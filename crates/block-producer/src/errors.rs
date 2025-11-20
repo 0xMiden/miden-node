@@ -1,9 +1,8 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
-use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 use miden_objects::transaction::TransactionId;
 use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
@@ -45,18 +44,20 @@ pub enum VerifyTxError {
     /// Unauthenticated transaction notes were not found in the store or in outputs of in-flight
     /// transactions
     #[error(
-        "unauthenticated transaction notes were not found in the store or in outputs of in-flight transactions: {0:?}"
+        "unauthenticated transaction note commitments were not found in the store or in outputs of in-flight transactions: {0:?}"
     )]
-    UnauthenticatedNotesNotFound(Vec<NoteId>),
+    UnauthenticatedNotesNotFound(Vec<Word>),
 
-    #[error("output note IDs already used: {0:?}")]
-    OutputNotesAlreadyExist(Vec<NoteId>),
+    #[error("output note commitments already used: {0:?}")]
+    OutputNotesAlreadyExist(Vec<Word>),
 
     /// The account's initial commitment did not match the current account's commitment
-    #[error("transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {}", format_opt(.current_account_commitment.as_ref()))]
+    #[error(
+        "transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {current_account_commitment}"
+    )]
     IncorrectAccountInitialCommitment {
         tx_initial_account_commitment: Word,
-        current_account_commitment: Option<Word>,
+        current_account_commitment: Word,
     },
 
     /// Failed to retrieve transaction inputs from the store
@@ -82,17 +83,19 @@ pub enum AddTransactionError {
     InputNotesAlreadyConsumed(Vec<Nullifier>),
 
     #[error(
-        "unauthenticated transaction notes were not found in the store or in outputs of in-flight transactions: {0:?}"
+        "unauthenticated transaction note commitments were not found in the store or in outputs of in-flight transactions: {0:?}"
     )]
-    UnauthenticatedNotesNotFound(Vec<NoteId>),
+    UnauthenticatedNotesNotFound(Vec<Word>),
 
-    #[error("output note IDs already used: {0:?}")]
-    OutputNotesAlreadyExist(Vec<NoteId>),
+    #[error("output note commitments already used: {0:?}")]
+    OutputNotesAlreadyExist(Vec<Word>),
 
-    #[error("transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {}", format_opt(.current_account_commitment.as_ref()))]
+    #[error(
+        "transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {current_account_commitment}"
+    )]
     IncorrectAccountInitialCommitment {
         tx_initial_account_commitment: Word,
-        current_account_commitment: Option<Word>,
+        current_account_commitment: Word,
     },
 
     #[error("failed to retrieve transaction inputs from the store")]
@@ -129,11 +132,11 @@ impl From<VerifyTxError> for AddTransactionError {
             VerifyTxError::InputNotesAlreadyConsumed(nullifiers) => {
                 Self::InputNotesAlreadyConsumed(nullifiers)
             },
-            VerifyTxError::UnauthenticatedNotesNotFound(note_ids) => {
-                Self::UnauthenticatedNotesNotFound(note_ids)
+            VerifyTxError::UnauthenticatedNotesNotFound(note_commitments) => {
+                Self::UnauthenticatedNotesNotFound(note_commitments)
             },
-            VerifyTxError::OutputNotesAlreadyExist(note_ids) => {
-                Self::OutputNotesAlreadyExist(note_ids)
+            VerifyTxError::OutputNotesAlreadyExist(note_commitments) => {
+                Self::OutputNotesAlreadyExist(note_commitments)
             },
             VerifyTxError::IncorrectAccountInitialCommitment {
                 tx_initial_account_commitment,

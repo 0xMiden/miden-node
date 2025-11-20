@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Queryable, QueryableByName};
@@ -32,10 +31,11 @@ use miden_objects::account::{
     NonFungibleDeltaAction,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset};
+use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
+use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{
     SqlTypeConvert,
     nonce_to_raw_sql,
@@ -58,19 +58,25 @@ use crate::errors::DatabaseError;
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
-///     account_id = ?1;
+///     account_id = ?1
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-) -> Result<proto::domain::account::AccountInfo, DatabaseError> {
+) -> Result<AccountInfo, DatabaseError> {
     let raw = SelectDsl::select(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
@@ -85,7 +91,6 @@ pub(crate) fn select_account(
     Ok(info)
 }
 
-// TODO: Handle account prefix collision in a more robust way
 /// Select the latest account details by account ID prefix from the DB using the given
 /// [`SqliteConnection`] This method is meant to be used by the network transaction builder. Because
 /// network notes get matched through accounts through the account's 30-bit prefix, it is possible
@@ -100,14 +105,20 @@ pub(crate) fn select_account(
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
-///     network_account_id_prefix = ?1;
+///     network_account_id_prefix = ?1
 /// ```
 pub(crate) fn select_account_by_id_prefix(
     conn: &mut SqliteConnection,
@@ -137,10 +148,21 @@ pub(crate) fn select_account_by_id_prefix(
 /// # Returns
 ///
 /// The vector with the account id and corresponding commitment, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment
+/// FROM
+///     accounts
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_all_account_commitments(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<(AccountId, Word)>, DatabaseError> {
-    // SELECT account_id, account_commitment FROM accounts ORDER BY block_num ASC
     let raw = SelectDsl::select(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
@@ -174,13 +196,13 @@ pub(crate) fn select_all_account_commitments(
 /// FROM
 ///     account_vault_assets
 /// WHERE
-///     account_id = ?
-///     AND block_num >= ?
-///     AND block_num <= ?
+///     account_id = ?1
+///     AND block_num >= ?2
+///     AND block_num <= ?3
 /// ORDER BY
 ///     block_num ASC
 /// LIMIT
-///     ROW_LIMIT;
+///     ?4
 /// ```
 pub(crate) fn select_account_vault_assets(
     conn: &mut SqliteConnection,
@@ -190,7 +212,6 @@ pub(crate) fn select_account_vault_assets(
     use schema::account_vault_assets as t;
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
-    const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
     const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
@@ -261,7 +282,7 @@ pub(crate) fn select_account_vault_assets(
 /// WHERE
 ///     block_num > ?1 AND
 ///     block_num <= ?2 AND
-///     account_id IN rarray(?3)
+///     account_id IN (?3)
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -295,14 +316,20 @@ pub fn select_accounts_by_block_range(
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// ORDER BY
-///     block_num ASC;
+///     block_num ASC
 /// ```
 #[cfg(test)]
 pub(crate) fn select_all_accounts(
@@ -377,7 +404,7 @@ impl StorageMapValue {
 /// ORDER BY
 ///     block_num ASC
 /// LIMIT
-///     :row_limit;
+///     ?4
 /// ```
 /// Select account storage map values within a block range (inclusive).
 ///
@@ -399,7 +426,6 @@ pub(crate) fn select_account_storage_map_values(
 
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
-    pub const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     pub const ROW_OVERHEAD_BYTES: usize =
         2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
     pub const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
@@ -466,7 +492,7 @@ impl TryFrom<AccountVaultUpdateRaw> for AccountVaultValue {
     type Error = DatabaseError;
 
     fn try_from(raw: AccountVaultUpdateRaw) -> Result<Self, Self::Error> {
-        let vault_key = Word::read_from_bytes(&raw.vault_key)?;
+        let vault_key = AssetVaultKey::new_unchecked(Word::read_from_bytes(&raw.vault_key)?);
         let asset = raw.asset.map(|bytes| Asset::read_from_bytes(&bytes)).transpose()?;
         let block_num = BlockNumber::from_raw_sql(raw.block_num)?;
 
@@ -577,7 +603,7 @@ pub(crate) fn insert_account_vault_asset(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    vault_key: Word,
+    vault_key: AssetVaultKey,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
     let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
@@ -585,6 +611,7 @@ pub(crate) fn insert_account_vault_asset(
     diesel::Connection::transaction(conn, |conn| {
         // First, update any existing rows with the same (account_id, vault_key) to set
         // is_latest_update=false
+        let vault_key: Word = vault_key.into();
         let update_count = diesel::update(schema::account_vault_assets::table)
             .filter(
                 schema::account_vault_assets::account_id
@@ -697,9 +724,10 @@ pub(crate) fn upsert_accounts(
             None
         };
 
-        let full_account = match update.details() {
+        let full_account: Option<Account> = match update.details() {
             AccountUpdateDetails::Private => None,
-            AccountUpdateDetails::New(account) => {
+            AccountUpdateDetails::Delta(delta) if delta.is_full_state() => {
+                let account = Account::try_from(delta)?;
                 debug_assert_eq!(account_id, account.id());
 
                 if account.commitment() != update.final_state_commitment() {
@@ -729,7 +757,7 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                Some(Cow::Borrowed(account))
+                Some(account)
             },
             AccountUpdateDetails::Delta(delta) => {
                 let mut rows = select_details_stmt(conn, account_id)?.into_iter();
@@ -788,11 +816,11 @@ pub(crate) fn upsert_accounts(
                     )?;
                 }
 
-                Some(Cow::Owned(account))
+                Some(account)
             },
         };
 
-        if let Some(code) = full_account.as_ref().map(|account| account.code()) {
+        if let Some(code) = full_account.as_ref().map(Account::code) {
             let code_value = AccountCodeRowInsert {
                 code_commitment: code.commitment().to_bytes(),
                 code: code.to_bytes(),
@@ -886,12 +914,13 @@ pub(crate) struct AccountAssetRowInsert {
 impl AccountAssetRowInsert {
     pub(crate) fn new(
         account_id: &AccountId,
-        vault_key: &Word,
+        vault_key: &AssetVaultKey,
         block_num: BlockNumber,
         asset: Option<Asset>,
         is_latest_update: bool,
     ) -> Self {
         let account_id = account_id.to_bytes();
+        let vault_key: Word = (*vault_key).into();
         let vault_key = vault_key.to_bytes();
         let block_num = block_num.to_raw_sql();
         let asset = asset.map(|asset| asset.to_bytes());

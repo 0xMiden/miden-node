@@ -1,10 +1,12 @@
+#![allow(dead_code, reason = "WIP: mempoool refactor")]
+
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate};
 
 use crate::errors::VerifyTxError;
@@ -26,12 +28,12 @@ pub struct AuthenticatedTransaction {
     /// This does not necessarily have to match the transaction's initial state
     /// as this may still be modified by inflight transactions.
     store_account_state: Option<Word>,
-    /// Unauthenticated notes that have now been authenticated by the store
+    /// Unauthenticated note commitments that have now been authenticated by the store
     /// [inputs](TransactionInputs).
     ///
     /// In other words, notes which were unauthenticated at the time the transaction was proven,
     /// but which have since been committed to, and authenticated by the store.
-    notes_authenticated_by_store: HashSet<NoteId>,
+    notes_authenticated_by_store: HashSet<Word>,
     /// Chain height that the authentication took place at.
     authentication_height: BlockNumber,
 }
@@ -45,7 +47,7 @@ impl AuthenticatedTransaction {
     /// # Errors
     ///
     /// Returns an error if any of the transaction's nullifiers are marked as spent by the inputs.
-    pub fn new(
+    pub fn new_unchecked(
         tx: ProvenTransaction,
         inputs: TransactionInputs,
     ) -> Result<AuthenticatedTransaction, VerifyTxError> {
@@ -89,8 +91,11 @@ impl AuthenticatedTransaction {
         self.inner.nullifiers()
     }
 
-    pub fn output_note_ids(&self) -> impl Iterator<Item = NoteId> + '_ {
-        self.inner.output_notes().iter().map(miden_objects::transaction::OutputNote::id)
+    pub fn output_note_commitments(&self) -> impl Iterator<Item = Word> + '_ {
+        self.inner
+            .output_notes()
+            .iter()
+            .map(miden_objects::transaction::OutputNote::commitment)
     }
 
     pub fn output_notes(&self) -> impl Iterator<Item = &OutputNote> + '_ {
@@ -109,21 +114,20 @@ impl AuthenticatedTransaction {
         (self.inner.ref_block_num(), self.inner.ref_block_commitment())
     }
 
-    /// Notes which were unauthenticate in the transaction __and__ which were
+    /// Note commitments which were unauthenticated in the transaction __and__ which were
     /// not authenticated by the store inputs.
-    pub fn unauthenticated_notes(&self) -> impl Iterator<Item = NoteId> + '_ {
+    pub fn unauthenticated_note_commitments(&self) -> impl Iterator<Item = Word> + '_ {
         self.inner
             .unauthenticated_notes()
             .copied()
-            .map(|header| header.id())
-            .filter(|note_id| !self.notes_authenticated_by_store.contains(note_id))
+            .map(|header| header.commitment())
+            .filter(|commitment| !self.notes_authenticated_by_store.contains(commitment))
     }
 
     pub fn proven_transaction(&self) -> Arc<ProvenTransaction> {
         Arc::clone(&self.inner)
     }
 
-    #[cfg(test)]
     pub fn raw_proven_transaction(&self) -> &ProvenTransaction {
         &self.inner
     }
@@ -154,7 +158,7 @@ impl AuthenticatedTransaction {
             current_block_height: 0.into(),
         };
         // SAFETY: nullifiers were set to None aka are definitely unspent.
-        Self::new(inner, inputs).unwrap()
+        Self::new_unchecked(inner, inputs).unwrap()
     }
 
     /// Overrides the authentication height with the given value.

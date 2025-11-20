@@ -63,9 +63,9 @@ pub mod block_inputs {
 /// Returns the inputs for a transaction batch.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchInputsRequest {
-    /// List of unauthenticated notes to be queried from the database.
+    /// List of unauthenticated note commitments to be queried from the database.
     #[prost(message, repeated, tag = "1")]
-    pub note_ids: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    pub note_commitments: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Set of block numbers referenced by transactions.
     #[prost(fixed32, repeated, tag = "2")]
     pub reference_blocks: ::prost::alloc::vec::Vec<u32>,
@@ -78,7 +78,7 @@ pub struct BatchInputs {
     pub batch_reference_block_header: ::core::option::Option<
         super::blockchain::BlockHeader,
     >,
-    /// Proof of each _found_ unauthenticated note's inclusion in a block.
+    /// Proof of each *found* unauthenticated note's inclusion in a block.
     #[prost(message, repeated, tag = "2")]
     pub note_proofs: ::prost::alloc::vec::Vec<super::note::NoteInclusionInBlockProof>,
     /// The serialized chain MMR which includes proofs for all blocks referenced by the
@@ -96,7 +96,7 @@ pub struct TransactionInputsRequest {
     /// Set of nullifiers consumed by this transaction.
     #[prost(message, repeated, tag = "2")]
     pub nullifiers: ::prost::alloc::vec::Vec<super::primitives::Digest>,
-    /// Set of unauthenticated notes to check for existence on-chain.
+    /// Set of unauthenticated note commitments to check for existence on-chain.
     ///
     /// These are notes which were not on-chain at the state the transaction was proven,
     /// but could by now be present.
@@ -131,7 +131,7 @@ pub struct TransactionInputs {
 /// Nested message and enum types in `TransactionInputs`.
 pub mod transaction_inputs {
     /// An account returned as a response to the `GetTransactionInputs`.
-    #[derive(Clone, PartialEq, ::prost::Message)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct AccountTransactionInputRecord {
         /// The account ID.
         #[prost(message, optional, tag = "1")]
@@ -141,7 +141,7 @@ pub mod transaction_inputs {
         pub account_commitment: ::core::option::Option<super::super::primitives::Digest>,
     }
     /// A nullifier returned as a response to the `GetTransactionInputs`.
-    #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct NullifierTransactionInputRecord {
         /// The nullifier ID.
         #[prost(message, optional, tag = "1")]
@@ -256,7 +256,7 @@ pub mod block_producer_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/block_producer_store.BlockProducer/ApplyBlock",
             );
@@ -286,7 +286,7 @@ pub mod block_producer_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/block_producer_store.BlockProducer/GetBlockHeaderByNumber",
             );
@@ -313,7 +313,7 @@ pub mod block_producer_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/block_producer_store.BlockProducer/GetBlockInputs",
             );
@@ -340,7 +340,7 @@ pub mod block_producer_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/block_producer_store.BlockProducer/GetBatchInputs",
             );
@@ -370,7 +370,7 @@ pub mod block_producer_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/block_producer_store.BlockProducer/GetTransactionInputs",
             );
@@ -539,7 +539,7 @@ pub mod block_producer_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ApplyBlockSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -591,7 +591,7 @@ pub mod block_producer_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetBlockHeaderByNumberSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -637,7 +637,7 @@ pub mod block_producer_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetBlockInputsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -683,7 +683,7 @@ pub mod block_producer_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetBatchInputsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -732,7 +732,7 @@ pub mod block_producer_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetTransactionInputsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,

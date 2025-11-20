@@ -9,6 +9,7 @@ use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
+use miden_node_validator::Validator;
 use tokio::net::TcpListener;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;
@@ -141,6 +142,12 @@ impl BundledCommand {
             .local_addr()
             .context("Failed to retrieve the block-producer's gRPC address")?;
 
+        let validator_address = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to validator gRPC endpoint")?
+            .local_addr()
+            .context("Failed to retrieve the validator's gRPC address")?;
+
         // Store addresses for each exposed API
         let store_rpc_listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -213,6 +220,17 @@ impl BundledCommand {
             })
             .id();
 
+        let validator_id = join_set
+            .spawn({
+                async move {
+                    Validator { address: validator_address, grpc_timeout }
+                        .serve()
+                        .await
+                        .context("failed while serving validator component")
+                }
+            })
+            .id();
+
         // Start RPC component.
         let rpc_id = join_set
             .spawn(async move {
@@ -236,6 +254,7 @@ impl BundledCommand {
         let mut component_ids = HashMap::from([
             (store_id, "store"),
             (block_producer_id, "block-producer"),
+            (validator_id, "validator"),
             (rpc_id, "rpc"),
         ]);
 
@@ -249,13 +268,13 @@ impl BundledCommand {
                     let block_producer_url =
                         Url::parse(&format!("http://{block_producer_address}"))
                             .context("Failed to parse URL")?;
-                    NetworkTransactionBuilder {
-                        store_url: store_ntx_builder_url,
+                    NetworkTransactionBuilder::new(
+                        store_ntx_builder_url,
                         block_producer_url,
-                        tx_prover_url: ntx_builder.tx_prover_url,
-                        ticker_interval: ntx_builder.ticker_interval,
-                        bp_checkpoint: checkpoint,
-                    }
+                        ntx_builder.tx_prover_url,
+                        ntx_builder.ticker_interval,
+                        checkpoint,
+                    )
                     .serve_new()
                     .await
                     .context("failed while serving ntx builder component")

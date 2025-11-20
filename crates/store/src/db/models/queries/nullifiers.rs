@@ -21,6 +21,7 @@ use miden_objects::block::BlockNumber;
 use miden_objects::note::Nullifier;
 
 use super::DatabaseError;
+use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{SqlTypeConvert, nullifier_prefix_to_raw_sql};
 use crate::db::models::utils::{get_nullifier_prefix, vec_raw_try_into};
 use crate::db::{NullifierInfo, schema};
@@ -51,10 +52,12 @@ use crate::db::{NullifierInfo, schema};
 ///     nullifiers
 /// WHERE
 ///     nullifier_prefix IN (?1) AND
-///     block_num >= ?2
+///     block_num >= ?2 AND
 ///     block_num <= ?3
 /// ORDER BY
 ///     block_num ASC
+/// LIMIT
+///     ?4
 /// ```
 pub(crate) fn select_nullifiers_by_prefix(
     conn: &mut SqliteConnection,
@@ -63,8 +66,6 @@ pub(crate) fn select_nullifiers_by_prefix(
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
     // Size calculation: max 2^16 nullifiers per block × 36 bytes per nullifier = ~2.25MB
-    // We use 2.5MB to provide a safety margin for the unlikely case of hitting the maximum
-    pub const MAX_PAYLOAD_BYTES: usize = 2_500_000; // 2.5 MB - allows for max block size of ~2.25MB
     pub const NULLIFIER_BYTES: usize = 32; // digest size (nullifier)
     pub const BLOCK_NUM_BYTES: usize = 4; // 32 bits per block number
     pub const ROW_OVERHEAD_BYTES: usize = NULLIFIER_BYTES + BLOCK_NUM_BYTES; // 36 bytes
@@ -114,10 +115,21 @@ pub(crate) fn select_nullifiers_by_prefix(
 /// # Returns
 ///
 /// A vector with nullifiers and the block height at which they were created, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     nullifier,
+///     block_num
+/// FROM
+///     nullifiers
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
-    // SELECT nullifier, block_num FROM nullifiers ORDER BY block_num ASC
     let nullifiers_raw =
         SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
             .load::<NullifierWithoutPrefixRawRow>(conn)?;
@@ -139,14 +151,23 @@ pub(crate) fn select_all_nullifiers(
 ///
 /// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// UPDATE notes
+/// SET consumed_at = ?1
+/// WHERE nullifier IN (?2);
+///
+/// INSERT INTO nullifiers (nullifier, nullifier_prefix, block_num)
+/// VALUES (?1, ?2, ?3)
+/// ```
 pub(crate) fn insert_nullifiers_for_block(
     conn: &mut SqliteConnection,
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     QueryParamNullifierLimit::check(nullifiers.len())?;
-
-    // UPDATE notes SET consumed = TRUE WHERE nullifier IN rarray(?1)
     let serialized_nullifiers =
         Vec::<Vec<u8>>::from_iter(nullifiers.iter().map(Nullifier::to_bytes));
 

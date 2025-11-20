@@ -2,7 +2,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 
-use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
+use account::{AccountState, InflightNetworkNote, NetworkAccountEffect};
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
@@ -19,6 +19,9 @@ use crate::COMPONENT;
 use crate::store::{StoreClient, StoreError};
 
 mod account;
+
+#[cfg(test)]
+mod tests;
 
 // CONSTANTS
 // =================================================================================================
@@ -90,7 +93,7 @@ pub struct State {
 
 impl State {
     /// Maximum number of attempts to execute a network note.
-    const MAX_NOTE_ATTEMPTS: usize = 30;
+    const MAX_NOTE_ATTEMPTS: usize = 1;
 
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
@@ -128,6 +131,28 @@ impl State {
         state.inject_telemetry();
 
         Ok(state)
+    }
+
+    /// Creates a new State for testing purposes with minimal setup.
+    ///
+    /// This bypasses the need for a real store connection and provides a mock state
+    /// that can be used in unit tests.
+    #[cfg(test)]
+    pub(crate) fn new_for_testing(
+        chain_tip_header: BlockHeader,
+        chain_mmr: PartialBlockchain,
+        store: StoreClient,
+    ) -> Self {
+        Self {
+            chain_tip_header,
+            chain_mmr,
+            store,
+            accounts: HashMap::default(),
+            queue: VecDeque::default(),
+            in_progress: HashSet::default(),
+            inflight_txs: BTreeMap::default(),
+            nullifier_idx: BTreeMap::default(),
+        }
     }
 
     /// Selects the next candidate network transaction.
@@ -320,15 +345,16 @@ impl State {
         }
 
         let mut tx_impact = TransactionImpact::default();
-        if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
+        if let Some(update) = account_delta.and_then(NetworkAccountEffect::from_protocol) {
             let prefix = update.prefix();
+
             match update {
-                NetworkAccountUpdate::New(account) => {
+                NetworkAccountEffect::Created(account) => {
                     let account_state = AccountState::from_uncommitted_account(account);
                     self.accounts.insert(prefix, account_state);
                     self.queue.push_back(prefix);
                 },
-                NetworkAccountUpdate::Delta(account_delta) => {
+                NetworkAccountEffect::Updated(account_delta) => {
                     self.fetch_account(prefix)
                         .await
                         .context("failed to load account")?
@@ -343,13 +369,17 @@ impl State {
             tx_impact.account_delta = Some(prefix);
         }
         for note in network_notes {
-            tx_impact.notes.insert(note.nullifier());
             let prefix = note.account_prefix();
+            tx_impact.notes.insert(note.nullifier());
+
+            // Skip and ignore nullifier if note targets a non-existent network account
+            let Some(account) = self.fetch_account(prefix).await? else {
+                tracing::warn!("could not fetch account from network: {:?}", prefix);
+                continue;
+            };
+
+            account.add_note(note.clone());
             self.nullifier_idx.insert(note.nullifier(), prefix);
-            // Skip notes which target a non-existent network account.
-            if let Some(account) = self.fetch_account(prefix).await? {
-                account.add_note(note);
-            }
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.
@@ -358,7 +388,8 @@ impl State {
             };
             tx_impact.nullifiers.insert(nullifier);
             // We don't use the entry wrapper here because the account must already exist.
-            self.accounts
+            let _res = self
+                .accounts
                 .get_mut(account)
                 .expect("nullifier account must exist")
                 .add_nullifier(nullifier);

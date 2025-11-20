@@ -40,6 +40,7 @@ CREATE TABLE notes (
     batch_index              INTEGER NOT NULL, -- Index of batch in block, starting from 0
     note_index               INTEGER NOT NULL, -- Index of note in batch, starting from 0
     note_id                  BLOB    NOT NULL,
+    note_commitment          BLOB    NOT NULL,
     note_type                INTEGER NOT NULL, -- 1-Public (0b01), 2-Private (0b10), 3-Encrypted (0b11)
     sender                   BLOB    NOT NULL,
     tag                      INTEGER NOT NULL,
@@ -66,6 +67,7 @@ CREATE TABLE notes (
 );
 
 CREATE INDEX idx_notes_note_id ON notes(note_id);
+CREATE INDEX idx_notes_note_commitment ON notes(note_commitment);
 CREATE INDEX idx_notes_sender ON notes(sender, committed_at);
 CREATE INDEX idx_notes_tag ON notes(tag, committed_at);
 CREATE INDEX idx_notes_nullifier ON notes(nullifier);
@@ -124,7 +126,7 @@ CREATE TABLE transactions (
     block_num                    INTEGER NOT NULL, -- Block number in which the transaction was included.
     initial_state_commitment     BLOB    NOT NULL, -- State of the account before applying the transaction.
     final_state_commitment       BLOB    NOT NULL, -- State of the account after applying the transaction.
-    input_notes                  BLOB    NOT NULL, -- Serialized vector with the Nullifier of the input notes.
+    nullifiers                   BLOB    NOT NULL, -- Serialized vector with the Nullifier of the input notes.
     output_notes                 BLOB    NOT NULL, -- Serialized vector with the NoteId of the output notes.
     size_in_bytes                INTEGER NOT NULL, -- Estimated size of the row in bytes, considering the size of the input and output notes.
 

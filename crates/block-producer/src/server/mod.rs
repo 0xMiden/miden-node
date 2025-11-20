@@ -34,14 +34,9 @@ use crate::errors::{
     SubmitProvenBatchError,
     VerifyTxError,
 };
-use crate::mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool};
+use crate::mempool::{BatchBudget, BlockBudget, Mempool, MempoolConfig, SharedMempool};
 use crate::store::StoreClient;
-use crate::{
-    COMPONENT,
-    SERVER_MEMPOOL_EXPIRATION_SLACK,
-    SERVER_MEMPOOL_STATE_RETENTION,
-    SERVER_NUM_BATCH_BUILDERS,
-};
+use crate::{COMPONENT, SERVER_NUM_BATCH_BUILDERS};
 
 /// The block producer server.
 ///
@@ -80,8 +75,8 @@ pub struct BlockProducer {
 impl BlockProducer {
     /// Serves the block-producer RPC API, the batch-builder and the block-builder.
     ///
-    /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
-    ///       a fatal error is encountered.
+    /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
+    /// encountered.
     #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
@@ -130,16 +125,15 @@ impl BlockProducer {
             self.batch_prover_url,
             self.batch_interval,
         );
-        let mempool = Mempool::shared(
-            chain_tip,
-            BatchBudget {
+        let mempool = MempoolConfig {
+            batch_budget: BatchBudget {
                 transactions: self.max_txs_per_batch,
                 ..BatchBudget::default()
             },
-            BlockBudget { batches: self.max_batches_per_block },
-            SERVER_MEMPOOL_STATE_RETENTION,
-            SERVER_MEMPOOL_EXPIRATION_SLACK,
-        );
+            block_budget: BlockBudget { batches: self.max_batches_per_block },
+            ..Default::default()
+        };
+        let mempool = Mempool::shared(chain_tip, mempool);
 
         // Spawn rpc server and batch and block provers.
         //
@@ -378,7 +372,7 @@ impl BlockProducerRpcServer {
         let inputs = self.store.get_tx_inputs(&tx).await.map_err(VerifyTxError::from)?;
 
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
-        let tx = AuthenticatedTransaction::new(tx, inputs)?;
+        let tx = AuthenticatedTransaction::new_unchecked(tx, inputs).map(Arc::new)?;
 
         self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
             proto::block_producer::SubmitProvenTransactionResponse {

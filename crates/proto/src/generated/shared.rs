@@ -3,7 +3,7 @@
 /// path and current forest which validate the block's inclusion in the chain.
 ///
 /// The Merkle path is an MMR proof for the block's leaf, based on the current chain length.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockHeaderByNumberRequest {
     /// The target block height, defaults to latest if not provided.
     #[prost(uint32, optional, tag = "1")]
@@ -24,4 +24,11 @@ pub struct BlockHeaderByNumberResponse {
     /// Current chain length.
     #[prost(fixed32, optional, tag = "3")]
     pub chain_length: ::core::option::Option<u32>,
+}
+/// Represents a note script or nothing.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MaybeNoteScript {
+    /// The script for a note by its root.
+    #[prost(message, optional, tag = "1")]
+    pub script: ::core::option::Option<super::note::NoteScript>,
 }

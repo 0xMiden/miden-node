@@ -177,6 +177,29 @@ impl StoreCommand {
             .unwrap_or_default();
 
         let (genesis_state, secrets) = config.into_state()?;
+
+        // Create directories if they do not already exist.
+        for directory in &[accounts_directory, data_directory] {
+            if fs_err::exists(directory)? {
+                let is_empty = fs_err::read_dir(directory)?.next().is_none();
+                // If the directory exists and is empty, we store the files there
+                if !is_empty {
+                    anyhow::bail!(format!("{} exists but it is not empty.", directory.display()));
+                }
+            } else {
+                fs_err::create_dir(directory).with_context(|| {
+                    format!(
+                        "failed to create {} at {}",
+                        directory
+                            .file_name()
+                            .unwrap_or(std::ffi::OsStr::new("directory"))
+                            .display(),
+                        directory.display()
+                    )
+                })?;
+            }
+        }
+
         // Write the accounts to disk
         for item in secrets.as_account_files(&genesis_state) {
             let AccountFileWithName { account_file, name } = item?;

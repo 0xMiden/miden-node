@@ -3,7 +3,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use miden_objects::transaction::{ExecutedTransaction, ProvenTransaction, TransactionInputs};
+use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use miden_objects::vm::FutureMaybeSend;
 use miden_tx::TransactionProverError;
@@ -32,6 +32,7 @@ pub struct RemoteTransactionProver {
     client: Arc<Mutex<Option<ApiClient<tonic::transport::Channel>>>>,
 
     endpoint: String,
+    timeout: Duration,
 }
 
 impl RemoteTransactionProver {
@@ -41,7 +42,23 @@ impl RemoteTransactionProver {
         RemoteTransactionProver {
             endpoint: endpoint.into(),
             client: Arc::new(Mutex::new(None)),
+            timeout: Duration::from_secs(10),
         }
+    }
+
+    /// Configures the timeout for requests to the remote prover server.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - The timeout duration for requests.
+    ///
+    /// # Returns
+    ///
+    /// A new [`RemoteTransactionProver`] instance with the configured timeout.
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Establishes a connection to the remote transaction prover server. The connection is
@@ -63,7 +80,7 @@ impl RemoteTransactionProver {
         let new_client = {
             let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .timeout(Duration::from_millis(10000));
+                .timeout(self.timeout);
             let channel = endpoint
                 .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?

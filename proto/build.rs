@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use fs_err as fs;
 use miette::{Context, IntoDiagnostic};
-use prost::Message;
+use protox::prost::Message;
 
 const RPC_PROTO: &str = "rpc.proto";
 const STORE_RPC_PROTO: &str = "store/rpc.proto";
@@ -12,6 +12,7 @@ const STORE_BLOCK_PRODUCER_PROTO: &str = "store/block_producer.proto";
 const STORE_SHARED_PROTO: &str = "store/shared.proto";
 const BLOCK_PRODUCER_PROTO: &str = "block_producer.proto";
 const REMOTE_PROVER_PROTO: &str = "remote_prover.proto";
+const VALIDATOR_PROTO: &str = "validator.proto";
 
 const RPC_DESCRIPTOR: &str = "rpc_file_descriptor.bin";
 const STORE_RPC_DESCRIPTOR: &str = "store_rpc_file_descriptor.bin";
@@ -20,6 +21,7 @@ const STORE_BLOCK_PRODUCER_DESCRIPTOR: &str = "store_block_producer_file_descrip
 const STORE_SHARED_DESCRIPTOR: &str = "store_shared_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
+const VALIDATOR_DESCRIPTOR: &str = "validator_file_descriptor.bin";
 
 /// Generates Rust protobuf bindings from .proto files.
 ///
@@ -78,6 +80,12 @@ fn main() -> miette::Result<()> {
     fs::write(&block_producer_path, block_producer_file_descriptor.encode_to_vec())
         .into_diagnostic()
         .wrap_err("writing block producer file descriptor")?;
+
+    let validator_file_descriptor = protox::compile([VALIDATOR_PROTO], includes)?;
+    let validator_path = PathBuf::from(&out).join(VALIDATOR_DESCRIPTOR);
+    fs::write(&validator_path, validator_file_descriptor.encode_to_vec())
+        .into_diagnostic()
+        .wrap_err("writing validator file descriptor")?;
 
     Ok(())
 }

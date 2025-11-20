@@ -3,7 +3,7 @@
     reason = "We will not approach the item count where i64 and usize cause issues"
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{
@@ -29,7 +29,7 @@ use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
-    QueryParamNoteIdLimit,
+    QueryParamNoteCommitmentLimit,
     QueryParamNoteTagLimit,
 };
 use miden_objects::account::AccountId;
@@ -114,9 +114,10 @@ use crate::errors::NoteSyncError;
 ///             block_num <= ?4
 ///         ORDER BY
 ///             block_num ASC
-///     LIMIT 1) AND
-///     -- filter the block's notes and return only the ones matching the requested tags or
-/// senders     (tag IN (?1) OR sender IN (?2))
+///         LIMIT 1
+///     ) AND
+///     -- filter the block's notes and return only the ones matching the requested tags or senders
+///     (tag IN (?1) OR sender IN (?2))
 /// ```
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
@@ -175,10 +176,24 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 /// # Raw SQL
 ///
 /// ```sql
-/// SELECT {}
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-/// WHERE note_id IN rarray(?1),
+/// WHERE note_id IN (?1)
 /// ```
 pub(crate) fn select_notes_by_id(
     conn: &mut SqliteConnection,
@@ -202,6 +217,36 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
+/// Select the subset of note commitments that already exist in the notes table
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     notes.note_commitment
+/// FROM notes
+/// WHERE note_commitment IN (?1)
+/// ```
+pub(crate) fn select_existing_note_commitments(
+    conn: &mut SqliteConnection,
+    note_commitments: &[Word],
+) -> Result<HashSet<Word>, DatabaseError> {
+    QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
+
+    let note_commitments = serialize_vec(note_commitments.iter());
+
+    let raw_commitments = SelectDsl::select(schema::notes::table, schema::notes::note_commitment)
+        .filter(schema::notes::note_commitment.eq_any(&note_commitments))
+        .load::<Vec<u8>>(conn)?;
+
+    let commitments = raw_commitments
+        .into_iter()
+        .map(|commitment| Word::read_from_bytes(&commitment[..]))
+        .collect::<Result<HashSet<_>, _>>()?;
+
+    Ok(commitments)
+}
+
 /// Select all notes from the DB using the given [`SqliteConnection`].
 ///
 ///
@@ -211,11 +256,25 @@ pub(crate) fn select_notes_by_id(
 ///
 /// # Raw SQL
 ///
-/// ```
-/// SELECT {cols}
+/// ```sql
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-/// ORDER BY block_num ASC
+/// ORDER BY committed_at ASC
 /// ```
 #[cfg(test)]
 pub(crate) fn select_all_notes(
@@ -237,7 +296,7 @@ pub(crate) fn select_all_notes(
     Ok(records)
 }
 
-/// Select note inclusion proofs matching the `NoteId`s.
+/// Select note inclusion proofs matching the note commitments.
 ///
 /// # Parameters
 /// * `note_ids`: Set of note IDs to query
@@ -252,7 +311,7 @@ pub(crate) fn select_all_notes(
 ///
 /// ```sql
 /// SELECT
-///     block_num,
+///     committed_at,
 ///     note_id,
 ///     batch_index,
 ///     note_index,
@@ -262,15 +321,15 @@ pub(crate) fn select_all_notes(
 /// WHERE
 ///     note_id IN (?1)
 /// ORDER BY
-///     block_num ASC
+///     committed_at ASC
 /// ```
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
-    note_ids: &BTreeSet<NoteId>,
+    note_commitments: &BTreeSet<Word>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
-    QueryParamNoteIdLimit::check(note_ids.len())?;
+    QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
 
-    let noted_ids_serialized = serialize_vec(note_ids.iter());
+    let note_commitments = serialize_vec(note_commitments.iter());
 
     let raw_notes = SelectDsl::select(
         schema::notes::table,
@@ -282,7 +341,7 @@ pub(crate) fn select_note_inclusion_proofs(
             schema::notes::inclusion_path,
         ),
     )
-    .filter(schema::notes::note_id.eq_any(noted_ids_serialized))
+    .filter(schema::notes::note_commitment.eq_any(note_commitments))
     .order_by(schema::notes::committed_at.asc())
     .load::<(i64, Vec<u8>, i32, i32, Vec<u8>)>(conn)?;
 
@@ -305,12 +364,12 @@ pub(crate) fn select_note_inclusion_proofs(
 ///
 /// ```sql
 /// SELECT
-///     root,
+///     script_root,
 ///     script
 /// FROM
 ///     note_scripts
 /// WHERE
-///     root = ?1;
+///     script_root = ?1
 /// ```
 pub(crate) fn select_note_script_by_root(
     conn: &mut SqliteConnection,
@@ -339,14 +398,29 @@ pub(crate) fn select_note_script_by_root(
 ///
 /// # Raw SQL
 ///
-/// ```
-/// SELECT *, rowid
+/// ```sql
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script,
+///     notes.rowid
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
 /// WHERE
-///     execution_mode = 0 AND consumed_block_num = NULL AND rowid >= ?
-/// ORDER BY rowid
-/// LIMIT ?
+///     execution_mode = 0 AND consumed_at IS NULL AND notes.rowid >= ?1
+/// ORDER BY notes.rowid ASC
+/// LIMIT ?2
 /// ```
 #[allow(
     clippy::cast_sign_loss,
@@ -437,15 +511,30 @@ pub(crate) fn unconsumed_network_notes(
 /// statements.
 ///
 /// ```sql
-/// SELECT *, rowid
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script,
+///     notes.rowid
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
 /// WHERE
-///  execution_mode = 0 AND tag = ?1 AND
-///  block_num <= ?2 AND
-///  (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
-/// ORDER BY rowid
-/// LIMIT ?
+///     execution_mode = 0 AND tag = ?1 AND
+///     committed_at <= ?2 AND
+///     (consumed_at IS NULL OR consumed_at > ?2) AND notes.rowid >= ?3
+/// ORDER BY notes.rowid ASC
+/// LIMIT ?4
 /// ```
 #[allow(
     clippy::cast_sign_loss,
@@ -604,6 +693,7 @@ pub struct NoteRecordWithScriptRawJoined {
     // #[diesel(embed)]
     // pub note_index: BlockNoteIndexRaw,
     pub note_id: Vec<u8>,
+    pub note_commitment: Vec<u8>,
 
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
@@ -629,6 +719,7 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             batch_index,
             note_index,
             note_id,
+            note_commitment,
             note_type,
             sender,
             tag,
@@ -644,6 +735,7 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             batch_index,
             note_index,
             note_id,
+            note_commitment,
             note_type,
             sender,
             tag,
@@ -670,6 +762,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             note_index,
             // block note index ^^^
             note_id,
+            note_commitment,
 
             note_type,
             sender,
@@ -698,6 +791,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
         let metadata = metadata.try_into()?;
         let committed_at = BlockNumber::from_raw_sql(committed_at)?;
         let note_id = Word::read_from_bytes(&note_id[..])?;
+        let note_commitment = Word::read_from_bytes(&note_commitment[..])?;
         let script = script.map(|script| NoteScript::read_from_bytes(&script[..])).transpose()?;
         let details = if let NoteDetailsRawRow {
             assets: Some(assets),
@@ -722,6 +816,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             block_num: committed_at,
             note_index,
             note_id,
+            note_commitment,
             metadata,
             details,
             inclusion_path,
@@ -738,6 +833,7 @@ pub struct NoteRecordRawRow {
     pub batch_index: i32,
     pub note_index: i32, // index within batch
     pub note_id: Vec<u8>,
+    pub note_commitment: Vec<u8>,
 
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
@@ -862,6 +958,7 @@ pub struct NoteInsertRowInsert {
     pub note_index: i32, // index within batch
 
     pub note_id: Vec<u8>,
+    pub note_commitment: Vec<u8>,
 
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
@@ -886,6 +983,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
             batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
             note_index: idx_to_raw_sql(note.note_index.note_idx_in_batch()),
             note_id: note.note_id.to_bytes(),
+            note_commitment: note.note_commitment.to_bytes(),
             note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),

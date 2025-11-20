@@ -123,7 +123,7 @@ mod vergen {
         let cargo_vcs_info = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cargo_vcs_info.json");
         if cargo_vcs_info.exists() {
             // The file is small so reading to string is acceptable.
-            let contents = std::fs::read_to_string(cargo_vcs_info).context("Reading vcs info")?;
+            let contents = fs_err::read_to_string(cargo_vcs_info).context("Reading vcs info")?;
 
             // File format:
             // {

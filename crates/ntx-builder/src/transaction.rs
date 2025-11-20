@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
+use lru::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
-use miden_objects::asset::AssetWitness;
+use miden_objects::asset::{AssetVaultKey, AssetWitness};
 use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::Note;
+use miden_objects::note::{Note, NoteScript};
 use miden_objects::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -33,12 +35,14 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
+use tokio::sync::Mutex;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
 use crate::block_producer::BlockProducerClient;
 use crate::state::TransactionCandidate;
+use crate::store::StoreClient;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {
@@ -73,6 +77,9 @@ pub struct NtxContext {
     /// Defaults to local proving if unset. This should be avoided in production as this is
     /// computationally intensive.
     pub prover: Option<RemoteTransactionProver>,
+
+    /// The store client for retrieving note scripts.
+    pub store: StoreClient,
 }
 
 impl NtxContext {
@@ -118,7 +125,8 @@ impl NtxContext {
 
         async move {
             async move {
-                let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
+                let data_store =
+                    NtxDataStore::new(account, chain_tip_header, chain_mmr, self.store.clone());
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
@@ -233,7 +241,11 @@ impl NtxContext {
 // ================================================================================================
 
 /// A [`DataStore`] implementation which provides transaction inputs for a single account and
-/// reference block.
+/// reference block with LRU caching for note scripts.
+///
+/// This implementation includes an LRU (Least Recently Used) cache for note scripts to improve
+/// performance by avoiding repeated RPC calls for the same script roots. The cache automatically
+/// manages memory usage by evicting least recently used entries when the cache reaches capacity.
 ///
 /// This is sufficient for executing a network transaction.
 struct NtxDataStore {
@@ -241,10 +253,26 @@ struct NtxDataStore {
     reference_header: BlockHeader,
     chain_mmr: PartialBlockchain,
     mast_store: TransactionMastStore,
+    /// Store client for retrieving note scripts.
+    store: StoreClient,
+    /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
+    script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
 }
 
 impl NtxDataStore {
-    fn new(account: Account, reference_header: BlockHeader, chain_mmr: PartialBlockchain) -> Self {
+    /// Default cache size for note scripts.
+    ///
+    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
+    /// depends on the complexity of the scripts being cached.
+    const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
+
+    /// Creates a new `NtxDataStore` with default cache size.
+    fn new(
+        account: Account,
+        reference_header: BlockHeader,
+        chain_mmr: PartialBlockchain,
+        store: StoreClient,
+    ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
 
@@ -253,6 +281,11 @@ impl NtxDataStore {
             reference_header,
             chain_mmr,
             mast_store,
+            store,
+            script_cache: Arc::new(Mutex::new(LruCache::new(
+                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
+                    .expect("default script cache size is non-zero"),
+            ))),
         }
     }
 }
@@ -264,9 +297,8 @@ impl DataStore for NtxDataStore {
         ref_blocks: BTreeSet<BlockNumber>,
     ) -> impl FutureMaybeSend<Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>>
     {
-        let account = self.account.clone();
         async move {
-            if account.id() != account_id {
+            if self.account.id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));
             }
 
@@ -277,7 +309,7 @@ impl DataStore for NtxDataStore {
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
 
-            let partial_account = PartialAccount::from(&account);
+            let partial_account = PartialAccount::from(&self.account);
 
             Ok((partial_account, self.reference_header.clone(), self.chain_mmr.clone()))
         }
@@ -295,22 +327,21 @@ impl DataStore for NtxDataStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: Word,
+        vault_key: AssetVaultKey,
     ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
-        let account = self.account.clone();
         async move {
-            if account.id() != account_id {
+            if self.account.id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));
             }
 
-            if account.vault().root() != vault_root {
+            if self.account.vault().root() != vault_root {
                 return Err(DataStoreError::Other {
                     error_msg: "vault root mismatch".into(),
                     source: None,
                 });
             }
 
-            AssetWitness::new(account.vault().open(vault_key).into()).map_err(|err| {
+            AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
                 DataStoreError::Other {
                     error_msg: "failed to open vault asset tree".into(),
                     source: Some(Box::new(err)),
@@ -325,14 +356,13 @@ impl DataStore for NtxDataStore {
         map_root: Word,
         map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
-        let account = self.account.clone();
         async move {
-            if account.id() != account_id {
+            if self.account.id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));
             }
 
             let mut map_witness = None;
-            for slot in account.storage().slots() {
+            for slot in self.account.storage().slots() {
                 if let StorageSlot::Map(map) = slot {
                     if map.root() == map_root {
                         map_witness = Some(map.open(&map_key));
@@ -351,12 +381,50 @@ impl DataStore for NtxDataStore {
         }
     }
 
+    /// Retrieves a note script by its root hash.
+    ///
+    /// This implementation uses the configured RPC client to call the `GetNoteScriptByRoot`
+    /// endpoint on the RPC server.
     fn get_note_script(
         &self,
         script_root: Word,
-    ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
-        // TODO: Add implementation for getting note script from NtxDataStore.
-        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
+    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
+        let store = self.store.clone();
+        let cache = self.script_cache.clone();
+
+        async move {
+            // Attempt to retrieve the script from the cache.
+            if let Some(cached_script) = {
+                let mut cache_guard = cache.lock().await;
+                cache_guard.get(&script_root).cloned()
+            } {
+                return Ok(Some(cached_script));
+            }
+
+            // Retrieve the script from the store.
+            let maybe_script = store.get_note_script_by_root(script_root).await.map_err(|err| {
+                DataStoreError::Other {
+                    error_msg: "failed to retrieve note script from store".to_string().into(),
+                    source: Some(err.into()),
+                }
+            })?;
+            // Handle response.
+            match maybe_script {
+                Some(script) => {
+                    // Cache the retrieved script.
+                    {
+                        let mut cache_guard = cache.lock().await;
+                        cache_guard.put(script_root, script.clone());
+                    }
+                    // Return script.
+                    Ok(Some(script))
+                },
+                None => {
+                    // Response did not contain the note script.
+                    Ok(None)
+                },
+            }
+        }
     }
 }
 

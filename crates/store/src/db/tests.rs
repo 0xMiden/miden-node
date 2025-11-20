@@ -10,6 +10,7 @@ use miden_lib::note::create_p2id_note;
 use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::test_fee_params;
+use miden_objects::account::auth::PublicKeyCommitment;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     Account,
@@ -22,10 +23,9 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
     AccountVaultDelta,
-    PublicKeyCommitment,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, FungibleAsset};
+use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{
     BlockAccountUpdate,
     BlockHeader,
@@ -249,6 +249,7 @@ fn sql_select_notes() {
             block_num,
             note_index: BlockNoteIndex::new(0, i.try_into().unwrap()).unwrap(),
             note_id: num_to_word(u64::try_from(i).unwrap()),
+            note_commitment: num_to_word(u64::try_from(i).unwrap()),
             metadata: *new_note.metadata(),
             details: Some(NoteDetails::from(&new_note)),
             inclusion_path: SparseMerklePath::default(),
@@ -298,6 +299,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 0).unwrap(),
         note_id: num_to_word(0),
+        note_commitment: num_to_word(0),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -323,6 +325,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 1).unwrap(),
         note_id: num_to_word(1),
+        note_commitment: num_to_word(1),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -346,6 +349,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 2).unwrap(),
         note_id: num_to_word(2),
+        note_commitment: num_to_word(2),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -388,6 +392,7 @@ fn sql_select_note_script_by_root() {
         block_num,
         note_index: BlockNoteIndex::new(0, 0.try_into().unwrap()).unwrap(),
         note_id: num_to_word(0),
+        note_commitment: num_to_word(0),
         metadata: *new_note.metadata(),
         details: Some(NoteDetails::from(&new_note)),
         inclusion_path: SparseMerklePath::default(),
@@ -426,7 +431,7 @@ fn make_account_and_note(
             &[BlockAccountUpdate::new(
                 account_id,
                 account.commitment(),
-                AccountUpdateDetails::New(account),
+                AccountUpdateDetails::Delta(AccountDelta::try_from(account).unwrap()),
             )],
             block_num,
         )
@@ -451,7 +456,7 @@ fn sql_unconsumed_network_notes() {
     // An arbitrary public account (network note tag requires public account).
     create_block(conn, block_num);
 
-    let account_notes = vec![
+    let account_notes = [
         make_account_and_note(conn, block_num, [0u8; 32], AccountStorageMode::Public),
         make_account_and_note(conn, block_num, [1u8; 32], AccountStorageMode::Network),
     ];
@@ -468,6 +473,7 @@ fn sql_unconsumed_network_notes() {
                 block_num,
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
                 note_id: num_to_word(i),
+                note_commitment: num_to_word(i),
                 metadata: NoteMetadata::new(
                     account_notes[index].0,
                     NoteType::Public,
@@ -590,6 +596,7 @@ fn sql_unconsumed_network_notes_for_account() {
                 block_num: 0.into(), // Created on same block.
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
                 note_id: num_to_word(i.into()),
+                note_commitment: num_to_word(i.into()),
                 metadata: NoteMetadata::new(
                     account_note.0,
                     NoteType::Public,
@@ -722,8 +729,8 @@ fn sync_account_vault_basic_validation() {
         .unwrap();
 
     // Create some test vault assets
-    let vault_key_1 = num_to_word(100);
-    let vault_key_2 = num_to_word(200);
+    let vault_key_1 = AssetVaultKey::new_unchecked(num_to_word(100));
+    let vault_key_2 = AssetVaultKey::new_unchecked(num_to_word(200));
     let fungible_asset_1 = Asset::Fungible(FungibleAsset::new(public_account_id, 1000).unwrap());
     let fungible_asset_2 = Asset::Fungible(FungibleAsset::new(public_account_id, 2000).unwrap());
 
@@ -1146,6 +1153,7 @@ fn notes() {
         block_num: block_num_1,
         note_index,
         note_id: new_note.id().into(),
+        note_commitment: new_note.commitment(),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -1192,6 +1200,7 @@ fn notes() {
         block_num: block_num_2,
         note_index: note.note_index,
         note_id: new_note.id().into(),
+        note_commitment: new_note.commitment(),
         metadata: note.metadata,
         details: None,
         inclusion_path: inclusion_path.clone(),

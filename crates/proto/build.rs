@@ -10,9 +10,10 @@ use miden_node_proto_build::{
     store_ntx_builder_api_descriptor,
     store_rpc_api_descriptor,
     store_shared_api_descriptor,
+    validator_api_descriptor,
 };
 use miette::{Context, IntoDiagnostic};
-use tonic_build::FileDescriptorSet;
+use tonic_prost_build::FileDescriptorSet;
 
 /// Generates Rust protobuf bindings using miden-node-proto-build.
 ///
@@ -46,6 +47,7 @@ fn main() -> miette::Result<()> {
     generate_bindings(store_shared_api_descriptor(), &dst_dir)?;
     generate_bindings(block_producer_api_descriptor(), &dst_dir)?;
     generate_bindings(remote_prover_api_descriptor(), &dst_dir)?;
+    generate_bindings(validator_api_descriptor(), &dst_dir)?;
 
     generate_mod_rs(&dst_dir).into_diagnostic().wrap_err("generating mod.rs")?;
 
@@ -55,13 +57,13 @@ fn main() -> miette::Result<()> {
 /// Generates protobuf bindings from the given file descriptor set and stores them in the
 /// given destination directory.
 fn generate_bindings(file_descriptors: FileDescriptorSet, dst_dir: &Path) -> miette::Result<()> {
-    let mut prost_config = prost_build::Config::new();
+    let mut prost_config = tonic_prost_build::Config::new();
     prost_config.skip_debug(["AccountId", "Digest"]);
 
     // Generate the stub of the user facing server from its proto file
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir(dst_dir)
-        .compile_fds_with_config(prost_config, file_descriptors)
+        .compile_fds_with_config(file_descriptors, prost_config)
         .into_diagnostic()
         .wrap_err("compiling protobufs")?;
 

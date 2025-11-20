@@ -212,7 +212,7 @@
                                             <strong>Workers (${details.RemoteProverStatus.workers.length}):</strong>
                                             ${details.RemoteProverStatus.workers.map(worker => `
                                                 <div class="worker-status">
-                                                    <span class="worker-address">${worker.address}</span> -
+                                                    <span class="worker-name">${worker.name}</span> -
                                                     <span class="worker-version">${worker.version}</span> -
                                                     <span class="worker-status-badge ${worker.status === 'Healthy' ? 'healthy' : worker.status === 'Unhealthy' ? 'unhealthy' : 'unknown'}">${worker.status}</span>
                                                 </div>
@@ -250,6 +250,38 @@
                                             <div class="metric-row">
                                                 <span class="metric-label">Last Challenge Difficulty:</span>
                                                 <span class="metric-value">~${details.FaucetTest.challenge_difficulty} bits</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            ${details.NtxService ? `
+                                <div class="nested-status">
+                                    <strong>Network Transaction Service:</strong>
+                                    <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
+                                        <div class="metric-row">
+                                            <span class="metric-label">Current Value:</span>
+                                            <span class="metric-value">${details.NtxService.current_value ?? '-'}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Successes:</span>
+                                            <span class="metric-value">${details.NtxService.success_count}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Failures:</span>
+                                            <span class="metric-value">${details.NtxService.failure_count}</span>
+                                        </div>
+                                        ${details.NtxService.last_tx_id ? `
+                                            <div class="metric-row">
+                                                <span class="metric-label">Last TX ID:</span>
+                                                <span class="metric-value">${details.NtxService.last_tx_id.substring(0, 16)}...
+                                                    <button class="copy-button" onclick="copyToClipboard('${details.NtxService.last_tx_id}', event)" title="Copy full TX ID">
+                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                        </svg>
+                                                    </button>
+                                                </span>
                                             </div>
                                         ` : ''}
                                     </div>

@@ -91,8 +91,8 @@ message BlockInputs {
 
 // Returns the inputs for a transaction batch.
 message BatchInputsRequest {
-  // List of unauthenticated notes to be queried from the database.
-  repeated primitives.Digest note_ids = 1;
+  // List of unauthenticated note commitments to be queried from the database.
+  repeated primitives.Digest note_commitments = 1;
   // Set of block numbers referenced by transactions.
   repeated fixed32 reference_blocks = 2;
 }
@@ -120,7 +120,7 @@ message TransactionInputsRequest {
     account.AccountId account_id = 1;
     // Set of nullifiers consumed by this transaction.
     repeated primitives.Digest nullifiers = 2;
-    // Set of unauthenticated notes to check for existence on-chain.
+    // Set of unauthenticated note commitments to check for existence on-chain.
     //
     // These are notes which were not on-chain at the state the transaction was proven,
     // but could by now be present.

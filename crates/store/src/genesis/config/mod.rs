@@ -10,6 +10,7 @@ use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::wallets::create_basic_wallet;
 use miden_lib::transaction::memory;
 use miden_node_utils::crypto::get_rpo_random_coin;
+use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{
     Account,
     AccountBuilder,
@@ -20,7 +21,6 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
     AccountVaultDelta,
-    AuthSecretKey,
     FungibleAssetDelta,
     NonFungibleAssetDelta,
 };
@@ -441,15 +441,12 @@ impl AccountSecrets {
         let account_lut = IndexMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );
-        self.secrets.iter().map(move |(name, account_id, secret_key)| {
+        self.secrets.iter().cloned().map(move |(name, account_id, secret_key)| {
             let account = account_lut
-                .get(account_id)
-                .ok_or(GenesisConfigError::MissingGenesisAccount { account_id: *account_id })?;
-            let account_file = AccountFile::new(
-                account.clone(),
-                vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
-            );
-            let name = name.to_string();
+                .get(&account_id)
+                .ok_or(GenesisConfigError::MissingGenesisAccount { account_id })?;
+            let account_file =
+                AccountFile::new(account.clone(), vec![AuthSecretKey::RpoFalcon512(secret_key)]);
             Ok(AccountFileWithName { name, account_file })
         })
     }

@@ -1,11 +1,12 @@
 use std::ops::Range;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use miden_node_utils::fee::test_fee;
 use miden_objects::account::AccountId;
 use miden_objects::asset::FungibleAsset;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier};
+use miden_objects::note::{Note, Nullifier};
 use miden_objects::transaction::{
     InputNote,
     OutputNote,
@@ -13,7 +14,7 @@ use miden_objects::transaction::{
     ProvenTransactionBuilder,
 };
 use miden_objects::vm::ExecutionProof;
-use miden_objects::{Felt, Hasher, ONE, Word};
+use miden_objects::{Felt, ONE, Word};
 use rand::Rng;
 
 use super::MockPrivateAccount;
@@ -38,7 +39,7 @@ impl MockProvenTxBuilder {
     }
 
     /// Generates 3 random, sequential transactions acting on the same account.
-    pub fn sequential() -> [AuthenticatedTransaction; 3] {
+    pub fn sequential() -> [Arc<AuthenticatedTransaction>; 3] {
         let mut rng = rand::rng();
         let mock_account: MockPrivateAccount<4> = rng.random::<u32>().into();
 
@@ -50,7 +51,7 @@ impl MockProvenTxBuilder {
                     mock_account.states[i + 1],
                 )
             })
-            .map(|tx| AuthenticatedTransaction::from_inner(tx.build()))
+            .map(|tx| Arc::new(AuthenticatedTransaction::from_inner(tx.build())))
             .collect_vec()
             .try_into()
             .expect("Sizes should match")
@@ -115,20 +116,21 @@ impl MockProvenTxBuilder {
     }
 
     #[must_use]
-    pub fn private_notes_created_range(self, range: Range<u64>) -> Self {
+    pub fn unauthenticated_notes_range(self, range: Range<u32>) -> Self {
+        let notes = range
+            .map(|note_index| Note::mock_noop(Word::from([0, 0, 0, note_index])))
+            .collect();
+
+        self.unauthenticated_notes(notes)
+    }
+
+    #[must_use]
+    pub fn private_notes_created_range(self, range: Range<u32>) -> Self {
         let notes = range
             .map(|note_index| {
-                let note_id = Hasher::hash(&note_index.to_be_bytes());
-                let note_metadata = NoteMetadata::new(
-                    self.account_id,
-                    NoteType::Private,
-                    0.into(),
-                    NoteExecutionHint::none(),
-                    ONE,
-                )
-                .unwrap();
+                let note = Note::mock_noop(Word::from([0, 0, 0, note_index]));
 
-                OutputNote::Header(NoteHeader::new(note_id.into(), note_metadata))
+                OutputNote::Header(*note.header())
             })
             .collect();
 
@@ -141,7 +143,7 @@ impl MockProvenTxBuilder {
             self.initial_account_commitment,
             self.final_account_commitment,
             Word::empty(),
-            BlockNumber::from(0),
+            BlockNumber::GENESIS,
             Word::empty(),
             self.fee,
             self.expiration_block_num,
@@ -153,15 +155,4 @@ impl MockProvenTxBuilder {
         .build()
         .unwrap()
     }
-}
-
-pub fn mock_proven_tx(
-    account_index: u8,
-    unauthenticated_notes: Vec<Note>,
-    output_notes: Vec<OutputNote>,
-) -> ProvenTransaction {
-    MockProvenTxBuilder::with_account_index(account_index.into())
-        .unauthenticated_notes(unauthenticated_notes)
-        .output_notes(output_notes)
-        .build()
 }

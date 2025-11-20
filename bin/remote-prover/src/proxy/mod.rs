@@ -352,7 +352,7 @@ impl RequestContext {
 
     /// Set the worker that will process the request
     fn set_worker(&mut self, worker: Worker) {
-        WORKER_REQUEST_COUNT.with_label_values(&[&worker.address()]).inc();
+        WORKER_REQUEST_COUNT.with_label_values(&[&worker.name()]).inc();
         self.worker = Some(worker);
     }
 }
@@ -495,7 +495,7 @@ impl ProxyHttp for LoadBalancer {
 
             // Check if there is an available worker
             if let Some(worker) = self.0.pop_available_worker().await {
-                debug!("Worker {} picked up the request with ID: {}", worker.address(), request_id);
+                debug!("Worker {} picked up the request with ID: {}", worker.name(), request_id);
                 ctx.set_worker(worker);
                 break;
             }
@@ -508,7 +508,7 @@ impl ProxyHttp for LoadBalancer {
 
         // Set SNI
         let mut http_peer = HttpPeer::new(
-            ctx.worker.clone().expect("Failed to get worker").address(),
+            ctx.worker.clone().expect("Failed to get worker").name(),
             false,
             String::new(),
         );
@@ -518,9 +518,6 @@ impl ProxyHttp for LoadBalancer {
         // Timeout settings
         peer_opts.total_connection_timeout = Some(self.0.timeout);
         peer_opts.connection_timeout = Some(self.0.connection_timeout);
-        peer_opts.read_timeout = Some(self.0.timeout);
-        peer_opts.write_timeout = Some(self.0.timeout);
-        peer_opts.idle_timeout = Some(self.0.timeout);
 
         // Enable HTTP/2
         peer_opts.alpn = ALPN::H2;

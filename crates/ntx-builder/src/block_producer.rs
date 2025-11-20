@@ -1,11 +1,7 @@
 use std::time::Duration;
 
 use futures::{TryStream, TryStreamExt};
-use miden_node_proto::clients::{
-    BlockProducer,
-    BlockProducerClient as InnerBlockProducerClient,
-    Builder,
-};
+use miden_node_proto::clients::{BlockProducerClient as InnerBlockProducerClient, Builder};
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::FlattenResult;
@@ -40,7 +36,8 @@ impl BlockProducerClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<BlockProducer>();
+            .with_otel_context_injection()
+            .connect_lazy::<InnerBlockProducerClient>();
 
         Self { client: block_producer }
     }
@@ -49,7 +46,10 @@ impl BlockProducerClient {
         &self,
         proven_tx: ProvenTransaction,
     ) -> Result<(), Status> {
-        let request = proto::transaction::ProvenTransaction { transaction: proven_tx.to_bytes() };
+        let request = proto::transaction::ProvenTransaction {
+            transaction: proven_tx.to_bytes(),
+            transaction_inputs: None,
+        };
 
         self.client.clone().submit_proven_transaction(request).await?;
 

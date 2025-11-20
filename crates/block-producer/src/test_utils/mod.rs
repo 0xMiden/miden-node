@@ -6,7 +6,7 @@ use miden_objects::transaction::TransactionId;
 
 mod proven_tx;
 
-pub use proven_tx::{MockProvenTxBuilder, mock_proven_tx};
+pub use proven_tx::MockProvenTxBuilder;
 
 mod account;
 

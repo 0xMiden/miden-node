@@ -56,8 +56,8 @@ service ProxyStatusApi {
 
 // Status of an individual worker in the proxy.
 message ProxyWorkerStatus {
-    // The address of the worker.
-    string address = 1;
+    // The name of the worker.
+    string name = 1;
     // The version of the worker.
     string version = 2;
     // The health status of the worker.

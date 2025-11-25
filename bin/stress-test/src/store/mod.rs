@@ -368,7 +368,7 @@ pub async fn bench_sync_transactions(
     let average_transactions_per_response = if responses.is_empty() {
         0.0
     } else {
-        responses.iter().map(|r| r.transaction_records.len()).sum::<usize>() as f64
+        responses.iter().map(|r| r.transactions.len()).sum::<usize>() as f64
             / responses.len() as f64
     };
     println!("Average transactions per response: {average_transactions_per_response}");
@@ -456,7 +456,7 @@ async fn sync_transactions_paginated(
             block_num: target_block_to,
         });
 
-        aggregated_records.extend(response.transaction_records.into_iter());
+        aggregated_records.extend(response.transactions.into_iter());
         let reached_block = info.block_num;
         let chain_tip = info.chain_tip;
         final_pagination_info =
@@ -475,7 +475,7 @@ async fn sync_transactions_paginated(
         duration: total_duration,
         response: proto::rpc_store::SyncTransactionsResponse {
             pagination_info: final_pagination_info,
-            transaction_records: aggregated_records,
+            transactions: aggregated_records,
         },
         pages,
     }

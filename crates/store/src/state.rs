@@ -12,8 +12,8 @@ use miden_node_proto::domain::account::{
     AccountDetailRequest,
     AccountDetails,
     AccountInfo,
-    AccountProofRequest,
-    AccountProofResponse,
+    AccountRequest,
+    AccountResponse,
     AccountStorageDetails,
     AccountStorageMapDetails,
     AccountVaultDetails,
@@ -1075,11 +1075,11 @@ impl State {
     ///
     /// When `block_num` is provided, this method will return the account state at that specific
     /// block using both the historical account tree witness and historical database state.
-    pub async fn get_account_proof(
+    pub async fn get_account(
         &self,
-        account_request: AccountProofRequest,
-    ) -> Result<AccountProofResponse, DatabaseError> {
-        let AccountProofRequest { block_num, account_id, details } = account_request;
+        account_request: AccountRequest,
+    ) -> Result<AccountResponse, DatabaseError> {
+        let AccountRequest { block_num, account_id, details } = account_request;
 
         if details.is_some() && !account_id.is_public() {
             return Err(DatabaseError::AccountNotPublic(account_id));
@@ -1093,7 +1093,7 @@ impl State {
             None
         };
 
-        Ok(AccountProofResponse { block_num, witness, details })
+        Ok(AccountResponse { block_num, witness, details })
     }
 
     /// Gets the block witness (account tree proof) for the specified account

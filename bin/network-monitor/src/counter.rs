@@ -32,7 +32,6 @@ use miden_objects::note::{
     NoteType,
 };
 use miden_objects::transaction::{InputNotes, PartialBlockchain, TransactionArgs};
-use miden_objects::utils::Deserializable;
 use miden_objects::{Felt, Word, ZERO};
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::Serializable;
@@ -90,43 +89,98 @@ async fn fetch_counter_value(
     account_id: AccountId,
 ) -> Result<Option<u64>> {
     let id_bytes: [u8; 15] = account_id.into();
-    let req = miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-    let resp = rpc_client.get_account_details(req).await?.into_inner();
-    if let Some(raw) = resp.details {
-        let account = Account::read_from_bytes(&raw)
-            .map_err(|e| anyhow::anyhow!("failed to deserialize account details: {e}"))?;
+    let account_id_proto =
+        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
 
-        let storage_slot = account.storage().slots().first().expect("storage slot is always value");
-        let word = storage_slot.value();
-        let value = word.as_elements().last().expect("a word is always 4 elements").as_int();
+    // Request account details with storage header (but no storage maps needed)
+    let request = miden_node_proto::generated::rpc_store::AccountRequest {
+        account_id: Some(account_id_proto),
+        block_num: None,
+        details: Some(
+            miden_node_proto::generated::rpc_store::account_request::AccountDetailRequest {
+                code_commitment: None,
+                asset_vault_commitment: None,
+                storage_maps: vec![],
+            },
+        ),
+    };
 
-        Ok(Some(value))
-    } else {
-        Ok(None)
+    let resp = rpc_client.get_account(request).await?.into_inner();
+
+    // Extract the counter value from the storage header
+    if let Some(details) = resp.details {
+        let storage_details =
+            details.storage_details.context("missing storage details")?;
+
+        let storage_header = storage_details.header.context("missing storage header")?;
+
+        // The counter value is in the first storage slot (index 0)
+        let first_slot = storage_header.slots.first().context("no storage slots found")?;
+
+        let commitment =
+            first_slot.commitment.as_ref().context("missing storage slot commitment")?;
+
+        // The commitment is a Word containing the counter value
+        // For a value slot, the Word directly contains the value
+        let word: Word = (*commitment).try_into().context("failed to convert commitment to word")?;
+
+        // The counter value is stored in the last element of the Word
+        // A Word always has 4 elements, so this is safe
+        let value = word.as_elements().last().expect("word always has 4 elements").as_int();
+
+        return Ok(Some(value));
     }
+
+    Ok(None)
 }
 
+/// Fetch the wallet account from RPC to get the latest nonce.
+///
+/// Note: Currently returns None because the RPC API returns commitments but not the full
+/// account data (code, vault assets, storage). To properly sync the account, we would need
+/// either:
+/// 1. The RPC to return full account data, or
+/// 2. To reconstruct the account from commitments + cached data
+///
+/// For now, we rely on the file-based account and update only the nonce after successful
+/// transactions.
 async fn fetch_wallet_account(
     rpc_client: &mut RpcClient,
     account_id: AccountId,
 ) -> Result<Option<Account>> {
     let id_bytes: [u8; 15] = account_id.into();
-    let req = miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-    let resp = rpc_client.get_account_details(req).await;
+    let account_id_proto =
+        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
 
-    // If the RPC call fails, return None
-    if resp.is_err() {
-        return Ok(None);
-    }
-
-    let Some(account_details) = resp.expect("Previously checked for error").into_inner().details
-    else {
-        return Ok(None);
+    // Request account header to check if account exists and get nonce
+    let request = miden_node_proto::generated::rpc_store::AccountRequest {
+        account_id: Some(account_id_proto),
+        block_num: None,
+        details: None,
     };
-    let account = Account::read_from_bytes(&account_details)
-        .map_err(|e| anyhow::anyhow!("failed to deserialize account details: {e}"))?;
 
-    Ok(Some(account))
+    match rpc_client.get_account(request).await {
+        Ok(response) => {
+            let resp = response.into_inner();
+            if resp.witness.is_some() {
+                info!(
+                    account.id = %account_id,
+                    "wallet found on-chain but cannot reconstruct full account from RPC response"
+                );
+            }
+            // We can't reconstruct the full Account without the actual code, vault, and storage
+            // data The RPC returns only commitments, so we fall back to the file-based account
+            Ok(None)
+        },
+        Err(e) => {
+            warn!(
+                account.id = %account_id,
+                err = %e,
+                "failed to fetch wallet account via RPC"
+            );
+            Ok(None)
+        },
+    }
 }
 
 async fn setup_increment_task(

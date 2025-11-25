@@ -19,6 +19,7 @@
 
 ### Changes
 
+- [BREAKING] Removed `GetAccountDetails` RPC endpoint. Use `GetAccountProof` instead ([#1185](https://github.com/0xMiden/miden-node/issues/1185)).
 - [BREAKING] Renamed `SyncTransactions` response fields ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
 - Normalize response size in endpoints to 4 MB ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
 - [BREAKING] Renamed `ProxyWorkerStatus::address` to `ProxyWorkerStatus::name` ([#1348](https://github.com/0xMiden/miden-node/pull/1348)).

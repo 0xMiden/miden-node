@@ -3,6 +3,7 @@
 ## v0.12.4 (TBD)
 
 - Split counter increment and tracking services in `miden-network-monitor` binary ([#1362](https://github.com/0xMiden/miden-node/pull/1362)).
+- Updated the counter account from the `miden-network-monitor` to start at 0 ([#1367](https://github.com/0xMiden/miden-node/pull/1367)).
 
 ## v0.12.3 (2025-11-15)
 

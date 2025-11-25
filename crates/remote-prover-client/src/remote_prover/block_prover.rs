@@ -138,41 +138,6 @@ impl RemoteBlockProver {
 
         Ok(block_proof)
     }
-
-    /// Validates that the proven block's transaction headers are consistent with the transactions
-    /// passed in the proposed block.
-    ///
-    /// This expects that transactions from the proposed block and proven block are in the same
-    /// order, as define by [`OrderedTransactionHeaders`].
-    fn validate_tx_headers(
-        proven_block: &ProvenBlock,
-        proposed_txs: &OrderedTransactionHeaders,
-    ) -> Result<(), RemoteProverClientError> {
-        if proposed_txs.as_slice().len() != proven_block.body().transactions().as_slice().len() {
-            return Err(RemoteProverClientError::other(format!(
-                "remote prover returned {} transaction headers but {} transactions were passed as part of the proposed block",
-                proven_block.body().transactions().as_slice().len(),
-                proposed_txs.as_slice().len()
-            )));
-        }
-
-        // Because we checked the length matches we can zip the iterators up.
-        // We expect the transaction headers to be in the same order.
-        for (proposed_header, proven_header) in proposed_txs
-            .as_slice()
-            .iter()
-            .zip(proven_block.body().transactions().as_slice())
-        {
-            if proposed_header != proven_header {
-                return Err(RemoteProverClientError::other(format!(
-                    "transaction header with id {} does not match header of the transaction in the proposed block",
-                    proposed_header.id()
-                )));
-            }
-        }
-
-        Ok(())
-    }
 }
 
 // CONVERSION

@@ -1,8 +1,8 @@
 use miden_block_prover::LocalBlockProver;
 use miden_node_utils::ErrorReport;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
-use miden_objects::batch::ProposedBatch;
-use miden_objects::block::ProposedBlock;
+use miden_objects::batch::{OrderedBatches, ProposedBatch};
+use miden_objects::block::{BlockHeader, BlockInputs, ProposedBlock};
 use miden_objects::transaction::TransactionInputs;
 use miden_objects::utils::Serializable;
 use miden_tx::LocalTransactionProver;
@@ -165,24 +165,41 @@ impl ProverRpcApi {
     )]
     pub fn prove_block(
         &self,
-        proposed_block: ProposedBlock,
+        _tx_batches: OrderedBatches,
+        _block_header: BlockHeader,
+        _block_inputs: BlockInputs,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Block(prover) = &self.prover else {
             return Err(Status::unimplemented("Block prover is not enabled"));
         };
+        todo!()
 
-        let proven_block = prover
-            .try_lock()
-            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
-            .prove(proposed_block)
-            .map_err(internal_error)?;
+        //let (
+        //    ordered_batches,
+        //    witnesses,
+        //    note_batch,
+        //    nullifier_witnesses,
+        //    partial_chain,
+        //    header,
+        //) = proposed_block.clone().into_parts();
+        ////let account_witnesses =
+        ////    .account_witnesses(batch_iterator.clone().flat_map(ProvenBatch::updated_accounts));
+        ////let nullifier_proofs =
+        ////    self.nullifier_witnesses(batch_iterator.flat_map(ProvenBatch::created_nullifiers));
+        //let (header, body) = build_block(proposed_block).map_err(internal_error)?;
+        //let block_inputs = BlockInputs::new(header.clone(), partial_chain, account_witnesses,
+        // nullifier_proofs) let proven_block = prover
+        //    .try_lock()
+        //    .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
+        //    .prove(ordered_batches, header, body)
+        //    .map_err(internal_error)?;
 
-        // Record the commitment of the block in the current tracing span
-        let block_id = proven_block.commitment();
-        tracing::Span::current().record("block_id", tracing::field::display(&block_id));
+        //// Record the commitment of the block in the current tracing span
+        //let block_id = proven_block.commitment();
+        //tracing::Span::current().record("block_id", tracing::field::display(&block_id));
 
-        Ok(Response::new(proto::remote_prover::Proof { payload: proven_block.to_bytes() }))
+        //Ok(Response::new(proto::remote_prover::Proof { payload: proven_block.to_bytes() }))
     }
 }
 
@@ -225,8 +242,9 @@ impl ProverApi for ProverRpcApi {
                 self.prove_batch(proposed_batch, &request_id)
             },
             proto::remote_prover::ProofType::Block => {
-                let proposed_block = proof_request.try_into().map_err(invalid_argument)?;
-                self.prove_block(proposed_block, &request_id)
+                todo!()
+                //let proposed_block = proof_request.try_into().map_err(invalid_argument)?;
+                //self.prove_block(proposed_block, &request_id)
             },
         }
     }

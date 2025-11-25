@@ -453,6 +453,6 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     (
         store_runtime,
         data_directory,
-        genesis_state.into_block().unwrap().inner().commitment(),
+        genesis_state.into_block().unwrap().inner().header().commitment(),
     )
 }

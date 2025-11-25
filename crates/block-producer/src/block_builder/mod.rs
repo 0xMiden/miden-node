@@ -112,8 +112,10 @@ impl BlockBuilder {
         self.get_block_inputs(selected)
             .inspect_ok(BlockBatchesAndInputs::inject_telemetry)
             .and_then(|inputs| self.propose_block(inputs))
-            .inspect_ok(ProposedBlock::inject_telemetry)
-            .and_then(|inputs| self.prove_block(inputs))
+            .inspect_ok(|(proposed_block, inputs)| {
+                ProposedBlock::inject_telemetry(proposed_block)
+            })
+            .and_then(|(proposed_block, inputs)| self.prove_block(proposed_block))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
@@ -197,14 +199,14 @@ impl BlockBuilder {
     async fn propose_block(
         &self,
         batches_inputs: BlockBatchesAndInputs,
-    ) -> Result<ProposedBlock, BuildBlockError> {
+    ) -> Result<(ProposedBlock, BlockInputs), BuildBlockError> {
         let BlockBatchesAndInputs { batches, inputs } = batches_inputs;
         let batches = batches.into_iter().map(Arc::unwrap_or_clone).collect();
 
-        let proposed_block =
-            ProposedBlock::new(inputs, batches).map_err(BuildBlockError::ProposeBlockFailed)?;
+        let proposed_block = ProposedBlock::new(inputs.clone(), batches)
+            .map_err(BuildBlockError::ProposeBlockFailed)?;
 
-        Ok(proposed_block)
+        Ok((proposed_block, inputs))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
@@ -212,6 +214,7 @@ impl BlockBuilder {
         &self,
         proposed_block: ProposedBlock,
     ) -> Result<ProvenBlock, BuildBlockError> {
+        // TODO: serge prove api
         let proven_block = self.block_prover.prove(proposed_block).await?;
 
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
@@ -391,8 +394,10 @@ impl BlockProver {
     async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
         match self {
             Self::Local(prover) => {
-                prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
+                todo!()
+                //prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
             },
+            // TODO: serge prove api
             Self::Remote(prover) => prover
                 .prove(proposed_block)
                 .await

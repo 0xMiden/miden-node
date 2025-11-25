@@ -234,7 +234,7 @@ impl State {
     /// Blocks in the MMR are pruned if the block count exceeds the maximum.
     fn update_chain_tip(&mut self, tip: BlockHeader) {
         // Update MMR which lags by one block.
-        self.chain_mmr.add_block(self.chain_tip_header.clone(), true);
+        self.chain_mmr.add_block(&self.chain_tip_header, true);
 
         // Set the new tip.
         self.chain_tip_header = tip;

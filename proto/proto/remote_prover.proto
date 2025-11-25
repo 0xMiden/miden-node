@@ -42,7 +42,7 @@ message Proof {
     // Serialized proof bytes.
     // - TRANSACTION: Returns an encoded ProvenTransaction.
     // - BATCH: Returns an encoded ProvenBatch.
-    // - BLOCK: Returns an encoded ProvenBlock.
+    // - BLOCK: Returns an encoded BlockProof.
     bytes payload = 1;
 }
 

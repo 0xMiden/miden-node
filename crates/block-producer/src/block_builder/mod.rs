@@ -4,10 +4,19 @@ use std::sync::Arc;
 use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
+use miden_lib::block::build_block;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
+use miden_objects::batch::{OrderedBatches, ProvenBatch};
+use miden_objects::block::{
+    BlockBody,
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    BlockProof,
+    ProposedBlock,
+    ProvenBlock,
+};
 use miden_objects::note::NoteHeader;
 use miden_objects::transaction::TransactionHeader;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
@@ -112,10 +121,10 @@ impl BlockBuilder {
         self.get_block_inputs(selected)
             .inspect_ok(BlockBatchesAndInputs::inject_telemetry)
             .and_then(|inputs| self.propose_block(inputs))
-            .inspect_ok(|(proposed_block, inputs)| {
-                ProposedBlock::inject_telemetry(proposed_block)
+            .inspect_ok(|(proposed_block, _)| {
+                ProposedBlock::inject_telemetry(proposed_block);
             })
-            .and_then(|(proposed_block, inputs)| self.prove_block(proposed_block))
+            .and_then(|(proposed_block, inputs)| self.validate_and_prove_block(proposed_block, inputs))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
@@ -210,13 +219,29 @@ impl BlockBuilder {
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
-    async fn prove_block(
+    async fn validate_and_prove_block(
         &self,
         proposed_block: ProposedBlock,
+        block_inputs: BlockInputs,
     ) -> Result<ProvenBlock, BuildBlockError> {
-        // TODO: serge prove api
-        let proven_block = self.block_prover.prove(proposed_block).await?;
+        // todo: validate
+        let (header, body) = build_block(proposed_block.clone()).unwrap(); // todo unwrap
+        self.prove_block(proposed_block.batches().clone(), header, body, block_inputs)
+            .await
+    }
 
+    #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
+    async fn prove_block(
+        &self,
+        tx_batches: OrderedBatches,
+        block_header: BlockHeader,
+        block_body: BlockBody,
+        block_inputs: BlockInputs,
+    ) -> Result<ProvenBlock, BuildBlockError> {
+        let block_proof =
+            self.block_prover.prove(tx_batches, block_header.clone(), block_inputs).await?;
+
+        let proven_block = ProvenBlock::new_unchecked(block_header, block_body, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
                 proven_block.proof_security_level(),
@@ -391,15 +416,18 @@ impl BlockProver {
     }
 
     #[instrument(target = COMPONENT, skip_all, err)]
-    async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
+    async fn prove(
+        &self,
+        tx_batches: OrderedBatches,
+        block_header: BlockHeader,
+        block_inputs: BlockInputs,
+    ) -> Result<BlockProof, BuildBlockError> {
         match self {
-            Self::Local(prover) => {
-                todo!()
-                //prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
-            },
-            // TODO: serge prove api
+            Self::Local(prover) => prover
+                .prove(tx_batches, block_header, block_inputs)
+                .map_err(BuildBlockError::ProveBlockFailed),
             Self::Remote(prover) => prover
-                .prove(proposed_block)
+                .prove(tx_batches, block_header, block_inputs)
                 .await
                 .map_err(BuildBlockError::RemoteProverClientError),
         }

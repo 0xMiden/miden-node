@@ -3,10 +3,11 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{ProposedBlock, ProvenBlock};
+use miden_objects::batch::{OrderedBatches, ProvenBatch};
+use miden_objects::block::{BlockHeader, BlockInputs, BlockProof, ProposedBlock, ProvenBlock};
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_tx::utils::{ByteReader, ByteWriter};
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
@@ -99,8 +100,10 @@ impl RemoteBlockProver {
 impl RemoteBlockProver {
     pub async fn prove(
         &self,
-        proposed_block: ProposedBlock,
-    ) -> Result<ProvenBlock, RemoteProverClientError> {
+        tx_batches: OrderedBatches,
+        block_header: BlockHeader,
+        block_inputs: BlockInputs,
+    ) -> Result<BlockProof, RemoteProverClientError> {
         use miden_objects::utils::Serializable;
         self.connect().await?;
 
@@ -114,26 +117,25 @@ impl RemoteBlockProver {
             })?
             .clone();
 
-        // Get the set of expected transaction headers.
-        let proposed_txs = proposed_block.batches().to_transactions();
-
-        let request = tonic::Request::new(proposed_block.into());
+        let request = BlockProofRequest { tx_batches, block_header, block_inputs };
+        let request = tonic::Request::new(request.into());
 
         let response = client.prove(request).await.map_err(|err| {
             RemoteProverClientError::other_with_source("failed to prove block", err)
         })?;
 
-        // Deserialize the response bytes back into a ProvenBlock.
-        let proven_block = ProvenBlock::try_from(response.into_inner()).map_err(|err| {
+        // Deserialize the response bytes back into a BlockProof.
+        let block_proof = BlockProof::try_from(response.into_inner()).map_err(|err| {
             RemoteProverClientError::other_with_source(
                 "failed to deserialize received response from remote block prover",
                 err,
             )
         })?;
 
-        Self::validate_tx_headers(&proven_block, &proposed_txs)?;
+        // todo reinstate elsewhere this pr
+        //Self::validate_tx_headers(&proven_block, &proposed_txs)?;
 
-        Ok(proven_block)
+        Ok(block_proof)
     }
 
     /// Validates that the proven block's transaction headers are consistent with the transactions
@@ -175,19 +177,51 @@ impl RemoteBlockProver {
 // CONVERSION
 // ================================================================================================
 
-impl TryFrom<proto::Proof> for ProvenBlock {
+impl TryFrom<proto::Proof> for BlockProof {
     type Error = DeserializationError;
 
     fn try_from(value: proto::Proof) -> Result<Self, Self::Error> {
-        ProvenBlock::read_from_bytes(&value.payload)
+        BlockProof::read_from_bytes(&value.payload)
     }
 }
 
-impl From<ProposedBlock> for proto::ProofRequest {
-    fn from(proposed_block: ProposedBlock) -> Self {
+impl From<BlockProofRequest> for proto::ProofRequest {
+    fn from(proposed_block: BlockProofRequest) -> Self {
         proto::ProofRequest {
             proof_type: proto::ProofType::Block.into(),
             payload: proposed_block.to_bytes(),
         }
+    }
+}
+
+// PROOF REQUEST
+// ================================================================================================
+
+struct BlockProofRequest {
+    pub tx_batches: OrderedBatches,
+    pub block_header: BlockHeader,
+    pub block_inputs: BlockInputs,
+}
+
+impl Serializable for BlockProofRequest {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        self.tx_batches.write_into(target);
+        self.block_header.write_into(target);
+        // TODO(serge): Add serde for block inputs
+        // self.block_inputs.write_into(target);
+    }
+}
+
+impl Deserializable for BlockProofRequest {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        todo!()
+        //let block = Self {
+        //    tx_batches: OrderedBatches::read_from(source)?,
+        //    block_header: BlockHeader::read_from(source)?,
+        //    // TODO(serge): Add serde for block inputs
+        //    block_inputs: BlockInputs::read_from(source)?,
+        //};
+
+        //Ok(block)
     }
 }

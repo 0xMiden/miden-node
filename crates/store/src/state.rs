@@ -916,16 +916,36 @@ impl State {
     ///
     /// When `block_num` is provided, this method will return the account state at that specific
     /// block using both the historical account tree witness and historical database state.
-    #[allow(clippy::too_many_lines)]
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
     ) -> Result<AccountProofResponse, DatabaseError> {
         let AccountProofRequest { block_num, account_id, details } = account_request;
 
-        // Lock inner state for the whole operation. We need to hold this lock to prevent the
-        // database, account tree and latest block number from changing during the operation,
-        // because changing one of them would lead to inconsistent state.
+        if details.is_some() && !account_id.is_public() {
+            return Err(DatabaseError::AccountNotPublic(account_id));
+        }
+
+        let (block_num, witness) = self.get_block_witness(block_num, account_id).await?;
+
+        let details = if let Some(request) = details {
+            Some(self.fetch_account_proof_details(account_id, block_num, request).await?)
+        } else {
+            None
+        };
+
+        Ok(AccountProofResponse { block_num, witness, details })
+    }
+
+    /// Gets the block witness (account tree proof) for the specified account
+    ///
+    /// If `block_num` is provided, returns the witness at that historical block,
+    /// if not present, returns the witness at the latest block.
+    async fn get_block_witness(
+        &self,
+        block_num: Option<BlockNumber>,
+        account_id: AccountId,
+    ) -> Result<(BlockNumber, AccountWitness), DatabaseError> {
         let inner_state = self.inner.read().await;
 
         // Determine which block to query
@@ -946,86 +966,88 @@ impl State {
             let witness = inner_state.account_tree.open_latest(account_id);
             (block_num, witness)
         };
-        drop(inner_state);
 
-        let account_details = if let Some(AccountDetailRequest {
+        Ok((block_num, witness))
+    }
+
+    /// Fetches the account details (code, vault, storage) for a public account at the specified
+    /// block.
+    ///
+    /// This method queries the database to fetch the account state and processes the detail
+    /// request to return only the requested information.
+    async fn fetch_account_proof_details(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        detail_request: AccountDetailRequest,
+    ) -> Result<AccountDetails, DatabaseError> {
+        let AccountDetailRequest {
             code_commitment,
             asset_vault_commitment,
             storage_requests,
-        }) = details
-        {
-            let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
+        } = detail_request;
 
-            // if we get a query for a _private_ account _with_ details requested, we'll error out
-            let Some(account) = account_info.details else {
-                return Err(DatabaseError::AccountNotPublic(account_id));
-            };
+        let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
 
-            let storage_header = account.storage().to_header();
-
-            let mut storage_map_details =
-                Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
-
-            for StorageMapRequest { slot_index, slot_data } in storage_requests {
-                let Some(StorageSlot::Map(storage_map)) =
-                    account.storage().slots().get(slot_index as usize)
-                else {
-                    return Err(AccountError::StorageSlotNotMap(slot_index).into());
-                };
-                let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
-                storage_map_details.push(details);
-            }
-
-            // Only include unknown account code blobs, which is equal to a account code digest
-            // mismatch. If `None` was requested, don't return any.
-            let account_code = code_commitment
-                .is_some_and(|code_commitment| code_commitment != account.code().commitment())
-                .then(|| account.code().to_bytes());
-
-            // storage details
-            let storage_details = AccountStorageDetails {
-                header: storage_header,
-                map_details: storage_map_details,
-            };
-
-            // Handle vault details based on the `asset_vault_commitment`.
-            // Similar to `code_commitment`, if the provided commitment matches, we don't return
-            // vault data. If no commitment is provided or it doesn't match, we return
-            // the vault data. If the number of vault contained assets are exceeding a
-            // limit, we signal this back in the response and the user must handle that
-            // in follow-up request.
-            let vault_details = match asset_vault_commitment {
-                Some(commitment) if commitment == account.vault().root() => {
-                    // The client already has the correct vault data
-                    AccountVaultDetails::empty()
-                },
-                Some(_) => {
-                    // The commitment doesn't match, so return vault data
-                    AccountVaultDetails::new(account.vault())
-                },
-                None => {
-                    // No commitment provided, so don't return vault data
-                    AccountVaultDetails::empty()
-                },
-            };
-
-            Some(AccountDetails {
-                account_header: AccountHeader::from(account),
-                account_code,
-                vault_details,
-                storage_details,
-            })
-        } else {
-            None
+        // if we get a query for a _private_ account _with_ details requested, we'll error out
+        let Some(account) = account_info.details else {
+            return Err(DatabaseError::AccountNotPublic(account_id));
         };
 
-        let response = AccountProofResponse {
-            block_num,
-            witness,
-            details: account_details,
+        let storage_header = account.storage().to_header();
+
+        let mut storage_map_details =
+            Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
+
+        for StorageMapRequest { slot_index, slot_data } in storage_requests {
+            let Some(StorageSlot::Map(storage_map)) =
+                account.storage().slots().get(slot_index as usize)
+            else {
+                return Err(AccountError::StorageSlotNotMap(slot_index).into());
+            };
+            let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+            storage_map_details.push(details);
+        }
+
+        // Only include unknown account code blobs, which is equal to a account code digest
+        // mismatch. If `None` was requested, don't return any.
+        let account_code = code_commitment
+            .is_some_and(|code_commitment| code_commitment != account.code().commitment())
+            .then(|| account.code().to_bytes());
+
+        // storage details
+        let storage_details = AccountStorageDetails {
+            header: storage_header,
+            map_details: storage_map_details,
         };
 
-        Ok(response)
+        // Handle vault details based on the `asset_vault_commitment`.
+        // Similar to `code_commitment`, if the provided commitment matches, we don't return
+        // vault data. If no commitment is provided or it doesn't match, we return
+        // the vault data. If the number of vault contained assets are exceeding a
+        // limit, we signal this back in the response and the user must handle that
+        // in follow-up request.
+        let vault_details = match asset_vault_commitment {
+            Some(commitment) if commitment == account.vault().root() => {
+                // The client already has the correct vault data
+                AccountVaultDetails::empty()
+            },
+            Some(_) => {
+                // The commitment doesn't match, so return vault data
+                AccountVaultDetails::new(account.vault())
+            },
+            None => {
+                // No commitment provided, so don't return vault data
+                AccountVaultDetails::empty()
+            },
+        };
+
+        Ok(AccountDetails {
+            account_header: AccountHeader::from(account),
+            account_code,
+            vault_details,
+            storage_details,
+        })
     }
 
     /// Returns storage map values for syncing within a block range.

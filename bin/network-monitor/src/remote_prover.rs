@@ -94,16 +94,19 @@ pub async fn run_remote_prover_test_task(
     proof_type: ProofType,
     serialized_request_payload: proto::remote_prover::ProofRequest,
     status_sender: watch::Sender<ServiceStatus>,
+    request_timeout: Duration,
+    test_interval: Duration,
 ) {
     let mut client = ClientBuilder::new(prover_url)
         .with_tls()
         .expect("TLS is enabled")
-        .with_timeout(Duration::from_secs(10))
+        .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
+        .without_otel_context_injection()
         .connect_lazy::<RemoteProverClient>();
 
-    let mut interval = tokio::time::interval(Duration::from_secs(2 * 60)); // Test every 2 minutes
+    let mut interval = tokio::time::interval(test_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     let mut success_count = 0u64;

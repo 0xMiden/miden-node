@@ -136,9 +136,9 @@ impl DataStore for TransactionInputsDataStore {
 
     fn get_note_script(
         &self,
-        script_root: Word,
-    ) -> impl FutureMaybeSend<Result<NoteScript, DataStoreError>> {
-        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
+        _script_root: Word,
+    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
+        async move { Ok(None) }
     }
 }
 

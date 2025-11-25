@@ -35,6 +35,7 @@ use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
+use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{
     SqlTypeConvert,
     nonce_to_raw_sql,
@@ -71,6 +72,7 @@ use crate::errors::DatabaseError;
 ///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
 ///     account_id = ?1
+///     AND is_latest = 1
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
@@ -83,6 +85,57 @@ pub(crate) fn select_account(
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .filter(schema::accounts::is_latest.eq(true))
+    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
+    .optional()?
+    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    let info = AccountWithCodeRawJoined::from(raw).try_into()?;
+    Ok(info)
+}
+
+/// Select account details at a specific block number from the DB using the given
+/// [`SqliteConnection`].
+///
+/// # Returns
+///
+/// The account details at the specified block, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
+/// FROM
+///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
+/// WHERE
+///     account_id = ?1
+///     AND block_num = ?2
+/// ```
+pub(crate) fn select_historical_account_at(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<AccountInfo, DatabaseError> {
+    let raw = SelectDsl::select(
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .filter(
+        schema::accounts::account_id
+            .eq(account_id.to_bytes())
+            .and(schema::accounts::block_num.eq(block_num.to_raw_sql())),
+    )
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
@@ -129,6 +182,7 @@ pub(crate) fn select_account_by_id_prefix(
         )),
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
+    .filter(schema::accounts::is_latest.eq(true))
     .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()
@@ -156,6 +210,8 @@ pub(crate) fn select_account_by_id_prefix(
 ///     account_commitment
 /// FROM
 ///     accounts
+/// WHERE
+///     is_latest = 1
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -166,6 +222,7 @@ pub(crate) fn select_all_account_commitments(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
     )
+    .filter(schema::accounts::is_latest.eq(true))
     .order_by(schema::accounts::block_num.asc())
     .load::<(Vec<u8>, Vec<u8>)>(conn)?;
 
@@ -211,7 +268,6 @@ pub(crate) fn select_account_vault_assets(
     use schema::account_vault_assets as t;
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
-    const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
     const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
@@ -341,6 +397,7 @@ pub(crate) fn select_all_accounts(
         )),
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
+    .filter(schema::accounts::is_latest.eq(true))
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
     let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
         accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
@@ -380,7 +437,7 @@ impl StorageMapValue {
 ///
 /// # Returns
 ///
-/// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account.
+/// A vector of tuples containing `(slot, key, value, is_latest)` for the given account.
 /// Each row contains one of:
 ///
 /// - the historical value for a slot and key specifically on block `block_to`
@@ -426,7 +483,6 @@ pub(crate) fn select_account_storage_map_values(
 
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
-    pub const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     pub const ROW_OVERHEAD_BYTES: usize =
         2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
     pub const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
@@ -594,8 +650,8 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest_update=true` for the new row and update any existing
-/// row with the same `(account_id, vault_key)` tuple to `is_latest_update=false`.
+/// This function will set `is_latest=true` for the new row and update any existing
+/// row with the same `(account_id, vault_key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -611,16 +667,16 @@ pub(crate) fn insert_account_vault_asset(
 
     diesel::Connection::transaction(conn, |conn| {
         // First, update any existing rows with the same (account_id, vault_key) to set
-        // is_latest_update=false
+        // is_latest=false
         let vault_key: Word = vault_key.into();
         let update_count = diesel::update(schema::account_vault_assets::table)
             .filter(
                 schema::account_vault_assets::account_id
                     .eq(&account_id.to_bytes())
                     .and(schema::account_vault_assets::vault_key.eq(&vault_key.to_bytes()))
-                    .and(schema::account_vault_assets::is_latest_update.eq(true)),
+                    .and(schema::account_vault_assets::is_latest.eq(true)),
             )
-            .set(schema::account_vault_assets::is_latest_update.eq(false))
+            .set(schema::account_vault_assets::is_latest.eq(false))
             .execute(conn)?;
 
         // Insert the new latest row
@@ -634,8 +690,8 @@ pub(crate) fn insert_account_vault_asset(
 
 /// Insert an account storage map value into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest_update=true` for the new row and update any existing
-/// row with the same `(account_id, slot, key)` tuple to `is_latest_update=false`.
+/// This function will set `is_latest=true` for the new row and update any existing
+/// row with the same `(account_id, slot, key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -660,9 +716,9 @@ pub(crate) fn insert_account_storage_map_value(
                 .eq(&account_id)
                 .and(schema::account_storage_map_values::slot.eq(slot))
                 .and(schema::account_storage_map_values::key.eq(&key))
-                .and(schema::account_storage_map_values::is_latest_update.eq(true)),
+                .and(schema::account_storage_map_values::is_latest.eq(true)),
         )
-        .set(schema::account_storage_map_values::is_latest_update.eq(false))
+        .set(schema::account_storage_map_values::is_latest.eq(false))
         .execute(conn)?;
 
     let record = AccountStorageMapRowInsert {
@@ -671,7 +727,7 @@ pub(crate) fn insert_account_storage_map_value(
         value,
         slot,
         block_num,
-        is_latest_update: true,
+        is_latest: true,
     };
     let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
         .values(record)
@@ -702,6 +758,7 @@ pub(crate) fn upsert_accounts(
             (AccountRaw::as_select(), schema::account_codes::code.nullable()),
         )
         .filter(schema::accounts::account_id.eq(account_id))
+        .filter(schema::accounts::is_latest.eq(true))
         .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
 
         // SELECT .. FROM accounts LEFT JOIN account_codes
@@ -845,15 +902,21 @@ pub(crate) fn upsert_accounts(
             code_commitment: full_account
                 .as_ref()
                 .map(|account| account.code().commitment().to_bytes()),
+            is_latest: true,
         };
 
-        let v = account_value.clone();
-        let inserted = diesel::insert_into(schema::accounts::table)
-            .values(&v)
-            .on_conflict(schema::accounts::account_id)
-            .do_update()
-            .set(account_value)
+        // Update any existing rows for this account_id to set is_latest = false
+        diesel::update(schema::accounts::table)
+            .filter(
+                schema::accounts::account_id
+                    .eq(&account_id.to_bytes())
+                    .and(schema::accounts::is_latest.eq(true)),
+            )
+            .set(schema::accounts::is_latest.eq(false))
             .execute(conn)?;
+
+        let v = account_value.clone();
+        let inserted = diesel::insert_into(schema::accounts::table).values(&v).execute(conn)?;
 
         debug_assert_eq!(inserted, 1);
 
@@ -900,6 +963,7 @@ pub(crate) struct AccountRowInsert {
     pub(crate) storage: Option<Vec<u8>>,
     pub(crate) vault: Option<Vec<u8>>,
     pub(crate) nonce: Option<i64>,
+    pub(crate) is_latest: bool,
 }
 
 #[derive(Insertable, AsChangeset, Debug, Clone)]
@@ -909,7 +973,7 @@ pub(crate) struct AccountAssetRowInsert {
     pub(crate) block_num: i64,
     pub(crate) vault_key: Vec<u8>,
     pub(crate) asset: Option<Vec<u8>>,
-    pub(crate) is_latest_update: bool,
+    pub(crate) is_latest: bool,
 }
 
 impl AccountAssetRowInsert {
@@ -918,7 +982,7 @@ impl AccountAssetRowInsert {
         vault_key: &AssetVaultKey,
         block_num: BlockNumber,
         asset: Option<Asset>,
-        is_latest_update: bool,
+        is_latest: bool,
     ) -> Self {
         let account_id = account_id.to_bytes();
         let vault_key: Word = (*vault_key).into();
@@ -930,7 +994,7 @@ impl AccountAssetRowInsert {
             block_num,
             vault_key,
             asset,
-            is_latest_update,
+            is_latest,
         }
     }
 }
@@ -943,5 +1007,5 @@ pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) slot: i32,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
-    pub(crate) is_latest_update: bool,
+    pub(crate) is_latest: bool,
 }

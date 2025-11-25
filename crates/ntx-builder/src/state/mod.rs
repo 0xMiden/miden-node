@@ -20,6 +20,9 @@ use crate::store::{StoreClient, StoreError};
 
 mod account;
 
+#[cfg(test)]
+mod tests;
+
 // CONSTANTS
 // =================================================================================================
 
@@ -128,6 +131,28 @@ impl State {
         state.inject_telemetry();
 
         Ok(state)
+    }
+
+    /// Creates a new State for testing purposes with minimal setup.
+    ///
+    /// This bypasses the need for a real store connection and provides a mock state
+    /// that can be used in unit tests.
+    #[cfg(test)]
+    pub(crate) fn new_for_testing(
+        chain_tip_header: BlockHeader,
+        chain_mmr: PartialBlockchain,
+        store: StoreClient,
+    ) -> Self {
+        Self {
+            chain_tip_header,
+            chain_mmr,
+            store,
+            accounts: HashMap::default(),
+            queue: VecDeque::default(),
+            in_progress: HashSet::default(),
+            inflight_txs: BTreeMap::default(),
+            nullifier_idx: BTreeMap::default(),
+        }
     }
 
     /// Selects the next candidate network transaction.

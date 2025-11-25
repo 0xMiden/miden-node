@@ -2,8 +2,27 @@
 
 ## v0.13.0 (TBD)
 
+### Changes
+
+- [BREAKING] Renamed `SyncTransactions` response fields ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
+- Normalize response size in endpoints to 4 MB ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
 - [BREAKING] Renamed `ProxyWorkerStatus::address` to `ProxyWorkerStatus::name` ([#1348](https://github.com/0xMiden/miden-node/pull/1348)).
 - Added `SyncTransactions` stress test to `miden-node-stress-test` binary ([#1294](https://github.com/0xMiden/miden-node/pull/1294)).
+- Remove `trait AccountTreeStorage` ([#1352](https://github.com/0xMiden/miden-node/issues/1352)).
+- [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298)).
+
+### Fixes
+
+- RPC client now correctly sets `genesis` value in `ACCEPT` header if `version` is unspecified ([#1370](https://github.com/0xMiden/miden-node/pull/1370)).
+
+## v0.12.3 (2025-11-15)
+
+- Added configurable timeout support to `RemoteBatchProver`, `RemoteBlockProver`, and `RemoteTransactionProver` clients ([#1365](https://github.com/0xMiden/miden-node/pull/1365)).
+- Added configurable timeout support to `miden-network-monitor` binary ([#1365](https://github.com/0xMiden/miden-node/pull/1365)).
+
+## v0.12.2 (2025-11-12)
+
+- Fixed `PoW` challenge solving in `miden-network-monitor` binary ([#1363](https://github.com/0xMiden/miden-node/pull/1363)).
 
 ## v0.12.1 (2025-11-08)
 
@@ -31,6 +50,7 @@
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
 - Added `validator` crate with initial protobuf, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
 - [BREAKING] Added `AccountTreeWithHistory` and integrate historical queries into `GetAccountProof` ([#1292](https://github.com/0xMiden/miden-node/pull/1292)).
+- [BREAKING] Handle past/historical `AccountProof` requests ([#1333](https://github.com/0xMiden/miden-node/pull/1333)).
 - Implement `DataStore::get_note_script()` for `NtxDataStore` (#[1332](https://github.com/0xMiden/miden-node/pull/1332)).
 - Started validating notes by their commitment instead of ID before entering the mempool ([#1338](https://github.com/0xMiden/miden-node/pull/1338)).
 

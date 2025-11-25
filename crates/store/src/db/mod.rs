@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
@@ -100,8 +100,8 @@ pub struct TransactionRecord {
     pub account_id: AccountId,
     pub initial_state_commitment: Word,
     pub final_state_commitment: Word,
-    pub input_notes: Vec<Nullifier>, // Store nullifiers for input notes
-    pub output_notes: Vec<NoteId>,   // Store note IDs for output notes
+    pub nullifiers: Vec<Nullifier>, // Store nullifiers for input notes
+    pub output_notes: Vec<NoteId>,  // Store note IDs for output notes
 }
 
 impl TransactionRecord {
@@ -116,11 +116,11 @@ impl TransactionRecord {
             note_records.into_iter().map(Into::into).collect();
 
         proto::rpc_store::TransactionRecord {
-            transaction_header: Some(proto::transaction::TransactionHeader {
+            header: Some(proto::transaction::TransactionHeader {
                 account_id: Some(self.account_id.into()),
                 initial_state_commitment: Some(self.initial_state_commitment.into()),
                 final_state_commitment: Some(self.final_state_commitment.into()),
-                input_notes: self.input_notes.into_iter().map(From::from).collect(),
+                nullifiers: self.nullifiers.into_iter().map(From::from).collect(),
                 output_notes,
             }),
             block_num: self.block_num.as_u32(),
@@ -408,6 +408,19 @@ impl Db {
             .await
     }
 
+    /// Loads account details at a specific block number from the DB.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_historical_account_at(
+        &self,
+        id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<AccountInfo> {
+        self.transact("Get historical account details", move |conn| {
+            queries::select_historical_account_at(conn, id, block_num)
+        })
+        .await
+    }
+
     /// Loads public account details from the DB based on the account ID's prefix.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_network_account_by_prefix(
@@ -455,15 +468,14 @@ impl Db {
         .await
     }
 
-    /// Loads all the [`NoteRecord`]s matching a certain note commitment from the
-    /// database.
+    /// Returns all note commitments from the DB that match the provided ones.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_notes_by_commitment(
+    pub async fn select_existing_note_commitments(
         &self,
         note_commitments: Vec<Word>,
-    ) -> Result<Vec<NoteRecord>> {
+    ) -> Result<HashSet<Word>> {
         self.transact("note by commitment", move |conn| {
-            queries::select_notes_by_commitment(conn, note_commitments.as_slice())
+            queries::select_existing_note_commitments(conn, note_commitments.as_slice())
         })
         .await
     }

@@ -24,6 +24,7 @@ testing = ["dep:tokio", "miden-objects/testing"]
 anyhow                = { workspace = true }
 bytes                 = { version = "1.10" }
 figment               = { features = ["env", "toml"], version = "0.10" }
+fs-err                = { workspace = true }
 http                  = { workspace = true }
 http-body-util        = { version = "0.1" }
 itertools             = { workspace = true }

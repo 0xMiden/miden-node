@@ -21,6 +21,7 @@ deadpool-diesel        = { features = ["sqlite"], version = "0.6" }
 deadpool-sync          = { version = "0.1" }
 diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
 diesel_migrations      = { features = ["sqlite"], version = "2.2" }
+fs-err                 = { workspace = true }
 hex                    = { version = "0.4" }
 indexmap               = { workspace = true }
 miden-lib              = { workspace = true }

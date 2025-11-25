@@ -77,7 +77,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory, InMemoryAccountTree};
+use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
 
 // STRUCTURES
 // ================================================================================================
@@ -97,7 +97,7 @@ where
 {
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: AccountTreeWithHistory<AccountTree<LargeSmt<S>>>,
+    account_tree: AccountTreeWithHistory<S>,
 }
 
 impl<S> InnerState<S>
@@ -150,11 +150,6 @@ impl State {
 
         let chain_mmr = load_mmr(&mut db).await?;
         let block_headers = db.select_all_block_headers().await?;
-        // TODO: Account tree loading synchronization
-        // Currently `load_account_tree` loads all account commitments from the DB. This could
-        // potentially lead to inconsistency if the DB contains account states from blocks beyond
-        // `latest_block_num`, though in practice the DB writes are transactional and this
-        // should not occur.
         let latest_block_num = block_headers
             .last()
             .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
@@ -892,11 +887,8 @@ impl State {
 
         let found_unauthenticated_notes = self
             .db
-            .select_notes_by_commitment(unauthenticated_note_commitments)
-            .await?
-            .into_iter()
-            .map(|note| note.note_commitment)
-            .collect();
+            .select_existing_note_commitments(unauthenticated_note_commitments)
+            .await?;
 
         Ok(TransactionInputs {
             account_commitment,
@@ -922,27 +914,39 @@ impl State {
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
-    /// Note: The `block_num` parameter in the request is currently ignored and will always
-    /// return the current state. Historical block support will be implemented in a future update.
+    /// When `block_num` is provided, this method will return the account state at that specific
+    /// block using both the historical account tree witness and historical database state.
     #[allow(clippy::too_many_lines)]
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
     ) -> Result<AccountProofResponse, DatabaseError> {
         let AccountProofRequest { block_num, account_id, details } = account_request;
-        let _ = block_num.ok_or_else(|| {
-            DatabaseError::NotImplemented(
-                "Handling of historical/past block numbers is not implemented yet".to_owned(),
-            )
-        });
 
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
         let inner_state = self.inner.read().await;
 
-        let block_num = inner_state.account_tree.block_number_latest();
-        let witness = inner_state.account_tree.open_latest(account_id);
+        // Determine which block to query
+        let (block_num, witness) = if let Some(requested_block) = block_num {
+            // Historical query: use the account tree with history
+            let witness = inner_state
+                .account_tree
+                .open_at(account_id, requested_block)
+                .ok_or_else(|| DatabaseError::HistoricalBlockNotAvailable {
+                    block_num: requested_block,
+                    reason: "Block is either in the future or has been pruned from history"
+                        .to_string(),
+                })?;
+            (requested_block, witness)
+        } else {
+            // Latest query: use the latest state
+            let block_num = inner_state.account_tree.block_number_latest();
+            let witness = inner_state.account_tree.open_latest(account_id);
+            (block_num, witness)
+        };
+        drop(inner_state);
 
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,
@@ -950,7 +954,7 @@ impl State {
             storage_requests,
         }) = details
         {
-            let account_info = self.db.select_account(account_id).await?;
+            let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
 
             // if we get a query for a _private_ account _with_ details requested, we'll error out
             let Some(account) = account_info.details else {
@@ -1130,17 +1134,27 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 async fn load_account_tree(
     db: &mut Db,
     block_number: BlockNumber,
-) -> Result<AccountTreeWithHistory<InMemoryAccountTree>, StateInitializationError> {
+) -> Result<AccountTreeWithHistory<MemoryStorage>, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
-    // Convert account_data to use account_id_to_smt_key
     let smt_entries = account_data
         .into_iter()
         .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
 
-    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
-        .expect("Failed to create LargeSmt from database account data");
+    let smt =
+        LargeSmt::with_entries(MemoryStorage::default(), smt_entries).map_err(|e| match e {
+            miden_objects::crypto::merkle::LargeSmtError::Merkle(merkle_error) => {
+                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
+            },
+            miden_objects::crypto::merkle::LargeSmtError::Storage(err) => {
+                // large_smt::StorageError is not `Sync` and hence `context` cannot be called
+                // which we want to and do
+                StateInitializationError::AccountTreeIoError(err.as_report())
+            },
+        })?;
 
-    let account_tree = AccountTree::new(smt).expect("Failed to create AccountTree");
+    let account_tree =
+        AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
+
     Ok(AccountTreeWithHistory::new(account_tree, block_number))
 }

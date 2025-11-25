@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
 
 use itertools::Itertools;
-use miden_node_proto::clients::{Builder, StoreBlockProducer, StoreBlockProducerClient};
+use miden_node_proto::clients::{Builder, StoreBlockProducerClient};
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
 use miden_node_proto::{AccountState, generated as proto};
@@ -133,7 +133,8 @@ impl StoreClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<StoreBlockProducer>();
+            .with_otel_context_injection()
+            .connect_lazy::<StoreBlockProducerClient>();
 
         Self { client: store }
     }

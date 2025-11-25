@@ -31,3 +31,6 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Run tests
         run: make test
+      - name: Doc tests
+        run: cargo test --doc --workspace --all-features
+

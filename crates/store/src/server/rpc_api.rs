@@ -9,6 +9,7 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
 use crate::COMPONENT;
+use crate::constants::{MAX_ACCOUNT_IDS, MAX_NOTE_IDS, MAX_NOTE_TAGS, MAX_NULLIFIERS};
 use crate::errors::{
     CheckNullifiersError,
     GetBlockByNumberError,
@@ -30,14 +31,6 @@ use crate::server::api::{
     read_root,
     validate_nullifiers,
 };
-
-// CONSTANTS
-// ================================================================================================
-
-const MAX_ACCOUNT_IDS: usize = 100;
-const MAX_NULLIFIERS: usize = 100;
-const MAX_NOTE_TAGS: usize = 100;
-const MAX_NOTE_IDS: usize = 100;
 
 // CLIENT ENDPOINTS
 // ================================================================================================
@@ -566,20 +559,40 @@ impl rpc_server::Rpc for StoreApi {
             .await
             .map_err(SyncTransactionsError::from)?;
 
+        // Collect all note IDs from all transactions to make a single query
+        let all_notes_ids = transaction_records_db
+            .iter()
+            .flat_map(|tx| tx.output_notes.iter())
+            .copied()
+            .collect::<Vec<_>>();
+
+        // Retrieve all note data in a single query
+        let all_note_records = self
+            .state
+            .get_notes_by_id(all_notes_ids)
+            .await
+            .map_err(SyncTransactionsError::from)?;
+
+        // Create a map from note ID to note record for efficient lookup
+        let note_map: std::collections::HashMap<_, _> = all_note_records
+            .into_iter()
+            .map(|note_record| (note_record.note_id, note_record))
+            .collect();
+
         // Convert database TransactionRecord to proto TransactionRecord
-        let mut transaction_records = Vec::with_capacity(transaction_records_db.len());
+        let mut transactions = Vec::with_capacity(transaction_records_db.len());
 
         for tx_header in transaction_records_db {
-            // Retrieve full note data for output notes from the database
-            let note_records = self
-                .state
-                .get_notes_by_id(tx_header.output_notes.clone())
-                .await
-                .map_err(SyncTransactionsError::from)?;
+            // Get note records for this transaction's output notes
+            let note_records: Vec<_> = tx_header
+                .output_notes
+                .iter()
+                .filter_map(|note_id| note_map.get(&note_id.into()).cloned())
+                .collect();
 
             // Convert to proto using the helper method
             let proto_record = tx_header.into_proto_with_note_records(note_records);
-            transaction_records.push(proto_record);
+            transactions.push(proto_record);
         }
 
         Ok(Response::new(proto::rpc_store::SyncTransactionsResponse {
@@ -587,7 +600,7 @@ impl rpc_server::Rpc for StoreApi {
                 chain_tip: chain_tip.as_u32(),
                 block_num: last_block_included.as_u32(),
             }),
-            transaction_records,
+            transactions,
         }))
     }
 }

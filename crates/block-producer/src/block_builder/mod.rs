@@ -218,14 +218,15 @@ impl BlockBuilder {
         Ok((proposed_block, inputs))
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "block_builder.validate_and_prove_block", skip_all, err)]
     async fn validate_and_prove_block(
         &self,
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
     ) -> Result<ProvenBlock, BuildBlockError> {
-        // todo: validate
-        let (header, body) = build_block(proposed_block.clone()).unwrap(); // todo unwrap
+        // TODO(sergerad): Validate proposed block when validator endpoint / client is ready.
+        let (header, body) =
+            build_block(proposed_block.clone()).map_err(BuildBlockError::ProposeBlockFailed)?;
         self.prove_block(proposed_block.batches().clone(), header, body, block_inputs)
             .await
     }

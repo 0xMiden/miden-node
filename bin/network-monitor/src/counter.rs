@@ -39,7 +39,6 @@ use miden_tx::{LocalTransactionProver, TransactionExecutor};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use tokio::sync::watch;
-use tokio::time::sleep;
 use tracing::{error, info, instrument, warn};
 
 use crate::COMPONENT;
@@ -228,8 +227,11 @@ pub async fn run_increment_task(
     ) = setup_increment_task(config.clone(), &mut rpc_client).await?;
 
     let mut rng = ChaCha20Rng::from_os_rng();
+    let mut interval = tokio::time::interval(config.counter_increment_interval);
 
     loop {
+        interval.tick().await;
+
         let last_error = match create_and_submit_network_note(
             &wallet_account,
             &counter_account,
@@ -255,8 +257,6 @@ pub async fn run_increment_task(
 
         let status = build_increment_status(&details, last_error);
         send_status(&tx, status)?;
-
-        sleep(config.counter_increment_interval).await;
     }
 }
 
@@ -381,7 +381,11 @@ pub async fn run_counter_tracking_task(
         },
     }
 
+    let mut poll_interval = tokio::time::interval(config.counter_increment_interval / 2);
+
     loop {
+        poll_interval.tick().await;
+
         let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
         let last_error = match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
             Ok(Some(value)) => {
@@ -421,9 +425,6 @@ pub async fn run_counter_tracking_task(
 
         let status = build_tracking_status(&details, last_error);
         send_status(&tx, status)?;
-
-        // Fetch faster than the increment interval to ensure we don't miss any increments
-        sleep(config.counter_increment_interval / 2).await;
     }
 }
 

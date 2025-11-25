@@ -3013,6 +3013,7 @@ dependencies = [
  "humantime",
  "miden-block-prover",
  "miden-lib",
+ "miden-node-proto",
  "miden-node-proto-build",
  "miden-node-utils",
  "miden-objects",
@@ -3051,6 +3052,7 @@ version = "0.13.0"
 dependencies = [
  "fs-err",
  "getrandom 0.3.4",
+ "miden-node-proto",
  "miden-node-proto-build",
  "miden-objects",
  "miden-tx",

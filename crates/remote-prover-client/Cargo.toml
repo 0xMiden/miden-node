@@ -38,6 +38,7 @@ tonic-web = { optional = true, version = "0.14" }
 workspace = true
 
 [dependencies]
+miden-node-proto = { workspace = true }
 miden-objects = { optional = true, workspace = true }
 miden-tx      = { optional = true, workspace = true }
 prost         = { default-features = false, features = ["derive"], version = "0.14" }

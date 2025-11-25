@@ -1,8 +1,8 @@
 use miden_block_prover::LocalBlockProver;
+use miden_node_proto::BlockProofRequest;
 use miden_node_utils::ErrorReport;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
-use miden_objects::batch::{OrderedBatches, ProposedBatch};
-use miden_objects::block::{BlockHeader, BlockInputs};
+use miden_objects::batch::ProposedBatch;
 use miden_objects::transaction::TransactionInputs;
 use miden_objects::utils::Serializable;
 use miden_tx::LocalTransactionProver;
@@ -165,14 +165,13 @@ impl ProverRpcApi {
     )]
     pub fn prove_block(
         &self,
-        tx_batches: OrderedBatches,
-        block_header: BlockHeader,
-        block_inputs: BlockInputs,
+        proof_request: BlockProofRequest,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Block(prover) = &self.prover else {
             return Err(Status::unimplemented("Block prover is not enabled"));
         };
+        let BlockProofRequest { tx_batches, block_header, block_inputs } = proof_request;
         let block_proof = prover
             .try_lock()
             .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
@@ -226,9 +225,8 @@ impl ProverApi for ProverRpcApi {
                 self.prove_batch(proposed_batch, &request_id)
             },
             proto::remote_prover::ProofType::Block => {
-                todo!()
-                //let proposed_block = proof_request.try_into().map_err(invalid_argument)?;
-                //self.prove_block(proposed_block, &request_id)
+                let proof_request = proof_request.try_into().map_err(invalid_argument)?;
+                self.prove_block(proof_request, &request_id)
             },
         }
     }

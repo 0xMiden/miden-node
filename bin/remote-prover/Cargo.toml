@@ -31,8 +31,8 @@ clap                  = { features = ["env"], workspace = true }
 http                  = { workspace = true }
 humantime             = { workspace = true }
 miden-block-prover    = { workspace = true }
-miden-node-utils      = { workspace = true }
 miden-node-proto      = { workspace = true }
+miden-node-utils      = { workspace = true }
 miden-objects         = { features = ["std"], workspace = true }
 miden-tx              = { features = ["std"], workspace = true }
 miden-tx-batch-prover = { features = ["std"], workspace = true }

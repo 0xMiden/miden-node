@@ -3,6 +3,7 @@
 ## v0.12.4 (TBD)
 
 - Updated the counter account from the `miden-network-monitor` to start at 0 ([#1367](https://github.com/0xMiden/miden-node/pull/1367)).
+- Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
 
 ## v0.12.3 (2025-11-15)
 

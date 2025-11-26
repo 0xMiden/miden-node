@@ -70,6 +70,7 @@ pub struct GetMetadataResponse {
     explorer_url: String,
     pow_load_difficulty: u32,
     base_amount: u64,
+    version: Option<String>,
 }
 
 // FAUCET TEST TASK

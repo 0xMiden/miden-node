@@ -153,7 +153,7 @@ impl NetworkAccountState {
 
     /// Updates state with the mempool event.
     #[instrument(target = COMPONENT, name = "ntx.state.mempool_update", skip_all)]
-    pub fn mempool_update(&mut self, update: MempoolEvent) -> Option<ActorShutdownReason> {
+    pub fn mempool_update(&mut self, update: &MempoolEvent) -> Option<ActorShutdownReason> {
         let span = tracing::Span::current();
         span.set_attribute("mempool_event.kind", update.kind());
 
@@ -165,13 +165,15 @@ impl NetworkAccountState {
                 account_delta,
             } => {
                 // Filter network notes relevant to this account.
-                let network_notes =
-                    filter_by_prefix_and_map_to_single_target(self.account_prefix, network_notes);
-                self.add_transaction(id, nullifiers, network_notes, account_delta);
+                let network_notes = filter_by_prefix_and_map_to_single_target(
+                    self.account_prefix,
+                    network_notes.clone(),
+                );
+                self.add_transaction(*id, nullifiers, &network_notes, account_delta.as_ref());
             },
             MempoolEvent::TransactionsReverted(txs) => {
                 for tx in txs {
-                    let shutdown_reason = self.revert_transaction(tx);
+                    let shutdown_reason = self.revert_transaction(*tx);
                     if shutdown_reason.is_some() {
                         return shutdown_reason;
                     }
@@ -179,7 +181,7 @@ impl NetworkAccountState {
             },
             MempoolEvent::BlockCommitted { txs, .. } => {
                 for tx in txs {
-                    self.commit_transaction(tx);
+                    self.commit_transaction(*tx);
                 }
             },
         }
@@ -193,9 +195,9 @@ impl NetworkAccountState {
     fn add_transaction(
         &mut self,
         id: TransactionId,
-        nullifiers: Vec<Nullifier>,
-        network_notes: Vec<SingleTargetNetworkNote>,
-        account_delta: Option<AccountUpdateDetails>,
+        nullifiers: &[Nullifier],
+        network_notes: &[SingleTargetNetworkNote],
+        account_delta: Option<&AccountUpdateDetails>,
     ) {
         // Skip transactions we already know about.
         //
@@ -226,16 +228,16 @@ impl NetworkAccountState {
             );
             tx_impact.notes.insert(note.nullifier());
             self.nullifier_idx.insert(note.nullifier());
-            self.account.add_note(note);
+            self.account.add_note(note.clone());
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.
-            if !self.nullifier_idx.contains(&nullifier) {
+            if !self.nullifier_idx.contains(nullifier) {
                 continue;
             }
-            tx_impact.nullifiers.insert(nullifier);
+            tx_impact.nullifiers.insert(*nullifier);
             // We don't use the entry wrapper here because the account must already exist.
-            let _ = self.account.add_nullifier(nullifier);
+            let _ = self.account.add_nullifier(*nullifier);
         }
 
         if !tx_impact.is_empty() {

@@ -2746,6 +2746,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "futures",
+ "indexmap 2.12.0",
  "lru 0.16.2",
  "miden-node-proto",
  "miden-node-test-macro",

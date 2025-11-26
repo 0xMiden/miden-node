@@ -20,12 +20,12 @@ use crate::actor::{AccountActor, AccountActorConfig, AccountOrigin, ActorShutdow
 /// Handle to account actors that are spawned by the coordinator.
 #[derive(Clone)]
 struct ActorHandle {
-    event_tx: mpsc::Sender<MempoolEvent>, // TODO: consider Arc<MempoolEvent>.
+    event_tx: mpsc::Sender<Arc<MempoolEvent>>,
     cancel_token: CancellationToken,
 }
 
 impl ActorHandle {
-    fn new(event_tx: mpsc::Sender<MempoolEvent>, cancel_token: CancellationToken) -> Self {
+    fn new(event_tx: mpsc::Sender<Arc<MempoolEvent>>, cancel_token: CancellationToken) -> Self {
         Self { event_tx, cancel_token }
     }
 }
@@ -115,7 +115,7 @@ impl Coordinator {
         &mut self,
         origin: AccountOrigin,
         config: &AccountActorConfig,
-    ) -> Result<(), SendError<MempoolEvent>> {
+    ) -> Result<(), SendError<Arc<MempoolEvent>>> {
         let account_prefix = origin.prefix();
 
         // If an actor already exists for this account prefix, something has gone wrong.
@@ -227,7 +227,7 @@ impl Coordinator {
     pub async fn send_targeted(
         &mut self,
         event: &Arc<MempoolEvent>,
-    ) -> Result<(), SendError<MempoolEvent>> {
+    ) -> Result<(), SendError<Arc<MempoolEvent>>> {
         let mut target_actors = HashMap::new();
         if let MempoolEvent::TransactionAdded { id, network_notes, .. } = event.as_ref() {
             // Determine target actors for each note.
@@ -265,7 +265,7 @@ impl Coordinator {
     async fn send(
         handle: &ActorHandle,
         event: Arc<MempoolEvent>,
-    ) -> Result<(), SendError<MempoolEvent>> {
-        handle.event_tx.send((*event).clone()).await
+    ) -> Result<(), SendError<Arc<MempoolEvent>>> {
+        handle.event_tx.send(event).await
     }
 }

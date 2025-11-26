@@ -104,6 +104,8 @@ pub enum DatabaseError {
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
     AccountNotPublic(AccountId),
+    #[error("account {0} details missing")]
+    AccountDetailsMissing(AccountId),
     #[error("invalid block parameters: block_from ({from}) > block_to ({to})")]
     InvalidBlockRange { from: BlockNumber, to: BlockNumber },
     #[error("data corrupted: {0}")]

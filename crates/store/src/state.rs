@@ -929,7 +929,7 @@ impl State {
         let (block_num, witness) = self.get_block_witness(block_num, account_id).await?;
 
         let details = if let Some(request) = details {
-            Some(self.fetch_account_proof_details(account_id, block_num, request).await?)
+            Some(self.fetch_public_account_details(account_id, block_num, request).await?)
         } else {
             None
         };
@@ -975,7 +975,7 @@ impl State {
     ///
     /// This method queries the database to fetch the account state and processes the detail
     /// request to return only the requested information.
-    async fn fetch_account_proof_details(
+    async fn fetch_public_account_details(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
@@ -989,9 +989,10 @@ impl State {
 
         let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
 
-        // if we get a query for a _private_ account _with_ details requested, we'll error out
+        // If we get a query for a public account but the details are missing from the database,
+        // it indicates an inconsistent state in the database.
         let Some(account) = account_info.details else {
-            return Err(DatabaseError::AccountNotPublic(account_id));
+            return Err(DatabaseError::AccountDetailsMissing(account_id));
         };
 
         let storage_header = account.storage().to_header();

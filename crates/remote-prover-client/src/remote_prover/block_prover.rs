@@ -133,9 +133,6 @@ impl RemoteBlockProver {
             )
         })?;
 
-        // todo reinstate elsewhere this pr
-        //Self::validate_tx_headers(&proven_block, &proposed_txs)?;
-
         Ok(block_proof)
     }
 }

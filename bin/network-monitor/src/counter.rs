@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use miden_lib::AuthScheme;
 use miden_lib::account::interface::AccountInterface;
 use miden_lib::utils::ScriptBuilder;
-use miden_node_proto::clients::{Builder, RpcClient};
+use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::auth::AuthSecretKey;
@@ -43,7 +43,7 @@ use tracing::{error, info, instrument};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::deploy::{MonitorDataStore, get_counter_library};
+use crate::deploy::{MonitorDataStore, create_genesis_aware_rpc_client, get_counter_library};
 use crate::status::{ServiceDetails, ServiceStatus, Status};
 
 /// The number of seconds to wait before warning that the block header is not available.
@@ -60,19 +60,6 @@ pub struct CounterIncrementDetails {
     pub current_value: Option<u64>,
     /// Last transaction ID (if available).
     pub last_tx_id: Option<String>,
-}
-
-async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
-    Builder::new(config.rpc_url.clone())
-        .with_tls()
-        .context("Failed to configure TLS for RPC client")
-        .expect("TLS is enabled")
-        .with_timeout(config.request_timeout)
-        .without_metadata_version()
-        .without_metadata_genesis()
-        .without_otel_context_injection()
-        .connect()
-        .await
 }
 
 /// Get the genesis block header.
@@ -248,7 +235,8 @@ pub async fn run_ntx_service_task(
     tx: watch::Sender<ServiceStatus>,
 ) -> Result<()> {
     // Create RPC client
-    let mut rpc_client = create_rpc_client(&config).await?;
+    let mut rpc_client =
+        create_genesis_aware_rpc_client(&config.rpc_url, config.request_timeout).await?;
 
     let (
         mut details,

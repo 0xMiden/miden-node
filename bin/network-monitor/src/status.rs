@@ -115,7 +115,6 @@ pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
     /// Mempool statistics for this block producer.
-
     pub mempool: MempoolStatusDetails,
 }
 

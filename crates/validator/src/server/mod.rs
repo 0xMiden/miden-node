@@ -110,20 +110,19 @@ impl api_server::Api for ValidatorServer {
     ) -> Result<tonic::Response<proto::validator::ValidateBlockResponse>, tonic::Status> {
         let proposed_block_bytes = request.into_inner().proposed_block;
 
-        // Deserialize the proposed block
+        // Deserialize the proposed block.
         let proposed_block =
             ProposedBlock::read_from_bytes(&proposed_block_bytes).map_err(|err| {
                 tonic::Status::invalid_argument(format!(
-                    "Failed to deserialize proposed block: {}",
-                    err
+                    "Failed to deserialize proposed block: {err}",
                 ))
             })?;
 
-        // Build header and body
+        // Build header and body.
         let (header, body) = build_block(proposed_block)
-            .map_err(|err| tonic::Status::internal(format!("Failed to build block: {}", err)))?;
+            .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
 
-        // Convert to protobuf format
+        // Convert to protobuf format.
         let header_proto = proto::blockchain::BlockHeader::from(&header);
         let body_proto = proto::blockchain::BlockBody { block_body: body.to_bytes() };
 

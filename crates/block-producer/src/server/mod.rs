@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
-use miden_node_proto::clients::{Builder as ClientBuilder, ValidatorClient};
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::block_producer::api_server;
 use miden_node_proto::generated::{self as proto};
@@ -37,6 +36,7 @@ use crate::errors::{
 };
 use crate::mempool::{BatchBudget, BlockBudget, Mempool, MempoolConfig, SharedMempool};
 use crate::store::StoreClient;
+use crate::validator::BlockProducerValidatorClient;
 use crate::{COMPONENT, SERVER_NUM_BATCH_BUILDERS};
 
 /// The block producer server.
@@ -84,13 +84,7 @@ impl BlockProducer {
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
         let store = StoreClient::new(self.store_url.clone());
-        let validator = ClientBuilder::new(self.validator_url.clone())
-            .without_tls() // TODO(sergerad): Implement TLS support.
-            .without_timeout()
-            .without_metadata_version()
-            .without_metadata_genesis()
-            .with_otel_context_injection()
-            .connect_lazy::<ValidatorClient>();
+        let validator = BlockProducerValidatorClient::new(self.validator_url.clone());
 
         // Retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;

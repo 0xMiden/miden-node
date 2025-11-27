@@ -4,7 +4,6 @@ use std::sync::Arc;
 use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
-use miden_node_proto::clients::ValidatorClient;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::{OrderedBatches, ProvenBatch};
@@ -19,9 +18,7 @@ use miden_objects::block::{
 };
 use miden_objects::note::NoteHeader;
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
-use miden_objects::utils::Deserializable;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
-use miden_tx::utils::Serializable;
 use rand::Rng;
 use tokio::time::Duration;
 use tracing::{Span, info, instrument};
@@ -30,6 +27,7 @@ use url::Url;
 use crate::errors::BuildBlockError;
 use crate::mempool::SharedMempool;
 use crate::store::StoreClient;
+use crate::validator::BlockProducerValidatorClient;
 use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
@@ -47,7 +45,7 @@ pub struct BlockBuilder {
 
     pub store: StoreClient,
 
-    pub validator: ValidatorClient,
+    pub validator: BlockProducerValidatorClient,
 
     /// The prover used to prove a proposed block into a proven block.
     pub block_prover: BlockProver,
@@ -59,7 +57,7 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
-        validator: ValidatorClient,
+        validator: BlockProducerValidatorClient,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -232,47 +230,13 @@ impl BlockBuilder {
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
     ) -> Result<(ProposedBlock, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
-        let message = miden_node_proto::generated::blockchain::ProposedBlock {
-            proposed_block: proposed_block.to_bytes(),
-        };
-        tracing::debug!(target = COMPONENT, ?message);
-        let request = tonic::Request::new(message);
         let response = self
             .validator
-            .clone()
-            .validate_block(request)
+            .validate_block(proposed_block.clone())
             .await
             .map_err(BuildBlockError::ValidateBlockFailed)?;
 
-        let response_inner = response.into_inner();
-
-        // Extract header from response
-        let header_proto = response_inner.header.ok_or_else(|| {
-            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(
-                "Missing header in validator response",
-            ))
-        })?;
-        let header = BlockHeader::try_from(header_proto).map_err(|err| {
-            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(format!(
-                "Failed to convert header: {}",
-                err
-            )))
-        })?;
-
-        // Extract body from response
-        let body_proto = response_inner.body.ok_or_else(|| {
-            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(
-                "Missing body in validator response",
-            ))
-        })?;
-        let body = BlockBody::read_from_bytes(&body_proto.block_body).map_err(|err| {
-            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(format!(
-                "Failed to deserialize body: {}",
-                err
-            )))
-        })?;
-
-        Ok((proposed_block, block_inputs, header, body))
+        Ok((proposed_block, block_inputs, response.header, response.body))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]

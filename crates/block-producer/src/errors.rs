@@ -11,6 +11,8 @@ use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
 
+use crate::validator::ValidatorError;
+
 // Block-producer errors
 // =================================================================================================
 
@@ -207,7 +209,7 @@ pub enum BuildBlockError {
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
     #[error("failed to validate block")]
-    ValidateBlockFailed(#[source] tonic::Status),
+    ValidateBlockFailed(#[source] ValidatorError),
     #[error("failed to prove block")]
     ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure

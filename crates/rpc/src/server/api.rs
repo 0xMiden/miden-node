@@ -567,6 +567,11 @@ impl api_server::Api for RpcService {
                 proto::block_producer::BlockProducerStatus {
                     status: "unreachable".to_string(),
                     version: "-".to_string(),
+                    mempool_stats: Some(proto::block_producer::MempoolStats {
+                        unbatched_transactions: 0,
+                        proposed_batches: 0,
+                        proven_batches: 0,
+                    }),
                 },
             )),
             genesis_commitment: self.genesis_commitment.map(Into::into),

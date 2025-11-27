@@ -553,6 +553,21 @@ impl Mempool {
         self.subscription.subscribe(chain_tip)
     }
 
+    /// Returns the number of transactions currently waiting to be batched.
+    pub fn unbatched_transactions_count(&self) -> usize {
+        self.nodes.txs.len()
+    }
+
+    /// Returns the number of batches currently being proven.
+    pub fn proposed_batches_count(&self) -> usize {
+        self.nodes.proposed_batches.len()
+    }
+
+    /// Returns the number of proven batches waiting for block inclusion.
+    pub fn proven_batches_count(&self) -> usize {
+        self.nodes.proven_batches.len()
+    }
+
     /// Adds mempool stats to the current tracing span.
     ///
     /// Note that these are only visible in the OpenTelemetry context, as conventional tracing

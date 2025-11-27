@@ -98,10 +98,14 @@ pub enum DatabaseError {
     AccountNotFoundInDb(AccountId),
     #[error("account {0} state at block height {1} not found")]
     AccountAtBlockHeightNotFoundInDb(AccountId, BlockNumber),
+    #[error("historical block {block_num} not available: {reason}")]
+    HistoricalBlockNotAvailable { block_num: BlockNumber, reason: String },
     #[error("accounts {0:?} not found")]
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
     AccountNotPublic(AccountId),
+    #[error("account {0} details missing")]
+    AccountDetailsMissing(AccountId),
     #[error("invalid block parameters: block_from ({from}) > block_to ({to})")]
     InvalidBlockRange { from: BlockNumber, to: BlockNumber },
     #[error("data corrupted: {0}")]
@@ -169,6 +173,8 @@ impl From<DatabaseError> for Status {
 
 #[derive(Error, Debug)]
 pub enum StateInitializationError {
+    #[error("account tree IO error: {0}")]
+    AccountTreeIoError(String),
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("failed to create nullifier tree")]

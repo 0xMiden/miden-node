@@ -72,7 +72,12 @@ impl RemoteTransactionProver {
 
         #[cfg(target_arch = "wasm32")]
         let new_client = {
-            let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
+            let mut fetch_options =
+                tonic_web_wasm_client::FetchOptions::new().timeout(self.timeout);
+            let web_client = tonic_web_wasm_client::Client::new_with_options(
+                self.endpoint.clone(),
+                fetch_options,
+            );
             ApiClient::new(web_client)
         };
 

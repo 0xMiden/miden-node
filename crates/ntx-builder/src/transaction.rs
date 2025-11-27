@@ -409,20 +409,12 @@ impl DataStore for NtxDataStore {
                 }
             })?;
             // Handle response.
-            match maybe_script {
-                Some(script) => {
-                    // Cache the retrieved script.
-                    {
-                        let mut cache_guard = cache.lock().await;
-                        cache_guard.put(script_root, script.clone());
-                    }
-                    // Return script.
-                    Ok(Some(script))
-                },
-                None => {
-                    // Response did not contain the note script.
-                    Ok(None)
-                },
+            if let Some(script) = maybe_script {
+                let mut cache_guard = cache.lock().await;
+                cache_guard.put(script_root, script.clone());
+                Ok(Some(script))
+            } else {
+                Ok(None)
             }
         }
     }

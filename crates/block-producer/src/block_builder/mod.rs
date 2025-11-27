@@ -229,38 +229,39 @@ impl BlockBuilder {
         &self,
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
-    ) -> Result<(ProposedBlock, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
+    ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
         let response = self
             .validator
             .validate_block(proposed_block.clone())
             .await
             .map_err(BuildBlockError::ValidateBlockFailed)?;
 
-        Ok((proposed_block, block_inputs, response.header, response.body))
+        let (ordered_batches, ..) = proposed_block.into_parts();
+        Ok((ordered_batches, block_inputs, response.header, response.body))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
     async fn prove_block(
         &self,
-        proposed_block: ProposedBlock,
+        ordered_batches: OrderedBatches,
         block_inputs: BlockInputs,
         header: BlockHeader,
         body: BlockBody,
-    ) -> Result<(ProposedBlock, BlockHeader, BlockBody, BlockProof), BuildBlockError> {
+    ) -> Result<(OrderedBatches, BlockHeader, BlockBody, BlockProof), BuildBlockError> {
         // Prove block using header and body from validator.
         let block_proof = self
             .block_prover
-            .prove(proposed_block.batches().clone(), header.clone(), block_inputs)
+            .prove(ordered_batches.clone(), header.clone(), block_inputs)
             .await?;
         self.simulate_proving().await;
 
-        Ok((proposed_block, header, body, block_proof))
+        Ok((ordered_batches, header, body, block_proof))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.construct_proven_block", skip_all, err)]
     async fn construct_proven_block(
         &self,
-        proposed_block: ProposedBlock,
+        ordered_batches: OrderedBatches,
         header: BlockHeader,
         body: BlockBody,
         block_proof: BlockProof,
@@ -272,7 +273,7 @@ impl BlockBuilder {
                 MIN_PROOF_SECURITY_LEVEL,
             ));
         }
-        validate_tx_headers(&proven_block, &proposed_block.batches().clone().to_transactions())?;
+        validate_tx_headers(&proven_block, &ordered_batches.to_transactions())?;
 
         Ok(proven_block)
     }

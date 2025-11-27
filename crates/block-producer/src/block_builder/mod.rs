@@ -236,6 +236,8 @@ impl BlockBuilder {
             .await
             .map_err(BuildBlockError::ValidateBlockFailed)?;
 
+        // TODO: Check that the returned header and body match the proposed block.
+
         let (ordered_batches, ..) = proposed_block.into_parts();
         Ok((ordered_batches, block_inputs, response.header, response.body))
     }

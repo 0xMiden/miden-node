@@ -25,6 +25,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          # Share Rust build cache across workflows/jobs on the same OS/arch.
+          shared-key: miden-node
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install cargo-msrv
         run: cargo install cargo-msrv

@@ -27,6 +27,8 @@ jobs:
         run: rustup update --no-self-update
       - uses: Swatinem/rust-cache@v2
         with:
+          # Share Rust build cache across workflows/jobs on the same OS/arch.
+          shared-key: miden-node
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Check network monitor (release)
         run: |

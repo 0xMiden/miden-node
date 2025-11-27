@@ -38,6 +38,8 @@ jobs:
           rustup +nightly component add rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
+          # Share Rust build cache across workflows/jobs on the same OS/arch.
+          shared-key: miden-node
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Fmt
         run: make format-check
@@ -53,6 +55,8 @@ jobs:
           rustup component add clippy
       - uses: Swatinem/rust-cache@v2
         with:
+          # Share Rust build cache across workflows/jobs on the same OS/arch.
+          shared-key: miden-node
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Clippy
         run: make clippy
@@ -87,6 +91,8 @@ jobs:
         run: rustup update --no-self-update
       - uses: Swatinem/rust-cache@v2
         with:
+          # Share Rust build cache across workflows/jobs on the same OS/arch.
+          shared-key: miden-node
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Build docs
         run: make doc

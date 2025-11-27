@@ -118,14 +118,15 @@ impl api_server::Api for ValidatorServer {
                 ))
             })?;
 
-        // Build header and body.
+        // Build header and body
         let (header, body) = build_block(proposed_block)
             .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
 
-        // Convert to protobuf format.
+        // Convert to protobuf format
         let header_proto = proto::blockchain::BlockHeader::from(&header);
         let body_proto = proto::blockchain::BlockBody { block_body: body.to_bytes() };
 
+        // Both header and body are required fields and must always be populated
         let response = proto::validator::ValidateBlockResponse {
             header: Some(header_proto),
             body: Some(body_proto),

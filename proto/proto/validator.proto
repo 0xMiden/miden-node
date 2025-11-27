@@ -38,9 +38,9 @@ message ValidatorStatus {
 
 // Response message for ValidateBlock RPC.
 message ValidateBlockResponse {
-    // The block header.
+    // The block header (required - always present).
     blockchain.BlockHeader header = 1;
 
-    // The block body.
+    // The block body (required - always present).
     blockchain.BlockBody body = 2;
 }

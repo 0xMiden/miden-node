@@ -12,10 +12,10 @@ pub struct ValidatorStatus {
 /// Response message for ValidateBlock RPC.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ValidateBlockResponse {
-    /// The block header.
+    /// The block header (required - always present).
     #[prost(message, optional, tag = "1")]
     pub header: ::core::option::Option<super::blockchain::BlockHeader>,
-    /// The block body.
+    /// The block body (required - always present).
     #[prost(message, optional, tag = "2")]
     pub body: ::core::option::Option<super::blockchain::BlockBody>,
 }

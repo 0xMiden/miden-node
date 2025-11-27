@@ -17,10 +17,6 @@ pub enum ValidatorError {
     Transport(#[from] tonic::Status),
     #[error("Invalid response from validator: {0}")]
     InvalidResponse(String),
-    #[error("Missing header in validator response")]
-    MissingHeader,
-    #[error("Missing body in validator response")]
-    MissingBody,
     #[error("Failed to convert header: {0}")]
     HeaderConversion(String),
     #[error("Failed to deserialize body: {0}")]
@@ -76,13 +72,13 @@ impl BlockProducerValidatorClient {
         let response = self.client.clone().validate_block(request).await?;
         let response = response.into_inner();
 
-        // Extract header from response.
-        let header_proto = response.header.ok_or(ValidatorError::MissingHeader)?;
+        // Extract header from response (should always be present).
+        let header_proto = response.header.expect("validator always returns a header");
         let header = BlockHeader::try_from(header_proto)
             .map_err(|err| ValidatorError::HeaderConversion(err.to_string()))?;
 
-        // Extract body from response.
-        let body_proto = response.body.ok_or(ValidatorError::MissingBody)?;
+        // Extract body from response (should always be present).
+        let body_proto = response.body.expect("validator always returns a body");
         let body = BlockBody::read_from_bytes(&body_proto.block_body)
             .map_err(|err| ValidatorError::BodyDeserialization(err.to_string()))?;
 

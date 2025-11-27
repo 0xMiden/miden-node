@@ -203,7 +203,8 @@ pub enum BuildBlockError {
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
-    //
+    // TODO: restore once block proving gets implemented
+    // https://github.com/0xMiden/miden-base/pull/2012
     // #[error("failed to prove block")]
     // ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure

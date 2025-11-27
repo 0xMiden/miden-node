@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
+use miden_node_proto::clients::{Builder as ClientBuilder, ValidatorClient};
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::block_producer::api_server;
 use miden_node_proto::generated::{self as proto};
@@ -49,6 +50,8 @@ pub struct BlockProducer {
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_url: Url,
+    /// The address of the validator component.
+    pub validator_url: Url,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -81,6 +84,13 @@ impl BlockProducer {
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
         let store = StoreClient::new(self.store_url.clone());
+        let validator = ClientBuilder::new(self.validator_url.clone())
+            .without_tls() // TODO(sergerad): Implement TLS support.
+            .without_timeout()
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .with_otel_context_injection()
+            .connect_lazy::<ValidatorClient>();
 
         // Retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
@@ -118,7 +128,7 @@ impl BlockProducer {
         info!(target: COMPONENT, "Server initialized");
 
         let block_builder =
-            BlockBuilder::new(store.clone(), self.block_prover_url, self.block_interval);
+            BlockBuilder::new(store.clone(), validator, self.block_prover_url, self.block_interval);
         let batch_builder = BatchBuilder::new(
             store.clone(),
             SERVER_NUM_BATCH_BUILDERS,

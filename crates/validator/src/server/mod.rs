@@ -95,6 +95,16 @@ impl api_server::Api for ValidatorServer {
         &self,
         _request: tonic::Request<proto::transaction::ProvenTransaction>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        todo!()
+        // TODO(sergerad): Implement transaction validation logic.
+        Ok(tonic::Response::new(()))
+    }
+
+    /// Validates a proposed block.
+    async fn validate_block(
+        &self,
+        _request: tonic::Request<proto::blockchain::ProposedBlock>,
+    ) -> Result<tonic::Response<()>, tonic::Status> {
+        // TODO(sergerad): Implement block validation logic.
+        Ok(tonic::Response::new(()))
     }
 }

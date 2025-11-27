@@ -5,6 +5,7 @@ use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::block::build_block;
+use miden_node_proto::clients::ValidatorClient;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::{OrderedBatches, ProvenBatch};
@@ -20,6 +21,7 @@ use miden_objects::block::{
 use miden_objects::note::NoteHeader;
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
+use miden_tx::utils::Serializable;
 use rand::Rng;
 use tokio::time::Duration;
 use tracing::{Span, info, instrument};
@@ -45,6 +47,8 @@ pub struct BlockBuilder {
 
     pub store: StoreClient,
 
+    pub validator: ValidatorClient,
+
     /// The prover used to prove a proposed block into a proven block.
     pub block_prover: BlockProver,
 }
@@ -55,6 +59,7 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
+        validator: ValidatorClient,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -70,6 +75,7 @@ impl BlockBuilder {
             failure_rate: 0.0,
             block_prover,
             store,
+            validator,
         }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
@@ -224,7 +230,15 @@ impl BlockBuilder {
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
     ) -> Result<ProvenBlock, BuildBlockError> {
-        // TODO(sergerad): Validate proposed block when validator endpoint / client is ready.
+        // Validate the block.
+        let message = miden_node_proto::generated::blockchain::ProposedBlock {
+            proposed_block: proposed_block.to_bytes(),
+        };
+        tracing::debug!(target: COMPONENT, ?message);
+        let request = tonic::Request::new(message);
+        let _response = self.validator.clone().validate_block(request).await.unwrap(); // todo: rm unwrap
+
+        // Prove the block.
         let (header, body) =
             build_block(proposed_block.clone()).map_err(BuildBlockError::ProposeBlockFailed)?;
         self.prove_block(proposed_block.batches().clone(), header, body, block_inputs)

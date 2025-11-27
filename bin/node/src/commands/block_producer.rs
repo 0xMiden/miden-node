@@ -12,6 +12,7 @@ use crate::commands::{
     BlockProducerConfig,
     DEFAULT_TIMEOUT,
     ENV_ENABLE_OTEL,
+    ENV_VALIDATOR_BLOCK_PRODUCER_URL,
     duration_to_human_readable_string,
 };
 
@@ -26,6 +27,10 @@ pub enum BlockProducerCommand {
         /// The store's block-producer service gRPC url.
         #[arg(long = "store.url", env = ENV_STORE_BLOCK_PRODUCER_URL)]
         store_url: Url,
+
+        /// The validator's service gRPC url.
+        #[arg(long = "validator.url", env = ENV_VALIDATOR_BLOCK_PRODUCER_URL)]
+        validator_url: Url,
 
         #[command(flatten)]
         block_producer: BlockProducerConfig,
@@ -55,6 +60,7 @@ impl BlockProducerCommand {
         let Self::Start {
             url,
             store_url,
+            validator_url,
             block_producer,
             enable_otel: _,
             grpc_timeout,
@@ -80,6 +86,7 @@ impl BlockProducerCommand {
         BlockProducer {
             block_producer_address,
             store_url,
+            validator_url,
             batch_prover_url: block_producer.batch_prover_url,
             block_prover_url: block_producer.block_prover_url,
             batch_interval: block_producer.batch_interval,
@@ -115,6 +122,7 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
+            validator_url: dummy_url(),
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,
@@ -137,6 +145,7 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
+            validator_url: dummy_url(),
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,

@@ -7,6 +7,14 @@ pub struct Block {
     #[prost(bytes = "vec", tag = "1")]
     pub block: ::prost::alloc::vec::Vec<u8>,
 }
+/// Represents a proposed block.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ProposedBlock {
+    /// Block data encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::block::ProposedBlock\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub proposed_block: ::prost::alloc::vec::Vec<u8>,
+}
 /// Represents a block or nothing.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MaybeBlock {

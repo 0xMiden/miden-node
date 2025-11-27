@@ -119,6 +119,7 @@ type GeneratedStoreClientForRpc = generated::rpc_store::rpc_client::RpcClient<In
 type GeneratedProxyStatusClient =
     generated::remote_prover::proxy_status_api_client::ProxyStatusApiClient<InterceptedChannel>;
 type GeneratedProverClient = generated::remote_prover::api_client::ApiClient<InterceptedChannel>;
+type GeneratedValidatorClient = generated::validator::api_client::ApiClient<InterceptedChannel>;
 
 // gRPC CLIENTS
 // ================================================================================================
@@ -137,6 +138,8 @@ pub struct StoreRpcClient(GeneratedStoreClientForRpc);
 pub struct RemoteProverProxyStatusClient(GeneratedProxyStatusClient);
 #[derive(Debug, Clone)]
 pub struct RemoteProverClient(GeneratedProverClient);
+#[derive(Debug, Clone)]
+pub struct ValidatorClient(GeneratedValidatorClient);
 
 impl DerefMut for RpcClient {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -236,6 +239,20 @@ impl Deref for RemoteProverClient {
     }
 }
 
+impl DerefMut for ValidatorClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Deref for ValidatorClient {
+    type Target = GeneratedValidatorClient;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // GRPC CLIENT BUILDER TRAIT
 // ================================================================================================
 
@@ -289,6 +306,12 @@ impl GrpcClient for RemoteProverProxyStatusClient {
 impl GrpcClient for RemoteProverClient {
     fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
         Self(GeneratedProverClient::new(InterceptedService::new(channel, interceptor)))
+    }
+}
+
+impl GrpcClient for ValidatorClient {
+    fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
+        Self(GeneratedValidatorClient::new(InterceptedService::new(channel, interceptor)))
     }
 }
 

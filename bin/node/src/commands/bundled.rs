@@ -200,10 +200,13 @@ impl BundledCommand {
                 let checkpoint = Arc::clone(&checkpoint);
                 let store_url = Url::parse(&format!("http://{store_block_producer_address}"))
                     .context("Failed to parse URL")?;
+                let validator_url = Url::parse(&format!("http://{validator_address}"))
+                    .context("Failed to parse URL")?;
                 async move {
                     BlockProducer {
                         block_producer_address,
                         store_url,
+                        validator_url,
                         batch_prover_url: block_producer.batch_prover_url,
                         block_prover_url: block_producer.block_prover_url,
                         batch_interval: block_producer.batch_interval,

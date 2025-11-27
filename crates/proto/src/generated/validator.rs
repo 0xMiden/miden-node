@@ -147,6 +147,28 @@ pub mod api_client {
                 .insert(GrpcMethod::new("validator.Api", "SubmitProvenTransaction"));
             self.inner.unary(req, path, codec).await
         }
+        /// Validates a proposed block.
+        pub async fn validate_block(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::blockchain::ProposedBlock>,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/validator.Api/ValidateBlock",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("validator.Api", "ValidateBlock"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -171,6 +193,11 @@ pub mod api_server {
         async fn submit_proven_transaction(
             &self,
             request: tonic::Request<super::super::transaction::ProvenTransaction>,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
+        /// Validates a proposed block.
+        async fn validate_block(
+            &self,
+            request: tonic::Request<super::super::blockchain::ProposedBlock>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
     }
     /// Validator API for the Validator component.
@@ -322,6 +349,54 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SubmitProvenTransactionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/validator.Api/ValidateBlock" => {
+                    #[allow(non_camel_case_types)]
+                    struct ValidateBlockSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::blockchain::ProposedBlock,
+                    > for ValidateBlockSvc<T> {
+                        type Response = ();
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::blockchain::ProposedBlock,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::validate_block(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ValidateBlockSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

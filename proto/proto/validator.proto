@@ -16,6 +16,9 @@ service Api {
 
    // Submits a transaction to the validator.
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
+
+   // Validates a proposed block.
+   rpc ValidateBlock(blockchain.ProposedBlock) returns (google.protobuf.Empty) {}
 }
 
 // STATUS

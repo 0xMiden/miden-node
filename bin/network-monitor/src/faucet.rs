@@ -59,8 +59,6 @@ struct GetTokensResponse {
 }
 
 /// Response from the faucet's `/get_metadata` endpoint.
-///
-/// TODO: We need to add `faucet_version` once available.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetMetadataResponse {
     id: String,

@@ -15,7 +15,7 @@ crate-type = ["lib"]
 
 [features]
 batch-prover = ["dep:miden-objects", "dep:tokio"]
-block-prover = ["dep:miden-objects", "dep:tokio"]
+block-prover = ["dep:miden-node-proto", "dep:miden-objects", "dep:tokio"]
 default      = ["std"]
 std          = ["miden-objects/std", "miden-tx/std"]
 tx-prover    = ["dep:miden-objects", "dep:miden-tx", "dep:tokio"]
@@ -38,7 +38,7 @@ tonic-web = { optional = true, version = "0.14" }
 workspace = true
 
 [dependencies]
-miden-node-proto = { workspace = true }
+miden-node-proto = { optional = true, workspace = true }
 miden-objects    = { optional = true, workspace = true }
 miden-tx         = { optional = true, workspace = true }
 prost            = { default-features = false, features = ["derive"], version = "0.14" }

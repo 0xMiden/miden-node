@@ -25,13 +25,13 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
+use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
     AccountWitness,
     BlockHeader,
     BlockInputs,
     BlockNumber,
     Blockchain,
-    NullifierTree,
     NullifierWitness,
     ProvenBlock,
 };

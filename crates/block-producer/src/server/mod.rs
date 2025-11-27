@@ -17,7 +17,7 @@ use miden_objects::block::BlockNumber;
 use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::serde::Deserializable;
 use tokio::net::TcpListener;
-use tokio::sync::{Barrier, Mutex};
+use tokio::sync::{Barrier, Mutex, RwLock};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
@@ -37,7 +37,7 @@ use crate::errors::{
 use crate::mempool::{BatchBudget, BlockBudget, Mempool, MempoolConfig, SharedMempool};
 use crate::store::StoreClient;
 use crate::validator::BlockProducerValidatorClient;
-use crate::{COMPONENT, SERVER_NUM_BATCH_BUILDERS};
+use crate::{CACHED_MEMPOOL_STATS_UPDATE_INTERVAL, COMPONENT, SERVER_NUM_BATCH_BUILDERS};
 
 /// The block producer server.
 ///
@@ -213,6 +213,27 @@ impl BlockProducer {
     }
 }
 
+/// Mempool statistics that are updated periodically to avoid locking the mempool.
+#[derive(Clone, Copy)]
+struct MempoolStats {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    proven_batches: u64,
+}
+
+impl From<MempoolStats> for proto::block_producer::MempoolStats {
+    fn from(stats: MempoolStats) -> Self {
+        proto::block_producer::MempoolStats {
+            unbatched_transactions: stats.unbatched_transactions,
+            proposed_batches: stats.proposed_batches,
+            proven_batches: stats.proven_batches,
+        }
+    }
+}
+
 /// Serves the block producer's RPC [api](api_server::Api).
 struct BlockProducerRpcServer {
     /// The mutex effectively rate limits incoming transactions into the mempool by forcing them
@@ -224,6 +245,10 @@ struct BlockProducerRpcServer {
     mempool: Mutex<SharedMempool>,
 
     store: StoreClient,
+
+    /// Cached mempool statistics that are updated periodically to avoid locking the mempool
+    /// for each status request.
+    cached_mempool_stats: Arc<RwLock<MempoolStats>>,
 }
 
 #[tonic::async_trait]
@@ -261,9 +286,12 @@ impl api_server::Api for BlockProducerRpcServer {
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<proto::block_producer::BlockProducerStatus>, Status> {
+        let mempool_stats = *self.cached_mempool_stats.read().await;
+
         Ok(tonic::Response::new(proto::block_producer::BlockProducerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
+            mempool_stats: Some(mempool_stats.into()),
         }))
     }
 
@@ -312,10 +340,53 @@ impl tokio_stream::Stream for MempoolEventSubscription {
 
 impl BlockProducerRpcServer {
     pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
-        Self { mempool: Mutex::new(mempool), store }
+        Self {
+            mempool: Mutex::new(mempool),
+            store,
+            cached_mempool_stats: Arc::new(RwLock::new(MempoolStats {
+                unbatched_transactions: 0,
+                proposed_batches: 0,
+                proven_batches: 0,
+            })),
+        }
+    }
+
+    /// Starts a background task that periodically updates the cached mempool statistics.
+    ///
+    /// This prevents the need to lock the mempool for each status request.
+    async fn start_mempool_stats_updater(&self) {
+        let cached_mempool_stats = Arc::clone(&self.cached_mempool_stats);
+        let mempool = self.mempool.lock().await.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(CACHED_MEMPOOL_STATS_UPDATE_INTERVAL);
+
+            loop {
+                interval.tick().await;
+
+                let (unbatched_transactions, proposed_batches, proven_batches) = {
+                    let mempool = mempool.lock().await;
+                    (
+                        mempool.unbatched_transactions_count() as u64,
+                        mempool.proposed_batches_count() as u64,
+                        mempool.proven_batches_count() as u64,
+                    )
+                };
+
+                let mut cache = cached_mempool_stats.write().await;
+                *cache = MempoolStats {
+                    unbatched_transactions,
+                    proposed_batches,
+                    proven_batches,
+                };
+            }
+        });
     }
 
     async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
+        // Start background task to periodically update cached mempool stats
+        self.start_mempool_stats_updater().await;
+
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())
             .build_v1()

@@ -1,5 +1,6 @@
 #![recursion_limit = "256"]
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
 #[cfg(test)]
 pub mod test_utils;
@@ -45,6 +46,9 @@ const SERVER_MEMPOOL_STATE_RETENTION: NonZeroUsize = NonZeroUsize::new(5).unwrap
 ///
 /// This rejects transactions which would likely expire before making it into a block.
 const SERVER_MEMPOOL_EXPIRATION_SLACK: u32 = 2;
+
+/// The interval at which to update the cached mempool statistics.
+const CACHED_MEMPOOL_STATS_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 
 const _: () = assert!(
     DEFAULT_MAX_BATCHES_PER_BLOCK <= miden_objects::MAX_BATCHES_PER_BLOCK,

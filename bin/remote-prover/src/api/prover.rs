@@ -1,10 +1,10 @@
 use miden_block_prover::LocalBlockProver;
 use miden_node_utils::ErrorReport;
-use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProposedBatch;
-use miden_objects::block::ProposedBlock;
+use miden_objects::block::{BlockProof, ProposedBlock};
 use miden_objects::transaction::TransactionInputs;
 use miden_objects::utils::Serializable;
+use miden_objects::{EMPTY_WORD, MIN_PROOF_SECURITY_LEVEL};
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use serde::{Deserialize, Serialize};
@@ -165,24 +165,33 @@ impl ProverRpcApi {
     )]
     pub fn prove_block(
         &self,
-        proposed_block: ProposedBlock,
+        _proposed_block: ProposedBlock,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
-        let Prover::Block(prover) = &self.prover else {
+        let Prover::Block(_prover) = &self.prover else {
             return Err(Status::unimplemented("Block prover is not enabled"));
         };
 
-        let proven_block = prover
-            .try_lock()
-            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
-            .prove(proposed_block)
-            .map_err(internal_error)?;
+        // TODO: current implementation of BlockProof doesn't provide commitment
+        // https://github.com/0xMiden/miden-base/pull/2012
+        // let tx_batches = proposed_block.batches().clone();
+        // let block_header = proposed_block.prev_block_header().clone(); // TODO: should we use
+        // this block header? let block_inputs = todo!();
+        // let proven_block = prover
+        //     .try_lock()
+        //     .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
+        //     .prove(tx_batches, block_header, block_inputs)
+        //     .map_err(internal_error)?;
+        let proof = BlockProof::new_dummy();
 
         // Record the commitment of the block in the current tracing span
-        let block_id = proven_block.commitment();
+        // let block_id = proven_block.commitment();
+        // TODO: current implementation of BlockProof doesn't provide commitment
+        // https://github.com/0xMiden/miden-base/pull/2012
+        let block_id = EMPTY_WORD;
         tracing::Span::current().record("block_id", tracing::field::display(&block_id));
 
-        Ok(Response::new(proto::remote_prover::Proof { payload: proven_block.to_bytes() }))
+        Ok(Response::new(proto::remote_prover::Proof { payload: proof.to_bytes() }))
     }
 }
 

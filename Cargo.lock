@@ -1346,7 +1346,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2111,7 +2111,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2486,9 +2486,8 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#8592b0367c6ddb57a65b0773e348c3ea35c7bf0a"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e5ae2329735d2a89b6589375ca7fd91e4f104422"
 dependencies = [
- "miden-lib",
  "miden-objects",
  "thiserror 2.0.17",
 ]
@@ -2583,7 +2582,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#8592b0367c6ddb57a65b0773e348c3ea35c7bf0a"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e5ae2329735d2a89b6589375ca7fd91e4f104422"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2945,7 +2944,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#8592b0367c6ddb57a65b0773e348c3ea35c7bf0a"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e5ae2329735d2a89b6589375ca7fd91e4f104422"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -3085,7 +3084,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#8592b0367c6ddb57a65b0773e348c3ea35c7bf0a"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e5ae2329735d2a89b6589375ca7fd91e4f104422"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3103,7 +3102,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#8592b0367c6ddb57a65b0773e348c3ea35c7bf0a"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e5ae2329735d2a89b6589375ca7fd91e4f104422"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -3116,7 +3115,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#8592b0367c6ddb57a65b0773e348c3ea35c7bf0a"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e5ae2329735d2a89b6589375ca7fd91e4f104422"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -3338,7 +3337,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4647,7 +4646,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4660,7 +4659,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5293,7 +5292,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5302,7 +5301,7 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2111ef44dae28680ae9752bb89409e7310ca33a8c621ebe7b106cf5c928b3ac0"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6311,7 +6310,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

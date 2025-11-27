@@ -5,9 +5,11 @@ use miden_objects::account::{Account, AccountDelta};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::{
     BlockAccountUpdate,
+    BlockBody,
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
+    BlockProof,
     FeeParameters,
     ProvenBlock,
 };
@@ -118,16 +120,17 @@ impl GenesisState {
             self.timestamp,
         );
 
-        // SAFETY: Header and accounts should be valid by construction.
-        // No notes or nullifiers are created at genesis, which is consistent with the above empty
-        // block note tree root and empty nullifier tree root.
-        Ok(GenesisBlock(ProvenBlock::new_unchecked(
-            header,
+        let body = BlockBody::new_unchecked(
             accounts,
             empty_output_notes,
             empty_nullifiers,
             empty_transactions,
-        )))
+        );
+
+        // SAFETY: Header and accounts should be valid by construction.
+        // No notes or nullifiers are created at genesis, which is consistent with the above empty
+        // block note tree root and empty nullifier tree root.
+        Ok(GenesisBlock(ProvenBlock::new_unchecked(header, body, BlockProof::new_dummy())))
     }
 }
 

@@ -7,7 +7,14 @@ use miden_block_prover::LocalBlockProver;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
+use miden_objects::block::{
+    BlockBody,
+    BlockInputs,
+    BlockNumber,
+    BlockProof,
+    ProposedBlock,
+    ProvenBlock,
+};
 use miden_objects::note::NoteHeader;
 use miden_objects::transaction::TransactionHeader;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
@@ -390,8 +397,13 @@ impl BlockProver {
     #[instrument(target = COMPONENT, skip_all, err)]
     async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
         match self {
-            Self::Local(prover) => {
-                prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
+            Self::Local(_prover) => {
+                // TODO: implement once block proving gets implemented
+                // https://github.com/0xMiden/miden-base/pull/2012
+                let header = proposed_block.prev_block_header().clone(); // TODO: probably incorrect header
+                let body = proposed_block.clone().into();
+                let proof = BlockProof::new_dummy();
+                Ok(ProvenBlock::new_unchecked(header, body, proof))
             },
             Self::Remote(prover) => prover
                 .prove(proposed_block)

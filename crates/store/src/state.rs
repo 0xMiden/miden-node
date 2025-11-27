@@ -25,13 +25,14 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
+use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
     AccountWitness,
     BlockHeader,
     BlockInputs,
+    BlockNoteTree,
     BlockNumber,
     Blockchain,
-    NullifierTree,
     NullifierWitness,
     ProvenBlock,
 };
@@ -201,7 +202,7 @@ impl State {
 
         let header = block.header();
 
-        let tx_commitment = block.transactions().commitment();
+        let tx_commitment = block.body().transactions().commitment();
 
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
@@ -212,7 +213,7 @@ impl State {
         }
 
         let block_num = header.block_num();
-        let block_commitment = block.commitment();
+        let block_commitment = block.header().commitment();
 
         // ensures the right block header is being processed
         let prev_block = self
@@ -258,6 +259,7 @@ impl State {
 
             // nullifiers can be produced only once
             let duplicate_nullifiers: Vec<_> = block
+                .body()
                 .created_nullifiers()
                 .iter()
                 .filter(|&n| inner.nullifier_tree.get_block_num(n).is_some())
@@ -279,7 +281,11 @@ impl State {
             let nullifier_tree_update = inner
                 .nullifier_tree
                 .compute_mutations(
-                    block.created_nullifiers().iter().map(|nullifier| (*nullifier, block_num)),
+                    block
+                        .body()
+                        .created_nullifiers()
+                        .iter()
+                        .map(|nullifier| (*nullifier, block_num)),
                 )
                 .map_err(InvalidBlockError::NewBlockNullifierAlreadySpent)?;
 
@@ -292,6 +298,7 @@ impl State {
                 .account_tree
                 .compute_mutations(
                     block
+                        .body()
                         .updated_accounts()
                         .iter()
                         .map(|update| (update.account_id(), update.final_state_commitment())),
@@ -318,12 +325,18 @@ impl State {
         };
 
         // build note tree
-        let note_tree = block.build_output_note_tree();
+        let note_tree_entries = block
+            .body()
+            .output_notes()
+            .map(|(note_index, note)| (note_index, note.id(), *note.metadata()));
+        let note_tree = BlockNoteTree::with_entries(note_tree_entries)
+                    .expect("the output notes of the block should not contain duplicates and contain at most the allowed maximum");
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
         }
 
         let notes = block
+            .body()
             .output_notes()
             .map(|(note_index, note)| {
                 let (details, nullifier) = match note {

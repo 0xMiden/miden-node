@@ -26,7 +26,7 @@ use miden_objects::account::{
     AccountType,
 };
 use miden_objects::asset::{Asset, FungibleAsset, TokenSymbol};
-use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
+use miden_objects::batch::{BatchAccountUpdate, BatchId, OrderedBatches, ProvenBatch};
 use miden_objects::block::{
     BlockHeader,
     BlockInputs,
@@ -240,20 +240,23 @@ async fn generate_blocks(
 ///
 /// Returns the the inserted block.
 async fn apply_block(
-    batches: Vec<ProvenBatch>,
-    block_inputs: BlockInputs,
-    store_client: &StoreClient,
-    metrics: &mut SeedingMetrics,
+    _batches: Vec<ProvenBatch>,
+    _block_inputs: BlockInputs,
+    _store_client: &StoreClient,
+    _metrics: &mut SeedingMetrics,
 ) -> ProvenBlock {
-    let proposed_block = ProposedBlock::new(block_inputs, batches).unwrap();
-    let proven_block = LocalBlockProver::new(0).prove_dummy(proposed_block).unwrap();
-    let block_size: usize = proven_block.to_bytes().len();
+    // TODO: re-implement once block proving is implemented
+    // https://github.com/0xMiden/miden-base/pull/2012
+    todo!("Block proving not yet implemented");
+    // let proposed_block = ProposedBlock::new(block_inputs, batches).unwrap();
+    // let proven_block = LocalBlockProver::new(0).prove_dummy(proposed_block).unwrap();
+    // let block_size: usize = proven_block.to_bytes().len();
 
-    let start = Instant::now();
-    store_client.apply_block(&proven_block).await.unwrap();
-    metrics.track_block_insertion(start.elapsed(), block_size);
+    // let start = Instant::now();
+    // store_client.apply_block(&proven_block).await.unwrap();
+    // metrics.track_block_insertion(start.elapsed(), block_size);
 
-    proven_block
+    // proven_block
 }
 
 // HELPER FUNCTIONS

@@ -250,8 +250,8 @@ impl Db {
                 genesis.header(),
                 &[],
                 &[],
-                genesis.updated_accounts(),
-                genesis.transactions(),
+                genesis.body().updated_accounts(),
+                genesis.body().transactions(),
             )
         })
         .context("failed to insert genesis block")?;
@@ -513,9 +513,9 @@ impl Db {
                 conn,
                 block.header(),
                 &notes,
-                block.created_nullifiers(),
-                block.updated_accounts(),
-                block.transactions(),
+                block.body().created_nullifiers(),
+                block.body().updated_accounts(),
+                block.body().transactions(),
             )?;
 
             // XXX FIXME TODO free floating mutex MUST NOT exist

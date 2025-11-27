@@ -1,4 +1,3 @@
-use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -204,8 +203,9 @@ pub enum BuildBlockError {
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
-    #[error("failed to prove block")]
-    ProveBlockFailed(#[source] ProvenBlockError),
+    //
+    // #[error("failed to prove block")]
+    // ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure
     /// responses.
     #[error("nothing actually went wrong, failure was injected on purpose")]

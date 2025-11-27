@@ -130,7 +130,9 @@ impl BlockBuilder {
             .inspect_ok(|(proposed_block, _)| {
                 ProposedBlock::inject_telemetry(proposed_block);
             })
-            .and_then(|(proposed_block, inputs)| self.validate_and_prove_block(proposed_block, inputs))
+            .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
+            .and_then(|(proposed_block, inputs)| self.prove_block(proposed_block, inputs))
+            .and_then(|(proposed_block, header, body, block_proof)| self.construct_proven_block(proposed_block, header, body, block_proof))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
@@ -224,49 +226,62 @@ impl BlockBuilder {
         Ok((proposed_block, inputs))
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.validate_and_prove_block", skip_all, err)]
-    async fn validate_and_prove_block(
+    #[instrument(target = COMPONENT, name = "block_builder.validate_block", skip_all, err)]
+    async fn validate_block(
         &self,
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
-    ) -> Result<ProvenBlock, BuildBlockError> {
-        // Validate the block.
+    ) -> Result<(ProposedBlock, BlockInputs), BuildBlockError> {
         let message = miden_node_proto::generated::blockchain::ProposedBlock {
             proposed_block: proposed_block.to_bytes(),
         };
         tracing::debug!(target: COMPONENT, ?message);
         let request = tonic::Request::new(message);
-        let _response = self.validator.clone().validate_block(request).await.unwrap(); // todo: rm unwrap
-
-        // Prove the block.
-        let (header, body) =
-            build_block(proposed_block.clone()).map_err(BuildBlockError::ProposeBlockFailed)?;
-        self.prove_block(proposed_block.batches().clone(), header, body, block_inputs)
+        let _response = self
+            .validator
+            .clone()
+            .validate_block(request)
             .await
+            .map_err(BuildBlockError::ValidateBlockFailed)?;
+        Ok((proposed_block, block_inputs))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
     async fn prove_block(
         &self,
-        tx_batches: OrderedBatches,
-        block_header: BlockHeader,
-        block_body: BlockBody,
+        proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
-    ) -> Result<ProvenBlock, BuildBlockError> {
-        let proposed_txs = tx_batches.clone().to_transactions();
-        let block_proof =
-            self.block_prover.prove(tx_batches, block_header.clone(), block_inputs).await?;
+    ) -> Result<(ProposedBlock, BlockHeader, BlockBody, BlockProof), BuildBlockError> {
+        // Build header and body.
+        let (header, body) =
+            build_block(proposed_block.clone()).map_err(BuildBlockError::ProposeBlockFailed)?;
 
-        let proven_block = ProvenBlock::new_unchecked(block_header, block_body, block_proof);
+        // Prove block.
+        let block_proof = self
+            .block_prover
+            .prove(proposed_block.batches().clone(), header.clone(), block_inputs)
+            .await?;
+        self.simulate_proving().await;
+
+        Ok((proposed_block, header, body, block_proof))
+    }
+
+    #[instrument(target = COMPONENT, name = "block_builder.construct_proven_block", skip_all, err)]
+    async fn construct_proven_block(
+        &self,
+        proposed_block: ProposedBlock,
+        header: BlockHeader,
+        body: BlockBody,
+        block_proof: BlockProof,
+    ) -> Result<ProvenBlock, BuildBlockError> {
+        let proven_block = ProvenBlock::new_unchecked(header, body, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
                 proven_block.proof_security_level(),
                 MIN_PROOF_SECURITY_LEVEL,
             ));
         }
-        validate_tx_headers(&proven_block, &proposed_txs)?;
-
-        self.simulate_proving().await;
+        validate_tx_headers(&proven_block, &proposed_block.batches().clone().to_transactions())?;
 
         Ok(proven_block)
     }

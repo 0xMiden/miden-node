@@ -206,6 +206,8 @@ pub enum BuildBlockError {
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
+    #[error("failed to validate block")]
+    ValidateBlockFailed(#[source] tonic::Status),
     #[error("failed to prove block")]
     ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure

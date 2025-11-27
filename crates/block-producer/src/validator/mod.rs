@@ -15,8 +15,6 @@ use crate::COMPONENT;
 pub enum ValidatorError {
     #[error("gRPC transport error: {0}")]
     Transport(#[from] tonic::Status),
-    #[error("Invalid response from validator: {0}")]
-    InvalidResponse(String),
     #[error("Failed to convert header: {0}")]
     HeaderConversion(String),
     #[error("Failed to deserialize body: {0}")]

@@ -2930,9 +2930,11 @@ name = "miden-node-validator"
 version = "0.13.0"
 dependencies = [
  "anyhow",
+ "miden-lib",
  "miden-node-proto",
  "miden-node-proto-build",
  "miden-node-utils",
+ "miden-objects",
  "tokio",
  "tokio-stream",
  "tonic",

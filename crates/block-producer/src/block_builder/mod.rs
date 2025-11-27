@@ -4,7 +4,6 @@ use std::sync::Arc;
 use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
-use miden_lib::block::build_block;
 use miden_node_proto::clients::ValidatorClient;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
@@ -20,6 +19,7 @@ use miden_objects::block::{
 };
 use miden_objects::note::NoteHeader;
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
+use miden_objects::utils::Deserializable;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use miden_tx::utils::Serializable;
 use rand::Rng;
@@ -131,7 +131,7 @@ impl BlockBuilder {
                 ProposedBlock::inject_telemetry(proposed_block);
             })
             .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
-            .and_then(|(proposed_block, inputs)| self.prove_block(proposed_block, inputs))
+            .and_then(|(proposed_block, inputs, header, body)| self.prove_block(proposed_block, inputs, header, body))
             .and_then(|(proposed_block, header, body, block_proof)| self.construct_proven_block(proposed_block, header, body, block_proof))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
@@ -231,19 +231,48 @@ impl BlockBuilder {
         &self,
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
-    ) -> Result<(ProposedBlock, BlockInputs), BuildBlockError> {
+    ) -> Result<(ProposedBlock, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
         let message = miden_node_proto::generated::blockchain::ProposedBlock {
             proposed_block: proposed_block.to_bytes(),
         };
-        tracing::debug!(target: COMPONENT, ?message);
+        tracing::debug!(target = COMPONENT, ?message);
         let request = tonic::Request::new(message);
-        let _response = self
+        let response = self
             .validator
             .clone()
             .validate_block(request)
             .await
             .map_err(BuildBlockError::ValidateBlockFailed)?;
-        Ok((proposed_block, block_inputs))
+
+        let response_inner = response.into_inner();
+
+        // Extract header from response
+        let header_proto = response_inner.header.ok_or_else(|| {
+            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(
+                "Missing header in validator response",
+            ))
+        })?;
+        let header = BlockHeader::try_from(header_proto).map_err(|err| {
+            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(format!(
+                "Failed to convert header: {}",
+                err
+            )))
+        })?;
+
+        // Extract body from response
+        let body_proto = response_inner.body.ok_or_else(|| {
+            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(
+                "Missing body in validator response",
+            ))
+        })?;
+        let body = BlockBody::read_from_bytes(&body_proto.block_body).map_err(|err| {
+            BuildBlockError::ValidateBlockFailed(tonic::Status::internal(format!(
+                "Failed to deserialize body: {}",
+                err
+            )))
+        })?;
+
+        Ok((proposed_block, block_inputs, header, body))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
@@ -251,12 +280,10 @@ impl BlockBuilder {
         &self,
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
+        header: BlockHeader,
+        body: BlockBody,
     ) -> Result<(ProposedBlock, BlockHeader, BlockBody, BlockProof), BuildBlockError> {
-        // Build header and body.
-        let (header, body) =
-            build_block(proposed_block.clone()).map_err(BuildBlockError::ProposeBlockFailed)?;
-
-        // Prove block.
+        // Prove block using header and body from validator.
         let block_proof = self
             .block_prover
             .prove(proposed_block.batches().clone(), header.clone(), block_inputs)

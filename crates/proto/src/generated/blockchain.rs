@@ -87,3 +87,11 @@ pub struct FeeParameters {
     #[prost(fixed32, tag = "2")]
     pub verification_base_fee: u32,
 }
+/// Represents a block body.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockBody {
+    /// Block body data encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::block::BlockBody\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub block_body: ::prost::alloc::vec::Vec<u8>,
+}

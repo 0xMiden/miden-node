@@ -9,6 +9,16 @@ pub struct ValidatorStatus {
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
 }
+/// Response message for ValidateBlock RPC.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ValidateBlockResponse {
+    /// The block header.
+    #[prost(message, optional, tag = "1")]
+    pub header: ::core::option::Option<super::blockchain::BlockHeader>,
+    /// The block body.
+    #[prost(message, optional, tag = "2")]
+    pub body: ::core::option::Option<super::blockchain::BlockBody>,
+}
 /// Generated client implementations.
 pub mod api_client {
     #![allow(
@@ -147,11 +157,14 @@ pub mod api_client {
                 .insert(GrpcMethod::new("validator.Api", "SubmitProvenTransaction"));
             self.inner.unary(req, path, codec).await
         }
-        /// Validates a proposed block.
+        /// Validates a proposed block and returns the block header and body.
         pub async fn validate_block(
             &mut self,
             request: impl tonic::IntoRequest<super::super::blockchain::ProposedBlock>,
-        ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::ValidateBlockResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -194,11 +207,14 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::transaction::ProvenTransaction>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
-        /// Validates a proposed block.
+        /// Validates a proposed block and returns the block header and body.
         async fn validate_block(
             &self,
             request: tonic::Request<super::super::blockchain::ProposedBlock>,
-        ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::ValidateBlockResponse>,
+            tonic::Status,
+        >;
     }
     /// Validator API for the Validator component.
     #[derive(Debug)]
@@ -372,7 +388,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::blockchain::ProposedBlock,
                     > for ValidateBlockSvc<T> {
-                        type Response = ();
+                        type Response = super::ValidateBlockResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.12.6 (TBD)
+
+- Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
+
 ## v0.12.5 (2025-11-27)
 
 - Actually update `miden-base` dependencies ([#1384](https://github.com/0xMiden/miden-node/pull/1384)).
@@ -7,7 +11,6 @@
 ## v0.12.4 (2025-11-27)
 
 - Updated the counter account from the `miden-network-monitor` to start at 0 ([#1367](https://github.com/0xMiden/miden-node/pull/1367)).
-- Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
 - Updated  `miden-base` dependencies to fix ECDSA issues ([#1382](https://github.com/0xMiden/miden-node/pull/1382)).
 
 ## v0.12.3 (2025-11-15)

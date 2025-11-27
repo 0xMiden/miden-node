@@ -21,7 +21,7 @@ pub enum ValidatorError {
     BodyDeserialization(String),
 }
 
-// VALIDATOR RESPONSE
+// VALIDATE BLOCK RESPONSE
 // ================================================================================================
 
 #[derive(Debug, Clone)]

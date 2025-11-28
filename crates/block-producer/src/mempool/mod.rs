@@ -239,13 +239,13 @@ impl Mempool {
         //
         // The additional bookkeeping can be implemented once we have fee related strategies. KISS.
 
-        let mut selected = ProposedBatchNode::default();
+        let mut selected = Vec::<Arc<AuthenticatedTransaction>>::default();
         let mut budget = self.config.batch_budget;
 
         let mut candidates = self.nodes.txs.values();
 
         'next: while let Some(candidate) = candidates.next() {
-            if selected.contains(candidate.id()) {
+            if selected.iter().any(|tx| tx.id() == candidate.id()) {
                 continue 'next;
             }
 
@@ -255,7 +255,9 @@ impl Mempool {
                 match parent {
                     // TODO(mirko): Once user batches are supported, they will also need to be
                     // checked here.
-                    NodeId::Transaction(parent) if !selected.contains(parent) => continue 'next,
+                    NodeId::Transaction(parent) if selected.iter().all(|tx| tx.id() != parent) => {
+                        continue 'next;
+                    },
                     NodeId::Transaction(_)
                     | NodeId::ProposedBatch(_)
                     | NodeId::ProvenBatch(_)
@@ -275,10 +277,10 @@ impl Mempool {
             return None;
         }
 
-        let batch_id = selected.calculate_id();
-        let batch_txs = selected.transactions().cloned().collect::<Vec<_>>();
+        let batch = ProposedBatchNode::new(selected.clone());
+        let batch_id = batch.batch_id();
 
-        for tx in &batch_txs {
+        for tx in batch.transactions() {
             let node =
                 self.nodes.txs.remove(&tx.id()).expect("selected transaction node must exist");
             self.state.remove(&node);
@@ -288,13 +290,13 @@ impl Mempool {
                 "Transaction selected for inclusion in batch"
             );
         }
-        self.state.insert(NodeId::ProposedBatch(batch_id), &selected);
-        self.nodes.proposed_batches.insert(batch_id, selected);
+        self.state.insert(NodeId::ProposedBatch(batch_id), &batch);
+        self.nodes.proposed_batches.insert(batch_id, batch);
 
         // TODO(mirko): Selecting a batch can unblock user batches, which should be checked here.
 
         self.inject_telemetry();
-        Some((batch_id, batch_txs))
+        Some((batch_id, selected))
     }
 
     /// Drops the proposed batch and all of its descendants.
@@ -376,7 +378,8 @@ impl Mempool {
             self.nodes.proposed_block.as_ref().unwrap().0
         );
 
-        let mut selected = BlockNode::default();
+        let block_number = self.chain_tip.child();
+        let mut selected = BlockNode::new(block_number);
         let mut budget = self.config.block_budget;
         let mut candidates = self.nodes.proven_batches.values();
 
@@ -404,7 +407,6 @@ impl Mempool {
             selected.push(candidate.clone());
         }
 
-        let block_number = self.chain_tip.child();
         // Replace the batches with the block in state and nodes.
         for batch in selected.batches() {
             // SAFETY: Selected batches came from nodes, and are unique.

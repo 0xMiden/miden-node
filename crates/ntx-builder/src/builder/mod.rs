@@ -14,7 +14,7 @@ use url::Url;
 use crate::MAX_IN_PROGRESS_TXS;
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
-use crate::transaction::NtxError;
+use crate::transaction::{NtxContext, NtxError};
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -91,11 +91,7 @@ impl NetworkTransactionBuilder {
         let mut inflight = JoinSet::new();
         let mut inflight_idx = HashMap::new();
 
-        let context = crate::transaction::NtxContext {
-            block_producer: block_producer.clone(),
-            prover,
-            store,
-        };
+        let context = NtxContext::new(block_producer.clone(), prover, store);
 
         loop {
             tokio::select! {

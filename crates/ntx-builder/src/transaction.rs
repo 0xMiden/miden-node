@@ -70,19 +70,45 @@ type NtxResult<T> = Result<T, NtxError>;
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
 #[derive(Clone)]
 pub struct NtxContext {
-    pub block_producer: BlockProducerClient,
+    block_producer: BlockProducerClient,
 
     /// The prover to delegate proofs to.
     ///
     /// Defaults to local proving if unset. This should be avoided in production as this is
     /// computationally intensive.
-    pub prover: Option<RemoteTransactionProver>,
+    prover: Option<RemoteTransactionProver>,
 
     /// The store client for retrieving note scripts.
-    pub store: StoreClient,
+    store: StoreClient,
+
+    /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
+    script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
 }
 
 impl NtxContext {
+    /// Default cache size for note scripts.
+    ///
+    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
+    /// depends on the complexity of the scripts being cached.
+    const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
+
+    /// Creates a new [`NtxContext`] instance.
+    pub fn new(
+        block_producer: BlockProducerClient,
+        prover: Option<RemoteTransactionProver>,
+        store: StoreClient,
+    ) -> Self {
+        Self {
+            block_producer,
+            prover,
+            store,
+            script_cache: Arc::new(Mutex::new(LruCache::new(
+                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
+                    .expect("default script cache size is non-zero"),
+            ))),
+        }
+    }
+
     /// Executes a transaction end-to-end: filtering, executing, proving, and submitted to the block
     /// producer.
     ///
@@ -125,8 +151,13 @@ impl NtxContext {
 
         async move {
             async move {
-                let data_store =
-                    NtxDataStore::new(account, chain_tip_header, chain_mmr, self.store.clone());
+                let data_store = NtxDataStore::new(
+                    account,
+                    chain_tip_header,
+                    chain_mmr,
+                    self.store.clone(),
+                    self.script_cache.clone(),
+                );
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
@@ -260,18 +291,13 @@ struct NtxDataStore {
 }
 
 impl NtxDataStore {
-    /// Default cache size for note scripts.
-    ///
-    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
-    /// depends on the complexity of the scripts being cached.
-    const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
-
     /// Creates a new `NtxDataStore` with default cache size.
     fn new(
         account: Account,
         reference_header: BlockHeader,
         chain_mmr: PartialBlockchain,
         store: StoreClient,
+        script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
@@ -282,10 +308,7 @@ impl NtxDataStore {
             chain_mmr,
             mast_store,
             store,
-            script_cache: Arc::new(Mutex::new(LruCache::new(
-                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
-                    .expect("default script cache size is non-zero"),
-            ))),
+            script_cache,
         }
     }
 }

@@ -48,7 +48,7 @@ const SERVER_MEMPOOL_STATE_RETENTION: NonZeroUsize = NonZeroUsize::new(5).unwrap
 const SERVER_MEMPOOL_EXPIRATION_SLACK: u32 = 2;
 
 /// The interval at which to update the cached mempool statistics.
-const CACHED_MEMPOOL_STATS_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
+const CACHED_MEMPOOL_STATS_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
 const _: () = assert!(
     DEFAULT_MAX_BATCHES_PER_BLOCK <= miden_objects::MAX_BATCHES_PER_BLOCK,

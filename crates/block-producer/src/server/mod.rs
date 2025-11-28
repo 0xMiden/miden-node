@@ -214,7 +214,7 @@ impl BlockProducer {
 }
 
 /// Mempool statistics that are updated periodically to avoid locking the mempool.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct MempoolStats {
     /// Number of transactions currently in the mempool waiting to be batched.
     unbatched_transactions: u64,
@@ -343,18 +343,14 @@ impl BlockProducerRpcServer {
         Self {
             mempool: Mutex::new(mempool),
             store,
-            cached_mempool_stats: Arc::new(RwLock::new(MempoolStats {
-                unbatched_transactions: 0,
-                proposed_batches: 0,
-                proven_batches: 0,
-            })),
+            cached_mempool_stats: Arc::new(RwLock::new(MempoolStats::default())),
         }
     }
 
     /// Starts a background task that periodically updates the cached mempool statistics.
     ///
     /// This prevents the need to lock the mempool for each status request.
-    async fn start_mempool_stats_updater(&self) {
+    async fn spawn_mempool_stats_updater(&self) {
         let cached_mempool_stats = Arc::clone(&self.cached_mempool_stats);
         let mempool = self.mempool.lock().await.clone();
 
@@ -385,7 +381,7 @@ impl BlockProducerRpcServer {
 
     async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
         // Start background task to periodically update cached mempool stats
-        self.start_mempool_stats_updater().await;
+        self.spawn_mempool_stats_updater().await;
 
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())

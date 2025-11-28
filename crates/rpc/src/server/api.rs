@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::{BlockProducerClient, Builder, StoreRpcClient};
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::block_producer::MempoolStats;
 use miden_node_proto::generated::rpc::api_server::{self, Api};
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
@@ -567,11 +568,7 @@ impl api_server::Api for RpcService {
                 proto::block_producer::BlockProducerStatus {
                     status: "unreachable".to_string(),
                     version: "-".to_string(),
-                    mempool_stats: Some(proto::block_producer::MempoolStats {
-                        unbatched_transactions: 0,
-                        proposed_batches: 0,
-                        proven_batches: 0,
-                    }),
+                    mempool_stats: Some(MempoolStats::default()),
                 },
             )),
             genesis_commitment: self.genesis_commitment.map(Into::into),

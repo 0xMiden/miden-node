@@ -3,14 +3,13 @@ use std::time::Duration;
 
 use anyhow::Context;
 use miden_lib::block::build_block;
-use miden_lib::utils::Serializable;
 use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_objects::block::ProposedBlock;
-use miden_objects::utils::Deserializable;
+use miden_objects::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::catch_panic::CatchPanicLayer;

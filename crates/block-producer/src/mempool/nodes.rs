@@ -49,38 +49,33 @@ impl TransactionNode {
 /// Represents a batch which has been proposed by the mempool and which is undergoing proving.
 ///
 /// Once proven it transitions to a [`ProvenBatchNode`].
-#[derive(Clone, Debug, PartialEq, Default)]
-pub(super) struct ProposedBatchNode(Vec<Arc<AuthenticatedTransaction>>);
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ProposedBatchNode {
+    txs: Vec<Arc<AuthenticatedTransaction>>,
+    id: BatchId,
+}
 
 impl ProposedBatchNode {
-    pub(super) fn push(&mut self, tx: Arc<AuthenticatedTransaction>) {
-        self.0.push(tx);
-    }
-
-    pub(super) fn contains(&mut self, id: TransactionId) -> bool {
-        self.0.iter().any(|tx| tx.id() == id)
-    }
-
-    pub(super) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub(super) fn calculate_id(&self) -> BatchId {
-        BatchId::from_transactions(
-            self.0
-                .iter()
+    pub(super) fn new(txs: Vec<Arc<AuthenticatedTransaction>>) -> Self {
+        let id = BatchId::from_transactions(
+            txs.iter()
                 .map(AsRef::as_ref)
                 .map(AuthenticatedTransaction::raw_proven_transaction),
-        )
+        );
+        Self { txs, id }
     }
 
     pub(super) fn into_proven_batch_node(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
-        let Self(txs) = self;
+        let Self { txs, id: _ } = self;
         ProvenBatchNode { txs, inner: proof }
     }
 
     pub(super) fn expires_at(&self) -> BlockNumber {
-        self.0.iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
+        self.txs.iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
+    }
+
+    pub(super) fn batch_id(&self) -> BatchId {
+        self.id
     }
 }
 
@@ -113,13 +108,22 @@ impl ProvenBatchNode {
 }
 
 /// Represents a block - both committed and in-progress.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct BlockNode {
     txs: Vec<Arc<AuthenticatedTransaction>>,
     batches: Vec<Arc<ProvenBatch>>,
+    number: BlockNumber,
 }
 
 impl BlockNode {
+    pub(super) fn new(number: BlockNumber) -> Self {
+        Self {
+            number,
+            txs: Vec::default(),
+            batches: Vec::default(),
+        }
+    }
+
     pub(super) fn push(&mut self, batch: ProvenBatchNode) {
         let ProvenBatchNode { txs, inner } = batch;
         self.txs.extend(txs);
@@ -156,6 +160,8 @@ pub(super) trait Node {
     /// Output tuple represents each updates `(account ID, initial commitment, final commitment)`.
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_>;
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_>;
+
+    fn id(&self) -> NodeId;
 }
 
 impl Node for TransactionNode {
@@ -183,23 +189,27 @@ impl Node for TransactionNode {
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
         Box::new(std::iter::once(&self.0))
     }
+
+    fn id(&self) -> NodeId {
+        NodeId::Transaction(self.id())
+    }
 }
 
 impl Node for ProposedBatchNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.nullifiers()))
+        Box::new(self.txs.iter().flat_map(|tx| tx.nullifiers()))
     }
 
     fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.output_note_commitments()))
+        Box::new(self.txs.iter().flat_map(|tx| tx.output_note_commitments()))
     }
 
     fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.unauthenticated_note_commitments()))
+        Box::new(self.txs.iter().flat_map(|tx| tx.unauthenticated_note_commitments()))
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| {
+        Box::new(self.txs.iter().flat_map(|tx| {
             let update = tx.account_update();
             std::iter::once((
                 update.account_id(),
@@ -210,7 +220,11 @@ impl Node for ProposedBatchNode {
     }
 
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
-        Box::new(self.0.iter())
+        Box::new(self.txs.iter())
+    }
+
+    fn id(&self) -> NodeId {
+        NodeId::ProposedBatch(self.id)
     }
 }
 
@@ -252,6 +266,10 @@ impl Node for ProvenBatchNode {
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
         Box::new(self.txs.iter())
     }
+
+    fn id(&self) -> NodeId {
+        NodeId::ProvenBatch(self.id())
+    }
 }
 
 impl Node for BlockNode {
@@ -290,6 +308,10 @@ impl Node for BlockNode {
 
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
         Box::new(self.txs.iter())
+    }
+
+    fn id(&self) -> NodeId {
+        NodeId::Block(self.number)
     }
 }
 

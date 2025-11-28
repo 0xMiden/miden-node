@@ -242,7 +242,7 @@ pub enum InvalidBlockRange {
     EmptyRange { start: BlockNumber, end: BlockNumber },
 }
 
-impl proto::rpc_store::BlockRange {
+impl proto::shared::BlockRange {
     /// Converts the block range into an inclusive range, using the fallback block number if the
     /// block to is not specified.
     pub fn into_inclusive_range<T: From<InvalidBlockRange>>(
@@ -274,7 +274,7 @@ impl proto::rpc_store::BlockRange {
     }
 }
 
-impl From<RangeInclusive<BlockNumber>> for proto::rpc_store::BlockRange {
+impl From<RangeInclusive<BlockNumber>> for proto::shared::BlockRange {
     fn from(range: RangeInclusive<BlockNumber>) -> Self {
         Self {
             block_from: range.start().as_u32(),

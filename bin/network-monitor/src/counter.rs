@@ -446,7 +446,7 @@ async fn create_and_submit_network_note(
         .await
         .context("Failed to submit proven transaction to RPC")?
         .into_inner()
-        .block_height
+        .block_num
         .into();
 
     info!("Submitted proven transaction to RPC");

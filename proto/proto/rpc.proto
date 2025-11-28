@@ -7,8 +7,6 @@ import "types/blockchain.proto";
 import "types/note.proto";
 import "types/primitives.proto";
 import "types/transaction.proto";
-import "block_producer.proto";
-import "store/rpc.proto";
 import "store/shared.proto";
 import "google/protobuf/empty.proto";
 
@@ -21,13 +19,13 @@ service Api {
     rpc Status(google.protobuf.Empty) returns (RpcStatus) {}
 
     // Returns a nullifier proof for each of the requested nullifiers.
-    rpc CheckNullifiers(rpc_store.NullifierList) returns (rpc_store.CheckNullifiersResponse) {}
+    rpc CheckNullifiers(shared.NullifierList) returns (shared.CheckNullifiersResponse) {}
 
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
     // Returns the latest state proof of the specified account.
-    rpc GetAccountProof(rpc_store.AccountProofRequest) returns (rpc_store.AccountProofResponse) {}
+    rpc GetAccountProof(shared.AccountProofRequest) returns (shared.AccountProofResponse) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
@@ -42,8 +40,8 @@ service Api {
     // Returns the script for a note by its root.
     rpc GetNoteScriptByRoot(note.NoteRoot) returns (shared.MaybeNoteScript) {}
 
-    // Submits proven transaction to the Miden network.
-    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (block_producer.SubmitProvenTransactionResponse) {}
+    // Submits proven transaction to the Miden network. Returns the node's current block height.
+    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (blockchain.BlockNumber) {}
 
     // Submits a proven batch of transactions to the Miden network.
     //
@@ -55,15 +53,17 @@ service Api {
     //
     // All transactions in the batch but not in the mempool must build on the current mempool
     // state following normal transaction submission rules.
-    rpc SubmitProvenBatch(transaction.ProvenTransactionBatch) returns (block_producer.SubmitProvenBatchResponse) {}
+    //
+    // Returns the node's current block height.
+    rpc SubmitProvenBatch(transaction.ProvenTransactionBatch) returns (blockchain.BlockNumber) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //
     // Note that only 16-bit prefixes are supported at this time.
-    rpc SyncNullifiers(rpc_store.SyncNullifiersRequest) returns (rpc_store.SyncNullifiersResponse) {}
+    rpc SyncNullifiers(shared.SyncNullifiersRequest) returns (shared.SyncNullifiersResponse) {}
 
     // Returns account vault updates for specified account within a block range.
-    rpc SyncAccountVault(rpc_store.SyncAccountVaultRequest) returns (rpc_store.SyncAccountVaultResponse) {}
+    rpc SyncAccountVault(shared.SyncAccountVaultRequest) returns (shared.SyncAccountVaultResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -74,7 +74,7 @@ service Api {
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
     // tip of the chain.
-    rpc SyncNotes(rpc_store.SyncNotesRequest) returns (rpc_store.SyncNotesResponse) {}
+    rpc SyncNotes(shared.SyncNotesRequest) returns (shared.SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
     // for the objects (accounts and notes) the client is interested in.
@@ -91,13 +91,13 @@ service Api {
     // For preserving some degree of privacy, note tags contain only high
     // part of hashes. Thus, returned data contains excessive notes, client can make
     // additional filtering of that data on its side.
-    rpc SyncState(rpc_store.SyncStateRequest) returns (rpc_store.SyncStateResponse) {}
+    rpc SyncState(shared.SyncStateRequest) returns (shared.SyncStateResponse) {}
 
     // Returns storage map updates for specified account and storage slots within a block range.
-    rpc SyncStorageMaps(rpc_store.SyncStorageMapsRequest) returns (rpc_store.SyncStorageMapsResponse) {}
+    rpc SyncStorageMaps(shared.SyncStorageMapsRequest) returns (shared.SyncStorageMapsResponse) {}
 
     // Returns transactions records for specific accounts within a block range.
-    rpc SyncTransactions(rpc_store.SyncTransactionsRequest) returns (rpc_store.SyncTransactionsResponse) {}
+    rpc SyncTransactions(shared.SyncTransactionsRequest) returns (shared.SyncTransactionsResponse) {}
 }
 
 // RPC STATUS
@@ -112,8 +112,21 @@ message RpcStatus {
     primitives.Digest genesis_commitment = 2;
 
     // The store status.
-    rpc_store.StoreStatus store = 3;
+    shared.StoreStatus store = 3;
 
     // The block producer status.
-    block_producer.BlockProducerStatus block_producer = 4;
+    BlockProducerStatus block_producer = 4;
+}
+
+
+// BLOCK PRODUCER STATUS
+// ================================================================================================
+
+// Represents the status of the block producer.
+message BlockProducerStatus {
+    // The block producer's running version.
+    string version = 1;
+
+    // The block producer's status.
+    string status = 2;
 }

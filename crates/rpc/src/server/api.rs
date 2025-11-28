@@ -152,8 +152,8 @@ impl api_server::Api for RpcService {
     )]
     async fn check_nullifiers(
         &self,
-        request: Request<proto::rpc_store::NullifierList>,
-    ) -> Result<Response<proto::rpc_store::CheckNullifiersResponse>, Status> {
+        request: Request<proto::shared::NullifierList>,
+    ) -> Result<Response<proto::shared::CheckNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
@@ -178,8 +178,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_nullifiers(
         &self,
-        request: Request<proto::rpc_store::SyncNullifiersRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncNullifiersResponse>, Status> {
+        request: Request<proto::shared::SyncNullifiersRequest>,
+    ) -> Result<Response<proto::shared::SyncNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
@@ -214,8 +214,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_state(
         &self,
-        request: Request<proto::rpc_store::SyncStateRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncStateResponse>, Status> {
+        request: Request<proto::shared::SyncStateRequest>,
+    ) -> Result<Response<proto::shared::SyncStateResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamAccountIdLimit>(request.get_ref().account_ids.len())?;
@@ -234,8 +234,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_storage_maps(
         &self,
-        request: Request<proto::rpc_store::SyncStorageMapsRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncStorageMapsResponse>, Status> {
+        request: Request<proto::shared::SyncStorageMapsRequest>,
+    ) -> Result<Response<proto::shared::SyncStorageMapsResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         self.store.clone().sync_storage_maps(request).await
@@ -251,8 +251,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_notes(
         &self,
-        request: Request<proto::rpc_store::SyncNotesRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncNotesResponse>, Status> {
+        request: Request<proto::shared::SyncNotesRequest>,
+    ) -> Result<Response<proto::shared::SyncNotesResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
@@ -299,11 +299,9 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_account_vault(
         &self,
-        request: tonic::Request<proto::rpc_store::SyncAccountVaultRequest>,
-    ) -> std::result::Result<
-        tonic::Response<proto::rpc_store::SyncAccountVaultResponse>,
-        tonic::Status,
-    > {
+        request: tonic::Request<proto::shared::SyncAccountVaultRequest>,
+    ) -> std::result::Result<tonic::Response<proto::shared::SyncAccountVaultResponse>, tonic::Status>
+    {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         self.store.clone().sync_account_vault(request).await
@@ -313,7 +311,7 @@ impl api_server::Api for RpcService {
     async fn submit_proven_transaction(
         &self,
         request: Request<proto::transaction::ProvenTransaction>,
-    ) -> Result<Response<proto::block_producer::SubmitProvenTransactionResponse>, Status> {
+    ) -> Result<Response<proto::blockchain::BlockNumber>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         let Some(block_producer) = &self.block_producer else {
@@ -412,7 +410,7 @@ impl api_server::Api for RpcService {
     async fn submit_proven_batch(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
-    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
         let Some(block_producer) = &self.block_producer else {
             return Err(Status::unavailable("Batch submission not available in read-only mode"));
         };
@@ -520,8 +518,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_proof(
         &self,
-        request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
+        request: Request<proto::shared::AccountProofRequest>,
+    ) -> Result<Response<proto::shared::AccountProofResponse>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -558,17 +556,15 @@ impl api_server::Api for RpcService {
 
         Ok(Response::new(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            store: store_status.or(Some(proto::rpc_store::StoreStatus {
+            store: store_status.or(Some(proto::shared::StoreStatus {
                 status: "unreachable".to_string(),
                 chain_tip: 0,
                 version: "-".to_string(),
             })),
-            block_producer: block_producer_status.or(Some(
-                proto::block_producer::BlockProducerStatus {
-                    status: "unreachable".to_string(),
-                    version: "-".to_string(),
-                },
-            )),
+            block_producer: block_producer_status.or(Some(proto::rpc::BlockProducerStatus {
+                status: "unreachable".to_string(),
+                version: "-".to_string(),
+            })),
             genesis_commitment: self.genesis_commitment.map(Into::into),
         }))
     }
@@ -600,8 +596,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_transactions(
         &self,
-        request: Request<proto::rpc_store::SyncTransactionsRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncTransactionsResponse>, Status> {
+        request: Request<proto::shared::SyncTransactionsRequest>,
+    ) -> Result<Response<proto::shared::SyncTransactionsResponse>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         self.store.clone().sync_transactions(request).await

@@ -10,12 +10,20 @@ pub struct RpcStatus {
     pub genesis_commitment: ::core::option::Option<super::primitives::Digest>,
     /// The store status.
     #[prost(message, optional, tag = "3")]
-    pub store: ::core::option::Option<super::rpc_store::StoreStatus>,
+    pub store: ::core::option::Option<super::shared::StoreStatus>,
     /// The block producer status.
     #[prost(message, optional, tag = "4")]
-    pub block_producer: ::core::option::Option<
-        super::block_producer::BlockProducerStatus,
-    >,
+    pub block_producer: ::core::option::Option<BlockProducerStatus>,
+}
+/// Represents the status of the block producer.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockProducerStatus {
+    /// The block producer's running version.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The block producer's status.
+    #[prost(string, tag = "2")]
+    pub status: ::prost::alloc::string::String,
 }
 /// Generated client implementations.
 pub mod api_client {
@@ -131,9 +139,9 @@ pub mod api_client {
         /// Returns a nullifier proof for each of the requested nullifiers.
         pub async fn check_nullifiers(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc_store::NullifierList>,
+            request: impl tonic::IntoRequest<super::super::shared::NullifierList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::CheckNullifiersResponse>,
+            tonic::Response<super::super::shared::CheckNullifiersResponse>,
             tonic::Status,
         > {
             self.inner
@@ -177,11 +185,9 @@ pub mod api_client {
         /// Returns the latest state proof of the specified account.
         pub async fn get_account_proof(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::rpc_store::AccountProofRequest,
-            >,
+            request: impl tonic::IntoRequest<super::super::shared::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProofResponse>,
+            tonic::Response<super::super::shared::AccountProofResponse>,
             tonic::Status,
         > {
             self.inner
@@ -295,16 +301,14 @@ pub mod api_client {
                 .insert(GrpcMethod::new("rpc.Api", "GetNoteScriptByRoot"));
             self.inner.unary(req, path, codec).await
         }
-        /// Submits proven transaction to the Miden network.
+        /// Submits proven transaction to the Miden network. Returns the node's current block height.
         pub async fn submit_proven_transaction(
             &mut self,
             request: impl tonic::IntoRequest<
                 super::super::transaction::ProvenTransaction,
             >,
         ) -> std::result::Result<
-            tonic::Response<
-                super::super::block_producer::SubmitProvenTransactionResponse,
-            >,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         > {
             self.inner
@@ -334,13 +338,15 @@ pub mod api_client {
         ///
         /// All transactions in the batch but not in the mempool must build on the current mempool
         /// state following normal transaction submission rules.
+        ///
+        /// Returns the node's current block height.
         pub async fn submit_proven_batch(
             &mut self,
             request: impl tonic::IntoRequest<
                 super::super::transaction::ProvenTransactionBatch,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::block_producer::SubmitProvenBatchResponse>,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         > {
             self.inner
@@ -364,11 +370,9 @@ pub mod api_client {
         /// Note that only 16-bit prefixes are supported at this time.
         pub async fn sync_nullifiers(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncNullifiersRequest,
-            >,
+            request: impl tonic::IntoRequest<super::super::shared::SyncNullifiersRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNullifiersResponse>,
+            tonic::Response<super::super::shared::SyncNullifiersResponse>,
             tonic::Status,
         > {
             self.inner
@@ -389,10 +393,10 @@ pub mod api_client {
         pub async fn sync_account_vault(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncAccountVaultRequest,
+                super::super::shared::SyncAccountVaultRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncAccountVaultResponse>,
+            tonic::Response<super::super::shared::SyncAccountVaultResponse>,
             tonic::Status,
         > {
             self.inner
@@ -420,9 +424,9 @@ pub mod api_client {
         /// tip of the chain.
         pub async fn sync_notes(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc_store::SyncNotesRequest>,
+            request: impl tonic::IntoRequest<super::super::shared::SyncNotesRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNotesResponse>,
+            tonic::Response<super::super::shared::SyncNotesResponse>,
             tonic::Status,
         > {
             self.inner
@@ -456,9 +460,9 @@ pub mod api_client {
         /// additional filtering of that data on its side.
         pub async fn sync_state(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc_store::SyncStateRequest>,
+            request: impl tonic::IntoRequest<super::super::shared::SyncStateRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStateResponse>,
+            tonic::Response<super::super::shared::SyncStateResponse>,
             tonic::Status,
         > {
             self.inner
@@ -479,10 +483,10 @@ pub mod api_client {
         pub async fn sync_storage_maps(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncStorageMapsRequest,
+                super::super::shared::SyncStorageMapsRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStorageMapsResponse>,
+            tonic::Response<super::super::shared::SyncStorageMapsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -503,10 +507,10 @@ pub mod api_client {
         pub async fn sync_transactions(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncTransactionsRequest,
+                super::super::shared::SyncTransactionsRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncTransactionsResponse>,
+            tonic::Response<super::super::shared::SyncTransactionsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -546,9 +550,9 @@ pub mod api_server {
         /// Returns a nullifier proof for each of the requested nullifiers.
         async fn check_nullifiers(
             &self,
-            request: tonic::Request<super::super::rpc_store::NullifierList>,
+            request: tonic::Request<super::super::shared::NullifierList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::CheckNullifiersResponse>,
+            tonic::Response<super::super::shared::CheckNullifiersResponse>,
             tonic::Status,
         >;
         /// Returns the latest state of an account with the specified ID.
@@ -562,9 +566,9 @@ pub mod api_server {
         /// Returns the latest state proof of the specified account.
         async fn get_account_proof(
             &self,
-            request: tonic::Request<super::super::rpc_store::AccountProofRequest>,
+            request: tonic::Request<super::super::shared::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProofResponse>,
+            tonic::Response<super::super::shared::AccountProofResponse>,
             tonic::Status,
         >;
         /// Returns raw block data for the specified block number.
@@ -600,14 +604,12 @@ pub mod api_server {
             tonic::Response<super::super::shared::MaybeNoteScript>,
             tonic::Status,
         >;
-        /// Submits proven transaction to the Miden network.
+        /// Submits proven transaction to the Miden network. Returns the node's current block height.
         async fn submit_proven_transaction(
             &self,
             request: tonic::Request<super::super::transaction::ProvenTransaction>,
         ) -> std::result::Result<
-            tonic::Response<
-                super::super::block_producer::SubmitProvenTransactionResponse,
-            >,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         >;
         /// Submits a proven batch of transactions to the Miden network.
@@ -620,11 +622,13 @@ pub mod api_server {
         ///
         /// All transactions in the batch but not in the mempool must build on the current mempool
         /// state following normal transaction submission rules.
+        ///
+        /// Returns the node's current block height.
         async fn submit_proven_batch(
             &self,
             request: tonic::Request<super::super::transaction::ProvenTransactionBatch>,
         ) -> std::result::Result<
-            tonic::Response<super::super::block_producer::SubmitProvenBatchResponse>,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         >;
         /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
@@ -632,17 +636,17 @@ pub mod api_server {
         /// Note that only 16-bit prefixes are supported at this time.
         async fn sync_nullifiers(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncNullifiersRequest>,
+            request: tonic::Request<super::super::shared::SyncNullifiersRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNullifiersResponse>,
+            tonic::Response<super::super::shared::SyncNullifiersResponse>,
             tonic::Status,
         >;
         /// Returns account vault updates for specified account within a block range.
         async fn sync_account_vault(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncAccountVaultRequest>,
+            request: tonic::Request<super::super::shared::SyncAccountVaultRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncAccountVaultResponse>,
+            tonic::Response<super::super::shared::SyncAccountVaultResponse>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -656,9 +660,9 @@ pub mod api_server {
         /// tip of the chain.
         async fn sync_notes(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncNotesRequest>,
+            request: tonic::Request<super::super::shared::SyncNotesRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNotesResponse>,
+            tonic::Response<super::super::shared::SyncNotesResponse>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -678,25 +682,25 @@ pub mod api_server {
         /// additional filtering of that data on its side.
         async fn sync_state(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncStateRequest>,
+            request: tonic::Request<super::super::shared::SyncStateRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStateResponse>,
+            tonic::Response<super::super::shared::SyncStateResponse>,
             tonic::Status,
         >;
         /// Returns storage map updates for specified account and storage slots within a block range.
         async fn sync_storage_maps(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncStorageMapsRequest>,
+            request: tonic::Request<super::super::shared::SyncStorageMapsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStorageMapsResponse>,
+            tonic::Response<super::super::shared::SyncStorageMapsResponse>,
             tonic::Status,
         >;
         /// Returns transactions records for specific accounts within a block range.
         async fn sync_transactions(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncTransactionsRequest>,
+            request: tonic::Request<super::super::shared::SyncTransactionsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncTransactionsResponse>,
+            tonic::Response<super::super::shared::SyncTransactionsResponse>,
             tonic::Status,
         >;
     }
@@ -821,18 +825,16 @@ pub mod api_server {
                     struct CheckNullifiersSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<super::super::rpc_store::NullifierList>
+                    > tonic::server::UnaryService<super::super::shared::NullifierList>
                     for CheckNullifiersSvc<T> {
-                        type Response = super::super::rpc_store::CheckNullifiersResponse;
+                        type Response = super::super::shared::CheckNullifiersResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::NullifierList,
-                            >,
+                            request: tonic::Request<super::super::shared::NullifierList>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -914,9 +916,9 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::AccountProofRequest,
+                        super::super::shared::AccountProofRequest,
                     > for GetAccountProofSvc<T> {
-                        type Response = super::super::rpc_store::AccountProofResponse;
+                        type Response = super::super::shared::AccountProofResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -924,7 +926,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::AccountProofRequest,
+                                super::super::shared::AccountProofRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
@@ -1150,7 +1152,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::transaction::ProvenTransaction,
                     > for SubmitProvenTransactionSvc<T> {
-                        type Response = super::super::block_producer::SubmitProvenTransactionResponse;
+                        type Response = super::super::blockchain::BlockNumber;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1198,7 +1200,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::transaction::ProvenTransactionBatch,
                     > for SubmitProvenBatchSvc<T> {
-                        type Response = super::super::block_producer::SubmitProvenBatchResponse;
+                        type Response = super::super::blockchain::BlockNumber;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1244,9 +1246,9 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncNullifiersRequest,
+                        super::super::shared::SyncNullifiersRequest,
                     > for SyncNullifiersSvc<T> {
-                        type Response = super::super::rpc_store::SyncNullifiersResponse;
+                        type Response = super::super::shared::SyncNullifiersResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1254,7 +1256,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::SyncNullifiersRequest,
+                                super::super::shared::SyncNullifiersRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
@@ -1292,9 +1294,9 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncAccountVaultRequest,
+                        super::super::shared::SyncAccountVaultRequest,
                     > for SyncAccountVaultSvc<T> {
-                        type Response = super::super::rpc_store::SyncAccountVaultResponse;
+                        type Response = super::super::shared::SyncAccountVaultResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1302,7 +1304,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::SyncAccountVaultRequest,
+                                super::super::shared::SyncAccountVaultRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
@@ -1339,10 +1341,9 @@ pub mod api_server {
                     struct SyncNotesSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncNotesRequest,
-                    > for SyncNotesSvc<T> {
-                        type Response = super::super::rpc_store::SyncNotesResponse;
+                    > tonic::server::UnaryService<super::super::shared::SyncNotesRequest>
+                    for SyncNotesSvc<T> {
+                        type Response = super::super::shared::SyncNotesResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1350,7 +1351,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::SyncNotesRequest,
+                                super::super::shared::SyncNotesRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
@@ -1387,10 +1388,9 @@ pub mod api_server {
                     struct SyncStateSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncStateRequest,
-                    > for SyncStateSvc<T> {
-                        type Response = super::super::rpc_store::SyncStateResponse;
+                    > tonic::server::UnaryService<super::super::shared::SyncStateRequest>
+                    for SyncStateSvc<T> {
+                        type Response = super::super::shared::SyncStateResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1398,7 +1398,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::SyncStateRequest,
+                                super::super::shared::SyncStateRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
@@ -1436,9 +1436,9 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncStorageMapsRequest,
+                        super::super::shared::SyncStorageMapsRequest,
                     > for SyncStorageMapsSvc<T> {
-                        type Response = super::super::rpc_store::SyncStorageMapsResponse;
+                        type Response = super::super::shared::SyncStorageMapsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1446,7 +1446,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::SyncStorageMapsRequest,
+                                super::super::shared::SyncStorageMapsRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
@@ -1484,9 +1484,9 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncTransactionsRequest,
+                        super::super::shared::SyncTransactionsRequest,
                     > for SyncTransactionsSvc<T> {
-                        type Response = super::super::rpc_store::SyncTransactionsResponse;
+                        type Response = super::super::shared::SyncTransactionsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1494,7 +1494,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::SyncTransactionsRequest,
+                                super::super::shared::SyncTransactionsRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);

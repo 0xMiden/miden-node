@@ -64,9 +64,9 @@ pub fn conversion_error_to_status(value: &ConversionError) -> Status {
 
 /// Reads a block range from a request, returning a specific error type if the field is missing
 pub fn read_block_range<E>(
-    block_range: Option<proto::rpc_store::BlockRange>,
+    block_range: Option<proto::shared::BlockRange>,
     entity: &'static str,
-) -> Result<proto::rpc_store::BlockRange, E>
+) -> Result<proto::shared::BlockRange, E>
 where
     E: From<ConversionError>,
 {

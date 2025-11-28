@@ -11,9 +11,8 @@ use miden_node_proto::clients::{
     RpcClient,
 };
 use miden_node_proto::generated as proto;
-use miden_node_proto::generated::block_producer::BlockProducerStatus;
-use miden_node_proto::generated::rpc::RpcStatus;
-use miden_node_proto::generated::rpc_store::StoreStatus;
+use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus};
+use miden_node_proto::generated::shared::StoreStatus;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;

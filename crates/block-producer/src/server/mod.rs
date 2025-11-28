@@ -231,8 +231,7 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransaction>,
-    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, Status>
-    {
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
         self.submit_proven_transaction(request.into_inner())
              .await
              .map(tonic::Response::new)
@@ -243,7 +242,7 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_batch(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
-    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
         self.submit_proven_batch(request.into_inner())
              .await
              .map(tonic::Response::new)
@@ -260,8 +259,8 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn status(
         &self,
         _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<proto::block_producer::BlockProducerStatus>, Status> {
-        Ok(tonic::Response::new(proto::block_producer::BlockProducerStatus {
+    ) -> Result<tonic::Response<proto::rpc::BlockProducerStatus>, Status> {
+        Ok(tonic::Response::new(proto::rpc::BlockProducerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
         }))
@@ -352,7 +351,7 @@ impl BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
         request: proto::transaction::ProvenTransaction,
-    ) -> Result<proto::block_producer::SubmitProvenTransactionResponse, AddTransactionError> {
+    ) -> Result<proto::blockchain::BlockNumber, AddTransactionError> {
         debug!(target: COMPONENT, ?request);
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
@@ -378,11 +377,13 @@ impl BlockProducerRpcServer {
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
         let tx = AuthenticatedTransaction::new_unchecked(tx, inputs).map(Arc::new)?;
 
-        self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-            proto::block_producer::SubmitProvenTransactionResponse {
-                block_height: block_height.as_u32(),
-            }
-        })
+        self.mempool
+            .lock()
+            .await
+            .lock()
+            .await
+            .add_transaction(tx)
+            .map(|block_height| proto::blockchain::BlockNumber { block_num: block_height.as_u32() })
     }
 
     #[instrument(
@@ -394,7 +395,7 @@ impl BlockProducerRpcServer {
     async fn submit_proven_batch(
         &self,
         request: proto::transaction::ProvenTransactionBatch,
-    ) -> Result<proto::block_producer::SubmitProvenBatchResponse, SubmitProvenBatchError> {
+    ) -> Result<proto::blockchain::BlockNumber, SubmitProvenBatchError> {
         let _batch = ProvenBatch::read_from_bytes(&request.encoded)
             .map_err(SubmitProvenBatchError::Deserialization)?;
 

@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use lru::LruCache;
@@ -90,7 +91,7 @@ impl NtxContext {
     ///
     /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
     /// depends on the complexity of the scripts being cached.
-    const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
+    const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
 
     /// Creates a new [`NtxContext`] instance.
     pub fn new(
@@ -102,10 +103,7 @@ impl NtxContext {
             block_producer,
             prover,
             store,
-            script_cache: Arc::new(Mutex::new(LruCache::new(
-                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
-                    .expect("default script cache size is non-zero"),
-            ))),
+            script_cache: Arc::new(Mutex::new(LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE))),
         }
     }
 
@@ -418,6 +416,7 @@ impl DataStore for NtxDataStore {
         async move {
             // Attempt to retrieve the script from the cache.
             if let Some(cached_script) = {
+                // Note: Take care not to hold the lock across await points.
                 let mut cache_guard = cache.lock().await;
                 cache_guard.get(&script_root).cloned()
             } {

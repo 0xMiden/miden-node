@@ -288,6 +288,7 @@ impl BlockBuilder {
         body: BlockBody,
         block_proof: BlockProof,
     ) -> Result<ProvenBlock, BuildBlockError> {
+        // SAFETY: The header and body are assumed valid and consistent with the proof.
         let proven_block = ProvenBlock::new_unchecked(header, body, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(

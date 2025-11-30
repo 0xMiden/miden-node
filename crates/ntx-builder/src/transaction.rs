@@ -1,8 +1,6 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
-use lru::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
 use miden_objects::asset::{AssetVaultKey, AssetWitness};
@@ -36,12 +34,12 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
-use tokio::sync::Mutex;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
 use crate::block_producer::BlockProducerClient;
+use crate::cache::Cache;
 use crate::state::TransactionCandidate;
 use crate::store::StoreClient;
 
@@ -83,7 +81,7 @@ pub struct NtxContext {
     store: StoreClient,
 
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
-    script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
+    script_cache: Cache<Word, NoteScript>,
 }
 
 impl NtxContext {
@@ -103,7 +101,7 @@ impl NtxContext {
             block_producer,
             prover,
             store,
-            script_cache: Arc::new(Mutex::new(LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE))),
+            script_cache: Cache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE),
         }
     }
 
@@ -285,7 +283,7 @@ struct NtxDataStore {
     /// Store client for retrieving note scripts.
     store: StoreClient,
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
-    script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
+    script_cache: Cache<Word, NoteScript>,
 }
 
 impl NtxDataStore {
@@ -295,7 +293,7 @@ impl NtxDataStore {
         reference_header: BlockHeader,
         chain_mmr: PartialBlockchain,
         store: StoreClient,
-        script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
+        script_cache: Cache<Word, NoteScript>,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
@@ -411,15 +409,11 @@ impl DataStore for NtxDataStore {
         script_root: Word,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         let store = self.store.clone();
-        let cache = self.script_cache.clone();
+        let mut cache = self.script_cache.clone();
 
         async move {
             // Attempt to retrieve the script from the cache.
-            if let Some(cached_script) = {
-                // Note: Take care not to hold the lock across await points.
-                let mut cache_guard = cache.lock().await;
-                cache_guard.get(&script_root).cloned()
-            } {
+            if let Some(cached_script) = cache.get(&script_root).await {
                 return Ok(Some(cached_script));
             }
 
@@ -432,8 +426,7 @@ impl DataStore for NtxDataStore {
             })?;
             // Handle response.
             if let Some(script) = maybe_script {
-                let mut cache_guard = cache.lock().await;
-                cache_guard.put(script_root, script.clone());
+                cache.put(script_root, script.clone()).await;
                 Ok(Some(script))
             } else {
                 Ok(None)

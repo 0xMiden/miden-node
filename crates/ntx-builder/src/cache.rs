@@ -2,22 +2,22 @@ use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use lru::LruCache;
+use lru::LruCache as InnerCache;
 use tokio::sync::Mutex;
 
 /// A newtype wrapper around an LRU cache. Which ensures that the cache lock is not held across
 /// await points.
 #[derive(Clone)]
-pub struct Cache<K, V>(Arc<Mutex<LruCache<K, V>>>);
+pub struct LruCache<K, V>(Arc<Mutex<InnerCache<K, V>>>);
 
-impl<K, V> Cache<K, V>
+impl<K, V> LruCache<K, V>
 where
     K: Hash + Eq,
     V: Clone,
 {
     /// Creates a new cache with the given capacity.
     pub fn new(capacity: NonZeroUsize) -> Self {
-        Self(Arc::new(Mutex::new(LruCache::new(capacity))))
+        Self(Arc::new(Mutex::new(InnerCache::new(capacity))))
     }
 
     /// Retrieves a value from the cache.

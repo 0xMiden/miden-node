@@ -39,7 +39,7 @@ use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
 use crate::block_producer::BlockProducerClient;
-use crate::cache::Cache;
+use crate::cache::LruCache;
 use crate::state::TransactionCandidate;
 use crate::store::StoreClient;
 
@@ -81,7 +81,7 @@ pub struct NtxContext {
     store: StoreClient,
 
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
-    script_cache: Cache<Word, NoteScript>,
+    script_cache: LruCache<Word, NoteScript>,
 }
 
 impl NtxContext {
@@ -101,7 +101,7 @@ impl NtxContext {
             block_producer,
             prover,
             store,
-            script_cache: Cache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE),
+            script_cache: LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE),
         }
     }
 
@@ -283,7 +283,7 @@ struct NtxDataStore {
     /// Store client for retrieving note scripts.
     store: StoreClient,
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
-    script_cache: Cache<Word, NoteScript>,
+    script_cache: LruCache<Word, NoteScript>,
 }
 
 impl NtxDataStore {
@@ -293,7 +293,7 @@ impl NtxDataStore {
         reference_header: BlockHeader,
         chain_mmr: PartialBlockchain,
         store: StoreClient,
-        script_cache: Cache<Word, NoteScript>,
+        script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());

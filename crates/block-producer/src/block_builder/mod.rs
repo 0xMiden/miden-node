@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
+use miden_lib::block::build_block;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::{OrderedBatches, ProvenBatch};
@@ -230,13 +231,32 @@ impl BlockBuilder {
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
     ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
-        let response = self
-            .validator
-            .validate_block(proposed_block.clone())
-            .await
-            .map_err(BuildBlockError::ValidateBlockFailed)?;
+        // Request validation concurrently to building the block ourselves.
+        let (validator_result, build_result) = tokio::join!(
+            // Send request to validator.
+            self.validator.validate_block(proposed_block.clone()),
+            // Build the block ourselves.
+            tokio::task::spawn_blocking({
+                let proposed_block = proposed_block.clone();
+                move || build_block(proposed_block)
+            })
+        );
 
-        // TODO: Check that the returned header and body match the proposed block.
+        // Handle the results.
+        let response = validator_result.map_err(BuildBlockError::ValidateBlockFailed)?;
+        let (header, body) = build_result
+            .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
+            .map_err(BuildBlockError::ProposeBlockFailed)?;
+
+        // Check that the header and body returned from the validator is consistent with the
+        // proposed block.
+        // TODO(sergerad): Update Eq implementation once signatures are part of the header.
+        if response.header != header {
+            return Err(BuildBlockError::ValidateBlockMismatch("header".into()));
+        }
+        if response.body != body {
+            return Err(BuildBlockError::ValidateBlockMismatch("body".into()));
+        }
 
         let (ordered_batches, ..) = proposed_block.into_parts();
         Ok((ordered_batches, block_inputs, response.header, response.body))
@@ -275,6 +295,9 @@ impl BlockBuilder {
                 MIN_PROOF_SECURITY_LEVEL,
             ));
         }
+        // TODO(sergerad): Consider removing this validation. Once block proving is implemented,
+        // this would be replaced with verifying the proof returned from the prover against
+        // the block header.
         validate_tx_headers(&proven_block, &ordered_batches.to_transactions())?;
 
         Ok(proven_block)

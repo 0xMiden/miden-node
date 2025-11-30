@@ -36,7 +36,7 @@ pub struct ValidateBlockResponse {
 // VALIDATOR CLIENT
 // ================================================================================================
 
-/// Interface to the validator's block-producer gRPC API.
+/// Interface to the validator's gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]

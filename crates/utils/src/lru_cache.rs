@@ -5,7 +5,7 @@ use std::sync::Arc;
 use lru::LruCache as InnerCache;
 use tokio::sync::Mutex;
 
-/// A newtype wrapper around an LRU cache. Which ensures that the cache lock is not held across
+/// A newtype wrapper around an LRU cache. Ensures that the cache lock is not held across
 /// await points.
 #[derive(Clone)]
 pub struct LruCache<K, V>(Arc<Mutex<InnerCache<K, V>>>);

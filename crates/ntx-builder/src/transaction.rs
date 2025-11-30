@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
+use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
 use miden_objects::asset::{AssetVaultKey, AssetWitness};
@@ -39,7 +40,6 @@ use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
 use crate::block_producer::BlockProducerClient;
-use crate::cache::LruCache;
 use crate::state::TransactionCandidate;
 use crate::store::StoreClient;
 

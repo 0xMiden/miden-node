@@ -1,4 +1,5 @@
 use miden_node_proto::clients::{Builder, ValidatorClient};
+use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
 use miden_node_proto::generated as proto;
 use miden_objects::block::{BlockBody, BlockHeader, ProposedBlock};
 use miden_objects::utils::{Deserializable, Serializable};
@@ -15,6 +16,8 @@ use crate::COMPONENT;
 pub enum ValidatorError {
     #[error("gRPC transport error: {0}")]
     Transport(#[from] tonic::Status),
+    #[error("response content error: {0}")]
+    ResponseContent(#[from] ConversionError),
     #[error("Failed to convert header: {0}")]
     HeaderConversion(String),
     #[error("Failed to deserialize body: {0}")]
@@ -70,13 +73,19 @@ impl BlockProducerValidatorClient {
         let response = self.client.clone().validate_block(request).await?;
         let response = response.into_inner();
 
-        // Extract header from response (should always be present).
-        let header_proto = response.header.expect("validator always returns a header");
+        // Extract header from response.
+        let header_proto = response
+            .header
+            .ok_or(miden_node_proto::generated::blockchain::BlockHeader::missing_field("header"))
+            .map_err(ValidatorError::ResponseContent)?;
         let header = BlockHeader::try_from(header_proto)
             .map_err(|err| ValidatorError::HeaderConversion(err.to_string()))?;
 
-        // Extract body from response (should always be present).
-        let body_proto = response.body.expect("validator always returns a body");
+        // Extract body from response.
+        let body_proto = response
+            .body
+            .ok_or(miden_node_proto::generated::blockchain::BlockBody::missing_field("body"))
+            .map_err(ValidatorError::ResponseContent)?;
         let body = BlockBody::read_from_bytes(&body_proto.block_body)
             .map_err(|err| ValidatorError::BodyDeserialization(err.to_string()))?;
 

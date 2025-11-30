@@ -464,7 +464,7 @@ impl BlockProver {
 /// passed in the proposed block.
 ///
 /// This expects that transactions from the proposed block and proven block are in the same
-/// order, as define by [`OrderedTransactionHeaders`].
+/// order, as defined by [`OrderedTransactionHeaders`].
 fn validate_tx_headers(
     proven_block: &ProvenBlock,
     proposed_txs: &OrderedTransactionHeaders,

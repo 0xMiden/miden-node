@@ -574,7 +574,7 @@ impl Db {
         .await
     }
 
-    /// Selects storage map values for syncing storage maps for a specific account ID.
+    /// Selects storage map values for syncing storage maps for a specific account ID
     ///
     /// The returned values are the latest known values up to `block_range.end()`, and no values
     /// earlier than `block_range.start()` are returned.

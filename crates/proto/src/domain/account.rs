@@ -422,7 +422,7 @@ pub struct AccountStorageMapDetails {
 }
 
 impl AccountStorageMapDetails {
-    const MAX_RETURN_ENTRIES: usize = 1000;
+    pub const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
         match slot_data {
@@ -448,8 +448,27 @@ impl AccountStorageMapDetails {
         if keys.len() > Self::MAX_RETURN_ENTRIES {
             Self::too_many_entries(slot_index)
         } else {
-            // TODO For now, we return all entries instead of specific keys with proofs
-            Self::from_all_entries(slot_index, storage_map)
+            // Query specific keys from the storage map.
+            // StorageMap::get returns the value for a given key, or EMPTY_WORD if not present.
+            // We only return entries that actually exist in the map (non-empty values).
+            let map_entries: Vec<(Word, Word)> = keys
+                .iter()
+                .filter_map(|key| {
+                    let value = storage_map.get(key);
+                    // Only include entries with non-empty values
+                    if value == miden_objects::EMPTY_WORD {
+                        None
+                    } else {
+                        Some((*key, value))
+                    }
+                })
+                .collect();
+
+            Self {
+                slot_index,
+                too_many_entries: false,
+                map_entries,
+            }
         }
     }
 

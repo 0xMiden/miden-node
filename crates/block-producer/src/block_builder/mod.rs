@@ -238,7 +238,7 @@ impl BlockBuilder {
         });
         let (header, body) = self
             .validator
-            .validate_block(proposed_block.clone())
+            .sign_block(proposed_block.clone())
             .await
             .map_err(BuildBlockError::ValidateBlockFailed)?;
         let (expected_header, expected_body) = build_result

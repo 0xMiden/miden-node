@@ -12,13 +12,26 @@
 - [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298)).
 - Added support for timeouts in the WASM remote prover clients ([#1383](https://github.com/0xMiden/miden-node/pull/1383)).
 - Added block validation endpoint to validator and integrated with block producer ([#1382](https://github.com/0xMiden/miden-node/pull/1381)).
+- Added support for caching mempool statistics in the block producer server ([#1388](https://github.com/0xMiden/miden-node/pull/1388)).
+- Added mempool statistics to the block producer status in the `miden-network-monitor` binary ([#1392](https://github.com/0xMiden/miden-node/pull/1392)).
+- Add `S` generic to `NullifierTree` to allow usage with `LargeSmt`s ([#1353](https://github.com/0xMiden/miden-node/issues/1353)).
 
 ### Fixes
 
 - RPC client now correctly sets `genesis` value in `ACCEPT` header if `version` is unspecified ([#1370](https://github.com/0xMiden/miden-node/pull/1370)).
+- Pin protobuf (`protox`) dependencies to avoid breaking changes in transitive dependency ([#1403](https://github.com/0xMiden/miden-node/pull/1403)).
+
+## v0.12.6
+
+- Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
+
+## v0.12.5 (2025-11-27)
+
+- Actually update `miden-base` dependencies ([#1384](https://github.com/0xMiden/miden-node/pull/1384)).
 
 ## v0.12.4 (2025-11-27)
 
+- Split counter increment and tracking services in `miden-network-monitor` binary ([#1362](https://github.com/0xMiden/miden-node/pull/1362)).
 - Updated the counter account from the `miden-network-monitor` to start at 0 ([#1367](https://github.com/0xMiden/miden-node/pull/1367)).
 - Updated  `miden-base` dependencies to fix ECDSA issues ([#1382](https://github.com/0xMiden/miden-node/pull/1382)).
 

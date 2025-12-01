@@ -342,12 +342,12 @@ impl DataStore for NtxDataStore {
         async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
     }
 
-    fn get_vault_asset_witness(
+    fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: AssetVaultKey,
-    ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             if self.account.id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));
@@ -360,12 +360,14 @@ impl DataStore for NtxDataStore {
                 });
             }
 
-            AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
-                DataStoreError::Other {
-                    error_msg: "failed to open vault asset tree".into(),
-                    source: Some(Box::new(err)),
-                }
-            })
+            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+                AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
+                    DataStoreError::Other {
+                        error_msg: "failed to open vault asset tree".into(),
+                        source: Some(Box::new(err)),
+                    }
+                })
+            }))
         }
     }
 

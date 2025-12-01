@@ -69,6 +69,7 @@ impl From<AccountId> for proto::account::AccountId {
 // ACCOUNT UPDATE
 // ================================================================================================
 
+// TODO should be called `AccountStateRef` or so
 #[derive(Debug, PartialEq)]
 pub struct AccountSummary {
     pub account_id: AccountId,
@@ -86,6 +87,7 @@ impl From<&AccountSummary> for proto::account::AccountSummary {
     }
 }
 
+#[deprecated(note = "avoid this type, details will be `None` always!")]
 #[derive(Debug, PartialEq)]
 pub struct AccountInfo {
     pub summary: AccountSummary,

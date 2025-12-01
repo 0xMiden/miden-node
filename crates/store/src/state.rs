@@ -1317,7 +1317,7 @@ impl State {
         let (block_num, witness) = self.get_block_witness(block_num, account_id).await?;
 
         let details = if let Some(request) = details {
-            Some(self.fetch_account_proof_details(account_id, block_num, request).await?)
+            Some(self.fetch_requested_account_details(account_id, block_num, request).await?)
         } else {
             None
         };
@@ -1363,7 +1363,7 @@ impl State {
     ///
     /// This method queries the database to fetch the account state and processes the detail
     /// request to return only the requested information.
-    async fn fetch_account_proof_details(
+    async fn fetch_requested_account_details(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
@@ -1382,31 +1382,102 @@ impl State {
         let Some(account) = account_info.details else {
             return Err(DatabaseError::AccountNotPublic(account_id));
         };
+        let need_vault_from_account = asset_vault_commitment.is_some();
+        let need_full_storage_maps_from_account =
+            storage_requests.iter().any(|req| matches!(req.slot_data, SlotData::All));
 
-        // Determine if we need to deserialize the full account
-        // We need it if:
-        // - We need to return code and the commitment doesn't match
-        // - We need to return vault data and the commitment doesn't match or is missing
-        // - We need to return all entries for any storage slot
-        let need_full_account = code_commitment.is_some()
-            || asset_vault_commitment.is_some()
-            || storage_requests.iter().any(|req| matches!(req.slot_data, SlotData::All));
+        let need_full_account = need_vault_from_account && need_full_storage_maps_from_account;
 
         if need_full_account {
-            self.fetch_full_account_details(
-                account,
-                code_commitment,
-                asset_vault_commitment,
-                storage_requests,
-            )
+            // Inlined fetch_full_account_details
+            let storage_header = account.storage().to_header();
+            let mut storage_map_details =
+                Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
+
+            for StorageMapRequest { slot_index, slot_data } in storage_requests {
+                let Some(StorageSlot::Map(storage_map)) =
+                    account.storage().slots().get(slot_index as usize)
+                else {
+                    return Err(AccountError::StorageSlotNotMap(slot_index).into());
+                };
+                let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+                storage_map_details.push(details);
+            }
+
+            // Only include account code if the commitment doesn't match
+            let account_code = code_commitment
+                .filter(|commitment| *commitment != account.code().commitment())
+                .map(|_| account.code().to_bytes());
+
+            // Handle vault details based on the provided commitment
+            let vault_details = match asset_vault_commitment {
+                Some(commitment) if commitment == account.vault().root() => {
+                    AccountVaultDetails::empty()
+                },
+                Some(_) => AccountVaultDetails::new(account.vault()),
+                None => AccountVaultDetails::empty(),
+            };
+
+            let account_header = AccountHeader::from(&account);
+
+            Ok(AccountDetails {
+                account_header,
+                account_code,
+                vault_details,
+                storage_details: AccountStorageDetails {
+                    header: storage_header,
+                    map_details: storage_map_details,
+                },
+            })
         } else {
-            self.fetch_optimized_account_details(
-                account,
-                account_id,
-                block_num,
-                storage_requests,
-            )
-            .await
+            // Inlined fetch_optimized_account_details
+            let storage_header = account.storage().to_header();
+            let mut storage_map_details =
+                Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
+
+            for StorageMapRequest { slot_index, slot_data } in storage_requests {
+                let details = match slot_data {
+                    SlotData::MapKeys(keys) => {
+                        // Efficiently query specific keys from the DB
+                        let map_entries = self
+                            .db
+                            .select_storage_map_keys_at_block(
+                                account_id,
+                                block_num,
+                                slot_index,
+                                keys.clone(),
+                            )
+                            .await?;
+
+                        AccountStorageMapDetails::from_entries(slot_index, map_entries)
+                    },
+                    SlotData::All => {
+                        // This should not happen as we check for it in need_full_account
+                        return Err(DatabaseError::DataCorrupted(
+                            "SlotData::All should have been handled in need_full_account check"
+                                .to_string(),
+                        ));
+                    },
+                };
+                storage_map_details.push(details);
+            }
+
+            let account_header = AccountHeader::from(&account);
+
+            // Only include account code if the commitment doesn't match
+            let account_code = code_commitment
+                .filter(|commitment| *commitment != account.code().commitment())
+                .map(|_| account.code().to_bytes());
+
+            Ok(AccountDetails {
+                account_header,
+                account_code,
+                vault_details: AccountVaultDetails::empty(),
+                storage_details: AccountStorageDetails {
+                    header: storage_header,
+                    map_details: storage_map_details,
+                },
+            })
         }
     }
 
@@ -1419,13 +1490,14 @@ impl State {
         storage_requests: Vec<StorageMapRequest>,
     ) -> Result<AccountDetails, DatabaseError> {
         let storage_header = account.storage().to_header();
-        let storage_map_details = self.process_storage_map_requests_full(&account, storage_requests)?;
-        
+        let storage_map_details =
+            self.process_storage_map_requests_full(&account, storage_requests)?;
+
         // Only include account code if the commitment doesn't match
         let account_code = code_commitment
             .filter(|commitment| *commitment != account.code().commitment())
             .map(|_| account.code().to_bytes());
-        
+
         // Handle vault details based on the provided commitment
         let vault_details = match asset_vault_commitment {
             Some(commitment) if commitment == account.vault().root() => {
@@ -1434,7 +1506,7 @@ impl State {
             Some(_) => AccountVaultDetails::new(account.vault()),
             None => AccountVaultDetails::empty(),
         };
-        
+
         let account_header = AccountHeader::from(&account);
 
         Ok(AccountDetails {
@@ -1454,6 +1526,7 @@ impl State {
         account: miden_objects::account::Account,
         account_id: AccountId,
         block_num: BlockNumber,
+        code_commitment: Option<Word>,
         storage_requests: Vec<StorageMapRequest>,
     ) -> Result<AccountDetails, DatabaseError> {
         let storage_header = account.storage().to_header();
@@ -1462,9 +1535,14 @@ impl State {
             .await?;
         let account_header = AccountHeader::from(&account);
 
+        // Only include account code if the commitment doesn't match
+        let account_code = code_commitment
+            .filter(|commitment| *commitment != account.code().commitment())
+            .map(|_| account.code().to_bytes());
+
         Ok(AccountDetails {
             account_header,
-            account_code: None,
+            account_code,
             vault_details: AccountVaultDetails::empty(),
             storage_details: AccountStorageDetails {
                 header: storage_header,

@@ -28,7 +28,7 @@ use url::Url;
 use crate::errors::BuildBlockError;
 use crate::mempool::SharedMempool;
 use crate::store::StoreClient;
-use crate::validator::BlockProducerValidatorClient;
+use crate::validator::{BlockProducerValidatorClient, BodyDiff, HeaderDiff, ValidatorError};
 use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
@@ -240,7 +240,7 @@ impl BlockBuilder {
             .validator
             .sign_block(proposed_block.clone())
             .await
-            .map_err(BuildBlockError::ValidateBlockFailed)?;
+            .map_err(|err| BuildBlockError::ValidateBlockFailed(err.into()))?;
         let (expected_header, expected_body) = build_result
             .await
             .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
@@ -250,10 +250,20 @@ impl BlockBuilder {
         // proposed block.
         // TODO(sergerad): Update Eq implementation once signatures are part of the header.
         if header != expected_header {
-            return Err(BuildBlockError::ValidateBlockMismatch("header".into()));
+            let diff = HeaderDiff {
+                validator_header: header,
+                expected_header,
+            }
+            .into();
+            return Err(BuildBlockError::ValidateBlockFailed(
+                ValidatorError::HeaderMismatch(diff).into(),
+            ));
         }
         if body != expected_body {
-            return Err(BuildBlockError::ValidateBlockMismatch("body".into()));
+            let diff = BodyDiff { validator_body: body, expected_body }.into();
+            return Err(BuildBlockError::ValidateBlockFailed(
+                ValidatorError::BodyMismatch(diff).into(),
+            ));
         }
 
         let (ordered_batches, ..) = proposed_block.into_parts();

@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
 use miden_node_proto::generated as proto;
@@ -18,10 +20,53 @@ pub enum ValidatorError {
     Transport(#[from] tonic::Status),
     #[error("response content error: {0}")]
     ResponseContent(#[from] ConversionError),
-    #[error("Failed to convert header: {0}")]
+    #[error("failed to convert header: {0}")]
     HeaderConversion(String),
-    #[error("Failed to deserialize body: {0}")]
+    #[error("failed to deserialize body: {0}")]
     BodyDeserialization(String),
+    #[error("validator header does not match the request: {0}")]
+    HeaderMismatch(Box<HeaderDiff>),
+    #[error("validator body does not match the request: {0}")]
+    BodyMismatch(Box<BodyDiff>),
+}
+
+// VALIDATION DIFF TYPES
+// ================================================================================================
+
+/// Represents a difference between validator and expected block headers
+#[derive(Debug, Clone)]
+pub struct HeaderDiff {
+    pub validator_header: BlockHeader,
+    pub expected_header: BlockHeader,
+}
+
+impl Display for HeaderDiff {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Expected Header:")?;
+        writeln!(f, "{:?}", self.expected_header)?;
+        writeln!(f, "============================")?;
+        writeln!(f, "Validator Header:")?;
+        writeln!(f, "{:?}", self.validator_header)?;
+        Ok(())
+    }
+}
+
+/// Represents a difference between validator and expected block bodies
+#[derive(Debug, Clone)]
+pub struct BodyDiff {
+    pub validator_body: BlockBody,
+    pub expected_body: BlockBody,
+}
+
+impl Display for BodyDiff {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Expected Body:")?;
+        writeln!(f, "{:?}", self.expected_body)?;
+        writeln!(f, "============================")?;
+        writeln!(f, "Validator Body:")?;
+        writeln!(f, "{:?}", self.validator_body)?;
+        Ok(())
+    }
 }
 
 // VALIDATOR CLIENT

@@ -461,3 +461,49 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
         genesis_state.into_block().unwrap().inner().header().commitment(),
     )
 }
+
+#[tokio::test]
+async fn test_get_limits_endpoint() {
+    // Start the RPC and store
+    let (mut rpc_client, _rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
+
+    // Call the get_limits endpoint
+    let response = rpc_client.get_limits(()).await.expect("get_limits should succeed");
+    let limits = response.into_inner();
+
+    // Verify the response contains expected endpoints and limits
+    assert!(!limits.endpoints.is_empty(), "endpoints should not be empty");
+
+    // Verify CheckNullifiers endpoint
+    let check_nullifiers = limits.endpoints.get("CheckNullifiers").expect("CheckNullifiers should exist");
+    assert_eq!(
+        check_nullifiers.parameters.get("nullifier"),
+        Some(&1000),
+        "CheckNullifiers nullifier limit should be 1000"
+    );
+
+    // Verify SyncState endpoint has multiple parameters
+    let sync_state = limits.endpoints.get("SyncState").expect("SyncState should exist");
+    assert_eq!(
+        sync_state.parameters.get("account_id"),
+        Some(&1000),
+        "SyncState account_id limit should be 1000"
+    );
+    assert_eq!(
+        sync_state.parameters.get("note_tag"),
+        Some(&1000),
+        "SyncState note_tag limit should be 1000"
+    );
+
+    // Verify GetNotesById endpoint
+    let get_notes_by_id = limits.endpoints.get("GetNotesById").expect("GetNotesById should exist");
+    assert_eq!(
+        get_notes_by_id.parameters.get("note_id"),
+        Some(&1000),
+        "GetNotesById note_id limit should be 1000"
+    );
+
+    // Shutdown to avoid runtime drop error.
+    store_runtime.shutdown_background();
+}

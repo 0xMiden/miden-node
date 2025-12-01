@@ -612,6 +612,23 @@ impl api_server::Api for RpcService {
 
         self.store.clone().sync_transactions(request).await
     }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.get_limits",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_limits(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<proto::rpc::RpcLimits>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        Ok(Response::new(get_rpc_limits()))
+    }
 }
 
 // LIMIT HELPERS
@@ -626,4 +643,82 @@ fn out_of_range_error<E: core::fmt::Display>(err: E) -> Status {
 #[allow(clippy::result_large_err)]
 fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
     <Q as QueryParamLimiter>::check(n).map_err(out_of_range_error)
+}
+
+/// Returns all RPC query parameter limits
+fn get_rpc_limits() -> proto::rpc::RpcLimits {
+    use std::collections::HashMap;
+
+    let mut endpoints = HashMap::new();
+
+    // CheckNullifiers endpoint
+    let mut check_nullifiers_params = HashMap::new();
+    check_nullifiers_params.insert(
+        QueryParamNullifierLimit::PARAM_NAME.to_string(),
+        QueryParamNullifierLimit::LIMIT as u32,
+    );
+    endpoints.insert(
+        "CheckNullifiers".to_string(),
+        proto::rpc::EndpointLimits {
+            parameters: check_nullifiers_params,
+        },
+    );
+
+    // SyncNullifiers endpoint
+    let mut sync_nullifiers_params = HashMap::new();
+    sync_nullifiers_params.insert(
+        QueryParamNullifierLimit::PARAM_NAME.to_string(),
+        QueryParamNullifierLimit::LIMIT as u32,
+    );
+    endpoints.insert(
+        "SyncNullifiers".to_string(),
+        proto::rpc::EndpointLimits {
+            parameters: sync_nullifiers_params,
+        },
+    );
+
+    // SyncState endpoint
+    let mut sync_state_params = HashMap::new();
+    sync_state_params.insert(
+        QueryParamAccountIdLimit::PARAM_NAME.to_string(),
+        QueryParamAccountIdLimit::LIMIT as u32,
+    );
+    sync_state_params.insert(
+        QueryParamNoteTagLimit::PARAM_NAME.to_string(),
+        QueryParamNoteTagLimit::LIMIT as u32,
+    );
+    endpoints.insert(
+        "SyncState".to_string(),
+        proto::rpc::EndpointLimits {
+            parameters: sync_state_params,
+        },
+    );
+
+    // SyncNotes endpoint
+    let mut sync_notes_params = HashMap::new();
+    sync_notes_params.insert(
+        QueryParamNoteTagLimit::PARAM_NAME.to_string(),
+        QueryParamNoteTagLimit::LIMIT as u32,
+    );
+    endpoints.insert(
+        "SyncNotes".to_string(),
+        proto::rpc::EndpointLimits {
+            parameters: sync_notes_params,
+        },
+    );
+
+    // GetNotesById endpoint
+    let mut get_notes_by_id_params = HashMap::new();
+    get_notes_by_id_params.insert(
+        QueryParamNoteIdLimit::PARAM_NAME.to_string(),
+        QueryParamNoteIdLimit::LIMIT as u32,
+    );
+    endpoints.insert(
+        "GetNotesById".to_string(),
+        proto::rpc::EndpointLimits {
+            parameters: get_notes_by_id_params,
+        },
+    );
+
+    proto::rpc::RpcLimits { endpoints }
 }

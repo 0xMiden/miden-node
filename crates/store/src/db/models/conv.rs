@@ -36,6 +36,7 @@ use std::any::type_name;
 
 use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
 use miden_objects::Felt;
+use miden_objects::account::StorageSlotType;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 
@@ -113,6 +114,28 @@ impl SqlTypeConvert for NoteTag {
     #[inline(always)]
     fn to_raw_sql(self) -> Self::Raw {
         u32::from(self) as i32
+    }
+}
+
+impl SqlTypeConvert for StorageSlotType {
+    type Raw = i32;
+    type Error = DatabaseTypeConversionError;
+
+    #[inline(always)]
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+        match raw {
+            0 => Ok(StorageSlotType::Map),
+            1 => Ok(StorageSlotType::Value),
+            _ => Err(DatabaseTypeConversionError(type_name::<StorageSlotType>())),
+        }
+    }
+
+    #[inline(always)]
+    fn to_raw_sql(self) -> Self::Raw {
+        match self {
+            StorageSlotType::Map => 0,
+            StorageSlotType::Value => 1,
+        }
     }
 }
 

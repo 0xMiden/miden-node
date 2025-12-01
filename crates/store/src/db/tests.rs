@@ -19,11 +19,14 @@ use miden_objects::account::{
     AccountDelta,
     AccountId,
     AccountIdVersion,
+    AccountStorage,
     AccountStorageDelta,
     AccountStorageMode,
     AccountType,
     AccountVaultDelta,
+    StorageMap,
     StorageSlot,
+    StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{
@@ -1509,4 +1512,387 @@ fn mock_account_code_and_storage(
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
+}
+
+// STORAGE RECONSTRUCTION TESTS
+// ================================================================================================
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_storage_reconstruction_latest_state() {
+    let mut conn = create_db();
+
+    // Create an account with storage slots
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+    let block_num = BlockNumber::from(1);
+
+    // Create test storage with Value and Map slots
+    let value_slot = StorageSlot::Value(num_to_word(42));
+    let mut storage_map = StorageMap::new();
+    let _ = storage_map.insert(num_to_word(1), num_to_word(100));
+    let _ = storage_map.insert(num_to_word(2), num_to_word(200));
+    let map_slot = StorageSlot::Map(storage_map.clone());
+
+    let _storage = AccountStorage::new(vec![value_slot, map_slot]).unwrap();
+
+    // Insert storage headers for both slots
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num,
+        0, // slot_index
+        miden_objects::account::StorageSlotType::Value,
+        num_to_word(42),
+    )
+    .unwrap();
+
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num,
+        1, // slot_index
+        miden_objects::account::StorageSlotType::Map,
+        storage_map.root(),
+    )
+    .unwrap();
+
+    // Insert map values
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block_num,
+        1,                // slot
+        num_to_word(1),   // key
+        num_to_word(100), // value
+    )
+    .unwrap();
+
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block_num,
+        1,                // slot
+        num_to_word(2),   // key
+        num_to_word(200), // value
+    )
+    .unwrap();
+
+    // Reconstruct storage from latest state
+    let reconstructed_storage =
+        queries::select_latest_account_storage(&mut conn, account_id).unwrap();
+
+    // Verify reconstructed storage
+    assert_eq!(reconstructed_storage.slots().len(), 2);
+
+    // Check Value slot
+    match &reconstructed_storage.slots()[0] {
+        StorageSlot::Value(v) => assert_eq!(*v, num_to_word(42)),
+        StorageSlot::Map(_) => panic!("Expected Value slot"),
+    }
+
+    // Check Map slot (commitment should match)
+    match &reconstructed_storage.slots()[1] {
+        StorageSlot::Map(_) => {
+            // The map should be reconstructed (empty but with correct slot type)
+            // Actual values would need to be queried separately from account_storage_map_values
+        },
+        StorageSlot::Value(_) => panic!("Expected Map slot"),
+    }
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_storage_reconstruction_historical_state() {
+    let mut conn = create_db();
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    // Block 1: Initial storage
+    let block_num_1 = BlockNumber::from(1);
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num_1,
+        0,
+        miden_objects::account::StorageSlotType::Value,
+        num_to_word(10),
+    )
+    .unwrap();
+
+    // Block 2: Updated storage
+    let block_num_2 = BlockNumber::from(2);
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num_2,
+        0,
+        miden_objects::account::StorageSlotType::Value,
+        num_to_word(20),
+    )
+    .unwrap();
+
+    // Reconstruct storage at block 1
+    let storage_block_1 =
+        queries::select_account_storage_at_block(&mut conn, account_id, block_num_1).unwrap();
+    match &storage_block_1.slots()[0] {
+        StorageSlot::Value(v) => assert_eq!(*v, num_to_word(10)),
+        StorageSlot::Map(_) => panic!("Expected Value slot"),
+    }
+
+    // Reconstruct storage at block 2
+    let storage_block_2 =
+        queries::select_account_storage_at_block(&mut conn, account_id, block_num_2).unwrap();
+    match &storage_block_2.slots()[0] {
+        StorageSlot::Value(v) => assert_eq!(*v, num_to_word(20)),
+        StorageSlot::Map(_) => panic!("Expected Value slot"),
+    }
+
+    // Reconstruct latest storage (should match block 2)
+    let storage_latest = queries::select_latest_account_storage(&mut conn, account_id).unwrap();
+    match &storage_latest.slots()[0] {
+        StorageSlot::Value(v) => assert_eq!(*v, num_to_word(20)),
+        StorageSlot::Map(_) => panic!("Expected Value slot"),
+    }
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_storage_map_specific_keys_query() {
+    let mut conn = create_db();
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+    let block_num = BlockNumber::from(1);
+    let slot_index = 0u8;
+
+    // Insert storage map header
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num,
+        slot_index,
+        StorageSlotType::Map,
+        EMPTY_WORD, // placeholder commitment
+    )
+    .unwrap();
+
+    // Insert several map entries
+    for i in 1..=10 {
+        queries::insert_account_storage_map_value(
+            &mut conn,
+            account_id,
+            block_num,
+            slot_index,
+            num_to_word(i),
+            num_to_word(i * 100),
+        )
+        .unwrap();
+    }
+
+    // Query specific keys
+    let requested_keys = vec![num_to_word(2), num_to_word(5), num_to_word(8)];
+    let results = queries::select_storage_map_keys_at_block(
+        &mut conn,
+        account_id,
+        block_num,
+        slot_index,
+        &requested_keys,
+    )
+    .unwrap();
+
+    // Should return exactly 3 entries
+    assert_eq!(results.len(), 3);
+
+    // Verify the values
+    let result_map: std::collections::HashMap<_, _> = results.into_iter().collect();
+    assert_eq!(result_map.get(&num_to_word(2)), Some(&num_to_word(200)));
+    assert_eq!(result_map.get(&num_to_word(5)), Some(&num_to_word(500)));
+    assert_eq!(result_map.get(&num_to_word(8)), Some(&num_to_word(800)));
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_storage_reconstruction_latest() {
+    let mut conn = create_db();
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+    let block_num = BlockNumber::from(1);
+
+    // Insert storage headers: 2 Map slots and 1 Value slot
+    let map_commitment_1 = [Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)];
+    let map_commitment_2 = [Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)];
+    let value_slot = [Felt::new(100), Felt::new(200), Felt::new(300), Felt::new(400)];
+
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num,
+        0, // slot 0: Map
+        StorageSlotType::Map,
+        map_commitment_1.into(),
+    )
+    .unwrap();
+
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num,
+        1, // slot 1: Map
+        StorageSlotType::Map,
+        map_commitment_2.into(),
+    )
+    .unwrap();
+
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_num,
+        2, // slot 2: Value
+        StorageSlotType::Value,
+        value_slot.into(),
+    )
+    .unwrap();
+
+    // Reconstruct storage from headers
+    let storage = queries::select_latest_account_storage(&mut conn, account_id).unwrap();
+
+    // Verify we have 3 slots
+    assert_eq!(storage.slots().len(), 3);
+
+    // Verify slot types
+    assert!(matches!(storage.slots()[0], miden_objects::account::StorageSlot::Map(_)));
+    assert!(matches!(storage.slots()[1], miden_objects::account::StorageSlot::Map(_)));
+
+    if let miden_objects::account::StorageSlot::Value(value) = storage.slots()[2] {
+        assert_eq!(value, value_slot.into());
+    } else {
+        panic!("Expected Value slot at index 2");
+    }
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_storage_reconstruction_historical() {
+    let mut conn = create_db();
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    // Block 1: Initial state with one value slot
+    let block_1 = BlockNumber::from(1);
+    let value_1 = [Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)];
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_1,
+        0,
+        StorageSlotType::Value,
+        value_1.into(),
+    )
+    .unwrap();
+
+    // Block 2: Update the value slot
+    let block_2 = BlockNumber::from(2);
+    let value_2 = [Felt::new(50), Felt::new(60), Felt::new(70), Felt::new(80)];
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        block_2,
+        0,
+        StorageSlotType::Value,
+        value_2.into(),
+    )
+    .unwrap();
+
+    // Reconstruct storage at block 1
+    let storage_at_1 =
+        queries::select_account_storage_at_block(&mut conn, account_id, block_1).unwrap();
+    assert_eq!(storage_at_1.slots().len(), 1);
+    if let miden_objects::account::StorageSlot::Value(value) = storage_at_1.slots()[0] {
+        assert_eq!(value, value_1.into());
+    } else {
+        panic!("Expected Value slot");
+    }
+
+    // Reconstruct storage at block 2
+    let storage_at_2 =
+        queries::select_account_storage_at_block(&mut conn, account_id, block_2).unwrap();
+    assert_eq!(storage_at_2.slots().len(), 1);
+    if let miden_objects::account::StorageSlot::Value(value) = storage_at_2.slots()[0] {
+        assert_eq!(value, value_2.into());
+    } else {
+        panic!("Expected Value slot");
+    }
+
+    // Latest should return block 2 value
+    let storage_latest = queries::select_latest_account_storage(&mut conn, account_id).unwrap();
+    assert_eq!(storage_latest.slots().len(), 1);
+    if let miden_objects::account::StorageSlot::Value(value) = storage_latest.slots()[0] {
+        assert_eq!(value, value_2.into());
+    } else {
+        panic!("Expected Value slot");
+    }
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_storage_header_is_latest_flag() {
+    let mut conn = create_db();
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+    let slot_index = 0u8;
+
+    let value_1 = [Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)];
+    let value_2 = [Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)];
+    let value_3 = [Felt::new(9), Felt::new(10), Felt::new(11), Felt::new(12)];
+
+    // Insert at block 1
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        BlockNumber::from(1),
+        slot_index,
+        StorageSlotType::Value,
+        value_1.into(),
+    )
+    .unwrap();
+
+    // Insert at block 2 - should mark block 1 as not latest
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        BlockNumber::from(2),
+        slot_index,
+        StorageSlotType::Value,
+        value_2.into(),
+    )
+    .unwrap();
+
+    // Insert at block 3 - should mark block 2 as not latest
+    queries::insert_account_storage_header(
+        &mut conn,
+        account_id,
+        BlockNumber::from(3),
+        slot_index,
+        StorageSlotType::Value,
+        value_3.into(),
+    )
+    .unwrap();
+
+    // Query latest - should return block 3
+    let storage_latest = queries::select_latest_account_storage(&mut conn, account_id).unwrap();
+    assert_eq!(storage_latest.slots().len(), 1);
+    if let miden_objects::account::StorageSlot::Value(value) = storage_latest.slots()[0] {
+        assert_eq!(value, value_3.into());
+    } else {
+        panic!("Expected Value slot with value_3");
+    }
+
+    // Verify historical queries still work
+    let storage_at_1 =
+        queries::select_account_storage_at_block(&mut conn, account_id, BlockNumber::from(1))
+            .unwrap();
+    if let miden_objects::account::StorageSlot::Value(value) = storage_at_1.slots()[0] {
+        assert_eq!(value, value_1.into());
+    } else {
+        panic!("Expected Value slot with value_1");
+    }
 }

@@ -18,6 +18,7 @@ use miden_node_proto::domain::account::{
     AccountStorageMapDetails,
     AccountVaultDetails,
     NetworkAccountPrefix,
+    SlotData,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
@@ -212,7 +213,7 @@ impl State {
         }
 
         let block_num = header.block_num();
-        let block_commitment = block.header().commitment();
+        let block_commitment = header.commitment();
 
         // ensures the right block header is being processed
         let prev_block = self
@@ -261,7 +262,7 @@ impl State {
                 .body()
                 .created_nullifiers()
                 .iter()
-                .filter(|&n| inner.nullifier_tree.get_block_num(n).is_some())
+                .filter(|&nullifier| inner.nullifier_tree.get_block_num(nullifier).is_some())
                 .copied()
                 .collect();
             if !duplicate_nullifiers.is_empty() {
@@ -918,6 +919,23 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
+    /// Reconstructs account storage at a specific block
+    pub async fn get_account_storage_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<miden_objects::account::AccountStorage, DatabaseError> {
+        self.db.select_account_storage_at_block(account_id, block_num).await
+    }
+
+    /// Gets the latest account storage
+    pub async fn get_latest_account_storage(
+        &self,
+        account_id: AccountId,
+    ) -> Result<miden_objects::account::AccountStorage, DatabaseError> {
+        self.db.select_latest_account_storage(account_id).await
+    }
+
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
@@ -936,7 +954,7 @@ impl State {
         let (block_num, witness) = self.get_block_witness(block_num, account_id).await?;
 
         let details = if let Some(request) = details {
-            Some(self.fetch_public_account_details(account_id, block_num, request).await?)
+            Some(self.fetch_account_proof_details(account_id, block_num, request).await?)
         } else {
             None
         };
@@ -982,7 +1000,7 @@ impl State {
     ///
     /// This method queries the database to fetch the account state and processes the detail
     /// request to return only the requested information.
-    async fn fetch_public_account_details(
+    async fn fetch_account_proof_details(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,

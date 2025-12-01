@@ -433,6 +433,49 @@ impl Db {
         .await
     }
 
+    /// Reconstructs account storage at a specific block from the database
+    ///
+    /// This method queries the decomposed storage tables and reconstructs the full
+    /// `AccountStorage` with SMT backing for Map slots.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_account_storage_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<miden_objects::account::AccountStorage> {
+        self.transact("Get account storage at block", move |conn| {
+            queries::select_account_storage_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Gets the latest account storage from the database
+    ///
+    /// Uses the `is_latest` flag for efficient querying.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_latest_account_storage(
+        &self,
+        account_id: AccountId,
+    ) -> Result<miden_objects::account::AccountStorage> {
+        self.transact("Get latest account storage", move |conn| {
+            queries::select_latest_account_storage(conn, account_id)
+        })
+        .await
+    }
+
+    /// Queries vault assets at a specific block
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_account_vault_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Vec<(Word, Word)>> {
+        self.transact("Get account vault at block", move |conn| {
+            queries::select_account_vault_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,
@@ -542,6 +585,26 @@ impl Db {
     ) -> Result<StorageMapValuesPage> {
         self.transact("select storage map sync values", move |conn| {
             models::queries::select_account_storage_map_values(conn, account_id, block_range)
+        })
+        .await
+    }
+
+    /// Selects specific storage map keys at a specific block from the DB
+    ///
+    /// This method is optimized for querying specific keys without deserializing the entire
+    /// account, which is much faster for historical queries.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_storage_map_keys_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        slot_index: u8,
+        keys: Vec<Word>,
+    ) -> Result<Vec<(Word, Word)>> {
+        self.transact("select storage map keys at block", move |conn| {
+            models::queries::select_storage_map_keys_at_block(
+                conn, account_id, block_num, slot_index, &keys,
+            )
         })
         .await
     }

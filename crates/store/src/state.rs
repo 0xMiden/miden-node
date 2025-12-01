@@ -45,6 +45,7 @@ use miden_objects::crypto::merkle::{
     MmrPeaks,
     MmrProof,
     PartialMmr,
+    SmtForest,
     SmtProof,
     SmtStorage,
 };
@@ -130,6 +131,18 @@ pub struct State {
     /// To allow readers to access the tree data while an update in being performed, and prevent
     /// TOCTOU issues, there must be no concurrent writers. This locks to serialize the writers.
     writer: Mutex<()>,
+
+    /// `SmtForest` for efficient account storage reconstruction.
+    /// Populated during block import with storage and vault SMTs.
+    storage_forest: RwLock<SmtForest>,
+
+    /// Maps (`account_id`, `slot_index`, `block_num`) to SMT root.
+    /// Populated during block import for all storage map slots.
+    storage_roots: RwLock<BTreeMap<(AccountId, u8, BlockNumber), Word>>,
+
+    /// Maps (`account_id`, `block_num`) to vault SMT root.
+    /// Tracks asset vault versions across all blocks with structural sharing.
+    vault_roots: RwLock<BTreeMap<(AccountId, BlockNumber), Word>>,
 }
 
 impl State {
@@ -168,7 +181,23 @@ impl State {
         let writer = Mutex::new(());
         let db = Arc::new(db);
 
-        Ok(Self { db, block_store, inner, writer })
+        // Initialize empty SmtForest infrastructure.
+        // The forest will be populated incrementally as new blocks are imported.
+        // On startup, the forest is empty and queries will use database reconstruction.
+        // As blocks are applied, the forest will accumulate recent block data for fast queries.
+        let storage_forest = RwLock::new(SmtForest::new());
+        let storage_roots = RwLock::new(BTreeMap::new());
+        let vault_roots = RwLock::new(BTreeMap::new());
+
+        Ok(Self {
+            db,
+            block_store,
+            inner,
+            writer,
+            storage_forest,
+            storage_roots,
+            vault_roots,
+        })
     }
 
     /// Apply changes of a new block to the DB and in-memory data structures.
@@ -367,6 +396,16 @@ impl State {
         // Signals the write lock has been acquired, and the transaction can be committed
         let (inform_acquire_done, acquire_done) = oneshot::channel::<()>();
 
+        // Extract account IDs before block is moved into async task
+        // We'll need these later to populate the SmtForest
+        let updated_account_ids = Vec::<AccountId>::from_iter(
+            block
+                .body()
+                .updated_accounts()
+                .iter()
+                .map(miden_objects::block::BlockAccountUpdate::account_id),
+        );
+
         // The DB and in-memory state updates need to be synchronized and are partially
         // overlapping. Namely, the DB transaction only proceeds after this task acquires the
         // in-memory write lock. This requires the DB update to run concurrently, so a new task is
@@ -426,7 +465,324 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
+        // STEP 1: After successful DB commit, query updated accounts' storage and populate
+        // SmtForest
+        self.update_storage_forest_from_db(updated_account_ids, block_num).await?;
+
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
+
+        Ok(())
+    }
+
+    /// Updates `SmtForest` after a block is successfully applied
+    ///
+    /// STEP 1: Query updated accounts' full storage from DB after successful commit
+    ///
+    /// This is called after the DB transaction commits successfully, so we can safely
+    /// query the newly committed storage data.
+    #[allow(clippy::too_many_lines)] // Complex multi-step process (Steps 1-5)
+    async fn update_storage_forest_from_db(
+        &self,
+        account_ids: Vec<AccountId>,
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH};
+
+        if account_ids.is_empty() {
+            return Ok(());
+        }
+
+        tracing::debug!(
+            target: COMPONENT,
+            %block_num,
+            num_accounts = account_ids.len(),
+            "Querying account storage from DB to populate SmtForest"
+        );
+
+        // Query full storage for each updated account at this block
+        let mut account_storages = Vec::new();
+        for &account_id in &account_ids {
+            match self.db.select_account_storage_at_block(account_id, block_num).await {
+                Ok(storage) => {
+                    account_storages.push((account_id, storage));
+                },
+                Err(e) => {
+                    // Log error but don't fail the entire block application
+                    // Forest will be missing this account but DB queries still work
+                    tracing::warn!(
+                        target: COMPONENT,
+                        %account_id,
+                        %block_num,
+                        error = %e,
+                        "Failed to query account storage for SmtForest update"
+                    );
+                },
+            }
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_accounts = account_storages.len(),
+            "Successfully queried account storage from DB (Step 1 complete)"
+        );
+
+        // STEP 2: Extract Map slots and their entries from account_storages
+        let mut map_slots_to_populate = Vec::new();
+
+        for (account_id, storage) in &account_storages {
+            // Iterate through each slot in the account storage
+            for (slot_idx, slot) in storage.slots().iter().enumerate() {
+                let slot_idx_u8 = slot_idx as u8;
+
+                // Only process Map-type slots
+                if let miden_objects::account::StorageSlot::Map(storage_map) = slot {
+                    // Extract all (key, value) entries from this StorageMap
+                    let entries: Vec<_> = storage_map.entries().collect();
+
+                    tracing::debug!(
+                        target: COMPONENT,
+                        %account_id,
+                        slot_index = slot_idx_u8,
+                        num_entries = entries.len(),
+                        "Extracted Map slot entries"
+                    );
+
+                    map_slots_to_populate.push((*account_id, slot_idx_u8, entries));
+                }
+            }
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_map_slots = map_slots_to_populate.len(),
+            "Successfully extracted Map slots and entries (Step 2 complete)"
+        );
+
+        // STEP 3: Get previous roots from storage_roots or use empty root
+        let storage_roots = self.storage_roots.read().await;
+        let prev_block_num = if block_num.as_u32() > 0 {
+            BlockNumber::from(block_num.as_u32() - 1)
+        } else {
+            // Genesis block - no previous block
+            block_num
+        };
+
+        // For each map slot, get the previous root or use empty root
+        let mut slots_with_prev_roots = Vec::new();
+
+        for (account_id, slot_idx, entries) in map_slots_to_populate {
+            // Look up previous root for this (account_id, slot_idx, prev_block)
+            let prev_root = if block_num.as_u32() > 0 {
+                storage_roots
+                    .get(&(account_id, slot_idx, prev_block_num))
+                    .copied()
+                    .unwrap_or_else(|| {
+                        // No previous root found, use empty SMT root
+                        *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+                    })
+            } else {
+                // Genesis block - use empty root
+                *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+            };
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                slot_index = slot_idx,
+                "Retrieved previous root for slot"
+            );
+
+            slots_with_prev_roots.push((account_id, slot_idx, prev_root, entries));
+        }
+
+        drop(storage_roots); // Release read lock before write operations
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_slots = slots_with_prev_roots.len(),
+            "Successfully retrieved previous roots (Step 3 complete)"
+        );
+
+        // STEP 4: Use forest.insert(prev_root, key, value) to build new SMTs
+        let mut forest = self.storage_forest.write().await;
+        let mut new_roots = Vec::new();
+
+        for (account_id, slot_idx, prev_root, entries) in slots_with_prev_roots {
+            // Start with the previous root
+            let mut current_root = prev_root;
+
+            // Insert all entries into the forest to build the new SMT
+            for (key, value) in entries {
+                match forest.insert(current_root, *key, *value) {
+                    Ok(new_root) => {
+                        current_root = new_root;
+                    },
+                    Err(e) => {
+                        // Log error but continue with other slots
+                        tracing::error!(
+                            target: COMPONENT,
+                            %account_id,
+                            slot_index = slot_idx,
+                            error = ?e,
+                            "Failed to insert entry into SmtForest"
+                        );
+                        // Skip this slot by breaking out of entry loop
+                        break;
+                    },
+                }
+            }
+
+            // Store the final root after all insertions
+            new_roots.push((account_id, slot_idx, current_root));
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                slot_index = slot_idx,
+                "Built new SMT in forest"
+            );
+        }
+
+        drop(forest); // Release write lock before next write
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_new_roots = new_roots.len(),
+            "Successfully built new SMTs in forest (Step 4 complete)"
+        );
+
+        // STEP 5: Track new roots in storage_roots map
+        let mut storage_roots = self.storage_roots.write().await;
+
+        for (account_id, slot_idx, new_root) in new_roots {
+            // Insert the new root for this (account_id, slot_idx, block_num) triple
+            storage_roots.insert((account_id, slot_idx, block_num), new_root);
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                slot_index = slot_idx,
+                %block_num,
+                "Tracked new root in storage_roots map"
+            );
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            total_tracked_roots = storage_roots.len(),
+            "Successfully tracked new roots (Step 5 complete)"
+        );
+
+        // VAULT TRACKING: Track vault SMT roots for structural sharing
+        tracing::debug!(
+            target: COMPONENT,
+            %block_num,
+            "Starting vault tracking"
+        );
+
+        // Query vault assets for each updated account
+        let mut vault_entries_to_populate = Vec::new();
+
+        for &account_id in &account_ids {
+            match self.db.select_account_vault_at_block(account_id, block_num).await {
+                Ok(entries) if !entries.is_empty() => {
+                    vault_entries_to_populate.push((account_id, entries));
+                },
+                Ok(_) => {
+                    tracing::debug!(%account_id, "Account has empty vault");
+                },
+                Err(e) => {
+                    tracing::warn!(%account_id, error = %e, "Failed to query vault assets");
+                },
+            }
+        }
+
+        if vault_entries_to_populate.is_empty() {
+            tracing::debug!("No vaults to populate");
+            return Ok(());
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            num_vaults = vault_entries_to_populate.len(),
+            "Queried vault assets"
+        );
+
+        // Get previous vault roots
+        let vault_roots_read = self.vault_roots.read().await;
+        let prev_block_num = if block_num.as_u32() > 0 {
+            BlockNumber::from(block_num.as_u32() - 1)
+        } else {
+            block_num
+        };
+
+        let mut vaults_with_prev_roots = Vec::new();
+        for (account_id, entries) in vault_entries_to_populate {
+            let prev_root = if block_num.as_u32() > 0 {
+                vault_roots_read
+                    .get(&(account_id, prev_block_num))
+                    .copied()
+                    .unwrap_or_else(|| *EmptySubtreeRoots::entry(SMT_DEPTH, 0))
+            } else {
+                *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+            };
+
+            vaults_with_prev_roots.push((account_id, prev_root, entries));
+        }
+        drop(vault_roots_read);
+
+        // Build vault SMTs in forest
+        let mut forest = self.storage_forest.write().await;
+        let mut vault_new_roots = Vec::new();
+
+        for (account_id, prev_root, entries) in vaults_with_prev_roots {
+            let mut current_root = prev_root;
+
+            for (key, value) in entries {
+                match forest.insert(current_root, key, value) {
+                    Ok(new_root) => {
+                        current_root = new_root;
+                    },
+                    Err(e) => {
+                        tracing::error!(
+                            target: COMPONENT,
+                            %account_id,
+                            error = ?e,
+                            "Failed to insert vault entry into SmtForest"
+                        );
+                        break;
+                    },
+                }
+            }
+
+            vault_new_roots.push((account_id, current_root));
+        }
+        drop(forest);
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_vault_roots = vault_new_roots.len(),
+            "Built vault SMTs in forest"
+        );
+
+        // Track vault roots
+        let mut vault_roots = self.vault_roots.write().await;
+        for (account_id, new_root) in vault_new_roots {
+            vault_roots.insert((account_id, block_num), new_root);
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            total_vault_roots = vault_roots.len(),
+            "Successfully tracked vault roots (Vault tracking complete)"
+        );
 
         Ok(())
     }

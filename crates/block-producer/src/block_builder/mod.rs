@@ -28,7 +28,7 @@ use url::Url;
 use crate::errors::BuildBlockError;
 use crate::mempool::SharedMempool;
 use crate::store::StoreClient;
-use crate::validator::BlockProducerValidatorClient;
+use crate::validator::{BlockProducerValidatorClient, ValidateBlockResponse};
 use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
@@ -231,35 +231,33 @@ impl BlockBuilder {
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
     ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
-        // Request validation concurrently to building the block ourselves.
-        let (validator_result, build_result) = tokio::join!(
-            // Send request to validator.
-            self.validator.validate_block(proposed_block.clone()),
-            // Build the block ourselves.
-            tokio::task::spawn_blocking({
-                let proposed_block = proposed_block.clone();
-                move || build_block(proposed_block)
-            })
-        );
-
-        // Handle the results.
-        let response = validator_result.map_err(BuildBlockError::ValidateBlockFailed)?;
-        let (header, body) = build_result
+        // Concurrently build the block and validate it via the validator.
+        let build_result = tokio::task::spawn_blocking({
+            let proposed_block = proposed_block.clone();
+            move || build_block(proposed_block)
+        });
+        let ValidateBlockResponse { header, body } = self
+            .validator
+            .validate_block(proposed_block.clone())
+            .await
+            .map_err(BuildBlockError::ValidateBlockFailed)?;
+        let (expected_header, expected_body) = build_result
+            .await
             .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
             .map_err(BuildBlockError::ProposeBlockFailed)?;
 
         // Check that the header and body returned from the validator is consistent with the
         // proposed block.
         // TODO(sergerad): Update Eq implementation once signatures are part of the header.
-        if response.header != header {
+        if header != expected_header {
             return Err(BuildBlockError::ValidateBlockMismatch("header".into()));
         }
-        if response.body != body {
+        if body != expected_body {
             return Err(BuildBlockError::ValidateBlockMismatch("body".into()));
         }
 
         let (ordered_batches, ..) = proposed_block.into_parts();
-        Ok((ordered_batches, block_inputs, response.header, response.body))
+        Ok((ordered_batches, block_inputs, header, body))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]

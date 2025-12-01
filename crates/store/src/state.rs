@@ -354,7 +354,14 @@ impl State {
         };
 
         // build note tree
-        let note_tree = block.body().compute_block_note_tree();
+        let note_tree_entries: Vec<_> = block
+            .body()
+            .output_notes()
+            .map(|(note_index, note)| (note_index, note.id(), *note.metadata()))
+            .collect();
+        let note_tree =
+            miden_objects::block::BlockNoteTree::with_entries(note_tree_entries.iter().copied())
+                .map_err(|e| InvalidBlockError::FailedToBuildNoteTree(e.to_string()))?;
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
         }

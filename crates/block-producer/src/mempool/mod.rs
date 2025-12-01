@@ -69,6 +69,9 @@ mod subscription;
 #[cfg(test)]
 mod tests;
 
+// MEMPOOL CONFIGURATION
+// ================================================================================================
+
 #[derive(Clone)]
 pub struct SharedMempool(Arc<Mutex<Mempool>>);
 
@@ -112,12 +115,18 @@ impl Default for MempoolConfig {
     }
 }
 
+// SHARED MEMPOOL
+// ================================================================================================
+
 impl SharedMempool {
     #[instrument(target = COMPONENT, name = "mempool.lock", skip_all)]
     pub async fn lock(&self) -> MutexGuard<'_, Mempool> {
         self.0.lock().await
     }
 }
+
+// MEMPOOL
+// ================================================================================================
 
 #[derive(Clone, Debug)]
 pub struct Mempool {
@@ -142,6 +151,9 @@ impl PartialEq for Mempool {
 }
 
 impl Mempool {
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a new [`SharedMempool`] with the provided configuration.
     pub fn shared(chain_tip: BlockNumber, config: MempoolConfig) -> SharedMempool {
         SharedMempool(Arc::new(Mutex::new(Self::new(chain_tip, config))))
@@ -156,6 +168,9 @@ impl Mempool {
             nodes: nodes::Nodes::default(),
         }
     }
+
+    // TRANSACTION & BATCH LIFECYCLE
+    // --------------------------------------------------------------------------------------------
 
     /// Adds a transaction to the mempool.
     ///
@@ -537,6 +552,9 @@ impl Mempool {
         self.inject_telemetry();
     }
 
+    // EVENTS & SUBSCRIPTIONS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.
     ///
     /// Only emits events which occurred after the current committed block.
@@ -553,6 +571,9 @@ impl Mempool {
         self.subscription.subscribe(chain_tip)
     }
 
+    // STATS & INSPECTION
+    // --------------------------------------------------------------------------------------------
+
     /// Returns the number of transactions currently waiting to be batched.
     pub fn unbatched_transactions_count(&self) -> usize {
         self.nodes.txs.len()
@@ -567,6 +588,9 @@ impl Mempool {
     pub fn proven_batches_count(&self) -> usize {
         self.nodes.proven_batches.len()
     }
+
+    // INTERNAL HELPERS
+    // --------------------------------------------------------------------------------------------
 
     /// Adds mempool stats to the current tracing span.
     ///

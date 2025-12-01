@@ -9,7 +9,7 @@ mod block_builder;
 mod domain;
 mod mempool;
 pub mod store;
-pub mod validator;
+mod validator;
 
 #[cfg(feature = "testing")]
 pub mod errors;

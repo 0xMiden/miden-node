@@ -15,6 +15,7 @@ BUILD_PROTO=BUILD_PROTO=1
 clippy: ## Runs Clippy with configs
 	cargo clippy --locked --all-targets --all-features --workspace -- -D warnings
 	cargo clippy --locked --all-targets --all-features -p miden-remote-prover -- -D warnings
+	cargo clippy --locked -p miden-remote-prover-client --target wasm32-unknown-unknown --no-default-features --features batch-prover,block-prover,tx-prover -- -D warnings
 
 
 .PHONY: fix
@@ -90,7 +91,7 @@ check: ## Check all targets and features for errors without code generation
 .PHONY: build
 build: ## Builds all crates and re-builds protobuf bindings for proto crates
 	${BUILD_PROTO} cargo build --locked --workspace
-	${BUILD_PROTO} cargo build --locked -p miden-remote-prover-client --target wasm32-unknown-unknown --no-default-features  # no-std compatible build
+	${BUILD_PROTO} cargo build --locked -p miden-remote-prover-client --target wasm32-unknown-unknown --no-default-features --features batch-prover,block-prover,tx-prover # no-std compatible build
 
 # --- installing ----------------------------------------------------------------------------------
 

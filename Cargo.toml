@@ -73,8 +73,10 @@ indexmap           = { version = "2.12" }
 itertools          = { version = "0.14" }
 lru                = { default-features = false, version = "0.16" }
 pretty_assertions  = { version = "1.4" }
-prost              = { version = "0.14" }
-protox             = { version = "0.9" }
+# breaking change `DecodeError::new` is not exposed anymore
+# but is assumed public by some internal dependency
+prost              = { version = "=0.14.1" }
+protox             = { version = "=0.9.0" }
 rand               = { version = "0.9" }
 rand_chacha        = { version = "0.9" }
 rstest             = { version = "0.26" }

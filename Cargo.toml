@@ -60,19 +60,19 @@ miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/mid
 miden-air = { features = ["std", "testing"], version = "0.19" }
 
 # External dependencies
-anyhow             = { version = "1.0" }
-assert_matches     = { version = "1.5" }
-async-trait        = { version = "0.1" }
-clap               = { features = ["derive"], version = "4.5" }
-fs-err             = { version = "3" }
-futures            = { version = "0.3" }
-hex                = { version = "0.4" }
-http               = { version = "1.3" }
-humantime          = { version = "2.2" }
-indexmap           = { version = "2.12" }
-itertools          = { version = "0.14" }
-lru                = { default-features = false, version = "0.16" }
-pretty_assertions  = { version = "1.4" }
+anyhow            = { version = "1.0" }
+assert_matches    = { version = "1.5" }
+async-trait       = { version = "0.1" }
+clap              = { features = ["derive"], version = "4.5" }
+fs-err            = { version = "3" }
+futures           = { version = "0.3" }
+hex               = { version = "0.4" }
+http              = { version = "1.3" }
+humantime         = { version = "2.2" }
+indexmap          = { version = "2.12" }
+itertools         = { version = "0.14" }
+lru               = { default-features = false, version = "0.16" }
+pretty_assertions = { version = "1.4" }
 # breaking change `DecodeError::new` is not exposed anymore
 # but is assumed public by some internal dependency
 prost              = { version = "=0.14.1" }

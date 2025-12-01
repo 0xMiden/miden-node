@@ -261,12 +261,12 @@ impl DataStore for MonitorDataStore {
         unimplemented!("Not needed")
     }
 
-    async fn get_vault_asset_witness(
+    async fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: AssetVaultKey,
-    ) -> Result<AssetWitness, DataStoreError> {
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> Result<Vec<AssetWitness>, DataStoreError> {
         let account = self.get_account(account_id)?;
 
         if account.vault().root() != vault_root {
@@ -276,12 +276,14 @@ impl DataStore for MonitorDataStore {
             });
         }
 
-        AssetWitness::new(account.vault().open(vault_key).into()).map_err(|err| {
-            DataStoreError::Other {
-                error_msg: "failed to open vault asset tree".into(),
-                source: Some(Box::new(err)),
-            }
-        })
+        Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+            AssetWitness::new(account.vault().open(vault_key).into()).map_err(|err| {
+                DataStoreError::Other {
+                    error_msg: "failed to open vault asset tree".into(),
+                    source: Some(Box::new(err)),
+                }
+            })
+        }))
     }
 
     async fn get_note_script(

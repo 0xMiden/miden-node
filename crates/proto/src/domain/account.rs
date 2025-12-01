@@ -472,6 +472,23 @@ impl AccountStorageMapDetails {
         }
     }
 
+    /// Creates an AccountStorageMapDetails from already-queried entries (e.g., from database).
+    /// This is useful when entries have been fetched directly rather than extracted from a StorageMap.
+    pub fn from_entries(slot_index: u8, map_entries: Vec<(Word, Word)>) -> Self {
+        let too_many_entries = map_entries.len() > Self::MAX_RETURN_ENTRIES;
+        let map_entries = if too_many_entries {
+            Vec::new()
+        } else {
+            map_entries
+        };
+
+        Self {
+            slot_index,
+            too_many_entries,
+            map_entries,
+        }
+    }
+
     pub fn too_many_entries(slot_index: u8) -> Self {
         Self {
             slot_index,

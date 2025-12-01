@@ -1375,16 +1375,110 @@ impl State {
             storage_requests,
         } = detail_request;
 
+        // First, get the account summary without deserializing the full account
         let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
 
-        // If we get a query for a public account but the details are missing from the database,
-        // it indicates an inconsistent state in the database.
+        // Ensure we have account details (only available for public accounts)
         let Some(account) = account_info.details else {
-            return Err(DatabaseError::AccountDetailsMissing(account_id));
+            return Err(DatabaseError::AccountNotPublic(account_id));
         };
 
-        let storage_header = account.storage().to_header();
+        // Determine if we need to deserialize the full account
+        // We need it if:
+        // - We need to return code and the commitment doesn't match
+        // - We need to return vault data and the commitment doesn't match or is missing
+        // - We need to return all entries for any storage slot
+        let need_full_account = code_commitment.is_some()
+            || asset_vault_commitment.is_some()
+            || storage_requests.iter().any(|req| matches!(req.slot_data, SlotData::All));
 
+        if need_full_account {
+            self.fetch_full_account_details(
+                account,
+                code_commitment,
+                asset_vault_commitment,
+                storage_requests,
+            )
+        } else {
+            self.fetch_optimized_account_details(
+                account,
+                account_id,
+                block_num,
+                storage_requests,
+            )
+            .await
+        }
+    }
+
+    /// Fetches full account details when full deserialization is required
+    fn fetch_full_account_details(
+        &self,
+        account: miden_objects::account::Account,
+        code_commitment: Option<Word>,
+        asset_vault_commitment: Option<Word>,
+        storage_requests: Vec<StorageMapRequest>,
+    ) -> Result<AccountDetails, DatabaseError> {
+        let storage_header = account.storage().to_header();
+        let storage_map_details = self.process_storage_map_requests_full(&account, storage_requests)?;
+        
+        // Only include account code if the commitment doesn't match
+        let account_code = code_commitment
+            .filter(|commitment| *commitment != account.code().commitment())
+            .map(|_| account.code().to_bytes());
+        
+        // Handle vault details based on the provided commitment
+        let vault_details = match asset_vault_commitment {
+            Some(commitment) if commitment == account.vault().root() => {
+                AccountVaultDetails::empty()
+            },
+            Some(_) => AccountVaultDetails::new(account.vault()),
+            None => AccountVaultDetails::empty(),
+        };
+        
+        let account_header = AccountHeader::from(&account);
+
+        Ok(AccountDetails {
+            account_header,
+            account_code,
+            vault_details,
+            storage_details: AccountStorageDetails {
+                header: storage_header,
+                map_details: storage_map_details,
+            },
+        })
+    }
+
+    /// Fetches optimized account details by querying specific keys from DB
+    async fn fetch_optimized_account_details(
+        &self,
+        account: miden_objects::account::Account,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        storage_requests: Vec<StorageMapRequest>,
+    ) -> Result<AccountDetails, DatabaseError> {
+        let storage_header = account.storage().to_header();
+        let storage_map_details = self
+            .process_storage_map_requests_optimized(account_id, block_num, storage_requests)
+            .await?;
+        let account_header = AccountHeader::from(&account);
+
+        Ok(AccountDetails {
+            account_header,
+            account_code: None,
+            vault_details: AccountVaultDetails::empty(),
+            storage_details: AccountStorageDetails {
+                header: storage_header,
+                map_details: storage_map_details,
+            },
+        })
+    }
+
+    /// Processes storage map requests using full account data
+    fn process_storage_map_requests_full(
+        &self,
+        account: &miden_objects::account::Account,
+        storage_requests: Vec<StorageMapRequest>,
+    ) -> Result<Vec<AccountStorageMapDetails>, DatabaseError> {
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
@@ -1398,45 +1492,47 @@ impl State {
             storage_map_details.push(details);
         }
 
-        // Only include unknown account code blobs, which is equal to a account code digest
-        // mismatch. If `None` was requested, don't return any.
-        let account_code = code_commitment
-            .is_some_and(|code_commitment| code_commitment != account.code().commitment())
-            .then(|| account.code().to_bytes());
+        Ok(storage_map_details)
+    }
 
-        // storage details
-        let storage_details = AccountStorageDetails {
-            header: storage_header,
-            map_details: storage_map_details,
-        };
+    /// Processes storage map requests by querying DB for specific keys
+    async fn process_storage_map_requests_optimized(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        storage_requests: Vec<StorageMapRequest>,
+    ) -> Result<Vec<AccountStorageMapDetails>, DatabaseError> {
+        let mut storage_map_details =
+            Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
-        // Handle vault details based on the `asset_vault_commitment`.
-        // Similar to `code_commitment`, if the provided commitment matches, we don't return
-        // vault data. If no commitment is provided or it doesn't match, we return
-        // the vault data. If the number of vault contained assets are exceeding a
-        // limit, we signal this back in the response and the user must handle that
-        // in follow-up request.
-        let vault_details = match asset_vault_commitment {
-            Some(commitment) if commitment == account.vault().root() => {
-                // The client already has the correct vault data
-                AccountVaultDetails::empty()
-            },
-            Some(_) => {
-                // The commitment doesn't match, so return vault data
-                AccountVaultDetails::new(account.vault())
-            },
-            None => {
-                // No commitment provided, so don't return vault data
-                AccountVaultDetails::empty()
-            },
-        };
+        for StorageMapRequest { slot_index, slot_data } in storage_requests {
+            let details = match slot_data {
+                SlotData::MapKeys(keys) => {
+                    // Efficiently query specific keys from the DB
+                    let map_entries = self
+                        .db
+                        .select_storage_map_keys_at_block(
+                            account_id,
+                            block_num,
+                            slot_index,
+                            keys.clone(),
+                        )
+                        .await?;
 
-        Ok(AccountDetails {
-            account_header: AccountHeader::from(account),
-            account_code,
-            vault_details,
-            storage_details,
-        })
+                    AccountStorageMapDetails::from_entries(slot_index, map_entries)
+                },
+                SlotData::All => {
+                    // This should not happen as we check for it in need_full_account
+                    return Err(DatabaseError::DataCorrupted(
+                        "SlotData::All should have been handled in need_full_account check"
+                            .to_string(),
+                    ));
+                },
+            };
+            storage_map_details.push(details);
+        }
+
+        Ok(storage_map_details)
     }
 
     /// Returns storage map values for syncing within a block range.

@@ -1,6 +1,8 @@
 //! Task management for the network monitor.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -16,7 +18,7 @@ use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::counter::run_ntx_service_task;
+use crate::counter::{run_counter_tracking_task, run_increment_task};
 use crate::deploy::ensure_accounts_exist;
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
@@ -212,7 +214,7 @@ impl Tasks {
                 success_count: 0,
                 failure_count: 0,
                 last_tx_id: None,
-                challenge_difficulty: None,
+                faucet_metadata: None,
             }),
         };
 
@@ -234,48 +236,79 @@ impl Tasks {
         faucet_rx
     }
 
-    /// Spawn the network transaction service checker task.
+    /// Spawn the network transaction service checker tasks (increment and tracking).
     #[instrument(target = COMPONENT, name = "tasks.spawn-ntx-service", skip_all)]
     pub async fn spawn_ntx_service(
         &mut self,
         config: &MonitorConfig,
-    ) -> Result<Receiver<ServiceStatus>> {
+    ) -> Result<(Receiver<ServiceStatus>, Receiver<ServiceStatus>)> {
         // Ensure accounts exist before starting monitoring tasks
         ensure_accounts_exist(&config.wallet_filepath, &config.counter_filepath, &config.rpc_url)
             .await?;
 
         let current_time = current_unix_timestamp_secs();
 
-        // Create initial counter increment status
-        let initial_ntx_service_status = ServiceStatus {
-            name: "Network Transactions".to_string(),
+        // Create shared atomic counter for tracking expected counter value
+        let expected_counter_value = Arc::new(AtomicU64::new(0));
+
+        // Create initial increment status
+        let initial_increment_status = ServiceStatus {
+            name: "Counter Increment".to_string(),
             status: crate::status::Status::Unknown,
             last_checked: current_time,
             error: None,
-            details: crate::status::ServiceDetails::NtxService(
-                crate::counter::CounterIncrementDetails {
-                    success_count: 0,
-                    failure_count: 0,
+            details: crate::status::ServiceDetails::NtxIncrement(crate::status::IncrementDetails {
+                success_count: 0,
+                failure_count: 0,
+                last_tx_id: None,
+            }),
+        };
+
+        // Create initial tracking status
+        let initial_tracking_status = ServiceStatus {
+            name: "Counter Tracking".to_string(),
+            status: crate::status::Status::Unknown,
+            last_checked: current_time,
+            error: None,
+            details: crate::status::ServiceDetails::NtxTracking(
+                crate::status::CounterTrackingDetails {
                     current_value: None,
-                    last_tx_id: None,
+                    expected_value: None,
+                    last_updated: None,
+                    pending_increments: None,
                 },
             ),
         };
 
-        // Spawn the network transaction service task
-        let (ntx_service_tx, ntx_service_rx) = watch::channel(initial_ntx_service_status);
-        let config = config.clone();
-        let id = self
+        // Spawn the increment task
+        let (increment_tx, increment_rx) = watch::channel(initial_increment_status);
+        let config_clone = config.clone();
+        let counter_clone = Arc::clone(&expected_counter_value);
+        let increment_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_ntx_service_task(config, ntx_service_tx))
+                Box::pin(run_increment_task(config_clone, increment_tx, counter_clone))
                     .await
-                    .expect("Network transaction service runs indefinitely");
+                    .expect("Counter increment task runs indefinitely");
             })
             .id();
-        self.names.insert(id, "ntx-service".to_string());
+        self.names.insert(increment_id, "counter-increment".to_string());
 
-        Ok(ntx_service_rx)
+        // Spawn the tracking task
+        let (tracking_tx, tracking_rx) = watch::channel(initial_tracking_status);
+        let config_clone = config.clone();
+        let counter_clone = Arc::clone(&expected_counter_value);
+        let tracking_id = self
+            .handles
+            .spawn(async move {
+                Box::pin(run_counter_tracking_task(config_clone, tracking_tx, counter_clone))
+                    .await
+                    .expect("Counter tracking task runs indefinitely");
+            })
+            .id();
+        self.names.insert(tracking_id, "counter-tracking".to_string());
+
+        Ok((increment_rx, tracking_rx))
     }
 
     /// Spawn the HTTP frontend server.

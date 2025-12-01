@@ -95,7 +95,7 @@ struct InnerState<S = MemoryStorage>
 where
     S: SmtStorage,
 {
-    nullifier_tree: NullifierTree,
+    nullifier_tree: NullifierTree<LargeSmt<S>>,
     blockchain: Blockchain,
     account_tree: AccountTreeWithHistory<S>,
 }
@@ -1141,10 +1141,16 @@ impl State {
 // ================================================================================================
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitializationError> {
+async fn load_nullifier_tree(
+    db: &mut Db,
+) -> Result<NullifierTree<LargeSmt<MemoryStorage>>, StateInitializationError> {
     let nullifiers = db.select_all_nullifiers().await?;
 
-    NullifierTree::with_entries(nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)))
+    // Convert nullifier data to entries for NullifierTree
+    // The nullifier value format is: block_num
+    let entries = nullifiers.into_iter().map(|info| (info.nullifier, info.block_num));
+
+    NullifierTree::with_storage_from_entries(MemoryStorage::default(), entries)
         .map_err(StateInitializationError::FailedToCreateNullifierTree)
 }
 

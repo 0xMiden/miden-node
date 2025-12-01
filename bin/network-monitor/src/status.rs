@@ -20,7 +20,6 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, instrument};
 use url::Url;
 
-use crate::counter::CounterIncrementDetails;
 use crate::faucet::FaucetTestDetails;
 use crate::remote_prover::{ProofType, ProverTestDetails};
 use crate::{COMPONENT, current_unix_timestamp_secs};
@@ -72,6 +71,30 @@ pub struct ServiceStatus {
     pub details: ServiceDetails,
 }
 
+/// Details of the increment service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IncrementDetails {
+    /// Number of successful counter increments.
+    pub success_count: u64,
+    /// Number of failed counter increments.
+    pub failure_count: u64,
+    /// Last transaction ID (if available).
+    pub last_tx_id: Option<String>,
+}
+
+/// Details of the counter tracking service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CounterTrackingDetails {
+    /// Current counter value observed on-chain (if available).
+    pub current_value: Option<u64>,
+    /// Expected counter value based on successful increments sent.
+    pub expected_value: Option<u64>,
+    /// Last time the counter value was successfully updated.
+    pub last_updated: Option<u64>,
+    /// Number of pending increments (expected - current).
+    pub pending_increments: Option<u64>,
+}
+
 /// Details of a service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServiceDetails {
@@ -79,7 +102,8 @@ pub enum ServiceDetails {
     RemoteProverStatus(RemoteProverStatusDetails),
     RemoteProverTest(ProverTestDetails),
     FaucetTest(FaucetTestDetails),
-    NtxService(CounterIncrementDetails),
+    NtxIncrement(IncrementDetails),
+    NtxTracking(CounterTrackingDetails),
     Error,
 }
 

@@ -46,11 +46,12 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         None
     };
 
-    // Initialize the counter increment task only if enabled.
-    let ntx_service_rx = if config.disable_ntx_service {
-        None
+    // Initialize the counter increment and tracking tasks only if enabled.
+    let (ntx_increment_rx, ntx_tracking_rx) = if config.disable_ntx_service {
+        (None, None)
     } else {
-        Some(tasks.spawn_ntx_service(&config).await?)
+        let (increment_rx, tracking_rx) = tasks.spawn_ntx_service(&config).await?;
+        (Some(increment_rx), Some(tracking_rx))
     };
 
     // Initialize HTTP server.
@@ -58,7 +59,8 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         rpc: rpc_rx,
         provers: prover_rxs,
         faucet: faucet_rx,
-        ntx_service: ntx_service_rx,
+        ntx_increment: ntx_increment_rx,
+        ntx_tracking: ntx_tracking_rx,
     };
     tasks.spawn_http_server(server_state, &config);
 

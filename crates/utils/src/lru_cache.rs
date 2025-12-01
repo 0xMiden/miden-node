@@ -22,13 +22,11 @@ where
 
     /// Retrieves a value from the cache.
     pub async fn get(&self, key: &K) -> Option<V> {
-        let mut cache_guard = self.0.lock().await;
-        cache_guard.get(key).cloned()
+        self.0.lock().await.get(key).cloned()
     }
 
     /// Puts a value into the cache.
     pub async fn put(&mut self, key: K, value: V) {
-        let mut cache_guard = self.0.lock().await;
-        cache_guard.put(key, value);
+        self.0.lock().await.put(key, value);
     }
 }

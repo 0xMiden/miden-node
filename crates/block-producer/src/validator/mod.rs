@@ -70,11 +70,11 @@ impl BlockProducerValidatorClient {
             proposed_block: proposed_block.to_bytes(),
         };
         let request = tonic::Request::new(message);
-        let response = self.client.clone().validate_block(request).await?;
-        let response = response.into_inner();
+        let response = self.client.clone().sign_block(request).await?;
+        let signed_block = response.into_inner();
 
         // Extract header from response.
-        let header_proto = response
+        let header_proto = signed_block
             .header
             .ok_or(miden_node_proto::generated::blockchain::BlockHeader::missing_field("header"))
             .map_err(ValidatorError::ResponseContent)?;
@@ -82,7 +82,7 @@ impl BlockProducerValidatorClient {
             .map_err(|err| ValidatorError::HeaderConversion(err.to_string()))?;
 
         // Extract body from response.
-        let body_proto = response
+        let body_proto = signed_block
             .body
             .ok_or(miden_node_proto::generated::blockchain::BlockBody::missing_field("body"))
             .map_err(ValidatorError::ResponseContent)?;

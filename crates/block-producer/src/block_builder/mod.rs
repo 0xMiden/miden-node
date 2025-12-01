@@ -28,7 +28,7 @@ use url::Url;
 use crate::errors::BuildBlockError;
 use crate::mempool::SharedMempool;
 use crate::store::StoreClient;
-use crate::validator::{BlockProducerValidatorClient, ValidateBlockResponse};
+use crate::validator::BlockProducerValidatorClient;
 use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
@@ -236,7 +236,7 @@ impl BlockBuilder {
             let proposed_block = proposed_block.clone();
             move || build_block(proposed_block)
         });
-        let ValidateBlockResponse { header, body } = self
+        let (header, body) = self
             .validator
             .validate_block(proposed_block.clone())
             .await

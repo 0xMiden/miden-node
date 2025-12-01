@@ -24,15 +24,6 @@ pub enum ValidatorError {
     BodyDeserialization(String),
 }
 
-// VALIDATE BLOCK RESPONSE
-// ================================================================================================
-
-#[derive(Debug, Clone)]
-pub struct ValidateBlockResponse {
-    pub header: BlockHeader,
-    pub body: BlockBody,
-}
-
 // VALIDATOR CLIENT
 // ================================================================================================
 
@@ -64,7 +55,7 @@ impl BlockProducerValidatorClient {
     pub async fn validate_block(
         &self,
         proposed_block: ProposedBlock,
-    ) -> Result<ValidateBlockResponse, ValidatorError> {
+    ) -> Result<(BlockHeader, BlockBody), ValidatorError> {
         // Send request and receive response.
         let message = proto::blockchain::ProposedBlock {
             proposed_block: proposed_block.to_bytes(),
@@ -89,6 +80,6 @@ impl BlockProducerValidatorClient {
         let body = BlockBody::read_from_bytes(&body_proto.block_body)
             .map_err(|err| ValidatorError::BodyDeserialization(err.to_string()))?;
 
-        Ok(ValidateBlockResponse { header, body })
+        Ok((header, body))
     }
 }

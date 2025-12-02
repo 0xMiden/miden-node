@@ -1,10 +1,32 @@
-# ZERO-REGEX VERSION — works on BusyBox, mawk, gawk, POSIX awk
+# ZERO-REGEX VERSION — supports list-like comment lines:
+#   * bullet points
+#   - dashes
+#   1. numbered lists
+#   1) numbered lists
+#
+# These lines break merge groups and are printed verbatim.
 
-# Helper: trim leading spaces
 function ltrim(s) {
     while (substr(s,1,1) == " " || substr(s,1,1) == "\t")
         s = substr(s,2)
     return s
+}
+
+function is_numbered_list(s,    i, c) {
+    # returns 1 if s begins with digits then '.' or ')'
+    found_digit = 0
+    for (i=1; i<=length(s); i++) {
+        c = substr(s,i,1)
+        if (c >= "0" && c <= "9") {
+            found_digit = 1
+            continue
+        }
+        # if first non-digit is . or ) and we saw a digit
+        if (found_digit && (c == "." || c == ")"))
+            return 1
+        return 0
+    }
+    return 0
 }
 
 {
@@ -20,7 +42,7 @@ function ltrim(s) {
     else
         type = "none"
 
-    # ---------- Handle comment lines ----------
+    # ---------- COMMENT LINES ----------
     if (type != "none") {
 
         # Determine prefix
@@ -31,42 +53,54 @@ function ltrim(s) {
         else
             prefix = "//"
 
-        # Extract text after prefix
+        # Extract content after prefix
         raw = substr(line, length(prefix) + 1)
         text = raw
         if (substr(text,1,1) == " ")
             text = substr(text,2)
 
-        # ---------- 1. Empty comment line: only spaces ----------
+        # Trimmed version for tests
+        trimmed = ltrim(raw)
+
+        # ---------- 1. Empty comment line ----------
         empty = 1
         for (i=1; i<=length(text); i++) {
             c = substr(text,i,1)
-            if (c != " " && c != "\t") {
-                empty = 0
-                break
-            }
+            if (c != " " && c != "\t") { empty = 0; break }
         }
         if (empty) {
-            if (in_comment) {
-                print out_prefix merged
-                in_comment = 0
-            }
+            if (in_comment) print out_prefix merged
+            in_comment = 0
             print line
             next
         }
 
-        # ---------- 2. "===..." test ----------
-        trimmed = ltrim(raw)
+        # ---------- 2. "===..." lines ----------
         if (substr(trimmed,1,3) == "===") {
-            if (in_comment) {
-                print out_prefix merged
-                in_comment = 0
-            }
+            if (in_comment) print out_prefix merged
+            in_comment = 0
             print line
             next
         }
 
-        # ---------- 3. Mergeable comment lines ----------
+        # ---------- 3. Bullet point or list item ----------
+        first = substr(trimmed,1,1)
+        if (first == "*" || first == "-") {
+            if (in_comment) print out_prefix merged
+            in_comment = 0
+            print line
+            next
+        }
+
+        # Numbered list detection
+        if (is_numbered_list(trimmed)) {
+            if (in_comment) print out_prefix merged
+            in_comment = 0
+            print line
+            next
+        }
+
+        # ---------- 4. Mergeable line ----------
         if (in_comment && type == last_type) {
             merged = merged " " text
         } else {

@@ -25,7 +25,7 @@ miden-node-utils       = { features = ["testing"], workspace = true }
 miden-objects          = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
-tonic                  = { features = ["transport"], workspace = true }
+tonic                  = { default-features = true, features = ["transport"], workspace = true }
 tonic-reflection       = { workspace = true }
 tower-http             = { features = ["util"], workspace = true }
 tracing                = { workspace = true }

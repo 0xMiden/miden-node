@@ -1,10 +1,4 @@
-# ZERO-REGEX VERSION — preserves:
-# - //, ///, //! comment lines
-# - empty lines
-# - === headings
-# - bullet points (*, -, numbered lists)
-# - fenced code blocks (lines starting with ``` inside comments)
-# Merges only mergeable lines of the same comment type
+# ZERO-REGEX VERSION — preserves indentation for merged comment lines
 
 function ltrim(s) {
     while (substr(s,1,1) == " " || substr(s,1,1) == "\t")
@@ -12,18 +6,22 @@ function ltrim(s) {
     return s
 }
 
-function is_numbered_list(s,    i, c) {
-    # returns 1 if s begins with digits then '.' or ')'
-    found_digit = 0
+function leading_spaces(s,    i, count, c) {
+    count=0
     for (i=1; i<=length(s); i++) {
-        c = substr(s,i,1)
-        if (c >= "0" && c <= "9") {
-            found_digit = 1
-            continue
-        }
-        # first non-digit is . or ), and we saw a digit
-        if (found_digit && (c == "." || c == ")"))
-            return 1
+        c=substr(s,i,1)
+        if (c==" " || c=="\t") count++
+        else break
+    }
+    return count
+}
+
+function is_numbered_list(s,    i, c) {
+    found_digit=0
+    for (i=1; i<=length(s); i++) {
+        c=substr(s,i,1)
+        if (c >= "0" && c <= "9") { found_digit=1; continue }
+        if (found_digit && (c=="." || c==")")) return 1
         return 0
     }
     return 0
@@ -42,85 +40,69 @@ function is_numbered_list(s,    i, c) {
     else
         type = "none"
 
-    # ---------- Handle fenced code block start/end ----------
+    # ---------- Handle comment lines ----------
     if (type != "none") {
+
         prefix = (type=="doc" ? "///" : type=="innerdoc" ? "//!" : "//")
         raw = substr(line, length(prefix)+1)
         trimmed = ltrim(raw)
 
-        # Detect fenced code block line
+        # Track indentation
+        indent = leading_spaces(raw)
+
+        # ---------- Fenced code block ----------
         if (substr(trimmed,1,3) == "```") {
-            # Flush any existing merged comment
-            if (in_comment) {
-                print out_prefix merged
-                in_comment = 0
-            }
-
-            # Toggle fenced code block mode
-            if (fenced == 0) fenced = 1
-            else fenced = 0
-
-            # Print the code block fence line verbatim
+            if (in_comment) { print out_prefix merged; in_comment=0 }
+            if (fenced==0) fenced=1; else fenced=0
             print line
             next
         }
-
-        # If inside a fenced code block, print everything verbatim
-        if (fenced == 1) {
-            print line
-            next
-        }
+        if (fenced==1) { print line; next }
 
         # ---------- Empty comment line ----------
-        empty = 1
-        text = raw
-        if (substr(text,1,1) == " ")
-            text = substr(text,2)
-        for (i=1; i<=length(text); i++) {
-            c = substr(text,i,1)
-            if (c != " " && c != "\t") { empty = 0; break }
+        empty=1
+        for (i=1; i<=length(trimmed); i++) {
+            c=substr(trimmed,i,1)
+            if (c!=" " && c!="\t") { empty=0; break }
         }
-        if (empty) {
-            if (in_comment) { print out_prefix merged; in_comment=0 }
-            print line
-            next
-        }
+        if (empty) { if (in_comment) { print out_prefix merged; in_comment=0 } print line; next }
 
-        # ---------- === heading ----------
-        if (substr(trimmed,1,3) == "===") {
-            if (in_comment) { print out_prefix merged; in_comment=0 }
-            print line
-            next
-        }
+        # ---------- === section line ----------
+        if (substr(trimmed,1,3) == "===") { if (in_comment) { print out_prefix merged; in_comment=0 } print line; next }
 
-        # ---------- Bullet or list item ----------
+        # ---------- Markdown heading ----------
+        if (substr(trimmed,1,1) == "#") { if (in_comment) { print out_prefix merged; in_comment=0 } print line; next }
+
+        # ---------- Bullet or numbered list ----------
         first = substr(trimmed,1,1)
-        if (first=="*" || first=="-" || is_numbered_list(trimmed)) {
-            if (in_comment) { print out_prefix merged; in_comment=0 }
-            print line
-            next
-        }
+        if (first=="*" || first=="-" || is_numbered_list(trimmed)) { if (in_comment) { print out_prefix merged; in_comment=0 } print line; next }
 
         # ---------- Mergeable line ----------
-        if (in_comment && type == last_type) {
-            merged = merged " " text
+        if (in_comment && type==last_type) {
+            merged = merged " " ltrim(raw)  # preserve relative spacing inside line
+            if (indent < out_indent) out_indent = indent
         } else {
             if (in_comment) print out_prefix merged
-            in_comment = 1
-            last_type = type
-            merged = text
-            out_prefix = prefix " "
+            in_comment=1
+            last_type=type
+            merged = ltrim(raw)
+            out_prefix = prefix
+            out_indent = indent
         }
 
         next
     }
 
     # ---------- Non-comment line ----------
-    if (in_comment) { print out_prefix merged; in_comment=0 }
+    if (in_comment) {
+        # Apply preserved indentation
+        printf "%s%*s%s\n", out_prefix, out_indent, "", merged
+        in_comment=0
+    }
     print line
 }
 
 END {
-    if (in_comment) print out_prefix merged
+    if (in_comment) printf "%s%*s%s\n", out_prefix, out_indent, "", merged
 }
 

@@ -4,18 +4,8 @@ use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
 use diesel::{
-    AsChangeset,
-    BoolExpressionMethods,
-    ExpressionMethods,
-    Insertable,
-    JoinOnDsl,
-    NullableExpressionMethods,
-    OptionalExtension,
-    QueryDsl,
-    RunQueryDsl,
-    Selectable,
-    SelectableHelper,
-    SqliteConnection,
+    AsChangeset, BoolExpressionMethods, ExpressionMethods, Insertable, OptionalExtension, QueryDsl,
+    RunQueryDsl, Selectable, SelectableHelper, SqliteConnection,
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
@@ -24,19 +14,16 @@ use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
 use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    Account,
-    AccountDelta,
-    AccountId,
-    AccountStorage,
-    NonFungibleDeltaAction,
-    StorageSlot,
-    StorageSlotType,
+    Account, AccountCode, AccountDelta, AccountId, AccountStorage, NonFungibleDeltaAction,
+    StorageSlot, StorageSlotType,
 };
-use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
+use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 
 use crate::constants::MAX_PAYLOAD_BYTES;
-use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_slot, slot_to_raw_sql};
+use crate::db::models::conv::{
+    SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql,
+};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
@@ -866,7 +853,6 @@ pub struct AccountRaw {
     pub nonce: Option<i64>,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Selectable, Queryable, QueryableByName)]
 #[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(Sqlite))]
@@ -1042,43 +1028,29 @@ pub(crate) fn insert_account_storage_map_value(
 ///
 /// # Note
 ///
-/// This is used by `upsert_accounts` when applying deltas. In the future, this should
-/// be replaced with reconstruction from SmtForest state.
+/// A stop-gap solution to retain store API and construct `AccountInfo` types.
+/// The function should ultimately be removed, and any queries be served from the
+/// `State` which contains an `SmtForest` to serve the latest and most recent
+/// historical data.
+// TODO: remove eventually once refactoring is complete
 fn reconstruct_full_account_from_db(
     conn: &mut SqliteConnection,
     account_id: AccountId,
 ) -> Result<Account, DatabaseError> {
-    // Get account metadata (nonce, code_commitment)
-    let account_raw = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
-        .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::is_latest.eq(true))
-        .get_result::<AccountRaw>(conn)
-        .optional()?
-        .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    // Get account metadata (nonce, code_commitment) and code in a single join query
+    let (account_raw, code_bytes): (AccountRaw, Vec<u8>) = SelectDsl::select(
+        schema::accounts::table.inner_join(schema::account_codes::table),
+        (AccountRaw::as_select(), schema::account_codes::code),
+    )
+    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .filter(schema::accounts::is_latest.eq(true))
+    .get_result(conn)
+    .optional()?
+    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
 
-    let nonce_val = account_raw.nonce.ok_or_else(|| {
+    let nonce = raw_sql_to_nonce(account_raw.nonce.ok_or_else(|| {
         DatabaseError::DataCorrupted(format!("No nonce found for account {account_id}"))
-    })?;
-    let nonce = Nonce::try_from(u64::try_from(nonce_val).map_err(|_| {
-        DatabaseError::DataCorrupted(format!("Invalid nonce value for account {account_id}"))
-    })?)?;
-
-    // Get account code
-    let code_commitment_bytes = schema::accounts::table
-        .select(schema::accounts::code_commitment)
-        .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::is_latest.eq(true))
-        .get_result::<Option<Vec<u8>>>(conn)?
-        .ok_or_else(|| {
-            DatabaseError::DataCorrupted(format!(
-                "No code commitment found for account {account_id}"
-            ))
-        })?;
-
-    let code_bytes = schema::account_codes::table
-        .select(schema::account_codes::code)
-        .filter(schema::account_codes::code_commitment.eq(&code_commitment_bytes))
-        .get_result::<Vec<u8>>(conn)?;
+    })?);
 
     let code = AccountCode::read_from_bytes(&code_bytes)?;
 
@@ -1086,14 +1058,16 @@ fn reconstruct_full_account_from_db(
     let storage = select_latest_account_storage(conn, account_id)?;
 
     // Reconstruct vault from account_vault_assets table
-    let vault_entries: Vec<(Vec<u8>, Option<Vec<u8>>)> = schema::account_vault_assets::table
-        .select((schema::account_vault_assets::vault_key, schema::account_vault_assets::asset))
-        .filter(schema::account_vault_assets::account_id.eq(account_id.to_bytes()))
-        .filter(schema::account_vault_assets::is_latest.eq(true))
-        .load(conn)?;
+    let vault_entries: Vec<(Vec<u8>, Option<Vec<u8>>)> = SelectDsl::select(
+        schema::account_vault_assets::table,
+        (schema::account_vault_assets::vault_key, schema::account_vault_assets::asset),
+    )
+    .filter(schema::account_vault_assets::account_id.eq(account_id.to_bytes()))
+    .filter(schema::account_vault_assets::is_latest.eq(true))
+    .load(conn)?;
 
     let mut assets = Vec::new();
-    for (key_bytes, maybe_asset_bytes) in vault_entries {
+    for (_key_bytes, maybe_asset_bytes) in vault_entries {
         if let Some(asset_bytes) = maybe_asset_bytes {
             let asset = Asset::read_from_bytes(&asset_bytes)?;
             assets.push(asset);
@@ -1102,8 +1076,7 @@ fn reconstruct_full_account_from_db(
 
     let vault = AssetVault::new(&assets)?;
 
-    // Construct the full account
-    Account::from_parts(account_id, vault, storage, code, nonce)
+    Ok(Account::new(account_id, vault, storage, code, nonce, None)?)
 }
 
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!

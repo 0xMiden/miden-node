@@ -153,9 +153,9 @@ pub(crate) fn nullifier_prefix_to_raw_sql(prefix: u16) -> i32 {
 }
 
 #[inline(always)]
-pub(crate) fn raw_sql_to_nonce(raw: i64) -> u64 {
+pub(crate) fn raw_sql_to_nonce(raw: i64) -> Felt {
     debug_assert!(raw >= 0);
-    raw as u64
+    Felt::new(raw as u64)
 }
 #[inline(always)]
 pub(crate) fn nonce_to_raw_sql(nonce: Felt) -> i64 {

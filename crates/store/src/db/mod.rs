@@ -13,12 +13,7 @@ use miden_objects::asset::{Asset, AssetVaultKey};
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
-    NoteDetails,
-    NoteId,
-    NoteInclusionProof,
-    NoteMetadata,
-    NoteScript,
-    Nullifier,
+    NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, NoteScript, Nullifier,
 };
 use miden_objects::transaction::TransactionId;
 use tokio::sync::oneshot;
@@ -393,6 +388,7 @@ impl Db {
     }
 
     /// Loads all the account commitments from the DB.
+    // TODO add a variant with block_num as arg
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {

@@ -477,6 +477,34 @@ impl Db {
         .await
     }
 
+    /// Queries the account code for a specific account at a specific block number.
+    ///
+    /// Returns `None` if the account doesn't exist at that block or has no code.
+    pub async fn select_account_code_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Option<Vec<u8>>> {
+        self.transact("Get account code at block", move |conn| {
+            queries::select_account_code_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Queries the account header for a specific account at a specific block number.
+    ///
+    /// Returns `None` if the account doesn't exist at that block.
+    pub async fn select_account_header_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Option<miden_objects::account::AccountHeader>> {
+        self.transact("Get account header at block", move |conn| {
+            queries::select_account_header_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,

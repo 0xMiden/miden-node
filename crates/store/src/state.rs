@@ -9,44 +9,23 @@ use std::path::Path;
 use std::sync::Arc;
 
 use miden_node_proto::domain::account::{
-    AccountDetailRequest,
-    AccountDetails,
-    AccountInfo,
-    AccountProofRequest,
-    AccountProofResponse,
-    AccountStorageDetails,
-    AccountStorageMapDetails,
-    AccountVaultDetails,
-    NetworkAccountPrefix,
+    AccountDetailRequest, AccountDetails, AccountInfo, AccountProofRequest, AccountProofResponse,
+    AccountStorageDetails, AccountStorageMapDetails, AccountVaultDetails, NetworkAccountPrefix,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
+use miden_objects::account::{AccountId, StorageSlot};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
-    AccountWitness,
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    Blockchain,
-    NullifierWitness,
+    AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain, NullifierWitness,
     ProvenBlock,
 };
 use miden_objects::crypto::merkle::{
-    Forest,
-    LargeSmt,
-    MemoryStorage,
-    Mmr,
-    MmrDelta,
-    MmrPeaks,
-    MmrProof,
-    PartialMmr,
-    SmtForest,
-    SmtProof,
-    SmtStorage,
+    Forest, LargeSmt, MemoryStorage, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtForest,
+    SmtProof, SmtStorage,
 };
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
@@ -59,23 +38,11 @@ use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::{
-    AccountVaultValue,
-    Db,
-    NoteRecord,
-    NoteSyncUpdate,
-    NullifierInfo,
-    StateSyncUpdate,
+    AccountVaultValue, Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate,
 };
 use crate::errors::{
-    ApplyBlockError,
-    DatabaseError,
-    GetBatchInputsError,
-    GetBlockHeaderError,
-    GetBlockInputsError,
-    GetCurrentBlockchainDataError,
-    InvalidBlockError,
-    NoteSyncError,
-    StateInitializationError,
+    ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError, GetBlockInputsError,
+    GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError, StateInitializationError,
     StateSyncError,
 };
 use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
@@ -571,7 +538,7 @@ impl State {
                         "Extracted Map slot entries"
                     );
 
-                    map_slots_to_populate.push((*account_id, slot_idx, entries));
+                    map_slots_to_populate.push((*account_id, slot_idx as u8, entries));
                 }
             }
         }
@@ -1368,52 +1335,45 @@ impl State {
             return Err(DatabaseError::AccountNotPublic(account_id));
         }
 
-        let forest_guard = self.storage_forest.read().await;
+        let account_header = self
+            .db
+            .select_account_header_at_block(account_id, block_num)
+            .await?
+            .ok_or_else(|| DatabaseError::AccountNotPublic(account_id))?;
 
-        // First, get the account summary without deserializing the full account
-        // TODO we now still load details, but practically this should only return the summary
-        let AccountInfo { summary, details: _ } = self.db.select_historical_account_at(account_id, block_num).await?;
-
-        // code
-        let account_code = if let Some(requested_commitment) = code_commitment {
-            if requested_commitment != summary.code_commitment {
-                // Client requested code and it doesn't match their cached version
-                // Query the code from the database
-                let code_bytes = self.db
-                    .select_account_code_by_commitment(summary.code_commitment)
-                    .await?;
-                
-                let code = miden_objects::account::AccountCode::read_from_bytes(&code_bytes)?;
-                Some(code)
-            } else {
-                // Client's cached code matches, no need to send it
-                None
-            }
-        } else {
-            None
+        let account_code = match code_commitment {
+            Some(commitment) if commitment == account_header.code_commitment() => None,
+            Some(_) => self.db.select_account_code_at_block(account_id, block_num).await?,
+            None => None,
         };
 
-        // vault
         let vault_details = match asset_vault_commitment {
-            Some(commitment) if commitment == summary.asset_vault_commitment => {
+            Some(commitment) if commitment == account_header.vault_root() => {
                 AccountVaultDetails::empty()
             },
-            Some(_) => AccountVaultDetails::new(account.vault()),
-            None => AccountVaultDetails::empty(),
+            Some(_) | None if asset_vault_commitment.is_some() => {
+                let vault_entries =
+                    self.db.select_account_vault_at_block(account_id, block_num).await?;
+                AccountVaultDetails::from_entries(vault_entries).map_err(|e| {
+                    DatabaseError::InteractError(format!("Failed to parse vault assets: {e}"))
+                })?
+            },
+            _ => AccountVaultDetails::empty(),
         };
 
-        // storage requests
-        let storage_header: AccountStorageHeader = self.db.select_account_storage_header(account_id, block_num).await?;
-
+        // TODO: don't load the entire store at once, load what is required
+        let store = self.db.select_account_storage_at_block(account_id, block_num).await?;
+        let storage_header = store.to_header();
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
         for StorageMapRequest { slot_index, slot_data } in storage_requests {
-            let Some(slot) = account.storage().slots().get(slot_index as usize) else {
+            let Some(slot) = store.slots().get(slot_index as usize) else {
                 continue;
             };
 
             let StorageSlot::Map(storage_map) = slot else {
+                // TODO: what to do with value entries? Is it ok to ignore them?
                 return Err(AccountError::StorageSlotNotMap(slot_index).into());
             };
 
@@ -1421,65 +1381,15 @@ impl State {
             storage_map_details.push(details);
         }
 
-
-
-
-            let account_header = AccountHeader::from(&account);
-
-            Ok(AccountDetails {
-                account_header,
-                account_code,
-                vault_details,
-                storage_details: AccountStorageDetails {
-                    header: storage_header,
-                    map_details: storage_map_details,
-                },
-            })
-        } else {
-            // Inlined fetch_optimized_account_details
-            let storage_header = account.storage().to_header();
-            let mut storage_map_details =
-                Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
-
-            for StorageMapRequest { slot_index, slot_data } in storage_requests {
-                let details = match slot_data {
-                    SlotData::MapKeys(keys) => {
-                        // Efficiently query specific keys from the DB
-                        let map_entries = self
-                            .db
-                            .select_storage_map_keys_at_block(
-                                account_id,
-                                block_num,
-                                slot_index,
-                                keys.clone(),
-                            )
-                            .await?;
-
-                        AccountStorageMapDetails::from_entries(slot_index, map_entries)
-                    },
-                    SlotData::All => {
-                        // This should not happen as we check for it in need_full_account
-                        return Err(DatabaseError::DataCorrupted(
-                            "SlotData::All should have been handled in need_full_account check"
-                                .to_string(),
-                        ));
-                    },
-                };
-                storage_map_details.push(details);
-            }
-
-            let account_header = AccountHeader::from(&account);
-
-            Ok(AccountDetails {
-                account_header,
-                account_code,
-                vault_details: AccountVaultDetails::empty(),
-                storage_details: AccountStorageDetails {
-                    header: storage_header,
-                    map_details: storage_map_details,
-                },
-            })
-        }
+        Ok(AccountDetails {
+            account_header,
+            account_code,
+            vault_details,
+            storage_details: AccountStorageDetails {
+                header: storage_header,
+                map_details: storage_map_details,
+            },
+        })
     }
 
     /// Returns storage map values for syncing within a block range.

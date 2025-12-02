@@ -20,11 +20,13 @@ use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
 use miden_objects::Word;
+use miden_objects::{Felt, FieldElement};
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     Account,
     AccountCode,
     AccountDelta,
+    AccountHeader,
     AccountId,
     AccountStorage,
     NonFungibleDeltaAction,
@@ -1380,4 +1382,167 @@ pub(crate) fn select_account_vault_at_block(
         .collect();
 
     Ok(entries)
+}
+
+/// Computes the storage commitment from a list of slot commitments.
+///
+/// This replicates the logic from `AccountStorage::commitment()` which hashes all slot
+/// commitments together.
+///
+/// # Arguments
+///
+/// * `slot_commitments` - Vector of slot commitment words
+///
+/// # Returns
+///
+/// The storage commitment as a `Word`
+fn compute_storage_commitment(slot_commitments: &[Word]) -> Word {
+    use miden_objects::crypto::hash::rpo::Rpo256;
+    
+    let elements: Vec<Felt> = slot_commitments
+        .iter()
+        .flat_map(|w| w.iter())
+        .copied()
+        .collect();
+    
+    Rpo256::hash_elements(&elements).into()
+}
+
+/// Queries the account code for a specific account at a specific block number.
+///
+/// Returns `None` if:
+/// - The account doesn't exist at that block
+/// - The account has no code (private account or account without code commitment)
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `account_id` - The account ID to query
+/// * `block_num` - The block number at which to query the account code
+///
+/// # Returns
+///
+/// * `Ok(Some(Vec<u8>))` - The account code bytes if found
+/// * `Ok(None)` - If account doesn't exist or has no code
+/// * `Err(DatabaseError)` - If there's a database error
+pub(crate) fn select_account_code_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<Option<Vec<u8>>, DatabaseError> {
+    use schema::{account_codes, accounts};
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = i64::from(block_num.as_u32());
+
+    // Query the accounts table to get the code_commitment at the specified block
+    // Then join with account_codes to get the actual code
+    let result: Option<Vec<u8>> = SelectDsl::select(
+        accounts::table
+            .inner_join(account_codes::table)
+            .filter(accounts::account_id.eq(&account_id_bytes))
+            .filter(accounts::block_num.eq(block_num_sql)),
+        account_codes::code,
+    )
+    .first(conn)
+    .optional()?;
+
+    Ok(result)
+}
+
+/// Queries the account header for a specific account at a specific block number.
+///
+/// This reconstructs the AccountHeader by joining multiple tables:
+/// - `accounts` table for account_id, nonce, `code_commitment`
+/// - `account_vault_headers` table for `vault_root`
+/// - `account_storage_headers` table for storage slot commitments (to compute `storage_commitment`)
+///
+/// Returns `None` if the account doesn't exist at that block.
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `account_id` - The account ID to query
+/// * `block_num` - The block number at which to query the account header
+///
+/// # Returns
+///
+/// * `Ok(Some(AccountHeader))` - The account header if found
+/// * `Ok(None)` - If account doesn't exist at that block
+/// * `Err(DatabaseError)` - If there's a database error
+pub(crate) fn select_account_header_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<Option<AccountHeader>, DatabaseError> {
+    use schema::{account_storage_headers, account_vault_headers, accounts};
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = block_num.to_raw_sql();
+
+    let account_data: Option<(Option<Vec<u8>>, Option<i64>)> = SelectDsl::select(
+        accounts::table
+            .filter(accounts::account_id.eq(&account_id_bytes))
+            .filter(accounts::block_num.eq(block_num_sql)),
+        (accounts::code_commitment, accounts::nonce),
+    )
+    .first(conn)
+    .optional()?;
+
+    let Some((code_commitment_bytes, nonce_raw)) = account_data else {
+        return Ok(None);
+    };
+
+    let vault_root_bytes: Option<Vec<u8>> = SelectDsl::select(
+        account_vault_headers::table
+            .filter(account_vault_headers::account_id.eq(&account_id_bytes))
+            .filter(account_vault_headers::block_num.eq(block_num_sql)),
+        account_vault_headers::vault_root,
+    )
+    .first(conn)
+    .optional()?;
+
+    let storage_slots: Vec<(i32, i32, Vec<u8>)> = SelectDsl::select(
+        account_storage_headers::table
+            .filter(account_storage_headers::account_id.eq(&account_id_bytes))
+            .filter(account_storage_headers::block_num.eq(block_num_sql))
+            .order(account_storage_headers::slot_index.asc()),
+        (
+            account_storage_headers::slot_index,
+            account_storage_headers::slot_type,
+            account_storage_headers::slot_commitment,
+        ),
+    )
+    .load(conn)?;
+
+    let slot_commitments: Vec<Word> = storage_slots
+        .into_iter()
+        .map(|(_slot_index, _slot_type, commitment_bytes)| {
+            Word::read_from_bytes(&commitment_bytes)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let storage_commitment = compute_storage_commitment(&slot_commitments);
+
+    let code_commitment = code_commitment_bytes
+        .map(|bytes| Word::read_from_bytes(&bytes))
+        .transpose()?
+        .unwrap_or(Word::default());
+
+    let nonce = nonce_raw
+        .map(raw_sql_to_nonce)
+        .unwrap_or(Felt::ZERO);
+
+    let vault_root = vault_root_bytes
+        .map(|bytes| Word::read_from_bytes(&bytes))
+        .transpose()?
+        .unwrap_or(Word::default());
+
+    Ok(Some(AccountHeader::new(
+        account_id,
+        nonce,
+        vault_root,
+        storage_commitment,
+        code_commitment,
+    )))
 }

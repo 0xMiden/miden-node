@@ -3,12 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use miden_node_utils::formatting::format_opt;
 use miden_objects::Word;
 use miden_objects::account::{
-    Account,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    StorageMap,
-    StorageSlotType,
+    Account, AccountHeader, AccountId, AccountStorageHeader, StorageMap, StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVault};
 use miden_objects::block::{AccountWitness, BlockNumber};
@@ -377,6 +372,27 @@ impl AccountVaultDetails {
         }
     }
 
+    /// Creates `AccountVaultDetails` from vault entries (key-value pairs).
+    ///
+    /// This is useful when entries have been fetched directly from the database
+    /// rather than extracted from an AssetVault.
+    ///
+    /// The entries are `(vault_key, asset)` pairs where `asset` is a Word representation.
+    pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, miden_objects::AssetError> {
+        let too_many_assets = entries.len() > Self::MAX_RETURN_ENTRIES;
+
+        if too_many_assets {
+            return Ok(Self::too_many());
+        }
+
+        let assets = entries
+            .into_iter()
+            .map(|(_key, asset_word)| Asset::try_from(asset_word))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self { too_many_assets: false, assets })
+    }
+
     fn too_many() -> Self {
         Self {
             too_many_assets: true,
@@ -420,6 +436,10 @@ impl From<AccountVaultDetails> for proto::rpc_store::AccountVaultDetails {
 pub struct AccountStorageMapDetails {
     pub slot_index: u8,
     pub too_many_entries: bool,
+    // TODO the following is only for the case when _all_ entries are included
+    // TODO for partials, we also need to provide merkle proofs / a partial SMT with inner nodes
+    // Reason: if all leaf values are included, one can reconstruct the entire SMT, if just one
+    // is missing one cannot
     pub map_entries: Vec<(Word, Word)>,
 }
 
@@ -429,7 +449,7 @@ impl AccountStorageMapDetails {
     pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
         match slot_data {
             SlotData::All => Self::from_all_entries(slot_index, storage_map),
-            SlotData::MapKeys(keys) => Self::from_specific_keys(slot_index, &keys[..], storage_map),
+            SlotData::MapKeys(keys) => Self::from_all_entries(slot_index, storage_map), // TODO use from_specific_keys
         }
     }
 
@@ -446,31 +466,13 @@ impl AccountStorageMapDetails {
         }
     }
 
+    // TODO this is
+    #[allow(dead_code)]
     fn from_specific_keys(slot_index: u8, keys: &[Word], storage_map: &StorageMap) -> Self {
         if keys.len() > Self::MAX_RETURN_ENTRIES {
             Self::too_many_entries(slot_index)
         } else {
-            // Query specific keys from the storage map.
-            // StorageMap::get returns the value for a given key, or EMPTY_WORD if not present.
-            // We only return entries that actually exist in the map (non-empty values).
-            let map_entries: Vec<(Word, Word)> = keys
-                .iter()
-                .filter_map(|key| {
-                    let value = storage_map.get(key);
-                    // Only include entries with non-empty values
-                    if value == miden_objects::EMPTY_WORD {
-                        None
-                    } else {
-                        Some((*key, value))
-                    }
-                })
-                .collect();
-
-            Self {
-                slot_index,
-                too_many_entries: false,
-                map_entries,
-            }
+            todo!("construct a partial SMT / set of key values")
         }
     }
 

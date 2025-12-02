@@ -8,6 +8,7 @@ use diesel::{Connection, SqliteConnection};
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
 use miden_lib::transaction::TransactionKernel;
+use miden_lib::utils::Serializable;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::test_fee_params;
 use miden_objects::account::auth::PublicKeyCommitment;
@@ -1895,4 +1896,55 @@ fn test_storage_header_is_latest_flag() {
     } else {
         panic!("Expected Value slot with value_1");
     }
+}
+
+#[test]
+fn test_select_account_code_at_block() {
+    let mut conn = create_db();
+
+    let block_num_1 = BlockNumber::from(1);
+    let block_num_2 = BlockNumber::from(2);
+
+    // Create an account with code at block 1 using the existing mock function
+    let account = mock_account_code_and_storage(
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+        [],
+        None,
+    );
+    
+    // Use the actual account ID from the created account
+    let account_id = account.id();
+    
+    // Get the code bytes before inserting
+    let expected_code = account.code().to_bytes();
+
+    // Insert the account at block 1
+    queries::upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account_id,
+            account.commitment(),
+            AccountUpdateDetails::Delta(AccountDelta::try_from(account).unwrap()),
+        )],
+        block_num_1,
+    )
+    .unwrap();
+
+    // Query code at block 1 - should return the code
+    let code_at_1 = queries::select_account_code_at_block(&mut conn, account_id, block_num_1)
+        .unwrap()
+        .expect("Code should exist at block 1");
+    assert_eq!(code_at_1, expected_code);
+
+    // Query code at non-existent block - should return None
+    let code_at_2 = queries::select_account_code_at_block(&mut conn, account_id, block_num_2)
+        .unwrap();
+    assert!(code_at_2.is_none(), "Code should not exist at block 2");
+
+    // Query code for non-existent account - should return None
+    let other_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    let code_other = queries::select_account_code_at_block(&mut conn, other_account_id, block_num_1)
+        .unwrap();
+    assert!(code_other.is_none(), "Code should not exist for non-existent account");
 }

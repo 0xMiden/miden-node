@@ -607,7 +607,7 @@ pub(crate) fn select_account_storage_at_block(
 
 /// Select account storage headers at a specific block (lightweight query).
 ///
-/// Returns tuples of (`slot_index`, `slot_type`, `commitment`) without reconstructing full slots.
+/// Returns tuples of `(slot_index, slot_type, commitment)` without reconstructing full slots.
 #[allow(dead_code)] // Helper for future SmtForest integration
 pub(crate) fn select_account_storage_headers_at_block(
     conn: &mut SqliteConnection,
@@ -766,8 +766,8 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest=true` for the new row and update any existing
-/// row with the same `(account_id, vault_key)` tuple to `is_latest=false`.
+/// Sets `is_latest=true` for the new row and updates any existing
+/// row with the same (account_id, vault_key) tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -807,7 +807,7 @@ pub(crate) fn insert_account_vault_asset(
 /// Insert an account storage header into the DB using the given [`SqliteConnection`].
 ///
 /// Sets `is_latest=true` for the new row and updates any existing
-/// row with the same `(account_id, slot_index)` tuple to `is_latest=false`.
+/// row with the same (account_id, slot_index) tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -857,10 +857,10 @@ pub(crate) fn insert_account_storage_header(
     })
 }
 
-/// Insert an account storage header into the DB using the given [`SqliteConnection`].
+/// Insert an account storage map value into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest=true` for the new row and update any existing
-/// row with the same `(account_id, slot_index)` tuple to `is_latest=false`.
+/// Sets `is_latest=true` for the new row and updates any existing
+/// row with the same (account_id, slot_index, key) tuple to `is_latest=false`.
 ///
 /// # Returns
 ///

@@ -4,8 +4,16 @@ use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
 use diesel::{
-    AsChangeset, BoolExpressionMethods, ExpressionMethods, Insertable, OptionalExtension, QueryDsl,
-    RunQueryDsl, Selectable, SelectableHelper, SqliteConnection,
+    AsChangeset,
+    BoolExpressionMethods,
+    ExpressionMethods,
+    Insertable,
+    OptionalExtension,
+    QueryDsl,
+    RunQueryDsl,
+    Selectable,
+    SelectableHelper,
+    SqliteConnection,
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
@@ -14,15 +22,25 @@ use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
 use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    Account, AccountCode, AccountDelta, AccountId, AccountStorage, NonFungibleDeltaAction,
-    StorageSlot, StorageSlotType,
+    Account,
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    AccountStorage,
+    NonFungibleDeltaAction,
+    StorageSlot,
+    StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 
 use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{
-    SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql,
+    SqlTypeConvert,
+    nonce_to_raw_sql,
+    raw_sql_to_nonce,
+    raw_sql_to_slot,
+    slot_to_raw_sql,
 };
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};

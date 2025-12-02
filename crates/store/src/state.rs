@@ -9,9 +9,16 @@ use std::path::Path;
 use std::sync::Arc;
 
 use miden_node_proto::domain::account::{
-    AccountDetailRequest, AccountDetails, AccountInfo, AccountProofRequest, AccountProofResponse,
-    AccountStorageDetails, AccountStorageMapDetails, AccountVaultDetails, NetworkAccountPrefix,
-    SlotData, StorageMapRequest,
+    AccountDetailRequest,
+    AccountDetails,
+    AccountInfo,
+    AccountProofRequest,
+    AccountProofResponse,
+    AccountStorageDetails,
+    AccountStorageMapDetails,
+    AccountVaultDetails,
+    NetworkAccountPrefix,
+    StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
@@ -20,12 +27,26 @@ use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
-    AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain, NullifierWitness,
+    AccountWitness,
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    Blockchain,
+    NullifierWitness,
     ProvenBlock,
 };
 use miden_objects::crypto::merkle::{
-    Forest, LargeSmt, MemoryStorage, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtForest,
-    SmtProof, SmtStorage,
+    Forest,
+    LargeSmt,
+    MemoryStorage,
+    Mmr,
+    MmrDelta,
+    MmrPeaks,
+    MmrProof,
+    PartialMmr,
+    SmtForest,
+    SmtProof,
+    SmtStorage,
 };
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
@@ -36,13 +57,25 @@ use tracing::{info, info_span, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
-use crate::db::models::queries::{StorageMapValuesPage, select_account_storage_headers_at_block};
+use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::{
-    AccountVaultValue, Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate,
+    AccountVaultValue,
+    Db,
+    NoteRecord,
+    NoteSyncUpdate,
+    NullifierInfo,
+    StateSyncUpdate,
 };
 use crate::errors::{
-    ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError, GetBlockInputsError,
-    GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError, StateInitializationError,
+    ApplyBlockError,
+    DatabaseError,
+    GetBatchInputsError,
+    GetBlockHeaderError,
+    GetBlockInputsError,
+    GetCurrentBlockchainDataError,
+    InvalidBlockError,
+    NoteSyncError,
+    StateInitializationError,
     StateSyncError,
 };
 use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
@@ -162,10 +195,19 @@ impl State {
         };
 
         // load all accounts from the table
-        // TODO: make `select_all_account_at(block_num)` to be precise; if ACID is upheld, it's not necessary in theory
-        let acc_account_ids = db.select_all_account_commitments().await?;
-        let acc_account_ids = Vec::from_iter(acc_account_ids.into_iter().map(|(account_id, _)| acc_account_ids));
-        me.update_storage_forest_from_db(acc_account_ids, latest_block_num)?;
+        // TODO: make `select_all_account_at(block_num)` to be precise; if ACID is upheld, it's not
+        // necessary in theory
+        let acc_account_ids = me.db.select_all_account_commitments().await?;
+        let acc_account_ids =
+            acc_account_ids.into_iter().map(|(account_id, _)| account_id).collect();
+        me.update_storage_forest_from_db(acc_account_ids, latest_block_num)
+            .await
+            .map_err(|e| {
+                StateInitializationError::DatabaseError(DatabaseError::InteractError(format!(
+                    "Failed to update storage forest: {}",
+                    e
+                )))
+            })?;
 
         Ok(me)
     }
@@ -516,7 +558,6 @@ impl State {
         for (account_id, storage) in &account_storages {
             // Iterate through each slot in the account storage
             for (slot_idx, slot) in storage.slots().iter().enumerate() {
-
                 // Only process Map-type slots
                 if let miden_objects::account::StorageSlot::Map(storage_map) = slot {
                     // Extract all (key, value) entries from this StorageMap
@@ -593,7 +634,9 @@ impl State {
         let mut new_roots = Vec::new();
 
         for (account_id, slot_idx, prev_root, entries) in slots_with_prev_roots {
-            let updated_root = forest.batch_insert(prev_root, entries.into_iter().cloned()).expect("Insertion into Forest always works");
+            let updated_root = forest
+                .batch_insert(prev_root, entries.into_iter().map(|(k, v)| (*k, *v)))
+                .expect("Insertion into Forest always works");
             // Store the final root after all insertions
             new_roots.push((account_id, slot_idx, updated_root));
 
@@ -710,7 +753,9 @@ impl State {
         let mut vault_new_roots = Vec::new();
 
         for (account_id, prev_root, entries) in vaults_with_prev_roots {
-            let updated_root = forest.batch_insert(prev_root, entries).expect("Database is consistent and always allows constructing a smt or forest");
+            let updated_root = forest
+                .batch_insert(prev_root, entries)
+                .expect("Database is consistent and always allows constructing a smt or forest");
             vault_new_roots.push((account_id, updated_root));
         }
         drop(forest);
@@ -1320,8 +1365,7 @@ impl State {
         } = detail_request;
 
         if !account_id.is_public() {
-            return
-                Err(DatabaseError::AccountNotPublic(account_id));
+            return Err(DatabaseError::AccountNotPublic(account_id));
         }
 
         let forest_guard = self.storage_forest.read().await;
@@ -1346,7 +1390,6 @@ impl State {
                 None
             }
         } else {
-            // Client didn't request code
             None
         };
 
@@ -1366,12 +1409,14 @@ impl State {
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
         for StorageMapRequest { slot_index, slot_data } in storage_requests {
-            let Some(StorageSlot::Map(storage_map)) =
-                // FIXME TODO XXX load from SmtForest
-                account.storage().slots().get(slot_index as usize)
-            else {
+            let Some(slot) = account.storage().slots().get(slot_index as usize) else {
+                continue;
+            };
+
+            let StorageSlot::Map(storage_map) = slot else {
                 return Err(AccountError::StorageSlotNotMap(slot_index).into());
             };
+
             let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
             storage_map_details.push(details);
         }

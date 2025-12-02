@@ -138,6 +138,8 @@ pub struct StoreStatusDetails {
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
+    /// The block producer's current view of the chain tip height.
+    pub chain_tip: u32,
     /// Mempool statistics for this block producer.
     pub mempool: MempoolStatusDetails,
 }
@@ -211,6 +213,7 @@ impl From<BlockProducerStatus> for BlockProducerStatusDetails {
         Self {
             version: value.version,
             status: value.status.into(),
+            chain_tip: value.chain_tip,
             mempool: MempoolStatusDetails {
                 unbatched_transactions: mempool_stats.unbatched_transactions,
                 proposed_batches: mempool_stats.proposed_batches,

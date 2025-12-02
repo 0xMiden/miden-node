@@ -169,6 +169,13 @@ impl Mempool {
         }
     }
 
+    /// Returns the current chain tip height as seen by the mempool.
+    ///
+    /// This reflects the latest committed block that the block producer is aware of.
+    pub fn chain_tip(&self) -> BlockNumber {
+        self.chain_tip
+    }
+
     // TRANSACTION & BATCH LIFECYCLE
     // --------------------------------------------------------------------------------------------
 

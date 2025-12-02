@@ -190,16 +190,38 @@
                                 ` : ''}
                                 ${details.RpcStatus.store_status ? `
                                     <div class="nested-status">
-                                        <strong>Store:</strong> ${details.RpcStatus.store_status.version} - ${details.RpcStatus.store_status.status}
-                                        ${details.RpcStatus.store_status.chain_tip ? ` (Tip: ${details.RpcStatus.store_status.chain_tip})` : ''}
+                                        <div class="detail-item"><strong>Store</strong></div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Version:</span>
+                                            <span class="metric-value">${details.RpcStatus.store_status.version}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Status:</span>
+                                            <span class="metric-value">${details.RpcStatus.store_status.status}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Chain Tip:</span>
+                                            <span class="metric-value">${details.RpcStatus.store_status.chain_tip}</span>
+                                        </div>
                                     </div>
                                 ` : ''}
                                 ${details.RpcStatus.block_producer_status ? `
                                     <div class="nested-status">
-                                        <strong>Block Producer:</strong>
-                                        ${details.RpcStatus.block_producer_status.version} - ${details.RpcStatus.block_producer_status.status}
+                                        <div class="detail-item"><strong>Block Producer</strong></div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Version:</span>
+                                            <span class="metric-value">${details.RpcStatus.block_producer_status.version}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Status:</span>
+                                            <span class="metric-value">${details.RpcStatus.block_producer_status.status}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Chain Tip:</span>
+                                            <span class="metric-value">${details.RpcStatus.block_producer_status.chain_tip}</span>
+                                        </div>
                                         <div class="nested-status mempool-stats">
-                                            <strong>Mempool:</strong>
+                                            <strong>Mempool stats:</strong>
                                             <div class="metric-row">
                                                 <span class="metric-label">Unbatched TXs:</span>
                                                 <span class="metric-value">${details.RpcStatus.block_producer_status.mempool.unbatched_transactions}</span>

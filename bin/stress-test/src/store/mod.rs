@@ -149,9 +149,9 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
     print_summary(&timers_accumulator);
 }
 
-/// Sends a single `sync_notes` request to the store and returns the elapsed time.
-/// The note tags are generated from the account ids, so the request will contain a note tag for
-/// each account id, with a block number of 0.
+/// Sends a single `sync_notes` request to the store and returns the elapsed time. The note tags are
+/// generated from the account ids, so the request will contain a note tag for each account id, with
+/// a block number of 0.
 pub async fn sync_notes(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
@@ -522,9 +522,8 @@ pub async fn load_state(data_directory: &Path) {
 
 /// Waits for the store to be ready and accepting requests.
 ///
-/// Periodically checks the store’s status endpoint until it reports `"connected"`.
-/// Returns an error if the status does not become `"connected"` after
-/// [`STORE_STATUS_RETRIES`] attempts.
+/// Periodically checks the store’s status endpoint until it reports `"connected"`. Returns an error
+/// if the status does not become `"connected"` after [`STORE_STATUS_RETRIES`] attempts.
 async fn wait_for_store(
     store_client: &RpcClient<InterceptedService<Channel, OtelInterceptor>>,
 ) -> Result<(), String> {

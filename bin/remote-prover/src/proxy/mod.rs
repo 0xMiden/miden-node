@@ -243,9 +243,9 @@ static RATE_LIMITER: LazyLock<Rate> = LazyLock::new(|| Rate::new(Duration::from_
 // REQUEST QUEUE
 // ================================================================================================
 
-/// Request queue holds the list of requests that are waiting to be processed by the workers and
-/// the time they were enqueued.
-/// It is used to keep track of the order of the requests to then assign them to the workers.
+/// Request queue holds the list of requests that are waiting to be processed by the workers and the
+/// time they were enqueued. It is used to keep track of the order of the requests to then assign
+/// them to the workers.
 pub struct RequestQueue {
     queue: RwLock<VecDeque<(Uuid, Instant)>>,
 }
@@ -299,8 +299,8 @@ static QUEUE: LazyLock<RequestQueue> = LazyLock::new(RequestQueue::new);
 
 /// Pingora `RequestHeader` injector for OpenTelemetry trace context propagation.
 ///
-/// This allows the proxy to inject trace context into headers that will be forwarded
-/// to worker nodes, enabling proper parent-child trace relationships.
+/// This allows the proxy to inject trace context into headers that will be forwarded to worker
+/// nodes, enabling proper parent-child trace relationships.
 struct PingoraHeaderInjector<'a>(&'a mut pingora::http::RequestHeader);
 
 impl opentelemetry::propagation::Injector for PingoraHeaderInjector<'_> {
@@ -321,8 +321,8 @@ impl opentelemetry::propagation::Injector for PingoraHeaderInjector<'_> {
 /// Custom context for the request/response lifecycle
 ///
 /// We use this context to keep track of the number of tries for a request, the unique ID for the
-/// request, the worker that will process the request, a span that will be used for traces along
-/// the transaction execution, and a timer to track how long the request took.
+/// request, the worker that will process the request, a span that will be used for traces along the
+/// transaction execution, and a timer to track how long the request took.
 #[derive(Debug)]
 pub struct RequestContext {
     /// Number of tries for the request
@@ -362,9 +362,9 @@ impl RequestContext {
 
 /// Wrapper around the load balancer that implements the [`ProxyHttp`] trait
 ///
-/// This wrapper is used to implement the [`ProxyHttp`] trait for [`Arc<LoadBalancer>`].
-/// This is necessary because we want to share the load balancer between the proxy server and the
-/// health check background service.
+/// This wrapper is used to implement the [`ProxyHttp`] trait for [`Arc<LoadBalancer>`]. This is
+/// necessary because we want to share the load balancer between the proxy server and the health
+/// check background service.
 #[derive(Debug)]
 pub struct LoadBalancer(pub Arc<LoadBalancerState>);
 

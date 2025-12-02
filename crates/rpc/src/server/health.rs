@@ -6,10 +6,9 @@ use tower::{Layer, Service};
 
 /// Simple health check layer that intercepts requests to root path.
 ///
-/// The root path is used by load-balancers and options requests to check the health
-/// of the server. Since our gRPC server doesn't serve anything on the root
-/// these get logged as errors. This layer instead intercepts these requests
-/// and returns `Ok(200)`, preventing the errors.
+/// The root path is used by load-balancers and options requests to check the health of the server.
+/// Since our gRPC server doesn't serve anything on the root these get logged as errors. This layer
+/// instead intercepts these requests and returns `Ok(200)`, preventing the errors.
 #[derive(Clone)]
 pub struct HealthCheckLayer;
 

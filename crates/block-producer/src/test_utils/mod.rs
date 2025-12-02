@@ -18,8 +18,7 @@ pub mod note;
 
 /// Generates random values for tests.
 ///
-/// It prints its seed on construction which allows us to reproduce
-/// test failures.
+/// It prints its seed on construction which allows us to reproduce test failures.
 pub struct Random(RpoRandomCoin);
 
 impl Random {

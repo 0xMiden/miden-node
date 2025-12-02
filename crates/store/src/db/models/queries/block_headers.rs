@@ -24,8 +24,8 @@ use crate::db::schema;
 ///
 /// # Returns
 ///
-/// When `block_num` is [None], the latest block header is returned. Otherwise, the block with
-/// the given block height is returned.
+/// When `block_num` is [None], the latest block header is returned. Otherwise, the block with the
+/// given block height is returned.
 ///
 /// ```sql
 /// -- with argument

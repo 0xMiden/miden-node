@@ -387,8 +387,7 @@ struct AssetEntry {
 // STORAGE MODE
 // ================================================================================================
 
-/// See the [full description](https://0xmiden.github.io/miden-base/account.html?highlight=Accoun#account-storage-mode)
-/// for details
+/// See the [full description](https://0xmiden.github.io/miden-base/account.html?highlight=Accoun#account-storage-mode) for details
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
 pub enum StorageMode {
     /// Monitor for `Notes` related to the account, in addition to being `Public`.
@@ -455,8 +454,8 @@ impl AccountSecrets {
 // HELPERS
 // ================================================================================================
 
-/// Process wallet assets and return them as a fungible asset delta.
-/// Track the negative adjustments for the respective faucets.
+/// Process wallet assets and return them as a fungible asset delta. Track the negative adjustments
+/// for the respective faucets.
 fn prepare_fungible_asset_update(
     assets: impl IntoIterator<Item = AssetEntry>,
     faucets: &IndexMap<TokenSymbolStr, Account>,

@@ -12,9 +12,9 @@ use miden_objects::note::{Note, Nullifier};
 
 /// An unconsumed network note that may have failed to execute.
 ///
-/// The block number at which the network note was attempted are approximate and may not
-/// reflect the exact block number for which the execution attempt failed. The actual block
-/// will likely be soon after the number that is recorded here.
+/// The block number at which the network note was attempted are approximate and may not reflect the
+/// exact block number for which the execution attempt failed. The actual block will likely be soon
+/// after the number that is recorded here.
 #[derive(Debug, Clone)]
 pub struct InflightNetworkNote {
     note: SingleTargetNetworkNote,
@@ -290,8 +290,8 @@ impl NetworkAccountEffect {
 
 /// Checks if the backoff block period has passed.
 ///
-/// The number of blocks passed since the last attempt must be greater than or equal to
-/// e^(0.25 * `attempt_count`) rounded to the nearest integer.
+/// The number of blocks passed since the last attempt must be greater than or equal to e^(0.25 *
+/// `attempt_count`) rounded to the nearest integer.
 ///
 /// This evaluates to the following:
 /// - After 1 attempt, the backoff period is 1 block.

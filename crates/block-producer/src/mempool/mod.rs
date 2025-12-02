@@ -3,8 +3,8 @@
 //!
 //! It performs these tasks by maintaining a dependency graph between all inflight transactions,
 //! batches and blocks. A parent-child dependency edge between two nodes exists whenever the child
-//! consumes a piece of state that the parent node created. To be more specific, node `A` is a
-//! child of node `B`:
+//! consumes a piece of state that the parent node created. To be more specific, node `A` is a child
+//! of node `B`:
 //!
 //! - if `B` created an output note which is the input note of `A`, or
 //! - if `B` updated an account to state `x'`, and `A` is updating this account from `x' -> x''`.
@@ -19,8 +19,8 @@
 //! must build on the state of the previous block. This in turn implies that a child node can never
 //! be committed in a block before all of its parents.
 //!
-//! The mempool also enforces that the graph contains no cycles i.e. that the dependency graph
-//! is always a directed acyclic graph (DAG). While technically not illegal from a protocol
+//! The mempool also enforces that the graph contains no cycles i.e. that the dependency graph is
+//! always a directed acyclic graph (DAG). While technically not illegal from a protocol
 //! perspective, allowing cycles between nodes would require that all nodes within the cycle be
 //! committed within the same block.
 //!

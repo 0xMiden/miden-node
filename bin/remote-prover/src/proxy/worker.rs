@@ -41,15 +41,13 @@ static WORKER_VERSION_REQUIREMENT: LazyLock<VersionReq> = LazyLock::new(|| {
 
 /// A worker used for processing of requests.
 ///
-/// The worker is used to process requests.
-/// It has a backend, a status client, a health status, and a version.
-/// The backend is used to send requests to the worker.
-/// The status client is used to check the status of the worker.
-/// The health status is used to determine if the worker is healthy or unhealthy.
-/// The version is used to check if the worker is compatible with the proxy.
-/// The `is_available` is used to determine if the worker is available to process requests.
-/// The `connection_timeout` is used to set the timeout for the connection to the worker.
-/// The `total_timeout` is used to set the timeout for the total request.
+/// The worker is used to process requests. It has a backend, a status client, a health status, and
+/// a version. The backend is used to send requests to the worker. The status client is used to
+/// check the status of the worker. The health status is used to determine if the worker is healthy
+/// or unhealthy. The version is used to check if the worker is compatible with the proxy. The
+/// `is_available` is used to determine if the worker is available to process requests. The
+/// `connection_timeout` is used to set the timeout for the connection to the worker. The
+/// `total_timeout` is used to set the timeout for the total request.
 #[derive(Debug, Clone)]
 pub struct Worker {
     backend: Backend,
@@ -63,9 +61,9 @@ pub struct Worker {
 
 /// The health status of a worker.
 ///
-/// A worker can be either healthy or unhealthy.
-/// If the worker is unhealthy, it will have a number of failed attempts.
-/// The number of failed attempts is incremented each time the worker is unhealthy.
+/// A worker can be either healthy or unhealthy. If the worker is unhealthy, it will have a number
+/// of failed attempts. The number of failed attempts is incremented each time the worker is
+/// unhealthy.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum WorkerHealthStatus {
     /// The worker is healthy.

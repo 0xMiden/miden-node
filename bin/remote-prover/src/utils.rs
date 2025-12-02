@@ -55,8 +55,8 @@ fn build_grpc_trailers(
 
 /// Write a protobuf message as a gRPC response to a Pingora session
 ///
-/// This helper function takes a protobuf message and writes it to a Pingora session
-/// in the proper gRPC format, handling message encoding, headers, and trailers.
+/// This helper function takes a protobuf message and writes it to a Pingora session in the proper
+/// gRPC format, handling message encoding, headers, and trailers.
 pub async fn write_grpc_response_to_session<T>(
     session: &mut Session,
     message: T,
@@ -99,8 +99,8 @@ where
 
 /// Write a gRPC error response to a Pingora session
 ///
-/// This helper function creates a proper gRPC error response with the specified
-/// status code and error message.
+/// This helper function creates a proper gRPC error response with the specified status code and
+/// error message.
 pub async fn write_grpc_error_to_session(
     session: &mut Session,
     grpc_status: Code,

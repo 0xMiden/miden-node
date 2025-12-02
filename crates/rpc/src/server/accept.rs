@@ -19,12 +19,12 @@ pub enum GenesisNegotiation {
 /// Performs content negotiation by rejecting requests which don't match our RPC version or network.
 /// Clients can specify these as parameters in our `application/vnd.miden` accept media range.
 ///
-/// The client can specify RPC versions it supports using the [`VersionReq`] format. The network
-/// is specified as the genesis block's commitment. If the server cannot satisfy either of these
+/// The client can specify RPC versions it supports using the [`VersionReq`] format. The network is
+/// specified as the genesis block's commitment. If the server cannot satisfy either of these
 /// constraints then the request is rejected.
 ///
-/// Note that both values are optional, as is the header itself. If unset, the server considers
-/// any value acceptable.
+/// Note that both values are optional, as is the header itself. If unset, the server considers any
+/// value acceptable.
 ///
 /// As part of the accept header's standard, all media ranges are examined in quality weighting
 /// order until a matching content type is found. This means that the client can set multiple

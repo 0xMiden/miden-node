@@ -73,8 +73,8 @@ pub struct ProverTestDetails {
 
 /// Runs a task that continuously tests remote prover functionality and updates a watch channel.
 ///
-/// This function spawns a task that periodically sends mock request payloads to a remote prover
-/// and measures the success/failure rate and performance metrics for proof generation.
+/// This function spawns a task that periodically sends mock request payloads to a remote prover and
+/// measures the success/failure rate and performance metrics for proof generation.
 ///
 /// # Arguments
 ///
@@ -213,8 +213,8 @@ async fn test_remote_prover(
 
 /// Converts a `tonic::Status` error to a JSON string with structured error information.
 ///
-/// This function extracts the code, message, details, and metadata from a `tonic::Status`
-/// error and serializes them into a JSON string for structured error reporting.
+/// This function extracts the code, message, details, and metadata from a `tonic::Status` error and
+/// serializes them into a JSON string for structured error reporting.
 ///
 /// # Arguments
 ///
@@ -254,9 +254,9 @@ fn tonic_status_to_json(status: &tonic::Status) -> String {
 
 /// Generates a mock transaction for testing remote prover functionality.
 ///
-/// This function creates a mock transaction using `MockChainBuilder` similar to what's done
-/// in the remote prover tests. The transaction is generated once and can be reused for
-/// multiple proof test calls.
+/// This function creates a mock transaction using `MockChainBuilder` similar to what's done in the
+/// remote prover tests. The transaction is generated once and can be reused for multiple proof test
+/// calls.
 pub async fn generate_mock_transaction() -> anyhow::Result<TransactionInputs> {
     let mut mock_chain_builder = MockChainBuilder::new();
 

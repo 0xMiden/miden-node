@@ -40,9 +40,8 @@ use crate::deploy::wallet::{create_wallet_account, save_wallet_account};
 pub mod counter;
 pub mod wallet;
 
-/// Create an RPC client configured with the correct genesis metadata in the
-/// `Accept` header so that write RPCs such as `SubmitProvenTransaction` are
-/// accepted by the node.
+/// Create an RPC client configured with the correct genesis metadata in the `Accept` header so that
+/// write RPCs such as `SubmitProvenTransaction` are accepted by the node.
 pub async fn create_genesis_aware_rpc_client(
     rpc_url: &Url,
     timeout: Duration,
@@ -98,9 +97,8 @@ pub async fn create_genesis_aware_rpc_client(
 
 /// Ensure accounts exist, creating them if they don't.
 ///
-/// This function checks if the wallet and counter account files exist.
-/// If they don't exist, it creates new accounts and saves them to the specified files.
-/// If they do exist, it does nothing.
+/// This function checks if the wallet and counter account files exist. If they don't exist, it
+/// creates new accounts and saves them to the specified files. If they do exist, it does nothing.
 ///
 /// # Arguments
 ///
@@ -141,8 +139,7 @@ pub async fn ensure_accounts_exist(
 
 /// Deploy counter account to the network.
 ///
-/// This function creates a counter program account,
-/// then saves it to the specified file.
+/// This function creates a counter program account, then saves it to the specified file.
 #[instrument(target = COMPONENT, name = "deploy-counter-account", skip_all, ret(level = "debug"))]
 pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) -> Result<()> {
     // Deploy counter account to the network using a genesis-aware RPC client.

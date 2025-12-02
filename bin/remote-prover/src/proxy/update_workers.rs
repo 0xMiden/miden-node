@@ -22,9 +22,9 @@ pub(crate) struct LoadBalancerUpdateService {
     server_opts: HttpServerOptions,
 }
 
-/// Manually implement Debug for `LoadBalancerUpdateService`.
-/// [`HttpServerOptions`] does not implement Debug, so we cannot derive Debug for
-/// [`LoadBalancerUpdateService`], which is needed for the tracing instrumentation.
+/// Manually implement Debug for `LoadBalancerUpdateService`. [`HttpServerOptions`] does not
+/// implement Debug, so we cannot derive Debug for [`LoadBalancerUpdateService`], which is needed
+/// for the tracing instrumentation.
 impl fmt::Debug for LoadBalancerUpdateService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LBUpdaterService")

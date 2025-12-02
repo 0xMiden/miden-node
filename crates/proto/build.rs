@@ -54,8 +54,8 @@ fn main() -> miette::Result<()> {
     Ok(())
 }
 
-/// Generates protobuf bindings from the given file descriptor set and stores them in the
-/// given destination directory.
+/// Generates protobuf bindings from the given file descriptor set and stores them in the given
+/// destination directory.
 fn generate_bindings(file_descriptors: FileDescriptorSet, dst_dir: &Path) -> miette::Result<()> {
     let mut prost_config = tonic_prost_build::Config::new();
     prost_config.skip_debug(["AccountId", "Digest"]);

@@ -318,8 +318,8 @@ impl GrpcClient for ValidatorClient {
 // STRICT TYPE-SAFE BUILDER (NO DEFAULTS)
 // ================================================================================================
 
-/// A type-safe builder that forces the caller to make an explicit decision for each
-/// configuration item (TLS, timeout, metadata version, metadata genesis) before connecting.
+/// A type-safe builder that forces the caller to make an explicit decision for each configuration
+/// item (TLS, timeout, metadata version, metadata genesis) before connecting.
 ///
 /// This builder replaces the previous defaulted builder. Callers must explicitly choose TLS,
 /// timeout, and metadata options before connecting.

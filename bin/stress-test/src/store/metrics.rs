@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-/// Prints a summary of the benchmark results, including the average and various percentile
-/// request latencies to help diagnose performance outliers.
+/// Prints a summary of the benchmark results, including the average and various percentile request
+/// latencies to help diagnose performance outliers.
 pub fn print_summary(timers_accumulator: &[Duration]) {
     let avg_time = timers_accumulator.iter().sum::<Duration>() / timers_accumulator.len() as u32;
     println!("Average request latency: {avg_time:?}");

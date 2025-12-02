@@ -40,7 +40,9 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Fmt
-        run: make format-check
+        run: make format
+      - name: Diff check
+        run: git diff --exit-code
 
   clippy:
     name: clippy

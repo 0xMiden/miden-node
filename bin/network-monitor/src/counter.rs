@@ -1,7 +1,7 @@
 //! Counter increment task functionality.
 //!
-//! This module contains the implementation for periodically incrementing the counter
-//! of the network account deployed at startup by creating and submitting network notes.
+//! This module contains the implementation for periodically incrementing the counter of the network
+//! account deployed at startup by creating and submitting network notes.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -315,8 +315,8 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 
 /// Run the counter tracking task.
 ///
-/// This function periodically fetches the current counter value from the network
-/// and updates the tracking details.
+/// This function periodically fetches the current counter value from the network and updates the
+/// tracking details.
 ///
 /// # Arguments
 ///

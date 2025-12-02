@@ -41,8 +41,7 @@ impl Drop for OtelGuard {
 /// Trace filtering defaults to `INFO` and can be configured using the conventional `RUST_LOG`
 /// environment variable.
 ///
-/// The open-telemetry configuration is controlled via environment variables as defined in the
-/// [specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/exporter.md#opentelemetry-protocol-exporter)
+/// The open-telemetry configuration is controlled via environment variables as defined in the [specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/exporter.md#opentelemetry-protocol-exporter)
 ///
 /// Registers a panic hook so that panic errors are reported to the open-telemetry exporter.
 ///
@@ -94,9 +93,9 @@ fn init_tracer_provider() -> anyhow::Result<SdkTracerProvider> {
 /// Allows trace content to be inspected via the returned receiver.
 ///
 /// All tests that use this function must be annotated with `#[serial(open_telemetry_tracing)]`.
-/// This forces serialization of all such tests. Otherwise, the tested spans could
-/// be interleaved during runtime. Also, the global exporter could be re-initialized in
-/// the middle of a concurrently running test.
+/// This forces serialization of all such tests. Otherwise, the tested spans could be interleaved
+/// during runtime. Also, the global exporter could be re-initialized in the middle of a
+/// concurrently running test.
 #[cfg(feature = "testing")]
 pub fn setup_test_tracing() -> anyhow::Result<(
     tokio::sync::mpsc::UnboundedReceiver<opentelemetry_sdk::trace::SpanData>,

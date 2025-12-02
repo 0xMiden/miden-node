@@ -15,8 +15,8 @@ use crate::remote_prover::generated as proto;
 // REMOTE BATCH PROVER
 // ================================================================================================
 
-/// A [`RemoteBatchProver`] is a batch prover that sends a proposed batch data to a remote
-/// gRPC server and receives a proven batch.
+/// A [`RemoteBatchProver`] is a batch prover that sends a proposed batch data to a remote gRPC
+/// server and receives a proven batch.
 ///
 /// When compiled for the `wasm32-unknown-unknown` target, it uses the `tonic_web_wasm_client`
 /// transport. Otherwise, it uses the built-in `tonic::transport` for native platforms.

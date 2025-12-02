@@ -1,16 +1,16 @@
 #[cfg(feature = "vergen")]
 pub use vergen::vergen;
 
-/// Contains build metadata which can be formatted into a pretty --version
-/// output using its Display implementation.
+/// Contains build metadata which can be formatted into a pretty --version output using its Display
+/// implementation.
 ///
-/// The build metadata can be embedded at compile time using the `vergen` function
-/// available from the `vergen` feature. See that functions description for a list
-/// of the environment variables emitted which map nicely to [`LongVersion`].
+/// The build metadata can be embedded at compile time using the `vergen` function available from
+/// the `vergen` feature. See that functions description for a list of the environment variables
+/// emitted which map nicely to [`LongVersion`].
 ///
-/// Unfortunately these values must be transferred manually by the end user since the
-/// env variables are only available once the caller's build script has run - which is
-/// after this crate is compiled.
+/// Unfortunately these values must be transferred manually by the end user since the env variables
+/// are only available once the caller's build script has run - which is after this crate is
+/// compiled.
 pub struct LongVersion {
     pub version: &'static str,
     pub sha: &'static str,

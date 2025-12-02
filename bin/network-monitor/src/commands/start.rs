@@ -13,8 +13,8 @@ use crate::monitor::tasks::Tasks;
 
 /// Start the network monitoring service.
 ///
-/// This function initializes all monitoring tasks including RPC status checking,
-/// remote prover testing, faucet testing, and the web frontend.
+/// This function initializes all monitoring tasks including RPC status checking, remote prover
+/// testing, faucet testing, and the web frontend.
 #[instrument(target = COMPONENT, name = "start-monitor", skip_all, fields(port = %config.port))]
 pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
     // Load configuration from command-line arguments and environment variables

@@ -25,13 +25,9 @@ fix: ## Runs Fix with configs
 
 
 .PHONY: format
-format: ## Runs Format using nightly toolchain
+fmt format: ## Runs Format using nightly toolchain
+	./scripts/reflow.sh
 	cargo +nightly fmt --all
-
-
-.PHONY: format-check
-format-check: ## Runs Format using nightly toolchain but only in check mode
-	cargo +nightly fmt --all --check
 
 
 .PHONY: machete

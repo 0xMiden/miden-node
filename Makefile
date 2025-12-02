@@ -29,11 +29,6 @@ fmt format: ## Runs Format using nightly toolchain
 	cargo +nightly fmt --all
 
 
-.PHONY: format-check
-format-check: ## Runs Format using nightly toolchain but only in check mode
-	cargo +nightly fmt --all --check
-
-
 .PHONY: machete
 machete: ## Runs machete to find unused dependencies
 	cargo machete

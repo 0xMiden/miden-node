@@ -1,10 +1,10 @@
-# ZERO-REGEX VERSION — supports list-like comment lines:
-#   * bullet points
-#   - dashes
-#   1. numbered lists
-#   1) numbered lists
-#
-# These lines break merge groups and are printed verbatim.
+# ZERO-REGEX VERSION — preserves:
+# - //, ///, //! comment lines
+# - empty lines
+# - === headings
+# - bullet points (*, -, numbered lists)
+# - fenced code blocks (lines starting with ``` inside comments)
+# Merges only mergeable lines of the same comment type
 
 function ltrim(s) {
     while (substr(s,1,1) == " " || substr(s,1,1) == "\t")
@@ -21,7 +21,7 @@ function is_numbered_list(s,    i, c) {
             found_digit = 1
             continue
         }
-        # if first non-digit is . or ) and we saw a digit
+        # first non-digit is . or ), and we saw a digit
         if (found_digit && (c == "." || c == ")"))
             return 1
         return 0
@@ -42,71 +42,70 @@ function is_numbered_list(s,    i, c) {
     else
         type = "none"
 
-    # ---------- COMMENT LINES ----------
+    # ---------- Handle fenced code block start/end ----------
     if (type != "none") {
+        prefix = (type=="doc" ? "///" : type=="innerdoc" ? "//!" : "//")
+        raw = substr(line, length(prefix)+1)
+        trimmed = ltrim(raw)
 
-        # Determine prefix
-        if (type == "doc")
-            prefix = "///"
-        else if (type == "innerdoc")
-            prefix = "//!"
-        else
-            prefix = "//"
+        # Detect fenced code block line
+        if (substr(trimmed,1,3) == "```") {
+            # Flush any existing merged comment
+            if (in_comment) {
+                print out_prefix merged
+                in_comment = 0
+            }
 
-        # Extract content after prefix
-        raw = substr(line, length(prefix) + 1)
+            # Toggle fenced code block mode
+            if (fenced == 0) fenced = 1
+            else fenced = 0
+
+            # Print the code block fence line verbatim
+            print line
+            next
+        }
+
+        # If inside a fenced code block, print everything verbatim
+        if (fenced == 1) {
+            print line
+            next
+        }
+
+        # ---------- Empty comment line ----------
+        empty = 1
         text = raw
         if (substr(text,1,1) == " ")
             text = substr(text,2)
-
-        # Trimmed version for tests
-        trimmed = ltrim(raw)
-
-        # ---------- 1. Empty comment line ----------
-        empty = 1
         for (i=1; i<=length(text); i++) {
             c = substr(text,i,1)
             if (c != " " && c != "\t") { empty = 0; break }
         }
         if (empty) {
-            if (in_comment) print out_prefix merged
-            in_comment = 0
+            if (in_comment) { print out_prefix merged; in_comment=0 }
             print line
             next
         }
 
-        # ---------- 2. "===..." lines ----------
+        # ---------- === heading ----------
         if (substr(trimmed,1,3) == "===") {
-            if (in_comment) print out_prefix merged
-            in_comment = 0
+            if (in_comment) { print out_prefix merged; in_comment=0 }
             print line
             next
         }
 
-        # ---------- 3. Bullet point or list item ----------
+        # ---------- Bullet or list item ----------
         first = substr(trimmed,1,1)
-        if (first == "*" || first == "-") {
-            if (in_comment) print out_prefix merged
-            in_comment = 0
+        if (first=="*" || first=="-" || is_numbered_list(trimmed)) {
+            if (in_comment) { print out_prefix merged; in_comment=0 }
             print line
             next
         }
 
-        # Numbered list detection
-        if (is_numbered_list(trimmed)) {
-            if (in_comment) print out_prefix merged
-            in_comment = 0
-            print line
-            next
-        }
-
-        # ---------- 4. Mergeable line ----------
+        # ---------- Mergeable line ----------
         if (in_comment && type == last_type) {
             merged = merged " " text
         } else {
-            if (in_comment)
-                print out_prefix merged
-
+            if (in_comment) print out_prefix merged
             in_comment = 1
             last_type = type
             merged = text
@@ -117,15 +116,11 @@ function is_numbered_list(s,    i, c) {
     }
 
     # ---------- Non-comment line ----------
-    if (in_comment) {
-        print out_prefix merged
-        in_comment = 0
-    }
+    if (in_comment) { print out_prefix merged; in_comment=0 }
     print line
 }
 
 END {
-    if (in_comment)
-        print out_prefix merged
+    if (in_comment) print out_prefix merged
 }
 

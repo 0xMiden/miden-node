@@ -49,6 +49,15 @@
         let statusData = null;
         let updateInterval = null;
 
+        function formatSuccessRate(successCount, failureCount) {
+            const total = successCount + failureCount;
+            if (!total) {
+                return 'N/A';
+            }
+
+            return `${((successCount / total) * 100).toFixed(1)}%`;
+        }
+
         async function fetchStatus() {
             try {
                 const response = await fetch('/status');
@@ -243,7 +252,7 @@
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
-                                            <span class="metric-value">${details.FaucetTest.success_count}/${details.FaucetTest.success_count + details.FaucetTest.failure_count}</span>
+                                            <span class="metric-value">${formatSuccessRate(details.FaucetTest.success_count, details.FaucetTest.failure_count)}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Last Response Time:</span>
@@ -326,12 +335,8 @@
                                     <strong>Counter Increment:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
-                                            <span class="metric-label">Successes:</span>
-                                            <span class="metric-value">${details.NtxIncrement.success_count}</span>
-                                        </div>
-                                        <div class="metric-row">
-                                            <span class="metric-label">Failures:</span>
-                                            <span class="metric-value">${details.NtxIncrement.failure_count}</span>
+                                            <span class="metric-label">Success Rate:</span>
+                                            <span class="metric-value">${formatSuccessRate(details.NtxIncrement.success_count, details.NtxIncrement.failure_count)}</span>
                                         </div>
                                         ${details.NtxIncrement.last_tx_id ? `
                                             <div class="metric-row">
@@ -384,7 +389,7 @@
                                     <div class="test-metrics ${service.testStatus === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
-                                            <span class="metric-value">${service.testDetails.success_count}/${service.testDetails.success_count + service.testDetails.failure_count}</span>
+                                            <span class="metric-value">${formatSuccessRate(service.testDetails.success_count, service.testDetails.failure_count)}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Last Response Time:</span>

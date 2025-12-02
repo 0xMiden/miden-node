@@ -19,8 +19,6 @@ use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::Word;
-use miden_objects::{Felt, FieldElement};
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     Account,
@@ -35,6 +33,7 @@ use miden_objects::account::{
 };
 use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
+use miden_objects::{Felt, FieldElement, Word};
 
 use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{
@@ -1398,13 +1397,9 @@ pub(crate) fn select_account_vault_at_block(
 /// The storage commitment as a `Word`
 fn compute_storage_commitment(slot_commitments: &[Word]) -> Word {
     use miden_objects::crypto::hash::rpo::Rpo256;
-    
-    let elements: Vec<Felt> = slot_commitments
-        .iter()
-        .flat_map(|w| w.iter())
-        .copied()
-        .collect();
-    
+
+    let elements: Vec<Felt> = slot_commitments.iter().flat_map(|w| w.iter()).copied().collect();
+
     Rpo256::hash_elements(&elements).into()
 }
 
@@ -1517,9 +1512,7 @@ pub(crate) fn select_account_header_at_block(
 
     let slot_commitments: Vec<Word> = storage_slots
         .into_iter()
-        .map(|(_slot_index, _slot_type, commitment_bytes)| {
-            Word::read_from_bytes(&commitment_bytes)
-        })
+        .map(|(_slot_index, _slot_type, commitment_bytes)| Word::read_from_bytes(&commitment_bytes))
         .collect::<Result<Vec<_>, _>>()?;
 
     let storage_commitment = compute_storage_commitment(&slot_commitments);
@@ -1529,9 +1522,7 @@ pub(crate) fn select_account_header_at_block(
         .transpose()?
         .unwrap_or(Word::default());
 
-    let nonce = nonce_raw
-        .map(raw_sql_to_nonce)
-        .unwrap_or(Felt::ZERO);
+    let nonce = nonce_raw.map_or(Felt::ZERO, raw_sql_to_nonce);
 
     let vault_root = vault_root_bytes
         .map(|bytes| Word::read_from_bytes(&bytes))

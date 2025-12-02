@@ -3,7 +3,12 @@ use std::fmt::{Debug, Display, Formatter};
 use miden_node_utils::formatting::format_opt;
 use miden_objects::Word;
 use miden_objects::account::{
-    Account, AccountHeader, AccountId, AccountStorageHeader, StorageMap, StorageSlotType,
+    Account,
+    AccountHeader,
+    AccountId,
+    AccountStorageHeader,
+    StorageMap,
+    StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVault};
 use miden_objects::block::{AccountWitness, BlockNumber};
@@ -375,7 +380,7 @@ impl AccountVaultDetails {
     /// Creates `AccountVaultDetails` from vault entries (key-value pairs).
     ///
     /// This is useful when entries have been fetched directly from the database
-    /// rather than extracted from an AssetVault.
+    /// rather than extracted from an `AssetVault`.
     ///
     /// The entries are `(vault_key, asset)` pairs where `asset` is a Word representation.
     pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, miden_objects::AssetError> {
@@ -449,7 +454,7 @@ impl AccountStorageMapDetails {
     pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
         match slot_data {
             SlotData::All => Self::from_all_entries(slot_index, storage_map),
-            SlotData::MapKeys(keys) => Self::from_all_entries(slot_index, storage_map), // TODO use from_specific_keys
+            SlotData::MapKeys(_keys) => Self::from_all_entries(slot_index, storage_map), /* TODO use from_specific_keys */
         }
     }
 
@@ -468,7 +473,7 @@ impl AccountStorageMapDetails {
 
     // TODO this is
     #[allow(dead_code)]
-    fn from_specific_keys(slot_index: u8, keys: &[Word], storage_map: &StorageMap) -> Self {
+    fn from_specific_keys(slot_index: u8, keys: &[Word], _storage_map: &StorageMap) -> Self {
         if keys.len() > Self::MAX_RETURN_ENTRIES {
             Self::too_many_entries(slot_index)
         } else {
@@ -476,9 +481,9 @@ impl AccountStorageMapDetails {
         }
     }
 
-    /// Creates an AccountStorageMapDetails from already-queried entries (e.g., from database).
+    /// Creates an `AccountStorageMapDetails` from already-queried entries (e.g., from database).
     /// This is useful when entries have been fetched directly rather than extracted from a
-    /// StorageMap.
+    /// `StorageMap`.
     pub fn from_entries(slot_index: u8, map_entries: Vec<(Word, Word)>) -> Self {
         let too_many_entries = map_entries.len() > Self::MAX_RETURN_ENTRIES;
         let map_entries = if too_many_entries { Vec::new() } else { map_entries };

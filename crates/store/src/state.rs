@@ -9,8 +9,15 @@ use std::path::Path;
 use std::sync::Arc;
 
 use miden_node_proto::domain::account::{
-    AccountDetailRequest, AccountDetails, AccountInfo, AccountProofRequest, AccountProofResponse,
-    AccountStorageDetails, AccountStorageMapDetails, AccountVaultDetails, NetworkAccountPrefix,
+    AccountDetailRequest,
+    AccountDetails,
+    AccountInfo,
+    AccountProofRequest,
+    AccountProofResponse,
+    AccountStorageDetails,
+    AccountStorageMapDetails,
+    AccountVaultDetails,
+    NetworkAccountPrefix,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
@@ -20,12 +27,26 @@ use miden_objects::account::{AccountId, StorageSlot};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
-    AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain, NullifierWitness,
+    AccountWitness,
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    Blockchain,
+    NullifierWitness,
     ProvenBlock,
 };
 use miden_objects::crypto::merkle::{
-    Forest, LargeSmt, MemoryStorage, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtForest,
-    SmtProof, SmtStorage,
+    Forest,
+    LargeSmt,
+    MemoryStorage,
+    Mmr,
+    MmrDelta,
+    MmrPeaks,
+    MmrProof,
+    PartialMmr,
+    SmtForest,
+    SmtProof,
+    SmtStorage,
 };
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
@@ -38,11 +59,23 @@ use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::{
-    AccountVaultValue, Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate,
+    AccountVaultValue,
+    Db,
+    NoteRecord,
+    NoteSyncUpdate,
+    NullifierInfo,
+    StateSyncUpdate,
 };
 use crate::errors::{
-    ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError, GetBlockInputsError,
-    GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError, StateInitializationError,
+    ApplyBlockError,
+    DatabaseError,
+    GetBatchInputsError,
+    GetBlockHeaderError,
+    GetBlockInputsError,
+    GetCurrentBlockchainDataError,
+    InvalidBlockError,
+    NoteSyncError,
+    StateInitializationError,
     StateSyncError,
 };
 use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};

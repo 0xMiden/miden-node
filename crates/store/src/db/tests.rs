@@ -1912,10 +1912,10 @@ fn test_select_account_code_at_block() {
         [],
         None,
     );
-    
+
     // Use the actual account ID from the created account
     let account_id = account.id();
-    
+
     // Get the code bytes before inserting
     let expected_code = account.code().to_bytes();
 
@@ -1938,13 +1938,13 @@ fn test_select_account_code_at_block() {
     assert_eq!(code_at_1, expected_code);
 
     // Query code at non-existent block - should return None
-    let code_at_2 = queries::select_account_code_at_block(&mut conn, account_id, block_num_2)
-        .unwrap();
+    let code_at_2 =
+        queries::select_account_code_at_block(&mut conn, account_id, block_num_2).unwrap();
     assert!(code_at_2.is_none(), "Code should not exist at block 2");
 
     // Query code for non-existent account - should return None
     let other_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-    let code_other = queries::select_account_code_at_block(&mut conn, other_account_id, block_num_1)
-        .unwrap();
+    let code_other =
+        queries::select_account_code_at_block(&mut conn, other_account_id, block_num_1).unwrap();
     assert!(code_other.is_none(), "Code should not exist for non-existent account");
 }

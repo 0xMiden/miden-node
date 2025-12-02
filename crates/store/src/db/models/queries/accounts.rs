@@ -97,58 +97,8 @@ pub(crate) fn select_account(
     Ok(AccountInfo { summary, details })
 }
 
-/// Select account info at a specific block number from the DB using the given
-/// [`SqliteConnection`].
-///
-/// # Returns
-///
-/// The account info at the specified block, or an error.
-///
-/// # Note
-///
-/// This function returns only the account summary (id, commitment, `block_num`).
-/// Full account details are no longer reconstructed here - use separate query functions
-/// to fetch specific account components as needed.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT
-///     accounts.account_id,
-///     accounts.account_commitment,
-///     accounts.block_num
-/// FROM
-///     accounts
-/// WHERE
-///     account_id = ?1
-///     AND block_num = ?2
-/// ```
-pub(crate) fn select_historical_account_at(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<AccountInfo, DatabaseError> {
-    let raw = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
-        .filter(
-            schema::accounts::account_id
-                .eq(account_id.to_bytes())
-                .and(schema::accounts::block_num.eq(block_num.to_raw_sql())),
-        )
-        .get_result::<AccountSummaryRaw>(conn)
-        .optional()?
-        .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-
-    let summary: AccountSummary = raw.try_into()?;
-
-    // Backfill account details from database (at the specific historical block)
-    // Note: We use `ok()` to convert errors to None, as historical data might not have full details
-    let details = reconstruct_full_account_from_db(conn, account_id).ok();
-
-    Ok(AccountInfo { summary, details })
-}
-
 /// Select the latest account info by account ID prefix from the DB using the given
-/// [`SqliteConnection`]. This method is meant to be used by the network transaction builder.
+/// [`SqliteConnection`]. Meant to be used by the network transaction builder.
 /// Because network notes get matched through accounts through the account's 30-bit prefix, it is
 /// possible that multiple accounts match against a single prefix. In this scenario, the first
 /// account is returned.
@@ -534,88 +484,6 @@ pub(crate) fn select_account_storage_map_values(
     Ok(StorageMapValuesPage { last_block_included, values })
 }
 
-/// Select specific storage map keys at a specific block from the DB using the given
-/// [`SqliteConnection`].
-///
-/// This function queries the `account_storage_map_values` table for specific keys at or before
-/// the given block number, avoiding the need to deserialize the entire account.
-///
-/// # Arguments
-///
-/// * `conn` - Database connection
-/// * `account_id` - The account ID to query
-/// * `block_num` - The block number to query at
-/// * `slot_index` - The storage slot index
-/// * `keys` - The specific keys to retrieve
-///
-/// # Returns
-///
-/// A vector of (key, value) tuples for the requested keys that exist in the storage map.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT DISTINCT
-///     first_value(key) OVER w as key,
-///     first_value(value) OVER w as value
-/// FROM
-///     account_storage_map_values
-/// WHERE
-///     account_id = ?1
-///     AND slot = ?2
-///     AND block_num <= ?3
-///     AND key IN (?4, ?5, ...)
-/// WINDOW w AS (
-///     PARTITION BY key
-///     ORDER BY block_num DESC
-/// )
-/// ```
-pub(crate) fn select_storage_map_keys_at_block(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-    slot_index: u8,
-    keys: &[Word],
-) -> Result<Vec<(Word, Word)>, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    if keys.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let account_id_bytes = account_id.to_bytes();
-    let block_num_sql = block_num.to_raw_sql();
-    let slot_sql = slot_to_raw_sql(slot_index);
-
-    // Convert keys to bytes for query
-    let keys_bytes: Vec<Vec<u8>> =
-        keys.iter().map(miden_objects::utils::Serializable::to_bytes).collect();
-
-    // Query for the requested keys at or before the specified block
-    let raw: Vec<(Vec<u8>, Vec<u8>)> = SelectDsl::select(t::table, (t::key, t::value))
-        .filter(
-            t::account_id
-                .eq(&account_id_bytes)
-                .and(t::slot.eq(slot_sql))
-                .and(t::block_num.le(block_num_sql))
-                .and(t::key.eq_any(&keys_bytes)),
-        )
-        .distinct()
-        .load(conn)?;
-
-    // Parse results
-    let results: Vec<(Word, Word)> = raw
-        .into_iter()
-        .map(|(key_bytes, value_bytes)| {
-            let key = Word::read_from_bytes(&key_bytes)?;
-            let value = Word::read_from_bytes(&value_bytes)?;
-            Ok((key, value))
-        })
-        .collect::<Result<Vec<_>, DatabaseError>>()?;
-
-    Ok(results)
-}
-
 /// Reconstruct a `StorageMap` from database entries using `SmtForest`
 ///
 /// This function builds an `SmtForest` from all key-value pairs at the specified block,
@@ -938,13 +806,13 @@ pub(crate) fn insert_account_vault_asset(
 
 /// Insert an account storage header into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest=true` for the new row and update any existing
+/// Sets `is_latest=true` for the new row and updates any existing
 /// row with the same `(account_id, slot_index)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
 /// The number of affected rows.
-#[allow(dead_code)] // Used in tests
+#[cfg(test)]
 pub(crate) fn insert_account_storage_header(
     conn: &mut SqliteConnection,
     account_id: AccountId,

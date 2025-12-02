@@ -409,18 +409,7 @@ impl Db {
             .await
     }
 
-    /// Loads account details at a specific block number from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_historical_account_at(
-        &self,
-        id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountInfo> {
-        self.transact("Get historical account details", move |conn| {
-            queries::select_historical_account_at(conn, id, block_num)
-        })
-        .await
-    }
+
 
     /// Loads public account details from the DB based on the account ID's prefix.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
@@ -614,26 +603,6 @@ impl Db {
     ) -> Result<StorageMapValuesPage> {
         self.transact("select storage map sync values", move |conn| {
             models::queries::select_account_storage_map_values(conn, account_id, block_range)
-        })
-        .await
-    }
-
-    /// Selects specific storage map keys at a specific block from the DB
-    ///
-    /// This method is optimized for querying specific keys without deserializing the entire
-    /// account, which is much faster for historical queries.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_storage_map_keys_at_block(
-        &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
-        slot_index: u8,
-        keys: Vec<Word>,
-    ) -> Result<Vec<(Word, Word)>> {
-        self.transact("select storage map keys at block", move |conn| {
-            models::queries::select_storage_map_keys_at_block(
-                conn, account_id, block_num, slot_index, &keys,
-            )
         })
         .await
     }

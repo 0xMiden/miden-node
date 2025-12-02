@@ -1656,59 +1656,7 @@ fn test_storage_reconstruction_historical_state() {
     }
 }
 
-#[test]
-#[miden_node_test_macro::enable_logging]
-fn test_storage_map_specific_keys_query() {
-    let mut conn = create_db();
 
-    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let block_num = BlockNumber::from(1);
-    let slot_index = 0u8;
-
-    // Insert storage map header
-    queries::insert_account_storage_header(
-        &mut conn,
-        account_id,
-        block_num,
-        slot_index,
-        StorageSlotType::Map,
-        EMPTY_WORD, // placeholder commitment
-    )
-    .unwrap();
-
-    // Insert several map entries
-    for i in 1..=10 {
-        queries::insert_account_storage_map_value(
-            &mut conn,
-            account_id,
-            block_num,
-            slot_index,
-            num_to_word(i),
-            num_to_word(i * 100),
-        )
-        .unwrap();
-    }
-
-    // Query specific keys
-    let requested_keys = vec![num_to_word(2), num_to_word(5), num_to_word(8)];
-    let results = queries::select_storage_map_keys_at_block(
-        &mut conn,
-        account_id,
-        block_num,
-        slot_index,
-        &requested_keys,
-    )
-    .unwrap();
-
-    // Should return exactly 3 entries
-    assert_eq!(results.len(), 3);
-
-    // Verify the values
-    let result_map: std::collections::HashMap<_, _> = results.into_iter().collect();
-    assert_eq!(result_map.get(&num_to_word(2)), Some(&num_to_word(200)));
-    assert_eq!(result_map.get(&num_to_word(5)), Some(&num_to_word(500)));
-    assert_eq!(result_map.get(&num_to_word(8)), Some(&num_to_word(800)));
-}
 
 #[test]
 #[miden_node_test_macro::enable_logging]

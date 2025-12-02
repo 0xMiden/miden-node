@@ -355,8 +355,8 @@ impl Tasks {
 
 /// Gets the current Unix timestamp in seconds.
 ///
-/// This function is infallible - if the system time is somehow before Unix epoch
-/// (extremely unlikely), it returns 0.
+/// This function is infallible - if the system time is somehow before Unix epoch (extremely
+/// unlikely), it returns 0.
 pub fn current_unix_timestamp_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

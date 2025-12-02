@@ -295,11 +295,11 @@ impl Node for BlockNode {
 
 /// Contains the current nodes of the state DAG.
 ///
-/// Nodes are purposefully not stored as a single collection since we often want to iterate
-/// through specific node types e.g. all available transactions.
+/// Nodes are purposefully not stored as a single collection since we often want to iterate through
+/// specific node types e.g. all available transactions.
 ///
-/// This data _must_ be kept in sync with the [`InflightState's`] [`NodeIds`] since these are
-/// used as the edges of the graph.
+/// This data _must_ be kept in sync with the [`InflightState's`] [`NodeIds`] since these are used
+/// as the edges of the graph.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub(super) struct Nodes {
     // Nodes in the DAG

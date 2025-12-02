@@ -22,9 +22,9 @@ use crate::transaction::{NtxContext, NtxError};
 /// Network transaction builder component.
 ///
 /// The network transaction builder is in in charge of building transactions that consume notes
-/// against network accounts. These notes are identified and communicated by the block producer.
-/// The service maintains a list of unconsumed notes and periodically executes and proves
-/// transactions that consume them (reaching out to the store to retrieve state as necessary).
+/// against network accounts. These notes are identified and communicated by the block producer. The
+/// service maintains a list of unconsumed notes and periodically executes and proves transactions
+/// that consume them (reaching out to the store to retrieve state as necessary).
 pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
     store_url: Url,

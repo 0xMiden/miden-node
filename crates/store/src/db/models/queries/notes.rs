@@ -76,14 +76,14 @@ use crate::errors::NoteSyncError;
 ///
 /// # Returns
 ///
-/// All matching notes from the first block within the range containing a matching note.
-/// A note is considered a match if it has any of the given tags, or if its sender is one of the
-/// given account IDs. If no matching notes are found at all, then an empty vector is returned.
+/// All matching notes from the first block within the range containing a matching note. A note is
+/// considered a match if it has any of the given tags, or if its sender is one of the given account
+/// IDs. If no matching notes are found at all, then an empty vector is returned.
 ///
 /// # Note
 ///
-/// This method returns notes from a single block. To fetch all notes up to the chain tip,
-/// multiple requests are necessary.
+/// This method returns notes from a single block. To fetch all notes up to the chain tip, multiple
+/// requests are necessary.
 ///
 /// # Raw SQL
 ///
@@ -390,8 +390,8 @@ pub(crate) fn select_note_script_by_root(
 ///
 /// # Returns
 ///
-/// A set of unconsumed network notes with maximum length of `size` and the page to get
-/// the next set.
+/// A set of unconsumed network notes with maximum length of `size` and the page to get the next
+/// set.
 ///
 /// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
 /// statements
@@ -502,8 +502,8 @@ pub(crate) fn unconsumed_network_notes(
 ///
 /// # Returns
 ///
-/// A set of unconsumed network notes with maximum length of `size` and the page to get
-/// the next set.
+/// A set of unconsumed network notes with maximum length of `size` and the page to get the next
+/// set.
 ///
 /// # Raw SQL
 ///
@@ -680,10 +680,8 @@ pub struct NoteDetailsRawRow {
     pub serial_num: Option<Vec<u8>>,
 }
 
-// Note: One cannot use `#[diesel(embed)]` to structure
-// this, it will yield a significant amount of errors
-// when used with join and debugging is painful to put it
-// mildly.
+// Note: One cannot use `#[diesel(embed)]` to structure this, it will yield a significant amount of
+// errors when used with join and debugging is painful to put it mildly.
 #[derive(Debug, Clone, PartialEq, Queryable)]
 pub struct NoteRecordWithScriptRawJoined {
     pub committed_at: i64,

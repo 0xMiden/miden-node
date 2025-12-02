@@ -100,8 +100,8 @@ fn setup_account_tree_with_history(
 // VANILLA ACCOUNTTREE BENCHMARKS
 // ================================================================================================
 
-/// Benchmarks vanilla `AccountTree` open (query) operations.
-/// This provides a baseline for comparison with historical access operations.
+/// Benchmarks vanilla `AccountTree` open (query) operations. This provides a baseline for
+/// comparison with historical access operations.
 fn bench_vanilla_access(c: &mut Criterion) {
     let mut group = c.benchmark_group("account_tree_vanilla_access");
 
@@ -121,8 +121,8 @@ fn bench_vanilla_access(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmarks vanilla `AccountTree` insertion (mutation) performance.
-/// This provides a baseline for comparison with history-tracking insertion.
+/// Benchmarks vanilla `AccountTree` insertion (mutation) performance. This provides a baseline for
+/// comparison with history-tracking insertion.
 fn bench_vanilla_insertion(c: &mut Criterion) {
     let mut group = c.benchmark_group("account_tree_insertion");
 

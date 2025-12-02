@@ -34,9 +34,9 @@ use crate::db::{NullifierInfo, schema};
 /// * `nullifier_prefixes`: List of nullifier prefixes to filter by
 ///     - Limit: 0 <= count <= 1000
 ///
-/// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits
-/// of the nullifier of interest to the client. This hides the details of the specific
-/// nullifier being requested. Currently the only supported prefix length is 16 bits.
+/// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits of the
+/// nullifier of interest to the client. This hides the details of the specific nullifier being
+/// requested. Currently the only supported prefix length is 16 bits.
 ///
 /// # Returns
 ///

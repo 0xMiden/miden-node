@@ -50,8 +50,8 @@ impl std::str::FromStr for ProofType {
 
 /// The prover for the remote prover.
 ///
-/// This enum is used to store the prover for the remote prover.
-/// Only one prover is enabled at a time.
+/// This enum is used to store the prover for the remote prover. Only one prover is enabled at a
+/// time.
 enum Prover {
     Transaction(Mutex<LocalTransactionProver>),
     Batch(Mutex<LocalBatchProver>),

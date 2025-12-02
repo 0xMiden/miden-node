@@ -236,10 +236,10 @@ impl TransactionSummaryRowInsert {
 /// - `transaction_records`: Vector of transaction records, limited by payload size
 ///
 /// # Note
-/// This function returns complete transaction record information including state commitments
-/// and note IDs, allowing for direct conversion to proto `TransactionRecord` without loading
-/// full block data. We use a chunked loading strategy to prevent memory exhaustion attacks and
-/// ensure predictable resource usage.
+/// This function returns complete transaction record information including state commitments and
+/// note IDs, allowing for direct conversion to proto `TransactionRecord` without loading full block
+/// data. We use a chunked loading strategy to prevent memory exhaustion attacks and ensure
+/// predictable resource usage.
 ///
 /// # Raw SQL
 /// ```sql

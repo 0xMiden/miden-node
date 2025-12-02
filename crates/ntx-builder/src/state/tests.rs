@@ -38,8 +38,8 @@ fn create_mock_state() -> State {
 
 /// Regression test for issue #1312
 ///
-/// This test verifies that the `NtxBuilder`'s state handling correctly processes transactions
-/// that contain nullifiers without corresponding network notes. This scenario can occur when:
+/// This test verifies that the `NtxBuilder`'s state handling correctly processes transactions that
+/// contain nullifiers without corresponding network notes. This scenario can occur when:
 /// - A transaction consumes a non-network note (e.g., a private note)
 /// - The nullifier is included in the transaction but is not tracked by the `NtxBuilder`
 ///

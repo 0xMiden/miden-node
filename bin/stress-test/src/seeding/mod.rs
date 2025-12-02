@@ -118,8 +118,8 @@ pub async fn seed_store(
 
 /// Generates batches of transactions to be inserted into the store.
 ///
-/// The first transaction in each batch sends assets from the faucet to 255 accounts.
-/// The rest of the transactions consume the notes created by the faucet in the previous block.
+/// The first transaction in each batch sends assets from the faucet to 255 accounts. The rest of
+/// the transactions consume the notes created by the faucet in the previous block.
 async fn generate_blocks(
     num_accounts: usize,
     public_accounts_percentage: u8,
@@ -430,8 +430,8 @@ fn create_consume_note_tx(
     .unwrap()
 }
 
-/// Creates a transaction from the faucet that creates the given output notes.
-/// Updates the faucet account to increase the issuance slot and it's nonce.
+/// Creates a transaction from the faucet that creates the given output notes. Updates the faucet
+/// account to increase the issuance slot and it's nonce.
 fn create_emit_note_tx(
     block_ref: &BlockHeader,
     faucet: &mut Account,

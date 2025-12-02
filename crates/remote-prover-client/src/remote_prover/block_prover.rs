@@ -18,8 +18,8 @@ use crate::remote_prover::generated as proto;
 // REMOTE BLOCK PROVER
 // ================================================================================================
 
-/// A [`RemoteBlockProver`] is a block prover that sends a proposed block data to a remote
-/// gRPC server and receives a proven block.
+/// A [`RemoteBlockProver`] is a block prover that sends a proposed block data to a remote gRPC
+/// server and receives a proven block.
 ///
 /// When compiled for the `wasm32-unknown-unknown` target, it uses the `tonic_web_wasm_client`
 /// transport. Otherwise, it uses the built-in `tonic::transport` for native platforms.

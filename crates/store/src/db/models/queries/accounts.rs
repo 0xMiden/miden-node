@@ -437,8 +437,8 @@ impl StorageMapValue {
 ///
 /// # Returns
 ///
-/// A vector of tuples containing `(slot, key, value, is_latest)` for the given account.
-/// Each row contains one of:
+/// A vector of tuples containing `(slot, key, value, is_latest)` for the given account. Each row
+/// contains one of:
 ///
 /// - the historical value for a slot and key specifically on block `block_to`
 /// - the latest updated value for the slot and key combination, alongside the block number in which
@@ -650,8 +650,8 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest=true` for the new row and update any existing
-/// row with the same `(account_id, vault_key)` tuple to `is_latest=false`.
+/// This function will set `is_latest=true` for the new row and update any existing row with the
+/// same `(account_id, vault_key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -690,8 +690,8 @@ pub(crate) fn insert_account_vault_asset(
 
 /// Insert an account storage map value into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest=true` for the new row and update any existing
-/// row with the same `(account_id, slot, key)` tuple to `is_latest=false`.
+/// This function will set `is_latest=true` for the new row and update any existing row with the
+/// same `(account_id, slot, key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///

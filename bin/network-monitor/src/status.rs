@@ -1,7 +1,7 @@
 //! Network monitor status checker.
 //!
-//! This module contains the logic for checking the status of network services.
-//! Individual status checker tasks send updates via watch channels to the web server.
+//! This module contains the logic for checking the status of network services. Individual status
+//! checker tasks send updates via watch channels to the web server.
 
 use std::time::Duration;
 
@@ -132,8 +132,8 @@ pub struct StoreStatusDetails {
 
 /// Details of a block producer service.
 ///
-/// This struct contains the details of a block producer service, which is a union of the details
-/// of the block producer service.
+/// This struct contains the details of a block producer service, which is a union of the details of
+/// the block producer service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockProducerStatusDetails {
     pub version: String,
@@ -155,8 +155,8 @@ pub struct MempoolStatusDetails {
 
 /// Details of a remote prover service.
 ///
-/// This struct contains the details of a remote prover service, which is a union of the details
-/// of the remote prover service.
+/// This struct contains the details of a remote prover service, which is a union of the details of
+/// the remote prover service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteProverStatusDetails {
     pub url: String,
@@ -267,8 +267,8 @@ impl From<RpcStatus> for RpcStatusDetails {
 
 /// Runs a task that continuously checks RPC status and updates a watch channel.
 ///
-/// This function spawns a task that periodically checks the RPC service status
-/// and sends updates through a watch channel.
+/// This function spawns a task that periodically checks the RPC service status and sends updates
+/// through a watch channel.
 ///
 /// # Arguments
 ///
@@ -357,8 +357,8 @@ pub(crate) async fn check_rpc_status(
 
 /// Runs a task that continuously checks remote prover status and updates a watch channel.
 ///
-/// This function spawns a task that periodically checks a remote prover service status
-/// and sends updates through a watch channel.
+/// This function spawns a task that periodically checks a remote prover service status and sends
+/// updates through a watch channel.
 ///
 /// # Arguments
 ///

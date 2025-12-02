@@ -17,9 +17,7 @@ const DEFAULT_ALLOW_HEADERS: [HeaderName; 4] = [
 
 /// Enables CORS support. This is required for gRPC-web support.
 ///
-/// The following implementation is based on the one in tonic-web that was deprecated
-/// in favor of letting the user configure the CORS layer. Reference:
-/// <https://github.com/hyperium/tonic/pull/1982/files>
+/// The following implementation is based on the one in tonic-web that was deprecated in favor of letting the user configure the CORS layer. Reference: <https://github.com/hyperium/tonic/pull/1982/files>
 ///
 /// # Configuration
 ///

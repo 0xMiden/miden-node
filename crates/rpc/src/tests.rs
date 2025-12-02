@@ -370,8 +370,8 @@ async fn send_request(
     rpc_client.get_block_header_by_number(request).await
 }
 
-/// Binds a socket on an available port, runs the RPC server on it, and
-/// returns a client to talk to the server, along with the socket address.
+/// Binds a socket on an available port, runs the RPC server on it, and returns a client to talk to
+/// the server, along with the socket address.
 async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) {
     let store_addr = {
         let store_listener =

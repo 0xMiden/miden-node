@@ -1,7 +1,7 @@
 //! Faucet testing functionality.
 //!
-//! This module contains the logic for periodically testing faucet functionality
-//! by requesting proof-of-work challenges, solving them, and submitting token requests.
+//! This module contains the logic for periodically testing faucet functionality by requesting
+//! proof-of-work challenges, solving them, and submitting token requests.
 
 use std::time::Duration;
 

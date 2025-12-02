@@ -842,8 +842,8 @@ impl From<Asset> for proto::primitives::Asset {
 
 pub type AccountPrefix = u32;
 
-/// Newtype wrapper for network account prefix.
-/// Provides type safety for accounts that are meant for network execution.
+/// Newtype wrapper for network account prefix. Provides type safety for accounts that are meant for
+/// network execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct NetworkAccountPrefix(u32);
 

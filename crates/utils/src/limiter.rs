@@ -4,9 +4,8 @@
 //! 1. the external facing RPC
 //! 2. limiting SQL statements not exceeding parameter limits
 //!
-//! The 1st is good to terminate invalid requests as early as possible,
-//! where the second is both a fallback and a safeguard not benching
-//! pointless parameter combinations.
+//! The 1st is good to terminate invalid requests as early as possible, where the second is both a
+//! fallback and a safeguard not benching pointless parameter combinations.
 
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
@@ -17,8 +16,8 @@ pub struct QueryLimitError {
     limit: usize,
 }
 
-/// Checks limits against the desired query parameters, per query parameter and
-/// bails if they exceed a defined value.
+/// Checks limits against the desired query parameters, per query parameter and bails if they exceed
+/// a defined value.
 pub trait QueryParamLimiter {
     /// Name of the parameter to mention in the error.
     const PARAM_NAME: &'static str;
@@ -71,8 +70,7 @@ impl QueryParamLimiter for QueryParamNoteTagLimit {
     const LIMIT: usize = 1000;
 }
 
-/// Used for the following RPC endpoints
-/// `select_notes_by_id`
+/// Used for the following RPC endpoints `select_notes_by_id`
 pub struct QueryParamNoteIdLimit;
 impl QueryParamLimiter for QueryParamNoteIdLimit {
     const PARAM_NAME: &str = "note_id";

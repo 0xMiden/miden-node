@@ -1,7 +1,7 @@
 //! Miden Network Monitor
 //!
-//! A monitor application for Miden network infrastructure that provides real-time status
-//! monitoring and account deployment capabilities.
+//! A monitor application for Miden network infrastructure that provides real-time status monitoring
+//! and account deployment capabilities.
 
 use anyhow::Result;
 use clap::Parser;
@@ -28,8 +28,8 @@ pub const COMPONENT: &str = "miden-network-monitor";
 
 /// Network Monitor main function.
 ///
-/// This function parses command-line arguments and delegates to the appropriate
-/// command handler. The monitor supports two main commands:
+/// This function parses command-line arguments and delegates to the appropriate command handler.
+/// The monitor supports two main commands:
 /// - `start`: Runs the network monitoring service with web dashboard
 /// - `deploy-account`: Creates and deploys Miden accounts to the network
 #[tokio::main]

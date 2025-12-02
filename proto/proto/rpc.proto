@@ -128,6 +128,21 @@ message BlockProducerStatus {
 
     // The block producer's status.
     string status = 2;
+
+    // Statistics about the mempool.
+    MempoolStats mempool_stats = 3;
+}
+
+// Statistics about the mempool.
+message MempoolStats {
+    // Number of transactions currently in the mempool waiting to be batched.
+    uint64 unbatched_transactions = 1;
+
+    // Number of batches currently being proven.
+    uint64 proposed_batches = 2;
+
+    // Number of proven batches waiting for block inclusion.
+    uint64 proven_batches = 3;
 }
 
 // STORE STATUS

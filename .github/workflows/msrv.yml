@@ -26,8 +26,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - name: Install cargo-msrv
-        run: cargo install cargo-msrv
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - run: cargo binstall --no-confirm cargo-msrv
       - name: Check MSRV for each workspace member
         run: |
           ./scripts/check-msrv.sh

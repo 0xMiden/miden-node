@@ -8,7 +8,6 @@ pub mod note;
 pub mod primitives;
 pub mod remote_prover;
 pub mod rpc;
-pub mod shared;
 pub mod store;
 pub mod transaction;
 pub mod validator;

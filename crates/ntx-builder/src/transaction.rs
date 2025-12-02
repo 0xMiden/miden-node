@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::num::NonZeroUsize;
 
-use lru::LruCache;
+use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
 use miden_objects::asset::{AssetVaultKey, AssetWitness};
@@ -35,7 +35,6 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
-use tokio::sync::Mutex;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
@@ -70,19 +69,42 @@ type NtxResult<T> = Result<T, NtxError>;
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
 #[derive(Clone)]
 pub struct NtxContext {
-    pub block_producer: BlockProducerClient,
+    block_producer: BlockProducerClient,
 
     /// The prover to delegate proofs to.
     ///
     /// Defaults to local proving if unset. This should be avoided in production as this is
     /// computationally intensive.
-    pub prover: Option<RemoteTransactionProver>,
+    prover: Option<RemoteTransactionProver>,
 
     /// The store client for retrieving note scripts.
-    pub store: StoreClient,
+    store: StoreClient,
+
+    /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
+    script_cache: LruCache<Word, NoteScript>,
 }
 
 impl NtxContext {
+    /// Default cache size for note scripts.
+    ///
+    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
+    /// depends on the complexity of the scripts being cached.
+    const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
+
+    /// Creates a new [`NtxContext`] instance.
+    pub fn new(
+        block_producer: BlockProducerClient,
+        prover: Option<RemoteTransactionProver>,
+        store: StoreClient,
+    ) -> Self {
+        Self {
+            block_producer,
+            prover,
+            store,
+            script_cache: LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE),
+        }
+    }
+
     /// Executes a transaction end-to-end: filtering, executing, proving, and submitted to the block
     /// producer.
     ///
@@ -125,8 +147,13 @@ impl NtxContext {
 
         async move {
             async move {
-                let data_store =
-                    NtxDataStore::new(account, chain_tip_header, chain_mmr, self.store.clone());
+                let data_store = NtxDataStore::new(
+                    account,
+                    chain_tip_header,
+                    chain_mmr,
+                    self.store.clone(),
+                    self.script_cache.clone(),
+                );
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
@@ -256,22 +283,17 @@ struct NtxDataStore {
     /// Store client for retrieving note scripts.
     store: StoreClient,
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
-    script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
+    script_cache: LruCache<Word, NoteScript>,
 }
 
 impl NtxDataStore {
-    /// Default cache size for note scripts.
-    ///
-    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
-    /// depends on the complexity of the scripts being cached.
-    const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
-
     /// Creates a new `NtxDataStore` with default cache size.
     fn new(
         account: Account,
         reference_header: BlockHeader,
         chain_mmr: PartialBlockchain,
         store: StoreClient,
+        script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
@@ -282,10 +304,7 @@ impl NtxDataStore {
             chain_mmr,
             mast_store,
             store,
-            script_cache: Arc::new(Mutex::new(LruCache::new(
-                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
-                    .expect("default script cache size is non-zero"),
-            ))),
+            script_cache,
         }
     }
 }
@@ -323,12 +342,12 @@ impl DataStore for NtxDataStore {
         async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
     }
 
-    fn get_vault_asset_witness(
+    fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: AssetVaultKey,
-    ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             if self.account.id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));
@@ -341,12 +360,14 @@ impl DataStore for NtxDataStore {
                 });
             }
 
-            AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
-                DataStoreError::Other {
-                    error_msg: "failed to open vault asset tree".into(),
-                    source: Some(Box::new(err)),
-                }
-            })
+            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+                AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
+                    DataStoreError::Other {
+                        error_msg: "failed to open vault asset tree".into(),
+                        source: Some(Box::new(err)),
+                    }
+                })
+            }))
         }
     }
 
@@ -390,14 +411,11 @@ impl DataStore for NtxDataStore {
         script_root: Word,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         let store = self.store.clone();
-        let cache = self.script_cache.clone();
+        let mut cache = self.script_cache.clone();
 
         async move {
             // Attempt to retrieve the script from the cache.
-            if let Some(cached_script) = {
-                let mut cache_guard = cache.lock().await;
-                cache_guard.get(&script_root).cloned()
-            } {
+            if let Some(cached_script) = cache.get(&script_root).await {
                 return Ok(Some(cached_script));
             }
 
@@ -410,8 +428,7 @@ impl DataStore for NtxDataStore {
             })?;
             // Handle response.
             if let Some(script) = maybe_script {
-                let mut cache_guard = cache.lock().await;
-                cache_guard.put(script_root, script.clone());
+                cache.put(script_root, script.clone()).await;
                 Ok(Some(script))
             } else {
                 Ok(None)

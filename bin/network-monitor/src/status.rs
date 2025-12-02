@@ -18,7 +18,6 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, instrument};
 use url::Url;
 
-use crate::counter::CounterIncrementDetails;
 use crate::faucet::FaucetTestDetails;
 use crate::remote_prover::{ProofType, ProverTestDetails};
 use crate::{COMPONENT, current_unix_timestamp_secs};
@@ -70,6 +69,30 @@ pub struct ServiceStatus {
     pub details: ServiceDetails,
 }
 
+/// Details of the increment service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IncrementDetails {
+    /// Number of successful counter increments.
+    pub success_count: u64,
+    /// Number of failed counter increments.
+    pub failure_count: u64,
+    /// Last transaction ID (if available).
+    pub last_tx_id: Option<String>,
+}
+
+/// Details of the counter tracking service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CounterTrackingDetails {
+    /// Current counter value observed on-chain (if available).
+    pub current_value: Option<u64>,
+    /// Expected counter value based on successful increments sent.
+    pub expected_value: Option<u64>,
+    /// Last time the counter value was successfully updated.
+    pub last_updated: Option<u64>,
+    /// Number of pending increments (expected - current).
+    pub pending_increments: Option<u64>,
+}
+
 /// Details of a service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServiceDetails {
@@ -77,7 +100,8 @@ pub enum ServiceDetails {
     RemoteProverStatus(RemoteProverStatusDetails),
     RemoteProverTest(ProverTestDetails),
     FaucetTest(FaucetTestDetails),
-    NtxService(CounterIncrementDetails),
+    NtxIncrement(IncrementDetails),
+    NtxTracking(CounterTrackingDetails),
     Error,
 }
 
@@ -112,6 +136,19 @@ pub struct StoreStatusDetails {
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
+    /// Mempool statistics for this block producer.
+    pub mempool: MempoolStatusDetails,
+}
+
+/// Details about the block producer's mempool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MempoolStatusDetails {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    pub unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    pub proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    pub proven_batches: u64,
 }
 
 /// Details of a remote prover service.
@@ -164,9 +201,19 @@ impl From<StoreStatus> for StoreStatusDetails {
 
 impl From<BlockProducerStatus> for BlockProducerStatusDetails {
     fn from(value: BlockProducerStatus) -> Self {
+        // We assume all supported nodes expose mempool statistics.
+        let mempool_stats = value
+            .mempool_stats
+            .expect("block producer status must include mempool statistics");
+
         Self {
             version: value.version,
             status: value.status.into(),
+            mempool: MempoolStatusDetails {
+                unbatched_transactions: mempool_stats.unbatched_transactions,
+                proposed_batches: mempool_stats.proposed_batches,
+                proven_batches: mempool_stats.proven_batches,
+            },
         }
     }
 }

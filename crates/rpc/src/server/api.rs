@@ -519,20 +519,20 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "rpc.server.get_account_proof",
+        name = "rpc.server.get_account",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proof(
+    async fn get_account(
         &self,
-        request: Request<proto::rpc::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc::AccountProofResponse>, Status> {
+        request: Request<proto::rpc::AccountRequest>,
+    ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
 
-        self.store.clone().get_account_proof(request).await
+        self.store.clone().get_account(request).await
     }
 
     #[instrument(

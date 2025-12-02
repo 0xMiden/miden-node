@@ -334,21 +334,21 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.rpc_server.get_account_proof",
+        name = "store.rpc_server.get_account",
         skip_all,
         level = "debug",
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proof(
+    async fn get_account(
         &self,
-        request: Request<proto::rpc::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc::AccountProofResponse>, Status> {
+        request: Request<proto::rpc::AccountRequest>,
+    ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
         debug!(target: COMPONENT, ?request);
         let request = request.into_inner();
-        let account_proof_request = request.try_into()?;
+        let account_request = request.try_into()?;
 
-        let proof = self.state.get_account_proof(account_proof_request).await?;
+        let proof = self.state.get_account(account_request).await?;
 
         Ok(Response::new(proof.into()))
     }

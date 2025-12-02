@@ -35,7 +35,7 @@ service Rpc {
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
     // Returns the latest state proof of the specified account.
-    rpc GetAccountProof(rpc.AccountProofRequest) returns (rpc.AccountProofResponse) {}
+    rpc GetAccount(rpc.AccountRequest) returns (rpc.AccountResponse) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}

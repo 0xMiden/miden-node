@@ -89,7 +89,7 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Build docs
-        run: make doc
+        run: cargo doc --no-deps --workspace --all-features --locked
 
   unused_deps:
     name: check for unused dependencies

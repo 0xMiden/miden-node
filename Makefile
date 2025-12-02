@@ -24,7 +24,8 @@ fix: ## Runs Fix with configs
 
 
 .PHONY: format
-format: ## Runs Format using nightly toolchain
+fmt format: ## Runs Format using nightly toolchain
+	./scripts/reflow.sh
 	cargo +nightly fmt --all
 
 

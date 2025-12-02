@@ -134,55 +134,6 @@ async fn fetch_counter_value(
     Ok(None)
 }
 
-/// Fetch the wallet account from RPC to get the latest nonce.
-///
-/// Note: Currently returns None because the RPC API returns commitments but not the full
-/// account data (code, vault assets, storage). To properly sync the account, we would need
-/// either:
-/// 1. The RPC to return full account data, or
-/// 2. To reconstruct the account from commitments + cached data
-///
-/// For now, we rely on the file-based account and update only the nonce after successful
-/// transactions.
-async fn fetch_wallet_account(
-    rpc_client: &mut RpcClient,
-    account_id: AccountId,
-) -> Result<Option<Account>> {
-    let id_bytes: [u8; 15] = account_id.into();
-    let account_id_proto =
-        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-
-    // Request account header to check if account exists and get nonce
-    let request = miden_node_proto::generated::rpc_store::AccountRequest {
-        account_id: Some(account_id_proto),
-        block_num: None,
-        details: None,
-    };
-
-    match rpc_client.get_account(request).await {
-        Ok(response) => {
-            let resp = response.into_inner();
-            if resp.witness.is_some() {
-                info!(
-                    account.id = %account_id,
-                    "wallet found on-chain but cannot reconstruct full account from RPC response"
-                );
-            }
-            // We can't reconstruct the full Account without the actual code, vault, and storage
-            // data The RPC returns only commitments, so we fall back to the file-based account
-            Ok(None)
-        },
-        Err(e) => {
-            warn!(
-                account.id = %account_id,
-                err = %e,
-                "failed to fetch wallet account via RPC"
-            );
-            Ok(None)
-        },
-    }
-}
-
 async fn setup_increment_task(
     config: MonitorConfig,
     rpc_client: &mut RpcClient,
@@ -196,12 +147,9 @@ async fn setup_increment_task(
     SecretKey,
 )> {
     let details = IncrementDetails::default();
-    // Load accounts from files
     let wallet_account_file =
-        AccountFile::read(config.wallet_filepath).context("Failed to read wallet account file")?;
-    let wallet_account = fetch_wallet_account(rpc_client, wallet_account_file.account.id())
-        .await?
-        .unwrap_or(wallet_account_file.account.clone());
+        AccountFile::read(config.wallet_filepath).context("failed to read wallet account file")?;
+    let wallet_account = wallet_account_file.account.clone();
 
     let AuthSecretKey::RpoFalcon512(secret_key) = wallet_account_file
         .auth_secret_keys

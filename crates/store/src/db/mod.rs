@@ -111,11 +111,11 @@ impl TransactionRecord {
     pub fn into_proto_with_note_records(
         self,
         note_records: Vec<NoteRecord>,
-    ) -> proto::shared::TransactionRecord {
+    ) -> proto::rpc::TransactionRecord {
         let output_notes: Vec<proto::note::NoteSyncRecord> =
             note_records.into_iter().map(Into::into).collect();
 
-        proto::shared::TransactionRecord {
+        proto::rpc::TransactionRecord {
             header: Some(proto::transaction::TransactionHeader {
                 account_id: Some(self.account_id.into()),
                 initial_state_commitment: Some(self.initial_state_commitment.into()),

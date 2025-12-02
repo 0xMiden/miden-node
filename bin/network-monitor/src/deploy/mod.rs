@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::clients::{Builder, RpcClient};
-use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
+use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::{Account, AccountId, PartialAccount, PartialStorage};
 use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};

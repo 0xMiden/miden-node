@@ -112,10 +112,7 @@ impl StoreClient {
         let mut page_token: Option<u64> = None;
 
         loop {
-            let req = proto::ntx_builder_store::UnconsumedNetworkNotesRequest {
-                page_token,
-                page_size: 128,
-            };
+            let req = proto::store::UnconsumedNetworkNotesRequest { page_token, page_size: 128 };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
             let page: Vec<NetworkNote> = resp
@@ -140,8 +137,7 @@ impl StoreClient {
         &self,
         prefix: NetworkAccountPrefix,
     ) -> Result<Option<Account>, StoreError> {
-        let request =
-            proto::ntx_builder_store::AccountIdPrefix { account_id_prefix: prefix.inner() };
+        let request = proto::store::AccountIdPrefix { account_id_prefix: prefix.inner() };
 
         let store_response = self
             .inner

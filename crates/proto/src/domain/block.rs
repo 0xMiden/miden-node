@@ -122,7 +122,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
 // BLOCK INPUTS
 // ================================================================================================
 
-impl From<BlockInputs> for proto::block_producer_store::BlockInputs {
+impl From<BlockInputs> for proto::store::BlockInputs {
     fn from(inputs: BlockInputs) -> Self {
         let (
             prev_block_header,
@@ -132,7 +132,7 @@ impl From<BlockInputs> for proto::block_producer_store::BlockInputs {
             unauthenticated_note_proofs,
         ) = inputs.into_parts();
 
-        proto::block_producer_store::BlockInputs {
+        proto::store::BlockInputs {
             latest_block_header: Some(prev_block_header.into()),
             account_witnesses: account_witnesses
                 .into_iter()
@@ -154,10 +154,10 @@ impl From<BlockInputs> for proto::block_producer_store::BlockInputs {
     }
 }
 
-impl TryFrom<proto::block_producer_store::BlockInputs> for BlockInputs {
+impl TryFrom<proto::store::BlockInputs> for BlockInputs {
     type Error = ConversionError;
 
-    fn try_from(response: proto::block_producer_store::BlockInputs) -> Result<Self, Self::Error> {
+    fn try_from(response: proto::store::BlockInputs) -> Result<Self, Self::Error> {
         let latest_block_header: BlockHeader = response
             .latest_block_header
             .ok_or(proto::blockchain::BlockHeader::missing_field("block_header"))?
@@ -242,7 +242,7 @@ pub enum InvalidBlockRange {
     EmptyRange { start: BlockNumber, end: BlockNumber },
 }
 
-impl proto::shared::BlockRange {
+impl proto::rpc::BlockRange {
     /// Converts the block range into an inclusive range, using the fallback block number if the
     /// block to is not specified.
     pub fn into_inclusive_range<T: From<InvalidBlockRange>>(
@@ -274,7 +274,7 @@ impl proto::shared::BlockRange {
     }
 }
 
-impl From<RangeInclusive<BlockNumber>> for proto::shared::BlockRange {
+impl From<RangeInclusive<BlockNumber>> for proto::rpc::BlockRange {
     fn from(range: RangeInclusive<BlockNumber>) -> Self {
         Self {
             block_from: range.start().as_u32(),

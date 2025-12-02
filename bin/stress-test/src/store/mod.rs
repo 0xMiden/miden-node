@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use futures::{StreamExt, stream};
-use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
+use miden_node_proto::generated::store::rpc_client::RpcClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::state::State;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
@@ -89,7 +89,7 @@ pub async fn sync_state(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
     block_num: u32,
-) -> (Duration, proto::shared::SyncStateResponse) {
+) -> (Duration, proto::rpc::SyncStateResponse) {
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
@@ -100,7 +100,7 @@ pub async fn sync_state(
         .map(|id| proto::account::AccountId { id: id.to_bytes() })
         .collect::<Vec<_>>();
 
-    let sync_request = proto::shared::SyncStateRequest { block_num, note_tags, account_ids };
+    let sync_request = proto::rpc::SyncStateRequest { block_num, note_tags, account_ids };
 
     let start = Instant::now();
     let response = api_client.sync_state(sync_request).await.unwrap();
@@ -160,8 +160,8 @@ pub async fn sync_notes(
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
         .collect::<Vec<_>>();
-    let sync_request = proto::shared::SyncNotesRequest {
-        block_range: Some(proto::shared::BlockRange { block_from: 0, block_to: None }),
+    let sync_request = proto::rpc::SyncNotesRequest {
+        block_range: Some(proto::rpc::BlockRange { block_from: 0, block_to: None }),
         note_tags,
     };
 
@@ -282,9 +282,9 @@ pub async fn bench_sync_nullifiers(
 async fn sync_nullifiers(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers_prefixes: Vec<u32>,
-) -> (Duration, proto::shared::SyncNullifiersResponse) {
-    let sync_request = proto::shared::SyncNullifiersRequest {
-        block_range: Some(proto::shared::BlockRange { block_from: 0, block_to: None }),
+) -> (Duration, proto::rpc::SyncNullifiersResponse) {
+    let sync_request = proto::rpc::SyncNullifiersRequest {
+        block_range: Some(proto::rpc::BlockRange { block_from: 0, block_to: None }),
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,
     };
@@ -359,7 +359,7 @@ pub async fn bench_sync_transactions(
         .await;
 
     let timers_accumulator: Vec<Duration> = results.iter().map(|r| r.duration).collect();
-    let responses: Vec<proto::shared::SyncTransactionsResponse> =
+    let responses: Vec<proto::rpc::SyncTransactionsResponse> =
         results.iter().map(|r| r.response.clone()).collect();
 
     print_summary(&timers_accumulator);
@@ -404,14 +404,14 @@ pub async fn sync_transactions(
     account_ids: Vec<AccountId>,
     block_from: u32,
     block_to: u32,
-) -> (Duration, proto::shared::SyncTransactionsResponse) {
+) -> (Duration, proto::rpc::SyncTransactionsResponse) {
     let account_ids = account_ids
         .iter()
         .map(|id| proto::account::AccountId { id: id.to_bytes() })
         .collect::<Vec<_>>();
 
-    let sync_request = proto::shared::SyncTransactionsRequest {
-        block_range: Some(proto::shared::BlockRange { block_from, block_to: Some(block_to) }),
+    let sync_request = proto::rpc::SyncTransactionsRequest {
+        block_range: Some(proto::rpc::BlockRange { block_from, block_to: Some(block_to) }),
         account_ids,
     };
 
@@ -423,7 +423,7 @@ pub async fn sync_transactions(
 #[derive(Clone)]
 struct SyncTransactionsRun {
     duration: Duration,
-    response: proto::shared::SyncTransactionsResponse,
+    response: proto::rpc::SyncTransactionsResponse,
     pages: usize,
 }
 
@@ -451,7 +451,7 @@ async fn sync_transactions_paginated(
         total_duration += elapsed;
         pages += 1;
 
-        let info = response.pagination_info.unwrap_or(proto::shared::PaginationInfo {
+        let info = response.pagination_info.unwrap_or(proto::rpc::PaginationInfo {
             chain_tip: target_block_to,
             block_num: target_block_to,
         });
@@ -460,7 +460,7 @@ async fn sync_transactions_paginated(
         let reached_block = info.block_num;
         let chain_tip = info.chain_tip;
         final_pagination_info =
-            Some(proto::shared::PaginationInfo { chain_tip, block_num: reached_block });
+            Some(proto::rpc::PaginationInfo { chain_tip, block_num: reached_block });
 
         if reached_block >= chain_tip {
             break;
@@ -473,7 +473,7 @@ async fn sync_transactions_paginated(
 
     SyncTransactionsRun {
         duration: total_duration,
-        response: proto::shared::SyncTransactionsResponse {
+        response: proto::rpc::SyncTransactionsResponse {
             pagination_info: final_pagination_info,
             transactions: aggregated_records,
         },

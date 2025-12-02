@@ -99,7 +99,7 @@ impl RpcService {
         loop {
             let result = self
                 .get_block_header_by_number(
-                    proto::shared::BlockHeaderByNumberRequest {
+                    proto::rpc::BlockHeaderByNumberRequest {
                         block_num: Some(BlockNumber::GENESIS.as_u32()),
                         include_mmr_proof: None,
                     }
@@ -152,8 +152,8 @@ impl api_server::Api for RpcService {
     )]
     async fn check_nullifiers(
         &self,
-        request: Request<proto::shared::NullifierList>,
-    ) -> Result<Response<proto::shared::CheckNullifiersResponse>, Status> {
+        request: Request<proto::rpc::NullifierList>,
+    ) -> Result<Response<proto::rpc::CheckNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
@@ -178,8 +178,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_nullifiers(
         &self,
-        request: Request<proto::shared::SyncNullifiersRequest>,
-    ) -> Result<Response<proto::shared::SyncNullifiersResponse>, Status> {
+        request: Request<proto::rpc::SyncNullifiersRequest>,
+    ) -> Result<Response<proto::rpc::SyncNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
@@ -197,8 +197,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<proto::shared::BlockHeaderByNumberRequest>,
-    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::rpc::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::rpc::BlockHeaderByNumberResponse>, Status> {
         info!(target: COMPONENT, request = ?request.get_ref());
 
         self.store.clone().get_block_header_by_number(request).await
@@ -214,8 +214,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_state(
         &self,
-        request: Request<proto::shared::SyncStateRequest>,
-    ) -> Result<Response<proto::shared::SyncStateResponse>, Status> {
+        request: Request<proto::rpc::SyncStateRequest>,
+    ) -> Result<Response<proto::rpc::SyncStateResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamAccountIdLimit>(request.get_ref().account_ids.len())?;
@@ -234,8 +234,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_storage_maps(
         &self,
-        request: Request<proto::shared::SyncStorageMapsRequest>,
-    ) -> Result<Response<proto::shared::SyncStorageMapsResponse>, Status> {
+        request: Request<proto::rpc::SyncStorageMapsRequest>,
+    ) -> Result<Response<proto::rpc::SyncStorageMapsResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         self.store.clone().sync_storage_maps(request).await
@@ -251,8 +251,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_notes(
         &self,
-        request: Request<proto::shared::SyncNotesRequest>,
-    ) -> Result<Response<proto::shared::SyncNotesResponse>, Status> {
+        request: Request<proto::rpc::SyncNotesRequest>,
+    ) -> Result<Response<proto::rpc::SyncNotesResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
@@ -299,8 +299,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_account_vault(
         &self,
-        request: tonic::Request<proto::shared::SyncAccountVaultRequest>,
-    ) -> std::result::Result<tonic::Response<proto::shared::SyncAccountVaultResponse>, tonic::Status>
+        request: tonic::Request<proto::rpc::SyncAccountVaultRequest>,
+    ) -> std::result::Result<tonic::Response<proto::rpc::SyncAccountVaultResponse>, tonic::Status>
     {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
@@ -518,8 +518,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_proof(
         &self,
-        request: Request<proto::shared::AccountProofRequest>,
-    ) -> Result<Response<proto::shared::AccountProofResponse>, Status> {
+        request: Request<proto::rpc::AccountProofRequest>,
+    ) -> Result<Response<proto::rpc::AccountProofResponse>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -556,7 +556,7 @@ impl api_server::Api for RpcService {
 
         Ok(Response::new(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            store: store_status.or(Some(proto::shared::StoreStatus {
+            store: store_status.or(Some(proto::rpc::StoreStatus {
                 status: "unreachable".to_string(),
                 chain_tip: 0,
                 version: "-".to_string(),
@@ -580,7 +580,7 @@ impl api_server::Api for RpcService {
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,
-    ) -> Result<Response<proto::shared::MaybeNoteScript>, Status> {
+    ) -> Result<Response<proto::rpc::MaybeNoteScript>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         self.store.clone().get_note_script_by_root(request).await
@@ -596,8 +596,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_transactions(
         &self,
-        request: Request<proto::shared::SyncTransactionsRequest>,
-    ) -> Result<Response<proto::shared::SyncTransactionsResponse>, Status> {
+        request: Request<proto::rpc::SyncTransactionsRequest>,
+    ) -> Result<Response<proto::rpc::SyncTransactionsResponse>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         self.store.clone().sync_transactions(request).await

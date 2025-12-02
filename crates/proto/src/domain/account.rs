@@ -112,14 +112,14 @@ pub struct AccountProofRequest {
     pub details: Option<AccountDetailRequest>,
 }
 
-impl TryFrom<proto::shared::AccountProofRequest> for AccountProofRequest {
+impl TryFrom<proto::rpc::AccountProofRequest> for AccountProofRequest {
     type Error = ConversionError;
 
-    fn try_from(value: proto::shared::AccountProofRequest) -> Result<Self, Self::Error> {
-        let proto::shared::AccountProofRequest { account_id, block_num, details } = value;
+    fn try_from(value: proto::rpc::AccountProofRequest) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountProofRequest { account_id, block_num, details } = value;
 
         let account_id = account_id
-            .ok_or(proto::shared::AccountProofRequest::missing_field(stringify!(account_id)))?
+            .ok_or(proto::rpc::AccountProofRequest::missing_field(stringify!(account_id)))?
             .try_into()?;
         let block_num = block_num.map(Into::into);
 
@@ -136,13 +136,13 @@ pub struct AccountDetailRequest {
     pub storage_requests: Vec<StorageMapRequest>,
 }
 
-impl TryFrom<proto::shared::account_proof_request::AccountDetailRequest> for AccountDetailRequest {
+impl TryFrom<proto::rpc::account_proof_request::AccountDetailRequest> for AccountDetailRequest {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::shared::account_proof_request::AccountDetailRequest,
+        value: proto::rpc::account_proof_request::AccountDetailRequest,
     ) -> Result<Self, Self::Error> {
-        let proto::shared::account_proof_request::AccountDetailRequest {
+        let proto::rpc::account_proof_request::AccountDetailRequest {
             code_commitment,
             asset_vault_commitment,
             storage_maps,
@@ -180,15 +180,15 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     }
 }
 
-impl TryFrom<proto::shared::account_storage_details::AccountStorageMapDetails>
+impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
     for AccountStorageMapDetails
 {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::shared::account_storage_details::AccountStorageMapDetails,
+        value: proto::rpc::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
-        let proto::shared::account_storage_details::AccountStorageMapDetails {
+        let proto::rpc::account_storage_details::AccountStorageMapDetails {
             slot_index,
             too_many_entries,
             entries,
@@ -204,13 +204,13 @@ impl TryFrom<proto::shared::account_storage_details::AccountStorageMapDetails>
                 .map(|entry| {
                     let key = entry
                         .key
-                        .ok_or(proto::shared::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
+                        .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
                             stringify!(key),
                         ))?
                         .try_into()?;
                     let value = entry
                         .value
-                        .ok_or(proto::shared::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
+                        .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
                             stringify!(value),
                         ))?
                         .try_into()?;
@@ -235,21 +235,21 @@ pub struct StorageMapRequest {
     pub slot_data: SlotData,
 }
 
-impl TryFrom<proto::shared::account_proof_request::account_detail_request::StorageMapDetailRequest>
+impl TryFrom<proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest>
     for StorageMapRequest
 {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::shared::account_proof_request::account_detail_request::StorageMapDetailRequest,
+        value: proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest,
     ) -> Result<Self, Self::Error> {
-        let proto::shared::account_proof_request::account_detail_request::StorageMapDetailRequest {
+        let proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest {
             slot_index,
             slot_data,
         } = value;
 
         let slot_index = slot_index.try_into()?;
-        let slot_data = slot_data.ok_or(proto::shared::account_proof_request::account_detail_request::StorageMapDetailRequest::missing_field(stringify!(slot_data)))?.try_into()?;
+        let slot_data = slot_data.ok_or(proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest::missing_field(stringify!(slot_data)))?.try_into()?;
 
         Ok(StorageMapRequest { slot_index, slot_data })
     }
@@ -261,13 +261,13 @@ pub enum SlotData {
     MapKeys(Vec<Word>),
 }
 
-impl TryFrom<proto::shared::account_proof_request::account_detail_request::storage_map_detail_request::SlotData>
+impl TryFrom<proto::rpc::account_proof_request::account_detail_request::storage_map_detail_request::SlotData>
     for SlotData
 {
     type Error = ConversionError;
 
-    fn try_from(value: proto::shared::account_proof_request::account_detail_request::storage_map_detail_request::SlotData) -> Result<Self, Self::Error> {
-        use proto::shared::account_proof_request::account_detail_request::storage_map_detail_request::SlotData as ProtoSlotData;
+    fn try_from(value: proto::rpc::account_proof_request::account_detail_request::storage_map_detail_request::SlotData) -> Result<Self, Self::Error> {
+        use proto::rpc::account_proof_request::account_detail_request::storage_map_detail_request::SlotData as ProtoSlotData;
 
         Ok(match value {
             ProtoSlotData::AllEntries(true) => SlotData::All,
@@ -379,11 +379,11 @@ impl AccountVaultDetails {
     }
 }
 
-impl TryFrom<proto::shared::AccountVaultDetails> for AccountVaultDetails {
+impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
     type Error = ConversionError;
 
-    fn try_from(value: proto::shared::AccountVaultDetails) -> Result<Self, Self::Error> {
-        let proto::shared::AccountVaultDetails { too_many_assets, assets } = value;
+    fn try_from(value: proto::rpc::AccountVaultDetails) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountVaultDetails { too_many_assets, assets } = value;
 
         let assets =
             Result::<Vec<_>, ConversionError>::from_iter(assets.into_iter().map(|asset| {
@@ -397,7 +397,7 @@ impl TryFrom<proto::shared::AccountVaultDetails> for AccountVaultDetails {
     }
 }
 
-impl From<AccountVaultDetails> for proto::shared::AccountVaultDetails {
+impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
     fn from(value: AccountVaultDetails) -> Self {
         let AccountVaultDetails { too_many_assets, assets } = value;
 
@@ -464,14 +464,14 @@ pub struct AccountStorageDetails {
     pub map_details: Vec<AccountStorageMapDetails>,
 }
 
-impl TryFrom<proto::shared::AccountStorageDetails> for AccountStorageDetails {
+impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
     type Error = ConversionError;
 
-    fn try_from(value: proto::shared::AccountStorageDetails) -> Result<Self, Self::Error> {
-        let proto::shared::AccountStorageDetails { header, map_details } = value;
+    fn try_from(value: proto::rpc::AccountStorageDetails) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountStorageDetails { header, map_details } = value;
 
         let header = header
-            .ok_or(proto::shared::AccountStorageDetails::missing_field(stringify!(header)))?
+            .ok_or(proto::rpc::AccountStorageDetails::missing_field(stringify!(header)))?
             .try_into()?;
 
         let map_details = try_convert(map_details).collect::<Result<Vec<_>, _>>()?;
@@ -480,7 +480,7 @@ impl TryFrom<proto::shared::AccountStorageDetails> for AccountStorageDetails {
     }
 }
 
-impl From<AccountStorageDetails> for proto::shared::AccountStorageDetails {
+impl From<AccountStorageDetails> for proto::rpc::AccountStorageDetails {
     fn from(value: AccountStorageDetails) -> Self {
         let AccountStorageDetails { header, map_details } = value;
 
@@ -521,18 +521,18 @@ pub struct AccountProofResponse {
     pub details: Option<AccountDetails>,
 }
 
-impl TryFrom<proto::shared::AccountProofResponse> for AccountProofResponse {
+impl TryFrom<proto::rpc::AccountProofResponse> for AccountProofResponse {
     type Error = ConversionError;
 
-    fn try_from(value: proto::shared::AccountProofResponse) -> Result<Self, Self::Error> {
-        let proto::shared::AccountProofResponse { block_num, witness, details } = value;
+    fn try_from(value: proto::rpc::AccountProofResponse) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountProofResponse { block_num, witness, details } = value;
 
         let block_num = block_num
-            .ok_or(proto::shared::AccountProofResponse::missing_field(stringify!(block_num)))?
+            .ok_or(proto::rpc::AccountProofResponse::missing_field(stringify!(block_num)))?
             .into();
 
         let witness = witness
-            .ok_or(proto::shared::AccountProofResponse::missing_field(stringify!(witness)))?
+            .ok_or(proto::rpc::AccountProofResponse::missing_field(stringify!(witness)))?
             .try_into()?;
 
         let details = details.map(TryFrom::try_from).transpose()?;
@@ -541,7 +541,7 @@ impl TryFrom<proto::shared::AccountProofResponse> for AccountProofResponse {
     }
 }
 
-impl From<AccountProofResponse> for proto::shared::AccountProofResponse {
+impl From<AccountProofResponse> for proto::rpc::AccountProofResponse {
     fn from(value: AccountProofResponse) -> Self {
         let AccountProofResponse { block_num, witness, details } = value;
 
@@ -553,13 +553,13 @@ impl From<AccountProofResponse> for proto::shared::AccountProofResponse {
     }
 }
 
-impl TryFrom<proto::shared::account_proof_response::AccountDetails> for AccountDetails {
+impl TryFrom<proto::rpc::account_proof_response::AccountDetails> for AccountDetails {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::shared::account_proof_response::AccountDetails,
+        value: proto::rpc::account_proof_response::AccountDetails,
     ) -> Result<Self, Self::Error> {
-        let proto::shared::account_proof_response::AccountDetails {
+        let proto::rpc::account_proof_response::AccountDetails {
             header,
             code,
             vault_details,
@@ -567,21 +567,21 @@ impl TryFrom<proto::shared::account_proof_response::AccountDetails> for AccountD
         } = value;
 
         let account_header = header
-            .ok_or(proto::shared::account_proof_response::AccountDetails::missing_field(
-                stringify!(header),
-            ))?
+            .ok_or(proto::rpc::account_proof_response::AccountDetails::missing_field(stringify!(
+                header
+            )))?
             .try_into()?;
 
         let storage_details = storage_details
-            .ok_or(proto::shared::account_proof_response::AccountDetails::missing_field(
-                stringify!(storage_details),
-            ))?
+            .ok_or(proto::rpc::account_proof_response::AccountDetails::missing_field(stringify!(
+                storage_details
+            )))?
             .try_into()?;
 
         let vault_details = vault_details
-            .ok_or(proto::shared::account_proof_response::AccountDetails::missing_field(
-                stringify!(vault_details),
-            ))?
+            .ok_or(proto::rpc::account_proof_response::AccountDetails::missing_field(stringify!(
+                vault_details
+            )))?
             .try_into()?;
         let account_code = code;
 
@@ -594,7 +594,7 @@ impl TryFrom<proto::shared::account_proof_response::AccountDetails> for AccountD
     }
 }
 
-impl From<AccountDetails> for proto::shared::account_proof_response::AccountDetails {
+impl From<AccountDetails> for proto::rpc::account_proof_response::AccountDetails {
     fn from(value: AccountDetails) -> Self {
         let AccountDetails {
             account_header,
@@ -618,10 +618,10 @@ impl From<AccountDetails> for proto::shared::account_proof_response::AccountDeta
 }
 
 impl From<AccountStorageMapDetails>
-    for proto::shared::account_storage_details::AccountStorageMapDetails
+    for proto::rpc::account_storage_details::AccountStorageMapDetails
 {
     fn from(value: AccountStorageMapDetails) -> Self {
-        use proto::shared::account_storage_details::account_storage_map_details;
+        use proto::rpc::account_storage_details::account_storage_map_details;
 
         let AccountStorageMapDetails {
             slot_index,
@@ -766,24 +766,22 @@ impl Display for AccountState {
     }
 }
 
-impl TryFrom<proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord>
-    for AccountState
-{
+impl TryFrom<proto::store::transaction_inputs::AccountTransactionInputRecord> for AccountState {
     type Error = ConversionError;
 
     fn try_from(
-        from: proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord,
+        from: proto::store::transaction_inputs::AccountTransactionInputRecord,
     ) -> Result<Self, Self::Error> {
         let account_id = from
             .account_id
-            .ok_or(proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+            .ok_or(proto::store::transaction_inputs::AccountTransactionInputRecord::missing_field(
                 stringify!(account_id),
             ))?
             .try_into()?;
 
         let account_commitment = from
             .account_commitment
-            .ok_or(proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+            .ok_or(proto::store::transaction_inputs::AccountTransactionInputRecord::missing_field(
                 stringify!(account_commitment),
             ))?
             .try_into()?;
@@ -800,9 +798,7 @@ impl TryFrom<proto::block_producer_store::transaction_inputs::AccountTransaction
     }
 }
 
-impl From<AccountState>
-    for proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord
-{
+impl From<AccountState> for proto::store::transaction_inputs::AccountTransactionInputRecord {
     fn from(from: AccountState) -> Self {
         Self {
             account_id: Some(from.account_id.into()),

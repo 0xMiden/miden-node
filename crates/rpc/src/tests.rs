@@ -46,7 +46,7 @@ async fn rpc_server_accepts_requests_without_accept_header() {
     };
 
     // Send any request to the RPC.
-    let request = proto::shared::BlockHeaderByNumberRequest {
+    let request = proto::rpc::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };
@@ -361,9 +361,8 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
 /// Sends an arbitrary / irrelevant request to the RPC.
 async fn send_request(
     rpc_client: &mut RpcClient,
-) -> std::result::Result<tonic::Response<proto::shared::BlockHeaderByNumberResponse>, tonic::Status>
-{
-    let request = proto::shared::BlockHeaderByNumberRequest {
+) -> std::result::Result<tonic::Response<proto::rpc::BlockHeaderByNumberResponse>, tonic::Status> {
+    let request = proto::rpc::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };

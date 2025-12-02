@@ -65,17 +65,13 @@ impl Display for TransactionInputs {
     }
 }
 
-impl TryFrom<proto::block_producer_store::TransactionInputs> for TransactionInputs {
+impl TryFrom<proto::store::TransactionInputs> for TransactionInputs {
     type Error = ConversionError;
 
-    fn try_from(
-        response: proto::block_producer_store::TransactionInputs,
-    ) -> Result<Self, Self::Error> {
+    fn try_from(response: proto::store::TransactionInputs) -> Result<Self, Self::Error> {
         let AccountState { account_id, account_commitment } = response
             .account_state
-            .ok_or(proto::block_producer_store::TransactionInputs::missing_field(stringify!(
-                account_state
-            )))?
+            .ok_or(proto::store::TransactionInputs::missing_field(stringify!(account_state)))?
             .try_into()?;
 
         let mut nullifiers = HashMap::new();
@@ -83,7 +79,7 @@ impl TryFrom<proto::block_producer_store::TransactionInputs> for TransactionInpu
             let nullifier = nullifier_record
                 .nullifier
                 .ok_or(
-                    proto::block_producer_store::transaction_inputs::NullifierTransactionInputRecord::missing_field(
+                    proto::store::transaction_inputs::NullifierTransactionInputRecord::missing_field(
                         stringify!(nullifier),
                     ),
                 )?
@@ -146,7 +142,7 @@ impl StoreClient {
             .client
             .clone()
             .get_block_header_by_number(tonic::Request::new(
-                proto::shared::BlockHeaderByNumberRequest::default(),
+                proto::rpc::BlockHeaderByNumberRequest::default(),
             ))
             .await?
             .into_inner()
@@ -163,7 +159,7 @@ impl StoreClient {
         &self,
         proven_tx: &ProvenTransaction,
     ) -> Result<TransactionInputs, StoreError> {
-        let message = proto::block_producer_store::TransactionInputsRequest {
+        let message = proto::store::TransactionInputsRequest {
             account_id: Some(proven_tx.account_id().into()),
             nullifiers: proven_tx.nullifiers().map(Into::into).collect(),
             unauthenticated_notes: proven_tx
@@ -211,7 +207,7 @@ impl StoreClient {
         unauthenticated_notes: impl Iterator<Item = Word> + Send,
         reference_blocks: impl Iterator<Item = BlockNumber> + Send,
     ) -> Result<BlockInputs, StoreError> {
-        let request = tonic::Request::new(proto::block_producer_store::BlockInputsRequest {
+        let request = tonic::Request::new(proto::store::BlockInputsRequest {
             account_ids: updated_accounts.map(Into::into).collect(),
             nullifiers: created_nullifiers.map(proto::primitives::Digest::from).collect(),
             unauthenticated_notes: unauthenticated_notes
@@ -231,7 +227,7 @@ impl StoreClient {
         block_references: impl Iterator<Item = (BlockNumber, Word)> + Send,
         note_commitments: impl Iterator<Item = Word> + Send,
     ) -> Result<BatchInputs, StoreError> {
-        let request = tonic::Request::new(proto::block_producer_store::BatchInputsRequest {
+        let request = tonic::Request::new(proto::store::BatchInputsRequest {
             reference_blocks: block_references.map(|(block_num, _)| block_num.as_u32()).collect(),
             note_commitments: note_commitments.map(proto::primitives::Digest::from).collect(),
         });

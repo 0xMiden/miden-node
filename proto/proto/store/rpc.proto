@@ -149,6 +149,8 @@ message AccountProofRequest {
 
     // Block at which we'd like to get this data. If present, must be close to the chain tip.
     // If not present, data from the latest block will be returned.
+    // If the specified block does not contain an update for the specified account,
+    // the latest available data will be returned.
     optional blockchain.BlockNumber block_num = 2;
 
     // Request for additional account details; valid only for public accounts.

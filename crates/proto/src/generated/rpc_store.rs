@@ -20,6 +20,8 @@ pub struct AccountProofRequest {
     pub account_id: ::core::option::Option<super::account::AccountId>,
     /// Block at which we'd like to get this data. If present, must be close to the chain tip.
     /// If not present, data from the latest block will be returned.
+    /// If the specified block does not contain an update for the specified account,
+    /// the latest available data will be returned.
     #[prost(message, optional, tag = "2")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Request for additional account details; valid only for public accounts.

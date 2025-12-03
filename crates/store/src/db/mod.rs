@@ -408,7 +408,7 @@ impl Db {
             .await
     }
 
-    /// Loads account details at a specific block number from the DB.
+    /// Loads account details up to a specific block number from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_historical_account_at(
         &self,

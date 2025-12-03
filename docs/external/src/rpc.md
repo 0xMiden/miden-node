@@ -33,7 +33,67 @@ The gRPC service definition can be found in the Miden node's `proto` [directory]
 
 ### CheckNullifiers
 
-Request proofs for a set of nullifiers.
+Request Sparse Merkle Tree opening proofs to verify whether nullifiers have been consumed.
+
+#### Request
+
+```protobuf
+message NullifierList {
+    repeated Digest nullifiers = 1;  // List of nullifiers to check
+}
+```
+
+#### Response
+
+```protobuf
+message CheckNullifiersResponse {
+    repeated SmtOpening proofs = 1;  // One proof per requested nullifier
+}
+
+message SmtOpening {
+    SparseMerklePath path = 1;  // Merkle authentication path
+    SmtLeaf leaf = 2;           // Leaf at this position
+}
+
+message SmtLeaf {
+    oneof leaf {
+        uint64 empty_leaf_index = 1;
+        SmtLeafEntry single = 2;
+        SmtLeafEntryList multiple = 3;
+    }
+}
+```
+
+#### Understanding Proofs
+
+**Non-Inclusion (Nullifier NOT consumed):**
+- `leaf` contains `empty_leaf_index`
+- Note can still be consumed
+
+**Inclusion (Nullifier IS consumed):**
+- `leaf` contains `single` or `multiple` with key-value pairs
+- Note has been spent
+
+#### Verification
+
+```rust
+use miden_crypto::merkle::SmtProof;
+
+// 1. Get nullifier tree root from block header
+let block_header = get_latest_block_header();
+let nullifier_root = block_header.state_commitment().nullifier_root();
+
+// 2. Verify the proof
+let proof: SmtProof = smt_opening.try_into()?;
+assert_eq!(proof.root(), nullifier_root);
+
+// 3. Check status, assumes `nullifier` is the originally queried nullifier
+match proof.leaf() {
+    SmtLeaf::Empty(_) => println!("NOT consumed"),
+    SmtLeaf::Single((nullifier,_block_num) if nullifier == proof.root() => println!("IS consumed"),
+    SmtLeaf::Multiple(set) if inner.iter().filter(|(k,_)| k == nullifier)) => println!("IS consumed"),
+}
+```
 
 ### GetAccountDetails
 

@@ -921,7 +921,7 @@ impl State {
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
-    /// When `block_num` is provided, this method will return the account state up to that specific
+    /// When `block_num` is provided, this method will return the account state at that specific
     /// block using both the historical account tree witness and historical database state.
     pub async fn get_account_proof(
         &self,
@@ -977,7 +977,7 @@ impl State {
         Ok((block_num, witness))
     }
 
-    /// Fetches the account details (code, vault, storage) for a public account up to the specified
+    /// Fetches the account details (code, vault, storage) for a public account at the specified
     /// block.
     ///
     /// This method queries the database to fetch the account state and processes the detail

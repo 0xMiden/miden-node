@@ -93,8 +93,7 @@ pub(crate) fn select_account(
     Ok(info)
 }
 
-/// Select account details at a block number lower or equal than specified from the DB using the
-/// given [`SqliteConnection`].
+/// Select account details as they are at the given block height.
 ///
 /// # Returns
 ///

@@ -9,15 +9,13 @@ pub struct ValidatorStatus {
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
 }
-/// Response message for SignBlock RPC.
+/// ECDSA Signature.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SignedBlock {
-    /// The block header.
-    #[prost(message, optional, tag = "1")]
-    pub header: ::core::option::Option<super::blockchain::BlockHeader>,
-    /// The block body.
-    #[prost(message, optional, tag = "2")]
-    pub body: ::core::option::Option<super::blockchain::BlockBody>,
+pub struct Signature {
+    /// Signature encoded using \[winter_utils::Serializable\] implementation for
+    /// \[crypto::dsa::ecdsa_k256_keccak::Signature\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated client implementations.
 pub mod api_client {
@@ -161,7 +159,7 @@ pub mod api_client {
         pub async fn sign_block(
             &mut self,
             request: impl tonic::IntoRequest<super::super::blockchain::ProposedBlock>,
-        ) -> std::result::Result<tonic::Response<super::SignedBlock>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::Signature>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -205,7 +203,7 @@ pub mod api_server {
         async fn sign_block(
             &self,
             request: tonic::Request<super::super::blockchain::ProposedBlock>,
-        ) -> std::result::Result<tonic::Response<super::SignedBlock>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::Signature>, tonic::Status>;
     }
     /// Validator API for the Validator component.
     #[derive(Debug)]
@@ -379,7 +377,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::blockchain::ProposedBlock,
                     > for SignBlockSvc<T> {
-                        type Response = super::SignedBlock;
+                        type Response = super::Signature;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

@@ -1,10 +1,9 @@
-use std::fmt::{Display, Formatter};
-
 use miden_node_proto::clients::{Builder, ValidatorClient};
-use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
 use miden_node_proto::generated as proto;
-use miden_objects::block::{BlockBody, BlockHeader, ProposedBlock};
+use miden_objects::block::ProposedBlock;
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::utils::{Deserializable, Serializable};
+use miden_tx::utils::DeserializationError;
 use thiserror::Error;
 use tracing::{info, instrument};
 use url::Url;
@@ -18,55 +17,8 @@ use crate::COMPONENT;
 pub enum ValidatorError {
     #[error("gRPC transport error: {0}")]
     Transport(#[from] tonic::Status),
-    #[error("response content error: {0}")]
-    ResponseContent(#[from] ConversionError),
-    #[error("failed to convert header: {0}")]
-    HeaderConversion(String),
-    #[error("failed to deserialize body: {0}")]
-    BodyDeserialization(String),
-    #[error("validator header does not match the request: {0}")]
-    HeaderMismatch(Box<HeaderDiff>),
-    #[error("validator body does not match the request: {0}")]
-    BodyMismatch(Box<BodyDiff>),
-}
-
-// VALIDATION DIFF TYPES
-// ================================================================================================
-
-/// Represents a difference between validator and expected block headers
-#[derive(Debug, Clone)]
-pub struct HeaderDiff {
-    pub validator_header: BlockHeader,
-    pub expected_header: BlockHeader,
-}
-
-impl Display for HeaderDiff {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Expected Header:")?;
-        writeln!(f, "{:?}", self.expected_header)?;
-        writeln!(f, "============================")?;
-        writeln!(f, "Validator Header:")?;
-        writeln!(f, "{:?}", self.validator_header)?;
-        Ok(())
-    }
-}
-
-/// Represents a difference between validator and expected block bodies
-#[derive(Debug, Clone)]
-pub struct BodyDiff {
-    pub validator_body: BlockBody,
-    pub expected_body: BlockBody,
-}
-
-impl Display for BodyDiff {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Expected Body:")?;
-        writeln!(f, "{:?}", self.expected_body)?;
-        writeln!(f, "============================")?;
-        writeln!(f, "Validator Body:")?;
-        writeln!(f, "{:?}", self.validator_body)?;
-        Ok(())
-    }
+    #[error("signature deserialization failed: {0}")]
+    Deserialization(#[from] DeserializationError),
 }
 
 // VALIDATOR CLIENT
@@ -100,31 +52,16 @@ impl BlockProducerValidatorClient {
     pub async fn sign_block(
         &self,
         proposed_block: ProposedBlock,
-    ) -> Result<(BlockHeader, BlockBody), ValidatorError> {
+    ) -> Result<Signature, ValidatorError> {
         // Send request and receive response.
         let message = proto::blockchain::ProposedBlock {
             proposed_block: proposed_block.to_bytes(),
         };
         let request = tonic::Request::new(message);
         let response = self.client.clone().sign_block(request).await?;
-        let signed_block = response.into_inner();
 
-        // Extract header from response.
-        let header_proto = signed_block
-            .header
-            .ok_or(miden_node_proto::generated::blockchain::BlockHeader::missing_field("header"))
-            .map_err(ValidatorError::ResponseContent)?;
-        let header = BlockHeader::try_from(header_proto)
-            .map_err(|err| ValidatorError::HeaderConversion(err.to_string()))?;
-
-        // Extract body from response.
-        let body_proto = signed_block
-            .body
-            .ok_or(miden_node_proto::generated::blockchain::BlockBody::missing_field("body"))
-            .map_err(ValidatorError::ResponseContent)?;
-        let body = BlockBody::read_from_bytes(&body_proto.block_body)
-            .map_err(|err| ValidatorError::BodyDeserialization(err.to_string()))?;
-
-        Ok((header, body))
+        // Deserialize the signature.
+        let signature = response.into_inner();
+        Signature::read_from_bytes(&signature.signature).map_err(ValidatorError::Deserialization)
     }
 }

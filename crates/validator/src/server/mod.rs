@@ -9,6 +9,7 @@ use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_objects::block::ProposedBlock;
+use miden_objects::ecdsa_signer::{EcdsaSigner, LocalEcdsaSigner};
 use miden_objects::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -106,7 +107,7 @@ impl api_server::Api for ValidatorServer {
     async fn sign_block(
         &self,
         request: tonic::Request<proto::blockchain::ProposedBlock>,
-    ) -> Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
+    ) -> Result<tonic::Response<proto::validator::Signature>, tonic::Status> {
         let proposed_block_bytes = request.into_inner().proposed_block;
 
         // Deserialize the proposed block.
@@ -117,20 +118,13 @@ impl api_server::Api for ValidatorServer {
                 ))
             })?;
 
-        // Build header and body
-        let (header, body) = build_block(proposed_block)
+        // Build and sign header.
+        let (header, _body) = build_block(proposed_block)
             .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
+        let signature = LocalEcdsaSigner::dummy().sign(header.commitment());
 
-        // Convert to protobuf format
-        let header_proto = proto::blockchain::BlockHeader::from(&header);
-        let body_proto = proto::blockchain::BlockBody { block_body: body.to_bytes() };
-
-        // Both header and body are required fields and must always be populated
-        let response = proto::validator::SignedBlock {
-            header: Some(header_proto),
-            body: Some(body_proto),
-        };
-
+        // Send the signature.
+        let response = proto::validator::Signature { signature: signature.to_bytes() };
         Ok(tonic::Response::new(response))
     }
 }

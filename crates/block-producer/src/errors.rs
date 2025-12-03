@@ -210,9 +210,12 @@ pub enum BuildBlockError {
     #[error("failed to get block inputs from store")]
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
-    ProposeBlockFailed(#[source] ProposedBlockError),
+    ProposeBlockFailed(#[source] miden_lib::block::BuildBlockError), /* TODO(currentpr): name
+                                                                      * collision? */
     #[error("failed to validate block")]
     ValidateBlockFailed(#[source] Box<ValidatorError>),
+    #[error("block signature is invalid")]
+    InvalidSignature,
     #[error("failed to prove block")]
     ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure

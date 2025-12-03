@@ -84,7 +84,7 @@ while IFS=$'\t' read -r pkg_id package_name manifest_path rust_version; do
   echo "   Current MSRV: $current_msrv"
 
   # Try to verify the MSRV
-  if ! cargo msrv verify --manifest-path "$package_dir/Cargo.toml"; then
+  if ! cargo msrv verify --manifest-path "$package_dir/Cargo.toml" >/dev/null 2>&1; then
     echo "ERROR: MSRV check failed for $package_name"
     failed_packages="$failed_packages $package_name"
 

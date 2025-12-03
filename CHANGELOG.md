@@ -1,9 +1,19 @@
 # Changelog
 
-## v0.12.4 (TBD)
+## v0.12.6 (TBD)
 
 - Improved tracing in `miden-network-monitor` binary ([#1366](https://github.com/0xMiden/miden-node/pull/1366)).
+- Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
+
+## v0.12.5 (2025-11-27)
+
+- Actually update `miden-base` dependencies ([#1384](https://github.com/0xMiden/miden-node/pull/1384)).
+
+## v0.12.4 (2025-11-27)
+
+- Split counter increment and tracking services in `miden-network-monitor` binary ([#1362](https://github.com/0xMiden/miden-node/pull/1362)).
 - Updated the counter account from the `miden-network-monitor` to start at 0 ([#1367](https://github.com/0xMiden/miden-node/pull/1367)).
+- Updated  `miden-base` dependencies to fix ECDSA issues ([#1382](https://github.com/0xMiden/miden-node/pull/1382)).
 
 ## v0.12.3 (2025-11-15)
 

@@ -23,7 +23,8 @@ pub struct ServerState {
     pub rpc: watch::Receiver<ServiceStatus>,
     pub provers: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
     pub faucet: Option<watch::Receiver<ServiceStatus>>,
-    pub ntx_service: Option<watch::Receiver<ServiceStatus>>,
+    pub ntx_increment: Option<watch::Receiver<ServiceStatus>>,
+    pub ntx_tracking: Option<watch::Receiver<ServiceStatus>>,
 }
 
 /// Runs the frontend server.
@@ -61,7 +62,7 @@ async fn get_dashboard() -> Html<&'static str> {
     Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.html")))
 }
 
-#[instrument(target = COMPONENT, name = "frontend.get-status", skip_all, ret(level = "info"))]
+#[instrument(target = COMPONENT, name = "frontend.get-status", skip_all)]
 async fn get_status(
     axum::extract::State(server_state): axum::extract::State<ServerState>,
 ) -> axum::response::Json<NetworkStatus> {
@@ -86,9 +87,14 @@ async fn get_status(
         services.push(faucet_rx.borrow().clone());
     }
 
-    // Collect counter status if enabled
-    if let Some(ntx_service_rx) = &server_state.ntx_service {
-        services.push(ntx_service_rx.borrow().clone());
+    // Collect counter increment status if enabled
+    if let Some(ntx_increment_rx) = &server_state.ntx_increment {
+        services.push(ntx_increment_rx.borrow().clone());
+    }
+
+    // Collect counter tracking status if enabled
+    if let Some(ntx_tracking_rx) = &server_state.ntx_tracking {
+        services.push(ntx_tracking_rx.borrow().clone());
     }
 
     let network_status = NetworkStatus { services, last_updated: current_time };

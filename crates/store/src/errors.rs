@@ -104,10 +104,10 @@ pub enum DatabaseError {
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
     AccountNotPublic(AccountId),
-    #[error("account {0} details missing")]
-    AccountDetailsMissing(AccountId),
     #[error("invalid block parameters: block_from ({from}) > block_to ({to})")]
     InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("invalid storage slot type: {0}")]
+    InvalidStorageSlotType(i32),
     #[error("data corrupted: {0}")]
     DataCorrupted(String),
     #[error("SQLite pool interaction failed: {0}")]
@@ -175,6 +175,8 @@ impl From<DatabaseError> for Status {
 pub enum StateInitializationError {
     #[error("account tree IO error: {0}")]
     AccountTreeIoError(String),
+    #[error("nullifier tree IO error: {0}")]
+    NullifierTreeIoError(String),
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("failed to create nullifier tree")]
@@ -248,6 +250,8 @@ pub enum InvalidBlockError {
     NewBlockNullifierAlreadySpent(#[source] NullifierTreeError),
     #[error("duplicate account ID prefix in new block")]
     NewBlockDuplicateAccountIdPrefix(#[source] AccountTreeError),
+    #[error("failed to build note tree: {0}")]
+    FailedToBuildNoteTree(String),
 }
 
 #[derive(Error, Debug)]

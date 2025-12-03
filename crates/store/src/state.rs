@@ -23,7 +23,7 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
+use miden_objects::account::{AccountId, StorageSlot};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
@@ -44,6 +44,7 @@ use miden_objects::crypto::merkle::{
     MmrPeaks,
     MmrProof,
     PartialMmr,
+    SmtForest,
     SmtProof,
     SmtStorage,
 };
@@ -129,6 +130,18 @@ pub struct State {
     /// To allow readers to access the tree data while an update in being performed, and prevent
     /// TOCTOU issues, there must be no concurrent writers. This locks to serialize the writers.
     writer: Mutex<()>,
+
+    /// `SmtForest` for efficient account storage reconstruction.
+    /// Populated during block import with storage and vault SMTs.
+    storage_forest: RwLock<SmtForest>,
+
+    /// Maps (`account_id`, `slot_index`, `block_num`) to SMT root.
+    /// Populated during block import for all storage map slots.
+    storage_roots: RwLock<BTreeMap<(AccountId, u8, BlockNumber), Word>>,
+
+    /// Maps (`account_id`, `block_num`) to vault SMT root.
+    /// Tracks asset vault versions across all blocks with structural sharing.
+    vault_roots: RwLock<BTreeMap<(AccountId, BlockNumber), Word>>,
 }
 
 impl State {
@@ -167,7 +180,36 @@ impl State {
         let writer = Mutex::new(());
         let db = Arc::new(db);
 
-        Ok(Self { db, block_store, inner, writer })
+        let storage_forest = RwLock::new(SmtForest::new());
+        let storage_roots = RwLock::new(BTreeMap::new());
+        let vault_roots = RwLock::new(BTreeMap::new());
+
+        let me = Self {
+            db,
+            block_store,
+            inner,
+            writer,
+            storage_forest,
+            storage_roots,
+            vault_roots,
+        };
+
+        // load all accounts from the table
+        // TODO: make `select_all_account_at(block_num)` to be precise; if ACID is upheld, it's not
+        // necessary in theory
+        let acc_account_ids = me.db.select_all_account_commitments().await?;
+        let acc_account_ids =
+            acc_account_ids.into_iter().map(|(account_id, _)| account_id).collect();
+        me.update_storage_forest_from_db(acc_account_ids, latest_block_num)
+            .await
+            .map_err(|e| {
+                StateInitializationError::DatabaseError(DatabaseError::InteractError(format!(
+                    "Failed to update storage forest: {}",
+                    e
+                )))
+            })?;
+
+        Ok(me)
     }
 
     /// Apply changes of a new block to the DB and in-memory data structures.
@@ -212,7 +254,7 @@ impl State {
         }
 
         let block_num = header.block_num();
-        let block_commitment = block.header().commitment();
+        let block_commitment = header.commitment();
 
         // ensures the right block header is being processed
         let prev_block = self
@@ -261,7 +303,7 @@ impl State {
                 .body()
                 .created_nullifiers()
                 .iter()
-                .filter(|&n| inner.nullifier_tree.get_block_num(n).is_some())
+                .filter(|&nullifier| inner.nullifier_tree.get_block_num(nullifier).is_some())
                 .copied()
                 .collect();
             if !duplicate_nullifiers.is_empty() {
@@ -324,7 +366,14 @@ impl State {
         };
 
         // build note tree
-        let note_tree = block.body().compute_block_note_tree();
+        let note_tree_entries: Vec<_> = block
+            .body()
+            .output_notes()
+            .map(|(note_index, note)| (note_index, note.id(), *note.metadata()))
+            .collect();
+        let note_tree =
+            miden_objects::block::BlockNoteTree::with_entries(note_tree_entries.iter().copied())
+                .map_err(|e| InvalidBlockError::FailedToBuildNoteTree(e.to_string()))?;
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
         }
@@ -365,6 +414,16 @@ impl State {
         let (allow_acquire, acquired_allowed) = oneshot::channel::<()>();
         // Signals the write lock has been acquired, and the transaction can be committed
         let (inform_acquire_done, acquire_done) = oneshot::channel::<()>();
+
+        // Extract account IDs before block is moved into async task
+        // We'll need these later to populate the SmtForest
+        let updated_account_ids = Vec::<AccountId>::from_iter(
+            block
+                .body()
+                .updated_accounts()
+                .iter()
+                .map(miden_objects::block::BlockAccountUpdate::account_id),
+        );
 
         // The DB and in-memory state updates need to be synchronized and are partially
         // overlapping. Namely, the DB transaction only proceeds after this task acquires the
@@ -425,7 +484,301 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
+        // After successful DB commit, query updated accounts' storage as well as vault data
+        // TODO look into making this consume the `account_tree_update`
+        self.update_storage_forest_from_db(updated_account_ids, block_num).await?;
+
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
+
+        Ok(())
+    }
+
+    /// Updates `SmtForest` after a block is successfully applied
+    ///
+    /// Must be called after the DB transaction commits successfully, so we can safely
+    /// query the newly committed storage data.
+    ///
+    /// # Warning
+    ///
+    /// Has internal locking to mutate the state, use cautiously in scopes with other
+    /// mutex guards around!
+    ///
+    /// # Note
+    ///
+    /// The number of changed accounts is bounded by transactions per block.
+    async fn update_storage_forest_from_db(
+        &self,
+        changed_account_ids: Vec<AccountId>,
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        if changed_account_ids.is_empty() {
+            return Ok(());
+        }
+
+        self.update_storage_maps_in_forest(&changed_account_ids, block_num).await?;
+
+        self.update_vaults_in_forest(&changed_account_ids, block_num).await?;
+
+        Ok(())
+    }
+
+    /// Updates storage map SMTs in the forest for changed accounts
+    #[allow(clippy::too_many_lines)]
+    async fn update_storage_maps_in_forest(
+        &self,
+        changed_account_ids: &[AccountId],
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH};
+
+        tracing::debug!(
+            target: COMPONENT,
+            %block_num,
+            num_accounts = changed_account_ids.len(),
+            "Querying account storage from DB to populate SmtForest"
+        );
+
+        // Query full storage for each updated account at this block
+        let mut account_storages = Vec::new();
+        for &account_id in changed_account_ids {
+            let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
+            account_storages.push((account_id, storage));
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_accounts = account_storages.len(),
+            "Successfully queried account storage from DB (Step 1 complete)"
+        );
+
+        // STEP 2: Extract Map slots and their entries from account_storages
+        let mut map_slots_to_populate = Vec::new();
+
+        for (account_id, storage) in &account_storages {
+            // Iterate through each slot in the account storage
+            for (slot_idx, slot) in storage.slots().iter().enumerate() {
+                // Only process Map-type slots
+                if let miden_objects::account::StorageSlot::Map(storage_map) = slot {
+                    // Extract all (key, value) entries from this StorageMap
+                    let entries: Vec<_> = storage_map.entries().collect();
+
+                    tracing::debug!(
+                        target: COMPONENT,
+                        %account_id,
+                        slot_index = slot_idx,
+                        num_entries = entries.len(),
+                        "Extracted Map slot entries"
+                    );
+
+                    map_slots_to_populate.push((*account_id, slot_idx as u8, entries));
+                }
+            }
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_map_slots = map_slots_to_populate.len(),
+            "Successfully extracted Map slots and entries (Step 2 complete)"
+        );
+
+        // STEP 3: Get previous roots from storage_roots or use empty root
+        let storage_roots = self.storage_roots.read().await;
+        let prev_block_num = if block_num.as_u32() > 0 {
+            BlockNumber::from(block_num.as_u32() - 1)
+        } else {
+            // Genesis block - no previous block
+            block_num
+        };
+
+        // For each map slot, get the previous root or use empty root
+        let mut slots_with_prev_roots = Vec::new();
+
+        for (account_id, slot_idx, entries) in map_slots_to_populate {
+            // Look up previous root for this (account_id, slot_idx, prev_block)
+            let prev_root = if block_num.as_u32() > 0 {
+                storage_roots
+                    .get(&(account_id, slot_idx, prev_block_num))
+                    .copied()
+                    .unwrap_or_else(|| {
+                        // No previous root found, use empty SMT root
+                        *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+                    })
+            } else {
+                // Genesis block - use empty root
+                *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+            };
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                slot_index = slot_idx,
+                "Retrieved previous root for slot"
+            );
+
+            slots_with_prev_roots.push((account_id, slot_idx, prev_root, entries));
+        }
+
+        drop(storage_roots); // Release read lock before write operations
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_slots = slots_with_prev_roots.len(),
+            "Successfully retrieved previous roots (Step 3 complete)"
+        );
+
+        // STEP 4: Use forest.insert(prev_root, key, value) to build new SMTs
+        let mut forest = self.storage_forest.write().await;
+        let mut new_roots = Vec::new();
+
+        for (account_id, slot_idx, prev_root, entries) in slots_with_prev_roots {
+            let updated_root = forest
+                .batch_insert(prev_root, entries.into_iter().map(|(k, v)| (*k, *v)))
+                .expect("Insertion into Forest always works");
+            // Store the final root after all insertions
+            new_roots.push((account_id, slot_idx, updated_root));
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                slot_index = slot_idx,
+                "Built new SMT in forest"
+            );
+        }
+
+        drop(forest); // Release write lock before next write
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_new_roots = new_roots.len(),
+            "Successfully built new SMTs in forest (Step 4 complete)"
+        );
+
+        // STEP 5: Track new roots in storage_roots map
+        let mut storage_roots = self.storage_roots.write().await;
+
+        for (account_id, slot_idx, new_root) in new_roots {
+            // Insert the new root for this (account_id, slot_idx, block_num) triple
+            storage_roots.insert((account_id, slot_idx, block_num), new_root);
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                slot_index = slot_idx,
+                %block_num,
+                "Tracked new root in storage_roots map"
+            );
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            total_tracked_roots = storage_roots.len(),
+            "Successfully tracked new roots (Step 5 complete)"
+        );
+
+        Ok(())
+    }
+
+    /// Updates vault SMTs in the forest for changed accounts
+    async fn update_vaults_in_forest(
+        &self,
+        changed_account_ids: &[AccountId],
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH};
+
+        tracing::debug!(
+            target: COMPONENT,
+            %block_num,
+            "Starting vault tracking"
+        );
+
+        // Query vault assets for each updated account
+        let mut vault_entries_to_populate = Vec::new();
+
+        for &account_id in changed_account_ids {
+            match self.db.select_account_vault_at_block(account_id, block_num).await {
+                Ok(entries) if !entries.is_empty() => {
+                    vault_entries_to_populate.push((account_id, entries));
+                },
+                Ok(_) => {
+                    tracing::debug!(%account_id, "Account has empty vault");
+                },
+                Err(e) => {
+                    tracing::warn!(%account_id, error = %e, "Failed to query vault assets");
+                },
+            }
+        }
+
+        if vault_entries_to_populate.is_empty() {
+            tracing::debug!("No vaults to populate");
+            return Ok(());
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            num_vaults = vault_entries_to_populate.len(),
+            "Queried vault assets"
+        );
+
+        // Get previous vault roots
+        let vault_roots_read = self.vault_roots.read().await;
+        let prev_block_num = if block_num.as_u32() > 0 {
+            BlockNumber::from(block_num.as_u32() - 1)
+        } else {
+            block_num
+        };
+
+        let mut vaults_with_prev_roots = Vec::new();
+        for (account_id, entries) in vault_entries_to_populate {
+            let prev_root = if block_num.as_u32() > 0 {
+                vault_roots_read
+                    .get(&(account_id, prev_block_num))
+                    .copied()
+                    .unwrap_or_else(|| *EmptySubtreeRoots::entry(SMT_DEPTH, 0))
+            } else {
+                *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+            };
+
+            vaults_with_prev_roots.push((account_id, prev_root, entries));
+        }
+        drop(vault_roots_read);
+
+        // Build vault SMTs in forest
+        let mut forest = self.storage_forest.write().await;
+        let mut vault_new_roots = Vec::new();
+
+        for (account_id, prev_root, entries) in vaults_with_prev_roots {
+            let updated_root = forest
+                .batch_insert(prev_root, entries)
+                .expect("Database is consistent and always allows constructing a smt or forest");
+            vault_new_roots.push((account_id, updated_root));
+        }
+        drop(forest);
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            num_vault_roots = vault_new_roots.len(),
+            "Built vault SMTs in forest"
+        );
+
+        // Track vault roots
+        let mut vault_roots = self.vault_roots.write().await;
+        for (account_id, new_root) in vault_new_roots {
+            vault_roots.insert((account_id, block_num), new_root);
+        }
+
+        tracing::info!(
+            target: COMPONENT,
+            %block_num,
+            total_vault_roots = vault_roots.len(),
+            "Successfully tracked vault roots (Vault tracking complete)"
+        );
 
         Ok(())
     }
@@ -918,6 +1271,23 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
+    /// Reconstructs account storage at a specific block
+    pub async fn get_account_storage_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<miden_objects::account::AccountStorage, DatabaseError> {
+        self.db.select_account_storage_at_block(account_id, block_num).await
+    }
+
+    /// Gets the latest account storage
+    pub async fn get_latest_account_storage(
+        &self,
+        account_id: AccountId,
+    ) -> Result<miden_objects::account::AccountStorage, DatabaseError> {
+        self.db.select_latest_account_storage(account_id).await
+    }
+
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
@@ -933,10 +1303,10 @@ impl State {
             return Err(DatabaseError::AccountNotPublic(account_id));
         }
 
-        let (block_num, witness) = self.get_block_witness(block_num, account_id).await?;
+        let (block_num, witness) = self.get_account_witness(block_num, account_id).await?;
 
         let details = if let Some(request) = details {
-            Some(self.fetch_public_account_details(account_id, block_num, request).await?)
+            Some(self.fetch_requested_account_details(account_id, block_num, request).await?)
         } else {
             None
         };
@@ -948,7 +1318,7 @@ impl State {
     ///
     /// If `block_num` is provided, returns the witness at that historical block,
     /// if not present, returns the witness at the latest block.
-    async fn get_block_witness(
+    async fn get_account_witness(
         &self,
         block_num: Option<BlockNumber>,
         account_id: AccountId,
@@ -982,7 +1352,7 @@ impl State {
     ///
     /// This method queries the database to fetch the account state and processes the detail
     /// request to return only the requested information.
-    async fn fetch_public_account_details(
+    async fn fetch_requested_account_details(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
@@ -994,67 +1364,64 @@ impl State {
             storage_requests,
         } = detail_request;
 
-        let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
+        if !account_id.is_public() {
+            return Err(DatabaseError::AccountNotPublic(account_id));
+        }
 
-        // If we get a query for a public account but the details are missing from the database,
-        // it indicates an inconsistent state in the database.
-        let Some(account) = account_info.details else {
-            return Err(DatabaseError::AccountDetailsMissing(account_id));
+        let account_header = self
+            .db
+            .select_account_header_at_block(account_id, block_num)
+            .await?
+            .ok_or_else(|| DatabaseError::AccountNotPublic(account_id))?;
+
+        let account_code = match code_commitment {
+            Some(commitment) if commitment == account_header.code_commitment() => None,
+            Some(_) => self.db.select_account_code_at_block(account_id, block_num).await?,
+            None => None,
         };
 
-        let storage_header = account.storage().to_header();
+        let vault_details = match asset_vault_commitment {
+            Some(commitment) if commitment == account_header.vault_root() => {
+                AccountVaultDetails::empty()
+            },
+            Some(_) | None if asset_vault_commitment.is_some() => {
+                let vault_entries =
+                    self.db.select_account_vault_at_block(account_id, block_num).await?;
+                AccountVaultDetails::from_entries(vault_entries).map_err(|e| {
+                    DatabaseError::InteractError(format!("Failed to parse vault assets: {e}"))
+                })?
+            },
+            _ => AccountVaultDetails::empty(),
+        };
 
+        // TODO: don't load the entire store at once, load what is required
+        let store = self.db.select_account_storage_at_block(account_id, block_num).await?;
+        let storage_header = store.to_header();
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
         for StorageMapRequest { slot_index, slot_data } in storage_requests {
-            let Some(StorageSlot::Map(storage_map)) =
-                account.storage().slots().get(slot_index as usize)
-            else {
+            let Some(slot) = store.slots().get(slot_index as usize) else {
+                continue;
+            };
+
+            let StorageSlot::Map(storage_map) = slot else {
+                // TODO: what to do with value entries? Is it ok to ignore them?
                 return Err(AccountError::StorageSlotNotMap(slot_index).into());
             };
+
             let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
             storage_map_details.push(details);
         }
 
-        // Only include unknown account code blobs, which is equal to a account code digest
-        // mismatch. If `None` was requested, don't return any.
-        let account_code = code_commitment
-            .is_some_and(|code_commitment| code_commitment != account.code().commitment())
-            .then(|| account.code().to_bytes());
-
-        // storage details
-        let storage_details = AccountStorageDetails {
-            header: storage_header,
-            map_details: storage_map_details,
-        };
-
-        // Handle vault details based on the `asset_vault_commitment`.
-        // Similar to `code_commitment`, if the provided commitment matches, we don't return
-        // vault data. If no commitment is provided or it doesn't match, we return
-        // the vault data. If the number of vault contained assets are exceeding a
-        // limit, we signal this back in the response and the user must handle that
-        // in follow-up request.
-        let vault_details = match asset_vault_commitment {
-            Some(commitment) if commitment == account.vault().root() => {
-                // The client already has the correct vault data
-                AccountVaultDetails::empty()
-            },
-            Some(_) => {
-                // The commitment doesn't match, so return vault data
-                AccountVaultDetails::new(account.vault())
-            },
-            None => {
-                // No commitment provided, so don't return vault data
-                AccountVaultDetails::empty()
-            },
-        };
-
         Ok(AccountDetails {
-            account_header: AccountHeader::from(account),
+            account_header,
             account_code,
             vault_details,
-            storage_details,
+            storage_details: AccountStorageDetails {
+                header: storage_header,
+                map_details: storage_map_details,
+            },
         })
     }
 

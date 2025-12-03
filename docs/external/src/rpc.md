@@ -71,7 +71,7 @@ message SmtLeaf {
 - Note can still be consumed
 
 **Inclusion (Nullifier IS consumed):**
-- `leaf` contains `single` or `multiple` with key-value pairs
+- `leaf` contains `single` or `multiple` with key-value pairs, including the `nullifier` key
 - Note has been spent
 
 #### Verification
@@ -81,18 +81,25 @@ use miden_crypto::merkle::SmtProof;
 
 // 1. Get nullifier tree root from block header
 let block_header = get_latest_block_header();
-let nullifier_root = block_header.state_commitment().nullifier_root();
+let nullifier_tree_root = block_header.state_commitment().nullifier_root();
 
 // 2. Verify the proof
 let proof: SmtProof = smt_opening.try_into()?;
-assert_eq!(proof.root(), nullifier_root);
+assert_eq!(proof.root(), nullifier_tree_root);
 
 // 3. Check status, assumes `nullifier` is the originally queried nullifier
 match proof.leaf() {
-    SmtLeaf::Empty(_) => println!("NOT consumed"),
     SmtLeaf::Single((nullifier,_block_num) if nullifier == proof.root() => println!("IS consumed"),
     SmtLeaf::Multiple(set) if inner.iter().filter(|(k,_)| k == nullifier)) => println!("IS consumed"),
+    _ => println!("NOT consumed"),
 }
+
+// Alternatively:
+
+// non-inclusion
+proof.verify_membership(nullifier, EMPTY_WORD, nullifier_tree_root)
+// inclusion
+proof.verify_membership(nullifier, block_num_to_nullifier_leaf_value(block_header.block_num()), nullifier_tree_root)
 ```
 
 ### GetAccountDetails

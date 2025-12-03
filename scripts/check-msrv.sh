@@ -92,7 +92,7 @@ while IFS=$'\t' read -r pkg_id package_name manifest_path rust_version; do
 
     # Determine the currently-installed stable toolchain version (e.g., "1.81.0")
     latest_stable="$(rustup run stable rustc --version 2>/dev/null | awk '{print $2}')"
-    if [[ -z "$latest_stable" ]]; then latest_stable="1.81.0"; fi
+    if [[ -z "$latest_stable" ]]; then latest_stable="1.91.1"; fi
 
     # Search for the actual MSRV starting from the current one
     if actual_msrv=$(cargo msrv find \

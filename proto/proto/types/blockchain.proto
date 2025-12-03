@@ -66,8 +66,8 @@ message BlockHeader {
     // A commitment to a set of IDs of transactions which affected accounts in this block.
     primitives.Digest tx_commitment = 8;
 
-    // A commitment to a STARK proof attesting to the correct state transition.
-    primitives.Digest proof_commitment = 9;
+    // An ECDSA public key corresponding to the validator key that signs block headers.
+    PublicKey public_key = 9;
 
     // A commitment to all transaction kernels supported by this block.
     primitives.Digest tx_kernel_commitment = 10;
@@ -77,6 +77,16 @@ message BlockHeader {
 
     // The time when the block was created.
     fixed32 timestamp = 12;
+}
+
+// PUBLIC KEY
+// ================================================================================================
+
+// ECDSA PUBLIC KEY
+message PublicKey {
+    // Signature encoded using [winter_utils::Serializable] implementation for
+    // [crypto::dsa::ecdsa_k256_keccak::PublicKey].
+    bytes public_key = 1;
 }
 
 // FEE PARAMETERS

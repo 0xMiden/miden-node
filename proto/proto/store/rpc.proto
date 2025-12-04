@@ -244,7 +244,7 @@ message AccountStorageDetails {
 
 // List of nullifiers to return proofs for.
 message NullifierList {
-    // List of nullifiers to return proofs for. Each nullifier is a Digest (4 field elements).
+    // List of nullifiers to return proofs for.
     repeated primitives.Digest nullifiers = 1;
 }
 

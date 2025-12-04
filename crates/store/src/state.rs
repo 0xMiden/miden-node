@@ -51,7 +51,7 @@ use miden_objects::crypto::merkle::{
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
-use miden_objects::{AccountError, Word};
+use miden_objects::{AccountError, EMPTY_WORD, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 
@@ -91,6 +91,31 @@ pub struct TransactionInputs {
     pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
+/// Container for forest-related state that needs to be updated atomically.
+struct InnerForest {
+    /// `SmtForest` for efficient account storage reconstruction.
+    /// Populated during block import with storage and vault SMTs.
+    storage_forest: SmtForest,
+
+    /// Maps (`account_id`, `slot_index`, `block_num`) to SMT root.
+    /// Populated during block import for all storage map slots.
+    storage_roots: BTreeMap<(AccountId, u8, BlockNumber), Word>,
+
+    /// Maps (`account_id`, `block_num`) to vault SMT root.
+    /// Tracks asset vault versions across all blocks with structural sharing.
+    vault_roots: BTreeMap<(AccountId, BlockNumber), Word>,
+}
+
+impl InnerForest {
+    fn new() -> Self {
+        Self {
+            storage_forest: SmtForest::new(),
+            storage_roots: BTreeMap::new(),
+            vault_roots: BTreeMap::new(),
+        }
+    }
+}
+
 /// Container for state that needs to be updated atomically.
 struct InnerState<S = MemoryStorage>
 where
@@ -127,21 +152,12 @@ pub struct State {
     /// The lock is writer-preferring, meaning the writer won't be starved.
     inner: RwLock<InnerState>,
 
+    /// Forest-related state `(SmtForest, storage_roots, vault_roots)` with its own lock.
+    forest: RwLock<InnerForest>,
+
     /// To allow readers to access the tree data while an update in being performed, and prevent
     /// TOCTOU issues, there must be no concurrent writers. This locks to serialize the writers.
     writer: Mutex<()>,
-
-    /// `SmtForest` for efficient account storage reconstruction.
-    /// Populated during block import with storage and vault SMTs.
-    storage_forest: RwLock<SmtForest>,
-
-    /// Maps (`account_id`, `slot_index`, `block_num`) to SMT root.
-    /// Populated during block import for all storage map slots.
-    storage_roots: RwLock<BTreeMap<(AccountId, u8, BlockNumber), Word>>,
-
-    /// Maps (`account_id`, `block_num`) to vault SMT root.
-    /// Tracks asset vault versions across all blocks with structural sharing.
-    vault_roots: RwLock<BTreeMap<(AccountId, BlockNumber), Word>>,
 }
 
 impl State {
@@ -177,22 +193,11 @@ impl State {
             account_tree,
         });
 
+        let forest = RwLock::new(InnerForest::new());
         let writer = Mutex::new(());
         let db = Arc::new(db);
 
-        let storage_forest = RwLock::new(SmtForest::new());
-        let storage_roots = RwLock::new(BTreeMap::new());
-        let vault_roots = RwLock::new(BTreeMap::new());
-
-        let me = Self {
-            db,
-            block_store,
-            inner,
-            writer,
-            storage_forest,
-            storage_roots,
-            vault_roots,
-        };
+        let me = Self { db, block_store, inner, forest, writer };
 
         // load all accounts from the table
         // TODO: make `select_all_account_at(block_num)` to be precise; if ACID is upheld, it's not
@@ -559,9 +564,9 @@ impl State {
             // Iterate through each slot in the account storage
             for (slot_idx, slot) in storage.slots().iter().enumerate() {
                 // Only process Map-type slots
-                if let miden_objects::account::StorageSlot::Map(storage_map) = slot {
+                if let StorageSlot::Map(storage_map) = slot {
                     // Extract all (key, value) entries from this StorageMap
-                    let entries: Vec<_> = storage_map.entries().collect();
+                    let entries = Vec::from_iter(storage_map.entries());
 
                     tracing::debug!(
                         target: COMPONENT,
@@ -583,31 +588,25 @@ impl State {
             "Successfully extracted Map slots and entries (Step 2 complete)"
         );
 
-        // STEP 3: Get previous roots from storage_roots or use empty root
-        let storage_roots = self.storage_roots.read().await;
-        let prev_block_num = if block_num.as_u32() > 0 {
-            BlockNumber::from(block_num.as_u32() - 1)
-        } else {
-            // Genesis block - no previous block
-            block_num
-        };
+        // Acquire a single write lock on the forest for the entire update operation.
+        // Since apply_block() is already serialized by the `writer` Mutex, holding this lock
+        // for the entire duration is acceptable and simplifies the code by avoiding multiple
+        // lock acquisitions.
+        let mut forest_guard = self.forest.write().await;
 
-        // For each map slot, get the previous root or use empty root
-        let mut slots_with_prev_roots = Vec::new();
+        let prev_block_num = block_num.parent().unwrap_or_default();
 
+        // STEP 3 & 4 & 5: Process each map slot: get previous root, build new SMT, track new root
         for (account_id, slot_idx, entries) in map_slots_to_populate {
             // Look up previous root for this (account_id, slot_idx, prev_block)
             let prev_root = if block_num.as_u32() > 0 {
-                storage_roots
+                forest_guard
+                    .storage_roots
                     .get(&(account_id, slot_idx, prev_block_num))
                     .copied()
-                    .unwrap_or_else(|| {
-                        // No previous root found, use empty SMT root
-                        *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
-                    })
+                    .unwrap_or(EMPTY_WORD)
             } else {
-                // Genesis block - use empty root
-                *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+                EMPTY_WORD
             };
 
             tracing::debug!(
@@ -617,28 +616,11 @@ impl State {
                 "Retrieved previous root for slot"
             );
 
-            slots_with_prev_roots.push((account_id, slot_idx, prev_root, entries));
-        }
-
-        drop(storage_roots); // Release read lock before write operations
-
-        tracing::info!(
-            target: COMPONENT,
-            %block_num,
-            num_slots = slots_with_prev_roots.len(),
-            "Successfully retrieved previous roots (Step 3 complete)"
-        );
-
-        // STEP 4: Use forest.insert(prev_root, key, value) to build new SMTs
-        let mut forest = self.storage_forest.write().await;
-        let mut new_roots = Vec::new();
-
-        for (account_id, slot_idx, prev_root, entries) in slots_with_prev_roots {
-            let updated_root = forest
+            // Use forest.batch_insert to build new SMT
+            let updated_root = forest_guard
+                .storage_forest
                 .batch_insert(prev_root, entries.into_iter().map(|(k, v)| (*k, *v)))
                 .expect("Insertion into Forest always works");
-            // Store the final root after all insertions
-            new_roots.push((account_id, slot_idx, updated_root));
 
             tracing::debug!(
                 target: COMPONENT,
@@ -646,23 +628,11 @@ impl State {
                 slot_index = slot_idx,
                 "Built new SMT in forest"
             );
-        }
 
-        drop(forest); // Release write lock before next write
-
-        tracing::info!(
-            target: COMPONENT,
-            %block_num,
-            num_new_roots = new_roots.len(),
-            "Successfully built new SMTs in forest (Step 4 complete)"
-        );
-
-        // STEP 5: Track new roots in storage_roots map
-        let mut storage_roots = self.storage_roots.write().await;
-
-        for (account_id, slot_idx, new_root) in new_roots {
-            // Insert the new root for this (account_id, slot_idx, block_num) triple
-            storage_roots.insert((account_id, slot_idx, block_num), new_root);
+            // Track the new root for this (account_id, slot_idx, block_num) triple
+            forest_guard
+                .storage_roots
+                .insert((account_id, slot_idx, block_num), updated_root);
 
             tracing::debug!(
                 target: COMPONENT,
@@ -676,8 +646,8 @@ impl State {
         tracing::info!(
             target: COMPONENT,
             %block_num,
-            total_tracked_roots = storage_roots.len(),
-            "Successfully tracked new roots (Step 5 complete)"
+            total_tracked_roots = forest_guard.storage_roots.len(),
+            "Successfully completed storage map SMT updates"
         );
 
         Ok(())
@@ -701,7 +671,7 @@ impl State {
         let mut vault_entries_to_populate = Vec::new();
 
         for &account_id in changed_account_ids {
-            match self.db.select_account_vault_at_block(account_id, block_num).await {
+            match self.db.select_account_vault_at_block(account_id, block_num).await? {
                 Ok(entries) if !entries.is_empty() => {
                     vault_entries_to_populate.push((account_id, entries));
                 },
@@ -725,18 +695,18 @@ impl State {
             "Queried vault assets"
         );
 
-        // Get previous vault roots
-        let vault_roots_read = self.vault_roots.read().await;
-        let prev_block_num = if block_num.as_u32() > 0 {
-            BlockNumber::from(block_num.as_u32() - 1)
-        } else {
-            block_num
-        };
+        // Acquire a single write lock on the forest for the entire update operation.
+        // Since apply_block() is already serialized by the `writer` Mutex, holding this lock
+        // for the entire duration is acceptable and simplifies the code.
+        let mut forest_guard = self.forest.write().await;
 
-        let mut vaults_with_prev_roots = Vec::new();
+        let prev_block_num = block_num.parent().unwrap_or_default();
+
+        // Process each vault: get previous root, build new SMT, track new root
         for (account_id, entries) in vault_entries_to_populate {
             let prev_root = if block_num.as_u32() > 0 {
-                vault_roots_read
+                forest_guard
+                    .vault_roots
                     .get(&(account_id, prev_block_num))
                     .copied()
                     .unwrap_or_else(|| *EmptySubtreeRoots::entry(SMT_DEPTH, 0))
@@ -744,40 +714,20 @@ impl State {
                 *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
             };
 
-            vaults_with_prev_roots.push((account_id, prev_root, entries));
-        }
-        drop(vault_roots_read);
-
-        // Build vault SMTs in forest
-        let mut forest = self.storage_forest.write().await;
-        let mut vault_new_roots = Vec::new();
-
-        for (account_id, prev_root, entries) in vaults_with_prev_roots {
-            let updated_root = forest
+            let updated_root = forest_guard
+                .storage_forest
                 .batch_insert(prev_root, entries)
                 .expect("Database is consistent and always allows constructing a smt or forest");
-            vault_new_roots.push((account_id, updated_root));
-        }
-        drop(forest);
 
-        tracing::info!(
-            target: COMPONENT,
-            %block_num,
-            num_vault_roots = vault_new_roots.len(),
-            "Built vault SMTs in forest"
-        );
-
-        // Track vault roots
-        let mut vault_roots = self.vault_roots.write().await;
-        for (account_id, new_root) in vault_new_roots {
-            vault_roots.insert((account_id, block_num), new_root);
+            // Track the new vault root
+            forest_guard.vault_roots.insert((account_id, block_num), updated_root);
         }
 
         tracing::info!(
             target: COMPONENT,
             %block_num,
-            total_vault_roots = vault_roots.len(),
-            "Successfully tracked vault roots (Vault tracking complete)"
+            total_vault_roots = forest_guard.vault_roots.len(),
+            "Successfully completed vault SMT updates"
         );
 
         Ok(())

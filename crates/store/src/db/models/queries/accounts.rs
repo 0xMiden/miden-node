@@ -730,16 +730,6 @@ pub struct AccountStorageHeaderRaw {
     pub is_latest: bool,
 }
 
-#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = schema::accounts)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct AccountRaw {
-    pub account_id: Vec<u8>,
-    pub account_commitment: Vec<u8>,
-    pub block_num: i64,
-    pub nonce: Option<i64>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Selectable, Queryable, QueryableByName)]
 #[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(Sqlite))]
@@ -767,7 +757,7 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
 /// Sets `is_latest=true` for the new row and updates any existing
-/// row with the same (account_id, vault_key) tuple to `is_latest=false`.
+/// row with the same `(account_id, vault_key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -860,7 +850,7 @@ pub(crate) fn insert_account_storage_header(
 /// Insert an account storage map value into the DB using the given [`SqliteConnection`].
 ///
 /// Sets `is_latest=true` for the new row and updates any existing
-/// row with the same (account_id, slot_index, key) tuple to `is_latest=false`.
+/// row with the same `(account_id, slot_index, key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -925,9 +915,9 @@ fn reconstruct_full_account_from_db(
     account_id: AccountId,
 ) -> Result<Account, DatabaseError> {
     // Get account metadata (nonce, code_commitment) and code in a single join query
-    let (account_raw, code_bytes): (AccountRaw, Vec<u8>) = SelectDsl::select(
+    let (nonce, code_bytes): (Option<i64>, Vec<u8>) = SelectDsl::select(
         schema::accounts::table.inner_join(schema::account_codes::table),
-        (AccountRaw::as_select(), schema::account_codes::code),
+        (schema::accounts::nonce, schema::account_codes::code),
     )
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
     .filter(schema::accounts::is_latest.eq(true))
@@ -935,7 +925,7 @@ fn reconstruct_full_account_from_db(
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
 
-    let nonce = raw_sql_to_nonce(account_raw.nonce.ok_or_else(|| {
+    let nonce = raw_sql_to_nonce(nonce.ok_or_else(|| {
         DatabaseError::DataCorrupted(format!("No nonce found for account {account_id}"))
     })?);
 

@@ -409,8 +409,6 @@ impl Db {
             .await
     }
 
-
-
     /// Loads public account details from the DB based on the account ID's prefix.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_network_account_by_prefix(

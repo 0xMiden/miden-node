@@ -82,12 +82,12 @@ impl DataStore for TransactionInputsDataStore {
         async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
     }
 
-    fn get_vault_asset_witness(
+    fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: AssetVaultKey,
-    ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             if self.tx_inputs.account().id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));

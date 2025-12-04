@@ -186,17 +186,26 @@ pub mod account_storage_details {
         }
     }
 }
-/// List of nullifiers to return proofs for.
+/// List of nullifiers to check for inclusion or non-inclusion proofs.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NullifierList {
-    /// List of nullifiers to return proofs for.
+    /// List of nullifiers to return proofs for. Each nullifier is a Digest (4 field elements).
     #[prost(message, repeated, tag = "1")]
     pub nullifiers: ::prost::alloc::vec::Vec<super::primitives::Digest>,
 }
-/// Represents the result of checking nullifiers.
+/// Response containing SMT opening proofs for the requested nullifiers.
+///
+/// Each proof verifies whether the nullifier exists in the tree (consumed) or not (available).
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckNullifiersResponse {
-    /// Each requested nullifier has its corresponding nullifier proof at the same position.
+    /// SMT opening for each requested nullifier at the same position.
+    ///
+    /// Leaf types indicate nullifier status:
+    ///
+    /// * `empty_leaf_index`: Nullifier not consumed (available)
+    /// * `single` or `multiple`: Nullifier consumed (contains key-value pairs)
+    ///
+    /// Verify against the nullifier tree root from the latest block header.
     #[prost(message, repeated, tag = "1")]
     pub proofs: ::prost::alloc::vec::Vec<super::primitives::SmtOpening>,
 }
@@ -573,7 +582,19 @@ pub mod rpc_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc_store.Rpc", "Status"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof
+        /// * `single` or `multiple`: Inclusion proof with key-value pair(s)
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         pub async fn check_nullifiers(
             &mut self,
             request: impl tonic::IntoRequest<super::NullifierList>,
@@ -939,7 +960,19 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<()>,
         ) -> std::result::Result<tonic::Response<super::StoreStatus>, tonic::Status>;
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof
+        /// * `single` or `multiple`: Inclusion proof with key-value pair(s)
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         async fn check_nullifiers(
             &self,
             request: tonic::Request<super::NullifierList>,

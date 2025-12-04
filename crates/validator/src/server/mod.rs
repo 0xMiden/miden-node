@@ -121,6 +121,7 @@ impl api_server::Api for ValidatorServer {
         // Build and sign header.
         let (header, _body) = build_block(proposed_block)
             .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
+        // TODO(sergerad): Inject a real signer into the validator.
         let signature = LocalEcdsaSigner::dummy().sign(header.commitment());
 
         // Send the signature.

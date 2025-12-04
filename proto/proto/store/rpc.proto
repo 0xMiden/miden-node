@@ -217,8 +217,16 @@ message AccountStorageDetails {
         // endpoint should be used to get all storage map data.
         bool too_many_entries = 2;
 
-        // By default we provide all storage entries.
-        MapEntries entries = 3;
+        oneof data {
+            // By default we provide all storage entries when `all_entries` is requested
+            // or when the storage map is small.
+            MapEntries entries = 3;
+
+            // When specific keys are requested and the storage map is not small,
+            // we provide a partial SMT proof containing only the requested keys.
+            // The bytes represent a serialized `PartialSmt` from miden-objects.
+            bytes partial_smt = 4;
+        }
     }
 
     // Account storage header (storage slot info for up to 256 slots)

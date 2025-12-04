@@ -121,6 +121,7 @@ message RpcStatus {
 // BLOCK PRODUCER STATUS
 // ================================================================================================
 
+
 // Represents the status of the block producer.
 message BlockProducerStatus {
     // The block producer's running version.
@@ -128,6 +129,12 @@ message BlockProducerStatus {
 
     // The block producer's status.
     string status = 2;
+
+    // The block producer's current view of the chain tip height.
+    //
+    // This is the height of the latest block that the block producer considers
+    // to be part of the canonical chain.
+    fixed32 chain_tip = 4;
 
     // Statistics about the mempool.
     MempoolStats mempool_stats = 3;
@@ -242,8 +249,9 @@ message AccountProofRequest {
     // ID of the account for which we want to get data
     account.AccountId account_id = 1;
 
-    // Block at which we'd like to get this data. If present, must be close to the chain tip.
-    // If not present, data from the latest block will be returned.
+    // Optional block height at which to return the proof.
+    //
+    // Defaults to current chain tip if unspecified.
     optional blockchain.BlockNumber block_num = 2;
 
     // Request for additional account details; valid only for public accounts.

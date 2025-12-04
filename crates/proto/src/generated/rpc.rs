@@ -24,6 +24,12 @@ pub struct BlockProducerStatus {
     /// The block producer's status.
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
+    /// The block producer's current view of the chain tip height.
+    ///
+    /// This is the height of the latest block that the block producer considers
+    /// to be part of the canonical chain.
+    #[prost(fixed32, tag = "4")]
+    pub chain_tip: u32,
     /// Statistics about the mempool.
     #[prost(message, optional, tag = "3")]
     pub mempool_stats: ::core::option::Option<MempoolStats>,
@@ -93,8 +99,9 @@ pub struct AccountProofRequest {
     /// ID of the account for which we want to get data
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Block at which we'd like to get this data. If present, must be close to the chain tip.
-    /// If not present, data from the latest block will be returned.
+    /// Optional block height at which to return the proof.
+    ///
+    /// Defaults to current chain tip if unspecified.
     #[prost(message, optional, tag = "2")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Request for additional account details; valid only for public accounts.

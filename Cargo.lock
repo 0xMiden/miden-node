@@ -338,9 +338,9 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "bech32"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
+checksum = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f"
 
 [[package]]
 name = "beef"
@@ -1082,21 +1082,22 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "2.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+checksum = "10b768e943bed7bf2cab53df09f4bc34bfd217cdb57d971e769874c9a6710618"
 dependencies = [
  "derive_more-impl",
 ]
 
 [[package]]
 name = "derive_more-impl"
-version = "2.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
+checksum = "6d286bfdaf75e988b4a78e013ecd79c581e06399ab53fbacd2d916c2f904f30b"
 dependencies = [
  "proc-macro2",
  "quote",
+ "rustc_version 0.4.1",
  "syn 2.0.111",
 ]
 
@@ -1876,9 +1877,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.18"
+version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52e9a2a24dc5c6821e71a7030e1e14b7b632acac55c40e9d2e082c621261bb56"
+checksum = "727805d60e7938b76b826a6ef209eb70eaa1812794f9424d4a4e2d740662df5f"
 dependencies = [
  "base64",
  "bytes",
@@ -2241,9 +2242,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.177"
+version = "0.2.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
+checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
 
 [[package]]
 name = "libm"
@@ -2318,9 +2319,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.28"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "logos"
@@ -2472,7 +2473,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#0cd80afdbd9b9d26e27341fad895063ac53eacdc"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#15e787d2c9ee4744be2fedbc5cdd10abf639a5cb"
 dependencies = [
  "miden-objects",
  "thiserror 2.0.17",
@@ -2568,7 +2569,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#0cd80afdbd9b9d26e27341fad895063ac53eacdc"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#15e787d2c9ee4744be2fedbc5cdd10abf639a5cb"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2932,7 +2933,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#0cd80afdbd9b9d26e27341fad895063ac53eacdc"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#15e787d2c9ee4744be2fedbc5cdd10abf639a5cb"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -2942,6 +2943,7 @@ dependencies = [
  "miden-crypto",
  "miden-mast-package",
  "miden-processor",
+ "miden-protocol-macros",
  "miden-stdlib",
  "miden-utils-sync",
  "miden-verifier",
@@ -2972,6 +2974,16 @@ dependencies = [
  "tokio",
  "tracing",
  "winter-prover",
+]
+
+[[package]]
+name = "miden-protocol-macros"
+version = "0.13.0"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#15e787d2c9ee4744be2fedbc5cdd10abf639a5cb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -3073,7 +3085,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#0cd80afdbd9b9d26e27341fad895063ac53eacdc"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#15e787d2c9ee4744be2fedbc5cdd10abf639a5cb"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3091,7 +3103,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#0cd80afdbd9b9d26e27341fad895063ac53eacdc"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#15e787d2c9ee4744be2fedbc5cdd10abf639a5cb"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -3104,7 +3116,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#0cd80afdbd9b9d26e27341fad895063ac53eacdc"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#15e787d2c9ee4744be2fedbc5cdd10abf639a5cb"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -4200,9 +4212,9 @@ dependencies = [
 
 [[package]]
 name = "prost-derive"
-version = "0.14.2"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2d93e596a829ebe00afa41c3a056e6308d6b8a4c7d869edf184e2c91b1ba564"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -4213,9 +4225,9 @@ dependencies = [
 
 [[package]]
 name = "prost-reflect"
-version = "0.16.2"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89a3ac73ec9a9118131a4594c9d336631a07852220a1d0ae03ee36b04503a063"
+checksum = "b89455ef41ed200cafc47c76c552ee7792370ac420497e551f16123a9135f76e"
 dependencies = [
  "logos",
  "miette",
@@ -6067,9 +6079,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.18.1"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f87b8aa10b915a06587d0dec516c282ff295b475d94abf425d62b57710070a2"
+checksum = "e2e054861b4bd027cd373e18e8d8d8e6548085000e41290d95ce0c373a654b4a"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",

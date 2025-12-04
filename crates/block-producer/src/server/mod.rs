@@ -216,6 +216,8 @@ impl BlockProducer {
 /// Mempool statistics that are updated periodically to avoid locking the mempool.
 #[derive(Clone, Copy, Default)]
 struct MempoolStats {
+    /// The mempool's current view of the chain tip height.
+    chain_tip: BlockNumber,
     /// Number of transactions currently in the mempool waiting to be batched.
     unbatched_transactions: u64,
     /// Number of batches currently being proven.
@@ -290,6 +292,7 @@ impl api_server::Api for BlockProducerRpcServer {
         Ok(tonic::Response::new(proto::rpc::BlockProducerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
+            chain_tip: mempool_stats.chain_tip.as_u32(),
             mempool_stats: Some(mempool_stats.into()),
         }))
     }
@@ -359,9 +362,10 @@ impl BlockProducerRpcServer {
             loop {
                 interval.tick().await;
 
-                let (unbatched_transactions, proposed_batches, proven_batches) = {
+                let (chain_tip, unbatched_transactions, proposed_batches, proven_batches) = {
                     let mempool = mempool.lock().await;
                     (
+                        mempool.chain_tip(),
                         mempool.unbatched_transactions_count() as u64,
                         mempool.proposed_batches_count() as u64,
                         mempool.proven_batches_count() as u64,
@@ -370,6 +374,7 @@ impl BlockProducerRpcServer {
 
                 let mut cache = cached_mempool_stats.write().await;
                 *cache = MempoolStats {
+                    chain_tip,
                     unbatched_transactions,
                     proposed_batches,
                     proven_batches,

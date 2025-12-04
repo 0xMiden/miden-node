@@ -1513,3 +1513,193 @@ fn mock_account_code_and_storage(
         .build_existing()
         .unwrap()
 }
+
+// GENESIS REGRESSION TESTS
+// ================================================================================================
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_genesis_with_account_assets() {
+    use crate::genesis::GenesisState;
+    use miden_objects::account::StorageMap;
+
+    let component = AccountComponent::compile(
+        "export.foo push.1 end",
+        TransactionKernel::assembler(),
+        vec![],
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
+
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_assets([fungible_asset.into()])
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_genesis_with_account_storage_map() {
+    use crate::genesis::GenesisState;
+    use miden_objects::account::StorageMap;
+
+    let storage_map = StorageMap::with_entries(vec![
+        (
+            Word::from([Felt::new(1), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]),
+        ),
+        (
+            Word::from([Felt::new(2), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(50), Felt::new(60), Felt::new(70), Felt::new(80)]),
+        ),
+    ])
+    .unwrap();
+
+    let component_storage = vec![StorageSlot::Map(storage_map), StorageSlot::Value(Word::empty())];
+
+    let component = AccountComponent::compile(
+        "export.foo push.1 end",
+        TransactionKernel::assembler(),
+        component_storage,
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account = AccountBuilder::new([2u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_genesis_with_account_assets_and_storage() {
+    use crate::genesis::GenesisState;
+    use miden_objects::account::StorageMap;
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
+
+    let storage_map = StorageMap::with_entries(vec![(
+        Word::from([Felt::new(100), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]),
+    )])
+    .unwrap();
+
+    let component_storage = vec![StorageSlot::Value(Word::empty()), StorageSlot::Map(storage_map)];
+
+    let component = AccountComponent::compile(
+        "export.foo push.1 end",
+        TransactionKernel::assembler(),
+        component_storage,
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account = AccountBuilder::new([3u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_assets([fungible_asset.into()])
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_genesis_with_multiple_accounts() {
+    use crate::genesis::GenesisState;
+    use miden_objects::account::StorageMap;
+
+    let component1 = AccountComponent::compile(
+        "export.foo push.1 end",
+        TransactionKernel::assembler(),
+        vec![],
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account1 = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component1)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
+
+    let component2 = AccountComponent::compile(
+        "export.bar push.2 end",
+        TransactionKernel::assembler(),
+        vec![],
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account2 = AccountBuilder::new([2u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component2)
+        .with_assets([fungible_asset.into()])
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let storage_map = StorageMap::with_entries(vec![(
+        Word::from([Felt::new(5), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        Word::from([Felt::new(15), Felt::new(25), Felt::new(35), Felt::new(45)]),
+    )])
+    .unwrap();
+
+    let component_storage = vec![StorageSlot::Map(storage_map)];
+
+    let component3 = AccountComponent::compile(
+        "export.baz push.3 end",
+        TransactionKernel::assembler(),
+        component_storage,
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account3 = AccountBuilder::new([3u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component3)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state =
+        GenesisState::new(vec![account1, account2, account3], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}

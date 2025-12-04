@@ -24,7 +24,7 @@ miden-tx                   = { default-features = true, workspace = true }
 thiserror                  = { workspace = true }
 tokio                      = { features = ["rt-multi-thread"], workspace = true }
 tokio-stream               = { workspace = true }
-tonic                      = { workspace = true }
+tonic                      = { default-features = true, workspace = true }
 tracing                    = { workspace = true }
 url                        = { workspace = true }
 

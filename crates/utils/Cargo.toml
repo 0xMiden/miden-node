@@ -37,7 +37,7 @@ rand                  = { workspace = true }
 serde                 = { features = ["derive"], version = "1.0" }
 thiserror             = { workspace = true }
 tokio                 = { workspace = true }
-tonic                 = { workspace = true }
+tonic                 = { default-features = true, workspace = true }
 tower-http            = { features = ["catch-panic"], workspace = true }
 tracing               = { workspace = true }
 tracing-forest        = { features = ["chrono"], optional = true, version = "0.2" }

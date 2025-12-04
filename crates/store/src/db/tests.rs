@@ -1656,8 +1656,6 @@ fn test_storage_reconstruction_historical_state() {
     }
 }
 
-
-
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn test_storage_reconstruction_latest() {

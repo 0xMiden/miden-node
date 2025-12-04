@@ -1219,11 +1219,12 @@ pub(crate) fn select_account_vault_at_block(
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = i64::from(block_num.as_u32());
-
     let raw: Vec<(Vec<u8>, Option<Vec<u8>>)> = SelectDsl::select(
         t::table
             .filter(t::account_id.eq(&account_id_bytes))
-            .filter(t::block_num.eq(block_num_sql)),
+            .filter(t::block_num.le(block_num_sql))
+            .order(t::block_num.desc())
+            .limit(1),
         (t::vault_key, t::asset),
     )
     .load(conn)?;
@@ -1287,14 +1288,15 @@ pub(crate) fn select_account_code_at_block(
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = i64::from(block_num.as_u32());
-
-    // Query the accounts table to get the code_commitment at the specified block
+    // Query the accounts table to get the code_commitment at the specified block or earlier
     // Then join with account_codes to get the actual code
     let result: Option<Vec<u8>> = SelectDsl::select(
         accounts::table
             .inner_join(account_codes::table)
             .filter(accounts::account_id.eq(&account_id_bytes))
-            .filter(accounts::block_num.eq(block_num_sql)),
+            .filter(accounts::block_num.le(block_num_sql))
+            .order(accounts::block_num.desc())
+            .limit(1),
         account_codes::code,
     )
     .first(conn)
@@ -1305,8 +1307,8 @@ pub(crate) fn select_account_code_at_block(
 
 /// Queries the account header for a specific account at a specific block number.
 ///
-/// This reconstructs the AccountHeader by joining multiple tables:
-/// - `accounts` table for account_id, nonce, `code_commitment`
+/// This reconstructs the `AccountHeader` by joining multiple tables:
+/// - `accounts` table for `account_id`, `nonce`, `code_commitment`
 /// - `account_vault_headers` table for `vault_root`
 /// - `account_storage_headers` table for storage slot commitments (to compute `storage_commitment`)
 ///
@@ -1332,11 +1334,12 @@ pub(crate) fn select_account_header_at_block(
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
-
     let account_data: Option<(Option<Vec<u8>>, Option<i64>)> = SelectDsl::select(
         accounts::table
             .filter(accounts::account_id.eq(&account_id_bytes))
-            .filter(accounts::block_num.eq(block_num_sql)),
+            .filter(accounts::block_num.le(block_num_sql))
+            .order(accounts::block_num.desc())
+            .limit(1),
         (accounts::code_commitment, accounts::nonce),
     )
     .first(conn)
@@ -1345,11 +1348,12 @@ pub(crate) fn select_account_header_at_block(
     let Some((code_commitment_bytes, nonce_raw)) = account_data else {
         return Ok(None);
     };
-
     let vault_root_bytes: Option<Vec<u8>> = SelectDsl::select(
         account_vault_headers::table
             .filter(account_vault_headers::account_id.eq(&account_id_bytes))
-            .filter(account_vault_headers::block_num.eq(block_num_sql)),
+            .filter(account_vault_headers::block_num.le(block_num_sql))
+            .order(account_vault_headers::block_num.desc())
+            .limit(1),
         account_vault_headers::vault_root,
     )
     .first(conn)
@@ -1358,8 +1362,9 @@ pub(crate) fn select_account_header_at_block(
     let storage_slots: Vec<(i32, i32, Vec<u8>)> = SelectDsl::select(
         account_storage_headers::table
             .filter(account_storage_headers::account_id.eq(&account_id_bytes))
-            .filter(account_storage_headers::block_num.eq(block_num_sql))
-            .order(account_storage_headers::slot_index.asc()),
+            .filter(account_storage_headers::block_num.le(block_num_sql))
+            .order(account_storage_headers::block_num.desc())
+            .limit(1),
         (
             account_storage_headers::slot_index,
             account_storage_headers::slot_type,

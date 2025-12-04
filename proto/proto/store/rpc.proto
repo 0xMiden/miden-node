@@ -242,7 +242,7 @@ message AccountStorageDetails {
 // CHECK NULLIFIERS
 // ================================================================================================
 
-// List of nullifiers to check for inclusion or non-inclusion proofs.
+// List of nullifiers to return proofs for.
 message NullifierList {
     // List of nullifiers to return proofs for. Each nullifier is a Digest (4 field elements).
     repeated primitives.Digest nullifiers = 1;

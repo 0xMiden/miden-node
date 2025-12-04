@@ -8,6 +8,7 @@ use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteHeader, Nullifier};
 use miden_objects::transaction::{InputNoteCommitment, TransactionHeader, TransactionId};
 
+use crate::domain::batch::SelectedBatch;
 use crate::domain::transaction::AuthenticatedTransaction;
 
 /// Uniquely identifies a node in the mempool.
@@ -50,32 +51,26 @@ impl TransactionNode {
 ///
 /// Once proven it transitions to a [`ProvenBatchNode`].
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct ProposedBatchNode {
-    txs: Vec<Arc<AuthenticatedTransaction>>,
-    id: BatchId,
-}
+pub(super) struct ProposedBatchNode(SelectedBatch);
 
 impl ProposedBatchNode {
-    pub(super) fn new(txs: Vec<Arc<AuthenticatedTransaction>>) -> Self {
-        let id = BatchId::from_transactions(
-            txs.iter()
-                .map(AsRef::as_ref)
-                .map(AuthenticatedTransaction::raw_proven_transaction),
-        );
-        Self { txs, id }
+    pub(super) fn new(batch: SelectedBatch) -> Self {
+        Self(batch)
     }
 
     pub(super) fn into_proven_batch_node(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
-        let Self { txs, id: _ } = self;
-        ProvenBatchNode { txs, inner: proof }
+        ProvenBatchNode {
+            txs: self.0.into_transactions(),
+            inner: proof,
+        }
     }
 
     pub(super) fn expires_at(&self) -> BlockNumber {
-        self.txs.iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
+        self.0.txs().iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
     }
 
     pub(super) fn batch_id(&self) -> BatchId {
-        self.id
+        self.0.id()
     }
 }
 
@@ -158,6 +153,8 @@ pub(super) trait Node {
     /// The account state commitment updates caused by this node.
     ///
     /// Output tuple represents each updates `(account ID, initial commitment, final commitment)`.
+    ///
+    /// Updates must be aggregates i.e. only a single account ID update allowed.
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_>;
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_>;
 
@@ -197,34 +194,27 @@ impl Node for TransactionNode {
 
 impl Node for ProposedBatchNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
-        Box::new(self.txs.iter().flat_map(|tx| tx.nullifiers()))
+        Box::new(self.0.txs().iter().flat_map(|tx| tx.nullifiers()))
     }
 
     fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
-        Box::new(self.txs.iter().flat_map(|tx| tx.output_note_commitments()))
+        Box::new(self.0.txs().iter().flat_map(|tx| tx.output_note_commitments()))
     }
 
     fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
-        Box::new(self.txs.iter().flat_map(|tx| tx.unauthenticated_note_commitments()))
+        Box::new(self.0.txs().iter().flat_map(|tx| tx.unauthenticated_note_commitments()))
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
-        Box::new(self.txs.iter().flat_map(|tx| {
-            let update = tx.account_update();
-            std::iter::once((
-                update.account_id(),
-                update.initial_state_commitment(),
-                update.final_state_commitment(),
-            ))
-        }))
+        Box::new(self.0.account_updates())
     }
 
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
-        Box::new(self.txs.iter())
+        Box::new(self.0.txs().iter())
     }
 
     fn id(&self) -> NodeId {
-        NodeId::ProposedBatch(self.id)
+        NodeId::ProposedBatch(self.0.id())
     }
 }
 

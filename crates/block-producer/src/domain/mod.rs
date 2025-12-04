@@ -1,1 +1,2 @@
-pub mod transaction;
+pub(crate) mod batch;
+pub(crate) mod transaction;

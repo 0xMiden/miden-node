@@ -1,0 +1,104 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use miden_objects::Word;
+use miden_objects::account::AccountId;
+use miden_objects::batch::BatchId;
+use miden_objects::transaction::TransactionId;
+
+use crate::domain::transaction::AuthenticatedTransaction;
+
+// SELECTED BATCH
+// ================================================================================================
+
+/// A sequence of transactions selected by the [`Mempool`] to be processed by the
+/// [`BatchBuilder`] into a [`ProposedBatch`], and then finally into a [`ProvenBatch`].
+///
+/// [Mempool]: crate::mempool::Mempool
+/// [BatchBuilder]: crate::batch_builder::BatchBuilder
+/// [ProposedBatch]: miden_objects::batch::ProposedBatch
+/// [ProvenBatch]: miden_objects::batch::ProvenBatch
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SelectedBatch {
+    txs: Vec<Arc<AuthenticatedTransaction>>,
+    id: BatchId,
+    account_updates: HashMap<AccountId, (Word, Word)>,
+}
+
+impl SelectedBatch {
+    pub(crate) fn builder() -> SelectedBatchBuilder {
+        SelectedBatchBuilder::default()
+    }
+
+    pub(crate) fn id(&self) -> BatchId {
+        self.id
+    }
+
+    pub(crate) fn txs(&self) -> &[Arc<AuthenticatedTransaction>] {
+        &self.txs
+    }
+
+    pub(crate) fn into_transactions(self) -> Vec<Arc<AuthenticatedTransaction>> {
+        self.txs
+    }
+
+    pub(crate) fn account_updates(&self) -> impl Iterator<Item = (AccountId, Word, Word)> {
+        self.account_updates.iter().map(|(account, (from, to))| (*account, *from, *to))
+    }
+}
+
+/// A builder to construct a [`SelectedBatch`].
+#[derive(Clone, Default)]
+pub(crate) struct SelectedBatchBuilder {
+    pub(crate) txs: Vec<Arc<AuthenticatedTransaction>>,
+    pub(crate) account_updates: HashMap<AccountId, (Word, Word)>,
+}
+
+impl SelectedBatchBuilder {
+    /// Appends the given transaction to the current batch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new transaction's account update is inconsistent with the current account
+    /// state within the batch i.e. if the transaction's initial account commitment does not
+    /// match the account update's final account commitment within the batch (if any).
+    pub(crate) fn push(&mut self, tx: Arc<AuthenticatedTransaction>) {
+        let update = tx.account_update();
+        self.account_updates
+            .entry(update.account_id())
+            .and_modify(|(_, to)| {
+                assert!(
+                    to == &update.initial_state_commitment(),
+                    "Cannot select transaction {} as its initial commitment {} for account {} does \
+not match the current commitment {}",
+                    tx.id(),
+                    update.initial_state_commitment(),
+                    update.account_id(),
+                    to
+                );
+
+                *to = update.final_state_commitment();
+            })
+            .or_insert((update.initial_state_commitment(), update.final_state_commitment()));
+
+        self.txs.push(tx);
+    }
+
+    /// Returns `true` if the batch contains the given transaction already.
+    pub(crate) fn contains(&self, target: &TransactionId) -> bool {
+        self.txs.iter().any(|tx| &tx.id() == target)
+    }
+
+    /// Returns `true` if it contains no transactions.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.txs.is_empty()
+    }
+
+    /// Finalizes the batch selection.
+    pub(crate) fn build(self) -> SelectedBatch {
+        let Self { txs, account_updates } = self;
+        let id = BatchId::from_ids(txs.iter().map(|tx| (tx.id(), tx.account_id())));
+
+        SelectedBatch { txs, id, account_updates }
+    }
+}

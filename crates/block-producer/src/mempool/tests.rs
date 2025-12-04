@@ -68,23 +68,23 @@ fn children_of_failed_batches_are_ignored() {
 
     let (mut uut, _) = Mempool::for_tests();
     uut.add_transaction(txs[0].clone()).unwrap();
-    let (parent_batch, batch_txs) = uut.select_batch().unwrap();
-    assert_eq!(batch_txs, vec![txs[0].clone()]);
+    let parent_batch = uut.select_batch().unwrap();
+    assert_eq!(parent_batch.txs(), vec![txs[0].clone()]);
 
     uut.add_transaction(txs[1].clone()).unwrap();
-    let (child_batch_a, batch_txs) = uut.select_batch().unwrap();
-    assert_eq!(batch_txs, vec![txs[1].clone()]);
+    let child_batch_a = uut.select_batch().unwrap();
+    assert_eq!(child_batch_a.txs(), vec![txs[1].clone()]);
 
     uut.add_transaction(txs[2].clone()).unwrap();
-    let (_, batch_txs) = uut.select_batch().unwrap();
-    assert_eq!(batch_txs, vec![txs[2].clone()]);
+    let next_batch = uut.select_batch().unwrap();
+    assert_eq!(next_batch.txs(), vec![txs[2].clone()]);
 
     // Child batch jobs are now dangling.
-    uut.rollback_batch(parent_batch);
+    uut.rollback_batch(parent_batch.id());
     let reference = uut.clone();
 
     // Success or failure of the child job should effectively do nothing.
-    uut.rollback_batch(child_batch_a);
+    uut.rollback_batch(child_batch_a.id());
     assert_eq!(uut, reference);
 
     let proven_batch =
@@ -102,13 +102,13 @@ fn failed_batch_transactions_are_requeued() {
     uut.select_batch().unwrap();
 
     uut.add_transaction(txs[1].clone()).unwrap();
-    let (failed_batch, _) = uut.select_batch().unwrap();
+    let failed_batch = uut.select_batch().unwrap();
 
     uut.add_transaction(txs[2].clone()).unwrap();
     uut.select_batch().unwrap();
 
     // Middle batch failed, so it and its child transaction should be re-entered into the queue.
-    uut.rollback_batch(failed_batch);
+    uut.rollback_batch(failed_batch.id());
 
     reference.add_transaction(txs[0].clone()).unwrap();
     reference.select_batch().unwrap();
@@ -226,10 +226,10 @@ fn subtree_reversion_removes_all_descendents() {
     uut.select_batch().unwrap();
 
     uut.add_transaction(reverted_txs[1].clone()).unwrap();
-    let (to_revert, _) = uut.select_batch().unwrap();
+    let to_revert = uut.select_batch().unwrap();
 
     uut.add_transaction(reverted_txs[2].clone()).unwrap();
-    uut.revert_subtree(NodeId::ProposedBatch(to_revert));
+    uut.revert_subtree(NodeId::ProposedBatch(to_revert.id()));
 
     // We expect the second batch and the latter reverted txns to be non-existent.
     reference.add_transaction(reverted_txs[0].clone()).unwrap();
@@ -255,11 +255,11 @@ fn transactions_from_reverted_batches_are_requeued() {
 
     uut.add_transaction(tx_set_b[1].clone()).unwrap();
     uut.add_transaction(tx_set_a[1].clone()).unwrap();
-    let (batch_id, _) = uut.select_batch().unwrap();
+    let batch = uut.select_batch().unwrap();
 
     uut.add_transaction(tx_set_b[2].clone()).unwrap();
     uut.add_transaction(tx_set_a[2].clone()).unwrap();
-    uut.rollback_batch(batch_id);
+    uut.rollback_batch(batch.id());
 
     reference.add_transaction(tx_set_b[0].clone()).unwrap();
     reference.add_transaction(tx_set_a[0].clone()).unwrap();

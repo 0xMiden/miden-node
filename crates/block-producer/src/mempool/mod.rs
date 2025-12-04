@@ -53,6 +53,7 @@ use subscription::SubscriptionProvider;
 use tokio::sync::{Mutex, MutexGuard, mpsc};
 use tracing::{instrument, warn};
 
+use crate::domain::batch::SelectedBatch;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{AddTransactionError, VerifyTxError};
 use crate::mempool::budget::BudgetStatus;
@@ -224,7 +225,7 @@ impl Mempool {
     ///
     /// Returns `None` if no transactions are available.
     #[instrument(target = COMPONENT, name = "mempool.select_batch", skip_all)]
-    pub fn select_batch(&mut self) -> Option<(BatchId, Vec<Arc<AuthenticatedTransaction>>)> {
+    pub fn select_batch(&mut self) -> Option<SelectedBatch> {
         // The selection algorithm is fairly neanderthal in nature.
         //
         // We iterate over all transaction nodes, each time selecting the first transaction which
@@ -239,13 +240,13 @@ impl Mempool {
         //
         // The additional bookkeeping can be implemented once we have fee related strategies. KISS.
 
-        let mut selected = Vec::<Arc<AuthenticatedTransaction>>::default();
+        let mut selected = SelectedBatch::builder();
         let mut budget = self.config.batch_budget;
 
         let mut candidates = self.nodes.txs.values();
 
         'next: while let Some(candidate) = candidates.next() {
-            if selected.iter().any(|tx| tx.id() == candidate.id()) {
+            if selected.contains(&candidate.id()) {
                 continue 'next;
             }
 
@@ -255,7 +256,7 @@ impl Mempool {
                 match parent {
                     // TODO(mirko): Once user batches are supported, they will also need to be
                     // checked here.
-                    NodeId::Transaction(parent) if selected.iter().all(|tx| tx.id() != parent) => {
+                    NodeId::Transaction(parent) if !selected.contains(&parent) => {
                         continue 'next;
                     },
                     NodeId::Transaction(_)
@@ -276,6 +277,7 @@ impl Mempool {
         if selected.is_empty() {
             return None;
         }
+        let selected = selected.build();
 
         let batch = ProposedBatchNode::new(selected.clone());
         let batch_id = batch.batch_id();
@@ -296,7 +298,7 @@ impl Mempool {
         // TODO(mirko): Selecting a batch can unblock user batches, which should be checked here.
 
         self.inject_telemetry();
-        Some((batch_id, selected))
+        Some(selected)
     }
 
     /// Drops the proposed batch and all of its descendants.

@@ -6,7 +6,7 @@ use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::TransactionId;
-use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
+use miden_objects::{ProposedBatchError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;

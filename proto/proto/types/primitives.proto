@@ -92,3 +92,33 @@ message Digest {
     fixed64 d2 = 3;
     fixed64 d3 = 4;
 }
+
+// PARTIAL SMT
+// ================================================================================================
+
+// Represents a partial Sparse Merkle Tree containing only a subset of leaves and their paths.
+// This allows verifying and updating tracked keys without requiring the full tree.
+message PartialSmt {
+    // The root hash of the SMT
+    Digest root = 1;
+
+    // All tracked leaves in the partial SMT, keyed by their leaf index
+    repeated SmtLeafWithIndex leaves = 2;
+
+    // Inner nodes stored in deterministic order (by scalar index) for reconstruction
+    repeated InnerNode inner_nodes = 3;
+}
+
+// Represents a leaf with its index for partial SMT serialization
+message SmtLeafWithIndex {
+    // The leaf index (0 to 2^64 - 1 for leaves at depth 64)
+    uint64 leaf_index = 1;
+    
+    // The leaf data
+    SmtLeaf leaf = 2;
+}
+
+message InnerNode {
+    Digest left = 1;
+    Digest right = 2;
+}

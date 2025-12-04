@@ -261,4 +261,79 @@ impl InnerForest {
             "Populated vault in forest from DB"
         );
     }
+
+    /// Queries specific storage keys for a given account and slot at a specific block.
+    ///
+    /// This method retrieves key-value pairs from the forest without loading the entire
+    /// storage map from the database. It returns the values along with their Merkle proofs.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_id` - The account to query
+    /// * `slot_name` - The storage slot name
+    /// * `block_num` - The block number at which to query
+    /// * `keys` - The keys to retrieve
+    ///
+    /// # Returns
+    ///
+    /// A vector of key-value pairs for the requested keys. Keys that don't exist in the
+    /// storage map will have a value of `EMPTY_WORD`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The storage root for this account/slot/block is not tracked
+    /// - The forest doesn't have sufficient data to provide proofs for the keys
+    pub(crate) fn query_storage_keys(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+        block_num: BlockNumber,
+        keys: &[Word],
+    ) -> Result<Vec<(Word, Word)>, String> {
+        // Get the storage root for this account/slot/block
+        let root = self
+            .storage_roots
+            .get(&(account_id, slot_name.clone(), block_num))
+            .copied()
+            .ok_or_else(|| {
+                format!(
+                    "Storage root not found for account {:?}, slot {}, block {}",
+                    account_id, slot_name, block_num
+                )
+            })?;
+
+        let mut results = Vec::with_capacity(keys.len());
+
+        for key in keys {
+            // Open a proof for this key in the forest
+            match self.storage_forest.open(root, *key) {
+                Ok(proof) => {
+                    // Extract the value from the proof
+                    let value = proof.get(key).unwrap_or(EMPTY_WORD);
+                    results.push((*key, value));
+                },
+                Err(e) => {
+                    tracing::debug!(
+                        target: crate::COMPONENT,
+                        "Failed to open proof for key in storage forest: {}. Using empty value.",
+                        e
+                    );
+                    // Return empty value for keys that can't be proven
+                    results.push((*key, EMPTY_WORD));
+                },
+            }
+        }
+
+        tracing::debug!(
+            target: crate::COMPONENT,
+            "Queried {} storage keys from forest for account {:?}, slot {} at block {}",
+            results.len(),
+            account_id,
+            slot_name,
+            block_num
+        );
+
+        Ok(results)
+    }
 }

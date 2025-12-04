@@ -15,7 +15,7 @@ use miden_objects::account::{
 use miden_objects::asset::{Asset, AssetVault};
 use miden_objects::block::BlockNumber;
 use miden_objects::block::account_tree::AccountWitness;
-use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::crypto::merkle::{MerkleError, SmtForest, SmtProof, SparseMerklePath};
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
@@ -193,6 +193,8 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
     fn try_from(
         value: proto::rpc::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
+        use proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry;
+
         let proto::rpc::account_storage_details::AccountStorageMapDetails {
             slot_name,
             too_many_entries,
@@ -206,24 +208,20 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
         } else {
             let map_entries = if let Some(entries) = entries {
                 entries
-    .entries
-.into_iter()
-.map(|entry| {
-let key = entry
-.key
-    .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-        stringify!(key),
-        ))?
-    .try_into()?;
-let value = entry
-.value
-    .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-        stringify!(value),
-        ))?
-            .try_into()?;
-        Ok((key, value))
-            })
-        .collect::<Result<Vec<_>, ConversionError>>()?
+                    .entries
+                    .into_iter()
+                    .map(|entry| {
+                        let key = entry
+                            .key
+                            .ok_or(StorageMapEntry::missing_field(stringify!(key)))?
+                            .try_into()?;
+                        let value = entry
+                            .value
+                            .ok_or(StorageMapEntry::missing_field(stringify!(value)))?
+                            .try_into()?;
+                        Ok((key, value))
+                    })
+                    .collect::<Result<Vec<_>, ConversionError>>()?
             } else {
                 Vec::new()
             };
@@ -260,6 +258,7 @@ impl TryFrom<proto::rpc::account_proof_request::account_detail_request::StorageM
     }
 }
 
+/// Request of slot data values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlotData {
     All,
@@ -460,6 +459,15 @@ pub enum StorageMapEntries {
 }
 
 /// Details about an account storage map slot.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StorageMapData {
+    /// All entries are included used for small storage maps or when `all_entries` is requested.
+    AllEntries(Vec<(Word, Word)>),
+
+    /// Specific entries with their Merkle proofs for partial responses.
+    EntriesWithProofs(Vec<SmtProof>),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageMapDetails {
     pub slot_name: StorageSlotName,
@@ -470,14 +478,11 @@ impl AccountStorageMapDetails {
     /// Maximum number of storage map entries that can be returned in a single response.
     pub const MAX_RETURN_ENTRIES: usize = 1000;
 
-    pub fn new(slot_name: StorageSlotName, slot_data: SlotData, storage_map: &StorageMap) -> Self {
-        match slot_data {
-            SlotData::All => Self::from_all_entries(slot_name, storage_map),
-            SlotData::MapKeys(keys) => Self::from_specific_keys(slot_name, &keys[..], storage_map),
-        }
-    }
-
-    fn from_all_entries(slot_name: StorageSlotName, storage_map: &StorageMap) -> Self {
+    /// Creates storage map details with all entries from the storage map.
+    ///
+    /// If the storage map has too many entries (> `MAX_RETURN_ENTRIES`),
+    /// returns `LimitExceeded` variant.
+    pub fn from_all_entries(slot_name: StorageSlotName, storage_map: &StorageMap) -> Self {
         if storage_map.num_entries() > Self::MAX_RETURN_ENTRIES {
             Self {
                 slot_name,
@@ -492,20 +497,119 @@ impl AccountStorageMapDetails {
         }
     }
 
-    fn from_specific_keys(
-        slot_name: StorageSlotName,
-        keys: &[Word],
-        storage_map: &StorageMap,
-    ) -> Self {
-        if keys.len() > Self::MAX_RETURN_ENTRIES {
+    /// Creates storage map details based on the requested slot data.
+    ///
+    /// This method handles both "all entries" and "specific keys" requests:
+    /// - For `SlotData::All`: Returns all entries from the storage map
+    /// - For `SlotData::MapKeys`: Returns only the requested keys with their values
+    ///
+    /// # Arguments
+    ///
+    /// * `slot_name` - The name of the storage slot
+    /// * `slot_data` - The type of data requested (all or specific keys)
+    /// * `storage_map` - The storage map to query
+    ///
+    /// # Returns
+    ///
+    /// Storage map details containing the requested entries or `LimitExceeded` if too many.
+    pub fn new(slot_name: StorageSlotName, slot_data: SlotData, storage_map: &StorageMap) -> Self {
+        match slot_data {
+            SlotData::All => Self::from_all_entries(slot_name, storage_map),
+            SlotData::MapKeys(keys) => {
+                if keys.len() > Self::MAX_RETURN_ENTRIES {
+                    Self {
+                        slot_name,
+                        entries: StorageMapEntries::LimitExceeded,
+                    }
+                } else {
+                    // Query specific keys from the storage map
+                    let mut entries = Vec::with_capacity(keys.len());
+                    for key in keys {
+                        let value = storage_map.get(&key).copied().unwrap_or(miden_objects::EMPTY_WORD);
+                        entries.push((key, value));
+                    }
+                    Self {
+                        slot_name,
+                        entries: StorageMapEntries::Entries(entries),
+                    }
+                }
+            },
+        }
+    }
+
+    /// Creates storage map details from entries queried from storage forest with proofs.
+    ///
+    /// This method should be used when specific keys are requested and we want to include
+    /// Merkle proofs for verification. It avoids loading the entire storage map from the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `slot_name` - The name of the storage slot
+    /// * `entries` - Key-value pairs with their Merkle proofs from the storage forest
+    ///
+    /// # Returns
+    ///
+    /// Storage map details containing the requested entries or `LimitExceeded` if too many keys.
+    pub fn from_forest_entries(slot_name: StorageSlotName, entries: Vec<(Word, Word)>) -> Self {
+        if entries.len() > Self::MAX_RETURN_ENTRIES {
             Self {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,
             }
         } else {
-            // TODO For now, we return all entries instead of specific keys with proofs
-            Self::from_all_entries(slot_name, storage_map)
+            Self {
+                slot_name,
+                entries: StorageMapEntries::Entries(entries),
+            }
         }
+    }
+
+    /// Creates storage map details with SMT proofs for specific keys using the storage forest.
+    ///
+    /// This method queries the forest for specific keys and extracts key-value pairs from
+    /// the SMT proofs. The forest must be available and contain the data for the specified
+    /// SMT root.
+    ///
+    /// # Arguments
+    ///
+    /// * `slot_name` - The name of the storage slot
+    /// * `keys` - The keys to query
+    /// * `storage_forest` - The SMT forest containing the storage data
+    /// * `smt_root` - The root of the SMT for this storage slot
+    ///
+    /// # Returns
+    ///
+    /// Storage map details containing the requested entries or `LimitExceeded` if too many keys.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MerkleError` if the forest doesn't contain sufficient data to provide proofs.
+    pub fn from_specific_keys(
+        slot_name: StorageSlotName,
+        keys: &[Word],
+        storage_forest: &SmtForest,
+        smt_root: Word,
+    ) -> Result<Self, MerkleError> {
+        if keys.len() > Self::MAX_RETURN_ENTRIES {
+            return Ok(Self {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            });
+        }
+
+        // Collect key-value pairs by opening proofs for each key
+        let mut entries = Vec::with_capacity(keys.len());
+
+        for key in keys {
+            let proof = storage_forest.open(smt_root, *key)?;
+            let value = proof.get(key).unwrap_or(miden_objects::EMPTY_WORD);
+            entries.push((*key, value));
+        }
+
+        Ok(Self {
+            slot_name,
+            entries: StorageMapEntries::Entries(entries),
+        })
     }
 }
 
@@ -701,7 +805,6 @@ impl From<AccountStorageMapDetails>
         }
     }
 }
-
 // ACCOUNT WITNESS
 // ================================================================================================
 

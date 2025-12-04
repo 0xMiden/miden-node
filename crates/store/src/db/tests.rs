@@ -1517,19 +1517,16 @@ fn mock_account_code_and_storage(
 // GENESIS REGRESSION TESTS
 // ================================================================================================
 
+/// Verifies genesis block with account containing vault assets can be inserted.
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn test_genesis_with_account_assets() {
+fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
-    use miden_objects::account::StorageMap;
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        vec![],
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component =
+        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
+            .unwrap()
+            .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
@@ -1549,11 +1546,13 @@ fn test_genesis_with_account_assets() {
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
 }
 
+/// Verifies genesis block with account containing storage maps can be inserted.
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn test_genesis_with_account_storage_map() {
-    use crate::genesis::GenesisState;
+fn genesis_with_account_storage_map() {
     use miden_objects::account::StorageMap;
+
+    use crate::genesis::GenesisState;
 
     let storage_map = StorageMap::with_entries(vec![
         (
@@ -1591,11 +1590,13 @@ fn test_genesis_with_account_storage_map() {
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
 }
 
+/// Verifies genesis block with account containing both vault assets and storage maps.
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn test_genesis_with_account_assets_and_storage() {
-    use crate::genesis::GenesisState;
+fn genesis_with_account_assets_and_storage() {
     use miden_objects::account::StorageMap;
+
+    use crate::genesis::GenesisState;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
@@ -1631,19 +1632,19 @@ fn test_genesis_with_account_assets_and_storage() {
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
 }
 
+/// Verifies genesis block with multiple accounts of different types.
+/// Tests realistic genesis scenario with basic accounts, assets, and storage.
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn test_genesis_with_multiple_accounts() {
-    use crate::genesis::GenesisState;
+fn genesis_with_multiple_accounts() {
     use miden_objects::account::StorageMap;
 
-    let component1 = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        vec![],
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    use crate::genesis::GenesisState;
+
+    let component1 =
+        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
+            .unwrap()
+            .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -1656,13 +1657,10 @@ fn test_genesis_with_multiple_accounts() {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
-    let component2 = AccountComponent::compile(
-        "export.bar push.2 end",
-        TransactionKernel::assembler(),
-        vec![],
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component2 =
+        AccountComponent::compile("export.bar push.2 end", TransactionKernel::assembler(), vec![])
+            .unwrap()
+            .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account2 = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)

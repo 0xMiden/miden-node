@@ -654,7 +654,19 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "Status"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof
+        /// * `single` or `multiple`: Inclusion proof with key-value pair(s)
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         pub async fn check_nullifiers(
             &mut self,
             request: impl tonic::IntoRequest<super::NullifierList>,
@@ -1057,7 +1069,19 @@ pub mod api_server {
             &self,
             request: tonic::Request<()>,
         ) -> std::result::Result<tonic::Response<super::RpcStatus>, tonic::Status>;
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof
+        /// * `single` or `multiple`: Inclusion proof with key-value pair(s)
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         async fn check_nullifiers(
             &self,
             request: tonic::Request<super::NullifierList>,

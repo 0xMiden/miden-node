@@ -209,8 +209,7 @@ impl State {
             .await
             .map_err(|e| {
                 StateInitializationError::DatabaseError(DatabaseError::InteractError(format!(
-                    "Failed to update storage forest: {}",
-                    e
+                    "Failed to update storage forest: {e}"
                 )))
             })?;
 
@@ -534,8 +533,6 @@ impl State {
         changed_account_ids: &[AccountId],
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH};
-
         tracing::debug!(
             target: COMPONENT,
             %block_num,
@@ -671,16 +668,11 @@ impl State {
         let mut vault_entries_to_populate = Vec::new();
 
         for &account_id in changed_account_ids {
-            match self.db.select_account_vault_at_block(account_id, block_num).await? {
-                Ok(entries) if !entries.is_empty() => {
-                    vault_entries_to_populate.push((account_id, entries));
-                },
-                Ok(_) => {
-                    tracing::debug!(%account_id, "Account has empty vault");
-                },
-                Err(e) => {
-                    tracing::warn!(%account_id, error = %e, "Failed to query vault assets");
-                },
+            let entries = self.db.select_account_vault_at_block(account_id, block_num).await?;
+            if entries.is_empty() {
+                tracing::debug!(%account_id, "Account has empty vault");
+            } else {
+                vault_entries_to_populate.push((account_id, entries));
             }
         }
 

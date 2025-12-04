@@ -781,6 +781,10 @@ pub(crate) fn upsert_accounts(
             None
         };
 
+        // NOTE: we collect storage / asset inserts to apply them only after the  account row is
+        // written. The storage and vault tables have FKs pointing to `accounts (account_id,
+        // block_num)`, so inserting them earlier would violate those constraints when inserting a
+        // brand-new account.
         let (full_account, pending_storage_inserts, pending_asset_inserts) = match update.details()
         {
             AccountUpdateDetails::Private => (None, vec![], vec![]),
@@ -800,6 +804,8 @@ pub(crate) fn upsert_accounts(
                 let mut storage = Vec::new();
                 for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
                     if let StorageSlot::Map(storage_map) = slot {
+                        // SAFETY: We can safely unwrap the conversion to u8 because
+                        // accounts have a limit of 255 storage elements
                         for (key, value) in storage_map.entries() {
                             storage.push((
                                 account_id,
@@ -820,7 +826,8 @@ pub(crate) fn upsert_accounts(
                     return Err(DatabaseError::AccountNotFoundInDb(account_id));
                 };
 
-                // Collect storage map delta inserts
+                // --- collect storage map updates ----------------------------
+
                 let mut storage = Vec::new();
                 for (&slot, map_delta) in delta.storage().maps() {
                     for (key, value) in map_delta.entries() {
@@ -835,6 +842,7 @@ pub(crate) fn upsert_accounts(
                     apply_delta(account_before, delta, &update.final_state_commitment())?;
 
                 // --- process asset updates ----------------------------------
+
                 let mut assets = Vec::new();
 
                 for (faucet_id, _) in delta.vault().fungible().iter() {
@@ -869,7 +877,7 @@ pub(crate) fn upsert_accounts(
                 .execute(conn)?;
         }
 
-        // mark previous rows not-latest and insert NEW account row
+        // mark previous rows as non-latest and insert NEW account row
         diesel::update(schema::accounts::table)
             .filter(
                 schema::accounts::account_id

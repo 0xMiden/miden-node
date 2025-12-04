@@ -471,16 +471,6 @@ impl AccountStorageMapDetails {
         }
     }
 
-    // TODO this is
-    #[allow(dead_code)]
-    fn from_specific_keys(slot_index: u8, keys: &[Word], _storage_map: &StorageMap) -> Self {
-        if keys.len() > Self::MAX_RETURN_ENTRIES {
-            Self::too_many_entries(slot_index)
-        } else {
-            todo!("construct a partial SMT / set of key values")
-        }
-    }
-
     /// Creates an `AccountStorageMapDetails` from already-queried entries (e.g., from database).
     /// This is useful when entries have been fetched directly rather than extracted from a
     /// `StorageMap`.

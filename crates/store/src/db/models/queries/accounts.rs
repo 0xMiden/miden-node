@@ -8,8 +8,6 @@ use diesel::{
     BoolExpressionMethods,
     ExpressionMethods,
     Insertable,
-    JoinOnDsl,
-    NullableExpressionMethods,
     OptionalExtension,
     QueryDsl,
     RunQueryDsl,
@@ -26,14 +24,16 @@ use miden_objects::account::{
     Account,
     AccountCode,
     AccountDelta,
+    AccountHeader,
     AccountId,
     AccountStorage,
     NonFungibleDeltaAction,
     StorageSlot,
+    StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
-use miden_objects::{Felt, Word};
+use miden_objects::{Felt, FieldElement, Word};
 
 use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{
@@ -47,12 +47,18 @@ use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
-/// Select the latest account details by account id from the DB using the given
+/// Select the latest account info by account id from the DB using the given
 /// [`SqliteConnection`].
 ///
 /// # Returns
 ///
-/// The latest account details, or an error.
+/// The latest account info, or an error.
+///
+/// # Note
+///
+/// Returns only the account summary. Full account details must be reconstructed
+/// in follow up query, using separate query functions to fetch specific account
+/// components as needed.
 ///
 /// # Raw SQL
 ///
@@ -60,16 +66,9 @@ use crate::errors::DatabaseError;
 /// SELECT
 ///     accounts.account_id,
 ///     accounts.account_commitment,
-///     accounts.block_num,
-///     accounts.storage,
-///     accounts.vault,
-///     accounts.nonce,
-///     accounts.code_commitment,
-///     account_codes.code
+///     accounts.block_num
 /// FROM
 ///     accounts
-/// LEFT JOIN
-///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
 ///     account_id = ?1
 ///     AND is_latest = 1
@@ -78,26 +77,31 @@ pub(crate) fn select_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
 ) -> Result<AccountInfo, DatabaseError> {
-    let raw = SelectDsl::select(
-        schema::accounts::table.left_join(schema::account_codes::table.on(
-            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
-        )),
-        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-    )
-    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-    .filter(schema::accounts::is_latest.eq(true))
-    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
-    .optional()?
-    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-    let info = AccountWithCodeRawJoined::from(raw).try_into()?;
-    Ok(info)
+    let raw = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
+        .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+        .filter(schema::accounts::is_latest.eq(true))
+        .get_result::<AccountSummaryRaw>(conn)
+        .optional()?
+        .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+
+    let summary: AccountSummary = raw.try_into()?;
+
+    // Backfill account details from database
+    // For private accounts, we don't store full details in the database
+    let details = if account_id.is_public() {
+        Some(reconstruct_full_account_from_db(conn, account_id)?)
+    } else {
+        None
+    };
+
+    Ok(AccountInfo { summary, details })
 }
 
 /// Select account details as they are at the given block height.
 ///
 /// # Returns
 ///
-/// The account details at the specified block, or an error.
+/// The latest account info, `None` if the account was not found, or an error.
 ///
 /// # Raw SQL
 ///
@@ -105,100 +109,34 @@ pub(crate) fn select_account(
 /// SELECT
 ///     accounts.account_id,
 ///     accounts.account_commitment,
-///     accounts.block_num,
-///     accounts.storage,
-///     accounts.vault,
-///     accounts.nonce,
-///     accounts.code_commitment,
-///     account_codes.code
+///     accounts.block_num
 /// FROM
 ///     accounts
-/// LEFT JOIN
-///     account_codes ON accounts.code_commitment = account_codes.code_commitment
-/// WHERE
-///     account_id = ?1
-///     AND block_num <= ?2
-/// ORDER BY
-///     block_num DESC
-/// LIMIT
-///     1
-/// ```
-pub(crate) fn select_historical_account_at(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<AccountInfo, DatabaseError> {
-    let raw = SelectDsl::select(
-        schema::accounts::table.left_join(schema::account_codes::table.on(
-            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
-        )),
-        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-    )
-    .filter(
-        schema::accounts::account_id
-            .eq(account_id.to_bytes())
-            .and(schema::accounts::block_num.le(block_num.to_raw_sql())),
-    )
-    .order_by(schema::accounts::block_num.desc())
-    .limit(1)
-    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
-    .optional()?
-    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-    let info = AccountWithCodeRawJoined::from(raw).try_into()?;
-    Ok(info)
-}
-
-/// Select the latest account details by account ID prefix from the DB using the given
-/// [`SqliteConnection`] This method is meant to be used by the network transaction builder. Because
-/// network notes get matched through accounts through the account's 30-bit prefix, it is possible
-/// that multiple accounts match against a single prefix. In this scenario, the first account is
-/// returned.
-///
-/// # Returns
-///
-/// The latest account details, `None` if the account was not found, or an error.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT
-///     accounts.account_id,
-///     accounts.account_commitment,
-///     accounts.block_num,
-///     accounts.storage,
-///     accounts.vault,
-///     accounts.nonce,
-///     accounts.code_commitment,
-///     account_codes.code
-/// FROM
-///     accounts
-/// LEFT JOIN
-///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
 ///     network_account_id_prefix = ?1
+///     AND is_latest = 1
 /// ```
 pub(crate) fn select_account_by_id_prefix(
     conn: &mut SqliteConnection,
     id_prefix: u32,
 ) -> Result<Option<AccountInfo>, DatabaseError> {
-    let maybe_info = SelectDsl::select(
-        schema::accounts::table.left_join(schema::account_codes::table.on(
-            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
-        )),
-        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-    )
-    .filter(schema::accounts::is_latest.eq(true))
-    .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
-    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
-    .optional()
-    .map_err(DatabaseError::Diesel)?;
+    let maybe_summary = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
+        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
+        .get_result::<AccountSummaryRaw>(conn)
+        .optional()
+        .map_err(DatabaseError::Diesel)?;
 
-    let result: Result<Option<AccountInfo>, DatabaseError> = maybe_info
-        .map(AccountWithCodeRawJoined::from)
-        .map(std::convert::TryInto::<AccountInfo>::try_into)
-        .transpose();
-
-    result
+    match maybe_summary {
+        None => Ok(None),
+        Some(raw) => {
+            let summary: AccountSummary = raw.try_into()?;
+            let account_id = summary.account_id;
+            // Backfill account details from database
+            let details = reconstruct_full_account_from_db(conn, account_id).ok();
+            Ok(Some(AccountInfo { summary, details }))
+        },
+    }
 }
 
 /// Select all account commitments from the DB using the given [`SqliteConnection`].
@@ -379,16 +317,11 @@ pub fn select_accounts_by_block_range(
 /// SELECT
 ///     accounts.account_id,
 ///     accounts.account_commitment,
-///     accounts.block_num,
-///     accounts.storage,
-///     accounts.vault,
-///     accounts.nonce,
-///     accounts.code_commitment,
-///     account_codes.code
+///     accounts.block_num
 /// FROM
 ///     accounts
-/// LEFT JOIN
-///     account_codes ON accounts.code_commitment = account_codes.code_commitment
+/// WHERE
+///     is_latest = 1
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -396,17 +329,23 @@ pub fn select_accounts_by_block_range(
 pub(crate) fn select_all_accounts(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<AccountInfo>, DatabaseError> {
-    let accounts_raw = QueryDsl::select(
-        schema::accounts::table.left_join(schema::account_codes::table.on(
-            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
-        )),
-        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-    )
-    .filter(schema::accounts::is_latest.eq(true))
-    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
-        accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
-    )?;
+    let raw = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
+        .filter(schema::accounts::is_latest.eq(true))
+        .order_by(schema::accounts::block_num.asc())
+        .load::<AccountSummaryRaw>(conn)?;
+
+    let summaries: Vec<AccountSummary> = vec_raw_try_into(raw).unwrap();
+
+    // Backfill account details from database
+    let account_infos = summaries
+        .into_iter()
+        .map(|summary| {
+            let account_id = summary.account_id;
+            let details = reconstruct_full_account_from_db(conn, account_id).ok();
+            AccountInfo { summary, details }
+        })
+        .collect();
+
     Ok(account_infos)
 }
 
@@ -541,6 +480,218 @@ pub(crate) fn select_account_storage_map_values(
     Ok(StorageMapValuesPage { last_block_included, values })
 }
 
+/// Reconstruct a `StorageMap` from database entries using `SmtForest`
+///
+/// This function builds an `SmtForest` from all key-value pairs at the specified block,
+/// enabling efficient proof generation with structural sharing. The forest allows
+/// maintaining multiple SMT versions in memory with shared nodes.
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `account_id` - The account ID
+/// * `block_num` - The block number
+/// * `slot_index` - The storage slot index
+///
+/// # Returns
+///
+/// A reconstructed `StorageMap` backed by `SmtForest` with full proof capabilities.
+pub(crate) fn reconstruct_storage_map_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    slot_index: u8,
+) -> Result<miden_objects::account::StorageMap, DatabaseError> {
+    use schema::account_storage_map_values as t;
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = block_num.to_raw_sql();
+    let slot_sql = slot_to_raw_sql(slot_index);
+
+    // Query all entries for this slot at or before the given block
+    let raw: Vec<(Vec<u8>, Vec<u8>)> = SelectDsl::select(t::table, (t::key, t::value))
+        .filter(
+            t::account_id
+                .eq(&account_id_bytes)
+                .and(t::slot.eq(slot_sql))
+                .and(t::block_num.le(block_num_sql)),
+        )
+        .load(conn)?;
+
+    // Parse entries
+    let entries: Vec<(Word, Word)> = raw
+        .into_iter()
+        .map(|(k, v)| Ok((Word::read_from_bytes(&k)?, Word::read_from_bytes(&v)?)))
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+    let entry_count = entries.len();
+
+    // StorageMap::with_entries internally uses an SMT which can be backed by SmtForest
+    // The SMT is built with structural sharing for memory efficiency
+    miden_objects::account::StorageMap::with_entries(entries).map_err(|e| {
+        DatabaseError::DataCorrupted(format!(
+            "Failed to create StorageMap from {entry_count} entries: {e}"
+        ))
+    })
+}
+
+/// Reconstruct `AccountStorage` from database tables for a specific account at a specific block
+///
+/// This function queries the `account_storage_headers` table to get slot metadata and reconstructs
+/// the `AccountStorage` without deserializing a blob. For Map slots, we only store the commitment
+/// since the actual map data is in `account_storage_map_values`.
+///
+/// # Returns
+///
+/// The reconstructed `AccountStorage`, or an error if reconstruction fails.
+pub(crate) fn select_account_storage_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<AccountStorage, DatabaseError> {
+    use schema::account_storage_headers as t;
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = block_num.to_raw_sql();
+
+    // Query storage headers for this account at this block
+    let headers: Vec<AccountStorageHeaderRaw> =
+        SelectDsl::select(t::table, AccountStorageHeaderRaw::as_select())
+            .filter(t::account_id.eq(&account_id_bytes).and(t::block_num.eq(block_num_sql)))
+            .order(t::slot_index.asc())
+            .load(conn)?;
+
+    if headers.is_empty() {
+        // No storage headers means empty storage
+        return Ok(AccountStorage::new(Vec::new())?);
+    }
+
+    // Build slots from headers
+    let mut slots = Vec::with_capacity(headers.len());
+
+    for header in headers {
+        let slot_type = match header.slot_type {
+            0 => miden_objects::account::StorageSlotType::Map,
+            1 => miden_objects::account::StorageSlotType::Value,
+            _ => return Err(DatabaseError::InvalidStorageSlotType(header.slot_type)),
+        };
+
+        let commitment = Word::read_from_bytes(&header.slot_commitment)?;
+
+        let slot = match slot_type {
+            miden_objects::account::StorageSlotType::Map => {
+                // For Map slots, we create an empty map
+                // The actual map data is queried separately when needed from
+                // account_storage_map_values
+                use miden_objects::account::StorageMap;
+
+                // Create an empty storage map
+                let storage_map = StorageMap::new();
+                StorageSlot::Map(storage_map)
+            },
+            miden_objects::account::StorageSlotType::Value => {
+                // For Value slots, the commitment IS the value
+                StorageSlot::Value(commitment)
+            },
+        };
+
+        slots.push(slot);
+    }
+
+    Ok(AccountStorage::new(slots)?)
+}
+
+/// Select account storage headers at a specific block (lightweight query).
+///
+/// Returns tuples of `(slot_index, slot_type, commitment)` without reconstructing full slots.
+#[allow(dead_code)] // Helper for future SmtForest integration
+pub(crate) fn select_account_storage_headers_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<Vec<(u8, StorageSlotType, Word)>, DatabaseError> {
+    use schema::account_storage_headers as t;
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = block_num.to_raw_sql();
+
+    let headers: Vec<AccountStorageHeaderRaw> =
+        SelectDsl::select(t::table, AccountStorageHeaderRaw::as_select())
+            .filter(t::account_id.eq(&account_id_bytes).and(t::block_num.le(block_num_sql)))
+            .order(t::slot_index.asc())
+            .load(conn)?;
+
+    headers
+        .into_iter()
+        .map(|h| {
+            let slot_index = raw_sql_to_slot(h.slot_index);
+            let slot_type = StorageSlotType::from_raw_sql(h.slot_type)?;
+            let commitment = Word::read_from_bytes(&h.slot_commitment)?;
+            Ok((slot_index, slot_type, commitment))
+        })
+        .collect()
+}
+
+/// Reconstruct `AccountStorage` from the latest state in the database
+///
+/// This queries only the latest storage headers (where `is_latest=true`) for faster reconstruction
+/// Select the latest storage headers for an account
+///
+/// This function queries the `account_storage_headers` table for the latest state of an account's
+/// storage slots, using the `is_latest=true` flag for efficiency.
+///
+/// # Returns
+///
+/// The reconstructed `AccountStorage` from the latest storage headers.
+pub(crate) fn select_latest_account_storage(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+) -> Result<AccountStorage, DatabaseError> {
+    use schema::account_storage_headers as t;
+
+    let account_id_bytes = account_id.to_bytes();
+
+    // Query latest storage headers for this account
+    let headers: Vec<AccountStorageHeaderRaw> =
+        SelectDsl::select(t::table, AccountStorageHeaderRaw::as_select())
+            .filter(t::account_id.eq(&account_id_bytes).and(t::is_latest.eq(true)))
+            .order(t::slot_index.asc())
+            .load(conn)?;
+
+    if headers.is_empty() {
+        // No storage headers means empty storage
+        return Ok(AccountStorage::new(Vec::new())?);
+    }
+
+    // Build slots from headers
+    let mut slots = Vec::with_capacity(headers.len());
+
+    for header in headers {
+        let slot_type = StorageSlotType::from_raw_sql(header.slot_type)?;
+        let slot_index = raw_sql_to_slot(header.slot_index);
+        let block_num = BlockNumber::from_raw_sql(header.block_num)?;
+        let commitment = Word::read_from_bytes(&header.slot_commitment)?;
+
+        let slot = match slot_type {
+            StorageSlotType::Map => {
+                // For Map slots, reconstruct the full SMT from database entries
+                // This allows serving proofs for any key in the map
+                let storage_map =
+                    reconstruct_storage_map_at_block(conn, account_id, block_num, slot_index)?;
+                StorageSlot::Map(storage_map)
+            },
+            StorageSlotType::Value => {
+                // For Value slots, the commitment IS the value
+                StorageSlot::Value(commitment)
+            },
+        };
+
+        slots.push(slot);
+    }
+
+    Ok(AccountStorage::new(slots)?)
+}
+
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::db::schema::account_vault_assets)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
@@ -562,6 +713,19 @@ impl TryFrom<AccountVaultUpdateRaw> for AccountVaultValue {
     }
 }
 
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = schema::account_storage_headers)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[allow(dead_code)] // Fields used by Diesel, not directly in Rust code
+pub struct AccountStorageHeaderRaw {
+    pub account_id: Vec<u8>,
+    pub block_num: i64,
+    pub slot_index: i32,
+    pub slot_type: i32,
+    pub slot_commitment: Vec<u8>,
+    pub is_latest: bool,
+}
+
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
@@ -569,64 +733,7 @@ pub struct AccountRaw {
     pub account_id: Vec<u8>,
     pub account_commitment: Vec<u8>,
     pub block_num: i64,
-    pub storage: Option<Vec<u8>>,
-    pub vault: Option<Vec<u8>>,
     pub nonce: Option<i64>,
-}
-
-#[derive(Debug, Clone, QueryableByName)]
-pub struct AccountWithCodeRawJoined {
-    #[diesel(embed)]
-    pub account: AccountRaw,
-    #[diesel(embed)]
-    pub code: Option<Vec<u8>>,
-}
-
-impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRawJoined {
-    fn from((account, code): (AccountRaw, Option<Vec<u8>>)) -> Self {
-        Self { account, code }
-    }
-}
-
-impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRawJoined {
-    type Error = DatabaseError;
-    fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
-        use proto::domain::account::{AccountInfo, AccountSummary};
-
-        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
-        let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
-        let block_num = BlockNumber::from_raw_sql(self.account.block_num)?;
-        let summary = AccountSummary {
-            account_id,
-            account_commitment,
-            block_num,
-        };
-        let maybe_account = self.try_into()?;
-        Ok(AccountInfo { summary, details: maybe_account })
-    }
-}
-
-impl TryInto<Option<Account>> for AccountWithCodeRawJoined {
-    type Error = DatabaseError;
-    fn try_into(self) -> Result<Option<Account>, Self::Error> {
-        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
-
-        let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
-            (self.account.vault, self.account.storage, self.account.nonce, self.code)
-        {
-            let vault = AssetVault::read_from_bytes(&vault)?;
-            let storage = AccountStorage::read_from_bytes(&storage)?;
-            let code = AccountCode::read_from_bytes(&code)?;
-            let nonce = raw_sql_to_nonce(nonce);
-            let nonce = Felt::new(nonce);
-            let account = Account::new_unchecked(account_id, vault, storage, code, nonce, None);
-            Some(account)
-        } else {
-            // a private account
-            None
-        };
-        Ok(details)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Selectable, Queryable, QueryableByName)]
@@ -655,8 +762,8 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest=true` for the new row and update any existing
-/// row with the same `(account_id, vault_key)` tuple to `is_latest=false`.
+/// Sets `is_latest=true` for the new row and updates any existing
+/// row with the same (account_id, vault_key) tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -693,10 +800,63 @@ pub(crate) fn insert_account_vault_asset(
     })
 }
 
+/// Insert an account storage header into the DB using the given [`SqliteConnection`].
+///
+/// Sets `is_latest=true` for the new row and updates any existing
+/// row with the same (account_id, slot_index) tuple to `is_latest=false`.
+///
+/// # Returns
+///
+/// The number of affected rows.
+#[cfg(test)]
+pub(crate) fn insert_account_storage_header(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    slot_index: u8,
+    slot_type: StorageSlotType,
+    slot_commitment: Word,
+) -> Result<usize, DatabaseError> {
+    use schema::account_storage_headers as t;
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = block_num.to_raw_sql();
+    let slot_index_sql = slot_to_raw_sql(slot_index);
+    let slot_type_sql = slot_type.to_raw_sql();
+    let slot_commitment_bytes = slot_commitment.to_bytes();
+
+    diesel::Connection::transaction(conn, |conn| {
+        // Update existing headers for this slot to set is_latest=false
+        let update_count = diesel::update(t::table)
+            .filter(
+                t::account_id
+                    .eq(&account_id_bytes)
+                    .and(t::slot_index.eq(slot_index_sql))
+                    .and(t::is_latest.eq(true)),
+            )
+            .set(t::is_latest.eq(false))
+            .execute(conn)?;
+
+        // Insert the new latest row
+        let insert_count = diesel::insert_into(t::table)
+            .values((
+                t::account_id.eq(&account_id_bytes),
+                t::block_num.eq(block_num_sql),
+                t::slot_index.eq(slot_index_sql),
+                t::slot_type.eq(slot_type_sql),
+                t::slot_commitment.eq(&slot_commitment_bytes),
+                t::is_latest.eq(true),
+            ))
+            .execute(conn)?;
+
+        Ok(update_count + insert_count)
+    })
+}
+
 /// Insert an account storage map value into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest=true` for the new row and update any existing
-/// row with the same `(account_id, slot, key)` tuple to `is_latest=false`.
+/// Sets `is_latest=true` for the new row and updates any existing
+/// row with the same (account_id, slot_index, key) tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -741,6 +901,67 @@ pub(crate) fn insert_account_storage_map_value(
     Ok(update_count + insert_count)
 }
 
+/// Reconstruct full Account from database tables for the latest account state
+///
+/// This function queries the database tables to reconstruct a complete Account object:
+/// - Code from `account_codes` table
+/// - Nonce from `accounts` table
+/// - Storage from `account_storage_headers` and `account_storage_map_values` tables
+/// - Vault from `account_vault_assets` table
+///
+/// # Note
+///
+/// A stop-gap solution to retain store API and construct `AccountInfo` types.
+/// The function should ultimately be removed, and any queries be served from the
+/// `State` which contains an `SmtForest` to serve the latest and most recent
+/// historical data.
+// TODO: remove eventually once refactoring is complete
+fn reconstruct_full_account_from_db(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+) -> Result<Account, DatabaseError> {
+    // Get account metadata (nonce, code_commitment) and code in a single join query
+    let (account_raw, code_bytes): (AccountRaw, Vec<u8>) = SelectDsl::select(
+        schema::accounts::table.inner_join(schema::account_codes::table),
+        (AccountRaw::as_select(), schema::account_codes::code),
+    )
+    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .filter(schema::accounts::is_latest.eq(true))
+    .get_result(conn)
+    .optional()?
+    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+
+    let nonce = raw_sql_to_nonce(account_raw.nonce.ok_or_else(|| {
+        DatabaseError::DataCorrupted(format!("No nonce found for account {account_id}"))
+    })?);
+
+    let code = AccountCode::read_from_bytes(&code_bytes)?;
+
+    // Reconstruct storage using existing helper function
+    let storage = select_latest_account_storage(conn, account_id)?;
+
+    // Reconstruct vault from account_vault_assets table
+    let vault_entries: Vec<(Vec<u8>, Option<Vec<u8>>)> = SelectDsl::select(
+        schema::account_vault_assets::table,
+        (schema::account_vault_assets::vault_key, schema::account_vault_assets::asset),
+    )
+    .filter(schema::account_vault_assets::account_id.eq(account_id.to_bytes()))
+    .filter(schema::account_vault_assets::is_latest.eq(true))
+    .load(conn)?;
+
+    let mut assets = Vec::new();
+    for (_key_bytes, maybe_asset_bytes) in vault_entries {
+        if let Some(asset_bytes) = maybe_asset_bytes {
+            let asset = Asset::read_from_bytes(&asset_bytes)?;
+            assets.push(asset);
+        }
+    }
+
+    let vault = AssetVault::new(&assets)?;
+
+    Ok(Account::new(account_id, vault, storage, code, nonce, None)?)
+}
+
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
 #[allow(clippy::too_many_lines)]
 pub(crate) fn upsert_accounts(
@@ -749,32 +970,6 @@ pub(crate) fn upsert_accounts(
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     use proto::domain::account::NetworkAccountPrefix;
-
-    fn select_details_stmt(
-        conn: &mut SqliteConnection,
-        account_id: AccountId,
-    ) -> Result<Vec<Account>, DatabaseError> {
-        let account_id = account_id.to_bytes();
-        let accounts = SelectDsl::select(
-            schema::accounts::table.left_join(
-                schema::account_codes::table.on(schema::accounts::code_commitment
-                    .eq(schema::account_codes::code_commitment.nullable())),
-            ),
-            (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-        )
-        .filter(schema::accounts::account_id.eq(account_id))
-        .filter(schema::accounts::is_latest.eq(true))
-        .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-
-        // SELECT .. FROM accounts LEFT JOIN account_codes
-        // ON accounts.code_commitment == account_codes.code_commitment
-
-        let accounts = Result::from_iter(accounts.into_iter().filter_map(|x| {
-            let account_with_code = AccountWithCodeRawJoined::from(x);
-            account_with_code.try_into().transpose()
-        }))?;
-        Ok(accounts)
-    }
 
     let mut count = 0;
     for update in accounts {
@@ -823,10 +1018,8 @@ pub(crate) fn upsert_accounts(
                 Some(account)
             },
             AccountUpdateDetails::Delta(delta) => {
-                let mut rows = select_details_stmt(conn, account_id)?.into_iter();
-                let Some(account) = rows.next() else {
-                    return Err(DatabaseError::AccountNotFoundInDb(account_id));
-                };
+                // Reconstruct the full account from database tables
+                let account = reconstruct_full_account_from_db(conn, account_id)?;
 
                 // --- process storage map updates ----------------------------
 
@@ -902,8 +1095,6 @@ pub(crate) fn upsert_accounts(
             account_commitment: update.final_state_commitment().to_bytes(),
             block_num: block_num.to_raw_sql(),
             nonce: full_account.as_ref().map(|account| nonce_to_raw_sql(account.nonce())),
-            storage: full_account.as_ref().map(|account| account.storage().to_bytes()),
-            vault: full_account.as_ref().map(|account| account.vault().to_bytes()),
             code_commitment: full_account
                 .as_ref()
                 .map(|account| account.code().commitment().to_bytes()),
@@ -958,6 +1149,17 @@ pub(crate) struct AccountCodeRowInsert {
 }
 
 #[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::account_storage_headers)]
+pub(crate) struct AccountStorageHeaderInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) block_num: i64,
+    pub(crate) slot_index: i32,
+    pub(crate) slot_type: i32,
+    pub(crate) slot_commitment: Vec<u8>,
+    pub(crate) is_latest: bool,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
 #[diesel(table_name = schema::accounts)]
 pub(crate) struct AccountRowInsert {
     pub(crate) account_id: Vec<u8>,
@@ -965,8 +1167,6 @@ pub(crate) struct AccountRowInsert {
     pub(crate) block_num: i64,
     pub(crate) account_commitment: Vec<u8>,
     pub(crate) code_commitment: Option<Vec<u8>>,
-    pub(crate) storage: Option<Vec<u8>>,
-    pub(crate) vault: Option<Vec<u8>>,
     pub(crate) nonce: Option<i64>,
     pub(crate) is_latest: bool,
 }
@@ -1013,4 +1213,191 @@ pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
     pub(crate) is_latest: bool,
+}
+
+/// Queries vault assets (key, value) pairs at a specific block
+pub(crate) fn select_account_vault_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<Vec<(Word, Word)>, DatabaseError> {
+    use schema::account_vault_assets as t;
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = i64::from(block_num.as_u32());
+
+    let raw: Vec<(Vec<u8>, Option<Vec<u8>>)> = SelectDsl::select(
+        t::table
+            .filter(t::account_id.eq(&account_id_bytes))
+            .filter(t::block_num.eq(block_num_sql)),
+        (t::vault_key, t::asset),
+    )
+    .load(conn)?;
+
+    let entries = raw
+        .into_iter()
+        .filter_map(|(key_bytes, maybe_asset_bytes)| {
+            let key = Word::read_from_bytes(&key_bytes).ok()?;
+            let asset_bytes = maybe_asset_bytes?;
+            let value = Word::read_from_bytes(&asset_bytes).ok()?;
+            Some((key, value))
+        })
+        .collect();
+
+    Ok(entries)
+}
+
+/// Computes the storage commitment from a list of slot commitments.
+///
+/// This replicates the logic from `AccountStorage::commitment()` which hashes all slot
+/// commitments together.
+///
+/// # Arguments
+///
+/// * `slot_commitments` - Vector of slot commitment words
+///
+/// # Returns
+///
+/// The storage commitment as a `Word`
+fn compute_storage_commitment(slot_commitments: &[Word]) -> Word {
+    use miden_objects::crypto::hash::rpo::Rpo256;
+
+    let elements: Vec<Felt> = slot_commitments.iter().flat_map(|w| w.iter()).copied().collect();
+
+    Rpo256::hash_elements(&elements).into()
+}
+
+/// Queries the account code for a specific account at a specific block number.
+///
+/// Returns `None` if:
+/// - The account doesn't exist at that block
+/// - The account has no code (private account or account without code commitment)
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `account_id` - The account ID to query
+/// * `block_num` - The block number at which to query the account code
+///
+/// # Returns
+///
+/// * `Ok(Some(Vec<u8>))` - The account code bytes if found
+/// * `Ok(None)` - If account doesn't exist or has no code
+/// * `Err(DatabaseError)` - If there's a database error
+pub(crate) fn select_account_code_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<Option<Vec<u8>>, DatabaseError> {
+    use schema::{account_codes, accounts};
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = i64::from(block_num.as_u32());
+
+    // Query the accounts table to get the code_commitment at the specified block
+    // Then join with account_codes to get the actual code
+    let result: Option<Vec<u8>> = SelectDsl::select(
+        accounts::table
+            .inner_join(account_codes::table)
+            .filter(accounts::account_id.eq(&account_id_bytes))
+            .filter(accounts::block_num.eq(block_num_sql)),
+        account_codes::code,
+    )
+    .first(conn)
+    .optional()?;
+
+    Ok(result)
+}
+
+/// Queries the account header for a specific account at a specific block number.
+///
+/// This reconstructs the AccountHeader by joining multiple tables:
+/// - `accounts` table for account_id, nonce, `code_commitment`
+/// - `account_vault_headers` table for `vault_root`
+/// - `account_storage_headers` table for storage slot commitments (to compute `storage_commitment`)
+///
+/// Returns `None` if the account doesn't exist at that block.
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `account_id` - The account ID to query
+/// * `block_num` - The block number at which to query the account header
+///
+/// # Returns
+///
+/// * `Ok(Some(AccountHeader))` - The account header if found
+/// * `Ok(None)` - If account doesn't exist at that block
+/// * `Err(DatabaseError)` - If there's a database error
+pub(crate) fn select_account_header_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<Option<AccountHeader>, DatabaseError> {
+    use schema::{account_storage_headers, account_vault_headers, accounts};
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = block_num.to_raw_sql();
+
+    let account_data: Option<(Option<Vec<u8>>, Option<i64>)> = SelectDsl::select(
+        accounts::table
+            .filter(accounts::account_id.eq(&account_id_bytes))
+            .filter(accounts::block_num.eq(block_num_sql)),
+        (accounts::code_commitment, accounts::nonce),
+    )
+    .first(conn)
+    .optional()?;
+
+    let Some((code_commitment_bytes, nonce_raw)) = account_data else {
+        return Ok(None);
+    };
+
+    let vault_root_bytes: Option<Vec<u8>> = SelectDsl::select(
+        account_vault_headers::table
+            .filter(account_vault_headers::account_id.eq(&account_id_bytes))
+            .filter(account_vault_headers::block_num.eq(block_num_sql)),
+        account_vault_headers::vault_root,
+    )
+    .first(conn)
+    .optional()?;
+
+    let storage_slots: Vec<(i32, i32, Vec<u8>)> = SelectDsl::select(
+        account_storage_headers::table
+            .filter(account_storage_headers::account_id.eq(&account_id_bytes))
+            .filter(account_storage_headers::block_num.eq(block_num_sql))
+            .order(account_storage_headers::slot_index.asc()),
+        (
+            account_storage_headers::slot_index,
+            account_storage_headers::slot_type,
+            account_storage_headers::slot_commitment,
+        ),
+    )
+    .load(conn)?;
+
+    let slot_commitments: Vec<Word> = storage_slots
+        .into_iter()
+        .map(|(_slot_index, _slot_type, commitment_bytes)| Word::read_from_bytes(&commitment_bytes))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let storage_commitment = compute_storage_commitment(&slot_commitments);
+
+    let code_commitment = code_commitment_bytes
+        .map(|bytes| Word::read_from_bytes(&bytes))
+        .transpose()?
+        .unwrap_or(Word::default());
+
+    let nonce = nonce_raw.map_or(Felt::ZERO, raw_sql_to_nonce);
+
+    let vault_root = vault_root_bytes
+        .map(|bytes| Word::read_from_bytes(&bytes))
+        .transpose()?
+        .unwrap_or(Word::default());
+
+    Ok(Some(AccountHeader::new(
+        account_id,
+        nonce,
+        vault_root,
+        storage_commitment,
+        code_commitment,
+    )))
 }

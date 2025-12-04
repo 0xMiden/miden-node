@@ -1,6 +1,17 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    account_storage_headers (account_id, block_num, slot_index) {
+        account_id -> Binary,
+        block_num -> BigInt,
+        slot_index -> Integer,
+        slot_type -> Integer,
+        slot_commitment -> Binary,
+        is_latest -> Bool,
+    }
+}
+
+diesel::table! {
     account_storage_map_values (account_id, block_num, slot, key) {
         account_id -> Binary,
         block_num -> BigInt,
@@ -22,13 +33,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    account_vault_headers (account_id, block_num) {
+        account_id -> Binary,
+        block_num -> BigInt,
+        vault_root -> Binary,
+        is_latest -> Bool,
+    }
+}
+
+diesel::table! {
     accounts (account_id, block_num) {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
         account_commitment -> Binary,
         code_commitment -> Nullable<Binary>,
-        storage -> Nullable<Binary>,
-        vault -> Nullable<Binary>,
         nonce -> Nullable<BigInt>,
         block_num -> BigInt,
         is_latest -> Bool,
@@ -112,9 +130,11 @@ diesel::joinable!(transactions -> block_headers (block_num));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_codes,
+    account_storage_headers,
     account_storage_map_values,
     accounts,
     account_vault_assets,
+    account_vault_headers,
     block_headers,
     note_scripts,
     notes,

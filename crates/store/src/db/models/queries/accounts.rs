@@ -1259,7 +1259,7 @@ fn compute_storage_commitment(slot_commitments: &[Word]) -> Word {
 
     let elements: Vec<Felt> = slot_commitments.iter().flat_map(|w| w.iter()).copied().collect();
 
-    Rpo256::hash_elements(&elements).into()
+    Rpo256::hash_elements(&elements)
 }
 
 /// Queries the account code for a specific account at a specific block number.

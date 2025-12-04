@@ -248,15 +248,12 @@ message NullifierList {
     repeated primitives.Digest nullifiers = 1;
 }
 
-// Response containing SMT opening proofs for the requested nullifiers.
+// A set of Sparse Merkle Tree openings which provide proof of the status of each nullifier in the set
 //
-// Each proof verifies whether the nullifier exists in the tree (consumed) or not (available).
+// Each nullifier's proof is either a proof of inclusion (consumed) or exclusion (unconsumed) which can
+// can be verified against the nullifier tree root.
 message CheckNullifiersResponse {
     // SMT opening for each requested nullifier at the same position.
-    //
-    // Leaf types indicate nullifier status:
-    // - `empty_leaf_index`: Nullifier not consumed (available)
-    // - `single` or `multiple`: Nullifier consumed (contains key-value pairs)
     //
     // Verify against the nullifier tree root from the latest block header.
     repeated primitives.SmtOpening proofs = 1;

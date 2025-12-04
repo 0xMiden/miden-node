@@ -5,7 +5,11 @@
 
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::clients::{
+    Builder as ClientBuilder,
+    RemoteProverProxyStatusClient,
+    RpcClient,
+};
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::block_producer::BlockProducerStatus;
 use miden_node_proto::generated::rpc::RpcStatus;
@@ -134,6 +138,21 @@ pub struct StoreStatusDetails {
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
+    /// The block producer's current view of the chain tip height.
+    pub chain_tip: u32,
+    /// Mempool statistics for this block producer.
+    pub mempool: MempoolStatusDetails,
+}
+
+/// Details about the block producer's mempool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MempoolStatusDetails {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    pub unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    pub proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    pub proven_batches: u64,
 }
 
 /// Details of a remote prover service.
@@ -154,7 +173,7 @@ pub struct RemoteProverStatusDetails {
 /// worker service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatusDetails {
-    pub address: String,
+    pub name: String,
     pub version: String,
     pub status: Status,
 }
@@ -186,9 +205,20 @@ impl From<StoreStatus> for StoreStatusDetails {
 
 impl From<BlockProducerStatus> for BlockProducerStatusDetails {
     fn from(value: BlockProducerStatus) -> Self {
+        // We assume all supported nodes expose mempool statistics.
+        let mempool_stats = value
+            .mempool_stats
+            .expect("block producer status must include mempool statistics");
+
         Self {
             version: value.version,
             status: value.status.into(),
+            chain_tip: value.chain_tip,
+            mempool: MempoolStatusDetails {
+                unbatched_transactions: mempool_stats.unbatched_transactions,
+                proposed_batches: mempool_stats.proposed_batches,
+                proven_batches: mempool_stats.proven_batches,
+            },
         }
     }
 }
@@ -199,7 +229,7 @@ impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
             proto::remote_prover::WorkerHealthStatus::try_from(value.status).unwrap().into();
 
         Self {
-            address: value.address,
+            name: value.name,
             version: value.version,
             status,
         }
@@ -265,7 +295,8 @@ pub async fn run_rpc_status_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<Rpc>();
+        .without_otel_context_injection()
+        .connect_lazy::<RpcClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -358,7 +389,8 @@ pub async fn run_remote_prover_status_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<RemoteProverProxy>();
+        .without_otel_context_injection()
+        .connect_lazy::<RemoteProverProxyStatusClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);

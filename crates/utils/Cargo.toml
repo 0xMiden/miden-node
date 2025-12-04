@@ -18,15 +18,17 @@ workspace = true
 # Enables depedencies intended for build script generation of version metadata.
 vergen = ["dep:vergen", "dep:vergen-gitcl"]
 # Enables utility functions for testing traces created by some other crate's stack.
-testing = ["dep:tokio", "miden-objects/testing"]
+testing = ["miden-objects/testing"]
 
 [dependencies]
 anyhow                = { workspace = true }
 bytes                 = { version = "1.10" }
 figment               = { features = ["env", "toml"], version = "0.10" }
+fs-err                = { workspace = true }
 http                  = { workspace = true }
 http-body-util        = { version = "0.1" }
 itertools             = { workspace = true }
+lru                   = { workspace = true }
 miden-objects         = { workspace = true }
 opentelemetry         = { version = "0.31" }
 opentelemetry-otlp    = { default-features = false, features = ["grpc-tonic", "tls-roots", "trace"], version = "0.31" }
@@ -34,7 +36,8 @@ opentelemetry_sdk     = { features = ["rt-tokio", "testing"], version = "0.31" }
 rand                  = { workspace = true }
 serde                 = { features = ["derive"], version = "1.0" }
 thiserror             = { workspace = true }
-tonic                 = { workspace = true }
+tokio                 = { workspace = true }
+tonic                 = { default-features = true, workspace = true }
 tower-http            = { features = ["catch-panic"], workspace = true }
 tracing               = { workspace = true }
 tracing-forest        = { features = ["chrono"], optional = true, version = "0.2" }
@@ -46,8 +49,6 @@ url                   = { workspace = true }
 # This must match the version expected by `vergen-gitcl`.
 vergen       = { "version" = "9.0", optional = true }
 vergen-gitcl = { features = ["cargo", "rustc"], optional = true, version = "1.0" }
-# Optional dependencies enabled by `testing` feature.
-tokio = { optional = true, workspace = true }
 
 [dev-dependencies]
 thiserror = { workspace = true }

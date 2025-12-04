@@ -31,5 +31,5 @@ miden-objects             = { workspace = true }
 rand                      = { workspace = true }
 rayon                     = { version = "1.10" }
 tokio                     = { workspace = true }
-tonic                     = { workspace = true }
+tonic                     = { default-features = true, workspace = true }
 url                       = { workspace = true }

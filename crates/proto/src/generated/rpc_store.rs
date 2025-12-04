@@ -18,8 +18,9 @@ pub struct AccountProofRequest {
     /// ID of the account for which we want to get data
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Block at which we'd like to get this data. If present, must be close to the chain tip.
-    /// If not present, data from the latest block will be returned.
+    /// Optional block height at which to return the proof.
+    ///
+    /// Defaults to current chain tip if unspecified.
     #[prost(message, optional, tag = "2")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Request for additional account details; valid only for public accounts.
@@ -449,7 +450,7 @@ pub struct SyncTransactionsResponse {
     pub pagination_info: ::core::option::Option<PaginationInfo>,
     /// List of transaction records.
     #[prost(message, repeated, tag = "2")]
-    pub transaction_records: ::prost::alloc::vec::Vec<TransactionRecord>,
+    pub transactions: ::prost::alloc::vec::Vec<TransactionRecord>,
 }
 /// Represents a transaction record.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -459,9 +460,7 @@ pub struct TransactionRecord {
     pub block_num: u32,
     /// A transaction header.
     #[prost(message, optional, tag = "2")]
-    pub transaction_header: ::core::option::Option<
-        super::transaction::TransactionHeader,
-    >,
+    pub header: ::core::option::Option<super::transaction::TransactionHeader>,
 }
 /// Generated client implementations.
 pub mod rpc_client {

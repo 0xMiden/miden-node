@@ -20,6 +20,9 @@ use crate::store::{StoreClient, StoreError};
 
 mod account;
 
+#[cfg(test)]
+mod tests;
+
 // CONSTANTS
 // =================================================================================================
 
@@ -130,6 +133,28 @@ impl State {
         Ok(state)
     }
 
+    /// Creates a new State for testing purposes with minimal setup.
+    ///
+    /// This bypasses the need for a real store connection and provides a mock state
+    /// that can be used in unit tests.
+    #[cfg(test)]
+    pub(crate) fn new_for_testing(
+        chain_tip_header: BlockHeader,
+        chain_mmr: PartialBlockchain,
+        store: StoreClient,
+    ) -> Self {
+        Self {
+            chain_tip_header,
+            chain_mmr,
+            store,
+            accounts: HashMap::default(),
+            queue: VecDeque::default(),
+            in_progress: HashSet::default(),
+            inflight_txs: BTreeMap::default(),
+            nullifier_idx: BTreeMap::default(),
+        }
+    }
+
     /// Selects the next candidate network transaction.
     ///
     /// Note that this marks the candidate account as in-progress and that it cannot be selected
@@ -209,7 +234,7 @@ impl State {
     /// Blocks in the MMR are pruned if the block count exceeds the maximum.
     fn update_chain_tip(&mut self, tip: BlockHeader) {
         // Update MMR which lags by one block.
-        self.chain_mmr.add_block(self.chain_tip_header.clone(), true);
+        self.chain_mmr.add_block(&self.chain_tip_header, true);
 
         // Set the new tip.
         self.chain_tip_header = tip;

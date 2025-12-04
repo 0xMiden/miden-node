@@ -71,10 +71,10 @@ impl block_producer_server::BlockProducer for StoreApi {
         info!(
             target: COMPONENT,
             block_num,
-            block_commitment = %block.commitment(),
-            account_count = block.updated_accounts().len(),
-            note_count = block.output_notes().count(),
-            nullifier_count = block.created_nullifiers().len(),
+            block_commitment = %block.header().commitment(),
+            account_count = block.body().updated_accounts().len(),
+            note_count = block.body().output_notes().count(),
+            nullifier_count = block.body().created_nullifiers().len(),
         );
 
         self.state.apply_block(block).await?;

@@ -9,6 +9,16 @@ pub struct ValidatorStatus {
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
 }
+/// Response message for SignBlock RPC.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SignedBlock {
+    /// The block header.
+    #[prost(message, optional, tag = "1")]
+    pub header: ::core::option::Option<super::blockchain::BlockHeader>,
+    /// The block body.
+    #[prost(message, optional, tag = "2")]
+    pub body: ::core::option::Option<super::blockchain::BlockBody>,
+}
 /// Generated client implementations.
 pub mod api_client {
     #![allow(
@@ -147,6 +157,25 @@ pub mod api_client {
                 .insert(GrpcMethod::new("validator.Api", "SubmitProvenTransaction"));
             self.inner.unary(req, path, codec).await
         }
+        /// Validates a proposed block and returns the block header and body.
+        pub async fn sign_block(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::blockchain::ProposedBlock>,
+        ) -> std::result::Result<tonic::Response<super::SignedBlock>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/validator.Api/SignBlock");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("validator.Api", "SignBlock"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -172,6 +201,11 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::transaction::ProvenTransaction>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
+        /// Validates a proposed block and returns the block header and body.
+        async fn sign_block(
+            &self,
+            request: tonic::Request<super::super::blockchain::ProposedBlock>,
+        ) -> std::result::Result<tonic::Response<super::SignedBlock>, tonic::Status>;
     }
     /// Validator API for the Validator component.
     #[derive(Debug)]
@@ -322,6 +356,54 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SubmitProvenTransactionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/validator.Api/SignBlock" => {
+                    #[allow(non_camel_case_types)]
+                    struct SignBlockSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::blockchain::ProposedBlock,
+                    > for SignBlockSvc<T> {
+                        type Response = super::SignedBlock;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::blockchain::ProposedBlock,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::sign_block(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SignBlockSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

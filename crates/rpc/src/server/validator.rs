@@ -82,12 +82,12 @@ impl DataStore for TransactionInputsDataStore {
         async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
     }
 
-    fn get_vault_asset_witness(
+    fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: AssetVaultKey,
-    ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             if self.tx_inputs.account().id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));
@@ -100,18 +100,20 @@ impl DataStore for TransactionInputsDataStore {
                 });
             }
 
-            match self.tx_inputs.account().vault().open(vault_key) {
-                Ok(vault_proof) => {
-                    AssetWitness::new(vault_proof.into()).map_err(|err| DataStoreError::Other {
-                        error_msg: "failed to open vault asset tree".into(),
+            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+                match self.tx_inputs.account().vault().open(vault_key) {
+                    Ok(vault_proof) => {
+                        AssetWitness::new(vault_proof.into()).map_err(|err| DataStoreError::Other {
+                            error_msg: "failed to open vault asset tree".into(),
+                            source: Some(err.into()),
+                        })
+                    },
+                    Err(err) => Err(DataStoreError::Other {
+                        error_msg: "failed to open vault".into(),
                         source: Some(err.into()),
-                    })
-                },
-                Err(err) => Err(DataStoreError::Other {
-                    error_msg: "failed to open vault".into(),
-                    source: Some(err.into()),
-                }),
-            }
+                    }),
+                }
+            }))
         }
     }
 
@@ -136,9 +138,9 @@ impl DataStore for TransactionInputsDataStore {
 
     fn get_note_script(
         &self,
-        script_root: Word,
-    ) -> impl FutureMaybeSend<Result<NoteScript, DataStoreError>> {
-        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
+        _script_root: Word,
+    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
+        async move { Ok(None) }
     }
 }
 

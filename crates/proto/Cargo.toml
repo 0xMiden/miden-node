@@ -23,7 +23,7 @@ miden-node-utils            = { workspace = true }
 miden-objects               = { workspace = true }
 prost                       = { workspace = true }
 thiserror                   = { workspace = true }
-tonic                       = { workspace = true }
+tonic                       = { default-features = true, workspace = true }
 tonic-prost                 = { workspace = true }
 url                         = { workspace = true }
 

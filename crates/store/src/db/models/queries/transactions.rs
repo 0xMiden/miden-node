@@ -93,7 +93,7 @@ pub struct TransactionRecordRaw {
     transaction_id: Vec<u8>,
     initial_state_commitment: Vec<u8>,
     final_state_commitment: Vec<u8>,
-    input_notes: Vec<u8>,
+    nullifiers: Vec<u8>,
     output_notes: Vec<u8>,
     size_in_bytes: i64,
 }
@@ -117,11 +117,11 @@ impl TryInto<crate::db::TransactionRecord> for TransactionRecordRaw {
 
         let initial_state_commitment = self.initial_state_commitment;
         let final_state_commitment = self.final_state_commitment;
-        let input_notes_binary = self.input_notes;
+        let nullifiers_binary = self.nullifiers;
         let output_notes_binary = self.output_notes;
 
         // Deserialize input notes as nullifiers and output notes as note IDs
-        let input_notes: Vec<Nullifier> = Deserializable::read_from_bytes(&input_notes_binary)?;
+        let nullifiers: Vec<Nullifier> = Deserializable::read_from_bytes(&nullifiers_binary)?;
         let output_notes: Vec<NoteId> = Deserializable::read_from_bytes(&output_notes_binary)?;
 
         Ok(crate::db::TransactionRecord {
@@ -130,7 +130,7 @@ impl TryInto<crate::db::TransactionRecord> for TransactionRecordRaw {
             transaction_id: TransactionId::read_from_bytes(&self.transaction_id[..])?,
             initial_state_commitment: Word::read_from_bytes(&initial_state_commitment)?,
             final_state_commitment: Word::read_from_bytes(&final_state_commitment)?,
-            input_notes,
+            nullifiers,
             output_notes,
         })
     }
@@ -171,7 +171,7 @@ pub struct TransactionSummaryRowInsert {
     block_num: i64,
     initial_state_commitment: Vec<u8>,
     final_state_commitment: Vec<u8>,
-    input_notes: Vec<u8>,
+    nullifiers: Vec<u8>,
     output_notes: Vec<u8>,
     size_in_bytes: i64,
 }
@@ -190,7 +190,7 @@ impl TransactionSummaryRowInsert {
         const HEADER_BASE_SIZE: usize = 4 + 32 + 16 + 64; // block_num + tx_id + account_id + commitments
 
         // Serialize input notes using binary format (store nullifiers)
-        let input_notes_binary = transaction_header.input_notes().to_bytes();
+        let nullifiers_binary = transaction_header.input_notes().to_bytes();
 
         // Serialize output notes using binary format (store note IDs)
         let output_notes_binary = transaction_header.output_notes().to_bytes();
@@ -206,9 +206,9 @@ impl TransactionSummaryRowInsert {
         //
         // Note: 500 bytes per output note is an over-estimate but ensures we don't
         // exceed memory limits when these transactions are later converted to proto records.
-        let input_notes_size = (transaction_header.input_notes().num_notes() * 32) as usize;
+        let nullifiers_size = (transaction_header.input_notes().num_notes() * 32) as usize;
         let output_notes_size = transaction_header.output_notes().len() * 500;
-        let size_in_bytes = (HEADER_BASE_SIZE + input_notes_size + output_notes_size) as i64;
+        let size_in_bytes = (HEADER_BASE_SIZE + nullifiers_size + output_notes_size) as i64;
 
         Self {
             transaction_id: transaction_header.id().to_bytes(),
@@ -216,7 +216,7 @@ impl TransactionSummaryRowInsert {
             block_num: block_num.to_raw_sql(),
             initial_state_commitment: transaction_header.initial_state_commitment().to_bytes(),
             final_state_commitment: transaction_header.final_state_commitment().to_bytes(),
-            input_notes: input_notes_binary,
+            nullifiers: nullifiers_binary,
             output_notes: output_notes_binary,
             size_in_bytes,
         }

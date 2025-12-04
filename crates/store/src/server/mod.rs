@@ -183,7 +183,7 @@ impl DataDirectory {
     /// Creates a new [`DataDirectory`], ensuring that the directory exists and is accessible
     /// insofar as is possible.
     pub fn load(path: PathBuf) -> std::io::Result<Self> {
-        let meta = std::fs::metadata(&path)?;
+        let meta = fs_err::metadata(&path)?;
         if meta.is_dir().not() {
             return Err(std::io::ErrorKind::NotConnected.into());
         }

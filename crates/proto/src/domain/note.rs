@@ -135,19 +135,18 @@ impl TryFrom<&proto::note::NoteInclusionInBlockProof> for (NoteId, NoteInclusion
                 .clone(),
         )?;
 
+        let note_id = Word::try_from(
+            proof
+                .note_id
+                .as_ref()
+                .ok_or(proto::note::NoteInclusionInBlockProof::missing_field(stringify!(note_id)))?
+                .id
+                .as_ref()
+                .ok_or(proto::note::NoteId::missing_field(stringify!(id)))?,
+        )?;
+
         Ok((
-            Word::try_from(
-                proof
-                    .note_id
-                    .as_ref()
-                    .ok_or(proto::note::NoteInclusionInBlockProof::missing_field(stringify!(
-                        note_id
-                    )))?
-                    .id
-                    .as_ref()
-                    .ok_or(proto::note::NoteId::missing_field(stringify!(id)))?,
-            )?
-            .into(),
+            NoteId::new_unchecked(note_id),
             NoteInclusionProof::new(
                 proof.block_num.into(),
                 proof.note_index_in_block.try_into()?,

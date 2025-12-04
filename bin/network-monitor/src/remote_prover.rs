@@ -103,6 +103,7 @@ pub async fn run_remote_prover_test_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
+        .without_otel_context_injection()
         .connect_lazy::<RemoteProverClient>();
 
     let mut interval = tokio::time::interval(test_interval);

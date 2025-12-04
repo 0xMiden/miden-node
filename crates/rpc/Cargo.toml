@@ -28,7 +28,7 @@ semver                 = { version = "1.0" }
 thiserror              = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
-tonic                  = { features = ["tls-native-roots", "tls-ring"], workspace = true }
+tonic                  = { default-features = true, features = ["tls-native-roots", "tls-ring"], workspace = true }
 tonic-reflection       = { workspace = true }
 tonic-web              = { version = "0.14" }
 tower                  = { workspace = true }

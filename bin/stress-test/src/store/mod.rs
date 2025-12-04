@@ -9,6 +9,8 @@ use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::AccountId;
 use miden_objects::note::{NoteDetails, NoteTag};
 use miden_objects::utils::{Deserializable, Serializable};
+use rand::Rng;
+use rand::seq::SliceRandom;
 use tokio::fs;
 use tokio::time::sleep;
 use tonic::service::interceptor::InterceptedService;
@@ -290,6 +292,193 @@ async fn sync_nullifiers(
     let start = Instant::now();
     let response = api_client.sync_nullifiers(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
+}
+
+// SYNC TRANSACTIONS
+// ================================================================================================
+
+/// Sends multiple `sync_transactions` requests to the store and prints the performance.
+///
+/// Arguments:
+/// - `data_directory`: directory that contains the database dump file and the accounts ids dump
+///   file.
+/// - `iterations`: number of requests to send.
+/// - `concurrency`: number of requests to send in parallel.
+/// - `accounts_per_request`: number of accounts to sync transactions for in each request.
+pub async fn bench_sync_transactions(
+    data_directory: PathBuf,
+    iterations: usize,
+    concurrency: usize,
+    accounts_per_request: usize,
+    block_range_size: u32,
+) {
+    // load accounts from the dump file
+    let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
+    let accounts = fs::read_to_string(&accounts_file)
+        .await
+        .unwrap_or_else(|e| panic!("missing file {}: {e:?}", accounts_file.display()));
+    let mut account_ids: Vec<AccountId> = accounts
+        .lines()
+        .map(|a| AccountId::from_hex(a).expect("invalid account id"))
+        .collect();
+    // Shuffle once so the cycling iterator starts in a random order.
+    let mut rng = rand::rng();
+    account_ids.shuffle(&mut rng);
+    let mut account_ids = account_ids.into_iter().cycle();
+
+    let (store_client, _) = start_store(data_directory).await;
+
+    wait_for_store(&store_client).await.unwrap();
+
+    // Get the latest block number to determine the range
+    let status = store_client.clone().status(()).await.unwrap().into_inner();
+    let chain_tip = status.chain_tip;
+
+    // each request will have `accounts_per_request` account ids and will query a range of blocks
+    let request = |_| {
+        let mut client = store_client.clone();
+        let account_batch: Vec<AccountId> =
+            account_ids.by_ref().take(accounts_per_request).collect();
+
+        // Pick a random window of size `block_range_size` that fits before `chain_tip`.
+        let max_start = chain_tip.saturating_sub(block_range_size);
+        let start_block = rand::rng().random_range(0..=max_start);
+        let end_block = start_block.saturating_add(block_range_size).min(chain_tip);
+
+        tokio::spawn(async move {
+            sync_transactions_paginated(&mut client, account_batch, start_block, end_block).await
+        })
+    };
+
+    // create a stream of tasks to send sync_transactions requests
+    let results = stream::iter(0..iterations)
+        .map(request)
+        .buffer_unordered(concurrency)
+        .map(|res| res.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+
+    let timers_accumulator: Vec<Duration> = results.iter().map(|r| r.duration).collect();
+    let responses: Vec<proto::rpc_store::SyncTransactionsResponse> =
+        results.iter().map(|r| r.response.clone()).collect();
+
+    print_summary(&timers_accumulator);
+
+    #[allow(clippy::cast_precision_loss)]
+    let average_transactions_per_response = if responses.is_empty() {
+        0.0
+    } else {
+        responses.iter().map(|r| r.transactions.len()).sum::<usize>() as f64
+            / responses.len() as f64
+    };
+    println!("Average transactions per response: {average_transactions_per_response}");
+
+    // Calculate pagination statistics
+    let total_runs = results.len();
+    let paginated_runs = results.iter().filter(|r| r.pages > 1).count();
+    #[allow(clippy::cast_precision_loss)]
+    let pagination_rate = if total_runs > 0 {
+        (paginated_runs as f64 / total_runs as f64) * 100.0
+    } else {
+        0.0
+    };
+    #[allow(clippy::cast_precision_loss)]
+    let avg_pages = if total_runs > 0 {
+        results.iter().map(|r| r.pages as f64).sum::<f64>() / total_runs as f64
+    } else {
+        0.0
+    };
+
+    println!("Pagination statistics:");
+    println!("  Total runs: {total_runs}");
+    println!("  Runs triggering pagination: {paginated_runs}");
+    println!("  Pagination rate: {pagination_rate:.2}%");
+    println!("  Average pages per run: {avg_pages:.2}");
+}
+
+/// Sends a single `sync_transactions` request to the store and returns a tuple with:
+/// - the elapsed time.
+/// - the response.
+pub async fn sync_transactions(
+    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
+    account_ids: Vec<AccountId>,
+    block_from: u32,
+    block_to: u32,
+) -> (Duration, proto::rpc_store::SyncTransactionsResponse) {
+    let account_ids = account_ids
+        .iter()
+        .map(|id| proto::account::AccountId { id: id.to_bytes() })
+        .collect::<Vec<_>>();
+
+    let sync_request = proto::rpc_store::SyncTransactionsRequest {
+        block_range: Some(proto::rpc_store::BlockRange { block_from, block_to: Some(block_to) }),
+        account_ids,
+    };
+
+    let start = Instant::now();
+    let response = api_client.sync_transactions(sync_request).await.unwrap();
+    (start.elapsed(), response.into_inner())
+}
+
+#[derive(Clone)]
+struct SyncTransactionsRun {
+    duration: Duration,
+    response: proto::rpc_store::SyncTransactionsResponse,
+    pages: usize,
+}
+
+async fn sync_transactions_paginated(
+    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
+    account_ids: Vec<AccountId>,
+    block_from: u32,
+    block_to: u32,
+) -> SyncTransactionsRun {
+    let mut total_duration = Duration::default();
+    let mut aggregated_records = Vec::new();
+    let mut next_block_from = block_from;
+    let mut target_block_to = block_to;
+    let mut pages = 0usize;
+    let mut final_pagination_info = None;
+
+    loop {
+        if next_block_from > target_block_to {
+            break;
+        }
+
+        let (elapsed, response) =
+            sync_transactions(api_client, account_ids.clone(), next_block_from, target_block_to)
+                .await;
+        total_duration += elapsed;
+        pages += 1;
+
+        let info = response.pagination_info.unwrap_or(proto::rpc_store::PaginationInfo {
+            chain_tip: target_block_to,
+            block_num: target_block_to,
+        });
+
+        aggregated_records.extend(response.transactions.into_iter());
+        let reached_block = info.block_num;
+        let chain_tip = info.chain_tip;
+        final_pagination_info =
+            Some(proto::rpc_store::PaginationInfo { chain_tip, block_num: reached_block });
+
+        if reached_block >= chain_tip {
+            break;
+        }
+
+        // Request the remaining range up to the reported chain tip
+        next_block_from = reached_block;
+        target_block_to = chain_tip;
+    }
+
+    SyncTransactionsRun {
+        duration: total_duration,
+        response: proto::rpc_store::SyncTransactionsResponse {
+            pagination_info: final_pagination_info,
+            transactions: aggregated_records,
+        },
+        pages,
+    }
 }
 
 // LOAD STATE

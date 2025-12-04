@@ -10,4 +10,5 @@ pub mod generated;
 
 pub use domain::account::{AccountState, AccountWitnessRecord};
 pub use domain::nullifier::NullifierWitnessRecord;
+pub use domain::proof_request::BlockProofRequest;
 pub use domain::{convert, try_convert};

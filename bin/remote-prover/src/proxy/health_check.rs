@@ -49,7 +49,7 @@ impl BackgroundService for LoadBalancerState {
                         if let Err(ref reason) = status_result {
                             error!(
                                 err = %reason,
-                                worker.address = worker.address(),
+                                worker.name = worker.name(),
                                 "Worker failed health check"
                             );
                         }

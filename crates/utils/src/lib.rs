@@ -7,6 +7,7 @@ pub mod formatting;
 pub mod grpc;
 pub mod limiter;
 pub mod logging;
+pub mod lru_cache;
 pub mod panic;
 pub mod tracing;
 pub mod version;

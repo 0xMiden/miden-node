@@ -2,14 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::clients::{
-    BlockProducer,
-    BlockProducerClient,
-    Builder,
-    StoreRpc,
-    StoreRpcClient,
-};
+use miden_node_proto::clients::{BlockProducerClient, Builder, StoreRpcClient};
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::block_producer::MempoolStats;
 use miden_node_proto::generated::rpc::api_server::{self, Api};
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
@@ -59,7 +54,8 @@ impl RpcService {
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<StoreRpc>()
+                .with_otel_context_injection()
+                .connect_lazy::<StoreRpcClient>()
         };
 
         let block_producer = block_producer_url.map(|block_producer_url| {
@@ -73,7 +69,8 @@ impl RpcService {
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<BlockProducer>()
+                .with_otel_context_injection()
+                .connect_lazy::<BlockProducerClient>()
         });
 
         Self {
@@ -571,6 +568,8 @@ impl api_server::Api for RpcService {
                 proto::block_producer::BlockProducerStatus {
                     status: "unreachable".to_string(),
                     version: "-".to_string(),
+                    chain_tip: 0,
+                    mempool_stats: Some(MempoolStats::default()),
                 },
             )),
             genesis_commitment: self.genesis_commitment.map(Into::into),

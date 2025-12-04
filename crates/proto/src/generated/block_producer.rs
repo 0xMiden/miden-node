@@ -8,6 +8,28 @@ pub struct BlockProducerStatus {
     /// The block producer's status.
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
+    /// The block producer's current view of the chain tip height.
+    ///
+    /// This is the height of the latest block that the block producer considers
+    /// to be part of the canonical chain.
+    #[prost(fixed32, tag = "4")]
+    pub chain_tip: u32,
+    /// Statistics about the mempool.
+    #[prost(message, optional, tag = "3")]
+    pub mempool_stats: ::core::option::Option<MempoolStats>,
+}
+/// Statistics about the mempool.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MempoolStats {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    #[prost(uint64, tag = "1")]
+    pub unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    #[prost(uint64, tag = "2")]
+    pub proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    #[prost(uint64, tag = "3")]
+    pub proven_batches: u64,
 }
 /// Represents the result of submitting proven transaction.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]

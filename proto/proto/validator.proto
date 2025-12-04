@@ -16,6 +16,9 @@ service Api {
 
    // Submits a transaction to the validator.
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
+
+   // Validates a proposed block and returns the block header and body.
+   rpc SignBlock(blockchain.ProposedBlock) returns (SignedBlock) {}
 }
 
 // STATUS
@@ -28,4 +31,16 @@ message ValidatorStatus {
 
     // The validator's status.
     string status = 2;
+}
+
+// VALIDATE BLOCK RESPONSE
+// ================================================================================================
+
+// Response message for SignBlock RPC.
+message SignedBlock {
+    // The block header.
+    blockchain.BlockHeader header = 1;
+
+    // The block body.
+    blockchain.BlockBody body = 2;
 }

@@ -28,6 +28,7 @@ use miden_objects::account::{
     AccountId,
     AccountStorage,
     NonFungibleDeltaAction,
+    StorageMap,
     StorageSlot,
     StorageSlotType,
 };
@@ -574,26 +575,21 @@ pub(crate) fn select_account_storage_at_block(
     let mut slots = Vec::with_capacity(headers.len());
 
     for header in headers {
-        let slot_type = match header.slot_type {
-            0 => miden_objects::account::StorageSlotType::Map,
-            1 => miden_objects::account::StorageSlotType::Value,
-            _ => return Err(DatabaseError::InvalidStorageSlotType(header.slot_type)),
-        };
+        let slot_type = StorageSlotType::from_raw_sql(header.slot_type)?;
 
         let commitment = Word::read_from_bytes(&header.slot_commitment)?;
 
         let slot = match slot_type {
-            miden_objects::account::StorageSlotType::Map => {
+            StorageSlotType::Map => {
                 // For Map slots, we create an empty map
                 // The actual map data is queried separately when needed from
                 // account_storage_map_values
-                use miden_objects::account::StorageMap;
 
                 // Create an empty storage map
                 let storage_map = StorageMap::new();
                 StorageSlot::Map(storage_map)
             },
-            miden_objects::account::StorageSlotType::Value => {
+            StorageSlotType::Value => {
                 // For Value slots, the commitment IS the value
                 StorageSlot::Value(commitment)
             },

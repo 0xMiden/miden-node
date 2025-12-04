@@ -287,7 +287,11 @@ fn handle_increment_failure(details: &mut IncrementDetails, error: &anyhow::Erro
 
 /// Build a `ServiceStatus` snapshot from the current increment details and last error.
 fn build_increment_status(details: &IncrementDetails, last_error: Option<String>) -> ServiceStatus {
-    let status = if details.failure_count == 0 {
+    let status = if last_error.is_some() {
+        // If the most recent attempt failed, surface the service as unhealthy so the
+        // dashboard reflects that the increment pipeline is not currently working.
+        Status::Unhealthy
+    } else if details.failure_count == 0 {
         Status::Healthy
     } else if details.success_count == 0 {
         Status::Unhealthy
@@ -423,7 +427,11 @@ fn build_tracking_status(
     details: &CounterTrackingDetails,
     last_error: Option<String>,
 ) -> ServiceStatus {
-    let status = if details.current_value.is_some() {
+    let status = if last_error.is_some() {
+        // If the latest poll failed, surface the service as unhealthy even if we have
+        // a previously cached value, so the dashboard shows that tracking is degraded.
+        Status::Unhealthy
+    } else if details.current_value.is_some() {
         Status::Healthy
     } else {
         Status::Unknown

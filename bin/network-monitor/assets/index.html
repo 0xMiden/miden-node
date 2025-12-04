@@ -49,6 +49,15 @@
         let statusData = null;
         let updateInterval = null;
 
+        function formatSuccessRate(successCount, failureCount) {
+            const total = successCount + failureCount;
+            if (!total) {
+                return 'N/A';
+            }
+
+            return `${((successCount / total) * 100).toFixed(1)}%`;
+        }
+
         async function fetchStatus() {
             try {
                 const response = await fetch('/status');
@@ -265,7 +274,7 @@
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
-                                            <span class="metric-value">${details.FaucetTest.success_count}/${details.FaucetTest.success_count + details.FaucetTest.failure_count}</span>
+                                            <span class="metric-value">${formatSuccessRate(details.FaucetTest.success_count, details.FaucetTest.failure_count)}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Last Response Time:</span>
@@ -348,12 +357,8 @@
                                     <strong>Counter Increment:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
-                                            <span class="metric-label">Successes:</span>
-                                            <span class="metric-value">${details.NtxIncrement.success_count}</span>
-                                        </div>
-                                        <div class="metric-row">
-                                            <span class="metric-label">Failures:</span>
-                                            <span class="metric-value">${details.NtxIncrement.failure_count}</span>
+                                            <span class="metric-label">Success Rate:</span>
+                                            <span class="metric-value">${formatSuccessRate(details.NtxIncrement.success_count, details.NtxIncrement.failure_count)}</span>
                                         </div>
                                         ${details.NtxIncrement.last_tx_id ? `
                                             <div class="metric-row">
@@ -406,7 +411,7 @@
                                     <div class="test-metrics ${service.testStatus === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
-                                            <span class="metric-value">${service.testDetails.success_count}/${service.testDetails.success_count + service.testDetails.failure_count}</span>
+                                            <span class="metric-value">${formatSuccessRate(service.testDetails.success_count, service.testDetails.failure_count)}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Last Response Time:</span>
@@ -416,27 +421,6 @@
                                             <span class="metric-label">Last Proof Size:</span>
                                             <span class="metric-value">${(service.testDetails.proof_size_bytes / 1024).toFixed(2)} KB</span>
                                         </div>
-                                        ${service.testError ? `
-                                            <div class="metric-row error">
-                                                <span class="metric-label">Test Error:</span>
-                                                <span class="metric-value">
-                                                    ${(() => {
-                                                        try {
-                                                            const errorObj = JSON.parse(service.testError);
-                                                            return errorObj.code || 'Unknown error code';
-                                                        } catch (e) {
-                                                            return service.testError;
-                                                        }
-                                                    })()}
-                                                    <button class="copy-button" data-json="${service.testError.replace(/"/g, '&quot;')}" onclick="copyToClipboard(this.dataset.json, event)" title="Copy error JSON">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
-                                            </div>
-                                        ` : ''}
                                     </div>
                                 </div>
                             ` : ''}
@@ -453,7 +437,6 @@
                             </div>
                         </div>
                         <div class="service-content">
-                            ${service.error ? `<div class="service-error">${service.error}</div>` : ''}
                             ${detailsHtml}
                         </div>
                         <div class="service-timestamp">

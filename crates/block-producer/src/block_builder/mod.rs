@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
+use miden_lib::block::build_block;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::{OrderedBatches, ProvenBatch};
@@ -27,7 +28,7 @@ use url::Url;
 use crate::errors::BuildBlockError;
 use crate::mempool::SharedMempool;
 use crate::store::StoreClient;
-use crate::validator::BlockProducerValidatorClient;
+use crate::validator::{BlockProducerValidatorClient, BodyDiff, HeaderDiff, ValidatorError};
 use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
@@ -230,16 +231,43 @@ impl BlockBuilder {
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
     ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
-        let response = self
+        // Concurrently build the block and validate it via the validator.
+        let build_result = tokio::task::spawn_blocking({
+            let proposed_block = proposed_block.clone();
+            move || build_block(proposed_block)
+        });
+        let (header, body) = self
             .validator
-            .validate_block(proposed_block.clone())
+            .sign_block(proposed_block.clone())
             .await
-            .map_err(BuildBlockError::ValidateBlockFailed)?;
+            .map_err(|err| BuildBlockError::ValidateBlockFailed(err.into()))?;
+        let (expected_header, expected_body) = build_result
+            .await
+            .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
+            .map_err(BuildBlockError::ProposeBlockFailed)?;
 
-        // TODO: Check that the returned header and body match the proposed block.
+        // Check that the header and body returned from the validator is consistent with the
+        // proposed block.
+        // TODO(sergerad): Update Eq implementation once signatures are part of the header.
+        if header != expected_header {
+            let diff = HeaderDiff {
+                validator_header: header,
+                expected_header,
+            }
+            .into();
+            return Err(BuildBlockError::ValidateBlockFailed(
+                ValidatorError::HeaderMismatch(diff).into(),
+            ));
+        }
+        if body != expected_body {
+            let diff = BodyDiff { validator_body: body, expected_body }.into();
+            return Err(BuildBlockError::ValidateBlockFailed(
+                ValidatorError::BodyMismatch(diff).into(),
+            ));
+        }
 
         let (ordered_batches, ..) = proposed_block.into_parts();
-        Ok((ordered_batches, block_inputs, response.header, response.body))
+        Ok((ordered_batches, block_inputs, header, body))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
@@ -268,6 +296,7 @@ impl BlockBuilder {
         body: BlockBody,
         block_proof: BlockProof,
     ) -> Result<ProvenBlock, BuildBlockError> {
+        // SAFETY: The header and body are assumed valid and consistent with the proof.
         let proven_block = ProvenBlock::new_unchecked(header, body, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
@@ -275,6 +304,9 @@ impl BlockBuilder {
                 MIN_PROOF_SECURITY_LEVEL,
             ));
         }
+        // TODO(sergerad): Consider removing this validation. Once block proving is implemented,
+        // this would be replaced with verifying the proof returned from the prover against
+        // the block header.
         validate_tx_headers(&proven_block, &ordered_batches.to_transactions())?;
 
         Ok(proven_block)
@@ -464,7 +496,7 @@ impl BlockProver {
 /// passed in the proposed block.
 ///
 /// This expects that transactions from the proposed block and proven block are in the same
-/// order, as define by [`OrderedTransactionHeaders`].
+/// order, as defined by [`OrderedTransactionHeaders`].
 fn validate_tx_headers(
     proven_block: &ProvenBlock,
     proposed_txs: &OrderedTransactionHeaders,

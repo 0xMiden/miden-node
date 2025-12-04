@@ -172,15 +172,16 @@ impl ProverRpcApi {
             return Err(Status::unimplemented("Block prover is not enabled"));
         };
         let BlockProofRequest { tx_batches, block_header, block_inputs } = proof_request;
-        let block_proof = prover
-            .try_lock()
-            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
-            .prove(tx_batches, block_header.clone(), block_inputs)
-            .map_err(internal_error)?;
 
         // Record the commitment of the block in the current tracing span.
         let block_id = block_header.commitment();
         tracing::Span::current().record("block_id", tracing::field::display(&block_id));
+
+        let block_proof = prover
+            .try_lock()
+            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
+            .prove(tx_batches, block_header, block_inputs)
+            .map_err(internal_error)?;
 
         Ok(Response::new(proto::remote_prover::Proof { payload: block_proof.to_bytes() }))
     }

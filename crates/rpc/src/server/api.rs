@@ -568,6 +568,7 @@ impl api_server::Api for RpcService {
                 proto::block_producer::BlockProducerStatus {
                     status: "unreachable".to_string(),
                     version: "-".to_string(),
+                    chain_tip: 0,
                     mempool_stats: Some(MempoolStats::default()),
                 },
             )),

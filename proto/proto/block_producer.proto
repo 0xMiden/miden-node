@@ -54,6 +54,12 @@ message BlockProducerStatus {
     // The block producer's status.
     string status = 2;
 
+    // The block producer's current view of the chain tip height.
+    //
+    // This is the height of the latest block that the block producer considers
+    // to be part of the canonical chain.
+    fixed32 chain_tip = 4;
+
     // Statistics about the mempool.
     MempoolStats mempool_stats = 3;
 }

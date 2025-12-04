@@ -28,7 +28,7 @@ impl TryFrom<proto::primitives::Digest> for Nullifier {
 
     fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
         let digest: Word = value.try_into()?;
-        Ok(digest.into())
+        Ok(Nullifier::new_unchecked(digest))
     }
 }
 

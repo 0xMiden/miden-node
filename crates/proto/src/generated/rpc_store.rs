@@ -18,8 +18,9 @@ pub struct AccountProofRequest {
     /// ID of the account for which we want to get data
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Block at which we'd like to get this data. If present, must be close to the chain tip.
-    /// If not present, data from the latest block will be returned.
+    /// Optional block height at which to return the proof.
+    ///
+    /// Defaults to current chain tip if unspecified.
     #[prost(message, optional, tag = "2")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Request for additional account details; valid only for public accounts.
@@ -156,9 +157,8 @@ pub mod account_storage_details {
         /// endpoint should be used to get all storage map data.
         #[prost(bool, tag = "2")]
         pub too_many_entries: bool,
-        /// By default we provide all storage entries.
-        #[prost(message, optional, tag = "3")]
-        pub entries: ::core::option::Option<account_storage_map_details::MapEntries>,
+        #[prost(oneof = "account_storage_map_details::Data", tags = "3, 4")]
+        pub data: ::core::option::Option<account_storage_map_details::Data>,
     }
     /// Nested message and enum types in `AccountStorageMapDetails`.
     pub mod account_storage_map_details {
@@ -182,6 +182,18 @@ pub mod account_storage_details {
                     super::super::super::super::primitives::Digest,
                 >,
             }
+        }
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Data {
+            /// By default we provide all storage entries when `all_entries` is requested
+            /// or when the storage map is small.
+            #[prost(message, tag = "3")]
+            Entries(MapEntries),
+            /// When specific keys are requested and the storage map is not small,
+            /// we provide a partial SMT proof containing only the requested keys.
+            /// The bytes represent a serialized `PartialSmt` from miden-objects.
+            #[prost(bytes, tag = "4")]
+            PartialSmt(::prost::alloc::vec::Vec<u8>),
         }
     }
 }

@@ -97,11 +97,7 @@ pub(crate) fn select_account(
     Ok(AccountInfo { summary, details })
 }
 
-/// Select the latest account info by account ID prefix from the DB using the given
-/// [`SqliteConnection`]. Meant to be used by the network transaction builder.
-/// Because network notes get matched through accounts through the account's 30-bit prefix, it is
-/// possible that multiple accounts match against a single prefix. In this scenario, the first
-/// account is returned.
+/// Select account details as they are at the given block height.
 ///
 /// # Returns
 ///

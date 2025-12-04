@@ -103,10 +103,10 @@ impl api_server::Api for ValidatorServer {
     }
 
     /// Validates a proposed block and returns the block header and body.
-    async fn validate_block(
+    async fn sign_block(
         &self,
         request: tonic::Request<proto::blockchain::ProposedBlock>,
-    ) -> Result<tonic::Response<proto::validator::ValidateBlockResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
         let proposed_block_bytes = request.into_inner().proposed_block;
 
         // Deserialize the proposed block.
@@ -126,7 +126,7 @@ impl api_server::Api for ValidatorServer {
         let body_proto = proto::blockchain::BlockBody { block_body: body.to_bytes() };
 
         // Both header and body are required fields and must always be populated
-        let response = proto::validator::ValidateBlockResponse {
+        let response = proto::validator::SignedBlock {
             header: Some(header_proto),
             body: Some(body_proto),
         };

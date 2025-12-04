@@ -8,6 +8,12 @@ pub struct BlockProducerStatus {
     /// The block producer's status.
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
+    /// The block producer's current view of the chain tip height.
+    ///
+    /// This is the height of the latest block that the block producer considers
+    /// to be part of the canonical chain.
+    #[prost(fixed32, tag = "4")]
+    pub chain_tip: u32,
     /// Statistics about the mempool.
     #[prost(message, optional, tag = "3")]
     pub mempool_stats: ::core::option::Option<MempoolStats>,

@@ -18,6 +18,7 @@ use miden_node_proto::domain::account::{
     AccountStorageMapDetails,
     AccountVaultDetails,
     NetworkAccountPrefix,
+    SlotData,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
@@ -399,7 +400,7 @@ impl State {
                 let note_record = NoteRecord {
                     block_num,
                     note_index,
-                    note_id: note.id().into(),
+                    note_id: note.id().as_word(),
                     note_commitment: note.commitment(),
                     metadata: *note.metadata(),
                     details,
@@ -1400,6 +1401,9 @@ impl State {
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
+        let storage_forest = self.storage_forest.read().await;
+        let storage_roots = self.storage_roots.read().await;
+
         for StorageMapRequest { slot_index, slot_data } in storage_requests {
             let Some(slot) = store.slots().get(slot_index as usize) else {
                 continue;
@@ -1410,7 +1414,26 @@ impl State {
                 return Err(AccountError::StorageSlotNotMap(slot_index).into());
             };
 
-            let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+            // Previously this was `::new`, but we'd have to expose too much to it to be reasonable
+            let details = match slot_data {
+                SlotData::All => {
+                    AccountStorageMapDetails::from_all_entries(slot_index, storage_map)
+                },
+                SlotData::MapKeys(ref keys) => {
+                    let smt_root_key = (account_id, slot_index, block_num);
+                    let smt_root = storage_roots
+                        .get(&smt_root_key)
+                        .copied()
+                        .unwrap_or_else(|| storage_map.root());
+
+                    AccountStorageMapDetails::from_specific_keys(
+                        slot_index,
+                        keys,
+                        &storage_forest,
+                        smt_root,
+                    )?
+                },
+            };
             storage_map_details.push(details);
         }
 

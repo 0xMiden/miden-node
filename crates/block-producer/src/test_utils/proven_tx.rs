@@ -108,7 +108,7 @@ impl MockProvenTxBuilder {
             .map(|index| {
                 let nullifier = Word::from([ONE, ONE, ONE, Felt::new(index)]);
 
-                Nullifier::from(nullifier)
+                Nullifier::new_unchecked(nullifier)
             })
             .collect();
 

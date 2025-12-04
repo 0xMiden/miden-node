@@ -321,7 +321,8 @@ fn sql_select_notes_different_execution_hints() {
     let res = queries::insert_notes(conn, &[(note_none, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
-    let note = &queries::select_notes_by_id(conn, &[num_to_word(0).into()]).unwrap()[0];
+    let note_id = NoteId::new_unchecked(num_to_word(0));
+    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
 
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::none());
 
@@ -346,7 +347,8 @@ fn sql_select_notes_different_execution_hints() {
     let res = queries::insert_notes(conn, &[(note_always, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
-    let note = &queries::select_notes_by_id(conn, &[num_to_word(1).into()]).unwrap()[0];
+    let note_id = NoteId::new_unchecked(num_to_word(1));
+    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::always());
 
     let note_after_block = NoteRecord {
@@ -369,7 +371,8 @@ fn sql_select_notes_different_execution_hints() {
 
     let res = queries::insert_notes(conn, &[(note_after_block, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-    let note = &queries::select_notes_by_id(conn, &[num_to_word(2).into()]).unwrap()[0];
+    let note_id = NoteId::new_unchecked(num_to_word(2));
+    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
     assert_eq!(
         note.metadata.execution_hint(),
         NoteExecutionHint::after_block(12.into()).unwrap()
@@ -1156,7 +1159,7 @@ fn notes() {
     let note = NoteRecord {
         block_num: block_num_1,
         note_index,
-        note_id: new_note.id().into(),
+        note_id: new_note.id().as_word(),
         note_commitment: new_note.commitment(),
         metadata: NoteMetadata::new(
             sender,
@@ -1203,7 +1206,7 @@ fn notes() {
     let note2 = NoteRecord {
         block_num: block_num_2,
         note_index: note.note_index,
-        note_id: new_note.id().into(),
+        note_id: new_note.id().as_word(),
         note_commitment: new_note.commitment(),
         metadata: note.metadata,
         details: None,
@@ -1233,7 +1236,7 @@ fn notes() {
     // test query notes by id
     let notes = vec![note.clone(), note2];
 
-    let note_ids = Vec::from_iter(notes.iter().map(|note| NoteId::from(note.note_id)));
+    let note_ids = Vec::from_iter(notes.iter().map(|note| NoteId::new_unchecked(note.note_id)));
 
     let res = queries::select_notes_by_id(conn, &note_ids).unwrap();
     assert_eq!(res, notes);
@@ -1406,7 +1409,7 @@ fn num_to_word(n: u64) -> Word {
 }
 
 fn num_to_nullifier(n: u64) -> Nullifier {
-    Nullifier::from(num_to_word(n))
+    Nullifier::new_unchecked(num_to_word(n))
 }
 
 fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpdate {
@@ -1655,8 +1658,6 @@ fn test_storage_reconstruction_historical_state() {
         StorageSlot::Map(_) => panic!("Expected Value slot"),
     }
 }
-
-
 
 #[test]
 #[miden_node_test_macro::enable_logging]

@@ -274,7 +274,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let note_ids: Vec<Word> = convert_digests_to_words::<GetNotesByIdError, _>(note_ids)?;
 
-        let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
+        let note_ids: Vec<NoteId> = note_ids.into_iter().map(NoteId::new_unchecked).collect();
 
         let notes = self
             .state
@@ -587,7 +587,7 @@ impl rpc_server::Rpc for StoreApi {
             let note_records: Vec<_> = tx_header
                 .output_notes
                 .iter()
-                .filter_map(|note_id| note_map.get(&note_id.into()).cloned())
+                .filter_map(|note_id| note_map.get(&note_id.as_word()).cloned())
                 .collect();
 
             // Convert to proto using the helper method

@@ -3,12 +3,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use miden_node_proto::BlockProofRequest;
 use miden_objects::batch::{OrderedBatches, ProvenBatch};
 use miden_objects::block::{BlockHeader, BlockInputs, BlockProof, ProposedBlock, ProvenBlock};
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
-use miden_tx::utils::{ByteReader, ByteWriter};
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
@@ -74,8 +72,8 @@ impl RemoteBlockProver {
 
         #[cfg(target_arch = "wasm32")]
         let new_client = {
-            let mut fetch_options =
-                tonic_web_wasm_client::FetchOptions::new().timeout(self.timeout);
+            let fetch_options =
+                tonic_web_wasm_client::options::FetchOptions::new().timeout(self.timeout);
             let web_client = tonic_web_wasm_client::Client::new_with_options(
                 self.endpoint.clone(),
                 fetch_options,
@@ -123,8 +121,16 @@ impl RemoteBlockProver {
             })?
             .clone();
 
-        let request = BlockProofRequest { tx_batches, block_header, block_inputs };
-        let request = tonic::Request::new(request.into());
+        let block_proof_request =
+            ProposedBlock::new_at(block_inputs, tx_batches.into_vec(), block_header.timestamp())
+                .map_err(|err| {
+                    RemoteProverClientError::other_with_source(
+                        "failed to create proposed block",
+                        err,
+                    )
+                })?;
+
+        let request = tonic::Request::new(block_proof_request.into());
 
         let response = client.prove(request).await.map_err(|err| {
             RemoteProverClientError::other_with_source("failed to prove block", err)
@@ -153,8 +159,8 @@ impl TryFrom<proto::Proof> for BlockProof {
     }
 }
 
-impl From<BlockProofRequest> for proto::ProofRequest {
-    fn from(proposed_block: BlockProofRequest) -> Self {
+impl From<ProposedBlock> for proto::ProofRequest {
+    fn from(proposed_block: ProposedBlock) -> Self {
         proto::ProofRequest {
             proof_type: proto::ProofType::Block.into(),
             payload: proposed_block.to_bytes(),

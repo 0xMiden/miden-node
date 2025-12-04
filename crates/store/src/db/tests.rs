@@ -35,6 +35,7 @@ use miden_objects::block::{
 };
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
+use miden_objects::ecdsa_signer::{EcdsaSigner, LocalEcdsaSigner};
 use miden_objects::note::{
     Note,
     NoteDetails,
@@ -88,7 +89,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        LocalEcdsaSigner::dummy().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -987,7 +988,7 @@ fn db_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        LocalEcdsaSigner::dummy().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -1019,7 +1020,7 @@ fn db_block_header() {
         num_to_word(17),
         num_to_word(18),
         num_to_word(19),
-        num_to_word(20),
+        LocalEcdsaSigner::dummy().public_key(),
         test_fee_params(),
         21_u8.into(),
     );

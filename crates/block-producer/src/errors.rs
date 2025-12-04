@@ -6,7 +6,7 @@ use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::TransactionId;
-use miden_objects::{ProposedBatchError, ProvenBatchError, Word};
+use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -210,8 +210,9 @@ pub enum BuildBlockError {
     #[error("failed to get block inputs from store")]
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
-    ProposeBlockFailed(#[source] miden_lib::block::BuildBlockError), /* TODO(currentpr): name
-                                                                      * collision? */
+    ProposeBlockFailed(#[source] ProposedBlockError),
+    #[error("failed to build block header and body")]
+    BuildBlockFailed(#[source] miden_lib::block::BuildBlockError),
     #[error("failed to validate block")]
     ValidateBlockFailed(#[source] Box<ValidatorError>),
     #[error("block signature is invalid")]

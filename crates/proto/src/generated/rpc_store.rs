@@ -186,24 +186,20 @@ pub mod account_storage_details {
         }
     }
 }
-/// List of nullifiers to check for inclusion or non-inclusion proofs.
+/// List of nullifiers to return proofs for.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NullifierList {
-    /// List of nullifiers to return proofs for. Each nullifier is a Digest (4 field elements).
+    /// List of nullifiers to return proofs for.
     #[prost(message, repeated, tag = "1")]
     pub nullifiers: ::prost::alloc::vec::Vec<super::primitives::Digest>,
 }
-/// Response containing SMT opening proofs for the requested nullifiers.
+/// A set of Sparse Merkle Tree openings which provide proof of the status of each nullifier in the set
 ///
-/// Each proof verifies whether the nullifier exists in the tree (consumed) or not (available).
+/// Each nullifier's proof is either a proof of inclusion (consumed) or exclusion (unconsumed) which can
+/// can be verified against the nullifier tree root.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckNullifiersResponse {
     /// SMT opening for each requested nullifier at the same position.
-    ///
-    /// Leaf types indicate nullifier status:
-    ///
-    /// * `empty_leaf_index`: Nullifier not consumed (available)
-    /// * `single` or `multiple`: Nullifier consumed (contains key-value pairs)
     ///
     /// Verify against the nullifier tree root from the latest block header.
     #[prost(message, repeated, tag = "1")]

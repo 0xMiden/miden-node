@@ -20,7 +20,17 @@ service Rpc {
     // Returns the status info.
     rpc Status(google.protobuf.Empty) returns (StoreStatus) {}
 
-    // Returns a nullifier proof for each of the requested nullifiers.
+    // Returns a Sparse Merkle Tree opening proof for each requested nullifier
+    //
+    // Each proof demonstrates either:
+    // - **Inclusion**: Nullifier exists in the tree (consumed)
+    // - **Non-inclusion**: Nullifier does not exist (not consumed)
+    //
+    // The `leaf` field indicates the status:
+    // - `empty_leaf_index`: Non-inclusion proof
+    // - `single` or `multiple`: Inclusion proof with key-value pair(s)
+    //
+    // Verify proofs against the nullifier tree root in the latest block header.
     rpc CheckNullifiers(NullifierList) returns (CheckNullifiersResponse) {}
 
     // Returns the latest state of an account with the specified ID.
@@ -238,9 +248,14 @@ message NullifierList {
     repeated primitives.Digest nullifiers = 1;
 }
 
-// Represents the result of checking nullifiers.
+// A set of Sparse Merkle Tree openings which provide proof of the status of each nullifier in the set
+//
+// Each nullifier's proof is either a proof of inclusion (consumed) or exclusion (unconsumed) which can
+// can be verified against the nullifier tree root.
 message CheckNullifiersResponse {
-    // Each requested nullifier has its corresponding nullifier proof at the same position.
+    // SMT opening for each requested nullifier at the same position.
+    //
+    // Verify against the nullifier tree root from the latest block header.
     repeated primitives.SmtOpening proofs = 1;
 }
 

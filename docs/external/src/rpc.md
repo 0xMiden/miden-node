@@ -33,7 +33,82 @@ The gRPC service definition can be found in the Miden node's `proto` [directory]
 
 ### CheckNullifiers
 
-Request proofs for a set of nullifiers.
+Request Sparse Merkle Tree opening proofs to verify whether nullifiers have been consumed.
+
+#### Request
+
+```protobuf
+message NullifierList {
+    repeated Digest nullifiers = 1;  // List of nullifiers to check
+}
+```
+
+#### Response
+
+```protobuf
+message CheckNullifiersResponse {
+    repeated SmtOpening proofs = 1;  // One proof per requested nullifier
+}
+
+message SmtOpening {
+    SparseMerklePath path = 1;  // Merkle authentication path
+    SmtLeaf leaf = 2;           // Leaf at this position
+}
+
+message SmtLeaf {
+    oneof leaf {
+        uint64 empty_leaf_index = 1;
+        SmtLeafEntry single = 2;
+        SmtLeafEntryList multiple = 3;
+    }
+}
+```
+
+#### Understanding Proofs
+
+**Non-Inclusion (Nullifier NOT consumed):**
+- `leaf` contains `empty_leaf_index`
+- Note can still be consumed
+
+**Inclusion (Nullifier IS consumed):**
+- `leaf` contains `single` or `multiple` with key-value pairs, including the `nullifier` key
+- Note has been spent
+
+#### Verification
+
+```rust
+use miden_crypto::merkle::SmtProof;
+
+// 1. Get nullifier tree root from block header
+let block_header = get_latest_block_header();
+let nullifier_tree_root = block_header.state_commitment().nullifier_root();
+
+// 2. Verify the proof
+let proof: SmtProof = smt_opening.try_into()?;
+assert_eq!(proof.compute_root(), nullifier_tree_root);
+
+// 3. Check status, assumes `nullifier` is the originally queried nullifier
+let is_nullifier_consumed: bool = match proof.leaf() {
+    SmtLeaf::Single((nullifier,_block_num) => {
+		nullifier == proof.root()
+    }
+    SmtLeaf::Multiple(set) => {
+		set.iter().filter(|(k,_)| k == nullifier).next().is_some()
+    }
+    _ => false,
+}
+
+// Alternatively:
+
+// non-inclusion
+proof.verify_membership(nullifier, EMPTY_WORD, nullifier_tree_root);
+// inclusion
+proof.verify_membership(
+	nullifier,
+		block_num_to_nullifier_leaf_value(block_header.block_num()),
+		nullifier_tree_root
+	);
+```
 
 ### GetAccountDetails
 

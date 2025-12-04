@@ -9,7 +9,7 @@ message Asset {
     primitives.Digest asset = 1;
 }
 
-// SMT
+// SMT (Sparse Merkle Tree)
 // ================================================================================================
 
 // Represents a single SMT leaf entry.
@@ -21,9 +21,9 @@ message SmtLeafEntry {
     Digest value = 2;
 }
 
-// Represents multiple leaf entries in an SMT.
+// Multiple leaf entries when hash collisions occur at the same leaf position.
 message SmtLeafEntryList {
-    // The entries list.
+    // The list of entries at this leaf.
     repeated SmtLeafEntry entries = 1;
 }
 

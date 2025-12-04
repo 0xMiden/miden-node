@@ -93,8 +93,7 @@ pub(crate) fn select_account(
     Ok(info)
 }
 
-/// Select account details at a specific block number from the DB using the given
-/// [`SqliteConnection`].
+/// Select account details as they are at the given block height.
 ///
 /// # Returns
 ///
@@ -118,7 +117,11 @@ pub(crate) fn select_account(
 ///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
 ///     account_id = ?1
-///     AND block_num = ?2
+///     AND block_num <= ?2
+/// ORDER BY
+///     block_num DESC
+/// LIMIT
+///     1
 /// ```
 pub(crate) fn select_historical_account_at(
     conn: &mut SqliteConnection,
@@ -134,8 +137,10 @@ pub(crate) fn select_historical_account_at(
     .filter(
         schema::accounts::account_id
             .eq(account_id.to_bytes())
-            .and(schema::accounts::block_num.eq(block_num.to_raw_sql())),
+            .and(schema::accounts::block_num.le(block_num.to_raw_sql())),
     )
+    .order_by(schema::accounts::block_num.desc())
+    .limit(1)
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;

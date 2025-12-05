@@ -11,14 +11,14 @@ use miden_node_proto::clients::{
     RemoteProverProxyStatusClient,
     RpcClient,
 };
-use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
+use tokio::sync::{Mutex, watch};
 use tokio::task::{Id, JoinSet};
 use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::counter::{run_counter_tracking_task, run_increment_task};
+use crate::counter::{LatencyState, run_counter_tracking_task, run_increment_task};
 use crate::deploy::ensure_accounts_exist;
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
@@ -250,6 +250,9 @@ impl Tasks {
 
         // Create shared atomic counter for tracking expected counter value
         let expected_counter_value = Arc::new(AtomicU64::new(0));
+        let latency_state = Arc::new(Mutex::new(LatencyState::default()));
+        let latency_state_for_increment = latency_state.clone();
+        let latency_state_for_tracking = latency_state.clone();
 
         // Create initial increment status
         let initial_increment_status = ServiceStatus {
@@ -261,6 +264,8 @@ impl Tasks {
                 success_count: 0,
                 failure_count: 0,
                 last_tx_id: None,
+                last_latency_blocks: None,
+                pending_latency: None,
             }),
         };
 
@@ -287,9 +292,14 @@ impl Tasks {
         let increment_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_increment_task(config_clone, increment_tx, counter_clone))
-                    .await
-                    .expect("Counter increment task runs indefinitely");
+                Box::pin(run_increment_task(
+                    config_clone,
+                    increment_tx,
+                    counter_clone,
+                    latency_state_for_increment,
+                ))
+                .await
+                .expect("Counter increment task runs indefinitely");
             })
             .id();
         self.names.insert(increment_id, "counter-increment".to_string());
@@ -301,9 +311,14 @@ impl Tasks {
         let tracking_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_counter_tracking_task(config_clone, tracking_tx, counter_clone))
-                    .await
-                    .expect("Counter tracking task runs indefinitely");
+                Box::pin(run_counter_tracking_task(
+                    config_clone,
+                    tracking_tx,
+                    counter_clone,
+                    latency_state_for_tracking,
+                ))
+                .await
+                .expect("Counter tracking task runs indefinitely");
             })
             .id();
         self.names.insert(tracking_id, "counter-tracking".to_string());

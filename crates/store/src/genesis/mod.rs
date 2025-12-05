@@ -14,6 +14,7 @@ use miden_objects::block::{
     ProvenBlock,
 };
 use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
+use miden_objects::ecdsa_signer::{EcdsaSigner, LocalEcdsaSigner};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
@@ -115,7 +116,7 @@ impl GenesisState {
             empty_block_note_tree.root(),
             Word::empty(),
             TransactionKernel.to_commitment(),
-            Word::empty(),
+            LocalEcdsaSigner::dummy().public_key(),
             self.fee_parameters,
             self.timestamp,
         );

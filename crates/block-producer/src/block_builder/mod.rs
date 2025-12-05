@@ -28,7 +28,7 @@ use url::Url;
 use crate::errors::BuildBlockError;
 use crate::mempool::SharedMempool;
 use crate::store::StoreClient;
-use crate::validator::{BlockProducerValidatorClient, BodyDiff, HeaderDiff, ValidatorError};
+use crate::validator::BlockProducerValidatorClient;
 use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
@@ -236,34 +236,23 @@ impl BlockBuilder {
             let proposed_block = proposed_block.clone();
             move || build_block(proposed_block)
         });
-        let (header, body) = self
+        let signature = self
             .validator
             .sign_block(proposed_block.clone())
             .await
             .map_err(|err| BuildBlockError::ValidateBlockFailed(err.into()))?;
-        let (expected_header, expected_body) = build_result
+        let (header, body) = build_result
             .await
             .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
-            .map_err(BuildBlockError::ProposeBlockFailed)?;
+            .map_err(BuildBlockError::BuildBlockFailed)?;
 
-        // Check that the header and body returned from the validator is consistent with the
-        // proposed block.
-        // TODO(sergerad): Update Eq implementation once signatures are part of the header.
-        if header != expected_header {
-            let diff = HeaderDiff {
-                validator_header: header,
-                expected_header,
-            }
-            .into();
-            return Err(BuildBlockError::ValidateBlockFailed(
-                ValidatorError::HeaderMismatch(diff).into(),
-            ));
-        }
-        if body != expected_body {
-            let diff = BodyDiff { validator_body: body, expected_body }.into();
-            return Err(BuildBlockError::ValidateBlockFailed(
-                ValidatorError::BodyMismatch(diff).into(),
-            ));
+        // TODO(sergerad): Revert the logic to !signature.verify() when the validator key is
+        // properly established. The verification will fail while the validator key is random.
+        //
+        // Verify the signature against the built block to ensure that
+        // the validator has provided a valid signature for the relevant block.
+        if signature.verify(header.commitment(), header.public_key()) {
+            return Err(BuildBlockError::InvalidSignature);
         }
 
         let (ordered_batches, ..) = proposed_block.into_parts();

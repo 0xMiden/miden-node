@@ -18,10 +18,10 @@ service Api {
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
 
    // Validates a proposed block and returns the block header and body.
-   rpc SignBlock(blockchain.ProposedBlock) returns (SignedBlock) {}
+   rpc SignBlock(blockchain.ProposedBlock) returns (Signature) {}
 }
 
-// STATUS
+// VALIDATOR STATUS
 // ================================================================================================
 
 // Represents the status of the validator.
@@ -33,14 +33,12 @@ message ValidatorStatus {
     string status = 2;
 }
 
-// VALIDATE BLOCK RESPONSE
+// SIGNATURE
 // ================================================================================================
 
-// Response message for SignBlock RPC.
-message SignedBlock {
-    // The block header.
-    blockchain.BlockHeader header = 1;
-
-    // The block body.
-    blockchain.BlockBody body = 2;
+// ECDSA Signature.
+message Signature {
+    // Signature encoded using [winter_utils::Serializable] implementation for
+    // [crypto::dsa::ecdsa_k256_keccak::Signature].
+    bytes signature = 1;
 }

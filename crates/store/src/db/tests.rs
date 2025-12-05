@@ -1851,6 +1851,9 @@ fn test_select_account_code_at_block() {
     let block_num_1 = BlockNumber::from(1);
     let block_num_2 = BlockNumber::from(2);
 
+    // Create block 1
+    create_block(&mut conn, block_num_1);
+
     // Create an account with code at block 1 using the existing mock function
     let account = mock_account_code_and_storage(
         AccountType::RegularAccountImmutableCode,
@@ -1893,4 +1896,137 @@ fn test_select_account_code_at_block() {
     let code_other =
         queries::select_account_code_at_block(&mut conn, other_account_id, block_num_1).unwrap();
     assert!(code_other.is_none(), "Code should not exist for non-existent account");
+}
+
+#[test]
+fn test_select_account_code_at_block_with_updates() {
+    let mut conn = create_db();
+
+    let block_num_1 = BlockNumber::from(1);
+    let block_num_2 = BlockNumber::from(2);
+    let block_num_3 = BlockNumber::from(3);
+
+    // Create all blocks
+    create_block(&mut conn, block_num_1);
+    create_block(&mut conn, block_num_2);
+    create_block(&mut conn, block_num_3);
+
+    // Helper function to create account with specific code
+    fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
+        let component_storage = vec![
+            StorageSlot::Value(Word::empty()),
+            StorageSlot::Value(num_to_word(1)),
+        ];
+
+        let component = AccountComponent::compile(
+            code_str,
+            TransactionKernel::assembler(),
+            component_storage,
+        )
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountUpdatableCode);
+
+        AccountBuilder::new(seed)
+            .account_type(AccountType::RegularAccountUpdatableCode)
+            .storage_mode(AccountStorageMode::Public)
+            .with_component(component)
+            .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+            .build_existing()
+            .unwrap()
+    }
+
+    // Create initial account with code v1 at block 1
+    let code_v1_str = "\
+        export.account_procedure_1
+            push.1.2
+            add
+        end
+    ";
+    let account_v1 = create_account_with_code(code_v1_str, [1u8; 32]);
+    let account_id = account_v1.id();
+    let code_v1 = account_v1.code().to_bytes();
+
+    // Insert the account at block 1
+    queries::upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account_id,
+            account_v1.commitment(),
+            AccountUpdateDetails::Delta(AccountDelta::try_from(account_v1).unwrap()),
+        )],
+        block_num_1,
+    )
+    .unwrap();
+
+    // Create account with different code v2 at block 2
+    let code_v2_str = "\
+        export.account_procedure_1
+            push.3.4
+            mul
+        end
+    ";
+    let account_v2 = create_account_with_code(code_v2_str, [1u8; 32]); // Same seed to keep same account_id
+    let code_v2 = account_v2.code().to_bytes();
+
+    // Verify that the codes are actually different
+    assert_ne!(
+        code_v1, code_v2,
+        "Test setup error: codes should be different for different code strings"
+    );
+
+    // Insert the updated account at block 2
+    queries::upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account_id,
+            account_v2.commitment(),
+            AccountUpdateDetails::Delta(AccountDelta::try_from(account_v2).unwrap()),
+        )],
+        block_num_2,
+    )
+    .unwrap();
+
+    // Create account with different code v3 at block 3
+    let code_v3_str = "\
+        export.account_procedure_1
+            push.5.6
+            sub
+        end
+    ";
+    let account_v3 = create_account_with_code(code_v3_str, [1u8; 32]); // Same seed to keep same account_id
+    let code_v3 = account_v3.code().to_bytes();
+
+    // Verify that v3 code is different from v2 and v1
+    assert_ne!(code_v2, code_v3, "Test setup error: v3 code should differ from v2");
+    assert_ne!(code_v1, code_v3, "Test setup error: v3 code should differ from v1");
+
+    // Insert the updated account at block 3
+    queries::upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account_id,
+            account_v3.commitment(),
+            AccountUpdateDetails::Delta(AccountDelta::try_from(account_v3).unwrap()),
+        )],
+        block_num_3,
+    )
+    .unwrap();
+
+    // Test: Query code at block 1 - should return v1 code
+    let code_at_1 = queries::select_account_code_at_block(&mut conn, account_id, block_num_1)
+        .unwrap()
+        .expect("Code should exist at block 1");
+    assert_eq!(code_at_1, code_v1, "Block 1 should return v1 code");
+
+    // Test: Query code at block 2 - should return v2 code (even though we're at block 3)
+    let code_at_2 = queries::select_account_code_at_block(&mut conn, account_id, block_num_2)
+        .unwrap()
+        .expect("Code should exist at block 2");
+    assert_eq!(code_at_2, code_v2, "Block 2 should return v2 code");
+
+    // Test: Query code at block 3 - should return v3 code
+    let code_at_3 = queries::select_account_code_at_block(&mut conn, account_id, block_num_3)
+        .unwrap()
+        .expect("Code should exist at block 3");
+    assert_eq!(code_at_3, code_v3, "Block 3 should return v3 code");
 }

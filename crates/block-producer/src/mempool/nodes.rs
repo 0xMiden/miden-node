@@ -108,6 +108,8 @@ pub(super) struct BlockNode {
     txs: Vec<Arc<AuthenticatedTransaction>>,
     batches: Vec<Arc<ProvenBatch>>,
     number: BlockNumber,
+    /// Aggregated account updates of all batches.
+    account_updates: HashMap<AccountId, (Word, Word)>,
 }
 
 impl BlockNode {
@@ -116,13 +118,33 @@ impl BlockNode {
             number,
             txs: Vec::default(),
             batches: Vec::default(),
+            account_updates: HashMap::default(),
         }
     }
 
     pub(super) fn push(&mut self, batch: ProvenBatchNode) {
-        let ProvenBatchNode { txs, inner } = batch;
+        let ProvenBatchNode { txs, inner: batch } = batch;
+        for (account, update) in batch.account_updates() {
+            self.account_updates
+                .entry(*account)
+                .and_modify(|(_, to)| {
+                    assert!(
+                        to == &update.initial_state_commitment(),
+                        "Cannot select batch {} as its initial commitment {} for account {} does \
+    not match the current commitment {}",
+                        batch.id(),
+                        update.initial_state_commitment(),
+                        update.account_id(),
+                        to
+                    );
+
+                    *to = update.final_state_commitment();
+                })
+                .or_insert((update.initial_state_commitment(), update.final_state_commitment()));
+        }
+
         self.txs.extend(txs);
-        self.batches.push(inner);
+        self.batches.push(batch);
     }
 
     pub(super) fn contains(&self, id: BatchId) -> bool {
@@ -285,15 +307,7 @@ impl Node for BlockNode {
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
-        Box::new(self.batches.iter().flat_map(|batch| batch.account_updates()).map(
-            |(_, update)| {
-                (
-                    update.account_id(),
-                    update.initial_state_commitment(),
-                    update.final_state_commitment(),
-                )
-            },
-        ))
+        Box::new(self.account_updates.iter().map(|(account, (from, to))| (*account, *from, *to)))
     }
 
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {

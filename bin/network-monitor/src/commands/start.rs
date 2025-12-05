@@ -36,7 +36,6 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
     };
 
     let mut tasks = Tasks::new();
-    debug!(target: COMPONENT, "Initializing monitoring tasks");
 
     // Initialize the RPC Status endpoint checker task.
     debug!(target: COMPONENT, "Initializing RPC status checker");

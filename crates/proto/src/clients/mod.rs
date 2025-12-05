@@ -112,10 +112,10 @@ type GeneratedRpcClient = generated::rpc::api_client::ApiClient<InterceptedChann
 type GeneratedBlockProducerClient =
     generated::block_producer::api_client::ApiClient<InterceptedChannel>;
 type GeneratedStoreClientForNtxBuilder =
-    generated::ntx_builder_store::ntx_builder_client::NtxBuilderClient<InterceptedChannel>;
+    generated::store::ntx_builder_client::NtxBuilderClient<InterceptedChannel>;
 type GeneratedStoreClientForBlockProducer =
-    generated::block_producer_store::block_producer_client::BlockProducerClient<InterceptedChannel>;
-type GeneratedStoreClientForRpc = generated::rpc_store::rpc_client::RpcClient<InterceptedChannel>;
+    generated::store::block_producer_client::BlockProducerClient<InterceptedChannel>;
+type GeneratedStoreClientForRpc = generated::store::rpc_client::RpcClient<InterceptedChannel>;
 type GeneratedProxyStatusClient =
     generated::remote_prover::proxy_status_api_client::ProxyStatusApiClient<InterceptedChannel>;
 type GeneratedProverClient = generated::remote_prover::api_client::ApiClient<InterceptedChannel>;

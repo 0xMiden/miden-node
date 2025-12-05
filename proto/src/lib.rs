@@ -41,14 +41,6 @@ pub fn store_block_producer_api_descriptor() -> FileDescriptorSet {
         .expect("bytes should be a valid file descriptor created by build.rs")
 }
 
-/// Returns the Protobuf file descriptor for the store shared API.
-#[cfg(feature = "internal")]
-pub fn store_shared_api_descriptor() -> FileDescriptorSet {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", "store_shared_file_descriptor.bin"));
-    FileDescriptorSet::decode(&bytes[..])
-        .expect("bytes should be a valid file descriptor created by build.rs")
-}
-
 /// Returns the Protobuf file descriptor for the block-producer API.
 #[cfg(feature = "internal")]
 pub fn block_producer_api_descriptor() -> FileDescriptorSet {

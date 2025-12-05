@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 
-use miden_node_proto::generated::block_producer_store::block_producer_server;
+use miden_node_proto::generated::store::block_producer_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
@@ -40,8 +40,8 @@ impl block_producer_server::BlockProducer for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<proto::shared::BlockHeaderByNumberRequest>,
-    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::rpc::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::rpc::BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -93,8 +93,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_block_inputs(
         &self,
-        request: Request<proto::block_producer_store::BlockInputsRequest>,
-    ) -> Result<Response<proto::block_producer_store::BlockInputs>, Status> {
+        request: Request<proto::store::BlockInputsRequest>,
+    ) -> Result<Response<proto::store::BlockInputs>, Status> {
         let request = request.into_inner();
 
         let account_ids = read_account_ids::<Status>(&request.account_ids)?;
@@ -114,7 +114,7 @@ impl block_producer_server::BlockProducer for StoreApi {
                 reference_blocks,
             )
             .await
-            .map(proto::block_producer_store::BlockInputs::from)
+            .map(proto::store::BlockInputs::from)
             .map(Response::new)
             .map_err(internal_error)
     }
@@ -132,8 +132,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_batch_inputs(
         &self,
-        request: Request<proto::block_producer_store::BatchInputsRequest>,
-    ) -> Result<Response<proto::block_producer_store::BatchInputs>, Status> {
+        request: Request<proto::store::BatchInputsRequest>,
+    ) -> Result<Response<proto::store::BatchInputs>, Status> {
         let request = request.into_inner();
 
         let note_commitments: Vec<Word> = try_convert(request.note_commitments)
@@ -164,8 +164,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_transaction_inputs(
         &self,
-        request: Request<proto::block_producer_store::TransactionInputsRequest>,
-    ) -> Result<Response<proto::block_producer_store::TransactionInputs>, Status> {
+        request: Request<proto::store::TransactionInputsRequest>,
+    ) -> Result<Response<proto::store::TransactionInputs>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -183,17 +183,19 @@ impl block_producer_server::BlockProducer for StoreApi {
 
         let block_height = self.state.latest_block_num().await.as_u32();
 
-        Ok(Response::new(proto::block_producer_store::TransactionInputs {
-            account_state: Some(proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord {
+        Ok(Response::new(proto::store::TransactionInputs {
+            account_state: Some(proto::store::transaction_inputs::AccountTransactionInputRecord {
                 account_id: Some(account_id.into()),
                 account_commitment: Some(tx_inputs.account_commitment.into()),
             }),
             nullifiers: tx_inputs
                 .nullifiers
                 .into_iter()
-                .map(|nullifier| proto::block_producer_store::transaction_inputs::NullifierTransactionInputRecord {
-                    nullifier: Some(nullifier.nullifier.into()),
-                    block_num: nullifier.block_num.as_u32(),
+                .map(|nullifier| {
+                    proto::store::transaction_inputs::NullifierTransactionInputRecord {
+                        nullifier: Some(nullifier.nullifier.into()),
+                        block_num: nullifier.block_num.as_u32(),
+                    }
                 })
                 .collect(),
             found_unauthenticated_notes: tx_inputs

@@ -13,7 +13,7 @@ use miden_node_proto::generated::rpc_store::StoreStatus;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 use url::Url;
 
 use crate::faucet::FaucetTestDetails;
@@ -252,7 +252,14 @@ impl From<RpcStatus> for RpcStatusDetails {
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(target = COMPONENT, name = "rpc-status-task", skip_all)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.run_rpc_status_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub async fn run_rpc_status_task(
     rpc_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
@@ -297,7 +304,14 @@ pub async fn run_rpc_status_task(
 /// # Returns
 ///
 /// A `ServiceStatus` containing the status of the RPC service.
-#[instrument(target = COMPONENT, name = "check-status.rpc", skip_all, ret(level = "info"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.check_rpc_status",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub(crate) async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
     current_time: u64,
@@ -314,12 +328,15 @@ pub(crate) async fn check_rpc_status(
                 details: ServiceDetails::RpcStatus(status.into()),
             }
         },
-        Err(e) => ServiceStatus {
-            name: "RPC".to_string(),
-            status: Status::Unhealthy,
-            last_checked: current_time,
-            error: Some(e.to_string()),
-            details: ServiceDetails::Error,
+        Err(e) => {
+            debug!(target: COMPONENT, error = %e, "RPC status check failed");
+            ServiceStatus {
+                name: "RPC".to_string(),
+                status: Status::Unhealthy,
+                last_checked: current_time,
+                error: Some(e.to_string()),
+                details: ServiceDetails::Error,
+            }
         },
     }
 }
@@ -343,7 +360,14 @@ pub(crate) async fn check_rpc_status(
 ///
 /// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
 /// connection issues or failures while checking the remote prover status.
-#[instrument(target = COMPONENT, name = "remote-prover-status-task", skip_all)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.run_remote_prover_status_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub async fn run_remote_prover_status_task(
     prover_url: Url,
     name: String,
@@ -398,16 +422,25 @@ pub async fn run_remote_prover_status_task(
 /// # Returns
 ///
 /// A `ServiceStatus` containing the status of the remote prover service.
-#[instrument(target = COMPONENT, name = "check-status.remote-prover", skip_all, ret(level = "info"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.check_remote_prover_status",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub(crate) async fn check_remote_prover_status(
     remote_prover: &mut miden_node_proto::clients::RemoteProverProxyStatusClient,
     name: String,
     url: String,
     current_time: u64,
 ) -> ServiceStatus {
+    debug!(target: COMPONENT, prover_name = %name, "Checking remote prover status");
     match remote_prover.status(()).await {
         Ok(response) => {
             let status = response.into_inner();
+            debug!(target: COMPONENT, prover_name = %name, remote_prover_status = ?status, "Remote prover status check successful");
 
             // Use the new method to convert gRPC status to domain type
             let remote_prover_details = RemoteProverStatusDetails::from_proxy_status(status, url);
@@ -429,12 +462,15 @@ pub(crate) async fn check_remote_prover_status(
                 details: ServiceDetails::RemoteProverStatus(remote_prover_details),
             }
         },
-        Err(e) => ServiceStatus {
-            name: format!("Remote Prover ({name})"),
-            status: Status::Unhealthy,
-            last_checked: current_time,
-            error: Some(e.to_string()),
-            details: ServiceDetails::Error,
+        Err(e) => {
+            debug!(target: COMPONENT, prover_name = %name, error = %e, "Remote prover status check failed");
+            ServiceStatus {
+                name: format!("Remote Prover ({name})"),
+                status: Status::Unhealthy,
+                last_checked: current_time,
+                error: Some(e.to_string()),
+                details: ServiceDetails::Error,
+            }
         },
     }
 }

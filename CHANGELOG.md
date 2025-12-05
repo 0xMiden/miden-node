@@ -2,6 +2,7 @@
 
 ## v0.12.6 (TBD)
 
+- Improved tracing in `miden-network-monitor` binary ([#1366](https://github.com/0xMiden/miden-node/pull/1366)).
 - Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
 
 ## v0.12.5 (2025-11-27)

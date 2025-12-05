@@ -23,11 +23,8 @@ service Api {
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(rpc_store.NullifierList) returns (rpc_store.CheckNullifiersResponse) {}
 
-    // Returns the latest state of an account with the specified ID.
-    rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
-
     // Returns the latest state proof of the specified account.
-    rpc GetAccountProof(rpc_store.AccountProofRequest) returns (rpc_store.AccountProofResponse) {}
+    rpc GetAccount(rpc_store.AccountRequest) returns (rpc_store.AccountResponse) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}

@@ -1,5 +1,4 @@
 use miden_node_proto::convert;
-use miden_node_proto::domain::account::AccountInfo;
 use miden_node_proto::generated::rpc_store::rpc_server;
 use miden_node_proto::generated::{self as proto};
 use miden_objects::Word;
@@ -288,29 +287,6 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(proto::note::CommittedNoteList { notes }))
     }
 
-    /// Returns details for public (public) account by id.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_account_details",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_details(
-        &self,
-        request: Request<proto::account::AccountId>,
-    ) -> Result<Response<proto::account::AccountDetails>, Status> {
-        let request = request.into_inner();
-        let account_id = read_account_id::<Status>(Some(request))?;
-        let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
-
-        // TODO: revisit this, previous implementation was just returning only the summary, but it
-        // is weird since the details are not empty.
-        Ok(Response::new((&account_info).into()))
-    }
-
     #[instrument(
         parent = None,
         target = COMPONENT,
@@ -340,21 +316,21 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.rpc_server.get_account_proof",
+        name = "store.rpc_server.get_account",
         skip_all,
         level = "debug",
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proof(
+    async fn get_account(
         &self,
-        request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
+        request: Request<proto::rpc_store::AccountRequest>,
+    ) -> Result<Response<proto::rpc_store::AccountResponse>, Status> {
         debug!(target: COMPONENT, ?request);
         let request = request.into_inner();
         let account_proof_request = request.try_into()?;
 
-        let proof = self.state.get_account_proof(account_proof_request).await?;
+        let proof = self.state.get_account(account_proof_request).await?;
 
         Ok(Response::new(proof.into()))
     }

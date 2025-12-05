@@ -16,7 +16,6 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
 };
-use miden_objects::account::AccountId;
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteRecipient, NoteScript};
@@ -467,31 +466,6 @@ impl api_server::Api for RpcService {
         block_producer.clone().submit_proven_batch(request).await
     }
 
-    /// Returns details for public (public) account by id.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_account_details",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_details(
-        &self,
-        request: Request<proto::account::AccountId>,
-    ) -> std::result::Result<Response<proto::account::AccountDetails>, Status> {
-        debug!(target: COMPONENT, request = ?request.get_ref());
-
-        // Validating account using conversion:
-        let _account_id: AccountId = request
-            .get_ref()
-            .clone()
-            .try_into()
-            .map_err(|err| Status::invalid_argument(format!("Invalid account id: {err}")))?;
-
-        self.store.clone().get_account_details(request).await
-    }
-
     #[instrument(
         parent = None,
         target = COMPONENT,
@@ -514,20 +488,20 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "rpc.server.get_account_proof",
+        name = "rpc.server.get_account",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proof(
+    async fn get_account(
         &self,
-        request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
+        request: Request<proto::rpc_store::AccountRequest>,
+    ) -> Result<Response<proto::rpc_store::AccountResponse>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
 
-        self.store.clone().get_account_proof(request).await
+        self.store.clone().get_account(request).await
     }
 
     #[instrument(

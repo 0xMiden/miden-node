@@ -14,7 +14,7 @@ pub struct StoreStatus {
 }
 /// Returns the latest state proof of the specified account.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountProofRequest {
+pub struct AccountRequest {
     /// ID of the account for which we want to get data
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
@@ -25,10 +25,10 @@ pub struct AccountProofRequest {
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Request for additional account details; valid only for public accounts.
     #[prost(message, optional, tag = "3")]
-    pub details: ::core::option::Option<account_proof_request::AccountDetailRequest>,
+    pub details: ::core::option::Option<account_request::AccountDetailRequest>,
 }
-/// Nested message and enum types in `AccountProofRequest`.
-pub mod account_proof_request {
+/// Nested message and enum types in `AccountRequest`.
+pub mod account_request {
     /// Request the details for a public account.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AccountDetailRequest {
@@ -90,7 +90,7 @@ pub mod account_proof_request {
 }
 /// Represents the result of getting account proof.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountProofResponse {
+pub struct AccountResponse {
     /// The block number at which the account witness was created and the account details were observed.
     #[prost(message, optional, tag = "1")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
@@ -99,10 +99,10 @@ pub struct AccountProofResponse {
     pub witness: ::core::option::Option<super::account::AccountWitness>,
     /// Additional details for public accounts.
     #[prost(message, optional, tag = "3")]
-    pub details: ::core::option::Option<account_proof_response::AccountDetails>,
+    pub details: ::core::option::Option<account_response::AccountDetails>,
 }
-/// Nested message and enum types in `AccountProofResponse`.
-pub mod account_proof_response {
+/// Nested message and enum types in `AccountResponse`.
+pub mod account_response {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AccountDetails {
         /// Account header.
@@ -120,7 +120,7 @@ pub mod account_proof_response {
         pub vault_details: ::core::option::Option<super::AccountVaultDetails>,
     }
 }
-/// Account vault details for AccountProofResponse
+/// Account vault details for AccountResponse
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountVaultDetails {
     /// A flag that is set to true if the account contains too many assets. This indicates
@@ -133,7 +133,7 @@ pub struct AccountVaultDetails {
     #[prost(message, repeated, tag = "2")]
     pub assets: ::prost::alloc::vec::Vec<super::primitives::Asset>,
 }
-/// Account storage details for AccountProofResponse
+/// Account storage details for AccountResponse
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountStorageDetails {
     /// Account storage header (storage slot info for up to 256 slots)
@@ -598,37 +598,12 @@ pub mod rpc_client {
                 .insert(GrpcMethod::new("rpc_store.Rpc", "CheckNullifiers"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state of an account with the specified ID.
-        pub async fn get_account_details(
-            &mut self,
-            request: impl tonic::IntoRequest<super::super::account::AccountId>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::account::AccountDetails>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/rpc_store.Rpc/GetAccountDetails",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("rpc_store.Rpc", "GetAccountDetails"));
-            self.inner.unary(req, path, codec).await
-        }
         /// Returns the latest state proof of the specified account.
-        pub async fn get_account_proof(
+        pub async fn get_account(
             &mut self,
-            request: impl tonic::IntoRequest<super::AccountProofRequest>,
+            request: impl tonic::IntoRequest<super::AccountRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::AccountProofResponse>,
+            tonic::Response<super::AccountResponse>,
             tonic::Status,
         > {
             self.inner
@@ -640,12 +615,9 @@ pub mod rpc_client {
                     )
                 })?;
             let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/rpc_store.Rpc/GetAccountProof",
-            );
+            let path = http::uri::PathAndQuery::from_static("/rpc_store.Rpc/GetAccount");
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("rpc_store.Rpc", "GetAccountProof"));
+            req.extensions_mut().insert(GrpcMethod::new("rpc_store.Rpc", "GetAccount"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns raw block data for the specified block number.
@@ -947,22 +919,11 @@ pub mod rpc_server {
             tonic::Response<super::CheckNullifiersResponse>,
             tonic::Status,
         >;
-        /// Returns the latest state of an account with the specified ID.
-        async fn get_account_details(
-            &self,
-            request: tonic::Request<super::super::account::AccountId>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::account::AccountDetails>,
-            tonic::Status,
-        >;
         /// Returns the latest state proof of the specified account.
-        async fn get_account_proof(
+        async fn get_account(
             &self,
-            request: tonic::Request<super::AccountProofRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AccountProofResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::AccountRequest>,
+        ) -> std::result::Result<tonic::Response<super::AccountResponse>, tonic::Status>;
         /// Returns raw block data for the specified block number.
         async fn get_block_by_number(
             &self,
@@ -1228,25 +1189,23 @@ pub mod rpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/rpc_store.Rpc/GetAccountDetails" => {
+                "/rpc_store.Rpc/GetAccount" => {
                     #[allow(non_camel_case_types)]
-                    struct GetAccountDetailsSvc<T: Rpc>(pub Arc<T>);
-                    impl<
-                        T: Rpc,
-                    > tonic::server::UnaryService<super::super::account::AccountId>
-                    for GetAccountDetailsSvc<T> {
-                        type Response = super::super::account::AccountDetails;
+                    struct GetAccountSvc<T: Rpc>(pub Arc<T>);
+                    impl<T: Rpc> tonic::server::UnaryService<super::AccountRequest>
+                    for GetAccountSvc<T> {
+                        type Response = super::AccountResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::super::account::AccountId>,
+                            request: tonic::Request<super::AccountRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Rpc>::get_account_details(&inner, request).await
+                                <T as Rpc>::get_account(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1257,50 +1216,7 @@ pub mod rpc_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetAccountDetailsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/rpc_store.Rpc/GetAccountProof" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetAccountProofSvc<T: Rpc>(pub Arc<T>);
-                    impl<T: Rpc> tonic::server::UnaryService<super::AccountProofRequest>
-                    for GetAccountProofSvc<T> {
-                        type Response = super::AccountProofResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::AccountProofRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Rpc>::get_account_proof(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetAccountProofSvc(inner);
+                        let method = GetAccountSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

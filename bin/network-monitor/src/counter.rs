@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use miden_lib::AuthScheme;
@@ -38,7 +39,7 @@ use miden_tx::utils::Serializable;
 use miden_tx::{LocalTransactionProver, TransactionExecutor};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use tokio::sync::watch;
+use tokio::sync::{Mutex, watch};
 use tracing::{error, info, instrument, warn};
 
 use crate::COMPONENT;
@@ -47,10 +48,18 @@ use crate::deploy::{MonitorDataStore, create_genesis_aware_rpc_client, get_count
 use crate::status::{
     CounterTrackingDetails,
     IncrementDetails,
+    PendingLatencyDetails,
     ServiceDetails,
     ServiceStatus,
     Status,
 };
+
+#[derive(Debug, Default, Clone)]
+pub struct LatencyState {
+    pending: Option<PendingLatencyDetails>,
+    pending_started: Option<Instant>,
+    last_latency_blocks: Option<u32>,
+}
 
 /// Get the genesis block header.
 async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHeader> {
@@ -200,6 +209,7 @@ pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
     expected_counter_value: Arc<AtomicU64>,
+    latency_state: Arc<Mutex<LatencyState>>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client =
@@ -221,7 +231,9 @@ pub async fn run_increment_task(
     loop {
         interval.tick().await;
 
-        let last_error = match create_and_submit_network_note(
+        let mut last_error = None;
+
+        match create_and_submit_network_note(
             &wallet_account,
             &counter_account,
             &secret_key,
@@ -233,16 +245,35 @@ pub async fn run_increment_task(
         )
         .await
         {
-            Ok((tx_id, final_account, _block_height)) => handle_increment_success(
-                &mut wallet_account,
-                &final_account,
-                &mut data_store,
-                &mut details,
-                tx_id,
-                &expected_counter_value,
-            )?,
-            Err(e) => Some(handle_increment_failure(&mut details, &e)),
-        };
+            Ok((tx_id, final_account, block_height)) => {
+                let target_value = handle_increment_success(
+                    &mut wallet_account,
+                    &final_account,
+                    &mut data_store,
+                    &mut details,
+                    tx_id,
+                    &expected_counter_value,
+                )?;
+
+                {
+                    let mut guard = latency_state.lock().await;
+                    guard.pending = Some(PendingLatencyDetails {
+                        submit_height: block_height.as_u32(),
+                        target_value,
+                    });
+                    guard.pending_started = Some(Instant::now());
+                }
+            },
+            Err(e) => {
+                last_error = Some(handle_increment_failure(&mut details, &e));
+            },
+        }
+
+        {
+            let guard = latency_state.lock().await;
+            details.pending_latency.clone_from(&guard.pending);
+            details.last_latency_blocks = guard.last_latency_blocks;
+        }
 
         let status = build_increment_status(&details, last_error);
         send_status(&tx, status)?;
@@ -257,7 +288,7 @@ fn handle_increment_success(
     details: &mut IncrementDetails,
     tx_id: String,
     expected_counter_value: &Arc<AtomicU64>,
-) -> Result<Option<String>> {
+) -> Result<u64> {
     let updated_wallet = Account::new(
         wallet_account.id(),
         wallet_account.vault().clone(),
@@ -273,9 +304,9 @@ fn handle_increment_success(
     details.last_tx_id = Some(tx_id);
 
     // Increment the expected counter value
-    expected_counter_value.fetch_add(1, Ordering::Relaxed);
+    let new_expected = expected_counter_value.fetch_add(1, Ordering::Relaxed) + 1;
 
-    Ok(None)
+    Ok(new_expected)
 }
 
 /// Handle the failure path when creating/submitting the network note fails.
@@ -337,6 +368,7 @@ pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
     expected_counter_value: Arc<AtomicU64>,
+    latency_state: Arc<Mutex<LatencyState>>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client =
@@ -380,8 +412,10 @@ pub async fn run_counter_tracking_task(
     loop {
         poll_interval.tick().await;
 
+        let mut last_error = None;
+
         let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
-        let last_error = match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
+        match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
             Ok(Some(value)) => {
                 // Update current value and timestamp
                 details.current_value = Some(value);
@@ -405,17 +439,50 @@ pub async fn run_counter_tracking_task(
                     details.pending_increments = Some(0);
                 }
 
-                None
+                // Check for latency completion or timeout
+                let mut guard = latency_state.lock().await;
+                if let Some(pending) = guard.pending.clone() {
+                    if value >= pending.target_value {
+                        match fetch_chain_tip(&mut rpc_client).await {
+                            Ok(observed_height) => {
+                                let latency_blocks =
+                                    observed_height.saturating_sub(pending.submit_height);
+                                guard.last_latency_blocks = Some(latency_blocks);
+                                guard.pending = None;
+                                guard.pending_started = None;
+                            },
+                            Err(e) => {
+                                last_error = Some(format!(
+                                    "Failed to fetch chain tip for latency calc: {e}"
+                                ));
+                            },
+                        }
+                    } else if let Some(started) = guard.pending_started {
+                        if Instant::now().saturating_duration_since(started)
+                            >= config.counter_latency_timeout
+                        {
+                            warn!(
+                                "Latency measurement timed out after {:?} for target value {}",
+                                config.counter_latency_timeout, pending.target_value
+                            );
+                            guard.pending = None;
+                            guard.pending_started = None;
+                            last_error = Some(format!(
+                                "Timed out after {:?} waiting for counter to reach {}",
+                                config.counter_latency_timeout, pending.target_value
+                            ));
+                        }
+                    }
+                }
             },
             Ok(None) => {
                 // Counter value not available, but not an error
-                None
             },
             Err(e) => {
                 error!("Failed to fetch counter value: {:?}", e);
-                Some(format!("fetch counter value failed: {e}"))
+                last_error = Some(format!("fetch counter value failed: {e}"));
             },
-        };
+        }
 
         let status = build_tracking_status(&details, last_error);
         send_status(&tx, status)?;
@@ -569,4 +636,17 @@ fn create_network_note(
 
     let network_note = Note::new(NoteAssets::new(vec![])?, metadata, recipient.clone());
     Ok((network_note, recipient))
+}
+
+/// Fetch the current chain tip height from RPC status.
+async fn fetch_chain_tip(rpc_client: &mut RpcClient) -> Result<u32> {
+    let status = rpc_client.status(()).await?.into_inner();
+
+    if let Some(block_producer_status) = status.block_producer {
+        Ok(block_producer_status.chain_tip)
+    } else if let Some(store_status) = status.store {
+        Ok(store_status.chain_tip)
+    } else {
+        anyhow::bail!("RPC status response did not include a chain tip")
+    }
 }

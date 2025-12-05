@@ -80,6 +80,19 @@ pub struct IncrementDetails {
     pub failure_count: u64,
     /// Last transaction ID (if available).
     pub last_tx_id: Option<String>,
+    /// Last measured latency in blocks from submission to state update.
+    pub last_latency_blocks: Option<u32>,
+    /// Information about the currently pending latency measurement (if any).
+    pub pending_latency: Option<PendingLatencyDetails>,
+}
+
+/// Details about an in-flight latency measurement.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PendingLatencyDetails {
+    /// Block height returned when the transaction was submitted.
+    pub submit_height: u32,
+    /// Counter value we expect to see once the transaction is applied.
+    pub target_value: u64,
 }
 
 /// Details of the counter tracking service.

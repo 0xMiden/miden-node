@@ -98,6 +98,8 @@ pub enum DatabaseError {
     AccountNotFoundInDb(AccountId),
     #[error("account {0} state at block height {1} not found")]
     AccountAtBlockHeightNotFoundInDb(AccountId, BlockNumber),
+    #[error("block {0} not found in database")]
+    BlockNotFound(BlockNumber),
     #[error("historical block {block_num} not available: {reason}")]
     HistoricalBlockNotAvailable { block_num: BlockNumber, reason: String },
     #[error("accounts {0:?} not found")]

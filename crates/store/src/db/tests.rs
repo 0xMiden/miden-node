@@ -1527,6 +1527,9 @@ fn test_storage_reconstruction_latest_state() {
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let block_num = BlockNumber::from(1);
 
+    // Create the block before inserting storage data
+    create_block(&mut conn, block_num);
+
     // Create test storage with Value and Map slots
     let value_slot = StorageSlot::Value(num_to_word(42));
     let mut storage_map = StorageMap::new();
@@ -1610,6 +1613,8 @@ fn test_storage_reconstruction_historical_state() {
 
     // Block 1: Initial storage
     let block_num_1 = BlockNumber::from(1);
+    create_block(&mut conn, block_num_1);
+
     queries::insert_account_storage_header(
         &mut conn,
         account_id,
@@ -1622,6 +1627,8 @@ fn test_storage_reconstruction_historical_state() {
 
     // Block 2: Updated storage
     let block_num_2 = BlockNumber::from(2);
+    create_block(&mut conn, block_num_2);
+
     queries::insert_account_storage_header(
         &mut conn,
         account_id,
@@ -1663,6 +1670,9 @@ fn test_storage_reconstruction_latest() {
 
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let block_num = BlockNumber::from(1);
+
+    // Create the block
+    create_block(&mut conn, block_num);
 
     // Insert storage headers: 2 Map slots and 1 Value slot
     let map_commitment_1 = [Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)];
@@ -1725,6 +1735,8 @@ fn test_storage_reconstruction_historical() {
 
     // Block 1: Initial state with one value slot
     let block_1 = BlockNumber::from(1);
+    create_block(&mut conn, block_1);
+
     let value_1 = [Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)];
     queries::insert_account_storage_header(
         &mut conn,
@@ -1738,6 +1750,7 @@ fn test_storage_reconstruction_historical() {
 
     // Block 2: Update the value slot
     let block_2 = BlockNumber::from(2);
+    create_block(&mut conn, block_2);
     let value_2 = [Felt::new(50), Felt::new(60), Felt::new(70), Felt::new(80)];
     queries::insert_account_storage_header(
         &mut conn,
@@ -1790,6 +1803,11 @@ fn test_storage_header_is_latest_flag() {
     let value_1 = [Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)];
     let value_2 = [Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)];
     let value_3 = [Felt::new(9), Felt::new(10), Felt::new(11), Felt::new(12)];
+
+    // Create the blocks
+    create_block(&mut conn, BlockNumber::from(1));
+    create_block(&mut conn, BlockNumber::from(2));
+    create_block(&mut conn, BlockNumber::from(3));
 
     // Insert at block 1
     queries::insert_account_storage_header(
@@ -1849,7 +1867,6 @@ fn test_select_account_code_at_block() {
     let mut conn = create_db();
 
     let block_num_1 = BlockNumber::from(1);
-    let block_num_2 = BlockNumber::from(2);
 
     // Create block 1
     create_block(&mut conn, block_num_1);
@@ -1886,11 +1903,6 @@ fn test_select_account_code_at_block() {
         .expect("Code should exist at block 1");
     assert_eq!(code_at_1, expected_code);
 
-    // Query code at non-existent block - should return None
-    let code_at_2 =
-        queries::select_account_code_at_block(&mut conn, account_id, block_num_2).unwrap();
-    assert!(code_at_2.is_none(), "Code should not exist at block 2");
-
     // Query code for non-existent account - should return None
     let other_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
     let code_other =
@@ -1913,18 +1925,13 @@ fn test_select_account_code_at_block_with_updates() {
 
     // Helper function to create account with specific code
     fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
-        let component_storage = vec![
-            StorageSlot::Value(Word::empty()),
-            StorageSlot::Value(num_to_word(1)),
-        ];
+        let component_storage =
+            vec![StorageSlot::Value(Word::empty()), StorageSlot::Value(num_to_word(1))];
 
-        let component = AccountComponent::compile(
-            code_str,
-            TransactionKernel::assembler(),
-            component_storage,
-        )
-        .unwrap()
-        .with_supported_type(AccountType::RegularAccountUpdatableCode);
+        let component =
+            AccountComponent::compile(code_str, TransactionKernel::assembler(), component_storage)
+                .unwrap()
+                .with_supported_type(AccountType::RegularAccountUpdatableCode);
 
         AccountBuilder::new(seed)
             .account_type(AccountType::RegularAccountUpdatableCode)

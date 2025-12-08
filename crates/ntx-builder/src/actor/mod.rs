@@ -266,11 +266,11 @@ impl AccountActor {
         let block_num = tx_candidate.chain_tip_header.block_num();
 
         // Execute the selected transaction.
-        let context = execute::NtxContext {
-            block_producer: self.block_producer.clone(),
-            prover: self.prover.clone(),
-            store: self.store.clone(),
-        };
+        let context = execute::NtxContext::new(
+            self.block_producer.clone(),
+            self.prover.clone(),
+            self.store.clone(),
+        );
 
         let execution_result = context.execute_transaction(tx_candidate).await;
         match execution_result {

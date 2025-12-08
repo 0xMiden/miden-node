@@ -56,7 +56,7 @@ fn build_tonic_from_descriptor(
 
 /// Replaces std references with core and alloc for nostd compatibility
 fn convert_to_nostd(file_path: &str) -> miette::Result<()> {
-    let file_content = fs::read_to_string(file_path).into_diagnostic()?;
+    let file_content = fs_err::read_to_string(file_path).into_diagnostic()?;
     let updated_content = file_content
         .replace("std::result", "core::result")
         .replace("std::marker", "core::marker")

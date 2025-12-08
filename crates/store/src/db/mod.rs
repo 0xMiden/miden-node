@@ -100,8 +100,8 @@ pub struct TransactionRecord {
     pub account_id: AccountId,
     pub initial_state_commitment: Word,
     pub final_state_commitment: Word,
-    pub input_notes: Vec<Nullifier>, // Store nullifiers for input notes
-    pub output_notes: Vec<NoteId>,   // Store note IDs for output notes
+    pub nullifiers: Vec<Nullifier>, // Store nullifiers for input notes
+    pub output_notes: Vec<NoteId>,  // Store note IDs for output notes
 }
 
 impl TransactionRecord {
@@ -111,16 +111,16 @@ impl TransactionRecord {
     pub fn into_proto_with_note_records(
         self,
         note_records: Vec<NoteRecord>,
-    ) -> proto::rpc_store::TransactionRecord {
+    ) -> proto::rpc::TransactionRecord {
         let output_notes: Vec<proto::note::NoteSyncRecord> =
             note_records.into_iter().map(Into::into).collect();
 
-        proto::rpc_store::TransactionRecord {
-            transaction_header: Some(proto::transaction::TransactionHeader {
+        proto::rpc::TransactionRecord {
+            header: Some(proto::transaction::TransactionHeader {
                 account_id: Some(self.account_id.into()),
                 initial_state_commitment: Some(self.initial_state_commitment.into()),
                 final_state_commitment: Some(self.final_state_commitment.into()),
-                input_notes: self.input_notes.into_iter().map(From::from).collect(),
+                nullifiers: self.nullifiers.into_iter().map(From::from).collect(),
                 output_notes,
             }),
             block_num: self.block_num.as_u32(),
@@ -133,6 +133,7 @@ pub struct NoteRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
     pub note_id: Word,
+    pub note_commitment: Word,
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
     pub inclusion_path: SparseMerklePath,
@@ -249,8 +250,8 @@ impl Db {
                 genesis.header(),
                 &[],
                 &[],
-                genesis.updated_accounts(),
-                genesis.transactions(),
+                genesis.body().updated_accounts(),
+                genesis.body().transactions(),
             )
         })
         .context("failed to insert genesis block")?;
@@ -407,6 +408,19 @@ impl Db {
             .await
     }
 
+    /// Loads account details at a specific block number from the DB.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_historical_account_at(
+        &self,
+        id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<AccountInfo> {
+        self.transact("Get historical account details", move |conn| {
+            queries::select_historical_account_at(conn, id, block_num)
+        })
+        .await
+    }
+
     /// Loads public account details from the DB based on the account ID's prefix.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_network_account_by_prefix(
@@ -461,24 +475,28 @@ impl Db {
         .await
     }
 
-    /// Loads inclusion proofs for notes matching the given IDs.
+    /// Returns all note commitments from the DB that match the provided ones.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_inclusion_proofs(
+    pub async fn select_existing_note_commitments(
         &self,
-        note_ids: BTreeSet<NoteId>,
-    ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
-        self.transact("block note inclusion proofs", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_ids)
+        note_commitments: Vec<Word>,
+    ) -> Result<HashSet<Word>> {
+        self.transact("note by commitment", move |conn| {
+            queries::select_existing_note_commitments(conn, note_commitments.as_slice())
         })
         .await
     }
 
-    /// Loads all note IDs matching a certain [`NoteId`] from the database.
+    /// Loads inclusion proofs for notes matching the given note commitments.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<HashSet<NoteId>> {
-        self.select_notes_by_id(note_ids)
-            .await
-            .map(|notes| notes.into_iter().map(|note| note.note_id.into()).collect())
+    pub async fn select_note_inclusion_proofs(
+        &self,
+        note_commitments: BTreeSet<Word>,
+    ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
+        self.transact("block note inclusion proofs by commitment", move |conn| {
+            models::queries::select_note_inclusion_proofs(conn, &note_commitments)
+        })
+        .await
     }
 
     /// Inserts the data of a new block into the DB.
@@ -502,9 +520,9 @@ impl Db {
                 conn,
                 block.header(),
                 &notes,
-                block.created_nullifiers(),
-                block.updated_accounts(),
-                block.transactions(),
+                block.body().created_nullifiers(),
+                block.body().updated_accounts(),
+                block.body().transactions(),
             )?;
 
             // XXX FIXME TODO free floating mutex MUST NOT exist

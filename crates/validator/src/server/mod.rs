@@ -2,11 +2,14 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::Context;
+use miden_lib::block::build_block;
 use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use miden_objects::block::ProposedBlock;
+use miden_objects::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -95,6 +98,39 @@ impl api_server::Api for ValidatorServer {
         &self,
         _request: tonic::Request<proto::transaction::ProvenTransaction>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        todo!()
+        // TODO(sergerad): Implement transaction validation logic.
+        Ok(tonic::Response::new(()))
+    }
+
+    /// Validates a proposed block and returns the block header and body.
+    async fn sign_block(
+        &self,
+        request: tonic::Request<proto::blockchain::ProposedBlock>,
+    ) -> Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
+        let proposed_block_bytes = request.into_inner().proposed_block;
+
+        // Deserialize the proposed block.
+        let proposed_block =
+            ProposedBlock::read_from_bytes(&proposed_block_bytes).map_err(|err| {
+                tonic::Status::invalid_argument(format!(
+                    "Failed to deserialize proposed block: {err}",
+                ))
+            })?;
+
+        // Build header and body
+        let (header, body) = build_block(proposed_block)
+            .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
+
+        // Convert to protobuf format
+        let header_proto = proto::blockchain::BlockHeader::from(&header);
+        let body_proto = proto::blockchain::BlockBody { block_body: body.to_bytes() };
+
+        // Both header and body are required fields and must always be populated
+        let response = proto::validator::SignedBlock {
+            header: Some(header_proto),
+            body: Some(body_proto),
+        };
+
+        Ok(tonic::Response::new(response))
     }
 }

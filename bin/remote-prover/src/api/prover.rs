@@ -1,8 +1,8 @@
 use miden_block_prover::LocalBlockProver;
+use miden_node_proto::BlockProofRequest;
 use miden_node_utils::ErrorReport;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProposedBatch;
-use miden_objects::block::ProposedBlock;
 use miden_objects::transaction::TransactionInputs;
 use miden_objects::utils::Serializable;
 use miden_tx::LocalTransactionProver;
@@ -165,24 +165,25 @@ impl ProverRpcApi {
     )]
     pub fn prove_block(
         &self,
-        proposed_block: ProposedBlock,
+        proof_request: BlockProofRequest,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Block(prover) = &self.prover else {
             return Err(Status::unimplemented("Block prover is not enabled"));
         };
+        let BlockProofRequest { tx_batches, block_header, block_inputs } = proof_request;
 
-        let proven_block = prover
-            .try_lock()
-            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
-            .prove(proposed_block)
-            .map_err(internal_error)?;
-
-        // Record the commitment of the block in the current tracing span
-        let block_id = proven_block.commitment();
+        // Record the commitment of the block in the current tracing span.
+        let block_id = block_header.commitment();
         tracing::Span::current().record("block_id", tracing::field::display(&block_id));
 
-        Ok(Response::new(proto::remote_prover::Proof { payload: proven_block.to_bytes() }))
+        let block_proof = prover
+            .try_lock()
+            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
+            .prove(tx_batches, block_header, block_inputs)
+            .map_err(internal_error)?;
+
+        Ok(Response::new(proto::remote_prover::Proof { payload: block_proof.to_bytes() }))
     }
 }
 
@@ -225,8 +226,8 @@ impl ProverApi for ProverRpcApi {
                 self.prove_batch(proposed_batch, &request_id)
             },
             proto::remote_prover::ProofType::Block => {
-                let proposed_block = proof_request.try_into().map_err(invalid_argument)?;
-                self.prove_block(proposed_block, &request_id)
+                let proof_request = proof_request.try_into().map_err(invalid_argument)?;
+                self.prove_block(proof_request, &request_id)
             },
         }
     }

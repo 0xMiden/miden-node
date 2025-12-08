@@ -28,7 +28,7 @@ license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/miden-node"
 rust-version = "1.90"
-version      = "0.12.0"
+version      = "0.13.0"
 
 # Optimize the cryptography for faster tests involving account creation.
 [profile.test.package.miden-crypto]
@@ -36,45 +36,47 @@ opt-level = 2
 
 [workspace.dependencies]
 # Workspace crates.
-miden-node-block-producer   = { path = "crates/block-producer", version = "0.12" }
-miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.12" }
-miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.12" }
-miden-node-proto            = { path = "crates/proto", version = "0.12" }
-miden-node-proto-build      = { path = "proto", version = "0.12" }
-miden-node-rpc              = { path = "crates/rpc", version = "0.12" }
-miden-node-store            = { path = "crates/store", version = "0.12" }
+miden-node-block-producer   = { path = "crates/block-producer", version = "0.13" }
+miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.13" }
+miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.13" }
+miden-node-proto            = { path = "crates/proto", version = "0.13" }
+miden-node-proto-build      = { path = "proto", version = "0.13" }
+miden-node-rpc              = { path = "crates/rpc", version = "0.13" }
+miden-node-store            = { path = "crates/store", version = "0.13" }
 miden-node-test-macro       = { path = "crates/test-macro" }
-miden-node-utils            = { path = "crates/utils", version = "0.12" }
-miden-node-validator        = { path = "crates/validator", version = "0.12" }
-miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.12" }
+miden-node-utils            = { path = "crates/utils", version = "0.13" }
+miden-node-validator        = { path = "crates/validator", version = "0.13" }
+miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.13" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { version = "0.12" }
-miden-lib             = { version = "0.12" }
-miden-objects         = { default-features = false, version = "0.12" }
-miden-testing         = { version = "0.12" }
-miden-tx              = { default-features = false, version = "0.12" }
-miden-tx-batch-prover = { version = "0.12" }
+miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
+miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
+miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { features = ["std", "testing"], version = "0.19" }
 
 # External dependencies
-anyhow             = { version = "1.0" }
-assert_matches     = { version = "1.5" }
-async-trait        = { version = "0.1" }
-clap               = { features = ["derive"], version = "4.5" }
-fs-err             = { version = "3" }
-futures            = { version = "0.3" }
-hex                = { version = "0.4" }
-http               = { version = "1.3" }
-humantime          = { version = "2.2" }
-indexmap           = { version = "2.12" }
-itertools          = { version = "0.14" }
-lru                = { default-features = false, version = "0.16" }
-pretty_assertions  = { version = "1.4" }
-prost              = { version = "0.14" }
-protox             = { version = "0.9" }
+anyhow            = { version = "1.0" }
+assert_matches    = { version = "1.5" }
+async-trait       = { version = "0.1" }
+clap              = { features = ["derive"], version = "4.5" }
+fs-err            = { version = "3" }
+futures           = { version = "0.3" }
+hex               = { version = "0.4" }
+http              = { version = "1.3" }
+humantime         = { version = "2.2" }
+indexmap          = { version = "2.12" }
+itertools         = { version = "0.14" }
+lru               = { default-features = false, version = "0.16" }
+pretty_assertions = { version = "1.4" }
+# breaking change `DecodeError::new` is not exposed anymore
+# but is assumed public by some internal dependency
+prost              = { default-features = false, version = "=0.14.1" }
+protox             = { version = "=0.9.0" }
 rand               = { version = "0.9" }
 rand_chacha        = { version = "0.9" }
 rstest             = { version = "0.26" }
@@ -83,7 +85,7 @@ thiserror          = { default-features = false, version = "2.0" }
 tokio              = { features = ["rt-multi-thread"], version = "1.46" }
 tokio-stream       = { version = "0.1" }
 toml               = { version = "0.9" }
-tonic              = { version = "0.14" }
+tonic              = { default-features = false, version = "0.14" }
 tonic-prost        = { version = "0.14" }
 tonic-prost-build  = { version = "0.14" }
 tonic-reflection   = { version = "0.14" }

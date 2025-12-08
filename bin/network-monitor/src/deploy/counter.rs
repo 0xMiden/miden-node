@@ -15,7 +15,7 @@ use miden_objects::account::{
     AccountType,
     StorageSlot,
 };
-use miden_objects::{Felt, Word};
+use miden_objects::{Felt, FieldElement, Word};
 use tracing::instrument;
 
 use crate::COMPONENT;
@@ -28,13 +28,22 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
 
     // Compile the account code
-    let owner_felts: [Felt; 2] = owner_account_id.into();
-    let owner_word = Word::from([Felt::new(0), Felt::new(0), owner_felts[0], owner_felts[1]]);
+    let owner_account_id_prefix = owner_account_id.prefix().as_felt();
+    let owner_account_id_suffix = owner_account_id.suffix();
+
+    let owner_id_slot = StorageSlot::Value(Word::from([
+        Felt::ZERO,
+        Felt::ZERO,
+        owner_account_id_suffix,
+        owner_account_id_prefix,
+    ]));
+
+    let counter_slot = StorageSlot::Value(Word::empty());
 
     let account_code = AccountComponent::compile(
         script,
         TransactionKernel::assembler(),
-        vec![StorageSlot::empty_value(), StorageSlot::Value(owner_word)],
+        vec![counter_slot, owner_id_slot],
     )?
     .with_supports_all_types();
 

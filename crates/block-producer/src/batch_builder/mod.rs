@@ -211,7 +211,7 @@ impl BatchJob {
             .transactions
             .iter()
             .map(Deref::deref)
-            .flat_map(AuthenticatedTransaction::unauthenticated_notes);
+            .flat_map(AuthenticatedTransaction::unauthenticated_note_commitments);
 
         self.store
             .get_batch_inputs(block_references, unauthenticated_notes)
@@ -348,7 +348,7 @@ impl TelemetryInjectorExt for SelectedBatch {
                     tx_ids.push(tx.id());
                     input_notes_count += tx.input_note_count();
                     output_notes_count += tx.output_note_count();
-                    unauth_notes_count += tx.unauthenticated_notes().count();
+                    unauth_notes_count += tx.unauthenticated_note_commitments().count();
                     (tx_ids, input_notes_count, output_notes_count, unauth_notes_count)
                 },
             );

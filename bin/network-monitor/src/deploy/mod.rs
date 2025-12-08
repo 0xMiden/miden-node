@@ -2,16 +2,18 @@
 //!
 //! This module contains functionality for deploying Miden accounts to the network.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use miden_node_proto::clients::{Builder, Rpc, RpcClient};
-use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
+use miden_lib::transaction::TransactionKernel;
+use miden_node_proto::clients::{Builder, RpcClient};
+use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::{Account, AccountId, PartialAccount, PartialStorage};
+use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};
 use miden_objects::asset::{AssetVaultKey, AssetWitness, PartialVault};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
@@ -28,7 +30,6 @@ use miden_tx::{
     TransactionExecutor,
     TransactionMastStore,
 };
-use tokio::sync::Mutex;
 use tracing::instrument;
 use url::Url;
 
@@ -38,6 +39,62 @@ use crate::deploy::wallet::{create_wallet_account, save_wallet_account};
 
 pub mod counter;
 pub mod wallet;
+
+/// Create an RPC client configured with the correct genesis metadata in the
+/// `Accept` header so that write RPCs such as `SubmitProvenTransaction` are
+/// accepted by the node.
+pub async fn create_genesis_aware_rpc_client(
+    rpc_url: &Url,
+    timeout: Duration,
+) -> Result<RpcClient> {
+    // First, create a temporary client without genesis metadata to discover the
+    // genesis block header and its commitment.
+    let mut rpc: RpcClient = Builder::new(rpc_url.clone())
+        .with_tls()
+        .context("Failed to configure TLS for RPC client")?
+        .with_timeout(timeout)
+        .without_metadata_version()
+        .without_metadata_genesis()
+        .without_otel_context_injection()
+        .connect()
+        .await
+        .context("Failed to create RPC client for genesis discovery")?;
+
+    let block_header_request = BlockHeaderByNumberRequest {
+        block_num: Some(BlockNumber::GENESIS.as_u32()),
+        include_mmr_proof: None,
+    };
+
+    let response = rpc
+        .get_block_header_by_number(block_header_request)
+        .await
+        .context("Failed to get genesis block header from RPC")?
+        .into_inner();
+
+    let genesis_block_header = response
+        .block_header
+        .ok_or_else(|| anyhow::anyhow!("No block header in response"))?;
+
+    let genesis_header: BlockHeader =
+        genesis_block_header.try_into().context("Failed to convert block header")?;
+    let genesis_commitment = genesis_header.commitment();
+    let genesis = genesis_commitment.to_hex();
+
+    // Rebuild the client, this time including the required genesis metadata so that
+    // write RPCs like SubmitProvenTransaction are accepted by the node.
+    let rpc_client = Builder::new(rpc_url.clone())
+        .with_tls()
+        .context("Failed to configure TLS for RPC client")?
+        .with_timeout(timeout)
+        .without_metadata_version()
+        .with_metadata_genesis(genesis)
+        .without_otel_context_injection()
+        .connect()
+        .await
+        .context("Failed to connect to RPC server with genesis metadata")?;
+
+    Ok(rpc_client)
+}
 
 /// Ensure accounts exist, creating them if they don't.
 ///
@@ -74,7 +131,7 @@ pub async fn ensure_accounts_exist(
     // Create counter program account
     let counter_account = create_counter_account(wallet_account.id())?;
 
-    deploy_accounts(&wallet_account, &counter_account, rpc_url).await?;
+    deploy_counter_account(&counter_account, rpc_url).await?;
     tracing::info!("Successfully created and deployed accounts");
 
     // Save accounts to files
@@ -82,26 +139,14 @@ pub async fn ensure_accounts_exist(
     save_counter_account(&counter_account, counter_filepath)
 }
 
-/// Deploy accounts to the network.
+/// Deploy counter account to the network.
 ///
-/// This function creates both a wallet account and a counter program account,
-/// then saves them to the specified files.
-#[instrument(target = COMPONENT, name = "deploy-accounts", skip_all, ret(level = "debug"))]
-pub async fn deploy_accounts(
-    wallet_account: &Account,
-    counter_account: &Account,
-    rpc_url: &Url,
-) -> Result<()> {
-    // Deploy accounts to the network
-    let mut rpc_client: RpcClient = Builder::new(rpc_url.clone())
-        .with_tls()
-        .context("Failed to configure TLS for RPC client")?
-        .with_timeout(Duration::from_secs(5))
-        .without_metadata_version()
-        .without_metadata_genesis()
-        .connect::<Rpc>()
-        .await
-        .context("Failed to connect to RPC server")?;
+/// This function creates a counter program account,
+/// then saves it to the specified file.
+#[instrument(target = COMPONENT, name = "deploy-counter-account", skip_all, ret(level = "debug"))]
+pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) -> Result<()> {
+    // Deploy counter account to the network using a genesis-aware RPC client.
+    let mut rpc_client = create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
 
     let block_header_request = BlockHeaderByNumberRequest {
         block_num: Some(BlockNumber::GENESIS.as_u32()),
@@ -118,22 +163,18 @@ pub async fn deploy_accounts(
         .block_header
         .ok_or_else(|| anyhow::anyhow!("No block header in response"))?;
 
-    let genesis_header = root_block_header.try_into().context("Failed to convert block header")?;
+    let genesis_header: BlockHeader =
+        root_block_header.try_into().context("Failed to convert block header")?;
 
     let genesis_chain_mmr =
         PartialBlockchain::new(PartialMmr::from_peaks(MmrPeaks::default()), Vec::new())
             .context("Failed to create empty ChainMmr")?;
 
-    let data_store = Arc::new(MonitorDataStore::new(
-        wallet_account.clone(),
-        counter_account.clone(),
-        wallet_account.seed(),
-        genesis_header,
-        genesis_chain_mmr,
-    ));
+    let mut data_store = MonitorDataStore::new(genesis_header, genesis_chain_mmr);
+    data_store.add_account(counter_account.clone());
 
     let executor: TransactionExecutor<'_, '_, _, BasicAuthenticator> =
-        TransactionExecutor::new(data_store.as_ref());
+        TransactionExecutor::new(&data_store);
 
     let tx_args = TransactionArgs::default();
 
@@ -164,40 +205,68 @@ pub async fn deploy_accounts(
     Ok(())
 }
 
+pub(crate) fn get_counter_library() -> Result<Library> {
+    let assembler = TransactionKernel::assembler().with_debug_mode(true);
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let script =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
+
+    let library_path = LibraryPath::new("external_contract::counter_contract")
+        .context("Failed to create library path")?;
+
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, script, &source_manager)
+        .map_err(|e| anyhow::anyhow!("Failed to parse module: {e}"))?;
+
+    assembler
+        .clone()
+        .assemble_library([module])
+        .map_err(|e| anyhow::anyhow!("Failed to assemble library: {e}"))
+}
+
 // MONITOR DATA STORE
 // ================================================================================================
 
 /// A [`DataStore`] implementation for the network monitor.
 pub struct MonitorDataStore {
-    wallet_account: Mutex<Account>,
-    counter_account: Mutex<Account>,
-    #[allow(dead_code)]
-    wallet_init_seed: Option<Word>,
+    accounts: HashMap<AccountId, Account>,
     block_header: BlockHeader,
     partial_block_chain: PartialBlockchain,
     mast_store: TransactionMastStore,
 }
 
 impl MonitorDataStore {
-    pub fn new(
-        wallet_account: Account,
-        counter_account: Account,
-        wallet_init_seed: Option<Word>,
-        block_header: BlockHeader,
-        partial_block_chain: PartialBlockchain,
-    ) -> Self {
-        let mast_store = TransactionMastStore::new();
-        mast_store.insert(wallet_account.code().mast());
-        mast_store.insert(counter_account.code().mast());
-
+    pub fn new(block_header: BlockHeader, partial_block_chain: PartialBlockchain) -> Self {
         Self {
-            mast_store,
-            wallet_account: Mutex::new(wallet_account),
-            counter_account: Mutex::new(counter_account),
-            wallet_init_seed,
+            accounts: HashMap::new(),
             block_header,
             partial_block_chain,
+            mast_store: TransactionMastStore::new(),
         }
+    }
+
+    /// Add or replace an account in the store and load its code into the MAST store.
+    pub fn add_account(&mut self, account: Account) {
+        self.mast_store.load_account_code(account.code());
+        self.accounts.insert(account.id(), account);
+    }
+
+    /// Update an account after a transaction (loads latest code too).
+    pub fn update_account(&mut self, account: Account) {
+        self.add_account(account);
+    }
+
+    /// Insert external library procedures used by transactions.
+    pub fn insert_library(&mut self, library: &Library) {
+        self.mast_store.insert(library.mast_forest().clone());
+    }
+
+    /// Returns a reference to the account or a standardized "unknown account" error.
+    fn get_account(&self, account_id: AccountId) -> Result<&Account, DataStoreError> {
+        self.accounts.get(&account_id).ok_or_else(|| DataStoreError::Other {
+            error_msg: "unknown account".into(),
+            source: None,
+        })
     }
 }
 
@@ -207,14 +276,7 @@ impl DataStore for MonitorDataStore {
         account_id: AccountId,
         mut _block_refs: BTreeSet<BlockNumber>,
     ) -> Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError> {
-        let account = self.wallet_account.lock().await;
-
-        let account = if account_id == account.id() {
-            account.to_owned()
-        } else {
-            self.counter_account.lock().await.to_owned()
-        };
-
+        let account = self.get_account(account_id)?.clone();
         let partial_storage = PartialStorage::new_full(account.storage().clone());
         let assert_vault = PartialVault::new_full(account.vault().clone());
         let partial_account = PartialAccount::new(
@@ -247,19 +309,13 @@ impl DataStore for MonitorDataStore {
         unimplemented!("Not needed")
     }
 
-    async fn get_vault_asset_witness(
+    async fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: AssetVaultKey,
-    ) -> Result<AssetWitness, DataStoreError> {
-        let account = self.wallet_account.lock().await;
-
-        let account = if account_id == account.id() {
-            account.to_owned()
-        } else {
-            self.counter_account.lock().await.to_owned()
-        };
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> Result<Vec<AssetWitness>, DataStoreError> {
+        let account = self.get_account(account_id)?;
 
         if account.vault().root() != vault_root {
             return Err(DataStoreError::Other {
@@ -268,16 +324,21 @@ impl DataStore for MonitorDataStore {
             });
         }
 
-        AssetWitness::new(account.vault().open(vault_key).into()).map_err(|err| {
-            DataStoreError::Other {
-                error_msg: "failed to open vault asset tree".into(),
-                source: Some(Box::new(err)),
-            }
-        })
+        Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+            AssetWitness::new(account.vault().open(vault_key).into()).map_err(|err| {
+                DataStoreError::Other {
+                    error_msg: "failed to open vault asset tree".into(),
+                    source: Some(Box::new(err)),
+                }
+            })
+        }))
     }
 
-    async fn get_note_script(&self, script_root: Word) -> Result<NoteScript, DataStoreError> {
-        Err(DataStoreError::NoteScriptNotFound(script_root))
+    async fn get_note_script(
+        &self,
+        _script_root: Word,
+    ) -> Result<Option<NoteScript>, DataStoreError> {
+        Ok(None)
     }
 }
 

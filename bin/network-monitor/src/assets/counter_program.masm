@@ -7,7 +7,6 @@ use.miden::active_account
 use.miden::native_account
 use.miden::active_note
 use.miden::account_id
-use.miden::input_note
 use.miden::tx
 
 use.std::sys
@@ -25,7 +24,7 @@ export.increment
     exec.account_id::is_equal
     # => [are_equal, 0, 0]
 
-    assert drop drop
+    assert.err="Note sender not authorized" drop drop
     # => []
 
     push.0 exec.active_account::get_item

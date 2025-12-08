@@ -10,7 +10,7 @@ on:
 jobs:
   publish-dry-run:
     name: Cargo publish dry-run
-    runs-on: ubuntu-latest
+    runs-on: Linux-ARM64-Runner
     if: ${{ github.repository_owner == '0xMiden' }}
     steps:
       - name: Checkout repository

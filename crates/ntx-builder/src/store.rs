@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
+use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
@@ -39,7 +39,8 @@ impl StoreClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<StoreNtxBuilder>();
+            .with_otel_context_injection()
+            .connect_lazy::<StoreNtxBuilderClient>();
 
         Self { inner: store }
     }
@@ -109,8 +110,7 @@ impl StoreClient {
         &self,
         prefix: NetworkAccountPrefix,
     ) -> Result<Option<Account>, StoreError> {
-        let request =
-            proto::ntx_builder_store::AccountIdPrefix { account_id_prefix: prefix.inner() };
+        let request = proto::store::AccountIdPrefix { account_id_prefix: prefix.inner() };
 
         let store_response = self
             .inner
@@ -150,7 +150,7 @@ impl StoreClient {
 
         let mut store_client = self.inner.clone();
         loop {
-            let req = proto::ntx_builder_store::UnconsumedNetworkNotesRequest {
+            let req = proto::store::UnconsumedNetworkNotesRequest {
                 page_token,
                 page_size: PAGE_SIZE,
                 network_account_id_prefix: network_account_prefix.inner(),

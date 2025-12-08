@@ -9,7 +9,7 @@ use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
 use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::domain::account::AccountSummary;
-use miden_node_utils::fee::test_fee_params;
+use miden_node_utils::fee::{test_fee, test_fee_params};
 use miden_objects::account::auth::PublicKeyCommitment;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
@@ -249,6 +249,7 @@ fn sql_select_notes() {
             block_num,
             note_index: BlockNoteIndex::new(0, i.try_into().unwrap()).unwrap(),
             note_id: num_to_word(u64::try_from(i).unwrap()),
+            note_commitment: num_to_word(u64::try_from(i).unwrap()),
             metadata: *new_note.metadata(),
             details: Some(NoteDetails::from(&new_note)),
             inclusion_path: SparseMerklePath::default(),
@@ -298,6 +299,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 0).unwrap(),
         note_id: num_to_word(0),
+        note_commitment: num_to_word(0),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -315,7 +317,8 @@ fn sql_select_notes_different_execution_hints() {
     let res = queries::insert_notes(conn, &[(note_none, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
-    let note = &queries::select_notes_by_id(conn, &[num_to_word(0).into()]).unwrap()[0];
+    let note_id = NoteId::from_raw(num_to_word(0));
+    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
 
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::none());
 
@@ -323,6 +326,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 1).unwrap(),
         note_id: num_to_word(1),
+        note_commitment: num_to_word(1),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -339,13 +343,15 @@ fn sql_select_notes_different_execution_hints() {
     let res = queries::insert_notes(conn, &[(note_always, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
-    let note = &queries::select_notes_by_id(conn, &[num_to_word(1).into()]).unwrap()[0];
+    let note_id = NoteId::from_raw(num_to_word(1));
+    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::always());
 
     let note_after_block = NoteRecord {
         block_num,
         note_index: BlockNoteIndex::new(0, 2).unwrap(),
         note_id: num_to_word(2),
+        note_commitment: num_to_word(2),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -361,7 +367,8 @@ fn sql_select_notes_different_execution_hints() {
 
     let res = queries::insert_notes(conn, &[(note_after_block, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-    let note = &queries::select_notes_by_id(conn, &[num_to_word(2).into()]).unwrap()[0];
+    let note_id = NoteId::from_raw(num_to_word(2));
+    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
     assert_eq!(
         note.metadata.execution_hint(),
         NoteExecutionHint::after_block(12.into()).unwrap()
@@ -388,6 +395,7 @@ fn sql_select_note_script_by_root() {
         block_num,
         note_index: BlockNoteIndex::new(0, 0.try_into().unwrap()).unwrap(),
         note_id: num_to_word(0),
+        note_commitment: num_to_word(0),
         metadata: *new_note.metadata(),
         details: Some(NoteDetails::from(&new_note)),
         inclusion_path: SparseMerklePath::default(),
@@ -458,6 +466,7 @@ fn sql_unconsumed_network_notes() {
                 block_num: 0.into(), // Created on same block.
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
                 note_id: num_to_word(i.into()),
+                note_commitment: num_to_word(i.into()),
                 metadata: NoteMetadata::new(
                     account_note.0,
                     NoteType::Public,
@@ -1013,7 +1022,8 @@ fn notes() {
     let note = NoteRecord {
         block_num: block_num_1,
         note_index,
-        note_id: new_note.id().into(),
+        note_id: new_note.id().as_word(),
+        note_commitment: new_note.commitment(),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -1059,7 +1069,8 @@ fn notes() {
     let note2 = NoteRecord {
         block_num: block_num_2,
         note_index: note.note_index,
-        note_id: new_note.id().into(),
+        note_id: new_note.id().as_word(),
+        note_commitment: new_note.commitment(),
         metadata: note.metadata,
         details: None,
         inclusion_path: inclusion_path.clone(),
@@ -1088,7 +1099,7 @@ fn notes() {
     // test query notes by id
     let notes = vec![note.clone(), note2];
 
-    let note_ids = Vec::from_iter(notes.iter().map(|note| NoteId::from(note.note_id)));
+    let note_ids = Vec::from_iter(notes.iter().map(|note| NoteId::from_raw(note.note_id)));
 
     let res = queries::select_notes_by_id(conn, &note_ids).unwrap();
     assert_eq!(res, notes);
@@ -1261,7 +1272,7 @@ fn num_to_word(n: u64) -> Word {
 }
 
 fn num_to_nullifier(n: u64) -> Nullifier {
-    Nullifier::from(num_to_word(n))
+    Nullifier::from_raw(num_to_word(n))
 }
 
 fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpdate {
@@ -1304,6 +1315,7 @@ fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader 
         final_account_commitment,
         input_notes,
         output_notes,
+        test_fee(),
     )
 }
 
@@ -1368,4 +1380,192 @@ fn mock_account_code_and_storage(
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
+}
+
+// GENESIS REGRESSION TESTS
+// ================================================================================================
+
+/// Verifies genesis block with account containing vault assets can be inserted.
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn genesis_with_account_assets() {
+    use crate::genesis::GenesisState;
+
+    let component =
+        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
+            .unwrap()
+            .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
+
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_assets([fungible_asset.into()])
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+/// Verifies genesis block with account containing storage maps can be inserted.
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn genesis_with_account_storage_map() {
+    use miden_objects::account::StorageMap;
+
+    use crate::genesis::GenesisState;
+
+    let storage_map = StorageMap::with_entries(vec![
+        (
+            Word::from([Felt::new(1), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]),
+        ),
+        (
+            Word::from([Felt::new(2), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(50), Felt::new(60), Felt::new(70), Felt::new(80)]),
+        ),
+    ])
+    .unwrap();
+
+    let component_storage = vec![StorageSlot::Map(storage_map), StorageSlot::Value(Word::empty())];
+
+    let component = AccountComponent::compile(
+        "export.foo push.1 end",
+        TransactionKernel::assembler(),
+        component_storage,
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account = AccountBuilder::new([2u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+/// Verifies genesis block with account containing both vault assets and storage maps.
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn genesis_with_account_assets_and_storage() {
+    use miden_objects::account::StorageMap;
+
+    use crate::genesis::GenesisState;
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
+
+    let storage_map = StorageMap::with_entries(vec![(
+        Word::from([Felt::new(100), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]),
+    )])
+    .unwrap();
+
+    let component_storage = vec![StorageSlot::Value(Word::empty()), StorageSlot::Map(storage_map)];
+
+    let component = AccountComponent::compile(
+        "export.foo push.1 end",
+        TransactionKernel::assembler(),
+        component_storage,
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account = AccountBuilder::new([3u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_assets([fungible_asset.into()])
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+/// Verifies genesis block with multiple accounts of different types.
+/// Tests realistic genesis scenario with basic accounts, assets, and storage.
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn genesis_with_multiple_accounts() {
+    use miden_objects::account::StorageMap;
+
+    use crate::genesis::GenesisState;
+
+    let component1 =
+        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
+            .unwrap()
+            .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account1 = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component1)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
+
+    let component2 =
+        AccountComponent::compile("export.bar push.2 end", TransactionKernel::assembler(), vec![])
+            .unwrap()
+            .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account2 = AccountBuilder::new([2u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component2)
+        .with_assets([fungible_asset.into()])
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let storage_map = StorageMap::with_entries(vec![(
+        Word::from([Felt::new(5), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        Word::from([Felt::new(15), Felt::new(25), Felt::new(35), Felt::new(45)]),
+    )])
+    .unwrap();
+
+    let component_storage = vec![StorageSlot::Map(storage_map)];
+
+    let component3 = AccountComponent::compile(
+        "export.baz push.3 end",
+        TransactionKernel::assembler(),
+        component_storage,
+    )
+    .unwrap()
+    .with_supported_type(AccountType::RegularAccountImmutableCode);
+
+    let account3 = AccountBuilder::new([3u8; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component3)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let genesis_state =
+        GenesisState::new(vec![account1, account2, account3], test_fee_params(), 1, 0);
+    let genesis_block = genesis_state.into_block().unwrap();
+
+    crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
 }

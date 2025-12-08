@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use miden_objects::Word;
-use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use pretty_assertions::assert_eq;
 use serial_test::serial;
@@ -273,7 +272,7 @@ fn transactions_from_reverted_batches_are_requeued() {
     assert_eq!(uut, reference);
 }
 
-/// This test checks that pass through transactions can succesfully be added to an empty mempool,
+/// This test checks that pass through transactions can successfully be added to an empty mempool,
 /// and that they work as expected.
 #[test]
 fn pass_through_txs_on_an_empty_account() {
@@ -353,11 +352,11 @@ fn pass_through_txs_with_note_dependencies() {
     // relationship was correctly inferred by the mempool.
     uut.add_transaction(tx_pass_through_a.clone()).unwrap();
     let batch_a = uut.select_batch().unwrap();
-    assert_eq!(batch_a.txs(), &[tx_pass_through_a.clone()]);
+    assert_eq!(batch_a.txs(), std::slice::from_ref(&tx_pass_through_a));
 
     uut.add_transaction(tx_pass_through_b.clone()).unwrap();
     let batch_b = uut.select_batch().unwrap();
-    assert_eq!(batch_b.txs(), &[tx_pass_through_b.clone()]);
+    assert_eq!(batch_b.txs(), std::slice::from_ref(&tx_pass_through_b));
 
     // Rollback (a) and check that (b) also reverted by comparing to the reference.
     uut.rollback_batch(batch_a.id());

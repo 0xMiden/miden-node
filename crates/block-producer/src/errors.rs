@@ -128,6 +128,9 @@ pub enum AddTransactionError {
         expired_at: BlockNumber,
         limit: BlockNumber,
     },
+
+    #[error("the mempool is at capacity")]
+    CapacityExceeded,
 }
 
 impl From<VerifyTxError> for AddTransactionError {

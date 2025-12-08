@@ -50,6 +50,14 @@ const SERVER_MEMPOOL_EXPIRATION_SLACK: u32 = 2;
 /// The interval at which to update the cached mempool statistics.
 const CACHED_MEMPOOL_STATS_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// The default transaction capacity of the mempool.
+///
+/// The value is selected such that all transactions should approximately be processed within one
+/// minutes with a block time of 5s.
+const DEFAULT_MEMPOOL_TX_CAPACITY: NonZeroUsize =
+    NonZeroUsize::new(DEFAULT_MAX_BATCHES_PER_BLOCK * DEFAULT_MAX_TXS_PER_BATCH * (60 / 5))
+        .unwrap();
+
 const _: () = assert!(
     DEFAULT_MAX_BATCHES_PER_BLOCK <= miden_objects::MAX_BATCHES_PER_BLOCK,
     "Server constraint cannot exceed the protocol's constraint"

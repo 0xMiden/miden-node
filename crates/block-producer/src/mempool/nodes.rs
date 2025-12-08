@@ -319,8 +319,16 @@ impl Nodes {
     pub(super) fn inject_telemetry(&self, span: &tracing::Span) {
         use miden_node_utils::tracing::OpenTelemetrySpanExt;
 
+        span.set_attribute("mempool.transactions.uncommitted", self.uncommitted_tx_count());
         span.set_attribute("mempool.transactions.unbatched", self.txs.len());
         span.set_attribute("mempool.batches.proposed", self.proposed_batches.len());
         span.set_attribute("mempool.batches.proven", self.proven_batches.len());
+    }
+
+    pub(super) fn uncommitted_tx_count(&self) -> usize {
+        self.txs.len()
+            + self.proposed_batches.values().map(|b| b.0.len()).sum::<usize>()
+            + self.proven_batches.values().map(|b| b.txs.len()).sum::<usize>()
+            + self.proposed_block.as_ref().map(|b| b.1.txs.len()).unwrap_or_default()
     }
 }

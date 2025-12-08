@@ -145,7 +145,7 @@ pub struct AccountActor {
     origin: AccountOrigin,
     store: StoreClient,
     mode: ActorMode,
-    event_rx: mpsc::Receiver<MempoolEvent>,
+    event_rx: mpsc::Receiver<Arc<MempoolEvent>>,
     cancel_token: CancellationToken,
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
@@ -158,7 +158,7 @@ impl AccountActor {
     pub fn new(
         origin: AccountOrigin,
         config: &AccountActorConfig,
-        event_rx: mpsc::Receiver<MempoolEvent>,
+        event_rx: mpsc::Receiver<Arc<MempoolEvent>>,
         cancel_token: CancellationToken,
     ) -> Self {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
@@ -217,8 +217,8 @@ impl AccountActor {
                     };
                     // Re-enable transaction execution if the transaction being waited on has been
                     // added to the mempool.
-                    if let ActorMode::TransactionInflight(ref awaited_id) = self.mode {
-                        if let MempoolEvent::TransactionAdded { id, .. } = &event {
+                    if let ActorMode::TransactionInflight(awaited_id) = self.mode {
+                        if let MempoolEvent::TransactionAdded { id, .. } = *event {
                             if id == awaited_id {
                                 self.mode = ActorMode::NotesAvailable;
                             }
@@ -227,7 +227,7 @@ impl AccountActor {
                         self.mode = ActorMode::NotesAvailable;
                     }
                     // Update state.
-                    if let Some(shutdown_reason) = state.mempool_update(event) {
+                    if let Some(shutdown_reason) = state.mempool_update(event.as_ref()) {
                         return shutdown_reason;
                     }
                 },

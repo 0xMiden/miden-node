@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_proto::domain::note::NetworkNote;
+use miden_objects::transaction::TransactionId;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
@@ -17,12 +20,12 @@ use crate::actor::{AccountActor, AccountActorConfig, AccountOrigin, ActorShutdow
 /// Handle to account actors that are spawned by the coordinator.
 #[derive(Clone)]
 struct ActorHandle {
-    event_tx: mpsc::Sender<MempoolEvent>, // TODO: consider Arc<MempoolEvent>.
+    event_tx: mpsc::Sender<Arc<MempoolEvent>>,
     cancel_token: CancellationToken,
 }
 
 impl ActorHandle {
-    fn new(event_tx: mpsc::Sender<MempoolEvent>, cancel_token: CancellationToken) -> Self {
+    fn new(event_tx: mpsc::Sender<Arc<MempoolEvent>>, cancel_token: CancellationToken) -> Self {
         Self { event_tx, cancel_token }
     }
 }
@@ -82,6 +85,10 @@ pub struct Coordinator {
     /// Each actor must acquire a permit from this semaphore before processing a transaction,
     /// ensuring fair resource allocation and system stability under load.
     semaphore: Arc<Semaphore>,
+
+    /// Cache of events received from the mempool that predate corresponding network accounts.
+    /// Grouped by account prefix to allow targeted event delivery to actors upon creation.
+    predating_events: HashMap<NetworkAccountPrefix, IndexMap<TransactionId, Arc<MempoolEvent>>>,
 }
 
 impl Coordinator {
@@ -94,6 +101,7 @@ impl Coordinator {
             actor_registry: HashMap::new(),
             actor_join_set: JoinSet::new(),
             semaphore: Arc::new(Semaphore::new(max_inflight_transactions)),
+            predating_events: HashMap::new(),
         }
     }
 
@@ -103,7 +111,11 @@ impl Coordinator {
     /// and adds it to the coordinator's management system. The actor will be responsible for
     /// processing transactions and managing state for accounts matching the network prefix.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
-    pub fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
+    pub async fn spawn_actor(
+        &mut self,
+        origin: AccountOrigin,
+        config: &AccountActorConfig,
+    ) -> Result<(), SendError<Arc<MempoolEvent>>> {
         let account_prefix = origin.prefix();
 
         // If an actor already exists for this account prefix, something has gone wrong.
@@ -117,13 +129,21 @@ impl Coordinator {
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let actor = AccountActor::new(origin, config, event_rx, cancel_token.clone());
         let handle = ActorHandle::new(event_tx, cancel_token);
-        self.actor_registry.insert(account_prefix, handle);
 
         // Run the actor.
         let semaphore = self.semaphore.clone();
         self.actor_join_set.spawn(Box::pin(actor.run(semaphore)));
 
+        // Send the new actor any events that contain notes that predate account creation.
+        if let Some(prefix_events) = self.predating_events.remove(&account_prefix) {
+            for event in prefix_events.values() {
+                Self::send(&handle, event.clone()).await?;
+            }
+        }
+
+        self.actor_registry.insert(account_prefix, handle);
         tracing::info!("created actor for account prefix: {}", account_prefix);
+        Ok(())
     }
 
     /// Broadcasts a mempool event to all active account actors.
@@ -133,7 +153,7 @@ impl Coordinator {
     /// message channel and can process it accordingly.
     ///
     /// If an actor fails to receive the event, it will be canceled.
-    pub async fn broadcast_event(&mut self, event: &MempoolEvent) {
+    pub async fn broadcast(&mut self, event: Arc<MempoolEvent>) {
         tracing::debug!(
             actor_count = self.actor_registry.len(),
             "broadcasting event to all actors"
@@ -143,7 +163,7 @@ impl Coordinator {
 
         // Send event to all actors.
         for (account_prefix, handle) in &self.actor_registry {
-            if let Err(err) = Self::send(handle, event).await {
+            if let Err(err) = Self::send(handle, event.clone()).await {
                 tracing::error!("failed to send event to actor {}: {}", account_prefix, err);
                 failed_actors.push(*account_prefix);
             }
@@ -195,11 +215,59 @@ impl Coordinator {
         }
     }
 
+    /// Sends a mempool event to all network account actors that are found in the corresponding
+    /// transaction's notes.
+    ///
+    /// Caches the mempool event for each network account found in the transaction's notes that does
+    /// not currently have a corresponding actor. If an actor does not exist for the account, it is
+    /// assumed that the account has not been created on the chain yet.
+    ///
+    /// Cached events will be fed to the corresponding actor when the account creation transaction
+    /// is processed.
+    pub async fn send_targeted(
+        &mut self,
+        event: &Arc<MempoolEvent>,
+    ) -> Result<(), SendError<Arc<MempoolEvent>>> {
+        let mut target_actors = HashMap::new();
+        if let MempoolEvent::TransactionAdded { id, network_notes, .. } = event.as_ref() {
+            // Determine target actors for each note.
+            for note in network_notes {
+                if let NetworkNote::SingleTarget(note) = note {
+                    let prefix = note.account_prefix();
+                    if let Some(actor) = self.actor_registry.get(&prefix) {
+                        // Register actor as target.
+                        target_actors.insert(prefix, actor);
+                    } else {
+                        // Cache event for every note that doesn't have a corresponding actor.
+                        self.predating_events.entry(prefix).or_default().insert(*id, event.clone());
+                    }
+                }
+            }
+        }
+        // Send event to target actors.
+        for actor in target_actors.values() {
+            Self::send(actor, event.clone()).await?;
+        }
+        Ok(())
+    }
+
+    /// Removes any cached events for a given transaction ID from all account prefix caches.
+    pub fn drain_predating_events(&mut self, tx_id: &TransactionId) {
+        // Remove the transaction from all prefix caches.
+        // This iterates over all predating events which is fine because the count is expected to be
+        // low.
+        self.predating_events.retain(|_, prefix_event| {
+            prefix_event.shift_remove(tx_id);
+            // Remove entries for account prefixes with no more cached events.
+            !prefix_event.is_empty()
+        });
+    }
+
     /// Helper function to send an event to a single account actor.
     async fn send(
         handle: &ActorHandle,
-        event: &MempoolEvent,
-    ) -> Result<(), SendError<MempoolEvent>> {
-        handle.event_tx.send(event.clone()).await
+        event: Arc<MempoolEvent>,
+    ) -> Result<(), SendError<Arc<MempoolEvent>>> {
+        handle.event_tx.send(event).await
     }
 }

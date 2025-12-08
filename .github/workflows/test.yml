@@ -16,6 +16,11 @@ concurrency:
   group: "${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}"
   cancel-in-progress: true
 
+env:
+  # Reduce cache usage by removing debug information.
+  # This works for tests as well because TEST inherits from DEV.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
 jobs:
   test:
     name: test
@@ -31,3 +36,6 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Run tests
         run: make test
+      - name: Doc tests
+        run: cargo test --doc --workspace --all-features
+

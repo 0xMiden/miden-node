@@ -138,6 +138,7 @@ impl NetworkAccountNoteState {
         // in case it's transaction wasn't available in the first place.
         // It shouldn't happen practically, since we skip them if the
         // relevant account cannot be retrieved via `fetch`.
+
         let _ = self.nullified_notes.remove(&nullifier);
     }
 

@@ -10,6 +10,7 @@ use clap::Parser;
 mod cli;
 pub mod commands;
 pub mod config;
+pub mod counter;
 mod deploy;
 pub mod faucet;
 pub mod frontend;

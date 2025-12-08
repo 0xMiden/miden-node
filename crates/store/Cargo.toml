@@ -21,25 +21,27 @@ deadpool-diesel        = { features = ["sqlite"], version = "0.6" }
 deadpool-sync          = { version = "0.1" }
 diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
 diesel_migrations      = { features = ["sqlite"], version = "2.2" }
+fs-err                 = { workspace = true }
 hex                    = { version = "0.4" }
 indexmap               = { workspace = true }
 miden-lib              = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }
-miden-objects          = { features = ["std"], workspace = true }
-pretty_assertions      = { workspace = true }
-rand                   = { workspace = true }
-rand_chacha            = { workspace = true }
-serde                  = { features = ["derive"], version = "1" }
-thiserror              = { workspace = true }
-tokio                  = { features = ["fs", "rt-multi-thread"], workspace = true }
-tokio-stream           = { features = ["net"], workspace = true }
-toml                   = { version = "0.9" }
-tonic                  = { workspace = true }
-tonic-reflection       = { workspace = true }
-tower-http             = { features = ["util"], workspace = true }
-tracing                = { workspace = true }
+# TODO remove `testing` from `miden-objects`, required for `BlockProof::new_dummy`
+miden-objects     = { features = ["std", "testing"], workspace = true }
+pretty_assertions = { workspace = true }
+rand              = { workspace = true }
+rand_chacha       = { workspace = true }
+serde             = { features = ["derive"], version = "1" }
+thiserror         = { workspace = true }
+tokio             = { features = ["fs", "rt-multi-thread"], workspace = true }
+tokio-stream      = { features = ["net"], workspace = true }
+toml              = { version = "0.9" }
+tonic             = { default-features = true, workspace = true }
+tonic-reflection  = { workspace = true }
+tower-http        = { features = ["util"], workspace = true }
+tracing           = { workspace = true }
 
 [dev-dependencies]
 assert_matches        = { workspace = true }

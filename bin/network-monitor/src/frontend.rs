@@ -23,6 +23,8 @@ pub struct ServerState {
     pub rpc: watch::Receiver<ServiceStatus>,
     pub provers: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
     pub faucet: Option<watch::Receiver<ServiceStatus>>,
+    pub ntx_increment: Option<watch::Receiver<ServiceStatus>>,
+    pub ntx_tracking: Option<watch::Receiver<ServiceStatus>>,
 }
 
 /// Runs the frontend server.
@@ -33,6 +35,7 @@ pub struct ServerState {
 ///
 /// * `server_state` - The server state containing watch receivers for all services.
 /// * `config` - The configuration of the network.
+#[instrument(target = COMPONENT, name = "frontend.serve", skip_all, fields(port = %config.port))]
 pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     // build our application with routes
     let app = Router::new()
@@ -54,11 +57,12 @@ pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     axum::serve(listener, app).await.expect("Failed to start web server");
 }
 
+#[instrument(target = COMPONENT, name = "frontend.get-dashboard", skip_all)]
 async fn get_dashboard() -> Html<&'static str> {
     Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.html")))
 }
 
-#[instrument(target = COMPONENT, name = "frontend.get-status", skip_all, ret(level = "info"))]
+#[instrument(target = COMPONENT, name = "frontend.get-status", skip_all)]
 async fn get_status(
     axum::extract::State(server_state): axum::extract::State<ServerState>,
 ) -> axum::response::Json<NetworkStatus> {
@@ -81,6 +85,16 @@ async fn get_status(
     // Collect faucet status if available
     if let Some(faucet_rx) = &server_state.faucet {
         services.push(faucet_rx.borrow().clone());
+    }
+
+    // Collect counter increment status if enabled
+    if let Some(ntx_increment_rx) = &server_state.ntx_increment {
+        services.push(ntx_increment_rx.borrow().clone());
+    }
+
+    // Collect counter tracking status if enabled
+    if let Some(ntx_tracking_rx) = &server_state.ntx_tracking {
+        services.push(ntx_tracking_rx.borrow().clone());
     }
 
     let network_status = NetworkStatus { services, last_updated: current_time };

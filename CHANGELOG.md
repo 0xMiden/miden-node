@@ -1,33 +1,91 @@
 # Changelog
 
-## v0.12.0 (TBD)
+## v0.13.0 (TBD)
+
+### Changes
+
+- [BREAKING] Renamed `SyncTransactions` response fields ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
+- Normalize response size in endpoints to 4 MB ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
+- [BREAKING] Renamed `ProxyWorkerStatus::address` to `ProxyWorkerStatus::name` ([#1348](https://github.com/0xMiden/miden-node/pull/1348)).
+- Added `SyncTransactions` stress test to `miden-node-stress-test` binary ([#1294](https://github.com/0xMiden/miden-node/pull/1294)).
+- Remove `trait AccountTreeStorage` ([#1352](https://github.com/0xMiden/miden-node/issues/1352)).
+- [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298)).
+- Added support for timeouts in the WASM remote prover clients ([#1383](https://github.com/0xMiden/miden-node/pull/1383)).
+- Added block validation endpoint to validator and integrated with block producer ([#1382](https://github.com/0xMiden/miden-node/pull/1381)).
+- Added support for caching mempool statistics in the block producer server ([#1388](https://github.com/0xMiden/miden-node/pull/1388)).
+- Added mempool statistics to the block producer status in the `miden-network-monitor` binary ([#1392](https://github.com/0xMiden/miden-node/pull/1392)).
+- Add `S` generic to `NullifierTree` to allow usage with `LargeSmt`s ([#1353](https://github.com/0xMiden/miden-node/issues/1353)).
+- Added success rate to the `miden-network-monitor` binary ([#1420](https://github.com/0xMiden/miden-node/pull/1420)).
+- Removed internal errors from the `miden-network-monitor` ([#1424](https://github.com/0xMiden/miden-node/pull/1424)).
+- Added chain tip to the block producer status ([#1419](https://github.com/0xMiden/miden-node/pull/1419)).
+- [BREAKING] Re-organized RPC protobuf schema to be independent of internal schema ([#1401](https://github.com/0xMiden/miden-node/pull/1401)).
+
+### Fixes
+
+- RPC client now correctly sets `genesis` value in `ACCEPT` header if `version` is unspecified ([#1370](https://github.com/0xMiden/miden-node/pull/1370)).
+- Pin protobuf (`protox`) dependencies to avoid breaking changes in transitive dependency ([#1403](https://github.com/0xMiden/miden-node/pull/1403)).
+- Fixed no-std compatibility for remote prover clients ([#1407](https://github.com/0xMiden/miden-node/pull/1407)).
+- Fixed `AccountProofRequest` to retrieve the latest known state in case specified block number (or chain tip) does not contain account updates ([#1422](https://github.com/0xMiden/miden-node/issues/1422)).
+
+## v0.12.6
+
+- Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
+
+## v0.12.5 (2025-11-27)
+
+- Actually update `miden-base` dependencies ([#1384](https://github.com/0xMiden/miden-node/pull/1384)).
+
+## v0.12.4 (2025-11-27)
+
+- Split counter increment and tracking services in `miden-network-monitor` binary ([#1362](https://github.com/0xMiden/miden-node/pull/1362)).
+- Updated the counter account from the `miden-network-monitor` to start at 0 ([#1367](https://github.com/0xMiden/miden-node/pull/1367)).
+- Updated  `miden-base` dependencies to fix ECDSA issues ([#1382](https://github.com/0xMiden/miden-node/pull/1382)).
+
+## v0.12.3 (2025-11-15)
+
+- Added configurable timeout support to `RemoteBatchProver`, `RemoteBlockProver`, and `RemoteTransactionProver` clients ([#1365](https://github.com/0xMiden/miden-node/pull/1365)).
+- Added configurable timeout support to `miden-network-monitor` binary ([#1365](https://github.com/0xMiden/miden-node/pull/1365)).
+
+## v0.12.2 (2025-11-12)
+
+- Fixed `PoW` challenge solving in `miden-network-monitor` binary ([#1363](https://github.com/0xMiden/miden-node/pull/1363)).
+
+## v0.12.1 (2025-11-08)
+
+- Added support for network transaction service in `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).
+- Improves `.env` file example in for the `miden-network-monitor` binary ([#1345](https://github.com/0xMiden/miden-node/pull/1345)).
+
+## v0.12.0 (2025-11-06)
 
 ### Changes
 
 - [BREAKING] Updated MSRV to 1.90.
-- Added `GetNoteScriptByRoot` gRPC endpoint for retrieving a note script by its root ([#1196](https://github.com/0xMiden/miden-node/pull/1196)).
 - [BREAKING] Refactored `CheckNullifiersByPrefix` endpoint adding pagination ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
 - [BREAKING] Renamed `CheckNullifiersByPrefix` endpoint to `SyncNullifiers` ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
+- Added `GetNoteScriptByRoot` gRPC endpoint for retrieving a note script by its root ([#1196](https://github.com/0xMiden/miden-node/pull/1196)).
 - [BREAKING] Added `block_range` and `pagination_info` fields to paginated gRPC endpoints ([#1205](https://github.com/0xMiden/miden-node/pull/1205)).
-- Use `tonic` error codes for gRPC errors ([#1208](https://github.com/0xMiden/miden-node/pull/1208)).
+- Implemented usage of `tonic` error codes for gRPC errors ([#1208](https://github.com/0xMiden/miden-node/pull/1208)).
 - [BREAKING] Replaced `GetAccountProofs` with `GetAccountProof` in the public store API (#[1211](https://github.com/0xMiden/miden-node/pull/1211)).
-- [BREAKING] Refactored the mempool to use a single DAG across transactions and batches ([#1234](https://github.com/0xMiden/miden-node/pull/1234)).
 - Implemented storage map `DataStore` function ([#1226](https://github.com/0xMiden/miden-node/pull/1226)).
+- [BREAKING] Refactored the mempool to use a single DAG across transactions and batches ([#1234](https://github.com/0xMiden/miden-node/pull/1234)).
 - [BREAKING] Renamed `RemoteProverProxy` to `RemoteProverClient` ([#1236](https://github.com/0xMiden/miden-node/pull/1236)).
 - Added pagination to `SyncNotes` endpoint ([#1257](https://github.com/0xMiden/miden-node/pull/1257)).
 - Added application level error in gRPC endpoints ([#1266](https://github.com/0xMiden/miden-node/pull/1266)).
-- [BREAKING] Response type nuances of `GetAccountProof` in the public store API (#[1277](https://github.com/0xMiden/miden-node/pull/1277)).
 - Added `deploy-account` command to `miden-network-monitor` binary ([#1276](https://github.com/0xMiden/miden-node/pull/1276)).
-- Add `validator` crate with initial protobuf, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
+- [BREAKING] Response type nuances of `GetAccountProof` in the public store API (#[1277](https://github.com/0xMiden/miden-node/pull/1277)).
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
-- Implement `DataStore::get_note_script()` for `NtxDataStore` (#[1332](https://github.com/0xMiden/miden-node/pull/1332)).
+- Added `validator` crate with initial protobuf, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
 - [BREAKING] Added `AccountTreeWithHistory` and integrate historical queries into `GetAccountProof` ([#1292](https://github.com/0xMiden/miden-node/pull/1292)).
+- [BREAKING] Handle past/historical `AccountProof` requests ([#1333](https://github.com/0xMiden/miden-node/pull/1333)).
+- Implement `DataStore::get_note_script()` for `NtxDataStore` (#[1332](https://github.com/0xMiden/miden-node/pull/1332)).
+- Started validating notes by their commitment instead of ID before entering the mempool ([#1338](https://github.com/0xMiden/miden-node/pull/1338)).
 
 ## v0.11.3 (2025-11-04)
 
 - Reduced note retries to 1 ([#1308](https://github.com/0xMiden/miden-node/pull/1308)).
 - Address network transaction builder (NTX) invariant breaking for unavailable accounts ([#1312](https://github.com/0xMiden/miden-node/pull/1312)).
 - Tweaked HTTP configurations on the pingora proxy server ([#1281](https://github.com/0xMiden/miden-node/pull/1281)).
+- Added the counter increment task to `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).
 
 ## v0.11.2 (2025-09-10)
 

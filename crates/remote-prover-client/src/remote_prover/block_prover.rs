@@ -3,8 +3,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{ProposedBlock, ProvenBlock};
+use miden_objects::batch::{OrderedBatches, ProvenBatch};
+use miden_objects::block::{BlockHeader, BlockInputs, BlockProof, ProposedBlock, ProvenBlock};
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use tokio::sync::Mutex;
@@ -32,6 +32,7 @@ pub struct RemoteBlockProver {
     client: Arc<Mutex<Option<ApiClient<tonic::transport::Channel>>>>,
 
     endpoint: String,
+    timeout: Duration,
 }
 
 impl RemoteBlockProver {
@@ -41,7 +42,23 @@ impl RemoteBlockProver {
         RemoteBlockProver {
             endpoint: endpoint.into(),
             client: Arc::new(Mutex::new(None)),
+            timeout: Duration::from_secs(10),
         }
+    }
+
+    /// Configures the timeout for requests to the remote prover server.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - The timeout duration for requests.
+    ///
+    /// # Returns
+    ///
+    /// A new [`RemoteBlockProver`] instance with the configured timeout.
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Establishes a connection to the remote block prover server. The connection is
@@ -55,7 +72,12 @@ impl RemoteBlockProver {
 
         #[cfg(target_arch = "wasm32")]
         let new_client = {
-            let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
+            let fetch_options =
+                tonic_web_wasm_client::options::FetchOptions::new().timeout(self.timeout);
+            let web_client = tonic_web_wasm_client::Client::new_with_options(
+                self.endpoint.clone(),
+                fetch_options,
+            );
             ApiClient::new(web_client)
         };
 
@@ -63,7 +85,7 @@ impl RemoteBlockProver {
         let new_client = {
             let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .timeout(Duration::from_millis(10000));
+                .timeout(self.timeout);
             let channel = endpoint
                 .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
@@ -82,8 +104,10 @@ impl RemoteBlockProver {
 impl RemoteBlockProver {
     pub async fn prove(
         &self,
-        proposed_block: ProposedBlock,
-    ) -> Result<ProvenBlock, RemoteProverClientError> {
+        tx_batches: OrderedBatches,
+        block_header: BlockHeader,
+        block_inputs: BlockInputs,
+    ) -> Result<BlockProof, RemoteProverClientError> {
         use miden_objects::utils::Serializable;
         self.connect().await?;
 
@@ -97,70 +121,41 @@ impl RemoteBlockProver {
             })?
             .clone();
 
-        // Get the set of expected transaction headers.
-        let proposed_txs = proposed_block.batches().to_transactions();
+        let block_proof_request =
+            ProposedBlock::new_at(block_inputs, tx_batches.into_vec(), block_header.timestamp())
+                .map_err(|err| {
+                    RemoteProverClientError::other_with_source(
+                        "failed to create proposed block",
+                        err,
+                    )
+                })?;
 
-        let request = tonic::Request::new(proposed_block.into());
+        let request = tonic::Request::new(block_proof_request.into());
 
         let response = client.prove(request).await.map_err(|err| {
             RemoteProverClientError::other_with_source("failed to prove block", err)
         })?;
 
-        // Deserialize the response bytes back into a ProvenBlock.
-        let proven_block = ProvenBlock::try_from(response.into_inner()).map_err(|err| {
+        // Deserialize the response bytes back into a BlockProof.
+        let block_proof = BlockProof::try_from(response.into_inner()).map_err(|err| {
             RemoteProverClientError::other_with_source(
                 "failed to deserialize received response from remote block prover",
                 err,
             )
         })?;
 
-        Self::validate_tx_headers(&proven_block, &proposed_txs)?;
-
-        Ok(proven_block)
-    }
-
-    /// Validates that the proven block's transaction headers are consistent with the transactions
-    /// passed in the proposed block.
-    ///
-    /// This expects that transactions from the proposed block and proven block are in the same
-    /// order, as define by [`OrderedTransactionHeaders`].
-    fn validate_tx_headers(
-        proven_block: &ProvenBlock,
-        proposed_txs: &OrderedTransactionHeaders,
-    ) -> Result<(), RemoteProverClientError> {
-        if proposed_txs.as_slice().len() != proven_block.transactions().as_slice().len() {
-            return Err(RemoteProverClientError::other(format!(
-                "remote prover returned {} transaction headers but {} transactions were passed as part of the proposed block",
-                proven_block.transactions().as_slice().len(),
-                proposed_txs.as_slice().len()
-            )));
-        }
-
-        // Because we checked the length matches we can zip the iterators up.
-        // We expect the transaction headers to be in the same order.
-        for (proposed_header, proven_header) in
-            proposed_txs.as_slice().iter().zip(proven_block.transactions().as_slice())
-        {
-            if proposed_header != proven_header {
-                return Err(RemoteProverClientError::other(format!(
-                    "transaction header with id {} does not match header of the transaction in the proposed block",
-                    proposed_header.id()
-                )));
-            }
-        }
-
-        Ok(())
+        Ok(block_proof)
     }
 }
 
 // CONVERSION
 // ================================================================================================
 
-impl TryFrom<proto::Proof> for ProvenBlock {
+impl TryFrom<proto::Proof> for BlockProof {
     type Error = DeserializationError;
 
     fn try_from(value: proto::Proof) -> Result<Self, Self::Error> {
-        ProvenBlock::read_from_bytes(&value.payload)
+        BlockProof::read_from_bytes(&value.payload)
     }
 }
 

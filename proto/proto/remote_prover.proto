@@ -33,7 +33,7 @@ message ProofRequest {
     // type-specific:
     // - TRANSACTION: TransactionInputs encoded.
     // - BATCH: ProposedBatch encoded.
-    // - BLOCK: ProposedBlock encoded.
+    // - BLOCK: BlockProofRequest encoded.
     bytes payload = 2;
 }
 
@@ -42,7 +42,7 @@ message Proof {
     // Serialized proof bytes.
     // - TRANSACTION: Returns an encoded ProvenTransaction.
     // - BATCH: Returns an encoded ProvenBatch.
-    // - BLOCK: Returns an encoded ProvenBlock.
+    // - BLOCK: Returns an encoded BlockProof.
     bytes payload = 1;
 }
 
@@ -56,8 +56,8 @@ service ProxyStatusApi {
 
 // Status of an individual worker in the proxy.
 message ProxyWorkerStatus {
-    // The address of the worker.
-    string address = 1;
+    // The name of the worker.
+    string name = 1;
     // The version of the worker.
     string version = 2;
     // The health status of the worker.

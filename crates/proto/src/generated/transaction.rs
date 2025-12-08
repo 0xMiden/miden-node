@@ -52,7 +52,7 @@ pub struct TransactionHeader {
     pub final_state_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Nullifiers of the input notes of the transaction.
     #[prost(message, repeated, tag = "4")]
-    pub input_notes: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    pub nullifiers: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Output notes of the transaction.
     #[prost(message, repeated, tag = "5")]
     pub output_notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,

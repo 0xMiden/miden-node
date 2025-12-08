@@ -148,7 +148,7 @@ async fn block_producer_startup_is_robust_to_network_failures() {
 async fn send_request(
     mut client: block_producer_client::ApiClient<Channel>,
     i: u8,
-) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, tonic::Status>
+) -> Result<tonic::Response<proto::blockchain::BlockNumber>, tonic::Status>
 {
     let tx = ProvenTransactionBuilder::new(
         AccountId::dummy(

@@ -7,7 +7,7 @@ diesel::table! {
         slot -> Integer,
         key -> Binary,
         value -> Binary,
-        is_latest_update -> Bool,
+        is_latest -> Bool,
     }
 }
 
@@ -17,12 +17,12 @@ diesel::table! {
         block_num -> BigInt,
         vault_key -> Binary,
         asset -> Nullable<Binary>,
-        is_latest_update -> Bool,
+        is_latest -> Bool,
     }
 }
 
 diesel::table! {
-    accounts (account_id) {
+    accounts (account_id, block_num) {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
         account_commitment -> Binary,
@@ -31,6 +31,7 @@ diesel::table! {
         vault -> Nullable<Binary>,
         nonce -> Nullable<BigInt>,
         block_num -> BigInt,
+        is_latest -> Bool,
     }
 }
 
@@ -61,6 +62,7 @@ diesel::table! {
         batch_index -> Integer,
         note_index -> Integer,
         note_id -> Binary,
+        note_commitment -> Binary,
         note_type -> Integer,
         sender -> Binary,
         tag -> Integer,
@@ -92,7 +94,7 @@ diesel::table! {
         block_num -> BigInt,
         initial_state_commitment -> Binary,
         final_state_commitment -> Binary,
-        input_notes -> Binary,
+        nullifiers -> Binary,
         output_notes -> Binary,
         size_in_bytes -> BigInt,
     }
@@ -100,11 +102,12 @@ diesel::table! {
 
 diesel::joinable!(accounts -> account_codes (code_commitment));
 diesel::joinable!(accounts -> block_headers (block_num));
-diesel::joinable!(notes -> accounts (sender));
+// Note: Cannot use diesel::joinable! with accounts table due to composite primary key
+// diesel::joinable!(notes -> accounts (sender));
+// diesel::joinable!(transactions -> accounts (account_id));
 diesel::joinable!(notes -> block_headers (committed_at));
 diesel::joinable!(notes -> note_scripts (script_root));
 diesel::joinable!(nullifiers -> block_headers (block_num));
-diesel::joinable!(transactions -> accounts (account_id));
 diesel::joinable!(transactions -> block_headers (block_num));
 
 diesel::allow_tables_to_appear_in_same_query!(

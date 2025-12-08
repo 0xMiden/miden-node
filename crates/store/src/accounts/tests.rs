@@ -84,8 +84,7 @@ mod account_tree_with_history_tests {
 
     #[test]
     fn test_history_limits() {
-        const MAX_HIST: u32 =
-            AccountTreeWithHistory::<AccountTree<LargeSmt<MemoryStorage>>>::MAX_HISTORY as u32;
+        const MAX_HIST: u32 = AccountTreeWithHistory::<MemoryStorage>::MAX_HISTORY as u32;
         use assert_matches::assert_matches;
 
         let id = AccountIdBuilder::new().build_with_seed([30; 32]);

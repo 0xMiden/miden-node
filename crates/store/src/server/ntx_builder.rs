@@ -1,7 +1,7 @@
 use std::num::{NonZero, TryFromIntError};
 
 use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
-use miden_node_proto::generated::ntx_builder_store::ntx_builder_server;
+use miden_node_proto::generated::store::ntx_builder_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
 use miden_objects::block::BlockNumber;
@@ -32,8 +32,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<proto::shared::BlockHeaderByNumberRequest>,
-    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::rpc::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::rpc::BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -53,7 +53,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     async fn get_current_blockchain_data(
         &self,
         request: Request<proto::blockchain::MaybeBlockNumber>,
-    ) -> Result<Response<proto::ntx_builder_store::CurrentBlockchainData>, Status> {
+    ) -> Result<Response<proto::store::CurrentBlockchainData>, Status> {
         let block_num = request.into_inner().block_num.map(BlockNumber::from);
 
         let response = match self
@@ -62,11 +62,11 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .await
             .map_err(internal_error)?
         {
-            Some((header, peaks)) => proto::ntx_builder_store::CurrentBlockchainData {
+            Some((header, peaks)) => proto::store::CurrentBlockchainData {
                 current_peaks: peaks.peaks().iter().map(Into::into).collect(),
                 current_block_header: Some(header.into()),
             },
-            None => proto::ntx_builder_store::CurrentBlockchainData {
+            None => proto::store::CurrentBlockchainData {
                 current_peaks: vec![],
                 current_block_header: None,
             },
@@ -85,8 +85,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_network_account_details_by_prefix(
         &self,
-        request: Request<proto::ntx_builder_store::AccountIdPrefix>,
-    ) -> Result<Response<proto::ntx_builder_store::MaybeAccountDetails>, Status> {
+        request: Request<proto::store::AccountIdPrefix>,
+    ) -> Result<Response<proto::store::MaybeAccountDetails>, Status> {
         let request = request.into_inner();
 
         // Validate that the call is for a valid network account prefix
@@ -98,7 +98,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let account_info: Option<AccountInfo> =
             self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
 
-        Ok(Response::new(proto::ntx_builder_store::MaybeAccountDetails {
+        Ok(Response::new(proto::store::MaybeAccountDetails {
             details: account_info.map(|acc| (&acc).into()),
         }))
     }
@@ -112,8 +112,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_unconsumed_network_notes(
         &self,
-        request: Request<proto::ntx_builder_store::UnconsumedNetworkNotesRequest>,
-    ) -> Result<Response<proto::ntx_builder_store::UnconsumedNetworkNotes>, Status> {
+        request: Request<proto::store::UnconsumedNetworkNotesRequest>,
+    ) -> Result<Response<proto::store::UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let block_num = BlockNumber::from(request.block_num);
         let network_account_id_prefix =
@@ -144,7 +144,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             network_notes.push(note.into());
         }
 
-        Ok(Response::new(proto::ntx_builder_store::UnconsumedNetworkNotes {
+        Ok(Response::new(proto::store::UnconsumedNetworkNotes {
             notes: network_notes,
             next_token: next_page.token,
         }))
@@ -162,13 +162,13 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     async fn get_network_account_ids(
         &self,
         _request: Request<()>,
-    ) -> Result<Response<proto::ntx_builder_store::NetworkAccountIdList>, Status> {
+    ) -> Result<Response<proto::store::NetworkAccountIdList>, Status> {
         let account_ids = self.state.get_all_network_accounts().await.map_err(internal_error)?;
 
         let account_ids: Vec<proto::account::AccountId> =
             account_ids.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(proto::ntx_builder_store::NetworkAccountIdList { account_ids }))
+        Ok(Response::new(proto::store::NetworkAccountIdList { account_ids }))
     }
 
     #[instrument(
@@ -182,7 +182,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,
-    ) -> Result<Response<proto::shared::MaybeNoteScript>, Status> {
+    ) -> Result<Response<proto::rpc::MaybeNoteScript>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         let root = read_root::<GetNoteScriptByRootError>(request.into_inner().root, "NoteRoot")?;
@@ -193,7 +193,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .await
             .map_err(GetNoteScriptByRootError::from)?;
 
-        Ok(Response::new(proto::shared::MaybeNoteScript {
+        Ok(Response::new(proto::rpc::MaybeNoteScript {
             script: note_script.map(Into::into),
         }))
     }

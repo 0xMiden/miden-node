@@ -1,16 +1,25 @@
 //! Task management for the network monitor.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::clients::{
+    Builder as ClientBuilder,
+    RemoteProverProxyStatusClient,
+    RpcClient,
+};
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task::{Id, JoinSet};
-use tracing::debug;
+use tracing::{debug, instrument};
 
+use crate::COMPONENT;
 use crate::config::MonitorConfig;
+use crate::counter::{run_counter_tracking_task, run_increment_task};
+use crate::deploy::ensure_accounts_exist;
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload, run_remote_prover_test_task};
@@ -39,6 +48,7 @@ impl Tasks {
     }
 
     /// Spawn the RPC status checker task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-rpc-checker", skip_all)]
     pub async fn spawn_rpc_checker(
         &mut self,
         config: &MonitorConfig,
@@ -47,10 +57,11 @@ impl Tasks {
         let mut rpc = ClientBuilder::new(config.rpc_url.clone())
             .with_tls()
             .expect("TLS is enabled")
-            .with_timeout(Duration::from_secs(10))
+            .with_timeout(config.request_timeout)
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<Rpc>();
+            .without_otel_context_injection()
+            .connect_lazy::<RpcClient>();
 
         let current_time = current_unix_timestamp_secs();
         let initial_rpc_status = check_rpc_status(&mut rpc, current_time).await;
@@ -59,10 +70,11 @@ impl Tasks {
         let (rpc_tx, rpc_rx) = watch::channel(initial_rpc_status);
         let rpc_url = config.rpc_url.clone();
         let status_check_interval = config.status_check_interval;
+        let request_timeout = config.request_timeout;
         let id = self
             .handles
             .spawn(async move {
-                run_rpc_status_task(rpc_url, rpc_tx, status_check_interval).await;
+                run_rpc_status_task(rpc_url, rpc_tx, status_check_interval, request_timeout).await;
             })
             .id();
         self.names.insert(id, "rpc-checker".to_string());
@@ -71,6 +83,7 @@ impl Tasks {
     }
 
     /// Spawn prover status and test tasks for all configured provers.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-prover-tasks", skip_all)]
     pub async fn spawn_prover_tasks(
         &mut self,
         config: &MonitorConfig,
@@ -83,10 +96,11 @@ impl Tasks {
             let mut remote_prover = ClientBuilder::new(prover_url.clone())
                 .with_tls()
                 .expect("TLS is enabled")
-                .with_timeout(Duration::from_secs(10))
+                .with_timeout(config.request_timeout)
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<RemoteProverProxy>();
+                .without_otel_context_injection()
+                .connect_lazy::<RemoteProverProxyStatusClient>();
 
             let current_time = current_unix_timestamp_secs();
 
@@ -106,6 +120,7 @@ impl Tasks {
             let prover_url_clone = prover_url.clone();
             let name_clone = name.clone();
             let status_check_interval = config.status_check_interval;
+            let request_timeout = config.request_timeout;
             let id = self
                 .handles
                 .spawn(async move {
@@ -114,6 +129,7 @@ impl Tasks {
                         name_clone,
                         prover_status_tx,
                         status_check_interval,
+                        request_timeout,
                     )
                     .await;
                 })
@@ -145,6 +161,7 @@ impl Tasks {
                 let prover_url_clone = prover_url.clone();
                 let name_clone = name.clone();
                 let proof_type = proof_type.expect("proof type is Some");
+                let remote_prover_interval = config.remote_prover_test_interval;
 
                 let id = self
                     .handles
@@ -155,6 +172,8 @@ impl Tasks {
                             proof_type,
                             payload,
                             prover_test_tx,
+                            request_timeout,
+                            remote_prover_interval,
                         )
                         .await;
                     })
@@ -180,6 +199,7 @@ impl Tasks {
     }
 
     /// Spawn the faucet testing task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-faucet", skip_all)]
     pub fn spawn_faucet(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
         let current_time = current_unix_timestamp_secs();
 
@@ -194,7 +214,7 @@ impl Tasks {
                 success_count: 0,
                 failure_count: 0,
                 last_tx_id: None,
-                challenge_difficulty: None,
+                faucet_metadata: None,
             }),
         };
 
@@ -203,10 +223,12 @@ impl Tasks {
         // SAFETY: config.faucet_url is Some
         let faucet_url = config.faucet_url.clone().unwrap();
         let faucet_test_interval = config.faucet_test_interval;
+        let request_timeout = config.request_timeout;
         let id = self
             .handles
             .spawn(async move {
-                run_faucet_test_task(faucet_url, faucet_tx, faucet_test_interval).await;
+                run_faucet_test_task(faucet_url, faucet_tx, faucet_test_interval, request_timeout)
+                    .await;
             })
             .id();
         self.names.insert(id, "faucet-test".to_string());
@@ -214,7 +236,83 @@ impl Tasks {
         faucet_rx
     }
 
+    /// Spawn the network transaction service checker tasks (increment and tracking).
+    #[instrument(target = COMPONENT, name = "tasks.spawn-ntx-service", skip_all)]
+    pub async fn spawn_ntx_service(
+        &mut self,
+        config: &MonitorConfig,
+    ) -> Result<(Receiver<ServiceStatus>, Receiver<ServiceStatus>)> {
+        // Ensure accounts exist before starting monitoring tasks
+        ensure_accounts_exist(&config.wallet_filepath, &config.counter_filepath, &config.rpc_url)
+            .await?;
+
+        let current_time = current_unix_timestamp_secs();
+
+        // Create shared atomic counter for tracking expected counter value
+        let expected_counter_value = Arc::new(AtomicU64::new(0));
+
+        // Create initial increment status
+        let initial_increment_status = ServiceStatus {
+            name: "Counter Increment".to_string(),
+            status: crate::status::Status::Unknown,
+            last_checked: current_time,
+            error: None,
+            details: crate::status::ServiceDetails::NtxIncrement(crate::status::IncrementDetails {
+                success_count: 0,
+                failure_count: 0,
+                last_tx_id: None,
+            }),
+        };
+
+        // Create initial tracking status
+        let initial_tracking_status = ServiceStatus {
+            name: "Counter Tracking".to_string(),
+            status: crate::status::Status::Unknown,
+            last_checked: current_time,
+            error: None,
+            details: crate::status::ServiceDetails::NtxTracking(
+                crate::status::CounterTrackingDetails {
+                    current_value: None,
+                    expected_value: None,
+                    last_updated: None,
+                    pending_increments: None,
+                },
+            ),
+        };
+
+        // Spawn the increment task
+        let (increment_tx, increment_rx) = watch::channel(initial_increment_status);
+        let config_clone = config.clone();
+        let counter_clone = Arc::clone(&expected_counter_value);
+        let increment_id = self
+            .handles
+            .spawn(async move {
+                Box::pin(run_increment_task(config_clone, increment_tx, counter_clone))
+                    .await
+                    .expect("Counter increment task runs indefinitely");
+            })
+            .id();
+        self.names.insert(increment_id, "counter-increment".to_string());
+
+        // Spawn the tracking task
+        let (tracking_tx, tracking_rx) = watch::channel(initial_tracking_status);
+        let config_clone = config.clone();
+        let counter_clone = Arc::clone(&expected_counter_value);
+        let tracking_id = self
+            .handles
+            .spawn(async move {
+                Box::pin(run_counter_tracking_task(config_clone, tracking_tx, counter_clone))
+                    .await
+                    .expect("Counter tracking task runs indefinitely");
+            })
+            .id();
+        self.names.insert(tracking_id, "counter-tracking".to_string());
+
+        Ok((increment_rx, tracking_rx))
+    }
+
     /// Spawn the HTTP frontend server.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-frontend", skip_all)]
     pub fn spawn_http_server(&mut self, server_state: ServerState, config: &MonitorConfig) {
         let config = config.clone();
         let id = self.handles.spawn(async move { serve(server_state, config).await }).id();

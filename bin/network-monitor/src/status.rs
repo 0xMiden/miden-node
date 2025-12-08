@@ -5,11 +5,13 @@
 
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::clients::{
+    Builder as ClientBuilder,
+    RemoteProverProxyStatusClient,
+    RpcClient,
+};
 use miden_node_proto::generated as proto;
-use miden_node_proto::generated::block_producer::BlockProducerStatus;
-use miden_node_proto::generated::rpc::RpcStatus;
-use miden_node_proto::generated::rpc_store::StoreStatus;
+use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus, StoreStatus};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
@@ -67,6 +69,30 @@ pub struct ServiceStatus {
     pub details: ServiceDetails,
 }
 
+/// Details of the increment service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IncrementDetails {
+    /// Number of successful counter increments.
+    pub success_count: u64,
+    /// Number of failed counter increments.
+    pub failure_count: u64,
+    /// Last transaction ID (if available).
+    pub last_tx_id: Option<String>,
+}
+
+/// Details of the counter tracking service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CounterTrackingDetails {
+    /// Current counter value observed on-chain (if available).
+    pub current_value: Option<u64>,
+    /// Expected counter value based on successful increments sent.
+    pub expected_value: Option<u64>,
+    /// Last time the counter value was successfully updated.
+    pub last_updated: Option<u64>,
+    /// Number of pending increments (expected - current).
+    pub pending_increments: Option<u64>,
+}
+
 /// Details of a service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServiceDetails {
@@ -74,6 +100,8 @@ pub enum ServiceDetails {
     RemoteProverStatus(RemoteProverStatusDetails),
     RemoteProverTest(ProverTestDetails),
     FaucetTest(FaucetTestDetails),
+    NtxIncrement(IncrementDetails),
+    NtxTracking(CounterTrackingDetails),
     Error,
 }
 
@@ -108,6 +136,21 @@ pub struct StoreStatusDetails {
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
+    /// The block producer's current view of the chain tip height.
+    pub chain_tip: u32,
+    /// Mempool statistics for this block producer.
+    pub mempool: MempoolStatusDetails,
+}
+
+/// Details about the block producer's mempool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MempoolStatusDetails {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    pub unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    pub proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    pub proven_batches: u64,
 }
 
 /// Details of a remote prover service.
@@ -128,7 +171,7 @@ pub struct RemoteProverStatusDetails {
 /// worker service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatusDetails {
-    pub address: String,
+    pub name: String,
     pub version: String,
     pub status: Status,
 }
@@ -160,9 +203,20 @@ impl From<StoreStatus> for StoreStatusDetails {
 
 impl From<BlockProducerStatus> for BlockProducerStatusDetails {
     fn from(value: BlockProducerStatus) -> Self {
+        // We assume all supported nodes expose mempool statistics.
+        let mempool_stats = value
+            .mempool_stats
+            .expect("block producer status must include mempool statistics");
+
         Self {
             version: value.version,
             status: value.status.into(),
+            chain_tip: value.chain_tip,
+            mempool: MempoolStatusDetails {
+                unbatched_transactions: mempool_stats.unbatched_transactions,
+                proposed_batches: mempool_stats.proposed_batches,
+                proven_batches: mempool_stats.proven_batches,
+            },
         }
     }
 }
@@ -173,7 +227,7 @@ impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
             proto::remote_prover::WorkerHealthStatus::try_from(value.status).unwrap().into();
 
         Self {
-            address: value.address,
+            name: value.name,
             version: value.version,
             status,
         }
@@ -231,14 +285,16 @@ pub async fn run_rpc_status_task(
     rpc_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
     status_check_interval: Duration,
+    request_timeout: Duration,
 ) {
     let mut rpc = ClientBuilder::new(rpc_url)
         .with_tls()
         .expect("TLS is enabled")
-        .with_timeout(Duration::from_secs(10))
+        .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<Rpc>();
+        .without_otel_context_injection()
+        .connect_lazy::<RpcClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -322,15 +378,17 @@ pub async fn run_remote_prover_status_task(
     name: String,
     status_sender: watch::Sender<ServiceStatus>,
     status_check_interval: Duration,
+    request_timeout: Duration,
 ) {
     let url_str = prover_url.to_string();
     let mut remote_prover = ClientBuilder::new(prover_url)
         .with_tls()
         .expect("TLS is enabled")
-        .with_timeout(Duration::from_secs(10))
+        .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<RemoteProverProxy>();
+        .without_otel_context_injection()
+        .connect_lazy::<RemoteProverProxyStatusClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);

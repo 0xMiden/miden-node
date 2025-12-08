@@ -232,7 +232,7 @@ impl NetworkTransactionBuilder {
 
         // Update MMR which lags by one block.
         let mmr_tip = chain_state.chain_tip_header.clone();
-        chain_state.chain_mmr.add_block(mmr_tip, true);
+        chain_state.chain_mmr.add_block(&mmr_tip, true);
 
         // Set the new tip.
         chain_state.chain_tip_header = tip;

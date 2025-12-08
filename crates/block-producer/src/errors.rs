@@ -1,13 +1,17 @@
-use miden_block_prover::ProvenBlockError;
+use core::error::Error as CoreError;
+
+use miden_block_prover::BlockProverError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 use miden_objects::transaction::TransactionId;
 use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
+
+use crate::validator::ValidatorError;
 
 // Block-producer errors
 // =================================================================================================
@@ -44,12 +48,12 @@ pub enum VerifyTxError {
     /// Unauthenticated transaction notes were not found in the store or in outputs of in-flight
     /// transactions
     #[error(
-        "unauthenticated transaction notes were not found in the store or in outputs of in-flight transactions: {0:?}"
+        "unauthenticated transaction note commitments were not found in the store or in outputs of in-flight transactions: {0:?}"
     )]
-    UnauthenticatedNotesNotFound(Vec<NoteId>),
+    UnauthenticatedNotesNotFound(Vec<Word>),
 
-    #[error("output note IDs already used: {0:?}")]
-    OutputNotesAlreadyExist(Vec<NoteId>),
+    #[error("output note commitments already used: {0:?}")]
+    OutputNotesAlreadyExist(Vec<Word>),
 
     /// The account's initial commitment did not match the current account's commitment
     #[error(
@@ -83,12 +87,12 @@ pub enum AddTransactionError {
     InputNotesAlreadyConsumed(Vec<Nullifier>),
 
     #[error(
-        "unauthenticated transaction notes were not found in the store or in outputs of in-flight transactions: {0:?}"
+        "unauthenticated transaction note commitments were not found in the store or in outputs of in-flight transactions: {0:?}"
     )]
-    UnauthenticatedNotesNotFound(Vec<NoteId>),
+    UnauthenticatedNotesNotFound(Vec<Word>),
 
-    #[error("output note IDs already used: {0:?}")]
-    OutputNotesAlreadyExist(Vec<NoteId>),
+    #[error("output note commitments already used: {0:?}")]
+    OutputNotesAlreadyExist(Vec<Word>),
 
     #[error(
         "transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {current_account_commitment}"
@@ -132,11 +136,11 @@ impl From<VerifyTxError> for AddTransactionError {
             VerifyTxError::InputNotesAlreadyConsumed(nullifiers) => {
                 Self::InputNotesAlreadyConsumed(nullifiers)
             },
-            VerifyTxError::UnauthenticatedNotesNotFound(note_ids) => {
-                Self::UnauthenticatedNotesNotFound(note_ids)
+            VerifyTxError::UnauthenticatedNotesNotFound(note_commitments) => {
+                Self::UnauthenticatedNotesNotFound(note_commitments)
             },
-            VerifyTxError::OutputNotesAlreadyExist(note_ids) => {
-                Self::OutputNotesAlreadyExist(note_ids)
+            VerifyTxError::OutputNotesAlreadyExist(note_commitments) => {
+                Self::OutputNotesAlreadyExist(note_commitments)
             },
             VerifyTxError::IncorrectAccountInitialCommitment {
                 tx_initial_account_commitment,
@@ -204,8 +208,10 @@ pub enum BuildBlockError {
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
+    #[error("failed to validate block")]
+    ValidateBlockFailed(#[source] Box<ValidatorError>),
     #[error("failed to prove block")]
-    ProveBlockFailed(#[source] ProvenBlockError),
+    ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure
     /// responses.
     #[error("nothing actually went wrong, failure was injected on purpose")]
@@ -214,6 +220,21 @@ pub enum BuildBlockError {
     RemoteProverClientError(#[source] RemoteProverClientError),
     #[error("block proof security level is too low: {0} < {1}")]
     SecurityLevelTooLow(u32, u32),
+    /// Custom error variant for errors not covered by the other variants.
+    #[error("{error_msg}")]
+    Other {
+        error_msg: Box<str>,
+        source: Option<Box<dyn CoreError + Send + Sync + 'static>>,
+    },
+}
+
+impl BuildBlockError {
+    /// Creates a custom error using the [`BuildBlockError::Other`] variant from an
+    /// error message.
+    pub fn other(message: impl Into<String>) -> Self {
+        let message: String = message.into();
+        Self::Other { error_msg: message.into(), source: None }
+    }
 }
 
 // Store errors

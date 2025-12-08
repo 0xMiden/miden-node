@@ -54,7 +54,7 @@ const CACHED_MEMPOOL_STATS_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 ///
 /// The value is selected such that all transactions should approximately be processed within one
 /// minutes with a block time of 5s.
-const DEFAULT_MEMPOOL_TX_CAPACITY: NonZeroUsize =
+pub const DEFAULT_MEMPOOL_TX_CAPACITY: NonZeroUsize =
     NonZeroUsize::new(DEFAULT_MAX_BATCHES_PER_BLOCK * DEFAULT_MAX_TXS_PER_BATCH * (60 / 5))
         .unwrap();
 

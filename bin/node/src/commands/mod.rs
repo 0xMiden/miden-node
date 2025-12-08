@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use miden_node_block_producer::{DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH};
@@ -24,6 +25,7 @@ const ENV_ENABLE_OTEL: &str = "MIDEN_NODE_ENABLE_OTEL";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_GENESIS_CONFIG_FILE";
 const ENV_MAX_TXS_PER_BATCH: &str = "MIDEN_MAX_TXS_PER_BATCH";
 const ENV_MAX_BATCHES_PER_BLOCK: &str = "MIDEN_MAX_BATCHES_PER_BLOCK";
+const ENV_MEMPOOL_TX_CAPACITY: &str = "MIDEN_NODE_MEMPOOL_TX_CAPACITY";
 
 const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(2);
@@ -95,4 +97,12 @@ pub struct BlockProducerConfig {
     /// Maximum number of batches per block.
     #[arg(long = "max-batches-per-block", env = ENV_MAX_BATCHES_PER_BLOCK, value_name = "NUM", default_value_t = DEFAULT_MAX_BATCHES_PER_BLOCK)]
     pub max_batches_per_block: usize,
+
+    #[arg(
+        long = "mempool.tx-capacity",
+        default_value_t = miden_node_block_producer::DEFAULT_MEMPOOL_TX_CAPACITY,
+        env = ENV_MEMPOOL_TX_CAPACITY,
+        value_name = "NUM"
+    )]
+    mempool_tx_capacity: NonZeroUsize,
 }

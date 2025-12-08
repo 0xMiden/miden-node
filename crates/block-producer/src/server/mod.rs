@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -73,6 +74,9 @@ pub struct BlockProducer {
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
+
+    /// The maximum number of inflight transactions allowed in the mempool at once.
+    pub mempool_tx_capacity: NonZeroUsize,
 }
 
 impl BlockProducer {
@@ -135,6 +139,7 @@ impl BlockProducer {
                 ..BatchBudget::default()
             },
             block_budget: BlockBudget { batches: self.max_batches_per_block },
+            tx_capacity: self.mempool_tx_capacity,
             ..Default::default()
         };
         let mempool = Mempool::shared(chain_tip, mempool);

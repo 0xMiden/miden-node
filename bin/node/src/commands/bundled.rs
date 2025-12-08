@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -215,6 +216,7 @@ impl BundledCommand {
                         max_txs_per_batch: block_producer.max_txs_per_batch,
                         production_checkpoint: checkpoint,
                         grpc_timeout,
+                        mempool_tx_capacity: NonZeroUsize::new(1000).unwrap(),
                     }
                     .serve()
                     .await

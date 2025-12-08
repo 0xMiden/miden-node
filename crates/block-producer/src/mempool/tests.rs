@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use miden_objects::Word;
+use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use pretty_assertions::assert_eq;
 use serial_test::serial;
@@ -268,6 +269,100 @@ fn transactions_from_reverted_batches_are_requeued() {
     reference.add_transaction(tx_set_a[1].clone()).unwrap();
     reference.add_transaction(tx_set_b[2].clone()).unwrap();
     reference.add_transaction(tx_set_a[2].clone()).unwrap();
+
+    assert_eq!(uut, reference);
+}
+
+/// This test checks that pass through transactions can succesfully be added to an empty mempool,
+/// and that they work as expected.
+#[test]
+fn pass_through_txs_on_an_empty_account() {
+    let (mut uut, _) = Mempool::for_tests();
+
+    let tx_final = MockProvenTxBuilder::with_account_index(0).build();
+    let tx_final = Arc::new(AuthenticatedTransaction::from_inner(tx_final));
+
+    let account_update = tx_final.account_update().clone();
+    let tx_pass_through_base = MockProvenTxBuilder::with_account(
+        account_update.account_id(),
+        account_update.initial_state_commitment(),
+        account_update.initial_state_commitment(),
+    );
+
+    // Note: transactions _must_ have an input note or update an account to be considered valid.
+    // Since by definition pass through txs don't update an account, they must have a nullifier.
+    let tx_pass_through_a = tx_pass_through_base.clone().nullifiers_range(0..2).build();
+    let tx_pass_through_a = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_a));
+
+    let tx_pass_through_b = tx_pass_through_base.nullifiers_range(3..5).build();
+    let tx_pass_through_b = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_b));
+
+    uut.add_transaction(tx_pass_through_a.clone()).unwrap();
+    uut.add_transaction(tx_pass_through_b.clone()).unwrap();
+    uut.add_transaction(tx_final.clone()).unwrap();
+
+    let batch = uut.select_batch().unwrap();
+
+    // Ensure the batch correctly aggregates the account update.
+    let expected = std::iter::once((
+        account_update.account_id(),
+        account_update.initial_state_commitment(),
+        account_update.final_state_commitment(),
+    ));
+    itertools::assert_equal(batch.account_updates(), expected);
+
+    // Ensure the batch contains a,b and final. Final should also be the last tx since its order
+    // is required.
+    assert!(batch.txs().contains(&tx_pass_through_a));
+    assert!(batch.txs().contains(&tx_pass_through_b));
+    assert_eq!(batch.txs().last().unwrap(), &tx_final);
+}
+
+/// Tests that pass through transactions retain parent-child relations based on notes, even though
+/// they act as "siblings" for account purposes.
+#[test]
+fn pass_through_txs_with_note_dependencies() {
+    let (mut uut, mut reference) = Mempool::for_tests();
+
+    // Used to get a valid account ID.
+    let tx_final = MockProvenTxBuilder::with_account_index(0).build();
+    let account_update = tx_final.account_update();
+
+    let tx_pass_through_base = MockProvenTxBuilder::with_account(
+        account_update.account_id(),
+        account_update.initial_state_commitment(),
+        account_update.initial_state_commitment(),
+    );
+
+    // Note: transactions _must_ have an input note or update an account to be considered valid.
+    // Since by definition pass through txs don't update an account, they must have a nullifier.
+    let tx_pass_through_a = tx_pass_through_base
+        .clone()
+        .nullifiers_range(0..2)
+        .private_notes_created_range(3..4)
+        .build();
+    let tx_pass_through_a = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_a));
+
+    // This includes a note (3) created by (a).
+    let tx_pass_through_b = tx_pass_through_base.unauthenticated_notes_range(3..4).build();
+    let tx_pass_through_b = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_b));
+
+    // Select batches such that (a) and (b) go into separate batches.
+    //
+    // We then rollback batch (a) and check that batch (b) is also reverted which tests that the
+    // relationship was correctly inferred by the mempool.
+    uut.add_transaction(tx_pass_through_a.clone()).unwrap();
+    let batch_a = uut.select_batch().unwrap();
+    assert_eq!(batch_a.txs(), &[tx_pass_through_a.clone()]);
+
+    uut.add_transaction(tx_pass_through_b.clone()).unwrap();
+    let batch_b = uut.select_batch().unwrap();
+    assert_eq!(batch_b.txs(), &[tx_pass_through_b.clone()]);
+
+    // Rollback (a) and check that (b) also reverted by comparing to the reference.
+    uut.rollback_batch(batch_a.id());
+    reference.add_transaction(tx_pass_through_a).unwrap();
+    reference.add_transaction(tx_pass_through_b).unwrap();
 
     assert_eq!(uut, reference);
 }

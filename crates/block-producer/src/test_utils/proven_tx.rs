@@ -20,6 +20,7 @@ use rand::Rng;
 use super::MockPrivateAccount;
 use crate::domain::transaction::AuthenticatedTransaction;
 
+#[derive(Clone)]
 pub struct MockProvenTxBuilder {
     account_id: AccountId,
     initial_account_commitment: Word,

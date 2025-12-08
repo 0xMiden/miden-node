@@ -350,3 +350,73 @@ impl Nodes {
         span.set_attribute("mempool.batches.proven", self.proven_batches.len());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use miden_objects::batch::BatchAccountUpdate;
+    use miden_objects::transaction::{InputNotes, OrderedTransactionHeaders};
+
+    use super::*;
+    use crate::test_utils::MockProvenTxBuilder;
+
+    #[test]
+    fn proposed_batch_aggregates_account_updates() {
+        let mut batch = SelectedBatch::builder();
+        let txs = MockProvenTxBuilder::sequential();
+
+        let account = txs.first().unwrap().account_id();
+        let from = txs.first().unwrap().account_update().initial_state_commitment();
+        let to = txs.last().unwrap().account_update().final_state_commitment();
+        let expected = std::iter::once((account, from, to));
+
+        for tx in txs {
+            batch.push(tx);
+        }
+        let batch = ProposedBatchNode::new(batch.build());
+
+        itertools::assert_equal(batch.account_updates(), expected);
+    }
+
+    #[test]
+    fn block_aggregates_account_updates() {
+        // We map each tx into its own batch.
+        //
+        // This let's us trivially know what the expected aggregate block account update should be.
+        let txs = MockProvenTxBuilder::sequential();
+        let account = txs.first().unwrap().account_id();
+        let from = txs.first().unwrap().account_update().initial_state_commitment();
+        let to = txs.last().unwrap().account_update().final_state_commitment();
+        let expected = std::iter::once((account, from, to));
+
+        let mut block = BlockNode::new(BlockNumber::default());
+
+        for tx in txs {
+            let mut batch = SelectedBatch::builder();
+            batch.push(tx.clone());
+            let batch = batch.build();
+            let batch = ProposedBatchNode::new(batch);
+
+            let account_update = BatchAccountUpdate::from_transaction(tx.raw_proven_transaction());
+
+            let tx_header = TransactionHeader::from(tx.raw_proven_transaction());
+            let proven_batch = ProvenBatch::new(
+                batch.batch_id(),
+                Word::default(),
+                BlockNumber::default(),
+                BTreeMap::from([(account_update.account_id(), account_update)]),
+                InputNotes::default(),
+                Vec::default(),
+                BlockNumber::from(u32::MAX),
+                OrderedTransactionHeaders::new_unchecked(vec![tx_header]),
+            )
+            .unwrap();
+
+            let batch = batch.into_proven_batch_node(Arc::new(proven_batch));
+            block.push(batch);
+        }
+
+        itertools::assert_equal(block.account_updates(), expected);
+    }
+}

@@ -2760,6 +2760,7 @@ version = "0.13.0"
 dependencies = [
  "anyhow",
  "futures",
+ "indexmap 2.12.1",
  "miden-lib",
  "miden-node-proto",
  "miden-node-test-macro",
@@ -2771,6 +2772,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tonic",
  "tracing",
  "url",

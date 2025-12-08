@@ -4,7 +4,7 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::fee::test_fee_params;
 use miden_objects::Word;
 use miden_objects::block::BlockHeader;
-use miden_objects::ecdsa_signer::{EcdsaSigner, LocalEcdsaSigner};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::{PartialBlockchain, TransactionId};
 
@@ -15,18 +15,18 @@ use crate::store::StoreClient;
 fn create_mock_state() -> State {
     // Create a minimal genesis block header
     let chain_tip_header = BlockHeader::new(
-        1_u8.into(),                            // version
-        Word::default(),                        // prev_hash
-        0_u32.into(),                           // block_num (genesis)
-        Word::default(),                        // chain_root
-        Word::default(),                        // account_root
-        Word::default(),                        // nullifier_root
-        Word::default(),                        // note_root
-        Word::default(),                        // tx_hash
-        Word::default(),                        // kernel_root
-        LocalEcdsaSigner::dummy().public_key(), // public_key
-        test_fee_params(),                      // fee_parameters
-        0_u32,                                  // timestamp
+        1_u8.into(),                   // version
+        Word::default(),               // prev_hash
+        0_u32.into(),                  // block_num (genesis)
+        Word::default(),               // chain_root
+        Word::default(),               // account_root
+        Word::default(),               // nullifier_root
+        Word::default(),               // note_root
+        Word::default(),               // tx_hash
+        Word::default(),               // kernel_root
+        SecretKey::new().public_key(), // public_key
+        test_fee_params(),             // fee_parameters
+        0_u32,                         // timestamp
     );
 
     // Create an empty partial blockchain

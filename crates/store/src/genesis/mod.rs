@@ -13,8 +13,9 @@ use miden_objects::block::{
     FeeParameters,
     ProvenBlock,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
-use miden_objects::ecdsa_signer::{EcdsaSigner, LocalEcdsaSigner};
+use miden_objects::ecdsa_signer::EcdsaSigner;
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
@@ -28,11 +29,12 @@ pub mod config;
 
 /// Represents the state at genesis, which will be used to derive the genesis block.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GenesisState {
+pub struct GenesisState<S> {
     pub accounts: Vec<Account>,
     pub fee_parameters: FeeParameters,
     pub version: u32,
     pub timestamp: u32,
+    pub signer: S,
 }
 
 /// A type-safety wrapper ensuring that genesis block data can only be created from
@@ -49,21 +51,25 @@ impl GenesisBlock {
     }
 }
 
-impl GenesisState {
+impl<S> GenesisState<S> {
     pub fn new(
         accounts: Vec<Account>,
         fee_parameters: FeeParameters,
         version: u32,
         timestamp: u32,
+        signer: S,
     ) -> Self {
         Self {
             accounts,
             fee_parameters,
             version,
             timestamp,
+            signer,
         }
     }
+}
 
+impl<S: EcdsaSigner> GenesisState<S> {
     /// Returns the block header and the account SMT
     pub fn into_block(self) -> Result<GenesisBlock, GenesisError> {
         let accounts: Vec<BlockAccountUpdate> = self
@@ -116,7 +122,7 @@ impl GenesisState {
             empty_block_note_tree.root(),
             Word::empty(),
             TransactionKernel.to_commitment(),
-            LocalEcdsaSigner::dummy().public_key(),
+            self.signer.public_key(),
             self.fee_parameters,
             self.timestamp,
         );
@@ -130,17 +136,18 @@ impl GenesisState {
 
         let block_proof = BlockProof::new_dummy();
 
+        let signature = self.signer.sign(header.commitment());
         // SAFETY: Header and accounts should be valid by construction.
         // No notes or nullifiers are created at genesis, which is consistent with the above empty
         // block note tree root and empty nullifier tree root.
-        Ok(GenesisBlock(ProvenBlock::new_unchecked(header, body, block_proof)))
+        Ok(GenesisBlock(ProvenBlock::new_unchecked(header, signature, body, block_proof)))
     }
 }
 
 // SERIALIZATION
 // ================================================================================================
 
-impl Deserializable for GenesisState {
+impl<S: Deserializable> Deserializable for GenesisState<S> {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_accounts = source.read_usize()?;
         let accounts = source.read_many::<Account>(num_accounts)?;
@@ -148,7 +155,8 @@ impl Deserializable for GenesisState {
         let version = source.read_u32()?;
         let timestamp = source.read_u32()?;
         let fee_parameters = source.read::<FeeParameters>()?;
+        let signer = source.read::<S>()?;
 
-        Ok(Self::new(accounts, fee_parameters, version, timestamp))
+        Ok(Self::new(accounts, fee_parameters, version, timestamp, signer))
     }
 }

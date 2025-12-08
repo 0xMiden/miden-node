@@ -9,7 +9,7 @@ use miden_objects::block::{
     FeeParameters,
     NullifierWitness,
 };
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
 use miden_objects::utils::{Deserializable, Serializable};
@@ -223,6 +223,29 @@ impl From<PublicKey> for proto::blockchain::PublicKey {
 impl From<&PublicKey> for proto::blockchain::PublicKey {
     fn from(value: &PublicKey) -> Self {
         Self { public_key: value.to_bytes() }
+    }
+}
+
+// SIGNATURE
+// ================================================================================================
+
+impl TryFrom<proto::primitives::Signature> for Signature {
+    type Error = ConversionError;
+    fn try_from(signature: proto::primitives::Signature) -> Result<Self, Self::Error> {
+        Signature::read_from_bytes(&signature.signature)
+            .map_err(|source| ConversionError::deserialization_error("Signature", source))
+    }
+}
+
+impl From<Signature> for proto::primitives::Signature {
+    fn from(value: Signature) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<&Signature> for proto::primitives::Signature {
+    fn from(value: &Signature) -> Self {
+        Self { signature: value.to_bytes() }
     }
 }
 

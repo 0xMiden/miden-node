@@ -176,7 +176,7 @@ impl StoreCommand {
             .transpose()?
             .unwrap_or_default();
 
-        let (genesis_state, secrets) = config.into_state()?;
+        let (genesis_state, secrets) = config.into_state(signer)?;
 
         // Create directories if they do not already exist.
         for directory in &[accounts_directory, data_directory] {

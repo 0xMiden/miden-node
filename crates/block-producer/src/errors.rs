@@ -211,8 +211,6 @@ pub enum BuildBlockError {
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
-    #[error("failed to build block header and body")]
-    BuildBlockFailed(#[source] miden_lib::block::BuildBlockError),
     #[error("failed to validate block")]
     ValidateBlockFailed(#[source] Box<ValidatorError>),
     #[error("block signature is invalid")]

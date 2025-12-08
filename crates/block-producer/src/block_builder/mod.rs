@@ -17,6 +17,7 @@ use miden_objects::block::{
     ProposedBlock,
     ProvenBlock,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::note::NoteHeader;
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
@@ -130,8 +131,8 @@ impl BlockBuilder {
                 ProposedBlock::inject_telemetry(proposed_block);
             })
             .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
-            .and_then(|(proposed_block, inputs, header, body)| self.prove_block(proposed_block, inputs, header, body))
-            .and_then(|(proposed_block, header, body, block_proof)| self.construct_proven_block(proposed_block, header, body, block_proof))
+            .and_then(|(proposed_block, inputs, header, signature, body)| self.prove_block(proposed_block, inputs, header, signature, body))
+            .and_then(|(proposed_block, header, signature, body, block_proof)| self.construct_proven_block(proposed_block, header, signature, body, block_proof))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
@@ -230,7 +231,8 @@ impl BlockBuilder {
         &self,
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
-    ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, BlockBody), BuildBlockError> {
+    ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, Signature, BlockBody), BuildBlockError>
+    {
         // Concurrently build the block and validate it via the validator.
         let build_result = tokio::task::spawn_blocking({
             let proposed_block = proposed_block.clone();
@@ -244,7 +246,7 @@ impl BlockBuilder {
         let (header, body) = build_result
             .await
             .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
-            .map_err(BuildBlockError::BuildBlockFailed)?;
+            .map_err(BuildBlockError::ProposeBlockFailed)?;
 
         // TODO(sergerad): Revert the logic to !signature.verify() when the validator key is
         // properly established. The verification will fail while the validator key is random.
@@ -256,7 +258,7 @@ impl BlockBuilder {
         }
 
         let (ordered_batches, ..) = proposed_block.into_parts();
-        Ok((ordered_batches, block_inputs, header, body))
+        Ok((ordered_batches, block_inputs, header, signature, body))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
@@ -265,8 +267,10 @@ impl BlockBuilder {
         ordered_batches: OrderedBatches,
         block_inputs: BlockInputs,
         header: BlockHeader,
+        signature: Signature,
         body: BlockBody,
-    ) -> Result<(OrderedBatches, BlockHeader, BlockBody, BlockProof), BuildBlockError> {
+    ) -> Result<(OrderedBatches, BlockHeader, Signature, BlockBody, BlockProof), BuildBlockError>
+    {
         // Prove block using header and body from validator.
         let block_proof = self
             .block_prover
@@ -274,7 +278,7 @@ impl BlockBuilder {
             .await?;
         self.simulate_proving().await;
 
-        Ok((ordered_batches, header, body, block_proof))
+        Ok((ordered_batches, header, signature, body, block_proof))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.construct_proven_block", skip_all, err)]
@@ -282,11 +286,12 @@ impl BlockBuilder {
         &self,
         ordered_batches: OrderedBatches,
         header: BlockHeader,
+        signature: Signature,
         body: BlockBody,
         block_proof: BlockProof,
     ) -> Result<ProvenBlock, BuildBlockError> {
         // SAFETY: The header and body are assumed valid and consistent with the proof.
-        let proven_block = ProvenBlock::new_unchecked(header, body, block_proof);
+        let proven_block = ProvenBlock::new_unchecked(header, signature, body, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
                 proven_block.proof_security_level(),

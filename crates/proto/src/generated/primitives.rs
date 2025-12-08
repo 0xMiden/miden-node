@@ -96,3 +96,11 @@ pub struct Digest {
     #[prost(fixed64, tag = "4")]
     pub d3: u64,
 }
+/// ECDSA Signature.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Signature {
+    /// Signature encoded using \[winter_utils::Serializable\] implementation for
+    /// \[crypto::dsa::ecdsa_k256_keccak::Signature\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
+}

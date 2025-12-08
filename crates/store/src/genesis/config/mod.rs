@@ -32,6 +32,7 @@ use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::GenesisState;
 
@@ -94,7 +95,10 @@ impl GenesisConfig {
     ///
     /// Also returns the set of secrets for the generated accounts.
     #[allow(clippy::too_many_lines)]
-    pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
+    pub fn into_state<S>(
+        self,
+        signer: S,
+    ) -> Result<(GenesisState<S>, AccountSecrets), GenesisConfigError> {
         let GenesisConfig {
             version,
             timestamp,
@@ -263,6 +267,7 @@ impl GenesisConfig {
                 accounts: all_accounts,
                 version,
                 timestamp,
+                signer,
             },
             AccountSecrets { secrets },
         ))
@@ -434,9 +439,9 @@ impl AccountSecrets {
     ///
     /// If no name is present, a new one is generated based on the current time
     /// and the index in
-    pub fn as_account_files(
+    pub fn as_account_files<S>(
         &self,
-        genesis_state: &GenesisState,
+        genesis_state: &GenesisState<S>,
     ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_> {
         let account_lut = IndexMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),

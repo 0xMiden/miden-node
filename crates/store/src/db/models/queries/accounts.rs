@@ -799,7 +799,7 @@ pub(crate) fn insert_account_vault_asset(
 /// Insert an account storage header into the DB using the given [`SqliteConnection`].
 ///
 /// Sets `is_latest=true` for the new row and updates any existing
-/// row with the same (account_id, slot_index) tuple to `is_latest=false`.
+/// row with the same (`account_id`, `slot_index`) tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -1262,7 +1262,7 @@ fn compute_storage_commitment(slot_commitments: &[Word]) -> Word {
     Rpo256::hash_elements(&elements)
 }
 
-/// Helper function to check if a block exists in the block_headers table.
+/// Helper function to check if a block exists in the `block_headers` table.
 ///
 /// This should be called by all `_at_block` query functions to ensure that
 /// queries are only performed against blocks that have been produced.

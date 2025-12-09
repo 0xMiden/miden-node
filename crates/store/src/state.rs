@@ -538,7 +538,7 @@ impl State {
             self.query_account_storages_from_db(changed_account_ids, block_num).await?;
 
         // Step 2: Extract map slots and their entries
-        let map_slots_to_populate = self.extract_map_slots_from_storage(&account_storages);
+        let map_slots_to_populate = Self::extract_map_slots_from_storage(&account_storages);
 
         // Step 3: Update the forest with new SMTs
         self.populate_forest_with_storage_maps(map_slots_to_populate, block_num).await?;
@@ -565,10 +565,10 @@ impl State {
 
     /// Extracts map-type storage slots and their entries from account storage data
     #[instrument(target = COMPONENT, skip_all, fields(num_accounts = account_storages.len()))]
-    fn extract_map_slots_from_storage(
-        &self,
-        account_storages: &[(AccountId, miden_objects::account::AccountStorage)],
-    ) -> Vec<(AccountId, u8, Vec<(&Word, &Word)>)> {
+    #[allow(clippy::type_complexity)]
+    fn extract_map_slots_from_storage<'a>(
+        account_storages: &'a [(AccountId, miden_objects::account::AccountStorage)],
+    ) -> Vec<(AccountId, u8, Vec<(&'a Word, &'a Word)>)> {
         let mut map_slots = Vec::new();
 
         for (account_id, storage) in account_storages {
@@ -586,6 +586,7 @@ impl State {
 
     /// Populates the forest with storage map SMTs for the given slots
     #[instrument(target = COMPONENT, skip_all, fields(num_slots = map_slots.len()))]
+    #[allow(clippy::type_complexity)]
     async fn populate_forest_with_storage_maps(
         &self,
         map_slots: Vec<(AccountId, u8, Vec<(&Word, &Word)>)>,

@@ -1416,6 +1416,25 @@ fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpd
     BlockAccountUpdate::new(account_id, num_to_word(num), AccountUpdateDetails::Private)
 }
 
+// Helper function to create account with specific code for tests
+fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
+    let component_storage =
+        vec![StorageSlot::Value(Word::empty()), StorageSlot::Value(num_to_word(1))];
+
+    let component =
+        AccountComponent::compile(code_str, TransactionKernel::assembler(), component_storage)
+            .unwrap()
+            .with_supported_type(AccountType::RegularAccountUpdatableCode);
+
+    AccountBuilder::new(seed)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap()
+}
+
 fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader {
     let initial_state_commitment = Word::try_from([num, 0, 0, 0]).unwrap();
     let final_account_commitment = Word::try_from([0, num, 0, 0]).unwrap();
@@ -1926,25 +1945,6 @@ fn test_select_account_code_at_block_with_updates() {
     create_block(&mut conn, block_num_1);
     create_block(&mut conn, block_num_2);
     create_block(&mut conn, block_num_3);
-
-    // Helper function to create account with specific code
-    fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
-        let component_storage =
-            vec![StorageSlot::Value(Word::empty()), StorageSlot::Value(num_to_word(1))];
-
-        let component =
-            AccountComponent::compile(code_str, TransactionKernel::assembler(), component_storage)
-                .unwrap()
-                .with_supported_type(AccountType::RegularAccountUpdatableCode);
-
-        AccountBuilder::new(seed)
-            .account_type(AccountType::RegularAccountUpdatableCode)
-            .storage_mode(AccountStorageMode::Public)
-            .with_component(component)
-            .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
-            .build_existing()
-            .unwrap()
-    }
 
     // Create initial account with code v1 at block 1
     let code_v1_str = "\

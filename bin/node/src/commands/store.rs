@@ -176,6 +176,11 @@ impl StoreCommand {
             .transpose()?
             .unwrap_or_default();
 
+        let signer = if let SignerConfig::Local { secret_key } = signer {
+            EcdsaSecretKey::read_from_bytes(secret_key.as_bytes())?
+        } else {
+            return Err(GenesisConfigError::UnsupportedSignerConfig);
+        };
         let (genesis_state, secrets) = config.into_state(signer)?;
 
         // Create directories if they do not already exist.

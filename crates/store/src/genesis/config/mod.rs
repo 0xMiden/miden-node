@@ -26,13 +26,12 @@ use miden_objects::account::{
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
 use miden_objects::block::FeeParameters;
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
+use miden_objects::crypto::dsa::rpo_falcon512::SecretKey as RpoSecretKey;
 use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 use crate::GenesisState;
 
@@ -42,6 +41,12 @@ use self::errors::GenesisConfigError;
 #[cfg(test)]
 mod tests;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum SignerConfig {
+    /// An insecure, locally stored secret key used for development purposes.
+    Local { secret_key: String },
+}
+
 // GENESIS CONFIG
 // ================================================================================================
 
@@ -50,12 +55,13 @@ mod tests;
 /// Notice: Any faucet must be declared _before_ it's use in a wallet/regular account.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GenesisConfig {
-    version: u32,
-    timestamp: u32,
-    native_faucet: NativeFaucet,
-    fee_parameters: FeeParameterConfig,
-    wallet: Vec<WalletConfig>,
-    fungible_faucet: Vec<FungibleFaucetConfig>,
+    pub version: u32,
+    pub timestamp: u32,
+    pub native_faucet: NativeFaucet,
+    pub fee_parameters: FeeParameterConfig,
+    pub wallet: Vec<WalletConfig>,
+    pub fungible_faucet: Vec<FungibleFaucetConfig>,
+    pub signer: SignerConfig,
 }
 
 impl Default for GenesisConfig {
@@ -78,6 +84,7 @@ impl Default for GenesisConfig {
             },
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
+            signer: SignerConfig::Local { secret_key: String::new() },
         }
     }
 }
@@ -106,6 +113,7 @@ impl GenesisConfig {
             fee_parameters,
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
+            ..
         } = self;
 
         let symbol = native_faucet.symbol.clone();
@@ -158,7 +166,7 @@ impl GenesisConfig {
             tracing::debug!("Adding wallet account {index} with {assets:?}");
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
-            let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let secret_key = RpoSecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key().into() };
             let init_seed: [u8; 32] = rng.random();
 
@@ -337,7 +345,7 @@ pub struct FungibleFaucetConfig {
 
 impl FungibleFaucetConfig {
     /// Create a fungible faucet from a config entry
-    fn build_account(self) -> Result<(Account, SecretKey), GenesisConfigError> {
+    fn build_account(self) -> Result<(Account, RpoSecretKey), GenesisConfigError> {
         let FungibleFaucetConfig {
             symbol,
             decimals,
@@ -345,7 +353,7 @@ impl FungibleFaucetConfig {
             storage_mode,
         } = self;
         let mut rng = ChaCha20Rng::from_seed(rand::random());
-        let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+        let secret_key = RpoSecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
         let auth = AuthRpoFalcon512::new(secret_key.public_key().into());
         let init_seed: [u8; 32] = rng.random();
 
@@ -431,7 +439,7 @@ pub struct AccountFileWithName {
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
     // name, account, private key, account seed
-    pub secrets: Vec<(String, AccountId, SecretKey)>,
+    pub secrets: Vec<(String, AccountId, RpoSecretKey)>,
 }
 
 impl AccountSecrets {
@@ -442,7 +450,7 @@ impl AccountSecrets {
     pub fn as_account_files<S>(
         &self,
         genesis_state: &GenesisState<S>,
-    ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_> {
+    ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_, S> {
         let account_lut = IndexMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );

@@ -13,7 +13,6 @@ use miden_objects::block::{
     FeeParameters,
     ProvenBlock,
 };
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
 use miden_objects::ecdsa_signer::EcdsaSigner;
 use miden_objects::note::Nullifier;

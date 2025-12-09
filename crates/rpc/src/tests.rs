@@ -8,7 +8,7 @@ use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
-use miden_node_store::genesis::config::GenesisConfig;
+use miden_node_store::genesis::config::{GenesisConfig, SignerConfig};
 use miden_node_utils::fee::test_fee;
 use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -20,10 +20,12 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::testing::noop_auth_component::NoopAuthComponent;
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;
 use miden_objects::vm::ExecutionProof;
+use miden_tx::utils::Deserializable;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::runtime::{self, Runtime};
@@ -423,7 +425,11 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     // Start the store.
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
 
-    let (genesis_state, _) = GenesisConfig::default().into_state().unwrap();
+    let config = GenesisConfig::default();
+    let SignerConfig::Local { secret_key } = &config.signer;
+    let signer =
+        SecretKey::read_from_bytes(secret_key.as_bytes()).expect("secret key must be valid");
+    let (genesis_state, _) = config.into_state(signer).unwrap();
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();
     let rpc_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");

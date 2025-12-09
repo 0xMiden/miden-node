@@ -9,7 +9,7 @@ use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_objects::block::ProposedBlock;
-use miden_objects::ecdsa_signer::{EcdsaSigner, LocalEcdsaSigner};
+use miden_objects::ecdsa_signer::EcdsaSigner;
 use miden_objects::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -107,7 +107,7 @@ impl api_server::Api for ValidatorServer {
     async fn sign_block(
         &self,
         request: tonic::Request<proto::blockchain::ProposedBlock>,
-    ) -> Result<tonic::Response<proto::validator::Signature>, tonic::Status> {
+    ) -> Result<tonic::Response<proto::primitives::Signature>, tonic::Status> {
         let proposed_block_bytes = request.into_inner().proposed_block;
 
         // Deserialize the proposed block.
@@ -125,7 +125,7 @@ impl api_server::Api for ValidatorServer {
         let signature = LocalEcdsaSigner::dummy().sign(header.commitment());
 
         // Send the signature.
-        let response = proto::validator::Signature { signature: signature.to_bytes() };
+        let response = proto::primitives::Signature { signature: signature.to_bytes() };
         Ok(tonic::Response::new(response))
     }
 }

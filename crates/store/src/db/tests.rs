@@ -36,7 +36,6 @@ use miden_objects::block::{
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
-use miden_objects::ecdsa_signer::EcdsaSigner;
 use miden_objects::note::{
     Note,
     NoteDetails,

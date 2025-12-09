@@ -36,6 +36,7 @@ use miden_objects::block::{
     ProposedBlock,
     ProvenBlock,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey as EcdsaSecretKey;
 use miden_objects::crypto::dsa::rpo_falcon512::{PublicKey, SecretKey};
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
@@ -89,7 +90,8 @@ pub async fn seed_store(
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
     let fee_params = FeeParameters::new(faucet.id(), 0).unwrap();
-    let genesis_state = GenesisState::new(vec![faucet.clone()], fee_params, 1, 1);
+    let signer = EcdsaSecretKey::new();
+    let genesis_state = GenesisState::new(vec![faucet.clone()], fee_params, 1, 1, signer);
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
@@ -251,7 +253,8 @@ async fn apply_block(
     let block_proof = LocalBlockProver::new(0)
         .prove_dummy(proposed_block.batches().clone(), header.clone(), block_inputs)
         .unwrap();
-    let proven_block = ProvenBlock::new_unchecked(header, body, block_proof);
+    let signature = EcdsaSecretKey::new().sign(header.commitment());
+    let proven_block = ProvenBlock::new_unchecked(header, signature, body, block_proof);
     let block_size: usize = proven_block.to_bytes().len();
 
     let start = Instant::now();

@@ -228,7 +228,7 @@ where
         if request.method() == http::Method::OPTIONS {
             return self.inner.call(request).boxed();
         }
-        
+
         // Determine if this RPC method requires the `genesis` parameter.
         let path = request.uri().path();
         let method_name = path.rsplit('/').next().unwrap_or_default();

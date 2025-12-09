@@ -347,12 +347,30 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
+/// Account vault assets
+///
+/// Represents a list of assets, if the number of assets is reasonably small, which
+/// is currently set to 1000 for no particular reason.
+///
+/// When an account contains a large number of assets, including all assets
+/// in a single RPC response would create performance issues on client and server as
+/// and consume quite a bit of bandwidth, besides requiring additional memory on
+/// possibly low powered clients.
+///
+/// Hence `too_many_assets` is returned, which is indicating to the client to use the dedicated `SyncAccountVault` RPC endpoint and do incremental retrieval
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountVaultDetails {
+    /// Flag indicating whether the vault has too many assets to return inline.
+    /// If `true`, clients must use `SyncAccountVault` endpoint instead.
     pub too_many_assets: bool,
+
+    /// The assets in the vault. Empty if `too_many_assets` is `true`.
     pub assets: Vec<Asset>,
 }
+
 impl AccountVaultDetails {
+    /// Maximum number of vault entries that can be returned in a single response.
+    /// Accounts with more assets will have `too_many_assets = true` and empty `assets`.
     const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(vault: &AssetVault) -> Self {
@@ -433,18 +451,49 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
     }
 }
 
+/// Details about an account storage map slot, including overflow handling.
+///
+/// ## Rationale for "Too Many Entries" Flag
+///
+/// Similar to `AccountVaultDetails`, when a storage map contains many entries (> 1000),
+/// returning all entries in a single RPC response creates performance issues:
+/// - Large serialization/deserialization costs
+/// - Network bandwidth saturation
+/// - Client memory pressure
+///
+/// When `too_many_entries` is `true`:
+/// - The `map_entries` field is empty (no data included)
+/// - Clients should use the dedicated `SyncStorageMaps` RPC endpoint
+/// - That endpoint supports pagination and block range filtering
+///
+/// ## Future Enhancement (TODO)
+///
+/// Currently, when `too_many_entries = true`, we return an empty list. A future improvement
+/// would return a **partial SMT** with:
+/// - A subset of entries (e.g., most frequently accessed)
+/// - Merkle proofs for those entries
+/// - Inner node commitments
+///
+/// This would allow clients to verify partial data cryptographically while still
+/// signaling that more data exists. The reason this matters: if all leaf values are
+/// included, one can reconstruct the entire SMT; if even one is missing, one cannot.
+/// By providing proofs, we enable verification of partial data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageMapDetails {
     pub slot_index: u8,
+
+    /// Flag indicating whether the storage map has too many entries to return inline.
+    /// If `true`, clients must use `SyncStorageMaps` endpoint instead.
     pub too_many_entries: bool,
-    // TODO the following is only for the case when _all_ entries are included
-    // TODO for partials, we also need to provide merkle proofs / a partial SMT with inner nodes
-    // Reason: if all leaf values are included, one can reconstruct the entire SMT, if just one
-    // is missing one cannot
+
+    /// The storage map entries (key-value pairs). Empty if `too_many_entries` is `true`.
+    /// TODO: For partial responses, also include Merkle proofs and inner SMT nodes.
     pub map_entries: Vec<(Word, Word)>,
 }
 
 impl AccountStorageMapDetails {
+    /// Maximum number of storage map entries that can be returned in a single response.
+    /// Maps with more entries will have `too_many_entries = true` and empty `map_entries`.
     pub const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {

@@ -1,7 +1,12 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use miden_node_block_producer::{DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH};
+use miden_node_block_producer::{
+    DEFAULT_BATCH_INTERVAL,
+    DEFAULT_BLOCK_INTERVAL,
+    DEFAULT_MAX_BATCHES_PER_BLOCK,
+    DEFAULT_MAX_TXS_PER_BATCH,
+};
 use url::Url;
 
 pub mod block_producer;
@@ -27,8 +32,6 @@ const ENV_MAX_TXS_PER_BATCH: &str = "MIDEN_MAX_TXS_PER_BATCH";
 const ENV_MAX_BATCHES_PER_BLOCK: &str = "MIDEN_MAX_BATCHES_PER_BLOCK";
 const ENV_MEMPOOL_TX_CAPACITY: &str = "MIDEN_NODE_MEMPOOL_TX_CAPACITY";
 
-const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(5);
-const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(2);
 const DEFAULT_NTX_TICKER_INTERVAL: Duration = Duration::from_millis(200);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -91,13 +94,24 @@ pub struct BlockProducerConfig {
     pub block_prover_url: Option<Url>,
 
     /// The number of transactions per batch.
-    #[arg(long = "max-txs-per-batch", env = ENV_MAX_TXS_PER_BATCH, value_name = "NUM", default_value_t = DEFAULT_MAX_TXS_PER_BATCH)]
+    #[arg(
+        long = "max-txs-per-batch",
+        env = ENV_MAX_TXS_PER_BATCH,
+        value_name = "NUM",
+        default_value_t = DEFAULT_MAX_TXS_PER_BATCH
+    )]
     pub max_txs_per_batch: usize,
 
     /// Maximum number of batches per block.
-    #[arg(long = "max-batches-per-block", env = ENV_MAX_BATCHES_PER_BLOCK, value_name = "NUM", default_value_t = DEFAULT_MAX_BATCHES_PER_BLOCK)]
+    #[arg(
+        long = "max-batches-per-block",
+        env = ENV_MAX_BATCHES_PER_BLOCK,
+        value_name = "NUM",
+        default_value_t = DEFAULT_MAX_BATCHES_PER_BLOCK
+    )]
     pub max_batches_per_block: usize,
 
+    /// Maximum number of uncommitted transactions allowed in the mempool.
     #[arg(
         long = "mempool.tx-capacity",
         default_value_t = miden_node_block_producer::DEFAULT_MEMPOOL_TX_CAPACITY,

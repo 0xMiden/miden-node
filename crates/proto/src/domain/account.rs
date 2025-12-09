@@ -357,7 +357,8 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
 /// and consume quite a bit of bandwidth, besides requiring additional memory on
 /// possibly low powered clients.
 ///
-/// Hence `too_many_assets` is returned, which is indicating to the client to use the dedicated `SyncAccountVault` RPC endpoint and do incremental retrieval
+/// Hence `too_many_assets` is returned, which is indicating to the client to use the dedicated
+/// `SyncAccountVault` RPC endpoint and do incremental retrieval
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountVaultDetails {
     /// Flag indicating whether the vault has too many assets to return inline.

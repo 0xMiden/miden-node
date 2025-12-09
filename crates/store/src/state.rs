@@ -527,18 +527,12 @@ impl State {
     }
 
     /// Updates storage map SMTs in the forest for changed accounts
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = changed_account_ids.len()))]
     async fn update_storage_maps_in_forest(
         &self,
         changed_account_ids: &[AccountId],
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        tracing::debug!(
-            target: COMPONENT,
-            %block_num,
-            num_accounts = changed_account_ids.len(),
-            "Updating storage maps in forest"
-        );
-
         // Step 1: Query storage from database
         let account_storages =
             self.query_account_storages_from_db(changed_account_ids, block_num).await?;
@@ -549,16 +543,11 @@ impl State {
         // Step 3: Update the forest with new SMTs
         self.populate_forest_with_storage_maps(map_slots_to_populate, block_num).await?;
 
-        tracing::info!(
-            target: COMPONENT,
-            %block_num,
-            "Successfully completed storage map SMT updates"
-        );
-
         Ok(())
     }
 
     /// Queries account storage data from the database for the given accounts at a specific block
+    #[instrument(target = COMPONENT, skip_all, fields(num_accounts = account_ids.len()))]
     async fn query_account_storages_from_db(
         &self,
         account_ids: &[AccountId],
@@ -571,16 +560,11 @@ impl State {
             account_storages.push((account_id, storage));
         }
 
-        tracing::debug!(
-            target: COMPONENT,
-            num_accounts = account_storages.len(),
-            "Queried account storage from database"
-        );
-
         Ok(account_storages)
     }
 
     /// Extracts map-type storage slots and their entries from account storage data
+    #[instrument(target = COMPONENT, skip_all, fields(num_accounts = account_storages.len()))]
     fn extract_map_slots_from_storage(
         &self,
         account_storages: &[(AccountId, miden_objects::account::AccountStorage)],
@@ -591,30 +575,17 @@ impl State {
             for (slot_idx, slot) in storage.slots().iter().enumerate() {
                 if let StorageSlot::Map(storage_map) = slot {
                     let entries = Vec::from_iter(storage_map.entries());
-
-                    tracing::debug!(
-                        target: COMPONENT,
-                        %account_id,
-                        slot_index = slot_idx,
-                        num_entries = entries.len(),
-                        "Extracted map slot entries"
-                    );
-
                     map_slots.push((*account_id, slot_idx as u8, entries));
                 }
             }
         }
 
-        tracing::debug!(
-            target: COMPONENT,
-            num_map_slots = map_slots.len(),
-            "Extracted all map slots from storage"
-        );
-
+        tracing::debug!(target: COMPONENT, num_map_slots = map_slots.len());
         map_slots
     }
 
     /// Populates the forest with storage map SMTs for the given slots
+    #[instrument(target = COMPONENT, skip_all, fields(num_slots = map_slots.len()))]
     async fn populate_forest_with_storage_maps(
         &self,
         map_slots: Vec<(AccountId, u8, Vec<(&Word, &Word)>)>,
@@ -646,58 +617,32 @@ impl State {
             forest_guard
                 .storage_roots
                 .insert((account_id, slot_idx, block_num), updated_root);
-
-            tracing::debug!(
-                target: COMPONENT,
-                %account_id,
-                slot_index = slot_idx,
-                "Updated storage map SMT in forest"
-            );
         }
 
-        tracing::info!(
-            target: COMPONENT,
-            total_tracked_roots = forest_guard.storage_roots.len(),
-            "Populated forest with storage maps"
-        );
-
+        tracing::debug!(target: COMPONENT, total_tracked_roots = forest_guard.storage_roots.len());
         Ok(())
     }
 
     /// Updates vault SMTs in the forest for changed accounts
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = changed_account_ids.len()))]
     async fn update_vaults_in_forest(
         &self,
         changed_account_ids: &[AccountId],
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        tracing::debug!(
-            target: COMPONENT,
-            %block_num,
-            "Starting vault tracking"
-        );
-
         // Query vault assets for each updated account
         let mut vault_entries_to_populate = Vec::new();
 
         for &account_id in changed_account_ids {
             let entries = self.db.select_account_vault_at_block(account_id, block_num).await?;
-            if entries.is_empty() {
-                tracing::debug!(%account_id, "Account has empty vault");
-            } else {
+            if !entries.is_empty() {
                 vault_entries_to_populate.push((account_id, entries));
             }
         }
 
         if vault_entries_to_populate.is_empty() {
-            tracing::debug!("No vaults to populate");
             return Ok(());
         }
-
-        tracing::info!(
-            target: COMPONENT,
-            num_vaults = vault_entries_to_populate.len(),
-            "Queried vault assets"
-        );
 
         // Acquire a single write lock on the forest for the entire update operation.
         // Since apply_block() is already serialized by the `writer` Mutex, holding this lock
@@ -723,13 +668,7 @@ impl State {
             forest_guard.vault_roots.insert((account_id, block_num), updated_root);
         }
 
-        tracing::info!(
-            target: COMPONENT,
-            %block_num,
-            total_vault_roots = forest_guard.vault_roots.len(),
-            "Successfully completed vault SMT updates"
-        );
-
+        tracing::debug!(target: COMPONENT, total_vault_roots = forest_guard.vault_roots.len());
         Ok(())
     }
 

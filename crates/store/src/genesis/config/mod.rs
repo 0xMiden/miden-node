@@ -26,12 +26,15 @@ use miden_objects::account::{
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
 use miden_objects::block::FeeParameters;
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey as RpoSecretKey;
+use miden_objects::ecdsa_signer::EcdsaSigner;
 use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::GenesisState;
 
@@ -43,8 +46,24 @@ mod tests;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SignerConfig {
-    /// An insecure, locally stored secret key used for development purposes.
-    Local { secret_key: String },
+    /// An insecure, locally generated secret key used for development purposes.
+    Insecure,
+}
+
+impl SignerConfig {
+    /// Create a new signer based on the configuration.
+    ///
+    /// Insecure signers will generate a new secret key each time this is called. The insecure
+    /// secret key is printed to stdout.
+    pub fn signer(&self) -> impl EcdsaSigner + Clone {
+        match self {
+            SignerConfig::Insecure => {
+                let secret_key = SecretKey::new();
+                info!("Insecure secret key generated: {secret_key}");
+                secret_key
+            },
+        }
+    }
 }
 
 // GENESIS CONFIG
@@ -84,7 +103,7 @@ impl Default for GenesisConfig {
             },
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
-            signer: SignerConfig::Local { secret_key: String::new() },
+            signer: SignerConfig::Insecure,
         }
     }
 }

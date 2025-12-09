@@ -24,16 +24,19 @@ use crate::COMPONENT;
 /// The handle into running the gRPC validator server.
 ///
 /// Facilitates the running of the gRPC server which implements the validator API.
-pub struct Validator {
+pub struct Validator<S> {
     /// The address of the validator component.
     pub address: SocketAddr,
     /// Server-side timeout for an individual gRPC request.
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
+
+    /// The signer used to sign blocks.
+    pub signer: S,
 }
 
-impl Validator {
+impl<S: EcdsaSigner + Send + Sync + 'static> Validator<S> {
     /// Serves the validator RPC API.
     ///
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
@@ -64,7 +67,7 @@ impl Validator {
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .timeout(self.grpc_timeout)
-            .add_service(api_server::ApiServer::new(ValidatorServer {}))
+            .add_service(api_server::ApiServer::new(ValidatorServer { signer: self.signer }))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener))
@@ -79,10 +82,12 @@ impl Validator {
 /// The underlying implementation of the gRPC validator server.
 ///
 /// Implements the gRPC API for the validator.
-struct ValidatorServer {}
+struct ValidatorServer<S> {
+    signer: S,
+}
 
 #[tonic::async_trait]
-impl api_server::Api for ValidatorServer {
+impl<S: EcdsaSigner + Send + Sync + 'static> api_server::Api for ValidatorServer<S> {
     /// Returns the status of the validator.
     async fn status(
         &self,
@@ -121,8 +126,7 @@ impl api_server::Api for ValidatorServer {
         // Build and sign header.
         let (header, _body) = build_block(proposed_block)
             .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
-        // TODO(sergerad): Inject a real signer into the validator.
-        let signature = LocalEcdsaSigner::dummy().sign(header.commitment());
+        let signature = self.signer.sign(header.commitment());
 
         // Send the signature.
         let response = proto::primitives::Signature { signature: signature.to_bytes() };

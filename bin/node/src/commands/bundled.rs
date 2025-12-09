@@ -10,6 +10,8 @@ use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_objects::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;
@@ -82,6 +84,12 @@ pub enum BundledCommand {
             value_name = "DURATION"
         )]
         grpc_timeout: Duration,
+
+        /// Insecure validator secret key for signing transactions.
+        ///
+        /// Only used in development environments.
+        #[arg(long = "secret", default_value = "", value_name = "VALIDATOR_SECRET_KEY")]
+        validator_secret_key: String,
     },
 }
 
@@ -110,9 +118,17 @@ impl BundledCommand {
                 ntx_builder,
                 enable_otel: _,
                 grpc_timeout,
+                validator_secret_key,
             } => {
-                Self::start(rpc_url, data_directory, ntx_builder, block_producer, grpc_timeout)
-                    .await
+                Self::start(
+                    rpc_url,
+                    data_directory,
+                    ntx_builder,
+                    block_producer,
+                    grpc_timeout,
+                    validator_secret_key,
+                )
+                .await
             },
         }
     }
@@ -124,6 +140,7 @@ impl BundledCommand {
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
         grpc_timeout: Duration,
+        validator_secret_key: String,
     ) -> anyhow::Result<()> {
         let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
@@ -227,10 +244,16 @@ impl BundledCommand {
         let validator_id = join_set
             .spawn({
                 async move {
-                    Validator { address: validator_address, grpc_timeout }
-                        .serve()
-                        .await
-                        .context("failed while serving validator component")
+                    let signer =
+                        SecretKey::read_from_bytes(validator_secret_key.to_bytes().as_ref())?;
+                    Validator {
+                        address: validator_address,
+                        grpc_timeout,
+                        signer,
+                    }
+                    .serve()
+                    .await
+                    .context("failed while serving validator component")
                 }
             })
             .id();

@@ -3,6 +3,8 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_objects::utils::{Deserializable, Serializable};
 use url::Url;
 
 use crate::commands::{
@@ -35,17 +37,24 @@ pub enum ValidatorCommand {
             value_name = "DURATION"
         )]
         grpc_timeout: Duration,
+
+        /// Insecure validator secret key for signing transactions.
+        ///
+        /// Only used in development environments.
+        #[arg(long = "secret", default_value = "", value_name = "VALIDATOR_SECRET_KEY")]
+        secret_key: String,
     },
 }
 
 impl ValidatorCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let Self::Start { url, grpc_timeout, .. } = self;
+        let Self::Start { url, grpc_timeout, secret_key, .. } = self;
 
         let address =
             url.to_socket().context("Failed to extract socket address from validator URL")?;
 
-        Validator { address, grpc_timeout }
+        let signer = SecretKey::read_from_bytes(secret_key.to_bytes().as_ref())?;
+        Validator { address, grpc_timeout, signer }
             .serve()
             .await
             .context("failed while serving validator component")

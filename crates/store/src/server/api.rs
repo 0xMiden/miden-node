@@ -25,8 +25,8 @@ impl StoreApi {
     /// Shared implementation for all `get_block_header_by_number` endpoints.
     pub async fn get_block_header_by_number_inner(
         &self,
-        request: Request<proto::shared::BlockHeaderByNumberRequest>,
-    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::rpc::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::rpc::BlockHeaderByNumberResponse>, Status> {
         info!(target: COMPONENT, ?request);
         let request = request.into_inner();
 
@@ -36,7 +36,7 @@ impl StoreApi {
             .get_block_header(block_num, request.include_mmr_proof.unwrap_or(false))
             .await?;
 
-        Ok(Response::new(proto::shared::BlockHeaderByNumberResponse {
+        Ok(Response::new(proto::rpc::BlockHeaderByNumberResponse {
             block_header: block_header.map(Into::into),
             chain_length: mmr_proof.as_ref().map(|p| p.forest.num_leaves() as u32),
             mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
@@ -64,9 +64,9 @@ pub fn conversion_error_to_status(value: &ConversionError) -> Status {
 
 /// Reads a block range from a request, returning a specific error type if the field is missing
 pub fn read_block_range<E>(
-    block_range: Option<proto::rpc_store::BlockRange>,
+    block_range: Option<proto::rpc::BlockRange>,
     entity: &'static str,
-) -> Result<proto::rpc_store::BlockRange, E>
+) -> Result<proto::rpc::BlockRange, E>
 where
     E: From<ConversionError>,
 {

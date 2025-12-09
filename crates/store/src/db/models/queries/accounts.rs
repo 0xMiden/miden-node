@@ -970,16 +970,21 @@ pub(crate) fn upsert_accounts(
     let mut count = 0;
     for update in accounts {
         let account_id = update.account_id();
-        // Extract the 30-bit prefix to provide easy look ups for NTB
-        // Do not store prefix for accounts that are not network
+
         let network_account_id_prefix = if account_id.is_network() {
             Some(NetworkAccountPrefix::try_from(account_id)?)
         } else {
             None
         };
 
-        let full_account: Option<Account> = match update.details() {
-            AccountUpdateDetails::Private => None,
+        // NOTE: we collect storage / asset inserts to apply them only after the  account row is
+        // written. The storage and vault tables have FKs pointing to `accounts (account_id,
+        // block_num)`, so inserting them earlier would violate those constraints when inserting a
+        // brand-new account.
+        let (full_account, pending_storage_inserts, pending_asset_inserts) = match update.details()
+        {
+            AccountUpdateDetails::Private => (None, vec![], vec![]),
+
             AccountUpdateDetails::Delta(delta) if delta.is_full_state() => {
                 let account = Account::try_from(delta)?;
                 debug_assert_eq!(account_id, account.id());
@@ -991,67 +996,54 @@ pub(crate) fn upsert_accounts(
                     });
                 }
 
+                // collect storage-map inserts to apply after account upsert
+                let mut storage = Vec::new();
                 for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
-                    match slot {
-                        StorageSlot::Value(_) => {},
-                        StorageSlot::Map(storage_map) => {
-                            for (key, value) in storage_map.entries() {
-                                // SAFETY: We can safely unwrap the conversion to u8 because
-                                // accounts have a limit of 255 storage elements
-                                insert_account_storage_map_value(
-                                    conn,
-                                    account_id,
-                                    block_num,
-                                    u8::try_from(slot_idx).unwrap(),
-                                    *key,
-                                    *value,
-                                )?;
-                            }
-                        },
+                    if let StorageSlot::Map(storage_map) = slot {
+                        // SAFETY: We can safely unwrap the conversion to u8 because
+                        // accounts have a limit of 255 storage elements
+                        for (key, value) in storage_map.entries() {
+                            storage.push((
+                                account_id,
+                                u8::try_from(slot_idx).unwrap(),
+                                *key,
+                                *value,
+                            ));
+                        }
                     }
                 }
 
-                Some(account)
+                (Some(account), storage, Vec::new())
             },
+
             AccountUpdateDetails::Delta(delta) => {
                 // Reconstruct the full account from database tables
                 let account = reconstruct_full_account_from_db(conn, account_id)?;
 
-                // --- process storage map updates ----------------------------
+                // --- collect storage map updates ----------------------------
 
+                let mut storage = Vec::new();
                 for (&slot, map_delta) in delta.storage().maps() {
                     for (key, value) in map_delta.entries() {
-                        insert_account_storage_map_value(
-                            conn,
-                            account_id,
-                            block_num,
-                            slot,
-                            (*key).into(),
-                            *value,
-                        )?;
+                        storage.push((account_id, slot, (*key).into(), *value));
                     }
                 }
 
                 // apply delta to the account; we need to do this before we process asset updates
                 // because we currently need to get the current value of fungible assets from the
                 // account
-                let account = apply_delta(account, delta, &update.final_state_commitment())?;
+                let account_after = apply_delta(account, delta, &update.final_state_commitment())?;
 
                 // --- process asset updates ----------------------------------
 
-                for (faucet_id, _) in delta.vault().fungible().iter() {
-                    let current_amount = account.vault().get_balance(*faucet_id).unwrap();
-                    let asset: Asset = FungibleAsset::new(*faucet_id, current_amount)?.into();
-                    let asset_update_or_removal =
-                        if current_amount == 0 { None } else { Some(asset) };
+                let mut assets = Vec::new();
 
-                    insert_account_vault_asset(
-                        conn,
-                        account.id(),
-                        block_num,
-                        asset.vault_key(),
-                        asset_update_or_removal,
-                    )?;
+                for (faucet_id, _) in delta.vault().fungible().iter() {
+                    let current_amount = account_after.vault().get_balance(*faucet_id).unwrap();
+                    let asset: Asset = FungibleAsset::new(*faucet_id, current_amount)?.into();
+                    let update_or_remove = if current_amount == 0 { None } else { Some(asset) };
+
+                    assets.push((account_id, asset.vault_key(), update_or_remove));
                 }
 
                 for (asset, delta_action) in delta.vault().non_fungible().iter() {
@@ -1059,16 +1051,10 @@ pub(crate) fn upsert_accounts(
                         NonFungibleDeltaAction::Add => Some(Asset::NonFungible(*asset)),
                         NonFungibleDeltaAction::Remove => None,
                     };
-                    insert_account_vault_asset(
-                        conn,
-                        account.id(),
-                        block_num,
-                        asset.vault_key(),
-                        asset_update,
-                    )?;
+                    assets.push((account_id, asset.vault_key(), asset_update));
                 }
 
-                Some(account)
+                (Some(account_after), storage, assets)
             },
         };
 
@@ -1084,6 +1070,16 @@ pub(crate) fn upsert_accounts(
                 .execute(conn)?;
         }
 
+        // mark previous rows as non-latest and insert NEW account row
+        diesel::update(schema::accounts::table)
+            .filter(
+                schema::accounts::account_id
+                    .eq(&account_id.to_bytes())
+                    .and(schema::accounts::is_latest.eq(true)),
+            )
+            .set(schema::accounts::is_latest.eq(false))
+            .execute(conn)?;
+
         let account_value = AccountRowInsert {
             account_id: account_id.to_bytes(),
             network_account_id_prefix: network_account_id_prefix
@@ -1097,22 +1093,21 @@ pub(crate) fn upsert_accounts(
             is_latest: true,
         };
 
-        // Update any existing rows for this account_id to set is_latest = false
-        diesel::update(schema::accounts::table)
-            .filter(
-                schema::accounts::account_id
-                    .eq(&account_id.to_bytes())
-                    .and(schema::accounts::is_latest.eq(true)),
-            )
-            .set(schema::accounts::is_latest.eq(false))
+        diesel::insert_into(schema::accounts::table)
+            .values(&account_value)
             .execute(conn)?;
 
-        let v = account_value.clone();
-        let inserted = diesel::insert_into(schema::accounts::table).values(&v).execute(conn)?;
+        // insert pending storage map entries
+        for (acc_id, slot, key, value) in pending_storage_inserts {
+            insert_account_storage_map_value(conn, acc_id, block_num, slot, key, value)?;
+        }
 
-        debug_assert_eq!(inserted, 1);
+        // insert pending vault-asset entries
+        for (acc_id, vault_key, update) in pending_asset_inserts {
+            insert_account_vault_asset(conn, acc_id, block_num, vault_key, update)?;
+        }
 
-        count += inserted;
+        count += 1;
     }
 
     Ok(count)

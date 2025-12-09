@@ -128,6 +128,9 @@ pub enum AddTransactionError {
         expired_at: BlockNumber,
         limit: BlockNumber,
     },
+
+    #[error("the mempool is at capacity")]
+    CapacityExceeded,
 }
 
 impl From<VerifyTxError> for AddTransactionError {
@@ -209,7 +212,7 @@ pub enum BuildBlockError {
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
     #[error("failed to validate block")]
-    ValidateBlockFailed(#[source] ValidatorError),
+    ValidateBlockFailed(#[source] Box<ValidatorError>),
     #[error("failed to prove block")]
     ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure

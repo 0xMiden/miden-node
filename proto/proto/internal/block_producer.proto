@@ -2,6 +2,7 @@
 syntax = "proto3";
 package block_producer;
 
+import "rpc.proto";
 import "types/note.proto";
 import "types/blockchain.proto";
 import "types/primitives.proto";
@@ -13,10 +14,10 @@ import "google/protobuf/empty.proto";
 
 service Api {
     // Returns the status info.
-    rpc Status(google.protobuf.Empty) returns (BlockProducerStatus) {}
+    rpc Status(google.protobuf.Empty) returns (rpc.BlockProducerStatus) {}
 
-    // Submits proven transaction to the Miden network
-    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (SubmitProvenTransactionResponse) {}
+    // Submits proven transaction to the Miden network. Returns the node's current block height.
+    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (blockchain.BlockNumber) {}
 
     // Submits a proven batch to the Miden network.
     //
@@ -28,7 +29,9 @@ service Api {
     //
     // All transactions in the batch but not in the mempool must build on the current mempool
     // state following normal transaction submission rules.
-    rpc SubmitProvenBatch(transaction.ProvenTransactionBatch) returns (SubmitProvenBatchResponse) {}
+    //
+    // Returns the node's current block height.
+    rpc SubmitProvenBatch(transaction.ProvenTransactionBatch) returns (blockchain.BlockNumber) {}
 
     // Subscribe to mempool events.
     //
@@ -41,50 +44,6 @@ service Api {
     // Currently only a single active subscription is supported. Subscription requests will cancel the active
     // subscription, if any.
     rpc MempoolSubscription(MempoolSubscriptionRequest) returns (stream MempoolEvent) {}
-}
-
-// STATUS
-// ================================================================================================
-
-// Represents the status of the block producer.
-message BlockProducerStatus {
-    // The block producer's running version.
-    string version = 1;
-
-    // The block producer's status.
-    string status = 2;
-
-    // Statistics about the mempool.
-    MempoolStats mempool_stats = 3;
-}
-
-// Statistics about the mempool.
-message MempoolStats {
-    // Number of transactions currently in the mempool waiting to be batched.
-    uint64 unbatched_transactions = 1;
-
-    // Number of batches currently being proven.
-    uint64 proposed_batches = 2;
-
-    // Number of proven batches waiting for block inclusion.
-    uint64 proven_batches = 3;
-}
-
-// SUBMIT PROVEN TRANSACTION
-// ================================================================================================
-
-// Represents the result of submitting proven transaction.
-message SubmitProvenTransactionResponse {
-    // The node's current block height.
-    fixed32 block_height = 1;
-}
-
-// SUBMIT PROVEN TRANSACTION
-// ================================================================================================
-
-message SubmitProvenBatchResponse {
-    // The node's current block height.
-    fixed32 block_height = 1;
 }
 
 // MEMPOOL SUBSCRIPTION

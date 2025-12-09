@@ -15,36 +15,30 @@ crate-type = ["lib"]
 
 [features]
 batch-prover = ["dep:miden-objects", "dep:tokio"]
-block-prover = ["dep:miden-node-proto", "dep:miden-objects", "dep:tokio"]
+block-prover = ["dep:miden-objects", "dep:tokio"]
 default      = ["std"]
 std          = ["miden-objects/std", "miden-tx/std"]
 tx-prover    = ["dep:miden-objects", "dep:miden-tx", "dep:tokio"]
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom             = { features = ["wasm_js"], version = "0.3" }
-tonic                 = { default-features = false, features = ["codegen"], version = "0.14" }
+tonic                 = { features = ["codegen"], workspace = true }
 tonic-web-wasm-client = { default-features = false, version = "0.8" }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
-tonic = { default-features = false, features = [
-  "codegen",
-  "tls-native-roots",
-  "tls-ring",
-  "transport",
-], version = "0.14" }
+tonic     = { features = ["codegen", "tls-native-roots", "tls-ring", "transport"], workspace = true }
 tonic-web = { optional = true, version = "0.14" }
 
 [lints]
 workspace = true
 
 [dependencies]
-miden-node-proto = { optional = true, workspace = true }
-miden-objects    = { optional = true, workspace = true }
-miden-tx         = { optional = true, workspace = true }
-prost            = { default-features = false, features = ["derive"], version = "0.14" }
-thiserror        = { workspace = true }
-tokio            = { default-features = false, features = ["sync"], optional = true, version = "1.44" }
-tonic-prost      = { workspace = true }
+miden-objects = { optional = true, workspace = true }
+miden-tx      = { optional = true, workspace = true }
+prost         = { default-features = false, features = ["derive"], workspace = true }
+thiserror     = { workspace = true }
+tokio         = { default-features = false, features = ["sync"], optional = true, version = "1.44" }
+tonic-prost   = { workspace = true }
 
 [build-dependencies]
 fs-err                 = { workspace = true }

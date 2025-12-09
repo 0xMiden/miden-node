@@ -95,6 +95,7 @@ impl BlockProducerCommand {
             max_batches_per_block: block_producer.max_batches_per_block,
             production_checkpoint: Arc::new(Barrier::new(1)),
             grpc_timeout,
+            mempool_tx_capacity: block_producer.mempool_tx_capacity,
         }
         .serve()
         .await
@@ -109,6 +110,8 @@ impl BlockProducerCommand {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use url::Url;
 
     use super::*;
@@ -130,6 +133,7 @@ mod tests {
                 batch_interval: std::time::Duration::from_secs(1),
                 max_txs_per_batch: 8,
                 max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
+                mempool_tx_capacity: NonZeroUsize::new(1000).unwrap(),
             },
             enable_otel: false,
             grpc_timeout: Duration::from_secs(10),
@@ -155,6 +159,7 @@ mod tests {
                                                                                * limit
                                                                                * (should fail) */
                 max_batches_per_block: 8,
+                mempool_tx_capacity: NonZeroUsize::new(1000).unwrap(),
             },
             enable_otel: false,
             grpc_timeout: Duration::from_secs(10),

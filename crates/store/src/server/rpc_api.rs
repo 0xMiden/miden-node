@@ -1,6 +1,6 @@
 use miden_node_proto::convert;
 use miden_node_proto::domain::account::AccountInfo;
-use miden_node_proto::generated::rpc_store::rpc_server;
+use miden_node_proto::generated::store::rpc_server;
 use miden_node_proto::generated::{self as proto};
 use miden_objects::Word;
 use miden_objects::account::AccountId;
@@ -51,8 +51,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<proto::shared::BlockHeaderByNumberRequest>,
-    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::rpc::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::rpc::BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -71,8 +71,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn check_nullifiers(
         &self,
-        request: Request<proto::rpc_store::NullifierList>,
-    ) -> Result<Response<proto::rpc_store::CheckNullifiersResponse>, Status> {
+        request: Request<proto::rpc::NullifierList>,
+    ) -> Result<Response<proto::rpc::CheckNullifiersResponse>, Status> {
         // Validate the nullifiers and convert them to Word values. Stop on first error.
         let request = request.into_inner();
 
@@ -90,7 +90,7 @@ impl rpc_server::Rpc for StoreApi {
         // Query the state for the request's nullifiers
         let proofs = self.state.check_nullifiers(&nullifiers).await;
 
-        Ok(Response::new(proto::rpc_store::CheckNullifiersResponse {
+        Ok(Response::new(proto::rpc::CheckNullifiersResponse {
             proofs: convert(proofs).collect(),
         }))
     }
@@ -109,8 +109,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_nullifiers(
         &self,
-        request: Request<proto::rpc_store::SyncNullifiersRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncNullifiersResponse>, Status> {
+        request: Request<proto::rpc::SyncNullifiersRequest>,
+    ) -> Result<Response<proto::rpc::SyncNullifiersResponse>, Status> {
         let request = request.into_inner();
 
         if request.prefix_len != 16 {
@@ -130,14 +130,14 @@ impl rpc_server::Rpc for StoreApi {
 
         let nullifiers = nullifiers
             .into_iter()
-            .map(|nullifier_info| proto::rpc_store::sync_nullifiers_response::NullifierUpdate {
+            .map(|nullifier_info| proto::rpc::sync_nullifiers_response::NullifierUpdate {
                 nullifier: Some(nullifier_info.nullifier.into()),
                 block_num: nullifier_info.block_num.as_u32(),
             })
             .collect();
 
-        Ok(Response::new(proto::rpc_store::SyncNullifiersResponse {
-            pagination_info: Some(proto::rpc_store::PaginationInfo {
+        Ok(Response::new(proto::rpc::SyncNullifiersResponse {
+            pagination_info: Some(proto::rpc::PaginationInfo {
                 chain_tip: chain_tip.as_u32(),
                 block_num: block_num.as_u32(),
             }),
@@ -158,8 +158,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_state(
         &self,
-        request: Request<proto::rpc_store::SyncStateRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncStateResponse>, Status> {
+        request: Request<proto::rpc::SyncStateRequest>,
+    ) -> Result<Response<proto::rpc::SyncStateResponse>, Status> {
         let request = request.into_inner();
 
         let account_ids: Vec<AccountId> = read_account_ids::<Status>(&request.account_ids)?;
@@ -192,7 +192,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(proto::rpc_store::SyncStateResponse {
+        Ok(Response::new(proto::rpc::SyncStateResponse {
             chain_tip: self.state.latest_block_num().await.as_u32(),
             block_header: Some(state.block_header.into()),
             mmr_delta: Some(delta.into()),
@@ -214,8 +214,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_notes(
         &self,
-        request: Request<proto::rpc_store::SyncNotesRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncNotesResponse>, Status> {
+        request: Request<proto::rpc::SyncNotesRequest>,
+    ) -> Result<Response<proto::rpc::SyncNotesResponse>, Status> {
         let request = request.into_inner();
 
         let chain_tip = self.state.latest_block_num().await;
@@ -235,8 +235,8 @@ impl rpc_server::Rpc for StoreApi {
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(proto::rpc_store::SyncNotesResponse {
-            pagination_info: Some(proto::rpc_store::PaginationInfo {
+        Ok(Response::new(proto::rpc::SyncNotesResponse {
+            pagination_info: Some(proto::rpc::PaginationInfo {
                 chain_tip: chain_tip.as_u32(),
                 block_num: last_block_included.as_u32(),
             }),
@@ -274,7 +274,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let note_ids: Vec<Word> = convert_digests_to_words::<GetNotesByIdError, _>(note_ids)?;
 
-        let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
+        let note_ids: Vec<NoteId> = note_ids.into_iter().map(NoteId::from_raw).collect();
 
         let notes = self
             .state
@@ -348,8 +348,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_account_proof(
         &self,
-        request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
+        request: Request<proto::rpc::AccountProofRequest>,
+    ) -> Result<Response<proto::rpc::AccountProofResponse>, Status> {
         debug!(target: COMPONENT, ?request);
         let request = request.into_inner();
         let account_proof_request = request.try_into()?;
@@ -370,8 +370,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_account_vault(
         &self,
-        request: Request<proto::rpc_store::SyncAccountVaultRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncAccountVaultResponse>, Status> {
+        request: Request<proto::rpc::SyncAccountVaultRequest>,
+    ) -> Result<Response<proto::rpc::SyncAccountVaultResponse>, Status> {
         let request = request.into_inner();
         let chain_tip = self.state.latest_block_num().await;
 
@@ -397,7 +397,7 @@ impl rpc_server::Rpc for StoreApi {
             .into_iter()
             .map(|update| {
                 let vault_key: Word = update.vault_key.into();
-                proto::rpc_store::AccountVaultUpdate {
+                proto::rpc::AccountVaultUpdate {
                     vault_key: Some(vault_key.into()),
                     asset: update.asset.map(Into::into),
                     block_num: update.block_num.as_u32(),
@@ -405,8 +405,8 @@ impl rpc_server::Rpc for StoreApi {
             })
             .collect();
 
-        Ok(Response::new(proto::rpc_store::SyncAccountVaultResponse {
-            pagination_info: Some(proto::rpc_store::PaginationInfo {
+        Ok(Response::new(proto::rpc::SyncAccountVaultResponse {
+            pagination_info: Some(proto::rpc::PaginationInfo {
                 chain_tip: chain_tip.as_u32(),
                 block_num: last_included_block.as_u32(),
             }),
@@ -428,8 +428,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_storage_maps(
         &self,
-        request: Request<proto::rpc_store::SyncStorageMapsRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncStorageMapsResponse>, Status> {
+        request: Request<proto::rpc::SyncStorageMapsRequest>,
+    ) -> Result<Response<proto::rpc::SyncStorageMapsResponse>, Status> {
         let request = request.into_inner();
 
         let account_id = read_account_id::<SyncStorageMapsError>(request.account_id)?;
@@ -454,7 +454,7 @@ impl rpc_server::Rpc for StoreApi {
         let updates = storage_maps_page
             .values
             .into_iter()
-            .map(|map_value| proto::rpc_store::StorageMapUpdate {
+            .map(|map_value| proto::rpc::StorageMapUpdate {
                 slot_index: u32::from(map_value.slot_index),
                 key: Some(map_value.key.into()),
                 value: Some(map_value.value.into()),
@@ -462,8 +462,8 @@ impl rpc_server::Rpc for StoreApi {
             })
             .collect();
 
-        Ok(Response::new(proto::rpc_store::SyncStorageMapsResponse {
-            pagination_info: Some(proto::rpc_store::PaginationInfo {
+        Ok(Response::new(proto::rpc::SyncStorageMapsResponse {
+            pagination_info: Some(proto::rpc::PaginationInfo {
                 chain_tip: chain_tip.as_u32(),
                 block_num: storage_maps_page.last_block_included.as_u32(),
             }),
@@ -483,8 +483,8 @@ impl rpc_server::Rpc for StoreApi {
     async fn status(
         &self,
         _request: Request<()>,
-    ) -> Result<Response<proto::rpc_store::StoreStatus>, Status> {
-        Ok(Response::new(proto::rpc_store::StoreStatus {
+    ) -> Result<Response<proto::rpc::StoreStatus>, Status> {
+        Ok(Response::new(proto::rpc::StoreStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
             chain_tip: self.state.latest_block_num().await.as_u32(),
@@ -502,7 +502,7 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,
-    ) -> Result<Response<proto::shared::MaybeNoteScript>, Status> {
+    ) -> Result<Response<proto::rpc::MaybeNoteScript>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         let root = read_root::<GetNoteScriptByRootError>(request.into_inner().root, "NoteRoot")?;
@@ -513,7 +513,7 @@ impl rpc_server::Rpc for StoreApi {
             .await
             .map_err(GetNoteScriptByRootError::from)?;
 
-        Ok(Response::new(proto::shared::MaybeNoteScript {
+        Ok(Response::new(proto::rpc::MaybeNoteScript {
             script: note_script.map(Into::into),
         }))
     }
@@ -528,8 +528,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_transactions(
         &self,
-        request: Request<proto::rpc_store::SyncTransactionsRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncTransactionsResponse>, Status> {
+        request: Request<proto::rpc::SyncTransactionsRequest>,
+    ) -> Result<Response<proto::rpc::SyncTransactionsResponse>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         let request = request.into_inner();
@@ -587,7 +587,7 @@ impl rpc_server::Rpc for StoreApi {
             let note_records: Vec<_> = tx_header
                 .output_notes
                 .iter()
-                .filter_map(|note_id| note_map.get(&note_id.into()).cloned())
+                .filter_map(|note_id| note_map.get(&note_id.as_word()).cloned())
                 .collect();
 
             // Convert to proto using the helper method
@@ -595,8 +595,8 @@ impl rpc_server::Rpc for StoreApi {
             transactions.push(proto_record);
         }
 
-        Ok(Response::new(proto::rpc_store::SyncTransactionsResponse {
-            pagination_info: Some(proto::rpc_store::PaginationInfo {
+        Ok(Response::new(proto::rpc::SyncTransactionsResponse {
+            pagination_info: Some(proto::rpc::PaginationInfo {
                 chain_tip: chain_tip.as_u32(),
                 block_num: last_block_included.as_u32(),
             }),

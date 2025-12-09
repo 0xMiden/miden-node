@@ -57,7 +57,12 @@ use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{AddTransactionError, VerifyTxError};
 use crate::mempool::budget::BudgetStatus;
 use crate::mempool::nodes::{BlockNode, Node, NodeId, ProposedBatchNode, TransactionNode};
-use crate::{COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION};
+use crate::{
+    COMPONENT,
+    DEFAULT_MEMPOOL_TX_CAPACITY,
+    SERVER_MEMPOOL_EXPIRATION_SLACK,
+    SERVER_MEMPOOL_STATE_RETENTION,
+};
 
 mod budget;
 pub use budget::{BatchBudget, BlockBudget};
@@ -102,6 +107,13 @@ pub struct MempoolConfig {
     /// guarantees that the mempool can verify the data against the additional changes so long as
     /// the data was authenticated against one of the retained blocks.
     pub state_retention: NonZeroUsize,
+
+    /// The maximum number of uncommitted transactions allowed in the mempool at once.
+    ///
+    /// The mempool will reject transactions once it is at capacity.
+    ///
+    /// Transactions in batches and uncommitted blocks _do count_ towards this.
+    pub tx_capacity: NonZeroUsize,
 }
 
 impl Default for MempoolConfig {
@@ -111,6 +123,7 @@ impl Default for MempoolConfig {
             batch_budget: BatchBudget::default(),
             expiration_slack: SERVER_MEMPOOL_EXPIRATION_SLACK,
             state_retention: SERVER_MEMPOOL_STATE_RETENTION,
+            tx_capacity: DEFAULT_MEMPOOL_TX_CAPACITY,
         }
     }
 }
@@ -169,6 +182,13 @@ impl Mempool {
         }
     }
 
+    /// Returns the current chain tip height as seen by the mempool.
+    ///
+    /// This reflects the latest committed block that the block producer is aware of.
+    pub fn chain_tip(&self) -> BlockNumber {
+        self.chain_tip
+    }
+
     // TRANSACTION & BATCH LIFECYCLE
     // --------------------------------------------------------------------------------------------
 
@@ -188,6 +208,10 @@ impl Mempool {
         &mut self,
         tx: Arc<AuthenticatedTransaction>,
     ) -> Result<BlockNumber, AddTransactionError> {
+        if self.nodes.uncommitted_tx_count() >= self.config.tx_capacity.get() {
+            return Err(AddTransactionError::CapacityExceeded);
+        }
+
         self.authentication_staleness_check(tx.authentication_height())?;
         self.expiration_check(tx.expires_at())?;
 

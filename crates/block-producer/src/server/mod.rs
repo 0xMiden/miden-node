@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -73,6 +74,9 @@ pub struct BlockProducer {
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
+
+    /// The maximum number of inflight transactions allowed in the mempool at once.
+    pub mempool_tx_capacity: NonZeroUsize,
 }
 
 impl BlockProducer {
@@ -135,6 +139,7 @@ impl BlockProducer {
                 ..BatchBudget::default()
             },
             block_budget: BlockBudget { batches: self.max_batches_per_block },
+            tx_capacity: self.mempool_tx_capacity,
             ..Default::default()
         };
         let mempool = Mempool::shared(chain_tip, mempool);
@@ -216,6 +221,8 @@ impl BlockProducer {
 /// Mempool statistics that are updated periodically to avoid locking the mempool.
 #[derive(Clone, Copy, Default)]
 struct MempoolStats {
+    /// The mempool's current view of the chain tip height.
+    chain_tip: BlockNumber,
     /// Number of transactions currently in the mempool waiting to be batched.
     unbatched_transactions: u64,
     /// Number of batches currently being proven.
@@ -224,9 +231,9 @@ struct MempoolStats {
     proven_batches: u64,
 }
 
-impl From<MempoolStats> for proto::block_producer::MempoolStats {
+impl From<MempoolStats> for proto::rpc::MempoolStats {
     fn from(stats: MempoolStats) -> Self {
-        proto::block_producer::MempoolStats {
+        proto::rpc::MempoolStats {
             unbatched_transactions: stats.unbatched_transactions,
             proposed_batches: stats.proposed_batches,
             proven_batches: stats.proven_batches,
@@ -256,8 +263,7 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransaction>,
-    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, Status>
-    {
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
         self.submit_proven_transaction(request.into_inner())
              .await
              .map(tonic::Response::new)
@@ -268,7 +274,7 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_batch(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
-    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
         self.submit_proven_batch(request.into_inner())
              .await
              .map(tonic::Response::new)
@@ -285,12 +291,13 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn status(
         &self,
         _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<proto::block_producer::BlockProducerStatus>, Status> {
+    ) -> Result<tonic::Response<proto::rpc::BlockProducerStatus>, Status> {
         let mempool_stats = *self.cached_mempool_stats.read().await;
 
-        Ok(tonic::Response::new(proto::block_producer::BlockProducerStatus {
+        Ok(tonic::Response::new(proto::rpc::BlockProducerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
+            chain_tip: mempool_stats.chain_tip.as_u32(),
             mempool_stats: Some(mempool_stats.into()),
         }))
     }
@@ -360,9 +367,10 @@ impl BlockProducerRpcServer {
             loop {
                 interval.tick().await;
 
-                let (unbatched_transactions, proposed_batches, proven_batches) = {
+                let (chain_tip, unbatched_transactions, proposed_batches, proven_batches) = {
                     let mempool = mempool.lock().await;
                     (
+                        mempool.chain_tip(),
                         mempool.unbatched_transactions_count() as u64,
                         mempool.proposed_batches_count() as u64,
                         mempool.proven_batches_count() as u64,
@@ -371,6 +379,7 @@ impl BlockProducerRpcServer {
 
                 let mut cache = cached_mempool_stats.write().await;
                 *cache = MempoolStats {
+                    chain_tip,
                     unbatched_transactions,
                     proposed_batches,
                     proven_batches,
@@ -419,7 +428,7 @@ impl BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
         request: proto::transaction::ProvenTransaction,
-    ) -> Result<proto::block_producer::SubmitProvenTransactionResponse, AddTransactionError> {
+    ) -> Result<proto::blockchain::BlockNumber, AddTransactionError> {
         debug!(target: COMPONENT, ?request);
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
@@ -445,11 +454,13 @@ impl BlockProducerRpcServer {
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
         let tx = AuthenticatedTransaction::new_unchecked(tx, inputs).map(Arc::new)?;
 
-        self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-            proto::block_producer::SubmitProvenTransactionResponse {
-                block_height: block_height.as_u32(),
-            }
-        })
+        self.mempool
+            .lock()
+            .await
+            .lock()
+            .await
+            .add_transaction(tx)
+            .map(|block_height| proto::blockchain::BlockNumber { block_num: block_height.as_u32() })
     }
 
     #[instrument(
@@ -461,7 +472,7 @@ impl BlockProducerRpcServer {
     async fn submit_proven_batch(
         &self,
         request: proto::transaction::ProvenTransactionBatch,
-    ) -> Result<proto::block_producer::SubmitProvenBatchResponse, SubmitProvenBatchError> {
+    ) -> Result<proto::blockchain::BlockNumber, SubmitProvenBatchError> {
         let _batch = ProvenBatch::read_from_bytes(&request.encoded)
             .map_err(SubmitProvenBatchError::Deserialization)?;
 

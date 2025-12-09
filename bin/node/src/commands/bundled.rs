@@ -215,6 +215,7 @@ impl BundledCommand {
                         max_txs_per_batch: block_producer.max_txs_per_batch,
                         production_checkpoint: checkpoint,
                         grpc_timeout,
+                        mempool_tx_capacity: block_producer.mempool_tx_capacity,
                     }
                     .serve()
                     .await

@@ -11,9 +11,7 @@ use miden_node_proto::clients::{
     RpcClient,
 };
 use miden_node_proto::generated as proto;
-use miden_node_proto::generated::block_producer::BlockProducerStatus;
-use miden_node_proto::generated::rpc::RpcStatus;
-use miden_node_proto::generated::rpc_store::StoreStatus;
+use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus, StoreStatus};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
@@ -138,6 +136,8 @@ pub struct StoreStatusDetails {
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
+    /// The block producer's current view of the chain tip height.
+    pub chain_tip: u32,
     /// Mempool statistics for this block producer.
     pub mempool: MempoolStatusDetails,
 }
@@ -211,6 +211,7 @@ impl From<BlockProducerStatus> for BlockProducerStatusDetails {
         Self {
             version: value.version,
             status: value.status.into(),
+            chain_tip: value.chain_tip,
             mempool: MempoolStatusDetails {
                 unbatched_transactions: mempool_stats.unbatched_transactions,
                 proposed_batches: mempool_stats.proposed_batches,

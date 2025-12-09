@@ -224,12 +224,20 @@ where
     }
 
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
+        // Skip negotiation entirely for CORS preflight/non-gRPC requests.
+        //
+        // Browsers often automatically perform an `OPTIONS` check _before_ the client
+        // SDK can inject the appropriate `ACCEPT` header, causing a rejection.
+        // Since an `OPTIONS` request does nothing its safe for us to simply allow them.
+        if request.method() == http::Method::OPTIONS {
+            return self.inner.call(request).boxed();
+        }
+
         // Determine if this RPC method requires the `genesis` parameter.
         let path = request.uri().path();
         let method_name = path.rsplit('/').next().unwrap_or_default();
-        let requires_genesis = self.verifier.require_genesis_methods.contains(&method_name);
 
-        dbg!(request.headers());
+        let requires_genesis = self.verifier.require_genesis_methods.contains(&method_name);
 
         // If `genesis` is required but the header is missing entirely, reject early.
         let Some(header) = request.headers().get(ACCEPT) else {

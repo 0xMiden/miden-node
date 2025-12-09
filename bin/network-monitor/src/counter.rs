@@ -12,7 +12,7 @@ use miden_lib::AuthScheme;
 use miden_lib::account::interface::AccountInterface;
 use miden_lib::utils::ScriptBuilder;
 use miden_node_proto::clients::RpcClient;
-use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
+use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{Account, AccountFile, AccountHeader, AccountId};
@@ -287,7 +287,11 @@ fn handle_increment_failure(details: &mut IncrementDetails, error: &anyhow::Erro
 
 /// Build a `ServiceStatus` snapshot from the current increment details and last error.
 fn build_increment_status(details: &IncrementDetails, last_error: Option<String>) -> ServiceStatus {
-    let status = if details.failure_count == 0 {
+    let status = if last_error.is_some() {
+        // If the most recent attempt failed, surface the service as unhealthy so the
+        // dashboard reflects that the increment pipeline is not currently working.
+        Status::Unhealthy
+    } else if details.failure_count == 0 {
         Status::Healthy
     } else if details.success_count == 0 {
         Status::Unhealthy
@@ -423,7 +427,11 @@ fn build_tracking_status(
     details: &CounterTrackingDetails,
     last_error: Option<String>,
 ) -> ServiceStatus {
-    let status = if details.current_value.is_some() {
+    let status = if last_error.is_some() {
+        // If the latest poll failed, surface the service as unhealthy even if we have
+        // a previously cached value, so the dashboard shows that tracking is degraded.
+        Status::Unhealthy
+    } else if details.current_value.is_some() {
         Status::Healthy
     } else {
         Status::Unknown
@@ -505,7 +513,7 @@ async fn create_and_submit_network_note(
         .await
         .context("Failed to submit proven transaction to RPC")?
         .into_inner()
-        .block_height
+        .block_num
         .into();
 
     info!("Submitted proven transaction to RPC");

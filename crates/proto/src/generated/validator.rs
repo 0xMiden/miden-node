@@ -9,13 +9,13 @@ pub struct ValidatorStatus {
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
 }
-/// Response message for ValidateBlock RPC.
+/// Response message for SignBlock RPC.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ValidateBlockResponse {
-    /// The block header (required - always present).
+pub struct SignedBlock {
+    /// The block header.
     #[prost(message, optional, tag = "1")]
     pub header: ::core::option::Option<super::blockchain::BlockHeader>,
-    /// The block body (required - always present).
+    /// The block body.
     #[prost(message, optional, tag = "2")]
     pub body: ::core::option::Option<super::blockchain::BlockBody>,
 }
@@ -158,13 +158,10 @@ pub mod api_client {
             self.inner.unary(req, path, codec).await
         }
         /// Validates a proposed block and returns the block header and body.
-        pub async fn validate_block(
+        pub async fn sign_block(
             &mut self,
             request: impl tonic::IntoRequest<super::super::blockchain::ProposedBlock>,
-        ) -> std::result::Result<
-            tonic::Response<super::ValidateBlockResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::SignedBlock>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -174,12 +171,9 @@ pub mod api_client {
                     )
                 })?;
             let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/validator.Api/ValidateBlock",
-            );
+            let path = http::uri::PathAndQuery::from_static("/validator.Api/SignBlock");
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("validator.Api", "ValidateBlock"));
+            req.extensions_mut().insert(GrpcMethod::new("validator.Api", "SignBlock"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -208,13 +202,10 @@ pub mod api_server {
             request: tonic::Request<super::super::transaction::ProvenTransaction>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
         /// Validates a proposed block and returns the block header and body.
-        async fn validate_block(
+        async fn sign_block(
             &self,
             request: tonic::Request<super::super::blockchain::ProposedBlock>,
-        ) -> std::result::Result<
-            tonic::Response<super::ValidateBlockResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::SignedBlock>, tonic::Status>;
     }
     /// Validator API for the Validator component.
     #[derive(Debug)]
@@ -380,15 +371,15 @@ pub mod api_server {
                     };
                     Box::pin(fut)
                 }
-                "/validator.Api/ValidateBlock" => {
+                "/validator.Api/SignBlock" => {
                     #[allow(non_camel_case_types)]
-                    struct ValidateBlockSvc<T: Api>(pub Arc<T>);
+                    struct SignBlockSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
                         super::super::blockchain::ProposedBlock,
-                    > for ValidateBlockSvc<T> {
-                        type Response = super::ValidateBlockResponse;
+                    > for SignBlockSvc<T> {
+                        type Response = super::SignedBlock;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -401,7 +392,7 @@ pub mod api_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Api>::validate_block(&inner, request).await
+                                <T as Api>::sign_block(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -412,7 +403,7 @@ pub mod api_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = ValidateBlockSvc(inner);
+                        let method = SignBlockSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

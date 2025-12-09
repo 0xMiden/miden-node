@@ -403,7 +403,7 @@ impl State {
                 let note_record = NoteRecord {
                     block_num,
                     note_index,
-                    note_id: note.id().into(),
+                    note_id: note.id().as_word(),
                     note_commitment: note.commitment(),
                     metadata: *note.metadata(),
                     details,

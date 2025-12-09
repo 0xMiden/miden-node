@@ -656,8 +656,6 @@ impl State {
         changed_account_ids: &[AccountId],
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH};
-
         tracing::debug!(
             target: COMPONENT,
             %block_num,
@@ -696,15 +694,11 @@ impl State {
 
         // Process each vault: get previous root, build new SMT, track new root
         for (account_id, entries) in vault_entries_to_populate {
-            let prev_root = if block_num.as_u32() > 0 {
-                forest_guard
-                    .vault_roots
-                    .get(&(account_id, prev_block_num))
-                    .copied()
-                    .unwrap_or_else(|| *EmptySubtreeRoots::entry(SMT_DEPTH, 0))
-            } else {
-                *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
-            };
+            let prev_root = forest_guard
+                .vault_roots
+                .get(&(account_id, prev_block_num))
+                .copied()
+                .unwrap_or(EMPTY_WORD);
 
             let updated_root = forest_guard
                 .storage_forest

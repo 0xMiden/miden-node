@@ -199,6 +199,26 @@ impl InflightState {
 struct AccountUpdates {
     from: HashMap<Word, NodeId>,
     to: HashMap<Word, NodeId>,
+    /// This holds updates from nodes where the initial commitment is the same as the final
+    /// commitment aka no actual change was made to the account.
+    ///
+    /// This sounds counter-intuitive, but is caused by so-called pass-through transactions which
+    /// use an account at some state `A` but only consume and emit notes without changing the
+    /// account state itself.
+    ///
+    /// These still need to be tracked as part of account updates since they require that an
+    /// account is in the given state. Since we want these node's to be processed before the
+    /// account state is changed, this implies that they must be considered children of the
+    /// non-pass-through node that created the state. Similarly, they must be considered
+    /// parents of any non-pass-through node that changes to another state as otherwise this
+    /// node might be processed before the pass-through nodes are.
+    ///
+    /// Pass-through nodes with the same state are considered siblings of each as they don't
+    /// actually depend on each other, and may be processed in any order.
+    ///
+    /// Note also that its possible for any node's updates to an account to solely consist of
+    /// pass-through transactions and therefore in turn is a pass-through node from the perspective
+    /// of that account.
     pass_through: HashMap<Word, HashSet<NodeId>>,
 }
 
@@ -273,6 +293,12 @@ impl AccountUpdates {
     /// parent-child relationship where `parent.to == child.from`.
     fn parents(&self, from: Word, to: Word) -> impl Iterator<Item = &NodeId> {
         let direct_parent = self.to.get(&from).into_iter();
+
+        // If the node query isn't for a pass-through node, then it must also consider pass-through
+        // nodes at its `from` commitment as parents.
+        //
+        // This means the query node depends on the pass-through nodes since these must be processed
+        // before the account commitment may change.
         let pass_through_parents = (from != to)
             .then(|| self.pass_through.get(&from).map(HashSet::iter))
             .flatten()
@@ -291,6 +317,12 @@ impl AccountUpdates {
     /// parent-child relationship where `parent.to == child.from`.
     fn children(&self, from: Word, to: Word) -> impl Iterator<Item = &NodeId> {
         let direct_child = self.from.get(&to).into_iter();
+
+        // If the node query isn't for a pass-through node, then it must also consider pass-through
+        // nodes at its `to` commitment as children.
+        //
+        // This means the pass-through nodes depend on the query node since it changes the account
+        // commitment to the state required by the pass-through nodes.
         let pass_through_children = (from != to)
             .then(|| self.pass_through.get(&to).map(HashSet::iter))
             .flatten()

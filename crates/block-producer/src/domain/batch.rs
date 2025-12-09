@@ -42,6 +42,11 @@ impl SelectedBatch {
         self.txs
     }
 
+    /// The aggregated list of account transitions this batch causes given as tuples of `(AccountId,
+    /// initial commitment, final commitment)`.
+    ///
+    /// Note that the updates are aggregated, i.e. only a single update per account is possible, and
+    /// transaction updates to an account of `a -> b -> c` will result in a single `a -> c`.
     pub(crate) fn account_updates(&self) -> impl Iterator<Item = (AccountId, Word, Word)> {
         self.account_updates.iter().map(|(account, (from, to))| (*account, *from, *to))
     }

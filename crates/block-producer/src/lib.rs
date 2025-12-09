@@ -64,7 +64,7 @@ pub const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(1);
 pub const DEFAULT_MEMPOOL_TX_CAPACITY: NonZeroUsize = NonZeroUsize::new(
     DEFAULT_MAX_BATCHES_PER_BLOCK
         * DEFAULT_MAX_TXS_PER_BATCH
-        * (Duration::from_mins(1).div_duration_f32(DEFAULT_BLOCK_INTERVAL)) as usize,
+        * (Duration::from_secs(60).div_duration_f32(DEFAULT_BLOCK_INTERVAL)) as usize,
 )
 .unwrap();
 

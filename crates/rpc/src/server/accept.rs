@@ -225,6 +225,10 @@ where
 
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         // Skip negotiation entirely for CORS preflight/non-gRPC requests.
+        //
+        // Browsers often automatically perform an `OPTIONS` check _before_ the client
+        // SDK can inject the appropriate `ACCEPT` header, causing a rejection.
+        // Since an `OPTIONS` request does nothing its safe for us to simply allow them.
         if request.method() == http::Method::OPTIONS {
             return self.inner.call(request).boxed();
         }

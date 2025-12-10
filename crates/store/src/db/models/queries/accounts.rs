@@ -29,20 +29,15 @@ use miden_objects::account::{
     AccountId,
     AccountStorage,
     NonFungibleDeltaAction,
-    StorageSlot,
+    StorageSlotContent,
+    StorageSlotName,
 };
 use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
 use crate::constants::MAX_PAYLOAD_BYTES;
-use crate::db::models::conv::{
-    SqlTypeConvert,
-    nonce_to_raw_sql,
-    raw_sql_to_nonce,
-    raw_sql_to_slot,
-    slot_to_raw_sql,
-};
+use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
@@ -413,7 +408,7 @@ pub(crate) fn select_all_accounts(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMapValue {
     pub block_num: BlockNumber,
-    pub slot_index: u8,
+    pub slot_name: StorageSlotName,
     pub key: Word,
     pub value: Word,
 }
@@ -427,11 +422,11 @@ pub struct StorageMapValuesPage {
 }
 
 impl StorageMapValue {
-    pub fn from_raw_row(row: (i64, i32, Vec<u8>, Vec<u8>)) -> Result<Self, DatabaseError> {
-        let (block_num, slot_index, key, value) = row;
+    pub fn from_raw_row(row: (i64, Vec<u8>, Vec<u8>, Vec<u8>)) -> Result<Self, DatabaseError> {
+        let (block_num, slot_name, key, value) = row;
         Ok(Self {
             block_num: BlockNumber::from_raw_sql(block_num)?,
-            slot_index: raw_sql_to_slot(slot_index),
+            slot_name: StorageSlotName::from_raw_sql(slot_name)?,
             key: Word::read_from_bytes(&key)?,
             value: Word::read_from_bytes(&value)?,
         })
@@ -503,8 +498,8 @@ pub(crate) fn select_account_storage_map_values(
         });
     }
 
-    let raw: Vec<(i64, i32, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::block_num, t::slot, t::key, t::value))
+    let raw: Vec<(i64, Vec<u8>, Vec<u8>, Vec<u8>)> =
+        SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
             .filter(
                 t::account_id
                     .eq(account_id.to_bytes())
@@ -705,21 +700,21 @@ pub(crate) fn insert_account_storage_map_value(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    slot: u8,
+    slot_name: StorageSlotName,
     key: Word,
     value: Word,
 ) -> Result<usize, DatabaseError> {
     let account_id = account_id.to_bytes();
     let key = key.to_bytes();
     let value = value.to_bytes();
-    let slot = slot_to_raw_sql(slot);
+    let slot_name = slot_name.to_raw_sql();
     let block_num = block_num.to_raw_sql();
 
     let update_count = diesel::update(schema::account_storage_map_values::table)
         .filter(
             schema::account_storage_map_values::account_id
                 .eq(&account_id)
-                .and(schema::account_storage_map_values::slot.eq(slot))
+                .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
                 .and(schema::account_storage_map_values::key.eq(&key))
                 .and(schema::account_storage_map_values::is_latest.eq(true)),
         )
@@ -730,7 +725,7 @@ pub(crate) fn insert_account_storage_map_value(
         account_id,
         key,
         value,
-        slot,
+        slot_name,
         block_num,
         is_latest: true,
     };
@@ -807,17 +802,10 @@ pub(crate) fn upsert_accounts(
 
                 // collect storage-map inserts to apply after account upsert
                 let mut storage = Vec::new();
-                for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
-                    if let StorageSlot::Map(storage_map) = slot {
-                        // SAFETY: We can safely unwrap the conversion to u8 because
-                        // accounts have a limit of 255 storage elements
+                for slot in account.storage().slots() {
+                    if let StorageSlotContent::Map(storage_map) = slot.content() {
                         for (key, value) in storage_map.entries() {
-                            storage.push((
-                                account_id,
-                                u8::try_from(slot_idx).unwrap(),
-                                *key,
-                                *value,
-                            ));
+                            storage.push((account_id, slot.name().clone(), *key, *value));
                         }
                     }
                 }
@@ -834,9 +822,9 @@ pub(crate) fn upsert_accounts(
                 // --- collect storage map updates ----------------------------
 
                 let mut storage = Vec::new();
-                for (&slot, map_delta) in delta.storage().maps() {
+                for (slot_name, map_delta) in delta.storage().maps() {
                     for (key, value) in map_delta.entries() {
-                        storage.push((account_id, slot, (*key).into(), *value));
+                        storage.push((account_id, slot_name.clone(), (*key).into(), *value));
                     }
                 }
 
@@ -912,8 +900,8 @@ pub(crate) fn upsert_accounts(
             .execute(conn)?;
 
         // insert pending storage map entries
-        for (acc_id, slot, key, value) in pending_storage_inserts {
-            insert_account_storage_map_value(conn, acc_id, block_num, slot, key, value)?;
+        for (acc_id, slot_name, key, value) in pending_storage_inserts {
+            insert_account_storage_map_value(conn, acc_id, block_num, slot_name, key, value)?;
         }
 
         // insert pending vault-asset entries
@@ -1005,7 +993,7 @@ impl AccountAssetRowInsert {
 pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) account_id: Vec<u8>,
     pub(crate) block_num: i64,
-    pub(crate) slot: i32,
+    pub(crate) slot_name: Vec<u8>,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
     pub(crate) is_latest: bool,

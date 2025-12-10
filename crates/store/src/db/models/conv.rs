@@ -36,6 +36,7 @@ use std::any::type_name;
 
 use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
 use miden_objects::Felt;
+use miden_objects::account::StorageSlotName;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 
@@ -116,6 +117,24 @@ impl SqlTypeConvert for NoteTag {
     }
 }
 
+impl SqlTypeConvert for StorageSlotName {
+    type Raw = Vec<u8>;
+    type Error = DatabaseTypeConversionError;
+
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+        String::from_utf8(raw)
+            .map_err(|_| DatabaseTypeConversionError(type_name::<StorageSlotName>()))
+            .and_then(|name| {
+                StorageSlotName::new(name)
+                    .map_err(|_| DatabaseTypeConversionError(type_name::<StorageSlotName>()))
+            })
+    }
+
+    fn to_raw_sql(self) -> Self::Raw {
+        self.as_str().as_bytes().to_vec()
+    }
+}
+
 // Raw type conversions - eventually introduce wrapper types
 // ===========================================================
 
@@ -137,16 +156,6 @@ pub(crate) fn raw_sql_to_nonce(raw: i64) -> u64 {
 #[inline(always)]
 pub(crate) fn nonce_to_raw_sql(nonce: Felt) -> i64 {
     nonce.as_int() as i64
-}
-
-#[inline(always)]
-pub(crate) fn raw_sql_to_slot(raw: i32) -> u8 {
-    debug_assert!(raw >= 0);
-    raw as u8
-}
-#[inline(always)]
-pub(crate) fn slot_to_raw_sql(slot: u8) -> i32 {
-    i32::from(slot)
 }
 
 #[inline(always)]

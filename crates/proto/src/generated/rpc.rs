@@ -139,9 +139,9 @@ pub mod account_proof_request {
         /// Represents a storage slot index and the associated map keys.
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct StorageMapDetailRequest {
-            /// Storage slot index (`\[0..255\]`).
-            #[prost(uint32, tag = "1")]
-            pub slot_index: u32,
+            /// Storage slot name.
+            #[prost(string, tag = "1")]
+            pub slot_name: ::prost::alloc::string::String,
             #[prost(oneof = "storage_map_detail_request::SlotData", tags = "2, 3")]
             pub slot_data: ::core::option::Option<storage_map_detail_request::SlotData>,
         }
@@ -162,7 +162,7 @@ pub mod account_proof_request {
                 /// the response will not contain them but must be requested separately.
                 #[prost(bool, tag = "2")]
                 AllEntries(bool),
-                /// A list of map keys associated with the given storage slot identified by `slot_index`.
+                /// A list of map keys associated with the given storage slot identified by `slot_name`.
                 #[prost(message, tag = "3")]
                 MapKeys(MapKeys),
             }
@@ -230,9 +230,9 @@ pub struct AccountStorageDetails {
 pub mod account_storage_details {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AccountStorageMapDetails {
-        /// slot index of the storage map
-        #[prost(uint32, tag = "1")]
-        pub slot_index: u32,
+        /// Storage slot name.
+        #[prost(string, tag = "1")]
+        pub slot_name: ::prost::alloc::string::String,
         /// A flag that is set to `true` if the number of to-be-returned entries in the
         /// storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
         /// endpoint should be used to get all storage map data.
@@ -465,14 +465,14 @@ pub struct SyncStorageMapsResponse {
     pub updates: ::prost::alloc::vec::Vec<StorageMapUpdate>,
 }
 /// Represents a single storage map update.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StorageMapUpdate {
     /// Block number in which the slot was updated.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
-    /// Slot index (\[0..255\]).
-    #[prost(uint32, tag = "2")]
-    pub slot_index: u32,
+    /// Storage slot name.
+    #[prost(string, tag = "2")]
+    pub slot_name: ::prost::alloc::string::String,
     /// The storage map key.
     #[prost(message, optional, tag = "3")]
     pub key: ::core::option::Option<super::primitives::Digest>,

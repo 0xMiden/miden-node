@@ -216,15 +216,15 @@ message AccountProofRequest {
                 // A list of map keys associated with this storage slot.
                 repeated primitives.Digest map_keys = 1;
             }
-            // Storage slot index (`[0..255]`).
-            uint32 slot_index = 1;
+            // Storage slot name.
+            string slot_name = 1;
 
             oneof slot_data {
                 // Request to return all storage map data. If the number exceeds a threshold of 1000 entries,
                 // the response will not contain them but must be requested separately.
                 bool all_entries = 2;
 
-                // A list of map keys associated with the given storage slot identified by `slot_index`.
+                // A list of map keys associated with the given storage slot identified by `slot_name`.
                 MapKeys map_keys = 3;
             }
         }
@@ -311,8 +311,9 @@ message AccountStorageDetails {
 
             repeated StorageMapEntry entries = 1;
         }
-        // slot index of the storage map
-        uint32 slot_index = 1;
+
+        // Storage slot name.
+        string slot_name = 1;
 
         // A flag that is set to `true` if the number of to-be-returned entries in the
         // storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
@@ -533,8 +534,8 @@ message StorageMapUpdate {
     // Block number in which the slot was updated.
     fixed32 block_num = 1;
 
-    // Slot index ([0..255]).
-    uint32 slot_index = 2;
+    // Storage slot name.
+    string slot_name = 2;
 
     // The storage map key.
     primitives.Digest key = 3;

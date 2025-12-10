@@ -24,6 +24,7 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
     StorageSlot,
+    StorageSlotName,
 };
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{
@@ -1250,10 +1251,17 @@ fn insert_account_delta(
     block_number: BlockNumber,
     delta: &AccountDelta,
 ) {
-    for (slot, slot_delta) in delta.storage().maps() {
+    for (slot_name, slot_delta) in delta.storage().maps() {
         for (k, v) in slot_delta.entries() {
-            insert_account_storage_map_value(conn, account_id, block_number, *slot, *k.inner(), *v)
-                .unwrap();
+            insert_account_storage_map_value(
+                conn,
+                account_id,
+                block_number,
+                slot_name.clone(),
+                *k.inner(),
+                *v,
+            )
+            .unwrap();
         }
     }
 }
@@ -1276,7 +1284,7 @@ fn sql_account_storage_map_values_insertion() {
     let account_id =
         AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
 
-    let slot = 3u8;
+    let slot_name = StorageSlotName::mock(3);
     let key1 = Word::from([1u32, 2, 3, 4]);
     let key2 = Word::from([5u32, 6, 7, 8]);
     let value1 = Word::from([10u32, 11, 12, 13]);
@@ -1287,7 +1295,7 @@ fn sql_account_storage_map_values_insertion() {
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
-    let maps1: BTreeMap<_, _> = [(slot, map1)].into_iter().collect();
+    let maps1: BTreeMap<_, _> = [(slot_name.clone(), map1)].into_iter().collect();
     let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
@@ -1301,7 +1309,7 @@ fn sql_account_storage_map_values_insertion() {
     // Update key1 at block 2
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
-    let maps2 = BTreeMap::from_iter([(slot, map2)]);
+    let maps2 = BTreeMap::from_iter([(slot_name.clone(), map2)]);
     let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
@@ -1318,14 +1326,14 @@ fn sql_account_storage_map_values_insertion() {
         storage_map_values
             .values
             .iter()
-            .any(|val| val.slot_index == slot && val.key == key1 && val.value == value3),
+            .any(|val| val.slot_name == slot_name && val.key == key1 && val.value == value3),
         "key1 should point to new value at block2"
     );
     assert!(
         storage_map_values
             .values
             .iter()
-            .any(|val| val.slot_index == slot && val.key == key2 && val.value == value2),
+            .any(|val| val.slot_name == slot_name && val.key == key2 && val.value == value2),
         "key2 should stay the same (from block1)"
     );
 }
@@ -1334,7 +1342,7 @@ fn sql_account_storage_map_values_insertion() {
 fn select_storage_map_sync_values() {
     let mut conn = create_db();
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let slot = 5u8;
+    let slot_name = StorageSlotName::mock(5);
 
     let key1 = num_to_word(1);
     let key2 = num_to_word(2);
@@ -1349,20 +1357,55 @@ fn select_storage_map_sync_values() {
 
     // Insert data across multiple blocks using individual inserts
     // Block 1: key1 -> value1, key2 -> value2
-    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key1, value1)
-        .unwrap();
-    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key2, value2)
-        .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block1,
+        slot_name.clone(),
+        key1,
+        value1,
+    )
+    .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block1,
+        slot_name.clone(),
+        key2,
+        value2,
+    )
+    .unwrap();
 
     // Block 2: key2 -> value3 (update), key3 -> value3 (new)
-    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key2, value3)
-        .unwrap();
-    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key3, value3)
-        .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block2,
+        slot_name.clone(),
+        key2,
+        value3,
+    )
+    .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block2,
+        slot_name.clone(),
+        key3,
+        value3,
+    )
+    .unwrap();
 
     // Block 3: key1 -> value2 (update)
-    queries::insert_account_storage_map_value(&mut conn, account_id, block3, slot, key1, value2)
-        .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block3,
+        slot_name.clone(),
+        key1,
+        value2,
+    )
+    .unwrap();
 
     let page = queries::select_account_storage_map_values(
         &mut conn,
@@ -1376,19 +1419,19 @@ fn select_storage_map_sync_values() {
     // Compare ordered by key using a tuple view to avoid relying on the concrete struct name
     let expected = vec![
         StorageMapValue {
-            slot_index: slot,
+            slot_name: slot_name.clone(),
             key: key2,
             value: value3,
             block_num: block2,
         },
         StorageMapValue {
-            slot_index: slot,
+            slot_name: slot_name.clone(),
             key: key3,
             value: value3,
             block_num: block2,
         },
         StorageMapValue {
-            slot_index: slot,
+            slot_name,
             key: key1,
             value: value2,
             block_num: block3,
@@ -1489,12 +1532,12 @@ fn mock_account_code_and_storage(
     ";
 
     let component_storage = vec![
-        StorageSlot::Value(Word::empty()),
-        StorageSlot::Value(num_to_word(1)),
-        StorageSlot::Value(Word::empty()),
-        StorageSlot::Value(num_to_word(3)),
-        StorageSlot::Value(Word::empty()),
-        StorageSlot::Value(num_to_word(5)),
+        StorageSlot::with_value(StorageSlotName::mock(0), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(1), num_to_word(1)),
+        StorageSlot::with_value(StorageSlotName::mock(2), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(3), num_to_word(3)),
+        StorageSlot::with_value(StorageSlotName::mock(4), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(5), num_to_word(5)),
     ];
 
     let component = AccountComponent::compile(
@@ -1567,7 +1610,10 @@ fn genesis_with_account_storage_map() {
     ])
     .unwrap();
 
-    let component_storage = vec![StorageSlot::Map(storage_map), StorageSlot::Value(Word::empty())];
+    let component_storage = vec![
+        StorageSlot::with_map(StorageSlotName::mock(0), storage_map),
+        StorageSlot::with_empty_value(StorageSlotName::mock(1)),
+    ];
 
     let component = AccountComponent::compile(
         "export.foo push.1 end",
@@ -1608,7 +1654,10 @@ fn genesis_with_account_assets_and_storage() {
     )])
     .unwrap();
 
-    let component_storage = vec![StorageSlot::Value(Word::empty()), StorageSlot::Map(storage_map)];
+    let component_storage = vec![
+        StorageSlot::with_empty_value(StorageSlotName::mock(0)),
+        StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
+    ];
 
     let component = AccountComponent::compile(
         "export.foo push.1 end",
@@ -1678,7 +1727,7 @@ fn genesis_with_multiple_accounts() {
     )])
     .unwrap();
 
-    let component_storage = vec![StorageSlot::Map(storage_map)];
+    let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
     let component3 = AccountComponent::compile(
         "export.baz push.3 end",

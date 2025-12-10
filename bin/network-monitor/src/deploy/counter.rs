@@ -23,12 +23,12 @@ use tracing::instrument;
 use crate::COMPONENT;
 
 static OWNER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::counter_contract::owner")
+    StorageSlotName::new("miden::monitor::counter_contract::owner")
         .expect("storage slot name should be valid")
 });
 
 static COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::counter_contract::counter")
+    StorageSlotName::new("miden::monitor::counter_contract::counter")
         .expect("storage slot name should be valid")
 });
 

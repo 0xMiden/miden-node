@@ -12,7 +12,7 @@ use.miden::tx
 use.std::sys
 
 # The slot in this component's storage layout where the counter is stored.
-const COUNTER_SLOT = word("miden::counter_contract::counter")
+const COUNTER_SLOT = word("miden::monitor::counter_contract::counter")
 
 # Increment function with note authentication
 # => []

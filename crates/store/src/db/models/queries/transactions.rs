@@ -13,7 +13,11 @@ use diesel::{
     SqliteConnection,
 };
 use miden_lib::utils::Deserializable;
-use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
+use miden_node_utils::limiter::{
+    MAX_PAGINATED_PAYLOAD_BYTES,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+};
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
@@ -280,10 +284,12 @@ pub fn select_transactions_records(
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
-    const MAX_PAYLOAD_BYTES: i64 = 4 * 1024 * 1024; // 4 MB
     const NUM_TXS_PER_CHUNK: i64 = 1000; // Read 1000 transactions at a time
 
     QueryParamAccountIdLimit::check(account_ids.len())?;
+
+    let max_payload_bytes =
+        i64::try_from(MAX_PAGINATED_PAYLOAD_BYTES).expect("payload limit fits within i64");
 
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
@@ -334,7 +340,7 @@ pub fn select_transactions_records(
         let mut last_added_tx: Option<TransactionRecordRaw> = None;
 
         for tx in chunk {
-            if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES {
+            if total_size + tx.size_in_bytes <= max_payload_bytes {
                 total_size += tx.size_in_bytes;
                 last_added_tx = Some(tx);
                 added_from_chunk += 1;
@@ -359,7 +365,7 @@ pub fn select_transactions_records(
 
     // Ensure block consistency: remove the last block if it's incomplete
     // (we may have stopped loading mid-block due to size constraints)
-    if total_size >= MAX_PAYLOAD_BYTES {
+    if total_size >= max_payload_bytes {
         // SAFETY: We're guaranteed to have at least one transaction since total_size > 0
         let last_block_num = last_block_num.expect(
             "guaranteed to have processed at least one transaction when size limit is reached",

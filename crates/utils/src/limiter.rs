@@ -1,12 +1,15 @@
-//! Limit the size of a parameter list for a specific parameter
+//! Centralized limits for RPC and store parameters and payload sizes.
 //!
-//! Used for:
-//! 1. the external facing RPC
-//! 2. limiting SQL statements not exceeding parameter limits
+//! # Rationale
+//! - Parameter limits are kept at 1000 items across all multi-value RPC parameters. This caps
+//!   worst-case SQL `IN` clauses and keeps responses comfortably under the 4 MiB payload budget
+//!   enforced in the store.
+//! - Limits are enforced both at the RPC boundary and inside the store to prevent bypasses and to
+//!   avoid expensive queries even if validation is skipped earlier in the stack.
+//! - `MAX_PAGINATED_PAYLOAD_BYTES` is set to 4 MiB (e.g. 1000 nullifier rows at ~36 B each, 1000
+//!   transactions summaries streamed in chunks).
 //!
-//! The 1st is good to terminate invalid requests as early as possible,
-//! where the second is both a fallback and a safeguard not benching
-//! pointless parameter combinations.
+//! Add new limits here so callers share the same values and rationale.
 
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +39,10 @@ pub trait QueryParamLimiter {
         Ok(())
     }
 }
+
+/// Maximum payload size (in bytes) for paginated responses returned by the
+/// store.
+pub const MAX_PAGINATED_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
 
 /// Used for the following RPC endpoints
 /// * `state_sync`

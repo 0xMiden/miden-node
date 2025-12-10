@@ -6,6 +6,7 @@ mod constants;
 mod db;
 mod errors;
 pub mod genesis;
+mod inner_forest;
 mod server;
 pub mod state;
 

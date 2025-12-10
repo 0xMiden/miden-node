@@ -466,19 +466,6 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
 /// - The `map_entries` field is empty (no data included)
 /// - Clients should use the dedicated `SyncStorageMaps` RPC endpoint
 /// - That endpoint supports pagination and block range filtering
-///
-/// ## Future Enhancement (TODO)
-///
-/// Currently, when `too_many_entries = true`, we return an empty list. A future improvement
-/// would return a **partial SMT** with:
-/// - A subset of entries (e.g., most frequently accessed)
-/// - Merkle proofs for those entries
-/// - Inner node commitments
-///
-/// This would allow clients to verify partial data cryptographically while still
-/// signaling that more data exists. The reason this matters: if all leaf values are
-/// included, one can reconstruct the entire SMT; if even one is missing, one cannot.
-/// By providing proofs, we enable verification of partial data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageMapDetails {
     pub slot_index: u8,

@@ -392,8 +392,7 @@ impl Db {
         .await
     }
 
-    /// Loads all the account commitments from the DB.
-    // TODO add a variant with block_num as arg
+    /// TODO marked for removal, replace with paged version
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {

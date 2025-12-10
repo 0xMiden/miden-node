@@ -44,7 +44,6 @@ use miden_objects::crypto::merkle::{
     MmrPeaks,
     MmrProof,
     PartialMmr,
-    SmtForest,
     SmtProof,
     SmtStorage,
 };
@@ -78,6 +77,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
+use crate::inner_forest::InnerForest;
 use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
 
 // STRUCTURES
@@ -89,31 +89,6 @@ pub struct TransactionInputs {
     pub nullifiers: Vec<NullifierInfo>,
     pub found_unauthenticated_notes: HashSet<Word>,
     pub new_account_id_prefix_is_unique: Option<bool>,
-}
-
-/// Container for forest-related state that needs to be updated atomically.
-struct InnerForest {
-    /// `SmtForest` for efficient account storage reconstruction.
-    /// Populated during block import with storage and vault SMTs.
-    storage_forest: SmtForest,
-
-    /// Maps (`account_id`, `slot_index`, `block_num`) to SMT root.
-    /// Populated during block import for all storage map slots.
-    storage_roots: BTreeMap<(AccountId, u8, BlockNumber), Word>,
-
-    /// Maps (`account_id`, `block_num`) to vault SMT root.
-    /// Tracks asset vault versions across all blocks with structural sharing.
-    vault_roots: BTreeMap<(AccountId, BlockNumber), Word>,
-}
-
-impl InnerForest {
-    fn new() -> Self {
-        Self {
-            storage_forest: SmtForest::new(),
-            storage_roots: BTreeMap::new(),
-            vault_roots: BTreeMap::new(),
-        }
-    }
 }
 
 /// Container for state that needs to be updated atomically.

@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,16 +6,19 @@ use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_utils::lru_cache::LruCache;
+use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::PartialMmr;
+use miden_objects::note::NoteScript;
 use miden_objects::transaction::PartialBlockchain;
 use tokio::sync::{Barrier, RwLock};
 use tokio::time;
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
-use crate::actor::{AccountActorConfig, AccountOrigin};
+use crate::actor::{AccountActorContext, AccountOrigin};
 use crate::block_producer::BlockProducerClient;
 use crate::coordinator::Coordinator;
 use crate::store::StoreClient;
@@ -79,11 +83,20 @@ pub struct NetworkTransactionBuilder {
     /// This informs the block-producer when we have subscribed to mempool events and that it is
     /// safe to begin block-production.
     bp_checkpoint: Arc<Barrier>,
+    /// Shared LRU cache for storing retrieved note scripts to avoid repeated store calls.
+    /// This cache is shared across all account actors.
+    script_cache: LruCache<Word, NoteScript>,
     /// Coordinator for managing actor tasks.
     coordinator: Coordinator,
 }
 
 impl NetworkTransactionBuilder {
+    /// Default cache size for note scripts.
+    ///
+    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
+    /// depends on the complexity of the scripts being cached.
+    const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
+
     /// Creates a new instance of the network transaction builder.
     pub fn new(
         store_url: Url,
@@ -92,13 +105,16 @@ impl NetworkTransactionBuilder {
         ticker_interval: Duration,
         bp_checkpoint: Arc<Barrier>,
     ) -> Self {
+        let script_cache = LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE);
+        let coordinator = Coordinator::new(MAX_IN_PROGRESS_TXS);
         Self {
             store_url,
             block_producer_url,
             tx_prover_url,
             ticker_interval,
             bp_checkpoint,
-            coordinator: Coordinator::new(MAX_IN_PROGRESS_TXS),
+            script_cache,
+            coordinator,
         }
     }
 
@@ -127,12 +143,13 @@ impl NetworkTransactionBuilder {
 
         // Create chain state that will be updated by the coordinator and read by actors.
         let chain_state = Arc::new(RwLock::new(ChainState::new(chain_tip_header, chain_mmr)));
-        // Create a semaphore to limit the number of in-progress transactions across all actors.
-        let config = AccountActorConfig {
+
+        let actor_context = AccountActorContext {
             block_producer_url: self.block_producer_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
             chain_state: chain_state.clone(),
             store: store.clone(),
+            script_cache: self.script_cache.clone(),
         };
 
         // Create initial set of actors based on all known network accounts.
@@ -140,7 +157,7 @@ impl NetworkTransactionBuilder {
         for account_id in account_ids {
             if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
                 self.coordinator
-                    .spawn_actor(AccountOrigin::store(account_prefix), &config)
+                    .spawn_actor(AccountOrigin::store(account_prefix), &actor_context)
                     .await?;
             }
         }
@@ -160,7 +177,7 @@ impl NetworkTransactionBuilder {
 
                     self.handle_mempool_event(
                         event.into(),
-                        &config,
+                        &actor_context,
                         chain_state.clone(),
                     ).await?;
                 },
@@ -172,12 +189,12 @@ impl NetworkTransactionBuilder {
     /// actors as required.
     #[tracing::instrument(
         name = "ntx.builder.handle_mempool_event",
-        skip(self, event, account_actor_config, chain_state)
+        skip(self, event, actor_context, chain_state)
     )]
     async fn handle_mempool_event(
         &mut self,
         event: Arc<MempoolEvent>,
-        account_actor_config: &AccountActorConfig,
+        actor_context: &AccountActorContext,
         chain_state: Arc<RwLock<ChainState>>,
     ) -> Result<(), anyhow::Error> {
         match event.as_ref() {
@@ -189,9 +206,7 @@ impl NetworkTransactionBuilder {
                         // Spawn new actors if a transaction creates a new network account
                         let is_creating_account = delta.is_full_state();
                         if is_creating_account {
-                            self.coordinator
-                                .spawn_actor(network_account, account_actor_config)
-                                .await?;
+                            self.coordinator.spawn_actor(network_account, actor_context).await?;
                         }
                     }
                 }

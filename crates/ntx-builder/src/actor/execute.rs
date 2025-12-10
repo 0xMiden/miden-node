@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::num::NonZeroUsize;
 
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
@@ -86,23 +85,18 @@ pub struct NtxContext {
 }
 
 impl NtxContext {
-    /// Default cache size for note scripts.
-    ///
-    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
-    /// depends on the complexity of the scripts being cached.
-    const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
-
     /// Creates a new [`NtxContext`] instance.
     pub fn new(
         block_producer: BlockProducerClient,
         prover: Option<RemoteTransactionProver>,
         store: StoreClient,
+        script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
         Self {
             block_producer,
             prover,
             store,
-            script_cache: LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE),
+            script_cache,
         }
     }
 

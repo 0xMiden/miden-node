@@ -12,7 +12,7 @@ use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
-use crate::actor::{AccountActor, AccountActorConfig, AccountOrigin, ActorShutdownReason};
+use crate::actor::{AccountActor, AccountActorContext, AccountOrigin, ActorShutdownReason};
 
 // ACTOR HANDLE
 // ================================================================================================
@@ -95,7 +95,8 @@ impl Coordinator {
     /// Maximum number of messages of the message channel for each actor.
     const ACTOR_CHANNEL_SIZE: usize = 100;
 
-    /// Creates a new coordinator with the specified maximum number of inflight transactions.
+    /// Creates a new coordinator with the specified maximum number of inflight transactions
+    /// and shared script cache.
     pub fn new(max_inflight_transactions: usize) -> Self {
         Self {
             actor_registry: HashMap::new(),
@@ -110,11 +111,11 @@ impl Coordinator {
     /// This method creates a new [`AccountActor`] instance for the specified account origin
     /// and adds it to the coordinator's management system. The actor will be responsible for
     /// processing transactions and managing state for accounts matching the network prefix.
-    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
+    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, actor_context))]
     pub async fn spawn_actor(
         &mut self,
         origin: AccountOrigin,
-        config: &AccountActorConfig,
+        actor_context: &AccountActorContext,
     ) -> Result<(), SendError<Arc<MempoolEvent>>> {
         let account_prefix = origin.prefix();
 
@@ -124,10 +125,9 @@ impl Coordinator {
             handle.cancel_token.cancel();
         }
 
-        // Construct the actor and add it to the registry for subsequent messaging.
         let (event_tx, event_rx) = mpsc::channel(Self::ACTOR_CHANNEL_SIZE);
         let cancel_token = tokio_util::sync::CancellationToken::new();
-        let actor = AccountActor::new(origin, config, event_rx, cancel_token.clone());
+        let actor = AccountActor::new(origin, actor_context, event_rx, cancel_token.clone());
         let handle = ActorHandle::new(event_tx, cancel_token);
 
         // Run the actor.

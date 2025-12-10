@@ -11,8 +11,11 @@ use futures::FutureExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::lru_cache::LruCache;
+use miden_objects::Word;
 use miden_objects::account::{Account, AccountDelta};
 use miden_objects::block::BlockNumber;
+use miden_objects::note::NoteScript;
 use miden_objects::transaction::TransactionId;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
@@ -44,9 +47,9 @@ pub enum ActorShutdownReason {
 // ACCOUNT ACTOR CONFIG
 // ================================================================================================
 
-/// Configuration that is required by all account actors.
-#[derive(Debug, Clone)]
-pub struct AccountActorConfig {
+/// Contains miscellaneous resources that are required by all account actors.
+#[derive(Clone)]
+pub struct AccountActorContext {
     /// Client for interacting with the store in order to load account state.
     pub store: StoreClient,
     /// Address of the block producer gRPC server.
@@ -57,6 +60,9 @@ pub struct AccountActorConfig {
     /// The latest chain state that account all actors can rely on. A single chain state is shared
     /// among all actors.
     pub chain_state: Arc<RwLock<ChainState>>,
+    /// Shared LRU cache for storing retrieved note scripts to avoid repeated store calls.
+    /// This cache is shared across all account actors to maximize cache efficiency.
+    pub script_cache: LruCache<Word, NoteScript>,
 }
 
 // ACCOUNT ORIGIN
@@ -150,6 +156,7 @@ pub struct AccountActor {
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
     chain_state: Arc<RwLock<ChainState>>,
+    script_cache: LruCache<Word, NoteScript>,
 }
 
 impl AccountActor {
@@ -157,21 +164,22 @@ impl AccountActor {
     /// configuration.
     pub fn new(
         origin: AccountOrigin,
-        config: &AccountActorConfig,
+        actor_context: &AccountActorContext,
         event_rx: mpsc::Receiver<Arc<MempoolEvent>>,
         cancel_token: CancellationToken,
     ) -> Self {
-        let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
-        let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
+        let block_producer = BlockProducerClient::new(actor_context.block_producer_url.clone());
+        let prover = actor_context.tx_prover_url.clone().map(RemoteTransactionProver::new);
         Self {
             origin,
-            store: config.store.clone(),
+            store: actor_context.store.clone(),
             mode: ActorMode::NoViableNotes,
             event_rx,
             cancel_token,
             block_producer,
             prover,
-            chain_state: config.chain_state.clone(),
+            chain_state: actor_context.chain_state.clone(),
+            script_cache: actor_context.script_cache.clone(),
         }
     }
 
@@ -270,6 +278,7 @@ impl AccountActor {
             self.block_producer.clone(),
             self.prover.clone(),
             self.store.clone(),
+            self.script_cache.clone(),
         );
 
         let execution_result = context.execute_transaction(tx_candidate).await;

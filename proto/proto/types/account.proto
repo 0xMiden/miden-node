@@ -32,7 +32,7 @@ message AccountSummary {
 message AccountStorageHeader {
     // A single storage slot in the account storage header.
     message StorageSlot {
-        // The type of the storage slot.
+        // The name of the storage slot.
         string slot_name = 1;
 
         // The type of the storage slot.

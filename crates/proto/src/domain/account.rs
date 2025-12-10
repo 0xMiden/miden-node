@@ -178,7 +178,7 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
             })
             .collect::<Result<Vec<_>, ConversionError>>()?;
 
-        AccountStorageHeader::new(items).map_err(ConversionError::AccountError)
+        Ok(AccountStorageHeader::new(items)?)
     }
 }
 

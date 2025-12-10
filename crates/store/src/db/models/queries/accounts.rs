@@ -42,6 +42,8 @@ use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
+type StorageMapValueRow = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
+
 /// Select the latest account details by account id from the DB using the given
 /// [`SqliteConnection`].
 ///
@@ -422,7 +424,7 @@ pub struct StorageMapValuesPage {
 }
 
 impl StorageMapValue {
-    pub fn from_raw_row(row: (i64, Vec<u8>, Vec<u8>, Vec<u8>)) -> Result<Self, DatabaseError> {
+    pub fn from_raw_row(row: StorageMapValueRow) -> Result<Self, DatabaseError> {
         let (block_num, slot_name, key, value) = row;
         Ok(Self {
             block_num: BlockNumber::from_raw_sql(block_num)?,
@@ -498,7 +500,7 @@ pub(crate) fn select_account_storage_map_values(
         });
     }
 
-    let raw: Vec<(i64, Vec<u8>, Vec<u8>, Vec<u8>)> =
+    let raw: Vec<StorageMapValueRow> =
         SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
             .filter(
                 t::account_id

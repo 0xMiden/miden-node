@@ -32,11 +32,14 @@ message AccountSummary {
 message AccountStorageHeader {
     // A single storage slot in the account storage header.
     message StorageSlot {
+        // The name of the storage slot.
+        string slot_name = 1;
+
         // The type of the storage slot.
-        uint32 slot_type = 1;
+        uint32 slot_type = 2;
 
         // The commitment (Word) for this storage slot.
-        primitives.Digest commitment = 2;
+        primitives.Digest commitment = 3;
     }
 
     // Storage slots with their types and commitments.

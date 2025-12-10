@@ -1,5 +1,4 @@
 use assert_matches::assert_matches;
-use miden_lib::transaction::memory;
 use miden_objects::ONE;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 
@@ -46,7 +45,10 @@ fn parsing_yields_expected_default_values() -> TestResult {
 
     // check total issuance of the faucet
     assert_eq!(
-        native_faucet.storage().get_item(memory::FAUCET_STORAGE_DATA_SLOT).unwrap()[3],
+        native_faucet
+            .storage()
+            .get_item(AccountStorage::faucet_metadata_slot())
+            .unwrap()[3],
         Felt::new(999_777),
         "Issuance mismatch"
     );

@@ -91,13 +91,12 @@ CREATE TABLE note_scripts (
 CREATE TABLE account_storage_map_values (
     account_id          BLOB NOT NULL,
     block_num           INTEGER NOT NULL,
-    slot                INTEGER NOT NULL,
+    slot_name           BLOB NOT NULL,
     key                 BLOB    NOT NULL,
     value               BLOB    NOT NULL,
     is_latest           BOOLEAN NOT NULL,
 
-    PRIMARY KEY (account_id, block_num, slot, key),
-    CONSTRAINT slot_is_u8 CHECK (slot BETWEEN 0 AND 0xFF),
+    PRIMARY KEY (account_id, block_num, slot_name, key),
     FOREIGN KEY (account_id, block_num) REFERENCES accounts(account_id, block_num) ON DELETE CASCADE
 ) WITHOUT ROWID;
 

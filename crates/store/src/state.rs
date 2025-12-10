@@ -23,7 +23,7 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
+use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
@@ -1007,13 +1007,13 @@ impl State {
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
-        for StorageMapRequest { slot_index, slot_data } in storage_requests {
-            let Some(StorageSlot::Map(storage_map)) =
-                account.storage().slots().get(slot_index as usize)
+        for StorageMapRequest { slot_name, slot_data } in storage_requests {
+            let Some(StorageSlotContent::Map(storage_map)) =
+                account.storage().get(&slot_name).map(StorageSlot::content)
             else {
-                return Err(AccountError::StorageSlotNotMap(slot_index).into());
+                return Err(AccountError::StorageSlotNotMap(slot_name).into());
             };
-            let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+            let details = AccountStorageMapDetails::new(slot_name, slot_data, storage_map);
             storage_map_details.push(details);
         }
 

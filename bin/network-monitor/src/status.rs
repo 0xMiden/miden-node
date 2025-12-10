@@ -431,7 +431,7 @@ pub async fn run_remote_prover_status_task(
 #[instrument(target = COMPONENT, name = "check-status.remote-prover", skip_all, ret(level = "info"))]
 pub(crate) async fn check_remote_prover_status(
     remote_prover: &mut miden_node_proto::clients::RemoteProverProxyStatusClient,
-    name: String,
+    display_name: String,
     url: String,
     current_time: u64,
 ) -> ServiceStatus {
@@ -452,7 +452,7 @@ pub(crate) async fn check_remote_prover_status(
             };
 
             ServiceStatus {
-                name: format!("Remote Prover ({name})"),
+                name: display_name.clone(),
                 status: overall_health,
                 last_checked: current_time,
                 error: None,
@@ -460,7 +460,7 @@ pub(crate) async fn check_remote_prover_status(
             }
         },
         Err(e) => ServiceStatus {
-            name: format!("Remote Prover ({name})"),
+            name: display_name,
             status: Status::Unhealthy,
             last_checked: current_time,
             error: Some(e.to_string()),

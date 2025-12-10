@@ -23,6 +23,7 @@ use miden_objects::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
+    AccountStorage,
     AccountStorageMode,
     AccountType,
 };
@@ -442,10 +443,13 @@ fn create_emit_note_tx(
 ) -> ProvenTransaction {
     let initial_account_hash = faucet.commitment();
 
-    let slot = faucet.storage().get_item(2).unwrap();
+    let slot = faucet.storage().get_item(BasicFungibleFaucet::metadata_slot_name()).unwrap();
     faucet
         .storage_mut()
-        .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
+        .set_item(
+            AccountStorage::faucet_metadata_slot(),
+            [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into(),
+        )
         .unwrap();
 
     faucet.increment_nonce(ONE).unwrap();

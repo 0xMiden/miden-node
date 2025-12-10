@@ -170,7 +170,7 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
         let items = slots
             .into_iter()
             .map(|slot| {
-                let slot_name = StorageSlotName::new(slot.slot_name).expect("TODO: map to error");
+                let slot_name = StorageSlotName::new(slot.slot_name)?;
                 let slot_type = storage_slot_type_from_raw(slot.slot_type)?;
                 let commitment =
                     slot.commitment.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
@@ -178,7 +178,7 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
             })
             .collect::<Result<Vec<_>, ConversionError>>()?;
 
-        Ok(AccountStorageHeader::new(items).expect("TODO: map to error"))
+        AccountStorageHeader::new(items).map_err(ConversionError::AccountError)
     }
 }
 
@@ -196,7 +196,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
             entries,
         } = value;
 
-        let slot_name = StorageSlotName::new(slot_name).expect("TODO: map to error");
+        let slot_name = StorageSlotName::new(slot_name)?;
 
         // Extract map_entries from the MapEntries message
         let map_entries = if let Some(entries) = entries {
@@ -246,7 +246,7 @@ impl TryFrom<proto::rpc::account_proof_request::account_detail_request::StorageM
             slot_data,
         } = value;
 
-        let slot_name = StorageSlotName::new(slot_name).expect("TODO: map to error");
+        let slot_name = StorageSlotName::new(slot_name)?;
         let slot_data = slot_data.ok_or(proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest::missing_field(stringify!(slot_data)))?.try_into()?;
 
         Ok(StorageMapRequest { slot_name, slot_data })

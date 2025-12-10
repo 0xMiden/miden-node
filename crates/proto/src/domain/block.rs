@@ -48,7 +48,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.tx_commitment().into()),
             tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
-            public_key: Some(header.public_key().into()),
+            validator_key: Some(header.validator_key().into()),
             timestamp: header.timestamp(),
             fee_parameters: Some(header.fee_parameters().into()),
         }
@@ -109,8 +109,8 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 )))?
                 .try_into()?,
             value
-                .public_key
-                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(public_key)))?
+                .validator_key
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(validator_key)))?
                 .try_into()?,
             FeeParameters::try_from(value.fee_parameters.ok_or(
                 proto::blockchain::FeeParameters::missing_field(stringify!(fee_parameters)),
@@ -209,7 +209,7 @@ impl TryFrom<proto::store::BlockInputs> for BlockInputs {
 impl TryFrom<proto::blockchain::PublicKey> for PublicKey {
     type Error = ConversionError;
     fn try_from(public_key: proto::blockchain::PublicKey) -> Result<Self, Self::Error> {
-        PublicKey::read_from_bytes(&public_key.public_key)
+        PublicKey::read_from_bytes(&public_key.validator_key)
             .map_err(|source| ConversionError::deserialization_error("PublicKey", source))
     }
 }
@@ -222,7 +222,7 @@ impl From<PublicKey> for proto::blockchain::PublicKey {
 
 impl From<&PublicKey> for proto::blockchain::PublicKey {
     fn from(value: &PublicKey) -> Self {
-        Self { public_key: value.to_bytes() }
+        Self { validator_key: value.to_bytes() }
     }
 }
 

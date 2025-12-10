@@ -67,7 +67,7 @@ message BlockHeader {
     primitives.Digest tx_commitment = 8;
 
     // An ECDSA public key corresponding to the validator key that signs block headers.
-    PublicKey public_key = 9;
+    PublicKey validator_key = 9;
 
     // A commitment to all transaction kernels supported by this block.
     primitives.Digest tx_kernel_commitment = 10;
@@ -82,11 +82,11 @@ message BlockHeader {
 // PUBLIC KEY
 // ================================================================================================
 
-// ECDSA PUBLIC KEY
+// ECDSA public key.
 message PublicKey {
     // Signature encoded using [winter_utils::Serializable] implementation for
     // [crypto::dsa::ecdsa_k256_keccak::PublicKey].
-    bytes public_key = 1;
+    bytes validator_key = 1;
 }
 
 // FEE PARAMETERS

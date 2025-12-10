@@ -66,7 +66,7 @@ pub struct BlockHeader {
     pub tx_commitment: ::core::option::Option<super::primitives::Digest>,
     /// An ECDSA public key corresponding to the validator key that signs block headers.
     #[prost(message, optional, tag = "9")]
-    pub public_key: ::core::option::Option<PublicKey>,
+    pub validator_key: ::core::option::Option<PublicKey>,
     /// A commitment to all transaction kernels supported by this block.
     #[prost(message, optional, tag = "10")]
     pub tx_kernel_commitment: ::core::option::Option<super::primitives::Digest>,
@@ -77,13 +77,13 @@ pub struct BlockHeader {
     #[prost(fixed32, tag = "12")]
     pub timestamp: u32,
 }
-/// ECDSA PUBLIC KEY
+/// ECDSA public key.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PublicKey {
     /// Signature encoded using \[winter_utils::Serializable\] implementation for
     /// \[crypto::dsa::ecdsa_k256_keccak::PublicKey\].
     #[prost(bytes = "vec", tag = "1")]
-    pub public_key: ::prost::alloc::vec::Vec<u8>,
+    pub validator_key: ::prost::alloc::vec::Vec<u8>,
 }
 /// Definition of the fee parameters.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

@@ -1132,8 +1132,8 @@ impl State {
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
-        self.db.select_transactions_records(account_ids, block_range).await
+    ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecordWithNotes>), DatabaseError> {
+        self.db.select_transactions_records_with_notes(account_ids, block_range).await
     }
 }
 

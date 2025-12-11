@@ -5,6 +5,8 @@ use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
     BoolExpressionMethods,
     ExpressionMethods,
+    JoinOnDsl,
+    NullableExpressionMethods,
     QueryDsl,
     QueryableByName,
     RunQueryDsl,
@@ -20,9 +22,14 @@ use miden_objects::note::{NoteId, Nullifier};
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
 
 use super::DatabaseError;
+use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::SqlTypeConvert;
+use crate::db::models::queries::NoteRecordRawRow;
+use crate::db::models::queries::notes::NoteRecordWithScriptRawJoined;
 use crate::db::models::{serialize_vec, vec_raw_try_into};
-use crate::db::{TransactionSummary, schema};
+use crate::db::schema::note_scripts::{self};
+use crate::db::schema::{notes, transactions};
+use crate::db::{TransactionRecordWithNotes, TransactionSummary, schema};
 
 /// Select transactions for given accounts in a specified block range
 ///
@@ -223,7 +230,13 @@ impl TransactionSummaryRowInsert {
     }
 }
 
-/// Select complete transaction records for the given accounts and block range.
+/// Row shape: (`tx`, optional `note`, optional `note_script`)
+type TxNoteRow = (TransactionRecordRaw, Option<NoteRecordRawRow>, Option<Vec<u8>>);
+
+/// Select complete transaction records together with their emitted notes using a single join.
+///
+/// This keeps the same payload limit semantics used by [`select_transactions_records`] and
+/// avoids a second round trip to fetch notes separately.
 ///
 /// # Parameters
 /// * `account_ids`: List of account IDs to filter by
@@ -231,58 +244,59 @@ impl TransactionSummaryRowInsert {
 /// * `block_range`: Range of blocks to include inclusive
 ///
 /// # Returns
-/// A tuple of (`last_block_included`, `transaction_records`) where:
-/// - `last_block_included`: The highest block number included in the response
-/// - `transaction_records`: Vector of transaction records, limited by payload size
 ///
-/// # Note
-/// This function returns complete transaction record information including state commitments
-/// and note IDs, allowing for direct conversion to proto `TransactionRecord` without loading
-/// full block data. We use a chunked loading strategy to prevent memory exhaustion attacks and
-/// ensure predictable resource usage.
+/// A tuple containing the last block number included and a vector of
+/// [`TransactionRecordWithNotes`] types.
 ///
 /// # Raw SQL
 /// ```sql
 /// SELECT
-///     account_id,
-///     block_num,
-///     transaction_id,
-///     initial_state_commitment,
-///     final_state_commitment,
-///     input_notes,
-///     output_notes,
-///     size_in_bytes
-/// FROM
-///     transactions
-/// WHERE
-///     block_num >= ?1
-///     AND block_num <= ?2
-///     AND account_id IN (?3)
-///     AND (
-///         block_num > ?4 OR (block_num = ?4 AND transaction_id > ?5)
-///     )
+///     tx.account_id,
+///     tx.block_num,
+///     tx.transaction_id,
+///     tx.initial_state_commitment,
+///     tx.final_state_commitment,
+///     tx.nullifiers,
+///     tx.output_notes,
+///     tx.size_in_bytes,
+///
+///     n.committed_at,
+///     n.batch_index,
+///     n.note_index,
+///     n.note_id,
+///     n.note_commitment,
+///     n.note_type,
+///     n.sender,
+///     n.tag,
+///     n.aux,
+///     n.execution_hint,
+///     n.assets,
+///     n.inputs,
+///     n.serial_num,
+///     n.inclusion_path,
+///     n.script_root,
+///     s.script  -- nullable
+///
+/// FROM transactions AS tx
+/// LEFT JOIN notes AS n
+/// ON tx.block_num = n.committed_at
+/// AND tx.account_id = n.sender
+/// LEFT JOIN note_scripts AS s
+/// ON n.script_root = s.script_root
+/// WHERE tx.block_num >= :block_start
+/// AND tx.block_num <= :block_end
+/// AND tx.account_id IN (:account_ids)
 /// ORDER BY
-///     block_num ASC,
-///     transaction_id ASC
-/// LIMIT
-///     ?6
+///     tx.block_num ASC,
+///     tx.transaction_id ASC,
+///     n.batch_index ASC,
+///     n.note_index ASC;
 /// ```
-/// Notes:
-/// - Uses stable ordering (`block_num`, `transaction_id`) to ensure consistent results across
-///   paginated queries.
-/// - Uses cursor-based pagination.
-/// - The query is executed in chunks of 1000 transactions to prevent loading excessive data and to
-///   stop as soon as the accumulated size approaches the 4MB limit.
-/// - Given the size of note records, 1000 records are guaranteed never to return more than about
-///   60MB of data.
-pub fn select_transactions_records(
+pub fn select_transactions_records_with_notes(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
-) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
-    const MAX_PAYLOAD_BYTES: i64 = 4 * 1024 * 1024; // 4 MB
-    const NUM_TXS_PER_CHUNK: i64 = 1000; // Read 1000 transactions at a time
-
+) -> Result<(BlockNumber, Vec<TransactionRecordWithNotes>), DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
     if block_range.is_empty() {
@@ -294,84 +308,129 @@ pub fn select_transactions_records(
 
     let desired_account_ids = serialize_vec(account_ids);
 
-    // Read transactions in chunks to prevent loading excessive data and to stop
-    // as soon as we approach the size limit
-    let mut all_transactions = Vec::new();
+    // FROM transactions AS tx
+    let base = schema::transactions::table
+        // LEFT JOIN notes AS n ON tx.block_num = n.committed_at AND tx.account_id = n.sender
+        .left_join(
+            notes::table.on(
+                notes::committed_at
+                    .eq(transactions::block_num)
+                    .and(notes::sender.eq(transactions::account_id)),
+            ),
+        )
+        // LEFT JOIN note_scripts AS s ON n.script_root = s.script_root
+        .left_join(
+            note_scripts::table.on(
+                notes::script_root.eq(note_scripts::script_root.nullable())
+            ),
+        )
+        // WHERE tx.block_num BETWEEN :block_start AND :block_end
+        .filter(transactions::block_num.between(block_range.start().to_raw_sql(), block_range.end().to_raw_sql()))
+        // AND tx.account_id IN (desired_account_ids)
+        .filter(transactions::account_id.eq_any(desired_account_ids));
+
+    // Disambiguate select via UFCS to avoid type ambiguity
+    let joined_rows = diesel::query_dsl::QueryDsl::select(
+            base,
+            (
+                TransactionRecordRaw::as_select(),
+                Option::<NoteRecordRawRow>::as_select(),
+                note_scripts::script.nullable(), // single column from left-joined table
+            ),
+        )
+        // ORDER BY tx.block_num, tx.transaction_id, n.batch_index, n.note_index
+        .order((
+            transactions::block_num.asc(),
+            transactions::transaction_id.asc(),
+            notes::batch_index.asc(),
+            notes::note_index.asc(),
+        ))
+        .load::<TxNoteRow>(conn)
+        .map_err(DatabaseError::from)?;
+
     let mut total_size = 0i64;
-    let mut last_block_num: Option<i64> = None;
-    let mut last_transaction_id: Option<Vec<u8>> = None;
+    let mut limit_hit = false;
+    let mut grouped: Vec<(TransactionRecordRaw, Vec<NoteRecordWithScriptRawJoined>)> = Vec::new();
 
-    loop {
-        let mut query =
-            SelectDsl::select(schema::transactions::table, TransactionRecordRaw::as_select())
-                .filter(schema::transactions::block_num.ge(block_range.start().to_raw_sql()))
-                .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
-                .filter(schema::transactions::account_id.eq_any(&desired_account_ids))
-                .into_boxed();
+    // Accumulate joined rows per transaction while enforcing the same payload cap.
+    let mut current_key: Option<(i64, Vec<u8>)> = None;
+    let mut current: Option<(TransactionRecordRaw, Vec<NoteRecordWithScriptRawJoined>)> = None;
 
-        // Apply cursor-based pagination using the last seen (block_num, transaction_id)
-        if let (Some(last_block), Some(last_tx_id)) = (last_block_num, &last_transaction_id) {
-            query = query.filter(
-                schema::transactions::block_num
-                    .gt(last_block)
-                    .or(schema::transactions::block_num
-                        .eq(last_block)
-                        .and(schema::transactions::transaction_id.gt(last_tx_id))),
+    let max_payload = i64::try_from(MAX_PAYLOAD_BYTES).expect("MAX_PAYLOAD_BYTES fits within i64");
+
+    for (tx_raw, note_raw, script) in joined_rows {
+        let note = note_raw.map(|note| NoteRecordWithScriptRawJoined::from((note, script.clone())));
+        let tx_key = (tx_raw.block_num, tx_raw.transaction_id.clone());
+
+        if current_key.as_ref() != Some(&tx_key) {
+            finalize_current(
+                &mut current,
+                &mut grouped,
+                &mut total_size,
+                &mut limit_hit,
+                max_payload,
             );
-        }
-
-        let chunk = query
-            .order((
-                schema::transactions::block_num.asc(),
-                schema::transactions::transaction_id.asc(),
-            ))
-            .limit(NUM_TXS_PER_CHUNK)
-            .load::<TransactionRecordRaw>(conn)
-            .map_err(DatabaseError::from)?;
-
-        // Add transactions from this chunk one by one until we hit the limit
-        let mut added_from_chunk = 0;
-        let mut last_added_tx: Option<TransactionRecordRaw> = None;
-
-        for tx in chunk {
-            if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES {
-                total_size += tx.size_in_bytes;
-                last_added_tx = Some(tx);
-                added_from_chunk += 1;
-            } else {
-                // Can't fit this transaction, stop here
+            if limit_hit {
                 break;
             }
+            current_key = Some(tx_key);
+            current = Some((tx_raw, note.into_iter().collect()));
+            continue;
         }
 
-        // Update cursor position only for the last transaction that was actually added
-        if let Some(tx) = last_added_tx {
-            last_block_num = Some(tx.block_num);
-            last_transaction_id = Some(tx.transaction_id.clone());
-            all_transactions.push(tx);
-        }
-
-        // Break if chunk incomplete (size limit hit or data exhausted)
-        if added_from_chunk < NUM_TXS_PER_CHUNK {
-            break;
+        if let Some((_, notes)) = &mut current {
+            if let Some(note) = note {
+                notes.push(note);
+            }
         }
     }
 
-    // Ensure block consistency: remove the last block if it's incomplete
-    // (we may have stopped loading mid-block due to size constraints)
-    if total_size >= MAX_PAYLOAD_BYTES {
-        // SAFETY: We're guaranteed to have at least one transaction since total_size > 0
-        let last_block_num = last_block_num.expect(
-            "guaranteed to have processed at least one transaction when size limit is reached",
-        );
-        let filtered_transactions = vec_raw_try_into(
-            all_transactions.into_iter().take_while(|row| row.block_num != last_block_num),
-        )?;
+    finalize_current(&mut current, &mut grouped, &mut total_size, &mut limit_hit, max_payload);
 
-        // SAFETY: block_num came from the database and was previously validated
-        let last_included_block = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
-        Ok((last_included_block, filtered_transactions))
-    } else {
-        Ok((*block_range.end(), vec_raw_try_into(all_transactions)?))
+    let mut last_block_included = *block_range.end();
+
+    // If the payload cap was hit, drop the last (possibly partial) block for consistency.
+    if limit_hit && !grouped.is_empty() {
+        let last_block_num = grouped
+            .last()
+            .expect("grouped should be non-empty when limit is hit")
+            .0
+            .block_num;
+
+        grouped.retain(|(tx, _)| tx.block_num != last_block_num);
+
+        last_block_included = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
+    }
+
+    let transactions = grouped
+        .into_iter()
+        .map(|(tx_raw, notes_raw)| -> Result<TransactionRecordWithNotes, DatabaseError> {
+            Ok(TransactionRecordWithNotes {
+                transaction: tx_raw.try_into()?,
+                note_records: vec_raw_try_into(notes_raw)?,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok((last_block_included, transactions))
+}
+
+/// Moves the current accumulated transaction (and its notes) into the grouped list
+/// if the payload cap allows it; otherwise marks that the limit was hit.
+fn finalize_current(
+    current: &mut Option<(TransactionRecordRaw, Vec<NoteRecordWithScriptRawJoined>)>,
+    grouped: &mut Vec<(TransactionRecordRaw, Vec<NoteRecordWithScriptRawJoined>)>,
+    total_size: &mut i64,
+    limit_hit: &mut bool,
+    max_payload: i64,
+) {
+    if let Some((tx_raw, notes)) = current.take() {
+        let projected = *total_size + tx_raw.size_in_bytes;
+        if projected <= max_payload {
+            *total_size = projected;
+            grouped.push((tx_raw, notes));
+        } else {
+            *limit_hit = true;
+        }
     }
 }

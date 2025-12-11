@@ -128,6 +128,18 @@ impl TransactionRecord {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct TransactionRecordWithNotes {
+    pub transaction: TransactionRecord,
+    pub note_records: Vec<NoteRecord>,
+}
+
+impl From<TransactionRecordWithNotes> for proto::rpc::TransactionRecord {
+    fn from(value: TransactionRecordWithNotes) -> Self {
+        value.transaction.into_proto_with_note_records(value.note_records)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoteRecord {
     pub block_num: BlockNumber,
@@ -611,19 +623,18 @@ impl Db {
         .await
     }
 
-    /// Returns the complete transaction records for the specified accounts within the specified
-    /// block range, including state commitments and note IDs.
+    /// Returns full transaction records together with their output note data using a single query.
     ///
     /// Note: This method is size-limited (~5MB) and may not return all matching transactions
     /// if the limit is exceeded. Transactions from partial blocks are excluded to maintain
     /// consistency.
-    pub async fn select_transactions_records(
+    pub async fn select_transactions_records_with_notes(
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
-        self.transact("full transactions records", move |conn| {
-            queries::select_transactions_records(conn, &account_ids, block_range)
+    ) -> Result<(BlockNumber, Vec<TransactionRecordWithNotes>)> {
+        self.transact("full transaction records with notes", move |conn| {
+            queries::select_transactions_records_with_notes(conn, &account_ids, block_range)
         })
         .await
     }

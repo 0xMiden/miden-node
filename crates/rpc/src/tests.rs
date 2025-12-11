@@ -424,7 +424,7 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
 
     let config = GenesisConfig::default();
-    let signer = config.signer_config.signer();
+    let signer = config.signer.signer();
     let (genesis_state, _) = config.into_state(signer).unwrap();
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();

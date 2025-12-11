@@ -87,7 +87,7 @@ fn insecure_signer_creation() -> TestResult {
         (default_gcfg, GenesisConfig::DEFAULT_INSECURE_KEY_FILEPATH),
         (toml_gcfg, "/tmp/insecure_2"),
     ] {
-        let _signer = gcfg.signer_config.signer();
+        let _signer = gcfg.signer.signer();
 
         // Read the secret key from the file that was created by the genesis config.
         let file_bytes = fs_err::read(filepath)?;

@@ -24,7 +24,7 @@ fn create_mock_state() -> State {
         Word::default(),               // note_root
         Word::default(),               // tx_hash
         Word::default(),               // kernel_root
-        SecretKey::new().public_key(), // public_key
+        SecretKey::new().public_key(), // validator_key
         test_fee_params(),             // fee_parameters
         0_u32,                         // timestamp
     );

@@ -83,7 +83,7 @@ pub struct GenesisConfig {
     pub fee_parameters: FeeParameterConfig,
     pub wallet: Vec<WalletConfig>,
     pub fungible_faucet: Vec<FungibleFaucetConfig>,
-    pub signer_config: SignerConfig,
+    pub signer: SignerConfig,
 }
 
 impl Default for GenesisConfig {
@@ -106,7 +106,7 @@ impl Default for GenesisConfig {
             },
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
-            signer_config: SignerConfig::Insecure(Self::DEFAULT_INSECURE_KEY_FILEPATH.into()),
+            signer: SignerConfig::Insecure(Self::DEFAULT_INSECURE_KEY_FILEPATH.into()),
         }
     }
 }

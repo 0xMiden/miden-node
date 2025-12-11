@@ -19,15 +19,14 @@ CREATE TABLE accounts (
     account_commitment                      BLOB NOT NULL,
     code_commitment                         BLOB,
     nonce                                   INTEGER,
-    storage_header                          BLOB, -- Serialized AccountStorage from miden-objects
     is_latest                               BOOLEAN NOT NULL DEFAULT 0, -- Indicates if this is the latest state for this account_id
 
     PRIMARY KEY (account_id, block_num),
     CONSTRAINT all_null_or_none_null CHECK
         (
-            (code_commitment IS NOT NULL AND nonce IS NOT NULL AND storage_header IS NOT NULL)
+            (code_commitment IS NOT NULL AND nonce IS NOT NULL)
             OR
-            (code_commitment IS NULL AND nonce IS NULL AND storage_header IS NULL)
+            (code_commitment IS NULL AND nonce IS NULL)
         )
 ) WITHOUT ROWID;
 
@@ -38,6 +37,26 @@ CREATE INDEX idx_accounts_latest ON accounts(account_id, is_latest) WHERE is_lat
 CREATE INDEX idx_accounts_block_num ON accounts(block_num);
 -- Index for joining with account_codes
 CREATE INDEX idx_accounts_code_commitment ON accounts(code_commitment) WHERE code_commitment IS NOT NULL;
+
+-- Table to store storage slot headers (slot types and commitments)
+CREATE TABLE account_storage_headers (
+    account_id          BLOB NOT NULL,
+    block_num           INTEGER NOT NULL,
+    slot_index          INTEGER NOT NULL,
+    slot_type           INTEGER NOT NULL, -- 0=Map, 1=Value (as per StorageSlotType)
+    slot_commitment     BLOB    NOT NULL,
+    is_latest           BOOLEAN NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (account_id, block_num, slot_index),
+    CONSTRAINT slot_index_is_u8 CHECK (slot_index BETWEEN 0 AND 0xFF),
+    CONSTRAINT slot_type_in_enum CHECK (slot_type BETWEEN 0 AND 1),
+    FOREIGN KEY (account_id, block_num) REFERENCES accounts(account_id, block_num) ON DELETE CASCADE
+) WITHOUT ROWID;
+
+-- Index for joining with accounts table
+CREATE INDEX idx_account_storage_headers_account_block ON account_storage_headers(account_id, block_num);
+-- Index for querying latest state
+CREATE INDEX idx_account_storage_headers_latest ON account_storage_headers(account_id, is_latest) WHERE is_latest = 1;
 
 CREATE TABLE notes (
     committed_at             INTEGER NOT NULL, -- Block number when the note was committed

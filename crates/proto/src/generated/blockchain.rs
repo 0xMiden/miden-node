@@ -64,9 +64,9 @@ pub struct BlockHeader {
     /// A commitment to a set of IDs of transactions which affected accounts in this block.
     #[prost(message, optional, tag = "8")]
     pub tx_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// An ECDSA public key corresponding to the validator key that signs block headers.
+    /// The validator's ECDSA public key.
     #[prost(message, optional, tag = "9")]
-    pub validator_key: ::core::option::Option<PublicKey>,
+    pub validator_key: ::core::option::Option<ValidatorPublicKey>,
     /// A commitment to all transaction kernels supported by this block.
     #[prost(message, optional, tag = "10")]
     pub tx_kernel_commitment: ::core::option::Option<super::primitives::Digest>,
@@ -77,9 +77,9 @@ pub struct BlockHeader {
     #[prost(fixed32, tag = "12")]
     pub timestamp: u32,
 }
-/// ECDSA public key.
+/// Validator ECDSA public key.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct PublicKey {
+pub struct ValidatorPublicKey {
     /// Signature encoded using \[winter_utils::Serializable\] implementation for
     /// \[crypto::dsa::ecdsa_k256_keccak::PublicKey\].
     #[prost(bytes = "vec", tag = "1")]

@@ -206,21 +206,21 @@ impl TryFrom<proto::store::BlockInputs> for BlockInputs {
 // PUBLIC KEY
 // ================================================================================================
 
-impl TryFrom<proto::blockchain::PublicKey> for PublicKey {
+impl TryFrom<proto::blockchain::ValidatorPublicKey> for PublicKey {
     type Error = ConversionError;
-    fn try_from(public_key: proto::blockchain::PublicKey) -> Result<Self, Self::Error> {
+    fn try_from(public_key: proto::blockchain::ValidatorPublicKey) -> Result<Self, Self::Error> {
         PublicKey::read_from_bytes(&public_key.validator_key)
             .map_err(|source| ConversionError::deserialization_error("PublicKey", source))
     }
 }
 
-impl From<PublicKey> for proto::blockchain::PublicKey {
+impl From<PublicKey> for proto::blockchain::ValidatorPublicKey {
     fn from(value: PublicKey) -> Self {
         Self::from(&value)
     }
 }
 
-impl From<&PublicKey> for proto::blockchain::PublicKey {
+impl From<&PublicKey> for proto::blockchain::ValidatorPublicKey {
     fn from(value: &PublicKey) -> Self {
         Self { validator_key: value.to_bytes() }
     }

@@ -127,7 +127,7 @@ impl SqlTypeConvert for StorageSlotName {
     }
 
     fn to_raw_sql(self) -> Self::Raw {
-        self.as_str().to_owned()
+        String::from(self)
     }
 }
 

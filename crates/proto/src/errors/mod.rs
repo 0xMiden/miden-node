@@ -5,7 +5,7 @@ use std::num::TryFromIntError;
 pub use miden_node_grpc_error_macro::GrpcError;
 use miden_objects::crypto::merkle::{SmtLeafError, SmtProofError};
 use miden_objects::utils::DeserializationError;
-use miden_objects::{AccountError, AssetError, FeeError, SlotNameError};
+use miden_objects::{AccountError, AssetError, FeeError, StorageSlotNameError};
 use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;
@@ -32,7 +32,7 @@ pub enum ConversionError {
     #[error("SMT proof error")]
     SmtProofError(#[from] SmtProofError),
     #[error("storage slot name error")]
-    StorageSlotNameError(#[from] SlotNameError),
+    StorageSlotNameError(#[from] StorageSlotNameError),
     #[error("integer conversion error: {0}")]
     TryFromIntError(#[from] TryFromIntError),
     #[error("too much data, expected {expected}, got {got}")]

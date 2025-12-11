@@ -1,6 +1,9 @@
 //! Describe a subset of the genesis manifest in easily human readable format
 
 use std::cmp::Ordering;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use indexmap::IndexMap;
@@ -8,6 +11,7 @@ use miden_lib::AuthScheme;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::wallets::create_basic_wallet;
+use miden_lib::utils::Serializable;
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{
@@ -33,7 +37,6 @@ use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 use crate::GenesisState;
 
@@ -45,20 +48,21 @@ mod tests;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SignerConfig {
-    /// An insecure, locally generated secret key used for development purposes.
-    Insecure,
+    /// An insecure, locally generated and locally stored secret key used for development purposes.
+    Insecure(PathBuf),
 }
 
 impl SignerConfig {
     /// Create a new signer based on the configuration.
     ///
     /// Insecure signers will generate a new secret key each time this is called. The insecure
-    /// secret key is printed to stdout.
+    /// secret key is stored in the specified filepath.
     pub fn signer(&self) -> impl BlockSigner + Clone {
         match self {
-            SignerConfig::Insecure => {
+            SignerConfig::Insecure(key_filepath) => {
                 let secret_key = SecretKey::new();
-                info!("Insecure secret key generated: {secret_key}");
+                let mut file = File::create(key_filepath).expect("secret key file can be created");
+                file.write_all(&secret_key.to_bytes()).expect("secret key can be written to");
                 secret_key
             },
         }
@@ -102,12 +106,15 @@ impl Default for GenesisConfig {
             },
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
-            signer: SignerConfig::Insecure,
+            signer: SignerConfig::Insecure(Self::DEFAULT_INSECURE_KEY_FILEPATH.into()),
         }
     }
 }
 
 impl GenesisConfig {
+    /// The default insecure key filepath that the key is written to.
+    const DEFAULT_INSECURE_KEY_FILEPATH: &str = "/tmp/insecure_secret_key";
+
     /// Read the genesis accounts from a toml formatted string
     ///
     /// Notice: It will generate the specified case during [`fn into_state`].

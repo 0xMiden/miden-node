@@ -1,10 +1,11 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_objects::utils::{Deserializable, Serializable};
+use miden_objects::utils::Deserializable;
 use url::Url;
 
 use crate::commands::{
@@ -38,22 +39,33 @@ pub enum ValidatorCommand {
         )]
         grpc_timeout: Duration,
 
-        /// Insecure validator secret key for signing transactions.
+        /// Filepath to the insecure validator secret key for signing blocks.
         ///
-        /// Only used in development environments.
-        #[arg(long = "secret", default_value = "", value_name = "VALIDATOR_SECRET_KEY")]
-        secret_key: String,
+        /// Only used in development and testing environments.
+        #[arg(long = "secret-key-filepath", value_name = "VALIDATOR_SECRET_KEY_FILEPATH")]
+        secret_key_filepath: Option<PathBuf>,
     },
 }
 
 impl ValidatorCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let Self::Start { url, grpc_timeout, secret_key, .. } = self;
+        let Self::Start {
+            url, grpc_timeout, secret_key_filepath, ..
+        } = self;
+
+        let Some(secret_key_filepath) = secret_key_filepath else {
+            return Err(anyhow::anyhow!(
+                "secret_key_filepath is required until more secret key backends are supported"
+            ));
+        };
 
         let address =
             url.to_socket().context("Failed to extract socket address from validator URL")?;
 
-        let signer = SecretKey::read_from_bytes(secret_key.to_bytes().as_ref())?;
+        // Read secret key file.
+        let file_bytes = fs_err::read(&secret_key_filepath)?;
+        let signer = SecretKey::read_from_bytes(&file_bytes)?;
+
         Validator { address, grpc_timeout, signer }
             .serve()
             .await

@@ -28,3 +28,6 @@ storage_mode = "private"
 [[wallet]]
 assets       = [{ amount = 1, symbol = "WHAT" }]
 storage_mode = "private"
+
+[signer]
+Insecure = "/tmp/insecure_2"

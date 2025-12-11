@@ -11,7 +11,7 @@ use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_objects::utils::{Deserializable, Serializable};
+use miden_objects::utils::Deserializable;
 use tokio::net::TcpListener;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;
@@ -85,11 +85,14 @@ pub enum BundledCommand {
         )]
         grpc_timeout: Duration,
 
-        /// Insecure validator secret key for signing transactions.
+        /// Filepath to the insecure validator secret key for signing blocks.
         ///
-        /// Only used in development environments.
-        #[arg(long = "secret", default_value = "", value_name = "VALIDATOR_SECRET_KEY")]
-        validator_secret_key: String,
+        /// Only used in development and testing environments.
+        #[arg(
+            long = "validator-secret-key-filepath",
+            value_name = "VALIDATOR_SECRET_KEY_FILEPATH"
+        )]
+        validator_secret_key_filepath: Option<PathBuf>,
     },
 }
 
@@ -118,15 +121,20 @@ impl BundledCommand {
                 ntx_builder,
                 enable_otel: _,
                 grpc_timeout,
-                validator_secret_key,
+                validator_secret_key_filepath,
             } => {
+                let Some(validator_secret_key_filepath) = validator_secret_key_filepath else {
+                    return Err(anyhow::anyhow!(
+                        "secret_key_filepath is required until more secret key backends are supported"
+                    ));
+                };
                 Self::start(
                     rpc_url,
                     data_directory,
                     ntx_builder,
                     block_producer,
                     grpc_timeout,
-                    validator_secret_key,
+                    validator_secret_key_filepath,
                 )
                 .await
             },
@@ -140,7 +148,7 @@ impl BundledCommand {
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
         grpc_timeout: Duration,
-        validator_secret_key: String,
+        validator_secret_key_filepath: PathBuf,
     ) -> anyhow::Result<()> {
         let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
@@ -244,8 +252,9 @@ impl BundledCommand {
         let validator_id = join_set
             .spawn({
                 async move {
-                    let signer =
-                        SecretKey::read_from_bytes(validator_secret_key.to_bytes().as_ref())?;
+                    // Read secret key file.
+                    let file_bytes = fs_err::read(&validator_secret_key_filepath)?;
+                    let signer = SecretKey::read_from_bytes(&file_bytes)?;
                     Validator {
                         address: validator_address,
                         grpc_timeout,

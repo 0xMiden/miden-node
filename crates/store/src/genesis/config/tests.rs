@@ -1,4 +1,6 @@
 use assert_matches::assert_matches;
+use fs_err;
+use miden_lib::utils::Deserializable;
 use miden_objects::ONE;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 
@@ -68,5 +70,41 @@ fn genesis_accounts_have_nonce_one() -> TestResult {
     assert_eq!(status_quo.account.nonce(), ONE);
 
     let _block = state.into_block()?;
+    Ok(())
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn insecure_signer_creation() -> TestResult {
+    // Default config.
+    let default_gcfg = GenesisConfig::default();
+    // Config from toml.
+    let s = include_str!("./samples/01-simple.toml");
+    let toml_gcfg = GenesisConfig::read_toml(s)?;
+
+    // Test both default and from toml.
+    for (gcfg, filepath) in vec![
+        (default_gcfg, GenesisConfig::DEFAULT_INSECURE_KEY_FILEPATH),
+        (toml_gcfg, "/tmp/insecure_2"),
+    ] {
+        let _signer = gcfg.signer.signer();
+
+        // Read the secret key from the file that was created by the genesis config.
+        let file_bytes = fs_err::read(filepath)?;
+        let read_signer = SecretKey::read_from_bytes(&file_bytes)?;
+
+        // Verify that we can successfully read a valid secret key from the file.
+        assert_eq!(read_signer.to_bytes().len(), 32); // ECDSA K256 secret keys are 32 bytes.
+
+        // Verify that the secret key is non-zero.
+        assert_ne!(read_signer.to_bytes(), [0u8; 32]);
+
+        // Verify we can create a new SecretKey from the same bytes.
+        let round_trip_signer = SecretKey::read_from_bytes(&read_signer.to_bytes())?;
+        assert_eq!(read_signer.to_bytes(), round_trip_signer.to_bytes());
+
+        // Clean up the test file.
+        fs_err::remove_file(filepath).ok();
+    }
     Ok(())
 }

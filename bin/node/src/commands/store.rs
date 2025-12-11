@@ -38,7 +38,7 @@ pub enum StoreCommand {
         accounts_directory: PathBuf,
         /// Use the given configuration file to construct the genesis state from.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
-        genesis_config_file: Option<PathBuf>,
+        genesis_config_file: PathBuf,
     },
 
     /// Starts the store component.
@@ -90,9 +90,7 @@ impl StoreCommand {
                 data_directory,
                 accounts_directory,
                 genesis_config_file,
-            } => {
-                Self::bootstrap(&data_directory, &accounts_directory, genesis_config_file.as_ref())
-            },
+            } => Self::bootstrap(&data_directory, &accounts_directory, &genesis_config_file),
             StoreCommand::Start {
                 rpc_url,
                 ntx_builder_url,
@@ -164,17 +162,11 @@ impl StoreCommand {
     fn bootstrap(
         data_directory: &Path,
         accounts_directory: &Path,
-        maybe_genesis_config: Option<&PathBuf>,
+        genesis_config: &PathBuf,
     ) -> anyhow::Result<()> {
-        let config = maybe_genesis_config
-            .map(|genesis_config| {
-                let toml_str = fs_err::read_to_string(genesis_config)?;
-                let config = GenesisConfig::read_toml(toml_str.as_str())
-                    .context(format!("Read from file: {}", genesis_config.display()))?;
-                Ok::<_, anyhow::Error>(config)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let toml_str = fs_err::read_to_string(genesis_config)?;
+        let config = GenesisConfig::read_toml(toml_str.as_str())
+            .context(format!("Read from file: {}", genesis_config.display()))?;
 
         let signer = config.validator.signer()?;
         let (genesis_state, secrets) = config.into_state(signer)?;

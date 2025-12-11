@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -39,32 +38,29 @@ pub enum ValidatorCommand {
         )]
         grpc_timeout: Duration,
 
-        /// Filepath to the insecure validator secret key for signing blocks.
-        ///
-        /// Only used in development and testing environments.
-        #[arg(long = "secret-key-filepath", value_name = "VALIDATOR_SECRET_KEY_FILEPATH")]
-        secret_key_filepath: Option<PathBuf>,
+        /// Insecure, hex-encoded validator secret key for development and testing purposes.
+        #[arg(long = "insecure.secret-key", value_name = "INSECURE_SECRET_KEY")]
+        insecure_secret_key: Option<String>,
     },
 }
 
 impl ValidatorCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
         let Self::Start {
-            url, grpc_timeout, secret_key_filepath, ..
+            url, grpc_timeout, insecure_secret_key, ..
         } = self;
 
-        let Some(secret_key_filepath) = secret_key_filepath else {
+        let Some(insecure_secret_key) = insecure_secret_key else {
             return Err(anyhow::anyhow!(
-                "secret_key_filepath is required until other secret key backends are supported"
+                "insecure secret key is required until other secret key backends are supported"
             ));
         };
 
         let address =
             url.to_socket().context("Failed to extract socket address from validator URL")?;
 
-        // Read secret key file.
-        let file_bytes = fs_err::read(&secret_key_filepath)?;
-        let signer = SecretKey::read_from_bytes(&file_bytes)?;
+        // Read secret key.
+        let signer = SecretKey::read_from_bytes(hex::decode(insecure_secret_key)?.as_ref())?;
 
         Validator { address, grpc_timeout, signer }
             .serve()

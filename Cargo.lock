@@ -2698,6 +2698,7 @@ dependencies = [
  "clap 4.5.53",
  "figment",
  "fs-err",
+ "hex",
  "humantime",
  "miden-node-block-producer",
  "miden-node-ntx-builder",

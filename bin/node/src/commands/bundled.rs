@@ -10,6 +10,7 @@ use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
+use miden_objects::block::BlockSigner;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::utils::Deserializable;
 use tokio::net::TcpListener;
@@ -45,7 +46,7 @@ pub enum BundledCommand {
         accounts_directory: PathBuf,
         /// Constructs the genesis block from the given toml file.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "FILE")]
-        genesis_config_file: Option<PathBuf>,
+        genesis_config_file: PathBuf,
     },
 
     /// Runs all three node components in the same process.
@@ -85,14 +86,12 @@ pub enum BundledCommand {
         )]
         grpc_timeout: Duration,
 
-        /// Filepath to the insecure validator secret key for signing blocks.
-        ///
-        /// Only used in development and testing environments.
+        /// Insecure, hex-encoded validator secret key for development and testing purposes.
         #[arg(
-            long = "validator-secret-key-filepath",
-            value_name = "VALIDATOR_SECRET_KEY_FILEPATH"
+            long = "validator.insecure.secret-key",
+            value_name = "VALIDATOR_INSECURE_SECRET_KEY"
         )]
-        validator_secret_key_filepath: Option<PathBuf>,
+        validator_insecure_secret_key: Option<String>,
     },
 }
 
@@ -121,20 +120,23 @@ impl BundledCommand {
                 ntx_builder,
                 enable_otel: _,
                 grpc_timeout,
-                validator_secret_key_filepath,
+                validator_insecure_secret_key,
             } => {
-                let Some(validator_secret_key_filepath) = validator_secret_key_filepath else {
+                let Some(validator_insecure_secret_key) = validator_insecure_secret_key else {
                     return Err(anyhow::anyhow!(
-                        "secret_key_filepath is required until other secret key backends are supported"
+                        "insecure validator secret key is required until other secret key backends are supported"
                     ));
                 };
+                let signer = SecretKey::read_from_bytes(
+                    hex::decode(validator_insecure_secret_key)?.as_ref(),
+                )?;
                 Self::start(
                     rpc_url,
                     data_directory,
                     ntx_builder,
                     block_producer,
                     grpc_timeout,
-                    validator_secret_key_filepath,
+                    signer,
                 )
                 .await
             },
@@ -148,7 +150,7 @@ impl BundledCommand {
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
         grpc_timeout: Duration,
-        validator_secret_key_filepath: PathBuf,
+        signer: impl BlockSigner + Send + Sync + 'static,
     ) -> anyhow::Result<()> {
         let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
@@ -252,9 +254,6 @@ impl BundledCommand {
         let validator_id = join_set
             .spawn({
                 async move {
-                    // Read secret key file.
-                    let file_bytes = fs_err::read(&validator_secret_key_filepath)?;
-                    let signer = SecretKey::read_from_bytes(&file_bytes)?;
                     Validator {
                         address: validator_address,
                         grpc_timeout,

@@ -122,11 +122,9 @@ impl BundledCommand {
                 grpc_timeout,
                 validator_insecure_secret_key,
             } => {
-                let Some(validator_insecure_secret_key) = validator_insecure_secret_key else {
-                    return Err(anyhow::anyhow!(
-                        "insecure validator secret key is required until other secret key backends are supported"
-                    ));
-                };
+                let validator_insecure_secret_key = validator_insecure_secret_key.context(
+                    "insecure validator secret key is required until other secret key backends are supported"
+                )?;
                 let signer = SecretKey::read_from_bytes(
                     hex::decode(validator_insecure_secret_key)?.as_ref(),
                 )?;

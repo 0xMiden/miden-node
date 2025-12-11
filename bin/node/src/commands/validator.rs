@@ -50,11 +50,9 @@ impl ValidatorCommand {
             url, grpc_timeout, insecure_secret_key, ..
         } = self;
 
-        let Some(insecure_secret_key) = insecure_secret_key else {
-            return Err(anyhow::anyhow!(
-                "insecure secret key is required until other secret key backends are supported"
-            ));
-        };
+        let insecure_secret_key = insecure_secret_key.context(
+            "insecure secret key is required until other secret key backends are supported",
+        )?;
 
         let address =
             url.to_socket().context("Failed to extract socket address from validator URL")?;

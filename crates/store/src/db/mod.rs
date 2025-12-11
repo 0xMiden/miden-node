@@ -424,6 +424,7 @@ impl Db {
     ///
     /// This method queries the decomposed storage tables and reconstructs the full
     /// `AccountStorage` with SMT backing for Map slots.
+    // TODO split querying the header from the content
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account_storage_at_block(
         &self,

@@ -132,7 +132,7 @@ impl BlockBuilder {
             })
             .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
             .and_then(|(proposed_block, inputs, header, signature, body)| self.prove_block(proposed_block, inputs, header, signature, body))
-            .and_then(|(proposed_block, header, signature, body, block_proof)| self.construct_proven_block(proposed_block, header, signature, body, block_proof))
+            .and_then(|(proposed_block, header, signature, body, block_proof)| self.construct_proven_block(proposed_block, header, body, signature, block_proof))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
@@ -253,7 +253,7 @@ impl BlockBuilder {
         //
         // Verify the signature against the built block to ensure that
         // the validator has provided a valid signature for the relevant block.
-        if signature.verify(header.commitment(), header.public_key()) {
+        if signature.verify(header.commitment(), header.validator_key()) {
             return Err(BuildBlockError::InvalidSignature);
         }
 
@@ -286,12 +286,12 @@ impl BlockBuilder {
         &self,
         ordered_batches: OrderedBatches,
         header: BlockHeader,
-        signature: Signature,
         body: BlockBody,
+        signature: Signature,
         block_proof: BlockProof,
     ) -> Result<ProvenBlock, BuildBlockError> {
         // SAFETY: The header and body are assumed valid and consistent with the proof.
-        let proven_block = ProvenBlock::new_unchecked(header, signature, body, block_proof);
+        let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
                 proven_block.proof_security_level(),

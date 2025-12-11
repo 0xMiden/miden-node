@@ -255,7 +255,7 @@ async fn apply_block(
         .prove_dummy(proposed_block.batches().clone(), header.clone(), block_inputs)
         .unwrap();
     let signature = EcdsaSecretKey::new().sign(header.commitment());
-    let proven_block = ProvenBlock::new_unchecked(header, signature, body, block_proof);
+    let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
     let block_size: usize = proven_block.to_bytes().len();
 
     let start = Instant::now();

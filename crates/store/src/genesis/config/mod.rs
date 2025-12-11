@@ -25,10 +25,9 @@ use miden_objects::account::{
     NonFungibleAssetDelta,
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
-use miden_objects::block::FeeParameters;
+use miden_objects::block::{BlockSigner, FeeParameters};
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey as RpoSecretKey;
-use miden_objects::ecdsa_signer::EcdsaSigner;
 use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
@@ -55,7 +54,7 @@ impl SignerConfig {
     ///
     /// Insecure signers will generate a new secret key each time this is called. The insecure
     /// secret key is printed to stdout.
-    pub fn signer(&self) -> impl EcdsaSigner + Clone {
+    pub fn signer(&self) -> impl BlockSigner + Clone {
         match self {
             SignerConfig::Insecure => {
                 let secret_key = SecretKey::new();
@@ -294,7 +293,7 @@ impl GenesisConfig {
                 accounts: all_accounts,
                 version,
                 timestamp,
-                signer,
+                block_signer: signer,
             },
             AccountSecrets { secrets },
         ))

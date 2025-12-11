@@ -8,8 +8,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_objects::block::ProposedBlock;
-use miden_objects::ecdsa_signer::EcdsaSigner;
+use miden_objects::block::{BlockSigner, ProposedBlock};
 use miden_objects::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -36,7 +35,7 @@ pub struct Validator<S> {
     pub signer: S,
 }
 
-impl<S: EcdsaSigner + Send + Sync + 'static> Validator<S> {
+impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
     /// Serves the validator RPC API.
     ///
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
@@ -87,7 +86,7 @@ struct ValidatorServer<S> {
 }
 
 #[tonic::async_trait]
-impl<S: EcdsaSigner + Send + Sync + 'static> api_server::Api for ValidatorServer<S> {
+impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer<S> {
     /// Returns the status of the validator.
     async fn status(
         &self,
@@ -126,7 +125,7 @@ impl<S: EcdsaSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
         // Build and sign header.
         let (header, _body) = build_block(proposed_block)
             .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
-        let signature = self.signer.sign(header.commitment());
+        let signature = self.signer.sign(&header);
 
         // Send the signature.
         let response = proto::primitives::Signature { signature: signature.to_bytes() };

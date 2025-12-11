@@ -10,11 +10,11 @@ use miden_objects::block::{
     BlockNoteTree,
     BlockNumber,
     BlockProof,
+    BlockSigner,
     FeeParameters,
     ProvenBlock,
 };
 use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
-use miden_objects::ecdsa_signer::EcdsaSigner;
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
@@ -33,7 +33,7 @@ pub struct GenesisState<S> {
     pub fee_parameters: FeeParameters,
     pub version: u32,
     pub timestamp: u32,
-    pub signer: S,
+    pub block_signer: S,
 }
 
 /// A type-safety wrapper ensuring that genesis block data can only be created from
@@ -63,12 +63,12 @@ impl<S> GenesisState<S> {
             fee_parameters,
             version,
             timestamp,
-            signer,
+            block_signer: signer,
         }
     }
 }
 
-impl<S: EcdsaSigner> GenesisState<S> {
+impl<S: BlockSigner> GenesisState<S> {
     /// Returns the block header and the account SMT
     pub fn into_block(self) -> Result<GenesisBlock, GenesisError> {
         let accounts: Vec<BlockAccountUpdate> = self
@@ -121,7 +121,7 @@ impl<S: EcdsaSigner> GenesisState<S> {
             empty_block_note_tree.root(),
             Word::empty(),
             TransactionKernel.to_commitment(),
-            self.signer.public_key(),
+            self.block_signer.public_key(),
             self.fee_parameters,
             self.timestamp,
         );
@@ -135,11 +135,11 @@ impl<S: EcdsaSigner> GenesisState<S> {
 
         let block_proof = BlockProof::new_dummy();
 
-        let signature = self.signer.sign(header.commitment());
+        let signature = self.block_signer.sign(&header);
         // SAFETY: Header and accounts should be valid by construction.
         // No notes or nullifiers are created at genesis, which is consistent with the above empty
         // block note tree root and empty nullifier tree root.
-        Ok(GenesisBlock(ProvenBlock::new_unchecked(header, signature, body, block_proof)))
+        Ok(GenesisBlock(ProvenBlock::new_unchecked(header, body, signature, block_proof)))
     }
 }
 

@@ -55,6 +55,7 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
+use miden_objects::testing::random_signer::RandomBlockSigner;
 use miden_objects::transaction::{
     InputNoteCommitment,
     InputNotes,
@@ -1585,7 +1586,8 @@ fn genesis_with_account_assets() {
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1632,7 +1634,8 @@ fn genesis_with_account_storage_map() {
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1677,7 +1680,8 @@ fn genesis_with_account_assets_and_storage() {
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1746,8 +1750,13 @@ fn genesis_with_multiple_accounts() {
         .build_existing()
         .unwrap();
 
-    let genesis_state =
-        GenesisState::new(vec![account1, account2, account3], test_fee_params(), 1, 0);
+    let genesis_state = GenesisState::new(
+        vec![account1, account2, account3],
+        test_fee_params(),
+        1,
+        0,
+        SecretKey::random(),
+    );
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();

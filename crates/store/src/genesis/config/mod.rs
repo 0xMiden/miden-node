@@ -57,7 +57,7 @@ impl SignerConfig {
     ///
     /// Insecure signers will generate a new secret key each time this is called. The insecure
     /// secret key is stored in the specified filepath.
-    pub fn signer(&self) -> impl BlockSigner + Clone {
+    pub fn signer(&self) -> impl BlockSigner + Clone + use<> {
         match self {
             SignerConfig::Insecure(key_filepath) => {
                 let secret_key = SecretKey::new();
@@ -83,7 +83,7 @@ pub struct GenesisConfig {
     pub fee_parameters: FeeParameterConfig,
     pub wallet: Vec<WalletConfig>,
     pub fungible_faucet: Vec<FungibleFaucetConfig>,
-    pub signer: SignerConfig,
+    pub signer_config: SignerConfig,
 }
 
 impl Default for GenesisConfig {
@@ -106,7 +106,7 @@ impl Default for GenesisConfig {
             },
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
-            signer: SignerConfig::Insecure(Self::DEFAULT_INSECURE_KEY_FILEPATH.into()),
+            signer_config: SignerConfig::Insecure(Self::DEFAULT_INSECURE_KEY_FILEPATH.into()),
         }
     }
 }

@@ -125,7 +125,7 @@ impl BundledCommand {
             } => {
                 let Some(validator_secret_key_filepath) = validator_secret_key_filepath else {
                     return Err(anyhow::anyhow!(
-                        "secret_key_filepath is required until more secret key backends are supported"
+                        "secret_key_filepath is required until other secret key backends are supported"
                     ));
                 };
                 Self::start(

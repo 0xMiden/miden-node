@@ -176,8 +176,7 @@ impl StoreCommand {
             .transpose()?
             .unwrap_or_default();
 
-        let signer = config.signer.clone();
-        let signer = signer.signer();
+        let signer = config.signer_config.signer();
         let (genesis_state, secrets) = config.into_state(signer)?;
 
         // Create directories if they do not already exist.

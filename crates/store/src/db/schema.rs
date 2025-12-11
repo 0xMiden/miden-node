@@ -4,7 +4,7 @@ diesel::table! {
     account_storage_map_values (account_id, block_num, slot_name, key) {
         account_id -> Binary,
         block_num -> BigInt,
-        slot_name -> Binary,
+        slot_name -> Text,
         key -> Binary,
         value -> Binary,
         is_latest -> Bool,

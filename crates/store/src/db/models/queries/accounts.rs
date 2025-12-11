@@ -42,7 +42,7 @@ use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
-type StorageMapValueRow = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
+type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
 
 /// Select the latest account details by account id from the DB using the given
 /// [`SqliteConnection`].
@@ -995,7 +995,7 @@ impl AccountAssetRowInsert {
 pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) account_id: Vec<u8>,
     pub(crate) block_num: i64,
-    pub(crate) slot_name: Vec<u8>,
+    pub(crate) slot_name: String,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
     pub(crate) is_latest: bool,

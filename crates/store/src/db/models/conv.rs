@@ -118,20 +118,16 @@ impl SqlTypeConvert for NoteTag {
 }
 
 impl SqlTypeConvert for StorageSlotName {
-    type Raw = Vec<u8>;
+    type Raw = String;
     type Error = DatabaseTypeConversionError;
 
     fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
-        String::from_utf8(raw)
+        StorageSlotName::new(raw)
             .map_err(|_| DatabaseTypeConversionError(type_name::<StorageSlotName>()))
-            .and_then(|name| {
-                StorageSlotName::new(name)
-                    .map_err(|_| DatabaseTypeConversionError(type_name::<StorageSlotName>()))
-            })
     }
 
     fn to_raw_sql(self) -> Self::Raw {
-        self.as_str().as_bytes().to_vec()
+        self.as_str().to_owned()
     }
 }
 

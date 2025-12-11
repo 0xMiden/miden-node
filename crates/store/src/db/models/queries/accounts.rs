@@ -42,7 +42,7 @@ use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
-type StorageMapValueRow = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
+type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
 
 /// Select the latest account details by account id from the DB using the given
 /// [`SqliteConnection`].
@@ -405,6 +405,30 @@ pub(crate) fn select_all_accounts(
         accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
     )?;
     Ok(account_infos)
+}
+
+/// Returns all network account IDs.
+///
+/// # Returns
+///
+/// A vector with network account IDs, or an error.
+pub(crate) fn select_all_network_account_ids(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<AccountId>, DatabaseError> {
+    let account_ids_raw: Vec<Vec<u8>> = QueryDsl::select(
+        schema::accounts::table.filter(schema::accounts::network_account_id_prefix.is_not_null()),
+        schema::accounts::account_id,
+    )
+    .load::<Vec<u8>>(conn)?;
+
+    let account_ids = account_ids_raw
+        .into_iter()
+        .map(|id_bytes| {
+            AccountId::read_from_bytes(&id_bytes).map_err(DatabaseError::DeserializationError)
+        })
+        .collect::<Result<Vec<AccountId>, DatabaseError>>()?;
+
+    Ok(account_ids)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -995,7 +1019,7 @@ impl AccountAssetRowInsert {
 pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) account_id: Vec<u8>,
     pub(crate) block_num: i64,
-    pub(crate) slot_name: Vec<u8>,
+    pub(crate) slot_name: String,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
     pub(crate) is_latest: bool,

@@ -89,9 +89,9 @@ CREATE TABLE note_scripts (
 ) WITHOUT ROWID;
 
 CREATE TABLE account_storage_map_values (
-    account_id          BLOB NOT NULL,
+    account_id          BLOB    NOT NULL,
     block_num           INTEGER NOT NULL,
-    slot_name           BLOB NOT NULL,
+    slot_name           TEXT    NOT NULL,
     key                 BLOB    NOT NULL,
     value               BLOB    NOT NULL,
     is_latest           BOOLEAN NOT NULL,

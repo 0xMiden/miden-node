@@ -150,7 +150,6 @@ impl BundledCommand {
         grpc_timeout: Duration,
         signer: impl BlockSigner + Send + Sync + 'static,
     ) -> anyhow::Result<()> {
-        let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
         // before each component is fully started up.
         //
@@ -211,8 +210,9 @@ impl BundledCommand {
             })
             .id();
 
-        // A sync point between the ntb and block-producer components.
-        let checkpoint = if should_start_ntb {
+        // A sync point between the ntx-builder and block-producer components.
+        let should_start_ntx_builder = !ntx_builder.disabled;
+        let checkpoint = if should_start_ntx_builder {
             Barrier::new(2)
         } else {
             Barrier::new(1)
@@ -295,7 +295,7 @@ impl BundledCommand {
         let store_ntx_builder_url = Url::parse(&format!("http://{store_ntx_builder_address}"))
             .context("Failed to parse URL")?;
 
-        if should_start_ntb {
+        if should_start_ntx_builder {
             let id = join_set
                 .spawn(async move {
                     let block_producer_url =
@@ -308,7 +308,7 @@ impl BundledCommand {
                         ntx_builder.ticker_interval,
                         checkpoint,
                     )
-                    .serve_new()
+                    .run()
                     .await
                     .context("failed while serving ntx builder component")
                 })

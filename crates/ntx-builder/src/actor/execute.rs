@@ -2,7 +2,13 @@ use std::collections::BTreeSet;
 
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
+use miden_objects::account::{
+    Account,
+    AccountId,
+    PartialAccount,
+    StorageMapWitness,
+    StorageSlotContent,
+};
 use miden_objects::asset::{AssetVaultKey, AssetWitness};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteScript};
@@ -380,7 +386,7 @@ impl DataStore for NtxDataStore {
 
             let mut map_witness = None;
             for slot in self.account.storage().slots() {
-                if let StorageSlot::Map(map) = slot {
+                if let StorageSlotContent::Map(map) = slot.content() {
                     if map.root() == map_root {
                         map_witness = Some(map.open(&map_key));
                     }

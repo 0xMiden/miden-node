@@ -152,7 +152,7 @@ pub mod api_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::blockchain::ProposedBlock>,
         ) -> std::result::Result<
-            tonic::Response<super::super::primitives::Signature>,
+            tonic::Response<super::super::blockchain::EcdsaSignature>,
             tonic::Status,
         > {
             self.inner
@@ -199,7 +199,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::blockchain::ProposedBlock>,
         ) -> std::result::Result<
-            tonic::Response<super::super::primitives::Signature>,
+            tonic::Response<super::super::blockchain::EcdsaSignature>,
             tonic::Status,
         >;
     }
@@ -375,7 +375,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::blockchain::ProposedBlock,
                     > for SignBlockSvc<T> {
-                        type Response = super::super::primitives::Signature;
+                        type Response = super::super::blockchain::EcdsaSignature;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

@@ -89,6 +89,17 @@ message PublicKey {
     bytes validator_key = 1;
 }
 
+// BLOCK SIGNATURE
+// ================================================================================================
+
+// ECDSA Signature.
+message EcdsaSignature {
+    // Signature encoded using [winter_utils::Serializable] implementation for
+    // [crypto::dsa::ecdsa_k256_keccak::Signature].
+    bytes signature = 1;
+}
+
+
 // FEE PARAMETERS
 // ================================================================================================
 

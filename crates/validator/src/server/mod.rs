@@ -111,7 +111,7 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
     async fn sign_block(
         &self,
         request: tonic::Request<proto::blockchain::ProposedBlock>,
-    ) -> Result<tonic::Response<proto::primitives::Signature>, tonic::Status> {
+    ) -> Result<tonic::Response<proto::blockchain::EcdsaSignature>, tonic::Status> {
         let proposed_block_bytes = request.into_inner().proposed_block;
 
         // Deserialize the proposed block.
@@ -128,7 +128,7 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
         let signature = self.signer.sign(&header);
 
         // Send the signature.
-        let response = proto::primitives::Signature { signature: signature.to_bytes() };
+        let response = proto::blockchain::EcdsaSignature { signature: signature.to_bytes() };
         Ok(tonic::Response::new(response))
     }
 }

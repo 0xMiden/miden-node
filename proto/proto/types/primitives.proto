@@ -92,13 +92,3 @@ message Digest {
     fixed64 d2 = 3;
     fixed64 d3 = 4;
 }
-
-// SIGNATURE
-// ================================================================================================
-
-// ECDSA Signature.
-message Signature {
-    // Signature encoded using [winter_utils::Serializable] implementation for
-    // [crypto::dsa::ecdsa_k256_keccak::Signature].
-    bytes signature = 1;
-}

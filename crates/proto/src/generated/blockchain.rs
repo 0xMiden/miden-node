@@ -85,6 +85,14 @@ pub struct PublicKey {
     #[prost(bytes = "vec", tag = "1")]
     pub validator_key: ::prost::alloc::vec::Vec<u8>,
 }
+/// ECDSA Signature.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct EcdsaSignature {
+    /// Signature encoded using \[winter_utils::Serializable\] implementation for
+    /// \[crypto::dsa::ecdsa_k256_keccak::Signature\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
+}
 /// Definition of the fee parameters.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FeeParameters {

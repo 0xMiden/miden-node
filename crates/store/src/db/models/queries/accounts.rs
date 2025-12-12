@@ -410,6 +410,30 @@ pub(crate) fn select_all_accounts(
     Ok(account_infos)
 }
 
+/// Returns all network account IDs.
+///
+/// # Returns
+///
+/// A vector with network account IDs, or an error.
+pub(crate) fn select_all_network_account_ids(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<AccountId>, DatabaseError> {
+    let account_ids_raw: Vec<Vec<u8>> = QueryDsl::select(
+        schema::accounts::table.filter(schema::accounts::network_account_id_prefix.is_not_null()),
+        schema::accounts::account_id,
+    )
+    .load::<Vec<u8>>(conn)?;
+
+    let account_ids = account_ids_raw
+        .into_iter()
+        .map(|id_bytes| {
+            AccountId::read_from_bytes(&id_bytes).map_err(DatabaseError::DeserializationError)
+        })
+        .collect::<Result<Vec<AccountId>, DatabaseError>>()?;
+
+    Ok(account_ids)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMapValue {
     pub block_num: BlockNumber,

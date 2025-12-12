@@ -17,6 +17,7 @@ use tokio::time;
 use tracing::{Instrument, Span, instrument};
 use url::Url;
 
+use crate::domain::batch::SelectedBatch;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::BuildBatchError;
 use crate::mempool::SharedMempool;
@@ -168,7 +169,7 @@ impl BatchJob {
         };
 
         batch.inject_telemetry();
-        let batch_id = batch.id;
+        let batch_id = batch.id();
 
         self.get_batch_inputs(batch)
             .and_then(|(txs, inputs)| Self::propose_batch(txs, inputs) )
@@ -190,25 +191,21 @@ impl BatchJob {
 
     #[instrument(target = COMPONENT, name = "batch_builder.select_batch", skip_all)]
     async fn select_batch(&self) -> Option<SelectedBatch> {
-        self.mempool
-            .lock()
-            .await
-            .select_batch()
-            .map(|(id, transactions)| SelectedBatch { id, transactions })
+        self.mempool.lock().await.select_batch()
     }
 
     #[instrument(target = COMPONENT, name = "batch_builder.get_batch_inputs", skip_all, err)]
     async fn get_batch_inputs(
         &self,
         batch: SelectedBatch,
-    ) -> Result<(Vec<Arc<AuthenticatedTransaction>>, BatchInputs), BuildBatchError> {
+    ) -> Result<(SelectedBatch, BatchInputs), BuildBatchError> {
         let block_references = batch
-            .transactions
+            .txs()
             .iter()
             .map(Deref::deref)
             .map(AuthenticatedTransaction::reference_block);
         let unauthenticated_notes = batch
-            .transactions
+            .txs()
             .iter()
             .map(Deref::deref)
             .flat_map(AuthenticatedTransaction::unauthenticated_note_commitments);
@@ -217,18 +214,18 @@ impl BatchJob {
             .get_batch_inputs(block_references, unauthenticated_notes)
             .await
             .map_err(BuildBatchError::FetchBatchInputsFailed)
-            .map(|inputs| (batch.transactions, inputs))
+            .map(|inputs| (batch, inputs))
     }
 
     #[instrument(target = COMPONENT, name = "batch_builder.propose_batch", skip_all, err)]
     async fn propose_batch(
-        transactions: Vec<Arc<AuthenticatedTransaction>>,
+        selected: SelectedBatch,
         inputs: BatchInputs,
     ) -> Result<ProposedBatch, BuildBatchError> {
-        let transactions = transactions
-            .iter()
-            .map(Deref::deref)
-            .map(AuthenticatedTransaction::proven_transaction)
+        let transactions = selected
+            .into_transactions()
+            .into_iter()
+            .map(|tx| tx.proven_transaction())
             .collect();
 
         ProposedBatch::new(
@@ -295,11 +292,6 @@ impl BatchJob {
     }
 }
 
-struct SelectedBatch {
-    id: BatchId,
-    transactions: Vec<Arc<AuthenticatedTransaction>>,
-}
-
 // BATCH PROVER
 // ================================================================================================
 
@@ -332,11 +324,11 @@ impl BatchProver {
 
 impl TelemetryInjectorExt for SelectedBatch {
     fn inject_telemetry(&self) {
-        Span::current().set_attribute("batch.id", self.id);
-        Span::current().set_attribute("transactions.count", self.transactions.len());
+        Span::current().set_attribute("batch.id", self.id());
+        Span::current().set_attribute("transactions.count", self.txs().len());
         // Accumulate all telemetry based on transactions.
         let (tx_ids, input_notes_count, output_notes_count, unauth_notes_count) =
-            self.transactions.iter().fold(
+            self.txs().iter().fold(
                 (vec![], 0, 0, 0),
                 |(
                     mut tx_ids,

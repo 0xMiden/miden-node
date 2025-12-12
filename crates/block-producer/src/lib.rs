@@ -51,10 +51,10 @@ const SERVER_MEMPOOL_EXPIRATION_SLACK: u32 = 2;
 const CACHED_MEMPOOL_STATS_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
 /// How often a block is created.
-pub const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(5);
+pub const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(3);
 
 /// How often a batch is created.
-pub const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(2);
+pub const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The default transaction capacity of the mempool.
 ///

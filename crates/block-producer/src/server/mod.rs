@@ -154,10 +154,10 @@ impl BlockProducer {
 
         // Launch the gRPC server and wait at the checkpoint for any other components to be in sync.
         //
-        // This is used to ensure the ntb can subscribe to the mempool events without playing catch
-        // up caused by block-production.
+        // This is used to ensure the ntx-builder can subscribe to the mempool events without
+        // playing catch up caused by block-production.
         //
-        // This is a temporary work-around until the ntb can resync on the fly.
+        // This is a temporary work-around until the ntx-builder can resync on the fly.
         let rpc_id = tasks
             .spawn({
                 let mempool = mempool.clone();

@@ -68,23 +68,23 @@ fn children_of_failed_batches_are_ignored() {
 
     let (mut uut, _) = Mempool::for_tests();
     uut.add_transaction(txs[0].clone()).unwrap();
-    let (parent_batch, batch_txs) = uut.select_batch().unwrap();
-    assert_eq!(batch_txs, vec![txs[0].clone()]);
+    let parent_batch = uut.select_batch().unwrap();
+    assert_eq!(parent_batch.txs(), vec![txs[0].clone()]);
 
     uut.add_transaction(txs[1].clone()).unwrap();
-    let (child_batch_a, batch_txs) = uut.select_batch().unwrap();
-    assert_eq!(batch_txs, vec![txs[1].clone()]);
+    let child_batch_a = uut.select_batch().unwrap();
+    assert_eq!(child_batch_a.txs(), vec![txs[1].clone()]);
 
     uut.add_transaction(txs[2].clone()).unwrap();
-    let (_, batch_txs) = uut.select_batch().unwrap();
-    assert_eq!(batch_txs, vec![txs[2].clone()]);
+    let next_batch = uut.select_batch().unwrap();
+    assert_eq!(next_batch.txs(), vec![txs[2].clone()]);
 
     // Child batch jobs are now dangling.
-    uut.rollback_batch(parent_batch);
+    uut.rollback_batch(parent_batch.id());
     let reference = uut.clone();
 
     // Success or failure of the child job should effectively do nothing.
-    uut.rollback_batch(child_batch_a);
+    uut.rollback_batch(child_batch_a.id());
     assert_eq!(uut, reference);
 
     let proven_batch =
@@ -102,13 +102,13 @@ fn failed_batch_transactions_are_requeued() {
     uut.select_batch().unwrap();
 
     uut.add_transaction(txs[1].clone()).unwrap();
-    let (failed_batch, _) = uut.select_batch().unwrap();
+    let failed_batch = uut.select_batch().unwrap();
 
     uut.add_transaction(txs[2].clone()).unwrap();
     uut.select_batch().unwrap();
 
     // Middle batch failed, so it and its child transaction should be re-entered into the queue.
-    uut.rollback_batch(failed_batch);
+    uut.rollback_batch(failed_batch.id());
 
     reference.add_transaction(txs[0].clone()).unwrap();
     reference.select_batch().unwrap();
@@ -226,10 +226,10 @@ fn subtree_reversion_removes_all_descendents() {
     uut.select_batch().unwrap();
 
     uut.add_transaction(reverted_txs[1].clone()).unwrap();
-    let (to_revert, _) = uut.select_batch().unwrap();
+    let to_revert = uut.select_batch().unwrap();
 
     uut.add_transaction(reverted_txs[2].clone()).unwrap();
-    uut.revert_subtree(NodeId::ProposedBatch(to_revert));
+    uut.revert_subtree(NodeId::ProposedBatch(to_revert.id()));
 
     // We expect the second batch and the latter reverted txns to be non-existent.
     reference.add_transaction(reverted_txs[0].clone()).unwrap();
@@ -255,11 +255,11 @@ fn transactions_from_reverted_batches_are_requeued() {
 
     uut.add_transaction(tx_set_b[1].clone()).unwrap();
     uut.add_transaction(tx_set_a[1].clone()).unwrap();
-    let (batch_id, _) = uut.select_batch().unwrap();
+    let batch = uut.select_batch().unwrap();
 
     uut.add_transaction(tx_set_b[2].clone()).unwrap();
     uut.add_transaction(tx_set_a[2].clone()).unwrap();
-    uut.rollback_batch(batch_id);
+    uut.rollback_batch(batch.id());
 
     reference.add_transaction(tx_set_b[0].clone()).unwrap();
     reference.add_transaction(tx_set_a[0].clone()).unwrap();
@@ -268,6 +268,100 @@ fn transactions_from_reverted_batches_are_requeued() {
     reference.add_transaction(tx_set_a[1].clone()).unwrap();
     reference.add_transaction(tx_set_b[2].clone()).unwrap();
     reference.add_transaction(tx_set_a[2].clone()).unwrap();
+
+    assert_eq!(uut, reference);
+}
+
+/// This test checks that pass through transactions can successfully be added to an empty mempool,
+/// and that they work as expected.
+#[test]
+fn pass_through_txs_on_an_empty_account() {
+    let (mut uut, _) = Mempool::for_tests();
+
+    let tx_final = MockProvenTxBuilder::with_account_index(0).build();
+    let tx_final = Arc::new(AuthenticatedTransaction::from_inner(tx_final));
+
+    let account_update = tx_final.account_update().clone();
+    let tx_pass_through_base = MockProvenTxBuilder::with_account(
+        account_update.account_id(),
+        account_update.initial_state_commitment(),
+        account_update.initial_state_commitment(),
+    );
+
+    // Note: transactions _must_ have an input note or update an account to be considered valid.
+    // Since by definition pass through txs don't update an account, they must have a nullifier.
+    let tx_pass_through_a = tx_pass_through_base.clone().nullifiers_range(0..2).build();
+    let tx_pass_through_a = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_a));
+
+    let tx_pass_through_b = tx_pass_through_base.nullifiers_range(3..5).build();
+    let tx_pass_through_b = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_b));
+
+    uut.add_transaction(tx_pass_through_a.clone()).unwrap();
+    uut.add_transaction(tx_pass_through_b.clone()).unwrap();
+    uut.add_transaction(tx_final.clone()).unwrap();
+
+    let batch = uut.select_batch().unwrap();
+
+    // Ensure the batch correctly aggregates the account update.
+    let expected = std::iter::once((
+        account_update.account_id(),
+        account_update.initial_state_commitment(),
+        account_update.final_state_commitment(),
+    ));
+    itertools::assert_equal(batch.account_updates(), expected);
+
+    // Ensure the batch contains a,b and final. Final should also be the last tx since its order
+    // is required.
+    assert!(batch.txs().contains(&tx_pass_through_a));
+    assert!(batch.txs().contains(&tx_pass_through_b));
+    assert_eq!(batch.txs().last().unwrap(), &tx_final);
+}
+
+/// Tests that pass through transactions retain parent-child relations based on notes, even though
+/// they act as "siblings" for account purposes.
+#[test]
+fn pass_through_txs_with_note_dependencies() {
+    let (mut uut, mut reference) = Mempool::for_tests();
+
+    // Used to get a valid account ID.
+    let tx_final = MockProvenTxBuilder::with_account_index(0).build();
+    let account_update = tx_final.account_update();
+
+    let tx_pass_through_base = MockProvenTxBuilder::with_account(
+        account_update.account_id(),
+        account_update.initial_state_commitment(),
+        account_update.initial_state_commitment(),
+    );
+
+    // Note: transactions _must_ have an input note or update an account to be considered valid.
+    // Since by definition pass through txs don't update an account, they must have a nullifier.
+    let tx_pass_through_a = tx_pass_through_base
+        .clone()
+        .nullifiers_range(0..2)
+        .private_notes_created_range(3..4)
+        .build();
+    let tx_pass_through_a = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_a));
+
+    // This includes a note (3) created by (a).
+    let tx_pass_through_b = tx_pass_through_base.unauthenticated_notes_range(3..4).build();
+    let tx_pass_through_b = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_b));
+
+    // Select batches such that (a) and (b) go into separate batches.
+    //
+    // We then rollback batch (a) and check that batch (b) is also reverted which tests that the
+    // relationship was correctly inferred by the mempool.
+    uut.add_transaction(tx_pass_through_a.clone()).unwrap();
+    let batch_a = uut.select_batch().unwrap();
+    assert_eq!(batch_a.txs(), std::slice::from_ref(&tx_pass_through_a));
+
+    uut.add_transaction(tx_pass_through_b.clone()).unwrap();
+    let batch_b = uut.select_batch().unwrap();
+    assert_eq!(batch_b.txs(), std::slice::from_ref(&tx_pass_through_b));
+
+    // Rollback (a) and check that (b) also reverted by comparing to the reference.
+    uut.rollback_batch(batch_a.id());
+    reference.add_transaction(tx_pass_through_a).unwrap();
+    reference.add_transaction(tx_pass_through_b).unwrap();
 
     assert_eq!(uut, reference);
 }

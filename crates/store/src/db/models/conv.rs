@@ -32,36 +32,47 @@
     on relevant platforms"
 )]
 
-use std::any::type_name;
-
-use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_objects::Felt;
 use miden_objects::account::StorageSlotName;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 
 #[derive(Debug, thiserror::Error)]
-#[error("failed to convert a database value to it's in memory type {0}")]
-pub struct DatabaseTypeConversionError(&'static str);
+#[error("failed to convert from database type {from_type} into {into_type}")]
+pub struct DatabaseTypeConversionError {
+    source: Box<dyn std::error::Error + Send + Sync>,
+    from_type: &'static str,
+    into_type: &'static str,
+}
 
 /// Convert from and to it's database representation and back
 ///
 /// We do not assume sanity of DB types.
 pub(crate) trait SqlTypeConvert: Sized {
     type Raw: Sized;
-    type Error: std::error::Error + Send + Sync + 'static;
+
     fn to_raw_sql(self) -> Self::Raw;
-    fn from_raw_sql(_raw: Self::Raw) -> Result<Self, Self::Error>;
+    fn from_raw_sql(_raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError>;
+
+    fn map_err<E: std::error::Error + Send + Sync + 'static>(
+        source: E,
+    ) -> DatabaseTypeConversionError {
+        DatabaseTypeConversionError {
+            source: Box::new(source),
+            from_type: std::any::type_name::<Self::Raw>(),
+            into_type: std::any::type_name::<Self>(),
+        }
+    }
 }
 
 impl SqlTypeConvert for BlockNumber {
     type Raw = i64;
-    type Error = DatabaseTypeConversionError;
-    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
-        u32::try_from(raw)
-            .map(BlockNumber::from)
-            .map_err(|_| DatabaseTypeConversionError(type_name::<BlockNumber>()))
+
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        u32::try_from(raw).map(BlockNumber::from).map_err(Self::map_err)
     }
+
     fn to_raw_sql(self) -> Self::Raw {
         i64::from(self.as_u32())
     }
@@ -69,10 +80,9 @@ impl SqlTypeConvert for BlockNumber {
 
 impl SqlTypeConvert for NetworkAccountPrefix {
     type Raw = i64;
-    type Error = DatabaseTypeConversionError;
-    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
-        NetworkAccountPrefix::try_from(raw as u32)
-            .map_err(|_e| DatabaseTypeConversionError(type_name::<NetworkAccountError>()))
+
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        NetworkAccountPrefix::try_from(raw as u32).map_err(Self::map_err)
     }
     fn to_raw_sql(self) -> Self::Raw {
         i64::from(self.inner())
@@ -81,14 +91,19 @@ impl SqlTypeConvert for NetworkAccountPrefix {
 
 impl SqlTypeConvert for NoteExecutionMode {
     type Raw = i32;
-    type Error = DatabaseTypeConversionError;
 
     #[inline(always)]
-    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        #[derive(Debug, thiserror::Error)]
+        #[error("valid values are 0 or 1 but found {0}")]
+        struct ValueError(i32);
+
         Ok(match raw {
             0 => Self::Network,
             1 => Self::Local,
-            _ => return Err(DatabaseTypeConversionError(type_name::<NoteExecutionMode>())),
+            invalid => {
+                return Err(Self::map_err(ValueError(invalid)));
+            },
         })
     }
 
@@ -103,10 +118,9 @@ impl SqlTypeConvert for NoteExecutionMode {
 
 impl SqlTypeConvert for NoteTag {
     type Raw = i32;
-    type Error = DatabaseTypeConversionError;
 
     #[inline(always)]
-    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
         #[allow(clippy::cast_sign_loss)]
         Ok(NoteTag::from(raw as u32))
     }
@@ -119,11 +133,9 @@ impl SqlTypeConvert for NoteTag {
 
 impl SqlTypeConvert for StorageSlotName {
     type Raw = String;
-    type Error = DatabaseTypeConversionError;
 
-    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
-        StorageSlotName::new(raw)
-            .map_err(|_| DatabaseTypeConversionError(type_name::<StorageSlotName>()))
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        StorageSlotName::new(raw).map_err(Self::map_err)
     }
 
     fn to_raw_sql(self) -> Self::Raw {

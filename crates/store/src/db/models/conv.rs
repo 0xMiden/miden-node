@@ -133,11 +133,9 @@ impl SqlTypeConvert for NoteTag {
 
 impl SqlTypeConvert for StorageSlotName {
     type Raw = String;
-    type Error = DatabaseTypeConversionError;
 
-    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
-        StorageSlotName::new(raw)
-            .map_err(|_| DatabaseTypeConversionError(type_name::<StorageSlotName>()))
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        StorageSlotName::new(raw).map_err(Self::map_err)
     }
 
     fn to_raw_sql(self) -> Self::Raw {

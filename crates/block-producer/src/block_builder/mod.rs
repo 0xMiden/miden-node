@@ -132,7 +132,6 @@ impl BlockBuilder {
             })
             .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
             .and_then(|(proposed_block, inputs, header, signature, body)| self.prove_block(proposed_block, inputs, header, signature, body))
-            .and_then(|(proposed_block, header, signature, body, block_proof)| self.construct_proven_block(proposed_block, header, body, signature, block_proof))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
@@ -266,8 +265,7 @@ impl BlockBuilder {
         header: BlockHeader,
         signature: Signature,
         body: BlockBody,
-    ) -> Result<(OrderedBatches, BlockHeader, Signature, BlockBody, BlockProof), BuildBlockError>
-    {
+    ) -> Result<ProvenBlock, BuildBlockError> {
         // Prove block using header and body from validator.
         let block_proof = self
             .block_prover
@@ -275,18 +273,6 @@ impl BlockBuilder {
             .await?;
         self.simulate_proving().await;
 
-        Ok((ordered_batches, header, signature, body, block_proof))
-    }
-
-    #[instrument(target = COMPONENT, name = "block_builder.construct_proven_block", skip_all, err)]
-    async fn construct_proven_block(
-        &self,
-        ordered_batches: OrderedBatches,
-        header: BlockHeader,
-        body: BlockBody,
-        signature: Signature,
-        block_proof: BlockProof,
-    ) -> Result<ProvenBlock, BuildBlockError> {
         // SAFETY: The header and body are assumed valid and consistent with the proof.
         let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {

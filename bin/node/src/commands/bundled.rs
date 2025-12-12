@@ -24,6 +24,7 @@ use crate::commands::{
     DEFAULT_TIMEOUT,
     ENV_ENABLE_OTEL,
     ENV_GENESIS_CONFIG_FILE,
+    ENV_VALIDATOR_INSECURE_SECRET_KEY,
     NtxBuilderConfig,
     duration_to_human_readable_string,
 };
@@ -89,6 +90,7 @@ pub enum BundledCommand {
         /// Insecure, hex-encoded validator secret key for development and testing purposes.
         #[arg(
             long = "validator.insecure.secret-key",
+            env = ENV_VALIDATOR_INSECURE_SECRET_KEY,
             value_name = "VALIDATOR_INSECURE_SECRET_KEY"
         )]
         validator_insecure_secret_key: Option<String>,

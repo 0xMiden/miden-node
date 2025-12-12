@@ -10,6 +10,7 @@ use url::Url;
 use crate::commands::{
     DEFAULT_TIMEOUT,
     ENV_ENABLE_OTEL,
+    ENV_VALIDATOR_INSECURE_SECRET_KEY,
     ENV_VALIDATOR_URL,
     duration_to_human_readable_string,
 };
@@ -39,7 +40,7 @@ pub enum ValidatorCommand {
         grpc_timeout: Duration,
 
         /// Insecure, hex-encoded validator secret key for development and testing purposes.
-        #[arg(long = "insecure.secret-key", value_name = "INSECURE_SECRET_KEY")]
+        #[arg(long = "insecure.secret-key", env = ENV_VALIDATOR_INSECURE_SECRET_KEY, value_name = "INSECURE_SECRET_KEY")]
         insecure_secret_key: Option<String>,
     },
 }

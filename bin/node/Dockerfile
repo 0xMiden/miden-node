@@ -24,8 +24,6 @@ RUN apt-get update && \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/accounts accounts
-COPY --from=builder /app/data data
 COPY --from=builder /usr/local/cargo/bin/miden-node /usr/local/bin/miden-node
 
 LABEL org.opencontainers.image.authors=devops@miden.team \

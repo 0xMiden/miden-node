@@ -1,6 +1,7 @@
 use std::num::{NonZero, TryFromIntError};
 
 use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
+use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::store::ntx_builder_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
@@ -161,14 +162,22 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_network_account_ids(
         &self,
-        _request: Request<()>,
+        request: Request<BlockRange>,
     ) -> Result<Response<proto::store::NetworkAccountIdList>, Status> {
-        let account_ids = self.state.get_all_network_accounts().await.map_err(internal_error)?;
+        let block_range = request.into_inner();
+        let block_range = BlockNumber::from(block_range.block_from)
+            ..=BlockNumber::from(block_range.block_to.unwrap_or(0));
+
+        let account_ids =
+            self.state.get_all_network_accounts(block_range).await.map_err(internal_error)?;
 
         let account_ids: Vec<proto::account::AccountId> =
             account_ids.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(proto::store::NetworkAccountIdList { account_ids }))
+        Ok(Response::new(proto::store::NetworkAccountIdList {
+            account_ids,
+            pagination_info: None,
+        }))
     }
 
     #[instrument(

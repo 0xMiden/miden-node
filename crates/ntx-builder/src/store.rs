@@ -1,14 +1,16 @@
+use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_objects::Word;
 use miden_objects::account::{Account, AccountId};
-use miden_objects::block::BlockHeader;
+use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
 use miden_objects::note::NoteScript;
 use miden_tx::utils::Deserializable;
@@ -174,8 +176,21 @@ impl StoreClient {
 
     // TODO: add pagination.
     #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
-    pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
-        let response = self.inner.clone().get_network_account_ids(()).await?.into_inner();
+    pub async fn get_network_account_ids(
+        &self,
+        block_range: Option<RangeInclusive<BlockNumber>>,
+    ) -> Result<Vec<AccountId>, StoreError> {
+        let block_range = match block_range {
+            Some(range) => range,
+            None => BlockNumber::from(0)..=BlockNumber::from(u32::MAX),
+        };
+
+        let response = self
+            .inner
+            .clone()
+            .get_network_account_ids(Into::<BlockRange>::into(block_range))
+            .await?
+            .into_inner();
 
         let accounts: Result<Vec<AccountId>, ConversionError> = response
             .account_ids

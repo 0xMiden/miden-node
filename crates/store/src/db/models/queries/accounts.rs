@@ -414,11 +414,12 @@ pub(crate) fn select_all_accounts(
 /// A vector with network account IDs, or an error.
 pub(crate) fn select_all_network_account_ids(
     conn: &mut SqliteConnection,
+    block_range: RangeInclusive<BlockNumber>,
 ) -> Result<Vec<AccountId>, DatabaseError> {
-    let account_ids_raw: Vec<Vec<u8>> = QueryDsl::select(
-        schema::accounts::table.filter(schema::accounts::network_account_id_prefix.is_not_null()),
-        schema::accounts::account_id,
-    )
+    let account_ids_raw: Vec<Vec<u8>> = Box::new(QueryDsl::select(
+            schema::accounts::table.filter(schema::accounts::network_account_id_prefix.is_not_null()),
+            schema::accounts::account_id,
+        ).filter(schema::accounts::block_number.between(block_range.start(), block_range.end())))
     .load::<Vec<u8>>(conn)?;
 
     let account_ids = account_ids_raw

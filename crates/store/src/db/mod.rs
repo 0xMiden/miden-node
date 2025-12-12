@@ -435,9 +435,14 @@ impl Db {
 
     /// Loads all network account IDs from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_network_account_ids(&self) -> Result<Vec<AccountId>> {
-        self.transact("Get all network account IDs", queries::select_all_network_account_ids)
-            .await
+    pub async fn select_all_network_account_ids(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<Vec<AccountId>> {
+        self.transact("Get all network account IDs", move |conn| {
+            queries::select_all_network_account_ids(conn, block_range)
+        })
+        .await
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

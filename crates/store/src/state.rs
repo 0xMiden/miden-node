@@ -919,8 +919,11 @@ impl State {
     }
 
     /// Returns account IDs for all public (on-chain) network accounts.
-    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
-        self.db.select_all_network_account_ids().await
+    pub async fn get_all_network_accounts(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<Vec<AccountId>, DatabaseError> {
+        self.db.select_all_network_account_ids(block_range).await
     }
 
     /// Returns the respective account proof with optional details, such as asset and storage

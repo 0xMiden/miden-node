@@ -72,79 +72,53 @@
             }
         }
 
-        function groupServices(services) {
-            const grouped = {};
-            const result = [];
+        // Merge Remote Prover status and test entries into a single card per prover.
+        function mergeProverStatusAndTests(services) {
+            const testsByName = new Map();
+            const merged = [];
+            const usedTests = new Set();
 
-            // First pass: collect all services and group prover-related ones
             services.forEach(service => {
-                if (service.name.startsWith('Remote Prover (') && service.name.endsWith(')')) {
-                    // Extract prover name from "Remote Prover (Prover-1)" -> "Prover-1"
-                    const match = service.name.match(/Remote Prover \((.*)\)/);
-                    if (match) {
-                        const proverName = match[1];
-                        if (!grouped[proverName]) {
-                            grouped[proverName] = {
-                                name: proverName,
-                                status: service.status,
-                                last_checked: service.last_checked,
-                                error: service.error,
-                                details: service.details,
-                                testDetails: null,
-                                testStatus: null,
-                                testError: null
-                            };
-                        } else {
-                            // Update if this status is newer
-                            if (service.last_checked > grouped[proverName].last_checked) {
-                                grouped[proverName].status = service.status;
-                                grouped[proverName].last_checked = service.last_checked;
-                                grouped[proverName].error = service.error;
-                                grouped[proverName].details = service.details;
-                            }
-                        }
-                    }
-                } else if (service.details && service.details.RemoteProverTest) {
-                    // This is a prover test result - find corresponding prover group
-                    const proverName = service.name;
-                    if (!grouped[proverName]) {
-                        grouped[proverName] = {
-                            name: proverName,
-                            status: service.status,
-                            last_checked: service.last_checked,
-                            error: service.error,
-                            details: null,
-                            testDetails: service.details.RemoteProverTest,
-                            testStatus: service.status,
-                            testError: service.error
-                        };
-                    } else {
-                        grouped[proverName].testDetails = service.details.RemoteProverTest;
-                        grouped[proverName].testStatus = service.status;
-                        grouped[proverName].testError = service.error;
-
-                        // Combine status - if either test or status check is unhealthy, mark as unhealthy
-                        if (service.status === 'Unhealthy' || grouped[proverName].status === 'Unhealthy') {
-                            grouped[proverName].status = 'Unhealthy';
-                        }
-
-                        // Use the most recent timestamp
-                        if (service.last_checked > grouped[proverName].last_checked) {
-                            grouped[proverName].last_checked = service.last_checked;
-                        }
-                    }
-                } else {
-                    // Regular service (RPC, etc.)
-                    result.push(service);
+                if (service.details && service.details.RemoteProverTest) {
+                    testsByName.set(service.name, service);
                 }
             });
 
-            // Add all grouped prover services
-            Object.values(grouped).forEach(proverService => {
-                result.push(proverService);
+            services.forEach(service => {
+                if (service.details && service.details.RemoteProverStatus) {
+                    const test = testsByName.get(service.name);
+                    if (test) {
+                        usedTests.add(service.name);
+                    }
+                    merged.push({
+                        ...service,
+                        testDetails: test?.details?.RemoteProverTest ?? null,
+                        testStatus: test?.status ?? null,
+                        testError: test?.error ?? null
+                    });
+                } else if (!(service.details && service.details.RemoteProverTest)) {
+                    // Non-prover entries pass through unchanged
+                    merged.push(service);
+                }
             });
 
-            return result;
+            // Add orphaned tests (in case a test arrives before a status)
+            testsByName.forEach((test, name) => {
+                if (!usedTests.has(name)) {
+                    merged.push({
+                        name,
+                        status: test.status,
+                        last_checked: test.last_checked,
+                        error: test.error,
+                        details: null,
+                        testDetails: test.details.RemoteProverTest,
+                        testStatus: test.status,
+                        testError: test.error
+                    });
+                }
+            });
+
+            return merged;
         }
 
         function updateDisplay() {
@@ -159,8 +133,8 @@
             const lastUpdateTime = new Date(statusData.last_updated * 1000);
             lastUpdated.textContent = lastUpdateTime.toLocaleString();
 
-            // Group and process services
-            const processedServices = groupServices(statusData.services);
+            // Group remote prover status + test into single cards
+            const processedServices = mergeProverStatusAndTests(statusData.services);
 
             // Count healthy vs unhealthy services
             const healthyServices = processedServices.filter(s => s.status === 'Healthy').length;
@@ -270,7 +244,7 @@
                             ` : ''}
                             ${details.FaucetTest ? `
                                 <div class="nested-status">
-                                    <strong>Faucet Testing:</strong>
+                                    <strong>Faucet:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
@@ -354,7 +328,7 @@
                             ` : ''}
                             ${details.NtxIncrement ? `
                                 <div class="nested-status">
-                                    <strong>Counter Increment:</strong>
+                                    <strong>Local Transactions:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
@@ -384,7 +358,7 @@
                             ` : ''}
                             ${details.NtxTracking ? `
                                 <div class="nested-status">
-                                    <strong>Counter Tracking:</strong>
+                                    <strong>Network Transactions:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Current Value:</span>
@@ -398,7 +372,7 @@
                                         ` : ''}
                                         ${details.NtxTracking.pending_increments !== null && details.NtxTracking.pending_increments !== undefined ? `
                                             <div class="metric-row">
-                                                <span class="metric-label">Pending Increments:</span>
+                                                <span class="metric-label">Pending Notes:</span>
                                                 <span class="metric-value">${details.NtxTracking.pending_increments}</span>
                                             </div>
                                         ` : ''}

@@ -50,6 +50,24 @@ const SERVER_MEMPOOL_EXPIRATION_SLACK: u32 = 2;
 /// The interval at which to update the cached mempool statistics.
 const CACHED_MEMPOOL_STATS_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// How often a block is created.
+pub const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(3);
+
+/// How often a batch is created.
+pub const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(1);
+
+/// The default transaction capacity of the mempool.
+///
+/// The value is selected such that all transactions should approximately be processed within one
+/// minutes with a block time of 5s.
+#[allow(clippy::cast_sign_loss, reason = "Both durations are positive")]
+pub const DEFAULT_MEMPOOL_TX_CAPACITY: NonZeroUsize = NonZeroUsize::new(
+    DEFAULT_MAX_BATCHES_PER_BLOCK
+        * DEFAULT_MAX_TXS_PER_BATCH
+        * (Duration::from_secs(60).div_duration_f32(DEFAULT_BLOCK_INTERVAL)) as usize,
+)
+.unwrap();
+
 const _: () = assert!(
     DEFAULT_MAX_BATCHES_PER_BLOCK <= miden_objects::MAX_BATCHES_PER_BLOCK,
     "Server constraint cannot exceed the protocol's constraint"

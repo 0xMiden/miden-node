@@ -14,7 +14,7 @@ use miden_lib::note::create_p2id_note;
 use miden_lib::utils::Serializable;
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::domain::batch::BatchInputs;
-use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
+use miden_node_proto::generated::store::rpc_client::RpcClient;
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -23,6 +23,7 @@ use miden_objects::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
+    AccountStorage,
     AccountStorageMode,
     AccountType,
 };
@@ -439,10 +440,13 @@ fn create_emit_note_tx(
 ) -> ProvenTransaction {
     let initial_account_hash = faucet.commitment();
 
-    let slot = faucet.storage().get_item(2).unwrap();
+    let slot = faucet.storage().get_item(BasicFungibleFaucet::metadata_slot_name()).unwrap();
     faucet
         .storage_mut()
-        .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
+        .set_item(
+            AccountStorage::faucet_metadata_slot(),
+            [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into(),
+        )
         .unwrap();
 
     faucet.increment_nonce(ONE).unwrap();

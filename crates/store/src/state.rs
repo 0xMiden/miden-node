@@ -23,7 +23,7 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
+use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::NullifierTree;
 use miden_objects::block::{
@@ -918,6 +918,11 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
+    /// Returns account IDs for all public (on-chain) network accounts.
+    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
+        self.db.select_all_network_account_ids().await
+    }
+
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
@@ -1007,13 +1012,13 @@ impl State {
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
-        for StorageMapRequest { slot_index, slot_data } in storage_requests {
-            let Some(StorageSlot::Map(storage_map)) =
-                account.storage().slots().get(slot_index as usize)
+        for StorageMapRequest { slot_name, slot_data } in storage_requests {
+            let Some(StorageSlotContent::Map(storage_map)) =
+                account.storage().get(&slot_name).map(StorageSlot::content)
             else {
-                return Err(AccountError::StorageSlotNotMap(slot_index).into());
+                return Err(AccountError::StorageSlotNotMap(slot_name).into());
             };
-            let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+            let details = AccountStorageMapDetails::new(slot_name, slot_data, storage_map);
             storage_map_details.push(details);
         }
 
@@ -1097,14 +1102,6 @@ impl State {
         self.db.get_account_vault_sync(account_id, block_range).await
     }
 
-    /// Returns the unprocessed network notes, along with the next pagination token.
-    pub async fn get_unconsumed_network_notes(
-        &self,
-        page: Page,
-    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        self.db.select_unconsumed_network_notes(page).await
-    }
-
     /// Returns the network notes for an account that are unconsumed by a specified block number,
     /// along with the next pagination token.
     pub async fn get_unconsumed_network_notes_for_account(
@@ -1114,7 +1111,7 @@ impl State {
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db
-            .select_unconsumed_network_notes_for_account(network_account_id_prefix, block_num, page)
+            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
             .await
     }
 

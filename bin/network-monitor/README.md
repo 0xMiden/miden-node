@@ -177,19 +177,19 @@ The monitor application provides real-time status monitoring for the following M
   - Transaction and note ID tracking from successful mints
   - Automated testing on a configurable interval to verify faucet functionality
 
-### Counter Increment Service
-- **Service Health**: End-to-end transaction submission for counter increment
+### Local Transactions (Counter Increment)
+- **Service Health**: End-to-end local transaction submission for counter increment
 - **Metrics**:
   - Success/Failure counts for increment transactions
   - Last TX ID with copy-to-clipboard
   - Latency in blocks from submission to observed counter update (with pending measurement tracking)
 
-### Counter Tracking Service
-- **Service Health**: Real-time monitoring of counter value changes
+### Network Transactions (Counter Tracking)
+- **Service Health**: Real-time monitoring of on-chain counter value changes
 - **Metrics**:
   - Current network account counter value (queried from RPC periodically)
   - Expected counter value based on successful increments sent
-  - Pending increments: How many transactions are queued/unprocessed
+  - Pending notes: How many transactions are queued/unprocessed
   - Last updated timestamp
 
 ## User Interface

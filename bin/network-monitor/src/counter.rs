@@ -13,7 +13,7 @@ use miden_lib::AuthScheme;
 use miden_lib::account::interface::AccountInterface;
 use miden_lib::utils::ScriptBuilder;
 use miden_node_proto::clients::RpcClient;
-use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
+use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{Account, AccountFile, AccountHeader, AccountId};
@@ -331,7 +331,7 @@ fn build_increment_status(details: &IncrementDetails, last_error: Option<String>
     };
 
     ServiceStatus {
-        name: "Counter Increment".to_string(),
+        name: "Local Transactions".to_string(),
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,
@@ -505,7 +505,7 @@ fn build_tracking_status(
     };
 
     ServiceStatus {
-        name: "Counter Tracking".to_string(),
+        name: "Network Transactions".to_string(),
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,
@@ -580,7 +580,7 @@ async fn create_and_submit_network_note(
         .await
         .context("Failed to submit proven transaction to RPC")?
         .into_inner()
-        .block_height
+        .block_num
         .into();
 
     info!("Submitted proven transaction to RPC");

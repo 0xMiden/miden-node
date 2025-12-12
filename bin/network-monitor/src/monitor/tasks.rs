@@ -91,7 +91,7 @@ impl Tasks {
         let mut prover_rxs = Vec::new();
 
         for (i, prover_url) in config.remote_prover_urls.iter().enumerate() {
-            let name = format!("Prover-{}", i + 1);
+            let name = format!("Remote Prover ({})", i + 1);
 
             let mut remote_prover = ClientBuilder::new(prover_url.clone())
                 .with_tls()
@@ -256,7 +256,7 @@ impl Tasks {
 
         // Create initial increment status
         let initial_increment_status = ServiceStatus {
-            name: "Counter Increment".to_string(),
+            name: "Local Transactions".to_string(),
             status: crate::status::Status::Unknown,
             last_checked: current_time,
             error: None,
@@ -271,7 +271,7 @@ impl Tasks {
 
         // Create initial tracking status
         let initial_tracking_status = ServiceStatus {
-            name: "Counter Tracking".to_string(),
+            name: "Network Transactions".to_string(),
             status: crate::status::Status::Unknown,
             last_checked: current_time,
             error: None,

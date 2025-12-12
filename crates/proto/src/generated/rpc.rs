@@ -10,12 +10,538 @@ pub struct RpcStatus {
     pub genesis_commitment: ::core::option::Option<super::primitives::Digest>,
     /// The store status.
     #[prost(message, optional, tag = "3")]
-    pub store: ::core::option::Option<super::rpc_store::StoreStatus>,
+    pub store: ::core::option::Option<StoreStatus>,
     /// The block producer status.
     #[prost(message, optional, tag = "4")]
-    pub block_producer: ::core::option::Option<
-        super::block_producer::BlockProducerStatus,
+    pub block_producer: ::core::option::Option<BlockProducerStatus>,
+}
+/// Represents the status of the block producer.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockProducerStatus {
+    /// The block producer's running version.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The block producer's status.
+    #[prost(string, tag = "2")]
+    pub status: ::prost::alloc::string::String,
+    /// The block producer's current view of the chain tip height.
+    ///
+    /// This is the height of the latest block that the block producer considers
+    /// to be part of the canonical chain.
+    #[prost(fixed32, tag = "4")]
+    pub chain_tip: u32,
+    /// Statistics about the mempool.
+    #[prost(message, optional, tag = "3")]
+    pub mempool_stats: ::core::option::Option<MempoolStats>,
+}
+/// Statistics about the mempool.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MempoolStats {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    #[prost(uint64, tag = "1")]
+    pub unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    #[prost(uint64, tag = "2")]
+    pub proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    #[prost(uint64, tag = "3")]
+    pub proven_batches: u64,
+}
+/// Represents the status of the store.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StoreStatus {
+    /// The store's running version.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The store's status.
+    #[prost(string, tag = "2")]
+    pub status: ::prost::alloc::string::String,
+    /// Number of the latest block in the chain.
+    #[prost(fixed32, tag = "3")]
+    pub chain_tip: u32,
+}
+/// Returns the block header corresponding to the requested block number, as well as the merkle
+/// path and current forest which validate the block's inclusion in the chain.
+///
+/// The Merkle path is an MMR proof for the block's leaf, based on the current chain length.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockHeaderByNumberRequest {
+    /// The target block height, defaults to latest if not provided.
+    #[prost(uint32, optional, tag = "1")]
+    pub block_num: ::core::option::Option<u32>,
+    /// Whether or not to return authentication data for the block header.
+    #[prost(bool, optional, tag = "2")]
+    pub include_mmr_proof: ::core::option::Option<bool>,
+}
+/// Represents the result of getting a block header by block number.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BlockHeaderByNumberResponse {
+    /// The requested block header.
+    #[prost(message, optional, tag = "1")]
+    pub block_header: ::core::option::Option<super::blockchain::BlockHeader>,
+    /// Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
+    #[prost(message, optional, tag = "2")]
+    pub mmr_path: ::core::option::Option<super::primitives::MerklePath>,
+    /// Current chain length.
+    #[prost(fixed32, optional, tag = "3")]
+    pub chain_length: ::core::option::Option<u32>,
+}
+/// Represents a note script or nothing.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MaybeNoteScript {
+    /// The script for a note by its root.
+    #[prost(message, optional, tag = "1")]
+    pub script: ::core::option::Option<super::note::NoteScript>,
+}
+/// Returns the latest state proof of the specified account.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountProofRequest {
+    /// ID of the account for which we want to get data
+    #[prost(message, optional, tag = "1")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+    /// Optional block height at which to return the proof.
+    ///
+    /// Defaults to current chain tip if unspecified.
+    #[prost(message, optional, tag = "2")]
+    pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
+    /// Request for additional account details; valid only for public accounts.
+    #[prost(message, optional, tag = "3")]
+    pub details: ::core::option::Option<account_proof_request::AccountDetailRequest>,
+}
+/// Nested message and enum types in `AccountProofRequest`.
+pub mod account_proof_request {
+    /// Request the details for a public account.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct AccountDetailRequest {
+        /// Last known code commitment to the requester. The response will include account code
+        /// only if its commitment is different from this value.
+        ///
+        /// If the field is ommiteed, the response will not include the account code.
+        #[prost(message, optional, tag = "1")]
+        pub code_commitment: ::core::option::Option<super::super::primitives::Digest>,
+        /// Last known asset vault commitment to the requester. The response will include asset vault data
+        /// only if its commitment is different from this value. If the value is not present in the
+        /// request, the response will not contain one either.
+        /// If the number of to-be-returned asset entries exceed a threshold, they have to be requested
+        /// separately, which is signaled in the response message with dedicated flag.
+        #[prost(message, optional, tag = "2")]
+        pub asset_vault_commitment: ::core::option::Option<
+            super::super::primitives::Digest,
+        >,
+        /// Additional request per storage map.
+        #[prost(message, repeated, tag = "3")]
+        pub storage_maps: ::prost::alloc::vec::Vec<
+            account_detail_request::StorageMapDetailRequest,
+        >,
+    }
+    /// Nested message and enum types in `AccountDetailRequest`.
+    pub mod account_detail_request {
+        /// Represents a storage slot index and the associated map keys.
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct StorageMapDetailRequest {
+            /// Storage slot name.
+            #[prost(string, tag = "1")]
+            pub slot_name: ::prost::alloc::string::String,
+            #[prost(oneof = "storage_map_detail_request::SlotData", tags = "2, 3")]
+            pub slot_data: ::core::option::Option<storage_map_detail_request::SlotData>,
+        }
+        /// Nested message and enum types in `StorageMapDetailRequest`.
+        pub mod storage_map_detail_request {
+            /// Indirection required for use in `oneof {..}` block.
+            #[derive(Clone, PartialEq, ::prost::Message)]
+            pub struct MapKeys {
+                /// A list of map keys associated with this storage slot.
+                #[prost(message, repeated, tag = "1")]
+                pub map_keys: ::prost::alloc::vec::Vec<
+                    super::super::super::super::primitives::Digest,
+                >,
+            }
+            #[derive(Clone, PartialEq, ::prost::Oneof)]
+            pub enum SlotData {
+                /// Request to return all storage map data. If the number exceeds a threshold of 1000 entries,
+                /// the response will not contain them but must be requested separately.
+                #[prost(bool, tag = "2")]
+                AllEntries(bool),
+                /// A list of map keys associated with the given storage slot identified by `slot_name`.
+                #[prost(message, tag = "3")]
+                MapKeys(MapKeys),
+            }
+        }
+    }
+}
+/// Represents the result of getting account proof.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountProofResponse {
+    /// The block number at which the account witness was created and the account details were observed.
+    #[prost(message, optional, tag = "1")]
+    pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
+    /// Account ID, current state commitment, and SMT path.
+    #[prost(message, optional, tag = "2")]
+    pub witness: ::core::option::Option<super::account::AccountWitness>,
+    /// Additional details for public accounts.
+    #[prost(message, optional, tag = "3")]
+    pub details: ::core::option::Option<account_proof_response::AccountDetails>,
+}
+/// Nested message and enum types in `AccountProofResponse`.
+pub mod account_proof_response {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct AccountDetails {
+        /// Account header.
+        #[prost(message, optional, tag = "1")]
+        pub header: ::core::option::Option<super::super::account::AccountHeader>,
+        /// Account storage data
+        #[prost(message, optional, tag = "2")]
+        pub storage_details: ::core::option::Option<super::AccountStorageDetails>,
+        /// Account code; empty if code commitments matched or none was requested.
+        #[prost(bytes = "vec", optional, tag = "3")]
+        pub code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+        /// Account asset vault data; empty if vault commitments matched or the requester
+        /// omitted it in the request.
+        #[prost(message, optional, tag = "4")]
+        pub vault_details: ::core::option::Option<super::AccountVaultDetails>,
+    }
+}
+/// Account vault details for AccountProofResponse
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountVaultDetails {
+    /// A flag that is set to true if the account contains too many assets. This indicates
+    /// to the user that `SyncAccountVault` endpoint should be used to retrieve the
+    /// account's assets
+    #[prost(bool, tag = "1")]
+    pub too_many_assets: bool,
+    /// When too_many_assets == false, this will contain the list of assets in the
+    /// account's vault
+    #[prost(message, repeated, tag = "2")]
+    pub assets: ::prost::alloc::vec::Vec<super::primitives::Asset>,
+}
+/// Account storage details for AccountProofResponse
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountStorageDetails {
+    /// Account storage header (storage slot info for up to 256 slots)
+    #[prost(message, optional, tag = "1")]
+    pub header: ::core::option::Option<super::account::AccountStorageHeader>,
+    /// Additional data for the requested storage maps
+    #[prost(message, repeated, tag = "2")]
+    pub map_details: ::prost::alloc::vec::Vec<
+        account_storage_details::AccountStorageMapDetails,
     >,
+}
+/// Nested message and enum types in `AccountStorageDetails`.
+pub mod account_storage_details {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct AccountStorageMapDetails {
+        /// Storage slot name.
+        #[prost(string, tag = "1")]
+        pub slot_name: ::prost::alloc::string::String,
+        /// A flag that is set to `true` if the number of to-be-returned entries in the
+        /// storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
+        /// endpoint should be used to get all storage map data.
+        #[prost(bool, tag = "2")]
+        pub too_many_entries: bool,
+        /// By default we provide all storage entries.
+        #[prost(message, optional, tag = "3")]
+        pub entries: ::core::option::Option<account_storage_map_details::MapEntries>,
+    }
+    /// Nested message and enum types in `AccountStorageMapDetails`.
+    pub mod account_storage_map_details {
+        /// Wrapper for repeated storage map entries
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct MapEntries {
+            #[prost(message, repeated, tag = "1")]
+            pub entries: ::prost::alloc::vec::Vec<map_entries::StorageMapEntry>,
+        }
+        /// Nested message and enum types in `MapEntries`.
+        pub mod map_entries {
+            /// Definition of individual storage entries.
+            #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+            pub struct StorageMapEntry {
+                #[prost(message, optional, tag = "1")]
+                pub key: ::core::option::Option<
+                    super::super::super::super::primitives::Digest,
+                >,
+                #[prost(message, optional, tag = "2")]
+                pub value: ::core::option::Option<
+                    super::super::super::super::primitives::Digest,
+                >,
+            }
+        }
+    }
+}
+/// List of nullifiers to return proofs for.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NullifierList {
+    /// List of nullifiers to return proofs for.
+    #[prost(message, repeated, tag = "1")]
+    pub nullifiers: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+}
+/// Represents the result of checking nullifiers.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CheckNullifiersResponse {
+    /// Each requested nullifier has its corresponding nullifier proof at the same position.
+    #[prost(message, repeated, tag = "1")]
+    pub proofs: ::prost::alloc::vec::Vec<super::primitives::SmtOpening>,
+}
+/// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SyncNullifiersRequest {
+    /// Block number from which the nullifiers are requested (inclusive).
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
+    /// Number of bits used for nullifier prefix. Currently the only supported value is 16.
+    #[prost(uint32, tag = "2")]
+    pub prefix_len: u32,
+    /// List of nullifiers to check. Each nullifier is specified by its prefix with length equal
+    /// to `prefix_len`.
+    #[prost(uint32, repeated, tag = "3")]
+    pub nullifiers: ::prost::alloc::vec::Vec<u32>,
+}
+/// Represents the result of syncing nullifiers.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncNullifiersResponse {
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
+    /// List of nullifiers matching the prefixes specified in the request.
+    #[prost(message, repeated, tag = "2")]
+    pub nullifiers: ::prost::alloc::vec::Vec<sync_nullifiers_response::NullifierUpdate>,
+}
+/// Nested message and enum types in `SyncNullifiersResponse`.
+pub mod sync_nullifiers_response {
+    /// Represents a single nullifier update.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct NullifierUpdate {
+        /// Nullifier ID.
+        #[prost(message, optional, tag = "1")]
+        pub nullifier: ::core::option::Option<super::super::primitives::Digest>,
+        /// Block number.
+        #[prost(fixed32, tag = "2")]
+        pub block_num: u32,
+    }
+}
+/// Account vault synchronization request.
+///
+/// Allows requesters to sync asset values for specific public accounts within a block range.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SyncAccountVaultRequest {
+    /// Block range from which to start synchronizing.
+    ///
+    /// If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    /// otherwise an error will be returned.
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
+    /// Account for which we want to sync asset vault.
+    #[prost(message, optional, tag = "2")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncAccountVaultResponse {
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
+    /// List of asset updates for the account.
+    ///
+    /// Multiple updates can be returned for a single asset, and the one with a higher `block_num`
+    /// is expected to be retained by the caller.
+    #[prost(message, repeated, tag = "2")]
+    pub updates: ::prost::alloc::vec::Vec<AccountVaultUpdate>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccountVaultUpdate {
+    /// Vault key associated with the asset.
+    #[prost(message, optional, tag = "1")]
+    pub vault_key: ::core::option::Option<super::primitives::Digest>,
+    /// Asset value related to the vault key.
+    /// If not present, the asset was removed from the vault.
+    #[prost(message, optional, tag = "2")]
+    pub asset: ::core::option::Option<super::primitives::Asset>,
+    /// Block number at which the above asset was updated in the account vault.
+    #[prost(fixed32, tag = "3")]
+    pub block_num: u32,
+}
+/// Note synchronization request.
+///
+/// Specifies note tags that requester is interested in. The server will return the first block which
+/// contains a note matching `note_tags` or the chain tip.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SyncNotesRequest {
+    /// Block range from which to start synchronizing.
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
+    /// Specifies the tags which the requester is interested in.
+    #[prost(fixed32, repeated, tag = "2")]
+    pub note_tags: ::prost::alloc::vec::Vec<u32>,
+}
+/// Represents the result of syncing notes request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncNotesResponse {
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
+    /// Block header of the block with the first note matching the specified criteria.
+    #[prost(message, optional, tag = "2")]
+    pub block_header: ::core::option::Option<super::blockchain::BlockHeader>,
+    /// Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
+    ///
+    /// An MMR proof can be constructed for the leaf of index `block_header.block_num` of
+    /// an MMR of forest `chain_tip` with this path.
+    #[prost(message, optional, tag = "3")]
+    pub mmr_path: ::core::option::Option<super::primitives::MerklePath>,
+    /// List of all notes together with the Merkle paths from `response.block_header.note_root`.
+    #[prost(message, repeated, tag = "4")]
+    pub notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
+}
+/// State synchronization request.
+///
+/// Specifies state updates the requester is interested in. The server will return the first block which
+/// contains a note matching `note_tags` or the chain tip. And the corresponding updates to
+/// `account_ids` for that block range.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncStateRequest {
+    /// Last block known by the requester. The response will contain data starting from the next block,
+    /// until the first block which contains a note of matching the requested tag, or the chain tip
+    /// if there are no notes.
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
+    /// Accounts' commitment to include in the response.
+    ///
+    /// An account commitment will be included if-and-only-if it is the latest update. Meaning it is
+    /// possible there was an update to the account for the given range, but if it is not the latest,
+    /// it won't be included in the response.
+    #[prost(message, repeated, tag = "2")]
+    pub account_ids: ::prost::alloc::vec::Vec<super::account::AccountId>,
+    /// Specifies the tags which the requester is interested in.
+    #[prost(fixed32, repeated, tag = "3")]
+    pub note_tags: ::prost::alloc::vec::Vec<u32>,
+}
+/// Represents the result of syncing state request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncStateResponse {
+    /// Number of the latest block in the chain.
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
+    /// Block header of the block with the first note matching the specified criteria.
+    #[prost(message, optional, tag = "2")]
+    pub block_header: ::core::option::Option<super::blockchain::BlockHeader>,
+    /// Data needed to update the partial MMR from `request.block_num + 1` to `response.block_header.block_num`.
+    #[prost(message, optional, tag = "3")]
+    pub mmr_delta: ::core::option::Option<super::primitives::MmrDelta>,
+    /// List of account commitments updated after `request.block_num + 1` but not after `response.block_header.block_num`.
+    #[prost(message, repeated, tag = "5")]
+    pub accounts: ::prost::alloc::vec::Vec<super::account::AccountSummary>,
+    /// List of transactions executed against requested accounts between `request.block_num + 1` and
+    /// `response.block_header.block_num`.
+    #[prost(message, repeated, tag = "6")]
+    pub transactions: ::prost::alloc::vec::Vec<super::transaction::TransactionSummary>,
+    /// List of all notes together with the Merkle paths from `response.block_header.note_root`.
+    #[prost(message, repeated, tag = "7")]
+    pub notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
+}
+/// Storage map synchronization request.
+///
+/// Allows requesters to sync storage map values for specific public accounts within a block range,
+/// with support for cursor-based pagination to handle large storage maps.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SyncStorageMapsRequest {
+    /// Block range from which to start synchronizing.
+    ///
+    /// If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    /// otherwise an error will be returned.
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
+    /// Account for which we want to sync storage maps.
+    #[prost(message, optional, tag = "3")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncStorageMapsResponse {
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
+    /// The list of storage map updates.
+    ///
+    /// Multiple updates can be returned for a single slot index and key combination, and the one
+    /// with a higher `block_num` is expected to be retained by the caller.
+    #[prost(message, repeated, tag = "2")]
+    pub updates: ::prost::alloc::vec::Vec<StorageMapUpdate>,
+}
+/// Represents a single storage map update.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StorageMapUpdate {
+    /// Block number in which the slot was updated.
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
+    /// Storage slot name.
+    #[prost(string, tag = "2")]
+    pub slot_name: ::prost::alloc::string::String,
+    /// The storage map key.
+    #[prost(message, optional, tag = "3")]
+    pub key: ::core::option::Option<super::primitives::Digest>,
+    /// The storage map value.
+    #[prost(message, optional, tag = "4")]
+    pub value: ::core::option::Option<super::primitives::Digest>,
+}
+/// Represents a block range.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockRange {
+    /// Block number from which to start (inclusive).
+    #[prost(fixed32, tag = "1")]
+    pub block_from: u32,
+    /// Block number up to which to check (inclusive). If not specified, checks up to the latest block.
+    #[prost(fixed32, optional, tag = "2")]
+    pub block_to: ::core::option::Option<u32>,
+}
+/// Represents pagination information for chunked responses.
+///
+/// Pagination is done using block numbers as the axis, allowing requesters to request
+/// data in chunks by specifying block ranges and continuing from where the previous
+/// response left off.
+///
+/// To request the next chunk, the requester should use `block_num + 1` from the previous response
+/// as the `block_from` for the next request.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PaginationInfo {
+    /// Current chain tip
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
+    /// The block number of the last check included in this response.
+    ///
+    /// For chunked responses, this may be less than `request.block_range.block_to`.
+    /// If it is less than request.block_range.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
+    #[prost(fixed32, tag = "2")]
+    pub block_num: u32,
+}
+/// Transactions synchronization request.
+///
+/// Allows requesters to sync transactions for specific accounts within a block range.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncTransactionsRequest {
+    /// Block range from which to start synchronizing.
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
+    /// Accounts to sync transactions for.
+    #[prost(message, repeated, tag = "2")]
+    pub account_ids: ::prost::alloc::vec::Vec<super::account::AccountId>,
+}
+/// Represents the result of syncing transactions request.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncTransactionsResponse {
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
+    /// List of transaction records.
+    #[prost(message, repeated, tag = "2")]
+    pub transactions: ::prost::alloc::vec::Vec<TransactionRecord>,
+}
+/// Represents a transaction record.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TransactionRecord {
+    /// Block number in which the transaction was included.
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
+    /// A transaction header.
+    #[prost(message, optional, tag = "2")]
+    pub header: ::core::option::Option<super::transaction::TransactionHeader>,
 }
 /// Generated client implementations.
 pub mod api_client {
@@ -131,9 +657,9 @@ pub mod api_client {
         /// Returns a nullifier proof for each of the requested nullifiers.
         pub async fn check_nullifiers(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc_store::NullifierList>,
+            request: impl tonic::IntoRequest<super::NullifierList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::CheckNullifiersResponse>,
+            tonic::Response<super::CheckNullifiersResponse>,
             tonic::Status,
         > {
             self.inner
@@ -177,11 +703,9 @@ pub mod api_client {
         /// Returns the latest state proof of the specified account.
         pub async fn get_account_proof(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::rpc_store::AccountProofRequest,
-            >,
+            request: impl tonic::IntoRequest<super::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProofResponse>,
+            tonic::Response<super::AccountProofResponse>,
             tonic::Status,
         > {
             self.inner
@@ -224,11 +748,9 @@ pub mod api_client {
         /// and current chain length to authenticate the block's inclusion.
         pub async fn get_block_header_by_number(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::shared::BlockHeaderByNumberRequest,
-            >,
+            request: impl tonic::IntoRequest<super::BlockHeaderByNumberRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::BlockHeaderByNumberResponse>,
+            tonic::Response<super::BlockHeaderByNumberResponse>,
             tonic::Status,
         > {
             self.inner
@@ -275,7 +797,7 @@ pub mod api_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::note::NoteRoot>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::MaybeNoteScript>,
+            tonic::Response<super::MaybeNoteScript>,
             tonic::Status,
         > {
             self.inner
@@ -295,16 +817,14 @@ pub mod api_client {
                 .insert(GrpcMethod::new("rpc.Api", "GetNoteScriptByRoot"));
             self.inner.unary(req, path, codec).await
         }
-        /// Submits proven transaction to the Miden network.
+        /// Submits proven transaction to the Miden network. Returns the node's current block height.
         pub async fn submit_proven_transaction(
             &mut self,
             request: impl tonic::IntoRequest<
                 super::super::transaction::ProvenTransaction,
             >,
         ) -> std::result::Result<
-            tonic::Response<
-                super::super::block_producer::SubmitProvenTransactionResponse,
-            >,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         > {
             self.inner
@@ -334,13 +854,15 @@ pub mod api_client {
         ///
         /// All transactions in the batch but not in the mempool must build on the current mempool
         /// state following normal transaction submission rules.
+        ///
+        /// Returns the node's current block height.
         pub async fn submit_proven_batch(
             &mut self,
             request: impl tonic::IntoRequest<
                 super::super::transaction::ProvenTransactionBatch,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::block_producer::SubmitProvenBatchResponse>,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         > {
             self.inner
@@ -364,11 +886,9 @@ pub mod api_client {
         /// Note that only 16-bit prefixes are supported at this time.
         pub async fn sync_nullifiers(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncNullifiersRequest,
-            >,
+            request: impl tonic::IntoRequest<super::SyncNullifiersRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNullifiersResponse>,
+            tonic::Response<super::SyncNullifiersResponse>,
             tonic::Status,
         > {
             self.inner
@@ -388,11 +908,9 @@ pub mod api_client {
         /// Returns account vault updates for specified account within a block range.
         pub async fn sync_account_vault(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncAccountVaultRequest,
-            >,
+            request: impl tonic::IntoRequest<super::SyncAccountVaultRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncAccountVaultResponse>,
+            tonic::Response<super::SyncAccountVaultResponse>,
             tonic::Status,
         > {
             self.inner
@@ -420,9 +938,9 @@ pub mod api_client {
         /// tip of the chain.
         pub async fn sync_notes(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc_store::SyncNotesRequest>,
+            request: impl tonic::IntoRequest<super::SyncNotesRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNotesResponse>,
+            tonic::Response<super::SyncNotesResponse>,
             tonic::Status,
         > {
             self.inner
@@ -456,9 +974,9 @@ pub mod api_client {
         /// additional filtering of that data on its side.
         pub async fn sync_state(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc_store::SyncStateRequest>,
+            request: impl tonic::IntoRequest<super::SyncStateRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStateResponse>,
+            tonic::Response<super::SyncStateResponse>,
             tonic::Status,
         > {
             self.inner
@@ -478,11 +996,9 @@ pub mod api_client {
         /// Returns storage map updates for specified account and storage slots within a block range.
         pub async fn sync_storage_maps(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncStorageMapsRequest,
-            >,
+            request: impl tonic::IntoRequest<super::SyncStorageMapsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStorageMapsResponse>,
+            tonic::Response<super::SyncStorageMapsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -502,11 +1018,9 @@ pub mod api_client {
         /// Returns transactions records for specific accounts within a block range.
         pub async fn sync_transactions(
             &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::rpc_store::SyncTransactionsRequest,
-            >,
+            request: impl tonic::IntoRequest<super::SyncTransactionsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncTransactionsResponse>,
+            tonic::Response<super::SyncTransactionsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -546,9 +1060,9 @@ pub mod api_server {
         /// Returns a nullifier proof for each of the requested nullifiers.
         async fn check_nullifiers(
             &self,
-            request: tonic::Request<super::super::rpc_store::NullifierList>,
+            request: tonic::Request<super::NullifierList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::CheckNullifiersResponse>,
+            tonic::Response<super::CheckNullifiersResponse>,
             tonic::Status,
         >;
         /// Returns the latest state of an account with the specified ID.
@@ -562,9 +1076,9 @@ pub mod api_server {
         /// Returns the latest state proof of the specified account.
         async fn get_account_proof(
             &self,
-            request: tonic::Request<super::super::rpc_store::AccountProofRequest>,
+            request: tonic::Request<super::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProofResponse>,
+            tonic::Response<super::AccountProofResponse>,
             tonic::Status,
         >;
         /// Returns raw block data for the specified block number.
@@ -579,9 +1093,9 @@ pub mod api_server {
         /// and current chain length to authenticate the block's inclusion.
         async fn get_block_header_by_number(
             &self,
-            request: tonic::Request<super::super::shared::BlockHeaderByNumberRequest>,
+            request: tonic::Request<super::BlockHeaderByNumberRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::BlockHeaderByNumberResponse>,
+            tonic::Response<super::BlockHeaderByNumberResponse>,
             tonic::Status,
         >;
         /// Returns a list of notes matching the provided note IDs.
@@ -596,18 +1110,13 @@ pub mod api_server {
         async fn get_note_script_by_root(
             &self,
             request: tonic::Request<super::super::note::NoteRoot>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::shared::MaybeNoteScript>,
-            tonic::Status,
-        >;
-        /// Submits proven transaction to the Miden network.
+        ) -> std::result::Result<tonic::Response<super::MaybeNoteScript>, tonic::Status>;
+        /// Submits proven transaction to the Miden network. Returns the node's current block height.
         async fn submit_proven_transaction(
             &self,
             request: tonic::Request<super::super::transaction::ProvenTransaction>,
         ) -> std::result::Result<
-            tonic::Response<
-                super::super::block_producer::SubmitProvenTransactionResponse,
-            >,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         >;
         /// Submits a proven batch of transactions to the Miden network.
@@ -620,11 +1129,13 @@ pub mod api_server {
         ///
         /// All transactions in the batch but not in the mempool must build on the current mempool
         /// state following normal transaction submission rules.
+        ///
+        /// Returns the node's current block height.
         async fn submit_proven_batch(
             &self,
             request: tonic::Request<super::super::transaction::ProvenTransactionBatch>,
         ) -> std::result::Result<
-            tonic::Response<super::super::block_producer::SubmitProvenBatchResponse>,
+            tonic::Response<super::super::blockchain::BlockNumber>,
             tonic::Status,
         >;
         /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
@@ -632,17 +1143,17 @@ pub mod api_server {
         /// Note that only 16-bit prefixes are supported at this time.
         async fn sync_nullifiers(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncNullifiersRequest>,
+            request: tonic::Request<super::SyncNullifiersRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNullifiersResponse>,
+            tonic::Response<super::SyncNullifiersResponse>,
             tonic::Status,
         >;
         /// Returns account vault updates for specified account within a block range.
         async fn sync_account_vault(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncAccountVaultRequest>,
+            request: tonic::Request<super::SyncAccountVaultRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncAccountVaultResponse>,
+            tonic::Response<super::SyncAccountVaultResponse>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -656,9 +1167,9 @@ pub mod api_server {
         /// tip of the chain.
         async fn sync_notes(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncNotesRequest>,
+            request: tonic::Request<super::SyncNotesRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncNotesResponse>,
+            tonic::Response<super::SyncNotesResponse>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -678,25 +1189,25 @@ pub mod api_server {
         /// additional filtering of that data on its side.
         async fn sync_state(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncStateRequest>,
+            request: tonic::Request<super::SyncStateRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStateResponse>,
+            tonic::Response<super::SyncStateResponse>,
             tonic::Status,
         >;
         /// Returns storage map updates for specified account and storage slots within a block range.
         async fn sync_storage_maps(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncStorageMapsRequest>,
+            request: tonic::Request<super::SyncStorageMapsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncStorageMapsResponse>,
+            tonic::Response<super::SyncStorageMapsResponse>,
             tonic::Status,
         >;
         /// Returns transactions records for specific accounts within a block range.
         async fn sync_transactions(
             &self,
-            request: tonic::Request<super::super::rpc_store::SyncTransactionsRequest>,
+            request: tonic::Request<super::SyncTransactionsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::SyncTransactionsResponse>,
+            tonic::Response<super::SyncTransactionsResponse>,
             tonic::Status,
         >;
     }
@@ -819,20 +1330,16 @@ pub mod api_server {
                 "/rpc.Api/CheckNullifiers" => {
                     #[allow(non_camel_case_types)]
                     struct CheckNullifiersSvc<T: Api>(pub Arc<T>);
-                    impl<
-                        T: Api,
-                    > tonic::server::UnaryService<super::super::rpc_store::NullifierList>
+                    impl<T: Api> tonic::server::UnaryService<super::NullifierList>
                     for CheckNullifiersSvc<T> {
-                        type Response = super::super::rpc_store::CheckNullifiersResponse;
+                        type Response = super::CheckNullifiersResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::NullifierList,
-                            >,
+                            request: tonic::Request<super::NullifierList>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -911,21 +1418,16 @@ pub mod api_server {
                 "/rpc.Api/GetAccountProof" => {
                     #[allow(non_camel_case_types)]
                     struct GetAccountProofSvc<T: Api>(pub Arc<T>);
-                    impl<
-                        T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::AccountProofRequest,
-                    > for GetAccountProofSvc<T> {
-                        type Response = super::super::rpc_store::AccountProofResponse;
+                    impl<T: Api> tonic::server::UnaryService<super::AccountProofRequest>
+                    for GetAccountProofSvc<T> {
+                        type Response = super::AccountProofResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::AccountProofRequest,
-                            >,
+                            request: tonic::Request<super::AccountProofRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1008,19 +1510,16 @@ pub mod api_server {
                     struct GetBlockHeaderByNumberSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::shared::BlockHeaderByNumberRequest,
-                    > for GetBlockHeaderByNumberSvc<T> {
-                        type Response = super::super::shared::BlockHeaderByNumberResponse;
+                    > tonic::server::UnaryService<super::BlockHeaderByNumberRequest>
+                    for GetBlockHeaderByNumberSvc<T> {
+                        type Response = super::BlockHeaderByNumberResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::shared::BlockHeaderByNumberRequest,
-                            >,
+                            request: tonic::Request<super::BlockHeaderByNumberRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1104,7 +1603,7 @@ pub mod api_server {
                         T: Api,
                     > tonic::server::UnaryService<super::super::note::NoteRoot>
                     for GetNoteScriptByRootSvc<T> {
-                        type Response = super::super::shared::MaybeNoteScript;
+                        type Response = super::MaybeNoteScript;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1150,7 +1649,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::transaction::ProvenTransaction,
                     > for SubmitProvenTransactionSvc<T> {
-                        type Response = super::super::block_producer::SubmitProvenTransactionResponse;
+                        type Response = super::super::blockchain::BlockNumber;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1198,7 +1697,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::transaction::ProvenTransactionBatch,
                     > for SubmitProvenBatchSvc<T> {
-                        type Response = super::super::block_producer::SubmitProvenBatchResponse;
+                        type Response = super::super::blockchain::BlockNumber;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1243,19 +1742,16 @@ pub mod api_server {
                     struct SyncNullifiersSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncNullifiersRequest,
-                    > for SyncNullifiersSvc<T> {
-                        type Response = super::super::rpc_store::SyncNullifiersResponse;
+                    > tonic::server::UnaryService<super::SyncNullifiersRequest>
+                    for SyncNullifiersSvc<T> {
+                        type Response = super::SyncNullifiersResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::SyncNullifiersRequest,
-                            >,
+                            request: tonic::Request<super::SyncNullifiersRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1291,19 +1787,16 @@ pub mod api_server {
                     struct SyncAccountVaultSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncAccountVaultRequest,
-                    > for SyncAccountVaultSvc<T> {
-                        type Response = super::super::rpc_store::SyncAccountVaultResponse;
+                    > tonic::server::UnaryService<super::SyncAccountVaultRequest>
+                    for SyncAccountVaultSvc<T> {
+                        type Response = super::SyncAccountVaultResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::SyncAccountVaultRequest,
-                            >,
+                            request: tonic::Request<super::SyncAccountVaultRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1337,21 +1830,16 @@ pub mod api_server {
                 "/rpc.Api/SyncNotes" => {
                     #[allow(non_camel_case_types)]
                     struct SyncNotesSvc<T: Api>(pub Arc<T>);
-                    impl<
-                        T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncNotesRequest,
-                    > for SyncNotesSvc<T> {
-                        type Response = super::super::rpc_store::SyncNotesResponse;
+                    impl<T: Api> tonic::server::UnaryService<super::SyncNotesRequest>
+                    for SyncNotesSvc<T> {
+                        type Response = super::SyncNotesResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::SyncNotesRequest,
-                            >,
+                            request: tonic::Request<super::SyncNotesRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1385,21 +1873,16 @@ pub mod api_server {
                 "/rpc.Api/SyncState" => {
                     #[allow(non_camel_case_types)]
                     struct SyncStateSvc<T: Api>(pub Arc<T>);
-                    impl<
-                        T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncStateRequest,
-                    > for SyncStateSvc<T> {
-                        type Response = super::super::rpc_store::SyncStateResponse;
+                    impl<T: Api> tonic::server::UnaryService<super::SyncStateRequest>
+                    for SyncStateSvc<T> {
+                        type Response = super::SyncStateResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::SyncStateRequest,
-                            >,
+                            request: tonic::Request<super::SyncStateRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1435,19 +1918,16 @@ pub mod api_server {
                     struct SyncStorageMapsSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncStorageMapsRequest,
-                    > for SyncStorageMapsSvc<T> {
-                        type Response = super::super::rpc_store::SyncStorageMapsResponse;
+                    > tonic::server::UnaryService<super::SyncStorageMapsRequest>
+                    for SyncStorageMapsSvc<T> {
+                        type Response = super::SyncStorageMapsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::SyncStorageMapsRequest,
-                            >,
+                            request: tonic::Request<super::SyncStorageMapsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1483,19 +1963,16 @@ pub mod api_server {
                     struct SyncTransactionsSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<
-                        super::super::rpc_store::SyncTransactionsRequest,
-                    > for SyncTransactionsSvc<T> {
-                        type Response = super::super::rpc_store::SyncTransactionsResponse;
+                    > tonic::server::UnaryService<super::SyncTransactionsRequest>
+                    for SyncTransactionsSvc<T> {
+                        type Response = super::SyncTransactionsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::super::rpc_store::SyncTransactionsRequest,
-                            >,
+                            request: tonic::Request<super::SyncTransactionsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

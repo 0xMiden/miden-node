@@ -2,6 +2,17 @@
 
 ## v0.13.0 (TBD)
 
+### Enhancements
+
+- Added support for timeouts in the WASM remote prover clients ([#1383](https://github.com/0xMiden/miden-node/pull/1383)).
+- Added block validation endpoint to validator and integrated with block producer ([#1382](https://github.com/0xMiden/miden-node/pull/1381)).
+- Added support for caching mempool statistics in the block producer server ([#1388](https://github.com/0xMiden/miden-node/pull/1388)).
+- Added mempool statistics to the block producer status in the `miden-network-monitor` binary ([#1392](https://github.com/0xMiden/miden-node/pull/1392)).
+- Added success rate to the `miden-network-monitor` binary ([#1420](https://github.com/0xMiden/miden-node/pull/1420)).
+- Added chain tip to the block producer status ([#1419](https://github.com/0xMiden/miden-node/pull/1419)).
+- The mempool's transaction capacity is now configurable ([#1433](https://github.com/0xMiden/miden-node/pull/1433)).
+- Renamed card's names in the `miden-network-monitor` binary ([#1441](https://github.com/0xMiden/miden-node/pull/1441)).
+
 ### Changes
 
 - [BREAKING] Renamed `SyncTransactions` response fields ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
@@ -9,16 +20,15 @@
 - [BREAKING] Renamed `ProxyWorkerStatus::address` to `ProxyWorkerStatus::name` ([#1348](https://github.com/0xMiden/miden-node/pull/1348)).
 - Added `SyncTransactions` stress test to `miden-node-stress-test` binary ([#1294](https://github.com/0xMiden/miden-node/pull/1294)).
 - Remove `trait AccountTreeStorage` ([#1352](https://github.com/0xMiden/miden-node/issues/1352)).
+- [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298), [#1436](https://github.com/0xMiden/miden-node/pull/1436)).
 - [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298)).
-- Added support for timeouts in the WASM remote prover clients ([#1383](https://github.com/0xMiden/miden-node/pull/1383)).
-- Added block validation endpoint to validator and integrated with block producer ([#1382](https://github.com/0xMiden/miden-node/pull/1381)).
-- Added support for caching mempool statistics in the block producer server ([#1388](https://github.com/0xMiden/miden-node/pull/1388)).
-- Added mempool statistics to the block producer status in the `miden-network-monitor` binary ([#1392](https://github.com/0xMiden/miden-node/pull/1392)).
 - Add `S` generic to `NullifierTree` to allow usage with `LargeSmt`s ([#1353](https://github.com/0xMiden/miden-node/issues/1353)).
-- Added success rate to the `miden-network-monitor` binary ([#1420](https://github.com/0xMiden/miden-node/pull/1420)).
 - Removed internal errors from the `miden-network-monitor` ([#1424](https://github.com/0xMiden/miden-node/pull/1424)).
 - Added chain tip to the block producer status ([#1419](https://github.com/0xMiden/miden-node/pull/1419)).
 - Track network transactions latency in `miden-network-monitor` ([#1430](https://github.com/0xMiden/miden-node/pull/1430))
+- [BREAKING] Re-organized RPC protobuf schema to be independent of internal schema ([#1401](https://github.com/0xMiden/miden-node/pull/1401)).
+- Reduced default block interval from `5s` to `2s` ([#1438](https://github.com/0xMiden/miden-node/pull/1438)).
+- Increased retained account tree history from 33 to 100 blocks to account for the reduced block interval ([#1438](https://github.com/0xMiden/miden-node/pull/1438)).
 
 ### Fixes
 
@@ -29,7 +39,13 @@
 
 ## v0.12.6
 
+### Enhancements
+
 - Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
+
+### Fixes
+
+- Block producer crash caused by pass through transactions ([#1396](https://github.com/0xMiden/miden-node/pull/1396)).
 
 ## v0.12.5 (2025-11-27)
 
@@ -116,6 +132,7 @@
 - [BREAKING] Refactored protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
 - Added `SyncStorageMaps` gRPC endpoint for retrieving account storage maps ([#1140](https://github.com/0xMiden/miden-node/pull/1140), [#1132](https://github.com/0xMiden/miden-node/pull/1132)).
 - Added `SyncAccountVault` gRPC endpoints for retrieving account assets ([#1176](https://github.com/0xMiden/miden-node/pull/1176)).
+- Refactored Network Transaction Builder to manage dedicated tasks for every network account in the chain ([#1219](https://github.com/0xMiden/miden-node/pull/1219)).
 
 ### Changes
 

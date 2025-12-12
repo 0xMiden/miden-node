@@ -5,79 +5,16 @@ use miden_node_proto::domain::note::SingleTargetNetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountDelta, AccountId};
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{Note, Nullifier};
+use miden_objects::note::Nullifier;
 
-// INFLIGHT NETWORK NOTE
-// ================================================================================================
-
-/// An unconsumed network note that may have failed to execute.
-///
-/// The block number at which the network note was attempted are approximate and may not
-/// reflect the exact block number for which the execution attempt failed. The actual block
-/// will likely be soon after the number that is recorded here.
-#[derive(Debug, Clone)]
-pub struct InflightNetworkNote {
-    note: SingleTargetNetworkNote,
-    attempt_count: usize,
-    last_attempt: Option<BlockNumber>,
-}
-
-impl InflightNetworkNote {
-    /// Creates a new inflight network note.
-    pub fn new(note: SingleTargetNetworkNote) -> Self {
-        Self {
-            note,
-            attempt_count: 0,
-            last_attempt: None,
-        }
-    }
-
-    /// Consumes the inflight network note and returns the inner network note.
-    pub fn into_inner(self) -> SingleTargetNetworkNote {
-        self.note
-    }
-
-    /// Returns a reference to the inner network note.
-    pub fn to_inner(&self) -> &SingleTargetNetworkNote {
-        &self.note
-    }
-
-    /// Returns the number of attempts made to execute the network note.
-    pub fn attempt_count(&self) -> usize {
-        self.attempt_count
-    }
-
-    /// Checks if the network note is available for execution.
-    ///
-    /// The note is available if it can be consumed and the backoff period has passed.
-    pub fn is_available(&self, block_num: BlockNumber) -> bool {
-        let can_consume = self
-            .to_inner()
-            .metadata()
-            .execution_hint()
-            .can_be_consumed(block_num)
-            .unwrap_or(true);
-        can_consume && has_backoff_passed(block_num, self.last_attempt, self.attempt_count)
-    }
-
-    /// Registers a failed attempt to execute the network note at the specified block number.
-    pub fn fail(&mut self, block_num: BlockNumber) {
-        self.last_attempt = Some(block_num);
-        self.attempt_count += 1;
-    }
-}
-
-impl From<InflightNetworkNote> for Note {
-    fn from(value: InflightNetworkNote) -> Self {
-        value.into_inner().into()
-    }
-}
+use crate::actor::inflight_note::InflightNetworkNote;
 
 // ACCOUNT STATE
 // ================================================================================================
 
 /// Tracks the state of a network account and its notes.
-pub struct AccountState {
+#[derive(Clone)]
+pub struct NetworkAccountNoteState {
     /// The committed account state, if any.
     ///
     /// Its possible this is `None` if the account creation transaction is still inflight.
@@ -93,25 +30,29 @@ pub struct AccountState {
     nullified_notes: HashMap<Nullifier, InflightNetworkNote>,
 }
 
-impl AccountState {
-    /// Creates a new account state using the given value as the committed state.
-    pub fn from_committed_account(account: Account) -> Self {
-        Self {
+impl NetworkAccountNoteState {
+    /// Creates a new account state from the supplied account and notes.
+    pub fn new(account: Account, notes: Vec<SingleTargetNetworkNote>) -> Self {
+        let account_prefix = NetworkAccountPrefix::try_from(account.id())
+            .expect("only network accounts are used for account state");
+
+        let mut state = Self {
             committed: Some(account),
             inflight: VecDeque::default(),
             available_notes: HashMap::default(),
             nullified_notes: HashMap::default(),
-        }
-    }
+        };
 
-    /// Creates a new account state where the creating transaction is still inflight.
-    pub fn from_uncommitted_account(account: Account) -> Self {
-        Self {
-            inflight: VecDeque::from([account]),
-            committed: None,
-            available_notes: HashMap::default(),
-            nullified_notes: HashMap::default(),
+        for note in notes {
+            // Currently only support single target network notes in NTB.
+            assert!(
+                note.account_prefix() == account_prefix,
+                "Notes supplied into account state must match expected account prefix"
+            );
+            state.add_note(note);
         }
+
+        state
     }
 
     /// Returns an iterator over inflight notes that are not currently within their respective
@@ -257,16 +198,16 @@ pub enum NetworkAccountEffect {
 }
 
 impl NetworkAccountEffect {
-    pub fn from_protocol(update: AccountUpdateDetails) -> Option<Self> {
+    pub fn from_protocol(update: &AccountUpdateDetails) -> Option<Self> {
         let update = match update {
             AccountUpdateDetails::Private => return None,
             AccountUpdateDetails::Delta(update) if update.is_full_state() => {
                 NetworkAccountEffect::Created(
-                    Account::try_from(&update)
+                    Account::try_from(update)
                         .expect("Account should be derivable by full state AccountDelta"),
                 )
             },
-            AccountUpdateDetails::Delta(update) => NetworkAccountEffect::Updated(update),
+            AccountUpdateDetails::Delta(update) => NetworkAccountEffect::Updated(update.clone()),
         };
 
         update.account_id().is_network().then_some(update)
@@ -283,41 +224,6 @@ impl NetworkAccountEffect {
             NetworkAccountEffect::Updated(delta) => delta.id(),
         }
     }
-}
-
-// HELPERS
-// ================================================================================================
-
-/// Checks if the backoff block period has passed.
-///
-/// The number of blocks passed since the last attempt must be greater than or equal to
-/// e^(0.25 * `attempt_count`) rounded to the nearest integer.
-///
-/// This evaluates to the following:
-/// - After 1 attempt, the backoff period is 1 block.
-/// - After 3 attempts, the backoff period is 2 blocks.
-/// - After 10 attempts, the backoff period is 12 blocks.
-/// - After 20 attempts, the backoff period is 148 blocks.
-/// - etc...
-#[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
-fn has_backoff_passed(
-    chain_tip: BlockNumber,
-    last_attempt: Option<BlockNumber>,
-    attempts: usize,
-) -> bool {
-    if attempts == 0 {
-        return true;
-    }
-    // Compute the number of blocks passed since the last attempt.
-    let blocks_passed = last_attempt
-        .and_then(|last| chain_tip.checked_sub(last.as_u32()))
-        .unwrap_or_default();
-
-    // Compute the exponential backoff threshold: Δ = e^(0.25 * n).
-    let backoff_threshold = (0.25 * attempts as f64).exp().round() as usize;
-
-    // Check if the backoff period has passed.
-    blocks_passed.as_usize() > backoff_threshold
 }
 
 #[cfg(test)]
@@ -342,9 +248,11 @@ mod tests {
         #[case] attempt_count: usize,
         #[case] backoff_should_have_passed: bool,
     ) {
+        use crate::actor::has_backoff_passed;
+
         assert_eq!(
             backoff_should_have_passed,
-            super::has_backoff_passed(current_block_num, last_attempt_block_num, attempt_count)
+            has_backoff_passed(current_block_num, last_attempt_block_num, attempt_count)
         );
     }
 }

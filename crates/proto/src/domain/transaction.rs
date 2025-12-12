@@ -39,7 +39,7 @@ impl TryFrom<proto::primitives::Digest> for TransactionId {
 
     fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
         let digest: Word = value.try_into()?;
-        Ok(TransactionId::new_unchecked(digest))
+        Ok(TransactionId::from_raw(digest))
     }
 }
 

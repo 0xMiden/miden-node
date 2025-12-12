@@ -20,6 +20,7 @@ use rand::Rng;
 use super::MockPrivateAccount;
 use crate::domain::transaction::AuthenticatedTransaction;
 
+#[derive(Clone)]
 pub struct MockProvenTxBuilder {
     account_id: AccountId,
     initial_account_commitment: Word,
@@ -108,7 +109,7 @@ impl MockProvenTxBuilder {
             .map(|index| {
                 let nullifier = Word::from([ONE, ONE, ONE, Felt::new(index)]);
 
-                Nullifier::new_unchecked(nullifier)
+                Nullifier::from_raw(nullifier)
             })
             .collect();
 

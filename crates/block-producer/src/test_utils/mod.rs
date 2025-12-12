@@ -34,7 +34,7 @@ impl Random {
     }
 
     pub fn draw_tx_id(&mut self) -> TransactionId {
-        TransactionId::new_unchecked(self.0.draw_word())
+        TransactionId::from_raw(self.0.draw_word())
     }
 
     pub fn draw_account_id(&mut self) -> AccountId {

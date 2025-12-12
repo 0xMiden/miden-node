@@ -146,7 +146,7 @@ impl TryFrom<&proto::note::NoteInclusionInBlockProof> for (NoteId, NoteInclusion
         )?;
 
         Ok((
-            NoteId::new_unchecked(note_id),
+            NoteId::from_raw(note_id),
             NoteInclusionProof::new(
                 proof.block_num.into(),
                 proof.note_index_in_block.try_into()?,

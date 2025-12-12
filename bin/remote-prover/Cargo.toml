@@ -31,6 +31,7 @@ clap                  = { features = ["env"], workspace = true }
 http                  = { workspace = true }
 humantime             = { workspace = true }
 miden-block-prover    = { workspace = true }
+miden-node-proto      = { workspace = true }
 miden-node-utils      = { workspace = true }
 miden-objects         = { features = ["std"], workspace = true }
 miden-tx              = { features = ["std"], workspace = true }
@@ -41,7 +42,7 @@ pingora-core          = { version = "0.6" }
 pingora-limits        = { version = "0.6" }
 pingora-proxy         = { version = "0.6" }
 prometheus            = { version = "0.14" }
-prost                 = { default-features = false, features = ["derive"], version = "0.14" }
+prost                 = { default-features = false, features = ["derive"], workspace = true }
 reqwest               = { version = "0.12" }
 semver                = { version = "1.0" }
 serde                 = { features = ["derive"], version = "1.0" }

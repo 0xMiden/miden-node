@@ -6,6 +6,7 @@ pub mod mempool;
 pub mod merkle;
 pub mod note;
 pub mod nullifier;
+pub mod proof_request;
 pub mod transaction;
 
 // UTILITIES

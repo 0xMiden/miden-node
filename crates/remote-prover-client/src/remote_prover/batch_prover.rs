@@ -71,7 +71,12 @@ impl RemoteBatchProver {
 
         #[cfg(target_arch = "wasm32")]
         let new_client = {
-            let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
+            let fetch_options =
+                tonic_web_wasm_client::options::FetchOptions::new().timeout(self.timeout);
+            let web_client = tonic_web_wasm_client::Client::new_with_options(
+                self.endpoint.clone(),
+                fetch_options,
+            );
             ApiClient::new(web_client)
         };
 

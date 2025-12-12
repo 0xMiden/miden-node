@@ -9,11 +9,12 @@ use miden_block_prover::LocalBlockProver;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::wallets::BasicWallet;
+use miden_lib::block::build_block;
 use miden_lib::note::create_p2id_note;
 use miden_lib::utils::Serializable;
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::domain::batch::BatchInputs;
-use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
+use miden_node_proto::generated::store::rpc_client::RpcClient;
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -22,6 +23,7 @@ use miden_objects::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
+    AccountStorage,
     AccountStorageMode,
     AccountType,
 };
@@ -245,8 +247,12 @@ async fn apply_block(
     store_client: &StoreClient,
     metrics: &mut SeedingMetrics,
 ) -> ProvenBlock {
-    let proposed_block = ProposedBlock::new(block_inputs, batches).unwrap();
-    let proven_block = LocalBlockProver::new(0).prove_dummy(proposed_block).unwrap();
+    let proposed_block = ProposedBlock::new(block_inputs.clone(), batches).unwrap();
+    let (header, body) = build_block(proposed_block.clone()).unwrap();
+    let block_proof = LocalBlockProver::new(0)
+        .prove_dummy(proposed_block.batches().clone(), header.clone(), block_inputs)
+        .unwrap();
+    let proven_block = ProvenBlock::new_unchecked(header, body, block_proof);
     let block_size: usize = proven_block.to_bytes().len();
 
     let start = Instant::now();
@@ -434,10 +440,13 @@ fn create_emit_note_tx(
 ) -> ProvenTransaction {
     let initial_account_hash = faucet.commitment();
 
-    let slot = faucet.storage().get_item(2).unwrap();
+    let slot = faucet.storage().get_item(BasicFungibleFaucet::metadata_slot_name()).unwrap();
     faucet
         .storage_mut()
-        .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
+        .set_item(
+            AccountStorage::faucet_metadata_slot(),
+            [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into(),
+        )
         .unwrap();
 
     faucet.increment_nonce(ONE).unwrap();

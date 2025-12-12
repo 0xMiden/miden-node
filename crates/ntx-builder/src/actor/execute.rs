@@ -1,9 +1,14 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
-use lru::LruCache;
+use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
+use miden_objects::account::{
+    Account,
+    AccountId,
+    PartialAccount,
+    StorageMapWitness,
+    StorageSlotContent,
+};
 use miden_objects::asset::{AssetVaultKey, AssetWitness};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteScript};
@@ -15,6 +20,7 @@ use miden_objects::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionArgs,
+    TransactionId,
     TransactionInputs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -35,13 +41,12 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
-use tokio::sync::Mutex;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
+use crate::actor::account_state::TransactionCandidate;
 use crate::block_producer::BlockProducerClient;
-use crate::state::TransactionCandidate;
 use crate::store::StoreClient;
 
 #[derive(Debug, thiserror::Error)]
@@ -64,25 +69,43 @@ pub enum NtxError {
 
 type NtxResult<T> = Result<T, NtxError>;
 
-// Context and execution of network transactions
+// NETWORK TRANSACTION CONTEXT
 // ================================================================================================
 
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
 #[derive(Clone)]
 pub struct NtxContext {
-    pub block_producer: BlockProducerClient,
+    block_producer: BlockProducerClient,
 
     /// The prover to delegate proofs to.
     ///
     /// Defaults to local proving if unset. This should be avoided in production as this is
     /// computationally intensive.
-    pub prover: Option<RemoteTransactionProver>,
+    prover: Option<RemoteTransactionProver>,
 
     /// The store client for retrieving note scripts.
-    pub store: StoreClient,
+    store: StoreClient,
+
+    /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
+    script_cache: LruCache<Word, NoteScript>,
 }
 
 impl NtxContext {
+    /// Creates a new [`NtxContext`] instance.
+    pub fn new(
+        block_producer: BlockProducerClient,
+        prover: Option<RemoteTransactionProver>,
+        store: StoreClient,
+        script_cache: LruCache<Word, NoteScript>,
+    ) -> Self {
+        Self {
+            block_producer,
+            prover,
+            store,
+            script_cache,
+        }
+    }
+
     /// Executes a transaction end-to-end: filtering, executing, proving, and submitted to the block
     /// producer.
     ///
@@ -95,8 +118,8 @@ impl NtxContext {
     ///
     /// # Returns
     ///
-    /// On success, returns the list of [`FailedNote`]s representing notes that were
-    /// filtered out before execution.
+    /// On success, returns the [`TransactionId`] of the executed transaction and a list of
+    /// [`FailedNote`]s representing notes that were filtered out before execution.
     ///
     /// # Errors
     ///
@@ -109,7 +132,7 @@ impl NtxContext {
     pub fn execute_transaction(
         self,
         tx: TransactionCandidate,
-    ) -> impl FutureMaybeSend<NtxResult<Vec<FailedNote>>> {
+    ) -> impl FutureMaybeSend<NtxResult<(TransactionId, Vec<FailedNote>)>> {
         let TransactionCandidate {
             account,
             notes,
@@ -125,15 +148,21 @@ impl NtxContext {
 
         async move {
             async move {
-                let data_store =
-                    NtxDataStore::new(account, chain_tip_header, chain_mmr, self.store.clone());
+                let data_store = NtxDataStore::new(
+                    account,
+                    chain_tip_header,
+                    chain_mmr,
+                    self.store.clone(),
+                    self.script_cache.clone(),
+                );
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed.into())).await?;
+                let tx_id = proven.id();
                 self.submit(proven).await?;
-                Ok(failed)
+                Ok((tx_id, failed))
             }
             .in_current_span()
             .await
@@ -237,7 +266,7 @@ impl NtxContext {
     }
 }
 
-// Data store implementation for the transaction execution
+// NETWORK TRANSACTION DATA STORE
 // ================================================================================================
 
 /// A [`DataStore`] implementation which provides transaction inputs for a single account and
@@ -256,22 +285,17 @@ struct NtxDataStore {
     /// Store client for retrieving note scripts.
     store: StoreClient,
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
-    script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
+    script_cache: LruCache<Word, NoteScript>,
 }
 
 impl NtxDataStore {
-    /// Default cache size for note scripts.
-    ///
-    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
-    /// depends on the complexity of the scripts being cached.
-    const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
-
     /// Creates a new `NtxDataStore` with default cache size.
     fn new(
         account: Account,
         reference_header: BlockHeader,
         chain_mmr: PartialBlockchain,
         store: StoreClient,
+        script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
@@ -282,10 +306,7 @@ impl NtxDataStore {
             chain_mmr,
             mast_store,
             store,
-            script_cache: Arc::new(Mutex::new(LruCache::new(
-                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
-                    .expect("default script cache size is non-zero"),
-            ))),
+            script_cache,
         }
     }
 }
@@ -323,12 +344,12 @@ impl DataStore for NtxDataStore {
         async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
     }
 
-    fn get_vault_asset_witness(
+    fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: AssetVaultKey,
-    ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             if self.account.id() != account_id {
                 return Err(DataStoreError::AccountNotFound(account_id));
@@ -341,12 +362,14 @@ impl DataStore for NtxDataStore {
                 });
             }
 
-            AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
-                DataStoreError::Other {
-                    error_msg: "failed to open vault asset tree".into(),
-                    source: Some(Box::new(err)),
-                }
-            })
+            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+                AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
+                    DataStoreError::Other {
+                        error_msg: "failed to open vault asset tree".into(),
+                        source: Some(Box::new(err)),
+                    }
+                })
+            }))
         }
     }
 
@@ -363,7 +386,7 @@ impl DataStore for NtxDataStore {
 
             let mut map_witness = None;
             for slot in self.account.storage().slots() {
-                if let StorageSlot::Map(map) = slot {
+                if let StorageSlotContent::Map(map) = slot.content() {
                     if map.root() == map_root {
                         map_witness = Some(map.open(&map_key));
                     }
@@ -388,17 +411,14 @@ impl DataStore for NtxDataStore {
     fn get_note_script(
         &self,
         script_root: Word,
-    ) -> impl FutureMaybeSend<Result<NoteScript, DataStoreError>> {
+    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         let store = self.store.clone();
-        let cache = self.script_cache.clone();
+        let mut cache = self.script_cache.clone();
 
         async move {
             // Attempt to retrieve the script from the cache.
-            if let Some(cached_script) = {
-                let mut cache_guard = cache.lock().await;
-                cache_guard.get(&script_root).cloned()
-            } {
-                return Ok(cached_script);
+            if let Some(cached_script) = cache.get(&script_root).await {
+                return Ok(Some(cached_script));
             }
 
             // Retrieve the script from the store.
@@ -409,20 +429,11 @@ impl DataStore for NtxDataStore {
                 }
             })?;
             // Handle response.
-            match maybe_script {
-                Some(script) => {
-                    // Cache the retrieved script.
-                    {
-                        let mut cache_guard = cache.lock().await;
-                        cache_guard.put(script_root, script.clone());
-                    }
-                    // Return script.
-                    Ok(script)
-                },
-                None => {
-                    // Response did not contain the note script.
-                    Err(DataStoreError::NoteScriptNotFound(script_root))
-                },
+            if let Some(script) = maybe_script {
+                cache.put(script_root, script.clone()).await;
+                Ok(Some(script))
+            } else {
+                Ok(None)
             }
         }
     }

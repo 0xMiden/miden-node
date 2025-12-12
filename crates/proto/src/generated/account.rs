@@ -34,13 +34,16 @@ pub struct AccountStorageHeader {
 /// Nested message and enum types in `AccountStorageHeader`.
 pub mod account_storage_header {
     /// A single storage slot in the account storage header.
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct StorageSlot {
+        /// The name of the storage slot.
+        #[prost(string, tag = "1")]
+        pub slot_name: ::prost::alloc::string::String,
         /// The type of the storage slot.
-        #[prost(uint32, tag = "1")]
+        #[prost(uint32, tag = "2")]
         pub slot_type: u32,
         /// The commitment (Word) for this storage slot.
-        #[prost(message, optional, tag = "2")]
+        #[prost(message, optional, tag = "3")]
         pub commitment: ::core::option::Option<super::super::primitives::Digest>,
     }
 }

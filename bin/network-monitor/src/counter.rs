@@ -11,8 +11,8 @@ use anyhow::{Context, Result};
 use miden_lib::AuthScheme;
 use miden_lib::account::interface::AccountInterface;
 use miden_lib::utils::ScriptBuilder;
-use miden_node_proto::clients::{Builder, Rpc, RpcClient};
-use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
+use miden_node_proto::clients::RpcClient;
+use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{Account, AccountFile, AccountHeader, AccountId};
@@ -43,7 +43,7 @@ use tracing::{error, info, instrument, warn};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::deploy::{MonitorDataStore, get_counter_library};
+use crate::deploy::{MonitorDataStore, create_genesis_aware_rpc_client, get_counter_library};
 use crate::status::{
     CounterTrackingDetails,
     IncrementDetails,
@@ -51,18 +51,6 @@ use crate::status::{
     ServiceStatus,
     Status,
 };
-
-async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
-    Builder::new(config.rpc_url.clone())
-        .with_tls()
-        .context("Failed to configure TLS for RPC client")
-        .expect("TLS is enabled")
-        .with_timeout(config.request_timeout)
-        .without_metadata_version()
-        .without_metadata_genesis()
-        .connect::<Rpc>()
-        .await
-}
 
 /// Get the genesis block header.
 async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHeader> {
@@ -214,7 +202,8 @@ pub async fn run_increment_task(
     expected_counter_value: Arc<AtomicU64>,
 ) -> Result<()> {
     // Create RPC client
-    let mut rpc_client = create_rpc_client(&config).await?;
+    let mut rpc_client =
+        create_genesis_aware_rpc_client(&config.rpc_url, config.request_timeout).await?;
 
     let (
         mut details,
@@ -298,7 +287,11 @@ fn handle_increment_failure(details: &mut IncrementDetails, error: &anyhow::Erro
 
 /// Build a `ServiceStatus` snapshot from the current increment details and last error.
 fn build_increment_status(details: &IncrementDetails, last_error: Option<String>) -> ServiceStatus {
-    let status = if details.failure_count == 0 {
+    let status = if last_error.is_some() {
+        // If the most recent attempt failed, surface the service as unhealthy so the
+        // dashboard reflects that the increment pipeline is not currently working.
+        Status::Unhealthy
+    } else if details.failure_count == 0 {
         Status::Healthy
     } else if details.success_count == 0 {
         Status::Unhealthy
@@ -307,7 +300,7 @@ fn build_increment_status(details: &IncrementDetails, last_error: Option<String>
     };
 
     ServiceStatus {
-        name: "Counter Increment".to_string(),
+        name: "Local Transactions".to_string(),
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,
@@ -346,7 +339,8 @@ pub async fn run_counter_tracking_task(
     expected_counter_value: Arc<AtomicU64>,
 ) -> Result<()> {
     // Create RPC client
-    let mut rpc_client = create_rpc_client(&config).await?;
+    let mut rpc_client =
+        create_genesis_aware_rpc_client(&config.rpc_url, config.request_timeout).await?;
 
     // Load counter account to get the account ID
     let counter_account = match load_counter_account(&config.counter_filepath) {
@@ -433,14 +427,18 @@ fn build_tracking_status(
     details: &CounterTrackingDetails,
     last_error: Option<String>,
 ) -> ServiceStatus {
-    let status = if details.current_value.is_some() {
+    let status = if last_error.is_some() {
+        // If the latest poll failed, surface the service as unhealthy even if we have
+        // a previously cached value, so the dashboard shows that tracking is degraded.
+        Status::Unhealthy
+    } else if details.current_value.is_some() {
         Status::Healthy
     } else {
         Status::Unknown
     };
 
     ServiceStatus {
-        name: "Counter Tracking".to_string(),
+        name: "Network Transactions".to_string(),
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,
@@ -515,7 +513,7 @@ async fn create_and_submit_network_note(
         .await
         .context("Failed to submit proven transaction to RPC")?
         .into_inner()
-        .block_height
+        .block_num
         .into();
 
     info!("Submitted proven transaction to RPC");

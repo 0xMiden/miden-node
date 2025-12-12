@@ -49,6 +49,15 @@
         let statusData = null;
         let updateInterval = null;
 
+        function formatSuccessRate(successCount, failureCount) {
+            const total = successCount + failureCount;
+            if (!total) {
+                return 'N/A';
+            }
+
+            return `${((successCount / total) * 100).toFixed(1)}%`;
+        }
+
         async function fetchStatus() {
             try {
                 const response = await fetch('/status');
@@ -63,79 +72,53 @@
             }
         }
 
-        function groupServices(services) {
-            const grouped = {};
-            const result = [];
+        // Merge Remote Prover status and test entries into a single card per prover.
+        function mergeProverStatusAndTests(services) {
+            const testsByName = new Map();
+            const merged = [];
+            const usedTests = new Set();
 
-            // First pass: collect all services and group prover-related ones
             services.forEach(service => {
-                if (service.name.startsWith('Remote Prover (') && service.name.endsWith(')')) {
-                    // Extract prover name from "Remote Prover (Prover-1)" -> "Prover-1"
-                    const match = service.name.match(/Remote Prover \((.*)\)/);
-                    if (match) {
-                        const proverName = match[1];
-                        if (!grouped[proverName]) {
-                            grouped[proverName] = {
-                                name: proverName,
-                                status: service.status,
-                                last_checked: service.last_checked,
-                                error: service.error,
-                                details: service.details,
-                                testDetails: null,
-                                testStatus: null,
-                                testError: null
-                            };
-                        } else {
-                            // Update if this status is newer
-                            if (service.last_checked > grouped[proverName].last_checked) {
-                                grouped[proverName].status = service.status;
-                                grouped[proverName].last_checked = service.last_checked;
-                                grouped[proverName].error = service.error;
-                                grouped[proverName].details = service.details;
-                            }
-                        }
-                    }
-                } else if (service.details && service.details.RemoteProverTest) {
-                    // This is a prover test result - find corresponding prover group
-                    const proverName = service.name;
-                    if (!grouped[proverName]) {
-                        grouped[proverName] = {
-                            name: proverName,
-                            status: service.status,
-                            last_checked: service.last_checked,
-                            error: service.error,
-                            details: null,
-                            testDetails: service.details.RemoteProverTest,
-                            testStatus: service.status,
-                            testError: service.error
-                        };
-                    } else {
-                        grouped[proverName].testDetails = service.details.RemoteProverTest;
-                        grouped[proverName].testStatus = service.status;
-                        grouped[proverName].testError = service.error;
-
-                        // Combine status - if either test or status check is unhealthy, mark as unhealthy
-                        if (service.status === 'Unhealthy' || grouped[proverName].status === 'Unhealthy') {
-                            grouped[proverName].status = 'Unhealthy';
-                        }
-
-                        // Use the most recent timestamp
-                        if (service.last_checked > grouped[proverName].last_checked) {
-                            grouped[proverName].last_checked = service.last_checked;
-                        }
-                    }
-                } else {
-                    // Regular service (RPC, etc.)
-                    result.push(service);
+                if (service.details && service.details.RemoteProverTest) {
+                    testsByName.set(service.name, service);
                 }
             });
 
-            // Add all grouped prover services
-            Object.values(grouped).forEach(proverService => {
-                result.push(proverService);
+            services.forEach(service => {
+                if (service.details && service.details.RemoteProverStatus) {
+                    const test = testsByName.get(service.name);
+                    if (test) {
+                        usedTests.add(service.name);
+                    }
+                    merged.push({
+                        ...service,
+                        testDetails: test?.details?.RemoteProverTest ?? null,
+                        testStatus: test?.status ?? null,
+                        testError: test?.error ?? null
+                    });
+                } else if (!(service.details && service.details.RemoteProverTest)) {
+                    // Non-prover entries pass through unchanged
+                    merged.push(service);
+                }
             });
 
-            return result;
+            // Add orphaned tests (in case a test arrives before a status)
+            testsByName.forEach((test, name) => {
+                if (!usedTests.has(name)) {
+                    merged.push({
+                        name,
+                        status: test.status,
+                        last_checked: test.last_checked,
+                        error: test.error,
+                        details: null,
+                        testDetails: test.details.RemoteProverTest,
+                        testStatus: test.status,
+                        testError: test.error
+                    });
+                }
+            });
+
+            return merged;
         }
 
         function updateDisplay() {
@@ -150,8 +133,8 @@
             const lastUpdateTime = new Date(statusData.last_updated * 1000);
             lastUpdated.textContent = lastUpdateTime.toLocaleString();
 
-            // Group and process services
-            const processedServices = groupServices(statusData.services);
+            // Group remote prover status + test into single cards
+            const processedServices = mergeProverStatusAndTests(statusData.services);
 
             // Count healthy vs unhealthy services
             const healthyServices = processedServices.filter(s => s.status === 'Healthy').length;
@@ -190,13 +173,51 @@
                                 ` : ''}
                                 ${details.RpcStatus.store_status ? `
                                     <div class="nested-status">
-                                        <strong>Store:</strong> ${details.RpcStatus.store_status.version} - ${details.RpcStatus.store_status.status}
-                                        ${details.RpcStatus.store_status.chain_tip ? ` (Tip: ${details.RpcStatus.store_status.chain_tip})` : ''}
+                                        <div class="detail-item"><strong>Store</strong></div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Version:</span>
+                                            <span class="metric-value">${details.RpcStatus.store_status.version}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Status:</span>
+                                            <span class="metric-value">${details.RpcStatus.store_status.status}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Chain Tip:</span>
+                                            <span class="metric-value">${details.RpcStatus.store_status.chain_tip}</span>
+                                        </div>
                                     </div>
                                 ` : ''}
                                 ${details.RpcStatus.block_producer_status ? `
                                     <div class="nested-status">
-                                        <strong>Block Producer:</strong> ${details.RpcStatus.block_producer_status.version} - ${details.RpcStatus.block_producer_status.status}
+                                        <div class="detail-item"><strong>Block Producer</strong></div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Version:</span>
+                                            <span class="metric-value">${details.RpcStatus.block_producer_status.version}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Status:</span>
+                                            <span class="metric-value">${details.RpcStatus.block_producer_status.status}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Chain Tip:</span>
+                                            <span class="metric-value">${details.RpcStatus.block_producer_status.chain_tip}</span>
+                                        </div>
+                                        <div class="nested-status mempool-stats">
+                                            <strong>Mempool stats:</strong>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Unbatched TXs:</span>
+                                                <span class="metric-value">${details.RpcStatus.block_producer_status.mempool.unbatched_transactions}</span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Proposed Batches:</span>
+                                                <span class="metric-value">${details.RpcStatus.block_producer_status.mempool.proposed_batches}</span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Proven Batches:</span>
+                                                <span class="metric-value">${details.RpcStatus.block_producer_status.mempool.proven_batches}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 ` : ''}
                             ` : ''}
@@ -212,7 +233,7 @@
                                             <strong>Workers (${details.RemoteProverStatus.workers.length}):</strong>
                                             ${details.RemoteProverStatus.workers.map(worker => `
                                                 <div class="worker-status">
-                                                    <span class="worker-address">${worker.address}</span> -
+                                                    <span class="worker-name">${worker.name}</span> -
                                                     <span class="worker-version">${worker.version}</span> -
                                                     <span class="worker-status-badge ${worker.status === 'Healthy' ? 'healthy' : worker.status === 'Unhealthy' ? 'unhealthy' : 'unknown'}">${worker.status}</span>
                                                 </div>
@@ -223,11 +244,11 @@
                             ` : ''}
                             ${details.FaucetTest ? `
                                 <div class="nested-status">
-                                    <strong>Faucet Testing:</strong>
+                                    <strong>Faucet:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
-                                            <span class="metric-value">${details.FaucetTest.success_count}/${details.FaucetTest.success_count + details.FaucetTest.failure_count}</span>
+                                            <span class="metric-value">${formatSuccessRate(details.FaucetTest.success_count, details.FaucetTest.failure_count)}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Last Response Time:</span>
@@ -307,15 +328,11 @@
                             ` : ''}
                             ${details.NtxIncrement ? `
                                 <div class="nested-status">
-                                    <strong>Counter Increment:</strong>
+                                    <strong>Local Transactions:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
-                                            <span class="metric-label">Successes:</span>
-                                            <span class="metric-value">${details.NtxIncrement.success_count}</span>
-                                        </div>
-                                        <div class="metric-row">
-                                            <span class="metric-label">Failures:</span>
-                                            <span class="metric-value">${details.NtxIncrement.failure_count}</span>
+                                            <span class="metric-label">Success Rate:</span>
+                                            <span class="metric-value">${formatSuccessRate(details.NtxIncrement.success_count, details.NtxIncrement.failure_count)}</span>
                                         </div>
                                         ${details.NtxIncrement.last_tx_id ? `
                                             <div class="metric-row">
@@ -335,7 +352,7 @@
                             ` : ''}
                             ${details.NtxTracking ? `
                                 <div class="nested-status">
-                                    <strong>Counter Tracking:</strong>
+                                    <strong>Network Transactions:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Current Value:</span>
@@ -349,7 +366,7 @@
                                         ` : ''}
                                         ${details.NtxTracking.pending_increments !== null && details.NtxTracking.pending_increments !== undefined ? `
                                             <div class="metric-row">
-                                                <span class="metric-label">Pending Increments:</span>
+                                                <span class="metric-label">Pending Notes:</span>
                                                 <span class="metric-value">${details.NtxTracking.pending_increments}</span>
                                             </div>
                                         ` : ''}
@@ -368,7 +385,7 @@
                                     <div class="test-metrics ${service.testStatus === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Success Rate:</span>
-                                            <span class="metric-value">${service.testDetails.success_count}/${service.testDetails.success_count + service.testDetails.failure_count}</span>
+                                            <span class="metric-value">${formatSuccessRate(service.testDetails.success_count, service.testDetails.failure_count)}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Last Response Time:</span>
@@ -378,27 +395,6 @@
                                             <span class="metric-label">Last Proof Size:</span>
                                             <span class="metric-value">${(service.testDetails.proof_size_bytes / 1024).toFixed(2)} KB</span>
                                         </div>
-                                        ${service.testError ? `
-                                            <div class="metric-row error">
-                                                <span class="metric-label">Test Error:</span>
-                                                <span class="metric-value">
-                                                    ${(() => {
-                                                        try {
-                                                            const errorObj = JSON.parse(service.testError);
-                                                            return errorObj.code || 'Unknown error code';
-                                                        } catch (e) {
-                                                            return service.testError;
-                                                        }
-                                                    })()}
-                                                    <button class="copy-button" data-json="${service.testError.replace(/"/g, '&quot;')}" onclick="copyToClipboard(this.dataset.json, event)" title="Copy error JSON">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
-                                            </div>
-                                        ` : ''}
                                     </div>
                                 </div>
                             ` : ''}
@@ -415,7 +411,6 @@
                             </div>
                         </div>
                         <div class="service-content">
-                            ${service.error ? `<div class="service-error">${service.error}</div>` : ''}
                             ${detailsHtml}
                         </div>
                         <div class="service-timestamp">

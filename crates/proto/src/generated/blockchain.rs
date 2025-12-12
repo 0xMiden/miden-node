@@ -7,6 +7,14 @@ pub struct Block {
     #[prost(bytes = "vec", tag = "1")]
     pub block: ::prost::alloc::vec::Vec<u8>,
 }
+/// Represents a proposed block.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ProposedBlock {
+    /// Block data encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::block::ProposedBlock\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub proposed_block: ::prost::alloc::vec::Vec<u8>,
+}
 /// Represents a block or nothing.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MaybeBlock {
@@ -78,4 +86,12 @@ pub struct FeeParameters {
     /// The base fee (in base units) capturing the cost for the verification of a transaction.
     #[prost(fixed32, tag = "2")]
     pub verification_base_fee: u32,
+}
+/// Represents a block body.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockBody {
+    /// Block body data encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::block::BlockBody\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub block_body: ::prost::alloc::vec::Vec<u8>,
 }

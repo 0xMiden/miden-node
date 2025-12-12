@@ -58,7 +58,12 @@ use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{AddTransactionError, VerifyTxError};
 use crate::mempool::budget::BudgetStatus;
 use crate::mempool::nodes::{BlockNode, Node, NodeId, ProposedBatchNode, TransactionNode};
-use crate::{COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION};
+use crate::{
+    COMPONENT,
+    DEFAULT_MEMPOOL_TX_CAPACITY,
+    SERVER_MEMPOOL_EXPIRATION_SLACK,
+    SERVER_MEMPOOL_STATE_RETENTION,
+};
 
 mod budget;
 pub use budget::{BatchBudget, BlockBudget};
@@ -69,6 +74,9 @@ mod subscription;
 
 #[cfg(test)]
 mod tests;
+
+// MEMPOOL CONFIGURATION
+// ================================================================================================
 
 #[derive(Clone)]
 pub struct SharedMempool(Arc<Mutex<Mempool>>);
@@ -100,6 +108,13 @@ pub struct MempoolConfig {
     /// guarantees that the mempool can verify the data against the additional changes so long as
     /// the data was authenticated against one of the retained blocks.
     pub state_retention: NonZeroUsize,
+
+    /// The maximum number of uncommitted transactions allowed in the mempool at once.
+    ///
+    /// The mempool will reject transactions once it is at capacity.
+    ///
+    /// Transactions in batches and uncommitted blocks _do count_ towards this.
+    pub tx_capacity: NonZeroUsize,
 }
 
 impl Default for MempoolConfig {
@@ -109,9 +124,13 @@ impl Default for MempoolConfig {
             batch_budget: BatchBudget::default(),
             expiration_slack: SERVER_MEMPOOL_EXPIRATION_SLACK,
             state_retention: SERVER_MEMPOOL_STATE_RETENTION,
+            tx_capacity: DEFAULT_MEMPOOL_TX_CAPACITY,
         }
     }
 }
+
+// SHARED MEMPOOL
+// ================================================================================================
 
 impl SharedMempool {
     #[instrument(target = COMPONENT, name = "mempool.lock", skip_all)]
@@ -119,6 +138,9 @@ impl SharedMempool {
         self.0.lock().await
     }
 }
+
+// MEMPOOL
+// ================================================================================================
 
 #[derive(Clone, Debug)]
 pub struct Mempool {
@@ -143,6 +165,9 @@ impl PartialEq for Mempool {
 }
 
 impl Mempool {
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a new [`SharedMempool`] with the provided configuration.
     pub fn shared(chain_tip: BlockNumber, config: MempoolConfig) -> SharedMempool {
         SharedMempool(Arc::new(Mutex::new(Self::new(chain_tip, config))))
@@ -157,6 +182,16 @@ impl Mempool {
             nodes: nodes::Nodes::default(),
         }
     }
+
+    /// Returns the current chain tip height as seen by the mempool.
+    ///
+    /// This reflects the latest committed block that the block producer is aware of.
+    pub fn chain_tip(&self) -> BlockNumber {
+        self.chain_tip
+    }
+
+    // TRANSACTION & BATCH LIFECYCLE
+    // --------------------------------------------------------------------------------------------
 
     /// Adds a transaction to the mempool.
     ///
@@ -174,6 +209,10 @@ impl Mempool {
         &mut self,
         tx: Arc<AuthenticatedTransaction>,
     ) -> Result<BlockNumber, AddTransactionError> {
+        if self.nodes.uncommitted_tx_count() >= self.config.tx_capacity.get() {
+            return Err(AddTransactionError::CapacityExceeded);
+        }
+
         self.authentication_staleness_check(tx.authentication_height())?;
         self.expiration_check(tx.expires_at())?;
 
@@ -541,6 +580,9 @@ impl Mempool {
         self.inject_telemetry();
     }
 
+    // EVENTS & SUBSCRIPTIONS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.
     ///
     /// Only emits events which occurred after the current committed block.
@@ -556,6 +598,27 @@ impl Mempool {
     ) -> Result<mpsc::Receiver<MempoolEvent>, BlockNumber> {
         self.subscription.subscribe(chain_tip)
     }
+
+    // STATS & INSPECTION
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the number of transactions currently waiting to be batched.
+    pub fn unbatched_transactions_count(&self) -> usize {
+        self.nodes.txs.len()
+    }
+
+    /// Returns the number of batches currently being proven.
+    pub fn proposed_batches_count(&self) -> usize {
+        self.nodes.proposed_batches.len()
+    }
+
+    /// Returns the number of proven batches waiting for block inclusion.
+    pub fn proven_batches_count(&self) -> usize {
+        self.nodes.proven_batches.len()
+    }
+
+    // INTERNAL HELPERS
+    // --------------------------------------------------------------------------------------------
 
     /// Adds mempool stats to the current tracing span.
     ///

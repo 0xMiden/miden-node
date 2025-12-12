@@ -5,11 +5,13 @@
 
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::clients::{
+    Builder as ClientBuilder,
+    RemoteProverProxyStatusClient,
+    RpcClient,
+};
 use miden_node_proto::generated as proto;
-use miden_node_proto::generated::block_producer::BlockProducerStatus;
-use miden_node_proto::generated::rpc::RpcStatus;
-use miden_node_proto::generated::rpc_store::StoreStatus;
+use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus, StoreStatus};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
@@ -134,6 +136,21 @@ pub struct StoreStatusDetails {
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
+    /// The block producer's current view of the chain tip height.
+    pub chain_tip: u32,
+    /// Mempool statistics for this block producer.
+    pub mempool: MempoolStatusDetails,
+}
+
+/// Details about the block producer's mempool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MempoolStatusDetails {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    pub unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    pub proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    pub proven_batches: u64,
 }
 
 /// Details of a remote prover service.
@@ -154,7 +171,7 @@ pub struct RemoteProverStatusDetails {
 /// worker service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatusDetails {
-    pub address: String,
+    pub name: String,
     pub version: String,
     pub status: Status,
 }
@@ -186,9 +203,20 @@ impl From<StoreStatus> for StoreStatusDetails {
 
 impl From<BlockProducerStatus> for BlockProducerStatusDetails {
     fn from(value: BlockProducerStatus) -> Self {
+        // We assume all supported nodes expose mempool statistics.
+        let mempool_stats = value
+            .mempool_stats
+            .expect("block producer status must include mempool statistics");
+
         Self {
             version: value.version,
             status: value.status.into(),
+            chain_tip: value.chain_tip,
+            mempool: MempoolStatusDetails {
+                unbatched_transactions: mempool_stats.unbatched_transactions,
+                proposed_batches: mempool_stats.proposed_batches,
+                proven_batches: mempool_stats.proven_batches,
+            },
         }
     }
 }
@@ -199,7 +227,7 @@ impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
             proto::remote_prover::WorkerHealthStatus::try_from(value.status).unwrap().into();
 
         Self {
-            address: value.address,
+            name: value.name,
             version: value.version,
             status,
         }
@@ -265,7 +293,8 @@ pub async fn run_rpc_status_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<Rpc>();
+        .without_otel_context_injection()
+        .connect_lazy::<RpcClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -358,7 +387,8 @@ pub async fn run_remote_prover_status_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<RemoteProverProxy>();
+        .without_otel_context_injection()
+        .connect_lazy::<RemoteProverProxyStatusClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -401,7 +431,7 @@ pub async fn run_remote_prover_status_task(
 #[instrument(target = COMPONENT, name = "check-status.remote-prover", skip_all, ret(level = "info"))]
 pub(crate) async fn check_remote_prover_status(
     remote_prover: &mut miden_node_proto::clients::RemoteProverProxyStatusClient,
-    name: String,
+    display_name: String,
     url: String,
     current_time: u64,
 ) -> ServiceStatus {
@@ -422,7 +452,7 @@ pub(crate) async fn check_remote_prover_status(
             };
 
             ServiceStatus {
-                name: format!("Remote Prover ({name})"),
+                name: display_name.clone(),
                 status: overall_health,
                 last_checked: current_time,
                 error: None,
@@ -430,7 +460,7 @@ pub(crate) async fn check_remote_prover_status(
             }
         },
         Err(e) => ServiceStatus {
-            name: format!("Remote Prover ({name})"),
+            name: display_name,
             status: Status::Unhealthy,
             last_checked: current_time,
             error: Some(e.to_string()),

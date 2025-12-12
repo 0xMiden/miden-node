@@ -16,6 +16,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Reduce cache usage by removing debug information.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
 jobs:
   typos:
     runs-on: Linux-ARM64-Runner
@@ -89,7 +93,7 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Build docs
-        run: make doc
+        run: cargo doc --no-deps --workspace --all-features --locked
 
   unused_deps:
     name: check for unused dependencies

@@ -8,7 +8,6 @@ use miden_lib::AuthScheme;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::wallets::create_basic_wallet;
-use miden_lib::transaction::memory;
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{
@@ -17,6 +16,7 @@ use miden_objects::account::{
     AccountDelta,
     AccountFile,
     AccountId,
+    AccountStorage,
     AccountStorageDelta,
     AccountStorageMode,
     AccountType,
@@ -215,7 +215,7 @@ impl GenesisConfig {
             if total_issuance != 0 {
                 // slot 0
                 storage_delta.set_item(
-                    memory::FAUCET_STORAGE_DATA_SLOT,
+                    AccountStorage::faucet_metadata_slot().clone(),
                     [ZERO, ZERO, ZERO, Felt::new(total_issuance)].into(),
                 );
                 tracing::debug!(

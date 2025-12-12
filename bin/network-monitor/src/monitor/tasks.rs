@@ -6,7 +6,11 @@ use std::sync::atomic::AtomicU64;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::clients::{
+    Builder as ClientBuilder,
+    RemoteProverProxyStatusClient,
+    RpcClient,
+};
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task::{Id, JoinSet};
@@ -56,7 +60,8 @@ impl Tasks {
             .with_timeout(config.request_timeout)
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<Rpc>();
+            .without_otel_context_injection()
+            .connect_lazy::<RpcClient>();
 
         let current_time = current_unix_timestamp_secs();
         let initial_rpc_status = check_rpc_status(&mut rpc, current_time).await;
@@ -86,7 +91,7 @@ impl Tasks {
         let mut prover_rxs = Vec::new();
 
         for (i, prover_url) in config.remote_prover_urls.iter().enumerate() {
-            let name = format!("Prover-{}", i + 1);
+            let name = format!("Remote Prover ({})", i + 1);
 
             let mut remote_prover = ClientBuilder::new(prover_url.clone())
                 .with_tls()
@@ -94,7 +99,8 @@ impl Tasks {
                 .with_timeout(config.request_timeout)
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<RemoteProverProxy>();
+                .without_otel_context_injection()
+                .connect_lazy::<RemoteProverProxyStatusClient>();
 
             let current_time = current_unix_timestamp_secs();
 
@@ -247,7 +253,7 @@ impl Tasks {
 
         // Create initial increment status
         let initial_increment_status = ServiceStatus {
-            name: "Counter Increment".to_string(),
+            name: "Local Transactions".to_string(),
             status: crate::status::Status::Unknown,
             last_checked: current_time,
             error: None,
@@ -260,7 +266,7 @@ impl Tasks {
 
         // Create initial tracking status
         let initial_tracking_status = ServiceStatus {
-            name: "Counter Tracking".to_string(),
+            name: "Network Transactions".to_string(),
             status: crate::status::Status::Unknown,
             last_checked: current_time,
             error: None,

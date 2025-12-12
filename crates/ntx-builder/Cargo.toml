@@ -16,7 +16,7 @@ workspace = true
 [dependencies]
 anyhow                     = { workspace = true }
 futures                    = { workspace = true }
-lru                        = { workspace = true }
+indexmap                   = { workspace = true }
 miden-node-proto           = { workspace = true }
 miden-node-utils           = { workspace = true }
 miden-objects              = { default-features = true, workspace = true }
@@ -25,10 +25,14 @@ miden-tx                   = { default-features = true, workspace = true }
 thiserror                  = { workspace = true }
 tokio                      = { features = ["rt-multi-thread"], workspace = true }
 tokio-stream               = { workspace = true }
+tokio-util                 = { version = "0.7" }
 tonic                      = { workspace = true }
 tracing                    = { workspace = true }
 url                        = { workspace = true }
 
 [dev-dependencies]
+miden-lib             = { workspace = true }
 miden-node-test-macro = { path = "../test-macro" }
+miden-node-utils      = { features = ["testing"], workspace = true }
+miden-objects         = { default-features = true, features = ["testing"], workspace = true }
 rstest                = { workspace = true }

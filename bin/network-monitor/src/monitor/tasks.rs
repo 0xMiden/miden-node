@@ -27,6 +27,8 @@ use crate::status::{
     ServiceStatus,
     check_remote_prover_status,
     check_rpc_status,
+    initial_explorer_status,
+    run_explorer_status_task,
     run_remote_prover_status_task,
     run_rpc_status_task,
 };
@@ -80,6 +82,39 @@ impl Tasks {
         self.names.insert(id, "rpc-checker".to_string());
 
         Ok(rpc_rx)
+    }
+
+    /// Spawn the explorer status checker task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-explorer-checker", skip_all)]
+    pub async fn spawn_explorer_checker(
+        &mut self,
+        config: &MonitorConfig,
+    ) -> Result<Receiver<ServiceStatus>> {
+        let explorer_url = config.explorer_url.clone().expect("Explorer URL exists");
+        let name = "Explorer".to_string();
+        let status_check_interval = config.status_check_interval;
+        let request_timeout = config.request_timeout;
+        let (explorer_status_tx, explorer_status_rx) = watch::channel(initial_explorer_status());
+
+        println!("Spawning explorer status checker task for URL: {}", explorer_url.clone());
+        let id = self
+            .handles
+            .spawn(async move {
+                run_explorer_status_task(
+                    explorer_url,
+                    name,
+                    explorer_status_tx,
+                    status_check_interval,
+                    request_timeout,
+                )
+                .await;
+            })
+            .id();
+        self.names.insert(id, "explorer-checker".to_string());
+
+        println!("Spawned explorer status checker task");
+
+        Ok(explorer_status_rx)
     }
 
     /// Spawn prover status and test tasks for all configured provers.

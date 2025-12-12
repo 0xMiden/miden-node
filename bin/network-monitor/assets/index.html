@@ -147,10 +147,29 @@
             servicesCount.textContent = `${totalServices} Services`;
 
             // Generate status cards
-            container.innerHTML = processedServices.map(service => {
+            const serviceCardsHtml = processedServices.map(service => {
                 const isHealthy = service.status === 'Healthy';
                 const statusColor = isHealthy ? '#22C55D' : '#ff5500';
                 const statusIcon = isHealthy ? '✓' : '✗';
+                const numOrDash = value => isHealthy ? (value?.toLocaleString?.() ?? value ?? '-') : '-';
+                const timeOrDash = ts => {
+                    if (!isHealthy) return '-';
+                    return ts ? new Date(ts * 1000).toLocaleString() : '-';
+                };
+                const commitmentOrDash = (value, label) => isHealthy && value
+                    ? `
+                        ${value.substring(0, 20)}...
+                        <button class="copy-button" onclick="copyToClipboard('${value}', event)" title="Copy full ${label}">
+                            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
+                    `
+                    : '-';
+
+                const explorerStats = service.details?.ExplorerStatus;
+                const isExplorerService = service.name?.toLowerCase().includes('explorer');
 
                 let detailsHtml = '';
                 if (service.details) {
@@ -402,6 +421,53 @@
                     `;
                 }
 
+                // Always render explorer block for explorer services, even if stats are missing.
+                if (isExplorerService) {
+                    detailsHtml += `
+                        <div class="service-details">
+                            <div class="nested-status">
+                                <strong>Explorer:</strong>
+                                <div class="metric-row">
+                                    <span class="metric-label">Block Height:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.block_number) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Block Time:</span>
+                                    <span class="metric-value">${explorerStats ? timeOrDash(explorerStats.timestamp) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Block Commitment:</span>
+                                    <span class="metric-value">${explorerStats ? commitmentOrDash(explorerStats.block_commitment, 'block commitment') : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Chain Commitment:</span>
+                                    <span class="metric-value">${explorerStats ? commitmentOrDash(explorerStats.chain_commitment, 'chain commitment') : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Proof Commitment:</span>
+                                    <span class="metric-value">${explorerStats ? commitmentOrDash(explorerStats.proof_commitment, 'proof commitment') : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Transactions:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_transactions) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Nullifiers:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_nullifiers) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Notes:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_notes) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Account Updates:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_account_updates) : '-'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 return `
                     <div class="service-card ${isHealthy ? 'healthy' : 'unhealthy'}">
                         <div class="service-header">
@@ -419,6 +485,8 @@
                     </div>
                 `;
             }).join('');
+
+            container.innerHTML = serviceCardsHtml;
 
             // Add refresh button that spans the full grid
             container.innerHTML += `

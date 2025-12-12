@@ -147,4 +147,12 @@ pub struct MonitorConfig {
         help = "The timeout for the outgoing requests"
     )]
     pub request_timeout: Duration,
+
+    /// The URL of the explorer service.
+    #[arg(
+        long = "explorer-url",
+        env = "MIDEN_MONITOR_EXPLORER_URL",
+        help = "The URL of the explorer service"
+    )]
+    pub explorer_url: Option<Url>,
 }

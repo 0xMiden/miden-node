@@ -30,6 +30,7 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--rpc-url`: RPC service URL (default: `http://localhost:50051`)
 - `--remote-prover-urls`: Comma-separated list of remote prover URLs. If omitted or empty, prover tasks are disabled.
 - `--faucet-url`: Faucet service URL for testing. If omitted, faucet testing is disabled.
+- `--explorer-url`: Explorer service GraphQL endpoint. If omitted, explorer checks are disabled.
 - `--disable-ntx-service`: Disable the network transaction service checks (enabled by default). The network transaction service consists of two components: counter increment (sending increment transactions) and counter tracking (monitoring counter value changes).
 - `--remote-prover-test-interval`: Interval at which to test the remote provers services (default: `2m`)
 - `--faucet-test-interval`: Interval at which to test the faucet services (default: `2m`)
@@ -50,6 +51,7 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_RPC_URL`: RPC service URL
 - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs. If unset or empty, prover tasks are disabled.
 - `MIDEN_MONITOR_FAUCET_URL`: Faucet service URL for testing. If unset, faucet testing is disabled.
+- `MIDEN_MONITOR_EXPLORER_URL`: Explorer service GraphQL endpoint. If unset, explorer checks are disabled.
 - `MIDEN_MONITOR_DISABLE_NTX_SERVICE`: Set to `true` to disable the network transaction service checks (enabled by default). This affects both counter increment and tracking components.
 - `MIDEN_MONITOR_REMOTE_PROVER_TEST_INTERVAL`: Interval at which to test the remote provers services
 - `MIDEN_MONITOR_FAUCET_TEST_INTERVAL`: Interval at which to test the faucet services
@@ -150,6 +152,13 @@ The monitor application provides real-time status monitoring for the following M
   - Chain tip (latest block number)
 - **Block Producer Status**:
   - Block producer version and health
+
+### Explorer
+- **Service Health**: Explorer availability and freshness of the latest block
+- **Latest Block Metadata**:
+  - Block height and timestamp
+  - Transactions, nullifiers, notes, and account updates counts
+  - Block, chain, and proof commitments (shortened display with copy-to-clipboard)
 
 ### Remote Provers
 - **Service Health**: Individual remote prover availability and status  

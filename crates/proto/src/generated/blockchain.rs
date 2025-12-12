@@ -85,9 +85,9 @@ pub struct ValidatorPublicKey {
     #[prost(bytes = "vec", tag = "1")]
     pub validator_key: ::prost::alloc::vec::Vec<u8>,
 }
-/// ECDSA Signature.
+/// Block ECDSA Signature.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct EcdsaSignature {
+pub struct BlockSignature {
     /// Signature encoded using \[winter_utils::Serializable\] implementation for
     /// \[crypto::dsa::ecdsa_k256_keccak::Signature\].
     #[prost(bytes = "vec", tag = "1")]

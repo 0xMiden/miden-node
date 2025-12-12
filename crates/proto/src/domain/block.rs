@@ -229,21 +229,21 @@ impl From<&PublicKey> for proto::blockchain::ValidatorPublicKey {
 // SIGNATURE
 // ================================================================================================
 
-impl TryFrom<proto::blockchain::EcdsaSignature> for Signature {
+impl TryFrom<proto::blockchain::BlockSignature> for Signature {
     type Error = ConversionError;
-    fn try_from(signature: proto::blockchain::EcdsaSignature) -> Result<Self, Self::Error> {
+    fn try_from(signature: proto::blockchain::BlockSignature) -> Result<Self, Self::Error> {
         Signature::read_from_bytes(&signature.signature)
             .map_err(|source| ConversionError::deserialization_error("Signature", source))
     }
 }
 
-impl From<Signature> for proto::blockchain::EcdsaSignature {
+impl From<Signature> for proto::blockchain::BlockSignature {
     fn from(value: Signature) -> Self {
         Self::from(&value)
     }
 }
 
-impl From<&Signature> for proto::blockchain::EcdsaSignature {
+impl From<&Signature> for proto::blockchain::BlockSignature {
     fn from(value: &Signature) -> Self {
         Self { signature: value.to_bytes() }
     }

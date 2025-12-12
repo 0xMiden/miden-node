@@ -92,8 +92,8 @@ message ValidatorPublicKey {
 // BLOCK SIGNATURE
 // ================================================================================================
 
-// ECDSA Signature.
-message EcdsaSignature {
+// Block ECDSA Signature.
+message BlockSignature {
     // Signature encoded using [winter_utils::Serializable] implementation for
     // [crypto::dsa::ecdsa_k256_keccak::Signature].
     bytes signature = 1;

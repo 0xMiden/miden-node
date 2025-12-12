@@ -19,7 +19,7 @@ service Api {
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
 
    // Validates a proposed block and returns the block header and body.
-   rpc SignBlock(blockchain.ProposedBlock) returns (blockchain.EcdsaSignature) {}
+   rpc SignBlock(blockchain.ProposedBlock) returns (blockchain.BlockSignature) {}
 }
 
 // VALIDATOR STATUS

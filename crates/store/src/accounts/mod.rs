@@ -118,7 +118,7 @@ pub struct AccountTreeWithHistory<S: SmtStorage> {
 
 impl<S: SmtStorage> AccountTreeWithHistory<S> {
     /// Maximum number of historical blocks to maintain.
-    pub const MAX_HISTORY: usize = 33;
+    pub const MAX_HISTORY: usize = 50;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------

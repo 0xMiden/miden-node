@@ -8,12 +8,10 @@ use url::Url;
 
 use crate::COMPONENT;
 
-// CLIENT
+// RPC CLIENT
 // ================================================================================================
 
 /// Interface to the RPC server's gRPC API.
-///
-/// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
 pub struct RpcClient {
     client: InnerRpcClient,

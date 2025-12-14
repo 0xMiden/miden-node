@@ -70,19 +70,3 @@ fn genesis_accounts_have_nonce_one() -> TestResult {
     let _block = state.into_block()?;
     Ok(())
 }
-
-#[test]
-#[miden_node_test_macro::enable_logging]
-fn insecure_signer_creation() -> TestResult {
-    // Default config.
-    let default_gcfg = GenesisConfig::default();
-    // Config from toml.
-    let s = include_str!("./samples/01-simple.toml");
-    let toml_gcfg = GenesisConfig::read_toml(s)?;
-
-    // Test both default and from toml.
-    for gcfg in vec![default_gcfg, toml_gcfg] {
-        let _signer = gcfg.validator.signer()?;
-    }
-    Ok(())
-}

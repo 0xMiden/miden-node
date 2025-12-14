@@ -1,9 +1,6 @@
 timestamp = 1717344256
 version   = 1
 
-[validator]
-Insecure = "fcb46c2acadf2c5d4a53908eeb02f892f064117750b05542bb93211ce515a315"
-
 [native_faucet]
 decimals   = 3
 max_supply = 100_000_000

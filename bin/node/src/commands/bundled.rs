@@ -48,6 +48,13 @@ pub enum BundledCommand {
         /// Constructs the genesis block from the given toml file.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "FILE")]
         genesis_config_file: PathBuf,
+        /// Insecure, hex-encoded validator secret key for development and testing purposes.
+        #[arg(
+            long = "validator.insecure.secret-key",
+            env = ENV_VALIDATOR_INSECURE_SECRET_KEY,
+            value_name = "VALIDATOR_INSECURE_SECRET_KEY"
+        )]
+        validator_insecure_secret_key: Option<String>,
     },
 
     /// Runs all three node components in the same process.
@@ -104,12 +111,14 @@ impl BundledCommand {
                 data_directory,
                 accounts_directory,
                 genesis_config_file,
+                validator_insecure_secret_key,
             } => {
                 // Currently the bundled bootstrap is identical to the store's bootstrap.
                 crate::commands::store::StoreCommand::Bootstrap {
                     data_directory,
                     accounts_directory,
                     genesis_config_file,
+                    validator_insecure_secret_key,
                 }
                 .handle()
                 .await

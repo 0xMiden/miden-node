@@ -8,7 +8,6 @@ use miden_lib::AuthScheme;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::wallets::create_basic_wallet;
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{
@@ -26,8 +25,7 @@ use miden_objects::account::{
     NonFungibleAssetDelta,
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
-use miden_objects::block::{BlockSigner, FeeParameters};
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_objects::block::FeeParameters;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey as RpoSecretKey;
 use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
 use rand::distr::weighted::Weight;
@@ -43,24 +41,6 @@ use self::errors::GenesisConfigError;
 #[cfg(test)]
 mod tests;
 
-/// Configuration for a validator's ECDSA key.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum ValidatorKey {
-    /// An insecure, hex-encoded secret key for development and testing purposes.
-    Insecure(String),
-}
-
-impl ValidatorKey {
-    /// Create a new signer based on the configuration.
-    pub fn signer(&self) -> anyhow::Result<impl BlockSigner + Clone + use<>> {
-        match self {
-            ValidatorKey::Insecure(secret_key_hex) => {
-                Ok(SecretKey::read_from_bytes(&hex::decode(secret_key_hex)?)?)
-            },
-        }
-    }
-}
-
 // GENESIS CONFIG
 // ================================================================================================
 
@@ -75,7 +55,6 @@ pub struct GenesisConfig {
     pub fee_parameters: FeeParameterConfig,
     pub wallet: Vec<WalletConfig>,
     pub fungible_faucet: Vec<FungibleFaucetConfig>,
-    pub validator: ValidatorKey,
 }
 
 impl Default for GenesisConfig {
@@ -98,7 +77,6 @@ impl Default for GenesisConfig {
             },
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
-            validator: ValidatorKey::Insecure(hex::encode(SecretKey::new().to_bytes())),
         }
     }
 }

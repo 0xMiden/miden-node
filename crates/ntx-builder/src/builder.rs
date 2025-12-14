@@ -95,7 +95,7 @@ impl NetworkTransactionBuilder {
     ///
     /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
     /// depends on the complexity of the scripts being cached.
-    const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
+    const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = crate::DEFAULT_SCRIPT_CACHE_SIZE;
 
     /// Creates a new instance of the network transaction builder.
     pub fn new(
@@ -105,7 +105,25 @@ impl NetworkTransactionBuilder {
         ticker_interval: Duration,
         bp_checkpoint: Arc<Barrier>,
     ) -> Self {
-        let script_cache = LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE);
+        Self::with_script_cache_size(
+            store_url,
+            block_producer_url,
+            tx_prover_url,
+            ticker_interval,
+            bp_checkpoint,
+            Self::DEFAULT_SCRIPT_CACHE_SIZE,
+        )
+    }
+
+    pub fn with_script_cache_size(
+        store_url: Url,
+        block_producer_url: Url,
+        tx_prover_url: Option<Url>,
+        ticker_interval: Duration,
+        bp_checkpoint: Arc<Barrier>,
+        script_cache_size: NonZeroUsize,
+    ) -> Self {
+        let script_cache = LruCache::new(script_cache_size);
         let coordinator = Coordinator::new(MAX_IN_PROGRESS_TXS);
         Self {
             store_url,

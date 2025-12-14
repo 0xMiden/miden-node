@@ -272,12 +272,13 @@ impl BundledCommand {
                     let block_producer_url =
                         Url::parse(&format!("http://{block_producer_address}"))
                             .context("Failed to parse URL")?;
-                    NetworkTransactionBuilder::new(
+                    NetworkTransactionBuilder::with_script_cache_size(
                         store_ntx_builder_url,
                         block_producer_url,
                         ntx_builder.tx_prover_url,
                         ntx_builder.ticker_interval,
                         checkpoint,
+                        ntx_builder.script_cache_size,
                     )
                     .run()
                     .await

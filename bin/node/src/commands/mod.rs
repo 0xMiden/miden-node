@@ -7,6 +7,7 @@ use miden_node_block_producer::{
     DEFAULT_MAX_BATCHES_PER_BLOCK,
     DEFAULT_MAX_TXS_PER_BATCH,
 };
+use miden_node_ntx_builder::DEFAULT_SCRIPT_CACHE_SIZE;
 use url::Url;
 
 pub mod block_producer;
@@ -31,6 +32,7 @@ const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_GENESIS_CONFIG_FILE";
 const ENV_MAX_TXS_PER_BATCH: &str = "MIDEN_MAX_TXS_PER_BATCH";
 const ENV_MAX_BATCHES_PER_BLOCK: &str = "MIDEN_MAX_BATCHES_PER_BLOCK";
 const ENV_MEMPOOL_TX_CAPACITY: &str = "MIDEN_NODE_MEMPOOL_TX_CAPACITY";
+const ENV_NTX_SCRIPT_CACHE_SIZE: &str = "MIDEN_NTX_DATA_STORE_SCRIPT_CACHE_SIZE";
 
 const DEFAULT_NTX_TICKER_INTERVAL: Duration = Duration::from_millis(200);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -60,6 +62,14 @@ pub struct NtxBuilderConfig {
         value_name = "DURATION"
     )]
     pub ticker_interval: Duration,
+
+    #[arg(
+        long = "ntx-builder.script-cache-size",
+        env = ENV_NTX_SCRIPT_CACHE_SIZE,
+        value_name = "NUM",
+        default_value_t = DEFAULT_SCRIPT_CACHE_SIZE
+    )]
+    pub script_cache_size: NonZeroUsize,
 }
 
 /// Configuration for the Block Producer component

@@ -73,6 +73,8 @@ pub struct NetworkTransactionBuilder {
     store_url: Url,
     /// Address of the block producer gRPC server.
     block_producer_url: Url,
+    /// Address of the RPC gRPC server.
+    rpc_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the performance impact.
     tx_prover_url: Option<Url>,
@@ -101,6 +103,7 @@ impl NetworkTransactionBuilder {
     pub fn new(
         store_url: Url,
         block_producer_url: Url,
+        rpc_url: Url,
         tx_prover_url: Option<Url>,
         ticker_interval: Duration,
         bp_checkpoint: Arc<Barrier>,
@@ -110,6 +113,7 @@ impl NetworkTransactionBuilder {
         Self {
             store_url,
             block_producer_url,
+            rpc_url,
             tx_prover_url,
             ticker_interval,
             bp_checkpoint,
@@ -145,7 +149,7 @@ impl NetworkTransactionBuilder {
         let chain_state = Arc::new(RwLock::new(ChainState::new(chain_tip_header, chain_mmr)));
 
         let actor_context = AccountActorContext {
-            block_producer_url: self.block_producer_url.clone(),
+            rpc_url: self.rpc_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
             chain_state: chain_state.clone(),
             store: store.clone(),

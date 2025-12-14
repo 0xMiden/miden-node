@@ -6,8 +6,6 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::FlattenResult;
 use miden_objects::block::BlockNumber;
-use miden_objects::transaction::ProvenTransaction;
-use miden_tx::utils::Serializable;
 use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::{info, instrument};
@@ -40,20 +38,6 @@ impl BlockProducerClient {
             .connect_lazy::<InnerBlockProducerClient>();
 
         Self { client: block_producer }
-    }
-    #[instrument(target = COMPONENT, name = "ntx.block_producer.client.submit_proven_transaction", skip_all, err)]
-    pub async fn submit_proven_transaction(
-        &self,
-        proven_tx: ProvenTransaction,
-    ) -> Result<(), Status> {
-        let request = proto::transaction::ProvenTransaction {
-            transaction: proven_tx.to_bytes(),
-            transaction_inputs: None,
-        };
-
-        self.client.clone().submit_proven_transaction(request).await?;
-
-        Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "ntx.block_producer.client.subscribe_to_mempool", skip_all, err)]

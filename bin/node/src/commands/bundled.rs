@@ -275,6 +275,7 @@ impl BundledCommand {
                     NetworkTransactionBuilder::new(
                         store_ntx_builder_url,
                         block_producer_url,
+                        rpc_url,
                         ntx_builder.tx_prover_url,
                         ntx_builder.ticker_interval,
                         checkpoint,

@@ -48,6 +48,7 @@
     <script>
         let statusData = null;
         let updateInterval = null;
+        const EXPLORER_LAG_TOLERANCE = 5; // max allowed block delta vs RPC
 
         function formatSuccessRate(successCount, failureCount) {
             const total = successCount + failureCount;
@@ -135,6 +136,11 @@
 
             // Group remote prover status + test into single cards
             const processedServices = mergeProverStatusAndTests(statusData.services);
+            const rpcService = processedServices.find(s => s.details && s.details.RpcStatus);
+            const rpcChainTip =
+                rpcService?.details?.RpcStatus?.store_status?.chain_tip ??
+                rpcService?.details?.RpcStatus?.block_producer_status?.chain_tip ??
+                null;
 
             // Count healthy vs unhealthy services
             const healthyServices = processedServices.filter(s => s.status === 'Healthy').length;
@@ -170,6 +176,16 @@
 
                 const explorerStats = service.details?.ExplorerStatus;
                 const isExplorerService = service.name?.toLowerCase().includes('explorer');
+                const deltaBlock = (isHealthy && explorerStats && rpcChainTip !== null)
+                    ? explorerStats.block_number - rpcChainTip
+                    : null;
+                const deltaText = deltaBlock !== null ? `${deltaBlock >= 0 ? '+' : ''}${deltaBlock}` : '-';
+                const deltaClass = deltaBlock !== null && Math.abs(deltaBlock) > EXPLORER_LAG_TOLERANCE ? 'warning-delta' : '';
+                const deltaWarning =
+                    deltaBlock !== null && Math.abs(deltaBlock) > EXPLORER_LAG_TOLERANCE
+                        ? `Explorer tip differs from RPC by ${deltaText} blocks`
+                        : null;
+                let explorerWarningHtml = '';
 
                 let detailsHtml = '';
                 if (service.details) {
@@ -432,6 +448,10 @@
                                     <span class="metric-value">${explorerStats ? numOrDash(explorerStats.block_number) : '-'}</span>
                                 </div>
                                 <div class="metric-row">
+                                    <span class="metric-label">RPC Chain Tip:</span>
+                                    <span class="metric-value">${isHealthy && rpcChainTip !== null ? rpcChainTip : '-'}</span>
+                                </div>
+                                <div class="metric-row">
                                     <span class="metric-label">Block Time:</span>
                                     <span class="metric-value">${explorerStats ? timeOrDash(explorerStats.timestamp) : '-'}</span>
                                 </div>
@@ -466,6 +486,17 @@
                             </div>
                         </div>
                     `;
+
+                    if (deltaWarning) {
+                        explorerWarningHtml = `
+                            <div class="warning-banner">
+                                <div class="metric-row">
+                                    <span class="metric-label">Explorer vs RPC</span>
+                                </div>
+                                <div class="warning-text">${deltaWarning}</div>
+                            </div>
+                        `;
+                    }
                 }
 
                 return `
@@ -478,6 +509,7 @@
                         </div>
                         <div class="service-content">
                             ${detailsHtml}
+                            ${explorerWarningHtml}
                         </div>
                         <div class="service-timestamp">
                             Last checked: ${new Date(service.last_checked * 1000).toLocaleString()}

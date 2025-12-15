@@ -2951,6 +2951,7 @@ dependencies = [
  "miden-node-proto-build",
  "miden-node-utils",
  "miden-objects",
+ "miden-tx",
  "tokio",
  "tokio-stream",
  "tonic",

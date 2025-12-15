@@ -49,12 +49,12 @@ mod tests;
 /// Notice: Any faucet must be declared _before_ it's use in a wallet/regular account.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GenesisConfig {
-    pub version: u32,
-    pub timestamp: u32,
-    pub native_faucet: NativeFaucet,
-    pub fee_parameters: FeeParameterConfig,
-    pub wallet: Vec<WalletConfig>,
-    pub fungible_faucet: Vec<FungibleFaucetConfig>,
+    version: u32,
+    timestamp: u32,
+    native_faucet: NativeFaucet,
+    fee_parameters: FeeParameterConfig,
+    wallet: Vec<WalletConfig>,
+    fungible_faucet: Vec<FungibleFaucetConfig>,
 }
 
 impl Default for GenesisConfig {

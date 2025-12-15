@@ -195,7 +195,15 @@ async fn setup_increment_task(
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(target = COMPONENT, name = "run-increment-task", skip_all, ret(level = "debug"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.run_increment_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -332,7 +340,15 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(target = COMPONENT, name = "run-counter-tracking-task", skip_all, ret(level = "debug"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.run_counter_tracking_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -456,7 +472,15 @@ fn load_counter_account(file_path: &Path) -> Result<Account> {
 
 /// Create and submit a network note that targets the counter account.
 #[allow(clippy::too_many_arguments)]
-#[instrument(target = COMPONENT, name = "create-and-submit-network-note", skip_all, ret)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.create_and_submit_network_note",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 async fn create_and_submit_network_note(
     wallet_account: &Account,
     counter_account: &Account,

@@ -15,6 +15,10 @@ pub mod rpc;
 pub mod store;
 pub mod validator;
 
+/// A predefined, insecure validator key for development purposes.
+const INSECURE_VALIDATOR_KEY_HEX: &str =
+    "0101010101010101010101010101010101010101010101010101010101010101";
+
 const ENV_BLOCK_PRODUCER_URL: &str = "MIDEN_NODE_BLOCK_PRODUCER_URL";
 const ENV_VALIDATOR_URL: &str = "MIDEN_NODE_VALIDATOR_URL";
 const ENV_BATCH_PROVER_URL: &str = "MIDEN_NODE_BATCH_PROVER_URL";

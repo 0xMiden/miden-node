@@ -25,6 +25,7 @@ use crate::commands::{
     ENV_ENABLE_OTEL,
     ENV_GENESIS_CONFIG_FILE,
     ENV_VALIDATOR_INSECURE_SECRET_KEY,
+    INSECURE_VALIDATOR_KEY_HEX,
     NtxBuilderConfig,
     duration_to_human_readable_string,
 };
@@ -49,12 +50,15 @@ pub enum BundledCommand {
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "FILE")]
         genesis_config_file: PathBuf,
         /// Insecure, hex-encoded validator secret key for development and testing purposes.
+        ///
+        /// If not provided, a predefined key is used.
         #[arg(
             long = "validator.insecure.secret-key",
             env = ENV_VALIDATOR_INSECURE_SECRET_KEY,
-            value_name = "VALIDATOR_INSECURE_SECRET_KEY"
+            value_name = "VALIDATOR_INSECURE_SECRET_KEY",
+            default_value = INSECURE_VALIDATOR_KEY_HEX
         )]
-        validator_insecure_secret_key: Option<String>,
+        validator_insecure_secret_key: String,
     },
 
     /// Runs all three node components in the same process.
@@ -133,12 +137,9 @@ impl BundledCommand {
                 grpc_timeout,
                 validator_insecure_secret_key,
             } => {
-                let validator_insecure_secret_key = validator_insecure_secret_key.context(
-                    "insecure validator secret key is required until other secret key backends are supported"
-                )?;
-                let signer = SecretKey::read_from_bytes(
-                    hex::decode(validator_insecure_secret_key)?.as_ref(),
-                )?;
+                let secret_key_hex =
+                    validator_insecure_secret_key.unwrap_or(INSECURE_VALIDATOR_KEY_HEX.into());
+                let signer = SecretKey::read_from_bytes(hex::decode(secret_key_hex)?.as_ref())?;
                 Self::start(
                     rpc_url,
                     data_directory,

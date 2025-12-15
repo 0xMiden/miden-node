@@ -20,6 +20,7 @@ use crate::commands::{
     ENV_ENABLE_OTEL,
     ENV_GENESIS_CONFIG_FILE,
     ENV_VALIDATOR_INSECURE_SECRET_KEY,
+    INSECURE_VALIDATOR_KEY_HEX,
     duration_to_human_readable_string,
 };
 
@@ -43,12 +44,15 @@ pub enum StoreCommand {
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
         genesis_config_file: PathBuf,
         /// Insecure, hex-encoded validator secret key for development and testing purposes.
+        ///
+        /// If not provided, a predefined key is used.
         #[arg(
             long = "validator.insecure.secret-key",
             env = ENV_VALIDATOR_INSECURE_SECRET_KEY,
-            value_name = "VALIDATOR_INSECURE_SECRET_KEY"
+            value_name = "VALIDATOR_INSECURE_SECRET_KEY",
+            default_value = INSECURE_VALIDATOR_KEY_HEX
         )]
-        validator_insecure_secret_key: Option<String>,
+        validator_insecure_secret_key: String,
     },
 
     /// Starts the store component.
@@ -179,13 +183,10 @@ impl StoreCommand {
         data_directory: &Path,
         accounts_directory: &Path,
         genesis_config: &PathBuf,
-        validator_insecure_secret_key: Option<String>,
+        validator_insecure_secret_key: String,
     ) -> anyhow::Result<()> {
         // Decode the validator key.
-        let secret_key_hex = validator_insecure_secret_key.context(
-            "insecure validator secret key is required until other secret key backends are supported"
-        )?;
-        let signer = SecretKey::read_from_bytes(&hex::decode(secret_key_hex)?)?;
+        let signer = SecretKey::read_from_bytes(&hex::decode(validator_insecure_secret_key)?)?;
 
         // Read the toml.
         let toml_str = fs_err::read_to_string(genesis_config)?;

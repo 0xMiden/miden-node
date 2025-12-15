@@ -12,7 +12,7 @@ use miden_objects::account::{
     StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::BlockNumber;
+use miden_objects::block::{AccountWitness, BlockNumber};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};

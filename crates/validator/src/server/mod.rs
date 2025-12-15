@@ -12,7 +12,7 @@ use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_objects::block::{BlockSigner, ProposedBlock, ProposedBlock};
+use miden_objects::block::{BlockSigner, ProposedBlock};
 use miden_objects::transaction::{ProvenTransaction, TransactionHeader, TransactionInputs};
 use miden_objects::utils::{Deserializable, Serializable};
 use miden_tx::TransactionExecutor;

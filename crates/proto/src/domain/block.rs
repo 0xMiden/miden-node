@@ -9,6 +9,7 @@ use miden_objects::block::{
     FeeParameters,
     NullifierWitness,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
 use miden_objects::utils::{Deserializable, Serializable};

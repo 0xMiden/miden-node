@@ -2,13 +2,8 @@ use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
 use miden_objects::account::AccountId;
-use miden_objects::block::{
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    FeeParameters,
-    NullifierWitness,
-};
+use miden_objects::block::nullifier_tree::NullifierWitness;
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, FeeParameters};
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;

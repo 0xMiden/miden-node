@@ -141,7 +141,7 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
             })?;
 
         // Validate that the executed transaction matches the submitted transaction.
-        let executed_tx_header: TransactionHeader = todo!();
+        let executed_tx_header: TransactionHeader = (&executed_tx).into();
         let proven_tx_header: TransactionHeader = (&proven_tx).into();
         if executed_tx_header != proven_tx_header {
             return Err(Status::aborted(

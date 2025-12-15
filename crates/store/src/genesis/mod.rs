@@ -17,7 +17,6 @@ use miden_objects::block::{
 use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
-use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
 
 use crate::errors::GenesisError;
 
@@ -140,22 +139,5 @@ impl<S: BlockSigner> GenesisState<S> {
         // No notes or nullifiers are created at genesis, which is consistent with the above empty
         // block note tree root and empty nullifier tree root.
         Ok(GenesisBlock(ProvenBlock::new_unchecked(header, body, signature, block_proof)))
-    }
-}
-
-// SERIALIZATION
-// ================================================================================================
-
-impl<S: Deserializable> Deserializable for GenesisState<S> {
-    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let num_accounts = source.read_usize()?;
-        let accounts = source.read_many::<Account>(num_accounts)?;
-
-        let version = source.read_u32()?;
-        let timestamp = source.read_u32()?;
-        let fee_parameters = source.read::<FeeParameters>()?;
-        let signer = source.read::<S>()?;
-
-        Ok(Self::new(accounts, fee_parameters, version, timestamp, signer))
     }
 }

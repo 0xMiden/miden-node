@@ -394,10 +394,13 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         let store_url = Url::parse(&format!("http://{store_addr}")).unwrap();
         // SAFETY: The block_producer_addr is always valid as it is created from a `SocketAddr`.
         let block_producer_url = Url::parse(&format!("http://{block_producer_addr}")).unwrap();
+        // SAFETY: Using dummy validator URL for test - not actually contacted in this test
+        let validator_url = Url::parse("http://127.0.0.1:0").unwrap();
         Rpc {
             listener: rpc_listener,
             store_url,
             block_producer_url: Some(block_producer_url),
+            validator_url,
             grpc_timeout: Duration::from_secs(30),
         }
         .serve()

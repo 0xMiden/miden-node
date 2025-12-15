@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::clients::{BlockProducerClient, Builder, StoreRpcClient};
+use miden_node_proto::clients::{BlockProducerClient, Builder, StoreRpcClient, ValidatorClient};
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::MempoolStats;
 use miden_node_proto::generated::rpc::api_server::{self, Api};
@@ -34,7 +34,6 @@ use tracing::{debug, info, instrument, warn};
 use url::Url;
 
 use crate::COMPONENT;
-use crate::server::validator;
 
 // RPC SERVICE
 // ================================================================================================
@@ -42,11 +41,12 @@ use crate::server::validator;
 pub struct RpcService {
     store: StoreRpcClient,
     block_producer: Option<BlockProducerClient>,
+    validator: ValidatorClient,
     genesis_commitment: Option<Word>,
 }
 
 impl RpcService {
-    pub(super) fn new(store_url: Url, block_producer_url: Option<Url>) -> Self {
+    pub(super) fn new(store_url: Url, block_producer_url: Option<Url>, validator_url: Url) -> Self {
         let store = {
             info!(target: COMPONENT, store_endpoint = %store_url, "Initializing store client");
             Builder::new(store_url)
@@ -73,9 +73,25 @@ impl RpcService {
                 .connect_lazy::<BlockProducerClient>()
         });
 
+        let validator = {
+            info!(
+                target: COMPONENT,
+                validator_endpoint = %validator_url,
+                "Initializing validator client",
+            );
+            Builder::new(validator_url)
+                .without_tls()
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
+                .with_otel_context_injection()
+                .connect_lazy::<ValidatorClient>()
+        };
+
         Self {
             store,
             block_producer,
+            validator,
             genesis_commitment: None,
         }
     }
@@ -384,13 +400,18 @@ impl api_server::Api for RpcService {
             let tx_inputs = TransactionInputs::read_from_bytes(tx_inputs_bytes).map_err(|err| {
                 Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
             })?;
-            // Re-execute the transaction.
-            match validator::re_execute_transaction(tx_inputs).await {
-                Ok(_executed_tx) => {
+            // Re-execute the transaction via the Validator.
+            let validator_request = proto::transaction::ProvenTransaction {
+                transaction: tx.to_bytes(),
+                transaction_inputs: Some(tx_inputs.to_bytes()),
+            };
+
+            match self.validator.clone().submit_proven_transaction(validator_request).await {
+                Ok(_) => {
                     debug!(
                         target = COMPONENT,
                         tx_id = %tx.id().to_hex(),
-                        "Transaction re-execution successful"
+                        "Transaction validation successful"
                     );
                 },
                 Err(e) => {
@@ -398,7 +419,7 @@ impl api_server::Api for RpcService {
                         target = COMPONENT,
                         tx_id = %tx.id().to_hex(),
                         error = %e,
-                        "Transaction re-execution failed, but continuing with submission"
+                        "Transaction validation failed, but continuing with submission"
                     );
                 },
             }

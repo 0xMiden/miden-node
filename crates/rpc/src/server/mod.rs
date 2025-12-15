@@ -21,7 +21,6 @@ use crate::server::health::HealthCheckLayer;
 mod accept;
 mod api;
 mod health;
-mod validator;
 
 /// The RPC server component.
 ///
@@ -32,6 +31,7 @@ pub struct Rpc {
     pub listener: TcpListener,
     pub store_url: Url,
     pub block_producer_url: Option<Url>,
+    pub validator_url: Url,
     /// Server-side timeout for an individual gRPC request.
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
@@ -44,7 +44,11 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        let mut api = api::RpcService::new(self.store_url.clone(), self.block_producer_url.clone());
+        let mut api = api::RpcService::new(
+            self.store_url.clone(),
+            self.block_producer_url.clone(),
+            self.validator_url,
+        );
 
         let genesis = api
             .get_genesis_header_with_retry()

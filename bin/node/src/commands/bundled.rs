@@ -283,10 +283,13 @@ impl BundledCommand {
                     .context("Failed to parse URL")?;
                 let block_producer_url = Url::parse(&format!("http://{block_producer_address}"))
                     .context("Failed to parse URL")?;
+                let validator_url = Url::parse(&format!("http://{validator_address}"))
+                    .context("Failed to parse URL")?;
                 Rpc {
                     listener: grpc_rpc,
                     store_url,
                     block_producer_url: Some(block_producer_url),
+                    validator_url,
                     grpc_timeout,
                 }
                 .serve()

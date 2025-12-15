@@ -1,5 +1,6 @@
 use assert_matches::assert_matches;
 use miden_objects::ONE;
+use miden_objects::account::StorageSlotName;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 
 use super::*;
@@ -47,7 +48,9 @@ fn parsing_yields_expected_default_values() -> TestResult {
     assert_eq!(
         native_faucet
             .storage()
-            .get_item(AccountStorage::faucet_metadata_slot())
+            .get_item(
+                &StorageSlotName::new("miden::standards::fungible_faucets::metadata").unwrap()
+            )
             .unwrap()[3],
         Felt::new(999_777),
         "Issuance mismatch"

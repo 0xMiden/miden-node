@@ -1,6 +1,7 @@
 //! Counter program account creation functionality.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Result;
 use miden_lib::testing::account_component::IncrNonceAuthComponent;
@@ -16,6 +17,7 @@ use miden_objects::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_objects::assembly::{DefaultSourceManager, LibraryPath, Module, ModuleKind};
 use miden_objects::utils::sync::LazyLock;
 use miden_objects::{Felt, FieldElement, Word};
 use tracing::instrument;
@@ -50,12 +52,18 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     let counter_slot = StorageSlot::with_value(COUNTER_SLOT_NAME.clone(), Word::empty());
 
-    let account_code = AccountComponent::compile(
-        script,
-        TransactionKernel::assembler(),
-        vec![counter_slot, owner_id_slot],
-    )?
-    .with_supports_all_types();
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("counter::program")?;
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, script, &source_manager)
+        .map_err(|e| anyhow::anyhow!("Failed to parse module: {e}"))?;
+    let library = assembler
+        .assemble_library([module])
+        .map_err(|e| anyhow::anyhow!("Failed to assemble library: {e}"))?;
+
+    let account_code = AccountComponent::new(library, vec![counter_slot, owner_id_slot])?
+        .with_supports_all_types();
 
     let incr_nonce_auth: AccountComponent = IncrNonceAuthComponent.into();
 

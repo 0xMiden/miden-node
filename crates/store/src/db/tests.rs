@@ -26,6 +26,7 @@ use miden_objects::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_objects::assembly::{DefaultSourceManager, LibraryPath, Module, ModuleKind};
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{
     BlockAccountUpdate,
@@ -1409,13 +1410,17 @@ fn mock_account_code_and_storage(
         StorageSlot::with_value(StorageSlotName::mock(5), num_to_word(5)),
     ];
 
-    let component = AccountComponent::compile(
-        component_code,
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(account_type);
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("test::account").unwrap();
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, component_code, &source_manager)
+        .unwrap();
+    let library = assembler.assemble_library([module]).unwrap();
+
+    let component = AccountComponent::new(library, component_storage)
+        .unwrap()
+        .with_supported_type(account_type);
 
     AccountBuilder::new(init_seed.unwrap_or([0; 32]))
         .account_type(account_type)
@@ -1436,10 +1441,17 @@ fn mock_account_code_and_storage(
 fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
 
-    let component =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("test::account").unwrap();
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, "export.foo push.1 end", &source_manager)
+        .unwrap();
+    let library = assembler.assemble_library([module]).unwrap();
+
+    let component = AccountComponent::new(library, vec![])
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
@@ -1485,13 +1497,17 @@ fn genesis_with_account_storage_map() {
         StorageSlot::with_empty_value(StorageSlotName::mock(1)),
     ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("test::account").unwrap();
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, "export.foo push.1 end", &source_manager)
+        .unwrap();
+    let library = assembler.assemble_library([module]).unwrap();
+
+    let component = AccountComponent::new(library, component_storage)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -1530,13 +1546,17 @@ fn genesis_with_account_assets_and_storage() {
         StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
     ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("test::account").unwrap();
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, "export.foo push.1 end", &source_manager)
+        .unwrap();
+    let library = assembler.assemble_library([module]).unwrap();
+
+    let component = AccountComponent::new(library, component_storage)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -1563,10 +1583,17 @@ fn genesis_with_multiple_accounts() {
 
     use crate::genesis::GenesisState;
 
-    let component1 =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("test::account1").unwrap();
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, "export.foo push.1 end", &source_manager)
+        .unwrap();
+    let library = assembler.assemble_library([module]).unwrap();
+
+    let component1 = AccountComponent::new(library, vec![])
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -1579,10 +1606,17 @@ fn genesis_with_multiple_accounts() {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
-    let component2 =
-        AccountComponent::compile("export.bar push.2 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("test::account2").unwrap();
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, "export.bar push.2 end", &source_manager)
+        .unwrap();
+    let library = assembler.assemble_library([module]).unwrap();
+
+    let component2 = AccountComponent::new(library, vec![])
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account2 = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -1601,16 +1635,20 @@ fn genesis_with_multiple_accounts() {
 
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
-    let component3 = AccountComponent::compile(
-        "export.baz push.3 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let assembler = TransactionKernel::assembler();
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let library_path = LibraryPath::new("test::account3").unwrap();
+    let module = Module::parser(ModuleKind::Library)
+        .parse_str(library_path, "export.baz push.3 end", &source_manager)
+        .unwrap();
+    let library = assembler.assemble_library([module]).unwrap();
+
+    let component3 = AccountComponent::new(library, component_storage)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountUpdatableCode);
 
     let account3 = AccountBuilder::new([3u8; 32])
-        .account_type(AccountType::RegularAccountImmutableCode)
+        .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(component3)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))

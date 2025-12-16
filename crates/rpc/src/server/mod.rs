@@ -25,7 +25,7 @@ mod health;
 /// The RPC server component.
 ///
 /// On startup, binds to the provided listener and starts serving the RPC API.
-/// It connects lazily to the store and block producer components as needed.
+/// It connects lazily to the store, validator and block producer components as needed.
 /// Requests will fail if the components are not available.
 pub struct Rpc {
     pub listener: TcpListener,

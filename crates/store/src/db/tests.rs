@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use diesel::{Connection, SqliteConnection};
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
-use miden_lib::transaction::TransactionKernel;
 use miden_lib::utils::CodeBuilder;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::{test_fee, test_fee_params};
@@ -27,7 +26,6 @@ use miden_objects::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_objects::assembly::{DefaultSourceManager, LibraryPath, Module, ModuleKind};
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{
     BlockAccountUpdate,
@@ -1614,7 +1612,7 @@ fn genesis_with_multiple_accounts() {
     let account_component_code = CodeBuilder::default()
         .compile_component_code("baz::interface", "export.baz push.3 end")
         .unwrap();
-    let account_component3 = AccountComponent::new(account_component_code, Vec::new())
+    let account_component3 = AccountComponent::new(account_component_code, component_storage)
         .unwrap()
         .with_supports_all_types();
 

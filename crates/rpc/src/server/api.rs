@@ -20,12 +20,7 @@ use miden_objects::account::AccountId;
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteRecipient, NoteScript};
-use miden_objects::transaction::{
-    OutputNote,
-    ProvenTransaction,
-    ProvenTransactionBuilder,
-    TransactionInputs,
-};
+use miden_objects::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
 use miden_objects::utils::serde::{Deserializable, Serializable};
 use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
@@ -395,18 +390,9 @@ impl api_server::Api for RpcService {
         })?;
 
         // If transaction inputs are provided, re-execute the transaction to validate it.
-        if let Some(tx_inputs_bytes) = &request.transaction_inputs {
-            // Deserialize the transaction inputs.
-            let tx_inputs = TransactionInputs::read_from_bytes(tx_inputs_bytes).map_err(|err| {
-                Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
-            })?;
+        if request.transaction_inputs.is_some() {
             // Re-execute the transaction via the Validator.
-            let validator_request = proto::transaction::ProvenTransaction {
-                transaction: tx.to_bytes(),
-                transaction_inputs: Some(tx_inputs.to_bytes()),
-            };
-
-            match self.validator.clone().submit_proven_transaction(validator_request).await {
+            match self.validator.clone().submit_proven_transaction(request.clone()).await {
                 Ok(_) => {
                     debug!(
                         target = COMPONENT,

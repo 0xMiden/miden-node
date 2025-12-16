@@ -1,4 +1,6 @@
+mod data_store;
 mod server;
+mod tx_validation;
 
 pub use server::Validator;
 

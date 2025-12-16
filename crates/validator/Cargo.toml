@@ -24,6 +24,7 @@ miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { features = ["testing"], workspace = true }
 miden-objects          = { workspace = true }
 miden-tx               = { workspace = true }
+thiserror              = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
 tonic                  = { default-features = true, features = ["transport"], workspace = true }

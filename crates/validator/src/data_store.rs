@@ -11,6 +11,9 @@ use miden_objects::transaction::{AccountInputs, PartialBlockchain, TransactionIn
 use miden_objects::vm::FutureMaybeSend;
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 
+// TRANSACTION INPUTS DATA STORE
+// ================================================================================================
+
 /// A [`DataStore`] implementation that wraps [`TransactionInputs`]
 pub struct TransactionInputsDataStore {
     tx_inputs: TransactionInputs,

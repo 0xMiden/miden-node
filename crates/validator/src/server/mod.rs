@@ -1,10 +1,7 @@
-mod data_store;
-
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::Context;
-use data_store::TransactionInputsDataStore;
 use miden_lib::block::build_block;
 use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
@@ -13,10 +10,8 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_objects::block::{BlockSigner, ProposedBlock};
-use miden_objects::transaction::{ProvenTransaction, TransactionHeader, TransactionInputs};
+use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
 use miden_objects::utils::{Deserializable, Serializable};
-use miden_tx::TransactionExecutor;
-use miden_tx::auth::UnreachableAuth;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
@@ -24,6 +19,7 @@ use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::COMPONENT;
+use crate::tx_validation::validate_transaction;
 
 // VALIDATOR
 // ================================================================================
@@ -126,28 +122,10 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
             Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
         })?;
 
-        // Create a DataStore from the transaction inputs.
-        let data_store = TransactionInputsDataStore::new(tx_inputs.clone());
-
-        // Execute the transaction.
-        let (account, block_header, _, input_notes, tx_args) = tx_inputs.into_parts();
-        let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
-            TransactionExecutor::new(&data_store);
-        let executed_tx = executor
-            .execute_transaction(account.id(), block_header.block_num(), input_notes, tx_args)
-            .await
-            .map_err(|err| {
-                Status::internal(err.as_report_context("Failed to execute transaction"))
-            })?;
-
-        // Validate that the executed transaction matches the submitted transaction.
-        let executed_tx_header: TransactionHeader = (&executed_tx).into();
-        let proven_tx_header: TransactionHeader = (&proven_tx).into();
-        if executed_tx_header != proven_tx_header {
-            return Err(Status::aborted(
-                "Executed transaction does not match submitted transaction",
-            ));
-        }
+        // Validate the transaction.
+        validate_transaction(proven_tx, tx_inputs).await.map_err(|err| {
+            Status::invalid_argument(err.as_report_context("Invalid transaction"))
+        })?;
 
         Ok(tonic::Response::new(()))
     }

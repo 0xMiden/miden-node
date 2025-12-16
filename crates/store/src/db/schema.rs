@@ -32,6 +32,7 @@ diesel::table! {
         nonce -> Nullable<BigInt>,
         block_num -> BigInt,
         is_latest -> Bool,
+        created_at_block -> BigInt,
     }
 }
 

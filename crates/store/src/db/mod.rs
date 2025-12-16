@@ -438,7 +438,7 @@ impl Db {
     pub async fn select_all_network_account_ids(
         &self,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<Vec<AccountId>> {
+    ) -> Result<(Vec<AccountId>, BlockNumber)> {
         self.transact("Get all network account IDs", move |conn| {
             queries::select_all_network_account_ids(conn, block_range)
         })

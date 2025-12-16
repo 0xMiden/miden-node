@@ -165,10 +165,13 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         request: Request<BlockRange>,
     ) -> Result<Response<proto::store::NetworkAccountIdList>, Status> {
         let block_range = request.into_inner();
-        let block_range = BlockNumber::from(block_range.block_from)
-            ..=BlockNumber::from(block_range.block_to.unwrap_or(0));
+        let chain_tip = self.state.latest_block_num().await;
 
-        let account_ids =
+        let block_from = BlockNumber::from(block_range.block_from);
+        let block_to = block_range.block_to.map_or(chain_tip, BlockNumber::from);
+        let block_range = block_from..=block_to;
+
+        let (account_ids, last_block_included) =
             self.state.get_all_network_accounts(block_range).await.map_err(internal_error)?;
 
         let account_ids: Vec<proto::account::AccountId> =
@@ -176,7 +179,10 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         Ok(Response::new(proto::store::NetworkAccountIdList {
             account_ids,
-            pagination_info: None,
+            pagination_info: Some(proto::rpc::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: last_block_included.as_u32(),
+            }),
         }))
     }
 

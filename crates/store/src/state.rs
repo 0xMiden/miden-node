@@ -922,7 +922,7 @@ impl State {
     pub async fn get_all_network_accounts(
         &self,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<Vec<AccountId>, DatabaseError> {
+    ) -> Result<(Vec<AccountId>, BlockNumber), DatabaseError> {
         self.db.select_all_network_account_ids(block_range).await
     }
 

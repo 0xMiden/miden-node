@@ -1414,7 +1414,7 @@ fn mock_account_code_and_storage(
     let account_component_code = CodeBuilder::default()
         .compile_component_code("counter_contract::interface", component_code)
         .unwrap();
-    let auth_component = AccountComponent::new(account_component_code, component_storage)
+    let account_component = AccountComponent::new(account_component_code, component_storage)
         .unwrap()
         .with_supports_all_types();
 
@@ -1422,7 +1422,7 @@ fn mock_account_code_and_storage(
         .account_type(account_type)
         .storage_mode(storage_mode)
         .with_assets(assets)
-        .with_component(auth_component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
@@ -1436,18 +1436,14 @@ fn mock_account_code_and_storage(
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
+    let component_code = "export.foo push.1 end";
 
-    let assembler = TransactionKernel::assembler();
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let library_path = LibraryPath::new("test::account").unwrap();
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, "export.foo push.1 end", &source_manager)
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
         .unwrap();
-    let library = assembler.assemble_library([module]).unwrap();
-
-    let component = AccountComponent::new(library, vec![])
+    let account_component = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
-        .with_supported_type(AccountType::RegularAccountImmutableCode);
+        .with_supports_all_types();
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
@@ -1455,7 +1451,7 @@ fn genesis_with_account_assets() {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
@@ -1493,22 +1489,19 @@ fn genesis_with_account_storage_map() {
         StorageSlot::with_empty_value(StorageSlotName::mock(1)),
     ];
 
-    let assembler = TransactionKernel::assembler();
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let library_path = LibraryPath::new("test::account").unwrap();
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, "export.foo push.1 end", &source_manager)
-        .unwrap();
-    let library = assembler.assemble_library([module]).unwrap();
+    let component_code = "export.foo push.1 end";
 
-    let component = AccountComponent::new(library, component_storage)
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
         .unwrap()
-        .with_supported_type(AccountType::RegularAccountImmutableCode);
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
@@ -1542,22 +1535,19 @@ fn genesis_with_account_assets_and_storage() {
         StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
     ];
 
-    let assembler = TransactionKernel::assembler();
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let library_path = LibraryPath::new("test::account").unwrap();
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, "export.foo push.1 end", &source_manager)
-        .unwrap();
-    let library = assembler.assemble_library([module]).unwrap();
+    let component_code = "export.foo push.1 end";
 
-    let component = AccountComponent::new(library, component_storage)
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
         .unwrap()
-        .with_supported_type(AccountType::RegularAccountImmutableCode);
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
@@ -1579,22 +1569,17 @@ fn genesis_with_multiple_accounts() {
 
     use crate::genesis::GenesisState;
 
-    let assembler = TransactionKernel::assembler();
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let library_path = LibraryPath::new("test::account1").unwrap();
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, "export.foo push.1 end", &source_manager)
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", "export.foo push.1 end")
         .unwrap();
-    let library = assembler.assemble_library([module]).unwrap();
-
-    let component1 = AccountComponent::new(library, vec![])
+    let account_component1 = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
-        .with_supported_type(AccountType::RegularAccountImmutableCode);
+        .with_supports_all_types();
 
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component1)
+        .with_component(account_component1)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
@@ -1602,22 +1587,17 @@ fn genesis_with_multiple_accounts() {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
-    let assembler = TransactionKernel::assembler();
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let library_path = LibraryPath::new("test::account2").unwrap();
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, "export.bar push.2 end", &source_manager)
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("bar::interface", "export.bar push.2 end")
         .unwrap();
-    let library = assembler.assemble_library([module]).unwrap();
-
-    let component2 = AccountComponent::new(library, vec![])
+    let account_component2 = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
-        .with_supported_type(AccountType::RegularAccountImmutableCode);
+        .with_supports_all_types();
 
     let account2 = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component2)
+        .with_component(account_component2)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
@@ -1631,22 +1611,17 @@ fn genesis_with_multiple_accounts() {
 
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
-    let assembler = TransactionKernel::assembler();
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let library_path = LibraryPath::new("test::account3").unwrap();
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, "export.baz push.3 end", &source_manager)
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("baz::interface", "export.baz push.3 end")
         .unwrap();
-    let library = assembler.assemble_library([module]).unwrap();
-
-    let component3 = AccountComponent::new(library, component_storage)
+    let account_component3 = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
-        .with_supported_type(AccountType::RegularAccountUpdatableCode);
+        .with_supports_all_types();
 
     let account3 = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component3)
+        .with_component(account_component3)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();

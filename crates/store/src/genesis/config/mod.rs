@@ -16,13 +16,13 @@ use miden_objects::account::{
     AccountDelta,
     AccountFile,
     AccountId,
+    AccountStorage,
     AccountStorageDelta,
     AccountStorageMode,
     AccountType,
     AccountVaultDelta,
     FungibleAssetDelta,
     NonFungibleAssetDelta,
-    StorageSlotName,
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
 use miden_objects::block::FeeParameters;
@@ -219,8 +219,7 @@ impl GenesisConfig {
             if total_issuance != 0 {
                 // slot 0
                 storage_delta.set_item(
-                    StorageSlotName::new("miden::standards::fungible_faucets::metadata")
-                        .expect("faucet metadata slot name is valid"),
+                    AccountStorage::faucet_sysdata_slot().clone(),
                     [ZERO, ZERO, ZERO, Felt::new(total_issuance)].into(),
                 );
                 tracing::debug!(

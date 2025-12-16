@@ -509,18 +509,19 @@ query LatestBlock {
 }
 ";
 
-#[derive(Serialize)]
+#[derive(Serialize, Copy, Clone)]
+struct EmptyVariables;
+
+#[derive(Serialize, Copy, Clone)]
 struct GraphqlRequest<V> {
     query: &'static str,
     variables: V,
 }
 
-fn latest_block_request() -> GraphqlRequest<serde_json::Value> {
-    GraphqlRequest {
-        query: LATEST_BLOCK_QUERY,
-        variables: serde_json::json!({}),
-    }
-}
+const LATEST_BLOCK_REQUEST: GraphqlRequest<EmptyVariables> = GraphqlRequest {
+    query: LATEST_BLOCK_QUERY,
+    variables: EmptyVariables,
+};
 
 /// Runs a task that continuously checks explorer status and updates a watch channel.
 ///
@@ -567,7 +568,6 @@ pub async fn run_explorer_status_task(
 
         // Send the status update; exit if no receivers (shutdown signal)
         if status_sender.send(status).is_err() {
-            println!("No receivers for explorer status updates, shutting down");
             info!("No receivers for explorer status updates, shutting down");
             return;
         }
@@ -617,7 +617,7 @@ pub(crate) async fn check_explorer_status(
 ) -> ServiceStatus {
     match explorer_client
         .post(explorer_url.to_string())
-        .json(&latest_block_request())
+        .json(&LATEST_BLOCK_REQUEST)
         .timeout(request_timeout)
         .send()
         .await

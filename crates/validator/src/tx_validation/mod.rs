@@ -1,9 +1,10 @@
+mod data_store;
+
+pub use data_store::TransactionInputsDataStore;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::transaction::{ProvenTransaction, TransactionHeader, TransactionInputs};
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{TransactionExecutor, TransactionExecutorError, TransactionVerifier};
-
-use crate::data_store::TransactionInputsDataStore;
 
 // TRANSACTION VALIDATION ERROR
 // ================================================================================================

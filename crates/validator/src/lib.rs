@@ -1,4 +1,3 @@
-mod data_store;
 mod server;
 mod tx_validation;
 

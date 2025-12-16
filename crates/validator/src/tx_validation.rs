@@ -1,6 +1,7 @@
+use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::transaction::{ProvenTransaction, TransactionHeader, TransactionInputs};
 use miden_tx::auth::UnreachableAuth;
-use miden_tx::{TransactionExecutor, TransactionExecutorError};
+use miden_tx::{TransactionExecutor, TransactionExecutorError, TransactionVerifier};
 
 use crate::data_store::TransactionInputsDataStore;
 
@@ -16,17 +17,23 @@ pub enum TransactionValidationError {
         proven_tx_header: Box<TransactionHeader>,
         executed_tx_header: Box<TransactionHeader>,
     },
+    #[error("transaction proof verification failed")]
+    ProofVerificationFailed(#[from] miden_tx::TransactionVerifierError),
 }
 
 // TRANSACTION VALIDATION
 // ================================================================================================
 
-/// Validates a transaction by executing it and comparing its header with the provided proven
-/// transaction.
+/// Validates a transaction by verifying its proof, executing it and comparing its header with the
+/// provided proven transaction.
 pub async fn validate_transaction(
     proven_tx: ProvenTransaction,
     tx_inputs: TransactionInputs,
 ) -> Result<(), TransactionValidationError> {
+    // First, verify the transaction proof
+    let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
+    tx_verifier.verify(&proven_tx)?;
+
     // Create a DataStore from the transaction inputs.
     let data_store = TransactionInputsDataStore::new(tx_inputs.clone());
 

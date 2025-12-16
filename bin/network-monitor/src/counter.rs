@@ -271,7 +271,6 @@ pub async fn run_increment_task(
 
         {
             let guard = latency_state.lock().await;
-            details.pending_latency.clone_from(&guard.pending);
             details.last_latency_blocks = guard.last_latency_blocks;
         }
 

@@ -265,7 +265,6 @@ impl Tasks {
                 failure_count: 0,
                 last_tx_id: None,
                 last_latency_blocks: None,
-                pending_latency: None,
             }),
         };
 

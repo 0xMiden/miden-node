@@ -80,8 +80,6 @@ pub struct IncrementDetails {
     pub last_tx_id: Option<String>,
     /// Last measured latency in blocks from submission to state update.
     pub last_latency_blocks: Option<u32>,
-    /// Information about the currently pending latency measurement (if any).
-    pub pending_latency: Option<PendingLatencyDetails>,
 }
 
 /// Details about an in-flight latency measurement.

@@ -50,9 +50,8 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     let counter_slot = StorageSlot::with_value(COUNTER_SLOT_NAME.clone(), Word::empty());
 
-    let component_code = CodeBuilder::default()
-        .compile_component_code("counter::program", script)
-        .map_err(|e| anyhow::anyhow!("Failed to compile component: {e}"))?;
+    let component_code =
+        CodeBuilder::default().compile_component_code("counter::program", script)?;
 
     let account_code = AccountComponent::new(component_code, vec![counter_slot, owner_id_slot])?
         .with_supports_all_types();

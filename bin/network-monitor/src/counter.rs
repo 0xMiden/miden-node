@@ -281,6 +281,8 @@ pub async fn run_increment_task(
 }
 
 /// Handle the success path for increment operations.
+///
+/// Returns the next expected counter value after a successful increment.
 fn handle_increment_success(
     wallet_account: &mut Account,
     final_account: &AccountHeader,
@@ -384,11 +386,45 @@ pub async fn run_counter_tracking_task(
     };
 
     let mut details = CounterTrackingDetails::default();
+    initialize_counter_tracking_state(
+        &mut rpc_client,
+        &counter_account,
+        &expected_counter_value,
+        &mut details,
+    )
+    .await;
 
-    // Initialize the expected counter value by fetching the current value from the node
-    match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
+    let mut poll_interval = tokio::time::interval(config.counter_increment_interval / 2);
+
+    loop {
+        poll_interval.tick().await;
+
+        let last_error = poll_counter_once(
+            &mut rpc_client,
+            &counter_account,
+            &expected_counter_value,
+            &latency_state,
+            &mut details,
+            &config,
+        )
+        .await;
+        let status = build_tracking_status(&details, last_error);
+        send_status(&tx, status)?;
+    }
+}
+
+/// Initialize tracking state by fetching the current counter value from the node.
+///
+/// Populates `expected_counter_value` and seeds `details` with the latest observed
+/// values so the first poll iteration starts from a consistent snapshot.
+async fn initialize_counter_tracking_state(
+    rpc_client: &mut RpcClient,
+    counter_account: &Account,
+    expected_counter_value: &Arc<AtomicU64>,
+    details: &mut CounterTrackingDetails,
+) {
+    match fetch_counter_value(rpc_client, counter_account.id()).await {
         Ok(Some(initial_value)) => {
-            // Set the expected value to the current value from the node
             expected_counter_value.store(initial_value, Ordering::Relaxed);
             details.current_value = Some(initial_value);
             details.expected_value = Some(initial_value);
@@ -396,96 +432,121 @@ pub async fn run_counter_tracking_task(
             info!("Initialized counter tracking with value: {}", initial_value);
         },
         Ok(None) => {
-            // Counter doesn't exist yet, initialize to 0
             expected_counter_value.store(0, Ordering::Relaxed);
             warn!("Counter account not found, initializing expected value to 0");
         },
         Err(e) => {
-            // Failed to fetch, initialize to 0 but log the error
             expected_counter_value.store(0, Ordering::Relaxed);
             error!("Failed to fetch initial counter value, initializing to 0: {:?}", e);
         },
     }
+}
 
-    let mut poll_interval = tokio::time::interval(config.counter_increment_interval / 2);
+/// Poll the counter once, updating details and latency tracking state.
+///
+/// Returns a human-readable error string when the poll fails or latency tracking
+/// cannot complete; otherwise returns `None`.
+async fn poll_counter_once(
+    rpc_client: &mut RpcClient,
+    counter_account: &Account,
+    expected_counter_value: &Arc<AtomicU64>,
+    latency_state: &Arc<Mutex<LatencyState>>,
+    details: &mut CounterTrackingDetails,
+    config: &MonitorConfig,
+) -> Option<String> {
+    let mut last_error = None;
+    let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
 
-    loop {
-        poll_interval.tick().await;
+    match fetch_counter_value(rpc_client, counter_account.id()).await {
+        Ok(Some(value)) => {
+            details.current_value = Some(value);
+            details.last_updated = Some(current_time);
 
-        let mut last_error = None;
+            update_expected_and_pending(details, expected_counter_value, value);
+            handle_latency_tracking(rpc_client, latency_state, config, value, &mut last_error)
+                .await;
+        },
+        Ok(None) => {
+            // Counter value not available, but not an error
+        },
+        Err(e) => {
+            error!("Failed to fetch counter value: {:?}", e);
+            last_error = Some(format!("fetch counter value failed: {e}"));
+        },
+    }
 
-        let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
-        match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
-            Ok(Some(value)) => {
-                // Update current value and timestamp
-                details.current_value = Some(value);
-                details.last_updated = Some(current_time);
+    last_error
+}
 
-                // Get expected value and calculate pending increments
-                let expected = expected_counter_value.load(Ordering::Relaxed);
-                details.expected_value = Some(expected);
+/// Update expected and pending counters based on the latest observed value.
+fn update_expected_and_pending(
+    details: &mut CounterTrackingDetails,
+    expected_counter_value: &Arc<AtomicU64>,
+    observed_value: u64,
+) {
+    let expected = expected_counter_value.load(Ordering::Relaxed);
+    details.expected_value = Some(expected);
 
-                // Calculate how many increments are pending (expected - current)
-                // Use saturating_sub to avoid negative values if current > expected (shouldn't
-                // happen normally, but could due to race conditions)
-                if expected >= value {
-                    details.pending_increments = Some(expected - value);
-                } else {
-                    // This shouldn't happen, but log it if it does
-                    warn!(
-                        "Expected counter value ({}) is less than current value ({}), setting pending to 0",
-                        expected, value
-                    );
-                    details.pending_increments = Some(0);
-                }
+    if expected >= observed_value {
+        details.pending_increments = Some(expected - observed_value);
+    } else {
+        warn!(
+            "Expected counter value ({}) is less than current value ({}), setting pending to 0",
+            expected, observed_value
+        );
+        details.pending_increments = Some(0);
+    }
+}
 
-                // Check for latency completion or timeout
-                let mut guard = latency_state.lock().await;
-                if let Some(pending) = guard.pending.clone() {
-                    if value >= pending.target_value {
-                        match fetch_chain_tip(&mut rpc_client).await {
-                            Ok(observed_height) => {
-                                let latency_blocks =
-                                    observed_height.saturating_sub(pending.submit_height);
-                                guard.last_latency_blocks = Some(latency_blocks);
-                                guard.pending = None;
-                                guard.pending_started = None;
-                            },
-                            Err(e) => {
-                                last_error = Some(format!(
-                                    "Failed to fetch chain tip for latency calc: {e}"
-                                ));
-                            },
-                        }
-                    } else if let Some(started) = guard.pending_started {
-                        if Instant::now().saturating_duration_since(started)
-                            >= config.counter_latency_timeout
-                        {
-                            warn!(
-                                "Latency measurement timed out after {:?} for target value {}",
-                                config.counter_latency_timeout, pending.target_value
-                            );
-                            guard.pending = None;
-                            guard.pending_started = None;
-                            last_error = Some(format!(
-                                "Timed out after {:?} waiting for counter to reach {}",
-                                config.counter_latency_timeout, pending.target_value
-                            ));
-                        }
+/// Update latency tracking state, performing RPC as needed while minimizing lock hold time.
+///
+/// Populates `last_error` when latency bookkeeping fails or times out.
+async fn handle_latency_tracking(
+    rpc_client: &mut RpcClient,
+    latency_state: &Arc<Mutex<LatencyState>>,
+    config: &MonitorConfig,
+    observed_value: u64,
+    last_error: &mut Option<String>,
+) {
+    let (pending, pending_started) = {
+        let guard = latency_state.lock().await;
+        (guard.pending.clone(), guard.pending_started)
+    };
+
+    if let Some(pending) = pending {
+        if observed_value >= pending.target_value {
+            match fetch_chain_tip(rpc_client).await {
+                Ok(observed_height) => {
+                    let latency_blocks = observed_height.saturating_sub(pending.submit_height);
+                    let mut guard = latency_state.lock().await;
+                    if guard.pending.as_ref().map(|p| p.target_value) == Some(pending.target_value)
+                    {
+                        guard.last_latency_blocks = Some(latency_blocks);
+                        guard.pending = None;
+                        guard.pending_started = None;
                     }
+                },
+                Err(e) => {
+                    *last_error = Some(format!("Failed to fetch chain tip for latency calc: {e}"));
+                },
+            }
+        } else if let Some(started) = pending_started {
+            if Instant::now().saturating_duration_since(started) >= config.counter_latency_timeout {
+                warn!(
+                    "Latency measurement timed out after {:?} for target value {}",
+                    config.counter_latency_timeout, pending.target_value
+                );
+                let mut guard = latency_state.lock().await;
+                if guard.pending.as_ref().map(|p| p.target_value) == Some(pending.target_value) {
+                    guard.pending = None;
+                    guard.pending_started = None;
                 }
-            },
-            Ok(None) => {
-                // Counter value not available, but not an error
-            },
-            Err(e) => {
-                error!("Failed to fetch counter value: {:?}", e);
-                last_error = Some(format!("fetch counter value failed: {e}"));
-            },
+                *last_error = Some(format!(
+                    "Timed out after {:?} waiting for counter to reach {}",
+                    config.counter_latency_timeout, pending.target_value
+                ));
+            }
         }
-
-        let status = build_tracking_status(&details, last_error);
-        send_status(&tx, status)?;
     }
 }
 

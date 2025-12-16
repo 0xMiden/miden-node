@@ -8,6 +8,7 @@ use diesel::{Connection, SqliteConnection};
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
 use miden_lib::transaction::TransactionKernel;
+use miden_lib::utils::CodeBuilder;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::{test_fee, test_fee_params};
 use miden_objects::account::auth::PublicKeyCommitment;
@@ -1410,23 +1411,18 @@ fn mock_account_code_and_storage(
         StorageSlot::with_value(StorageSlotName::mock(5), num_to_word(5)),
     ];
 
-    let assembler = TransactionKernel::assembler();
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let library_path = LibraryPath::new("test::account").unwrap();
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, component_code, &source_manager)
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("counter_contract::interface", component_code)
         .unwrap();
-    let library = assembler.assemble_library([module]).unwrap();
-
-    let component = AccountComponent::new(library, component_storage)
+    let auth_component = AccountComponent::new(account_component_code, component_storage)
         .unwrap()
-        .with_supported_type(account_type);
+        .with_supports_all_types();
 
     AccountBuilder::new(init_seed.unwrap_or([0; 32]))
         .account_type(account_type)
         .storage_mode(storage_mode)
         .with_assets(assets)
-        .with_component(component)
+        .with_component(auth_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()

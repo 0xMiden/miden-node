@@ -81,10 +81,7 @@ impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .timeout(self.grpc_timeout)
-            .add_service(api_server::ApiServer::new(ValidatorServer {
-                signer: self.signer,
-                validated_transactions: ValidatedTransactions::default().into(),
-            }))
+            .add_service(api_server::ApiServer::new(ValidatorServer::new(self.signer)))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener))
@@ -102,6 +99,13 @@ impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
 struct ValidatorServer<S> {
     signer: S,
     validated_transactions: Arc<ValidatedTransactions>,
+}
+
+impl<S> ValidatorServer<S> {
+    fn new(signer: S) -> Self {
+        let validated_transactions = Arc::new(ValidatedTransactions::default());
+        Self { signer, validated_transactions }
+    }
 }
 
 #[tonic::async_trait]

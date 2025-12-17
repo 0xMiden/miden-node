@@ -13,6 +13,7 @@
 - The mempool's transaction capacity is now configurable ([#1433](https://github.com/0xMiden/miden-node/pull/1433)).
 - Renamed card's names in the `miden-network-monitor` binary ([#1441](https://github.com/0xMiden/miden-node/pull/1441)).
 - Integrated RPC stack with Validator component for transaction validation ([#1457](https://github.com/0xMiden/miden-node/pull/1457)).
+- Added validated transactions check to block validation logc in Validator ([#1459](https://github.com/0xMiden/miden-node/pull/1459)).
 
 ### Changes
 

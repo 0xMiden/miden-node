@@ -20,6 +20,7 @@ use crate::COMPONENT;
 use crate::config::MonitorConfig;
 use crate::counter::{run_counter_tracking_task, run_increment_task};
 use crate::deploy::ensure_accounts_exist;
+use crate::explorer::{initial_explorer_status, run_explorer_status_task};
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload, run_remote_prover_test_task};
@@ -27,8 +28,6 @@ use crate::status::{
     ServiceStatus,
     check_remote_prover_status,
     check_rpc_status,
-    initial_explorer_status,
-    run_explorer_status_task,
     run_remote_prover_status_task,
     run_rpc_status_task,
 };
@@ -96,7 +95,6 @@ impl Tasks {
         let request_timeout = config.request_timeout;
         let (explorer_status_tx, explorer_status_rx) = watch::channel(initial_explorer_status());
 
-        println!("Spawning explorer status checker task for URL: {}", explorer_url.clone());
         let id = self
             .handles
             .spawn(async move {

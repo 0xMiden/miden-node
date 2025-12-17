@@ -20,6 +20,7 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::testing::noop_auth_component::NoopAuthComponent;
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;
@@ -393,10 +394,13 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         let store_url = Url::parse(&format!("http://{store_addr}")).unwrap();
         // SAFETY: The block_producer_addr is always valid as it is created from a `SocketAddr`.
         let block_producer_url = Url::parse(&format!("http://{block_producer_addr}")).unwrap();
+        // SAFETY: Using dummy validator URL for test - not actually contacted in this test
+        let validator_url = Url::parse("http://127.0.0.1:0").unwrap();
         Rpc {
             listener: rpc_listener,
             store_url,
             block_producer_url: Some(block_producer_url),
+            validator_url,
             grpc_timeout: Duration::from_secs(30),
         }
         .serve()
@@ -423,7 +427,9 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     // Start the store.
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
 
-    let (genesis_state, _) = GenesisConfig::default().into_state().unwrap();
+    let config = GenesisConfig::default();
+    let signer = SecretKey::new();
+    let (genesis_state, _) = config.into_state(signer).unwrap();
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();
     let rpc_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");

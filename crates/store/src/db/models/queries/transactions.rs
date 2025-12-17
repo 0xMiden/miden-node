@@ -14,7 +14,7 @@ use diesel::{
 };
 use miden_lib::utils::Deserializable;
 use miden_node_utils::limiter::{
-    MAX_PAGINATED_PAYLOAD_BYTES,
+    MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamAccountIdLimit,
     QueryParamLimiter,
 };
@@ -289,7 +289,7 @@ pub fn select_transactions_records(
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
     let max_payload_bytes =
-        i64::try_from(MAX_PAGINATED_PAYLOAD_BYTES).expect("payload limit fits within i64");
+        i64::try_from(MAX_RESPONSE_PAYLOAD_BYTES).expect("payload limit fits within i64");
 
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {

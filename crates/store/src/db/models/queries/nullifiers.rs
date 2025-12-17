@@ -13,7 +13,7 @@ use diesel::{
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
-    MAX_PAGINATED_PAYLOAD_BYTES,
+    MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamLimiter,
     QueryParamNullifierLimit,
     QueryParamNullifierPrefixLimit,
@@ -69,7 +69,7 @@ pub(crate) fn select_nullifiers_by_prefix(
     pub const NULLIFIER_BYTES: usize = 32; // digest size (nullifier)
     pub const BLOCK_NUM_BYTES: usize = 4; // 32 bits per block number
     pub const ROW_OVERHEAD_BYTES: usize = NULLIFIER_BYTES + BLOCK_NUM_BYTES; // 36 bytes
-    pub const MAX_ROWS: usize = MAX_PAGINATED_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    pub const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 

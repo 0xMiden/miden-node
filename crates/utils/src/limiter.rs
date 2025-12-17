@@ -1,4 +1,4 @@
-//! Centralized limits for RPC and store parameters and payload sizes.
+//! Limits for RPC and store parameters and payload sizes.
 //!
 //! # Rationale
 //! - Parameter limits are kept at 1000 items across all multi-value RPC parameters. This caps
@@ -42,7 +42,7 @@ pub trait QueryParamLimiter {
 
 /// Maximum payload size (in bytes) for paginated responses returned by the
 /// store.
-pub const MAX_PAGINATED_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_RESPONSE_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
 
 /// Used for the following RPC endpoints
 /// * `state_sync`

@@ -1,15 +1,17 @@
 //! Limits for RPC and store parameters and payload sizes.
 //!
 //! # Rationale
-//! - Parameter limits are kept at 1000 items across all multi-value RPC parameters. This caps
-//!   worst-case SQL `IN` clauses and keeps responses comfortably under the 4 MiB payload budget
-//!   enforced in the store.
+//! - Parameter limits are kept at [`GENERAL_REQUEST_LIMIT`] items across all multi-value RPC
+//!   parameters. This caps worst-case SQL `IN` clauses and keeps responses comfortably under the 4
+//!   MiB payload budget enforced in the store.
 //! - Limits are enforced both at the RPC boundary and inside the store to prevent bypasses and to
 //!   avoid expensive queries even if validation is skipped earlier in the stack.
 //! - `MAX_PAGINATED_PAYLOAD_BYTES` is set to 4 MiB (e.g. 1000 nullifier rows at ~36 B each, 1000
 //!   transactions summaries streamed in chunks).
 //!
 //! Add new limits here so callers share the same values and rationale.
+
+const GENERAL_REQUEST_LIMIT: usize = 1000;
 
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
@@ -49,7 +51,7 @@ pub const MAX_RESPONSE_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
 pub struct QueryParamAccountIdLimit;
 impl QueryParamLimiter for QueryParamAccountIdLimit {
     const PARAM_NAME: &str = "account_id";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
 }
 
 /// Used for the following RPC endpoints
@@ -57,7 +59,7 @@ impl QueryParamLimiter for QueryParamAccountIdLimit {
 pub struct QueryParamNullifierPrefixLimit;
 impl QueryParamLimiter for QueryParamNullifierPrefixLimit {
     const PARAM_NAME: &str = "nullifier_prefix";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
 }
 
 /// Used for the following RPC endpoints
@@ -67,7 +69,7 @@ impl QueryParamLimiter for QueryParamNullifierPrefixLimit {
 pub struct QueryParamNullifierLimit;
 impl QueryParamLimiter for QueryParamNullifierLimit {
     const PARAM_NAME: &str = "nullifier";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
 }
 
 /// Used for the following RPC endpoints
@@ -75,7 +77,7 @@ impl QueryParamLimiter for QueryParamNullifierLimit {
 pub struct QueryParamNoteTagLimit;
 impl QueryParamLimiter for QueryParamNoteTagLimit {
     const PARAM_NAME: &str = "note_tag";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
 }
 
 /// Used for the following RPC endpoints
@@ -83,19 +85,19 @@ impl QueryParamLimiter for QueryParamNoteTagLimit {
 pub struct QueryParamNoteIdLimit;
 impl QueryParamLimiter for QueryParamNoteIdLimit {
     const PARAM_NAME: &str = "note_id";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
 }
 
 /// Used for internal queries retrieving note inclusion proofs by commitment.
 pub struct QueryParamNoteCommitmentLimit;
 impl QueryParamLimiter for QueryParamNoteCommitmentLimit {
     const PARAM_NAME: &str = "note_commitment";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
 }
 
 /// Only used internally, not exposed via public RPC.
 pub struct QueryParamBlockLimit;
 impl QueryParamLimiter for QueryParamBlockLimit {
     const PARAM_NAME: &str = "block_header";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
 }

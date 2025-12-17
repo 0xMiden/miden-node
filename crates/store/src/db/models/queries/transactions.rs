@@ -251,41 +251,19 @@ type TxNoteRow = (TransactionRecordRaw, Option<NoteRecordRawRow>, Option<Vec<u8>
 /// # Raw SQL
 /// ```sql
 /// SELECT
-///     tx.account_id,
-///     tx.block_num,
-///     tx.transaction_id,
-///     tx.initial_state_commitment,
-///     tx.final_state_commitment,
-///     tx.nullifiers,
-///     tx.output_notes,
-///     tx.size_in_bytes,
-///
-///     n.committed_at,
-///     n.batch_index,
-///     n.note_index,
-///     n.note_id,
-///     n.note_commitment,
-///     n.note_type,
-///     n.sender,
-///     n.tag,
-///     n.aux,
-///     n.execution_hint,
-///     n.assets,
-///     n.inputs,
-///     n.serial_num,
-///     n.inclusion_path,
-///     n.script_root,
-///     s.script  -- nullable
+///     tx.{...}
+///     n.{...}
 ///
 /// FROM transactions AS tx
-/// LEFT JOIN notes AS n
-/// ON tx.block_num = n.committed_at
-/// AND tx.account_id = n.sender
-/// LEFT JOIN note_scripts AS s
-/// ON n.script_root = s.script_root
-/// WHERE tx.block_num >= :block_start
-/// AND tx.block_num <= :block_end
-/// AND tx.account_id IN (:account_ids)
+///     LEFT JOIN notes AS n ON
+///         x.block_num = n.committed_at
+///         AND tx.account_id = n.sender
+///     LEFT JOIN note_scripts AS s ON
+///         n.script_root = s.script_root
+/// WHERE
+///     tx.block_num >= :block_start
+///     AND tx.block_num <= :block_end
+///     AND tx.account_id IN (:account_ids)
 /// ORDER BY
 ///     tx.block_num ASC,
 ///     tx.transaction_id ASC,

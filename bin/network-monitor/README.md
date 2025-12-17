@@ -159,6 +159,7 @@ The monitor application provides real-time status monitoring for the following M
   - Block height and timestamp
   - Transactions, nullifiers, notes, and account updates counts
   - Block, chain, and proof commitments (shortened display with copy-to-clipboard)
+- **Block Delta**: The difference between the explorer's block height and the RPC's chain tip. If the difference is greater than a tolerance, a warning is displayed. This check is performed in the frontend.
 
 ### Remote Provers
 - **Service Health**: Individual remote prover availability and status  

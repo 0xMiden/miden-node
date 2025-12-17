@@ -96,7 +96,9 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         11_u8.into(),
     );
 
-    conn.transaction(|conn| queries::insert_block_header(conn, &block_header))
+    let dummy_signature = miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey::new()
+        .sign(block_header.commitment());
+    conn.transaction(|conn| queries::insert_block_header(conn, &block_header, &dummy_signature))
         .unwrap();
 }
 
@@ -863,7 +865,9 @@ fn db_block_header() {
     );
     // test insertion
 
-    queries::insert_block_header(conn, &block_header).unwrap();
+    let dummy_signature = miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey::new()
+        .sign(block_header.commitment());
+    queries::insert_block_header(conn, &block_header, &dummy_signature).unwrap();
 
     // test fetch unknown block header
     let block_number = 1;
@@ -894,7 +898,9 @@ fn db_block_header() {
         21_u8.into(),
     );
 
-    queries::insert_block_header(conn, &block_header2).unwrap();
+    let dummy_signature = miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey::new()
+        .sign(block_header2.commitment());
+    queries::insert_block_header(conn, &block_header2, &dummy_signature).unwrap();
 
     let res = queries::select_block_header_by_block_num(conn, None).unwrap();
     assert_eq!(res.unwrap(), block_header2);

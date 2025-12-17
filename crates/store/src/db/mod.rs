@@ -10,7 +10,8 @@ use miden_node_proto::generated as proto;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::asset::{Asset, AssetVaultKey};
-use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
+use miden_objects::block::{BlockBody, BlockHeader, BlockNoteIndex, BlockNumber};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
     NoteDetails,
@@ -248,6 +249,7 @@ impl Db {
             models::queries::apply_block(
                 conn,
                 genesis.header(),
+                genesis.signature().clone(),
                 &[],
                 &[],
                 genesis.body().updated_accounts(),
@@ -509,7 +511,9 @@ impl Db {
         &self,
         allow_acquire: oneshot::Sender<()>,
         acquire_done: oneshot::Receiver<()>,
-        block: ProvenBlock,
+        block_header: BlockHeader,
+        block_body: BlockBody,
+        signature: Signature,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
     ) -> Result<()> {
         self.transact("apply block", move |conn| -> Result<()> {
@@ -518,11 +522,12 @@ impl Db {
 
             models::queries::apply_block(
                 conn,
-                block.header(),
+                &block_header,
+                signature,
                 &notes,
-                block.body().created_nullifiers(),
-                block.body().updated_accounts(),
-                block.body().transactions(),
+                block_body.created_nullifiers(),
+                block_body.updated_accounts(),
+                block_body.transactions(),
             )?;
 
             // XXX FIXME TODO free floating mutex MUST NOT exist

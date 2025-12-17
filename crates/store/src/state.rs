@@ -27,6 +27,7 @@ use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotC
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::crypto::merkle::{
     Forest,
     LargeSmt,
@@ -188,12 +189,19 @@ impl State {
     // TODO: This span is logged in a root span, we should connect it to the parent span.
     #[allow(clippy::too_many_lines)]
     #[instrument(target = COMPONENT, skip_all, err)]
-    pub async fn apply_block(&self, block: ProvenBlock) -> Result<(), ApplyBlockError> {
+    pub async fn apply_block(
+        &self,
+        header: BlockHeader,
+        body: BlockBody,
+        signature: Signature,
+    ) -> Result<(), ApplyBlockError> {
         let _lock = self.writer.try_lock().map_err(|_| ApplyBlockError::ConcurrentWrite)?;
 
-        let header = block.header();
+        let header = block.header().clone();
+        let block_body = block.body().clone();
+        let signature = block.signature().clone();
 
-        let tx_commitment = block.body().transactions().commitment();
+        let tx_commitment = block_body.transactions().commitment();
 
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
@@ -363,10 +371,10 @@ impl State {
         // in-memory write lock. This requires the DB update to run concurrently, so a new task is
         // spawned.
         let db = Arc::clone(&self.db);
-        let db_update_task =
-            tokio::spawn(
-                async move { db.apply_block(allow_acquire, acquire_done, block, notes).await },
-            );
+        let db_update_task = tokio::spawn(async move {
+            db.apply_block(allow_acquire, acquire_done, header, block_body, signature, notes)
+                .await
+        });
 
         // Wait for the message from the DB update task, that we ready to commit the DB transaction
         acquired_allowed.await.map_err(ApplyBlockError::ClosedChannel)?;

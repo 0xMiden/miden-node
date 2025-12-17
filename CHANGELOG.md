@@ -12,6 +12,7 @@
 - Added chain tip to the block producer status ([#1419](https://github.com/0xMiden/miden-node/pull/1419)).
 - The mempool's transaction capacity is now configurable ([#1433](https://github.com/0xMiden/miden-node/pull/1433)).
 - Renamed card's names in the `miden-network-monitor` binary ([#1441](https://github.com/0xMiden/miden-node/pull/1441)).
+- Integrated RPC stack with Validator component for transaction validation ([#1457](https://github.com/0xMiden/miden-node/pull/1457)).
 
 ### Changes
 
@@ -26,6 +27,7 @@
 - Removed internal errors from the `miden-network-monitor` ([#1424](https://github.com/0xMiden/miden-node/pull/1424)).
 - [BREAKING] Re-organized RPC protobuf schema to be independent of internal schema ([#1401](https://github.com/0xMiden/miden-node/pull/1401)).
 - Increased the maximum query limit for the store ([#1443](https://github.com/0xMiden/miden-node/pull/1443)).
+- [BREAKING] Added block signing capabilities to Validator component and updated gensis bootstrap to sign blocks with configured signer ([#1426](https://github.com/0xMiden/miden-node/pull/1426)).
 - Reduced default block interval from `5s` to `2s` ([#1438](https://github.com/0xMiden/miden-node/pull/1438)).
 - Increased retained account tree history from 33 to 100 blocks to account for the reduced block interval ([#1438](https://github.com/0xMiden/miden-node/pull/1438)).
 

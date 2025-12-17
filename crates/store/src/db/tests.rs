@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use diesel::{Connection, SqliteConnection};
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
-use miden_lib::transaction::TransactionKernel;
+use miden_lib::utils::CodeBuilder;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::{test_fee, test_fee_params};
 use miden_objects::account::auth::PublicKeyCommitment;
@@ -34,6 +34,7 @@ use miden_objects::block::{
     BlockNoteTree,
     BlockNumber,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{
@@ -54,6 +55,7 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
+use miden_objects::testing::random_signer::RandomBlockSigner;
 use miden_objects::transaction::{
     InputNoteCommitment,
     InputNotes,
@@ -89,7 +91,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        SecretKey::new().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -855,7 +857,7 @@ fn db_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        SecretKey::new().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -887,7 +889,7 @@ fn db_block_header() {
         num_to_word(17),
         num_to_word(18),
         num_to_word(19),
-        num_to_word(20),
+        SecretKey::new().public_key(),
         test_fee_params(),
         21_u8.into(),
     );
@@ -1407,19 +1409,18 @@ fn mock_account_code_and_storage(
         StorageSlot::with_value(StorageSlotName::mock(5), num_to_word(5)),
     ];
 
-    let component = AccountComponent::compile(
-        component_code,
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(account_type);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("counter_contract::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     AccountBuilder::new(init_seed.unwrap_or([0; 32]))
         .account_type(account_type)
         .storage_mode(storage_mode)
         .with_assets(assets)
-        .with_component(component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
@@ -1433,11 +1434,14 @@ fn mock_account_code_and_storage(
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
+    let component_code = "export.foo push.1 end";
 
-    let component =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
@@ -1445,13 +1449,14 @@ fn genesis_with_account_assets() {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1482,23 +1487,25 @@ fn genesis_with_account_storage_map() {
         StorageSlot::with_empty_value(StorageSlotName::mock(1)),
     ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component_code = "export.foo push.1 end";
+
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1526,24 +1533,26 @@ fn genesis_with_account_assets_and_storage() {
         StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
     ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component_code = "export.foo push.1 end";
+
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1558,15 +1567,17 @@ fn genesis_with_multiple_accounts() {
 
     use crate::genesis::GenesisState;
 
-    let component1 =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", "export.foo push.1 end")
+        .unwrap();
+    let account_component1 = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component1)
+        .with_component(account_component1)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
@@ -1574,15 +1585,17 @@ fn genesis_with_multiple_accounts() {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
-    let component2 =
-        AccountComponent::compile("export.bar push.2 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("bar::interface", "export.bar push.2 end")
+        .unwrap();
+    let account_component2 = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let account2 = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component2)
+        .with_component(account_component2)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
@@ -1596,24 +1609,28 @@ fn genesis_with_multiple_accounts() {
 
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
-    let component3 = AccountComponent::compile(
-        "export.baz push.3 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("baz::interface", "export.baz push.3 end")
+        .unwrap();
+    let account_component3 = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account3 = AccountBuilder::new([3u8; 32])
-        .account_type(AccountType::RegularAccountImmutableCode)
+        .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component3)
+        .with_component(account_component3)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state =
-        GenesisState::new(vec![account1, account2, account3], test_fee_params(), 1, 0);
+    let genesis_state = GenesisState::new(
+        vec![account1, account2, account3],
+        test_fee_params(),
+        1,
+        0,
+        SecretKey::random(),
+    );
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();

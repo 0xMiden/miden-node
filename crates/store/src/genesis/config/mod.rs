@@ -26,7 +26,7 @@ use miden_objects::account::{
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
 use miden_objects::block::FeeParameters;
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
+use miden_objects::crypto::dsa::rpo_falcon512::SecretKey as RpoSecretKey;
 use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
@@ -94,7 +94,10 @@ impl GenesisConfig {
     ///
     /// Also returns the set of secrets for the generated accounts.
     #[allow(clippy::too_many_lines)]
-    pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
+    pub fn into_state<S>(
+        self,
+        signer: S,
+    ) -> Result<(GenesisState<S>, AccountSecrets), GenesisConfigError> {
         let GenesisConfig {
             version,
             timestamp,
@@ -102,6 +105,7 @@ impl GenesisConfig {
             fee_parameters,
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
+            ..
         } = self;
 
         let symbol = native_faucet.symbol.clone();
@@ -154,7 +158,7 @@ impl GenesisConfig {
             tracing::debug!("Adding wallet account {index} with {assets:?}");
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
-            let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let secret_key = RpoSecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key().into() };
             let init_seed: [u8; 32] = rng.random();
 
@@ -215,7 +219,7 @@ impl GenesisConfig {
             if total_issuance != 0 {
                 // slot 0
                 storage_delta.set_item(
-                    AccountStorage::faucet_metadata_slot().clone(),
+                    AccountStorage::faucet_sysdata_slot().clone(),
                     [ZERO, ZERO, ZERO, Felt::new(total_issuance)].into(),
                 );
                 tracing::debug!(
@@ -263,6 +267,7 @@ impl GenesisConfig {
                 accounts: all_accounts,
                 version,
                 timestamp,
+                block_signer: signer,
             },
             AccountSecrets { secrets },
         ))
@@ -332,7 +337,7 @@ pub struct FungibleFaucetConfig {
 
 impl FungibleFaucetConfig {
     /// Create a fungible faucet from a config entry
-    fn build_account(self) -> Result<(Account, SecretKey), GenesisConfigError> {
+    fn build_account(self) -> Result<(Account, RpoSecretKey), GenesisConfigError> {
         let FungibleFaucetConfig {
             symbol,
             decimals,
@@ -340,7 +345,7 @@ impl FungibleFaucetConfig {
             storage_mode,
         } = self;
         let mut rng = ChaCha20Rng::from_seed(rand::random());
-        let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+        let secret_key = RpoSecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
         let auth = AuthRpoFalcon512::new(secret_key.public_key().into());
         let init_seed: [u8; 32] = rng.random();
 
@@ -426,7 +431,7 @@ pub struct AccountFileWithName {
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
     // name, account, private key, account seed
-    pub secrets: Vec<(String, AccountId, SecretKey)>,
+    pub secrets: Vec<(String, AccountId, RpoSecretKey)>,
 }
 
 impl AccountSecrets {
@@ -434,10 +439,10 @@ impl AccountSecrets {
     ///
     /// If no name is present, a new one is generated based on the current time
     /// and the index in
-    pub fn as_account_files(
+    pub fn as_account_files<S>(
         &self,
-        genesis_state: &GenesisState,
-    ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_> {
+        genesis_state: &GenesisState<S>,
+    ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_, S> {
         let account_lut = IndexMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );

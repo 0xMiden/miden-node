@@ -24,17 +24,9 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
-use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-use miden_objects::block::nullifier_tree::NullifierTree;
-use miden_objects::block::{
-    AccountWitness,
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    Blockchain,
-    NullifierWitness,
-    ProvenBlock,
-};
+use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
+use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_objects::crypto::merkle::{
     Forest,
     LargeSmt,
@@ -934,7 +926,7 @@ impl State {
     ) -> Result<AccountProofResponse, DatabaseError> {
         let AccountProofRequest { block_num, account_id, details } = account_request;
 
-        if details.is_some() && !account_id.is_public() {
+        if details.is_some() && !account_id.has_public_state() {
             return Err(DatabaseError::AccountNotPublic(account_id));
         }
 

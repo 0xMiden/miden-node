@@ -64,9 +64,9 @@ pub struct BlockHeader {
     /// A commitment to a set of IDs of transactions which affected accounts in this block.
     #[prost(message, optional, tag = "8")]
     pub tx_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// A commitment to a STARK proof attesting to the correct state transition.
+    /// The validator's ECDSA public key.
     #[prost(message, optional, tag = "9")]
-    pub proof_commitment: ::core::option::Option<super::primitives::Digest>,
+    pub validator_key: ::core::option::Option<ValidatorPublicKey>,
     /// A commitment to all transaction kernels supported by this block.
     #[prost(message, optional, tag = "10")]
     pub tx_kernel_commitment: ::core::option::Option<super::primitives::Digest>,
@@ -76,6 +76,22 @@ pub struct BlockHeader {
     /// The time when the block was created.
     #[prost(fixed32, tag = "12")]
     pub timestamp: u32,
+}
+/// Validator ECDSA public key.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ValidatorPublicKey {
+    /// Signature encoded using \[winter_utils::Serializable\] implementation for
+    /// \[crypto::dsa::ecdsa_k256_keccak::PublicKey\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub validator_key: ::prost::alloc::vec::Vec<u8>,
+}
+/// Block ECDSA Signature.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockSignature {
+    /// Signature encoded using \[winter_utils::Serializable\] implementation for
+    /// \[crypto::dsa::ecdsa_k256_keccak::Signature\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
 }
 /// Definition of the fee parameters.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

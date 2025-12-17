@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use miden_objects::account::{AccountId, AccountIdPrefix};
-use miden_objects::block::account_tree::{AccountMutationSet, AccountTree};
-use miden_objects::block::{AccountWitness, BlockNumber};
+use miden_objects::block::BlockNumber;
+use miden_objects::block::account_tree::{AccountMutationSet, AccountTree, AccountWitness};
 use miden_objects::crypto::merkle::{
     EmptySubtreeRoots,
     LargeSmt,

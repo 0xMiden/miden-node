@@ -443,13 +443,11 @@ fn create_emit_note_tx(
 ) -> ProvenTransaction {
     let initial_account_hash = faucet.commitment();
 
-    let slot = faucet.storage().get_item(BasicFungibleFaucet::metadata_slot_name()).unwrap();
+    let metadata_slot_name = AccountStorage::faucet_sysdata_slot();
+    let slot = faucet.storage().get_item(metadata_slot_name).unwrap();
     faucet
         .storage_mut()
-        .set_item(
-            AccountStorage::faucet_metadata_slot(),
-            [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into(),
-        )
+        .set_item(metadata_slot_name, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
         .unwrap();
 
     faucet.increment_nonce(ONE).unwrap();

@@ -219,7 +219,7 @@ impl GenesisConfig {
             if total_issuance != 0 {
                 // slot 0
                 storage_delta.set_item(
-                    AccountStorage::faucet_metadata_slot().clone(),
+                    AccountStorage::faucet_sysdata_slot().clone(),
                     [ZERO, ZERO, ZERO, Felt::new(total_issuance)].into(),
                 );
                 tracing::debug!(

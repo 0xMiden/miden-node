@@ -24,17 +24,9 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
-use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-use miden_objects::block::nullifier_tree::NullifierTree;
-use miden_objects::block::{
-    AccountWitness,
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    Blockchain,
-    NullifierWitness,
-    ProvenBlock,
-};
+use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
+use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_objects::crypto::merkle::{
     Forest,
     LargeSmt,

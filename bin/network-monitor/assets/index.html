@@ -48,7 +48,23 @@
     <script>
         let statusData = null;
         let updateInterval = null;
-        const EXPLORER_LAG_TOLERANCE = 5; // max allowed block delta vs RPC
+        const EXPLORER_LAG_TOLERANCE = 20; // max allowed block delta vs RPC, roughly 1 minute
+        const COPY_ICON = `
+            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+        `;
+
+        function renderCopyButton(value, label) {
+            if (!value) return '';
+            const escapedValue = JSON.stringify(value);
+            return `
+                <button class="copy-button" onclick="copyToClipboard(${escapedValue}, event)" title="Copy full ${label}">
+                    ${COPY_ICON}
+                </button>
+            `;
+        }
 
         function formatSuccessRate(successCount, failureCount) {
             const total = successCount + failureCount;
@@ -165,12 +181,7 @@
                 const commitmentOrDash = (value, label) => isHealthy && value
                     ? `
                         ${value.substring(0, 20)}...
-                        <button class="copy-button" onclick="copyToClipboard('${value}', event)" title="Copy full ${label}">
-                            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                        </button>
+                        ${renderCopyButton(value, label)}
                     `
                     : '-';
 
@@ -179,11 +190,9 @@
                 const deltaBlock = (isHealthy && explorerStats && rpcChainTip !== null)
                     ? explorerStats.block_number - rpcChainTip
                     : null;
-                const deltaText = deltaBlock !== null ? `${deltaBlock >= 0 ? '+' : ''}${deltaBlock}` : '-';
-                const deltaClass = deltaBlock !== null && Math.abs(deltaBlock) > EXPLORER_LAG_TOLERANCE ? 'warning-delta' : '';
                 const deltaWarning =
                     deltaBlock !== null && Math.abs(deltaBlock) > EXPLORER_LAG_TOLERANCE
-                        ? `Explorer tip differs from RPC by ${deltaText} blocks`
+                        ? `Explorer tip is ${Math.abs(deltaBlock)} blocks ${deltaBlock > 0 ? 'ahead' : 'behind'}`
                         : null;
                 let explorerWarningHtml = '';
 
@@ -198,12 +207,7 @@
                                     <div class="detail-item">
                                         <strong>Genesis:</strong>
                                         <span class="genesis-value">0x${details.RpcStatus.genesis_commitment.substring(0, 20)}...</span>
-                                        <button class="copy-button" onclick="copyToClipboard('${details.RpcStatus.genesis_commitment}', event)" title="Copy full genesis commitment">
-                                            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                            </svg>
-                                        </button>
+                                        ${renderCopyButton(details.RpcStatus.genesis_commitment, 'genesis commitment')}
                                     </div>
                                 ` : ''}
                                 ${details.RpcStatus.store_status ? `
@@ -292,14 +296,7 @@
                                         ${details.FaucetTest.last_tx_id ? `
                                             <div class="metric-row">
                                                 <span class="metric-label">Last TX ID:</span>
-                                                <span class="metric-value">${details.FaucetTest.last_tx_id.substring(0, 16)}...
-                                                    <button class="copy-button" onclick="copyToClipboard('${details.FaucetTest.last_tx_id}', event)" title="Copy full TX ID">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
+                                                <span class="metric-value">${details.FaucetTest.last_tx_id.substring(0, 16)}...${renderCopyButton(details.FaucetTest.last_tx_id, 'TX ID')}</span>
                                             </div>
                                         ` : ''}
                                         ${details.FaucetTest.challenge_difficulty ? `
@@ -316,14 +313,7 @@
                                         <div class="test-metrics ${service.status === "Healthy" ? "healthy" : "unhealthy"}">
                                             <div class="metric-row">
                                                 <span class="metric-label">Token ID:</span>
-                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.id.substring(0, 16)}...
-                                                    <button class="copy-button" onclick="copyToClipboard('${details.FaucetTest.faucet_metadata.id}', event)" title="Copy full token ID">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.id.substring(0, 16)}...${renderCopyButton(details.FaucetTest.faucet_metadata.id, 'token ID')}</span>
                                             </div>
                                             <div class="metric-row">
                                                 <span class="metric-label">Version:</span>
@@ -372,14 +362,7 @@
                                         ${details.NtxIncrement.last_tx_id ? `
                                             <div class="metric-row">
                                                 <span class="metric-label">Last TX ID:</span>
-                                                <span class="metric-value">${details.NtxIncrement.last_tx_id.substring(0, 16)}...
-                                                    <button class="copy-button" onclick="copyToClipboard('${details.NtxIncrement.last_tx_id}', event)" title="Copy full TX ID">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
+                                                <span class="metric-value">${details.NtxIncrement.last_tx_id.substring(0, 16)}...${renderCopyButton(details.NtxIncrement.last_tx_id, 'TX ID')}</span>
                                             </div>
                                         ` : ''}
                                     </div>

@@ -12,8 +12,8 @@
 - Added chain tip to the block producer status ([#1419](https://github.com/0xMiden/miden-node/pull/1419)).
 - The mempool's transaction capacity is now configurable ([#1433](https://github.com/0xMiden/miden-node/pull/1433)).
 - Renamed card's names in the `miden-network-monitor` binary ([#1441](https://github.com/0xMiden/miden-node/pull/1441)).
-- Added explorer status to the `miden-network-monitor` binary ([#1450](https://github.com/0xMiden/miden-node/pull/1450)).
 - Integrated RPC stack with Validator component for transaction validation ([#1457](https://github.com/0xMiden/miden-node/pull/1457)).
+- Added explorer status to the `miden-network-monitor` binary ([#1450](https://github.com/0xMiden/miden-node/pull/1450)).
 
 ### Changes
 
@@ -23,7 +23,6 @@
 - Added `SyncTransactions` stress test to `miden-node-stress-test` binary ([#1294](https://github.com/0xMiden/miden-node/pull/1294)).
 - Remove `trait AccountTreeStorage` ([#1352](https://github.com/0xMiden/miden-node/issues/1352)).
 - [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298), [#1436](https://github.com/0xMiden/miden-node/pull/1436)).
-- [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298)).
 - Add `S` generic to `NullifierTree` to allow usage with `LargeSmt`s ([#1353](https://github.com/0xMiden/miden-node/issues/1353)).
 - Removed internal errors from the `miden-network-monitor` ([#1424](https://github.com/0xMiden/miden-node/pull/1424)).
 - [BREAKING] Re-organized RPC protobuf schema to be independent of internal schema ([#1401](https://github.com/0xMiden/miden-node/pull/1401)).

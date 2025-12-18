@@ -699,8 +699,8 @@ pub(crate) fn insert_account_storage_map_value(
 ///
 /// This function queries the database tables to reconstruct a complete Account object:
 /// - Code from `account_codes` table
-/// - Nonce from `accounts` table
-/// - Storage from `account_storage_headers` and `account_storage_map_values` tables
+/// - Nonce and storage header from `accounts` table
+/// - Storage map entries from `account_storage_map_values` table
 /// - Vault from `account_vault_assets` table
 ///
 /// # Note

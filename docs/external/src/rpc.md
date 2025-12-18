@@ -77,37 +77,24 @@ message SmtLeaf {
 #### Verification
 
 ```rust
-use miden_crypto::merkle::SmtProof;
+use miden_crypto::merkle::{SmtProof, SmtProofError};
 
-// 1. Get nullifier tree root from block header
 let block_header = get_latest_block_header();
 let nullifier_tree_root = block_header.state_commitment().nullifier_root();
 
-// 2. Verify the proof
 let proof: SmtProof = smt_opening.try_into()?;
-assert_eq!(proof.compute_root(), nullifier_tree_root);
 
-// 3. Check status, assumes `nullifier` is the originally queried nullifier
-let is_nullifier_consumed: bool = match proof.leaf() {
-    SmtLeaf::Single((nullifier,_block_num) => {
-		nullifier == proof.root()
+match proof.verify_unset(&nullifier, &nullifier_tree_root) {
+    Ok(()) => {
+        // Nullifier is NOT in the tree - note can be consumed
     }
-    SmtLeaf::Multiple(set) => {
-		set.iter().filter(|(k,_)| k == nullifier).next().is_some()
+    Err(SmtProofError::ValueMismatch { .. }) => {
+        // Proof is valid, but nullifier has a value (not empty) - note already consumed
     }
-    _ => false,
+    Err(_) => {
+        // Proof is invalid (wrong root, wrong key, etc.)
+    }
 }
-
-// Alternatively:
-
-// non-inclusion
-proof.verify_membership(nullifier, EMPTY_WORD, nullifier_tree_root);
-// inclusion
-proof.verify_membership(
-	nullifier,
-		block_num_to_nullifier_leaf_value(block_header.block_num()),
-		nullifier_tree_root
-	);
 ```
 
 ### GetAccountDetails

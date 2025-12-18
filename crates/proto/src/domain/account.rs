@@ -353,9 +353,9 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
 
 /// Account vault details
 ///
-/// When an account contains a large number of assets (> 1000), including all assets
-/// in a single RPC response creates performance issues. In such cases, the `LimitExceeded`
-/// variant indicates to the client to use the `SyncAccountVault` endpoint instead.
+/// When an account contains a large number of assets (> [`AccountVaultDetails::MAX_RETURN_ENTRIES`]),
+/// including all assets in a single RPC response creates performance issues. In such cases,
+/// the `LimitExceeded` variant indicates to the client to use the `SyncAccountVault` endpoint instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccountVaultDetails {
     /// The vault has too many assets to return inline.
@@ -369,7 +369,7 @@ pub enum AccountVaultDetails {
 impl AccountVaultDetails {
     /// Maximum number of vault entries that can be returned in a single response.
     /// Accounts with more assets will have `LimitExceeded` variant.
-    const MAX_RETURN_ENTRIES: usize = 1000;
+    pub const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(vault: &AssetVault) -> Self {
         if vault.assets().nth(Self::MAX_RETURN_ENTRIES).is_some() {
@@ -443,9 +443,9 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
 
 /// Storage map entries for an account storage slot.
 ///
-/// When a storage map contains many entries (> 1000), returning all entries in a single
-/// RPC response creates performance issues. In such cases, the `LimitExceeded` variant
-/// indicates to the client to use the `SyncStorageMaps` endpoint instead.
+/// When a storage map contains many entries (> [`AccountStorageMapDetails::MAX_RETURN_ENTRIES`]),
+/// returning all entries in a single RPC response creates performance issues. In such cases,
+/// the `LimitExceeded` variant indicates to the client to use the `SyncStorageMaps` endpoint instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageMapEntries {
     /// The map has too many entries to return inline.

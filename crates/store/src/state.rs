@@ -1137,11 +1137,18 @@ impl State {
     }
 
     /// Reconstructs account storage at a specific block
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block doesn't exist or if there's a database error.
     pub async fn get_account_storage_at_block(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
     ) -> Result<miden_objects::account::AccountStorage, DatabaseError> {
+        // Validate block exists in the blockchain before querying the database
+        self.validate_block_exists(block_num).await?;
+
         self.db.select_account_storage_at_block(account_id, block_num).await
     }
 
@@ -1233,6 +1240,9 @@ impl State {
             return Err(DatabaseError::AccountNotPublic(account_id));
         }
 
+        // Validate block exists in the blockchain before querying the database
+        self.validate_block_exists(block_num).await?;
+
         let account_header = self
             .db
             .select_account_header_at_block(account_id, block_num)
@@ -1313,6 +1323,26 @@ impl State {
     /// Returns the latest block number.
     pub async fn latest_block_num(&self) -> BlockNumber {
         self.inner.read().await.latest_block_num()
+    }
+
+    /// Validates that a block exists in the blockchain
+    ///
+    /// # Attention
+    ///
+    /// Acquires a *read lock** on `self.inner`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DatabaseError::BlockNotFound` if the block doesn't exist in the blockchain.
+    async fn validate_block_exists(&self, block_num: BlockNumber) -> Result<(), DatabaseError> {
+        let inner = self.inner.read().await;
+        let latest_block_num = inner.latest_block_num();
+
+        if block_num > latest_block_num {
+            return Err(DatabaseError::BlockNotFound(block_num));
+        }
+
+        Ok(())
     }
 
     /// Runs database optimization.

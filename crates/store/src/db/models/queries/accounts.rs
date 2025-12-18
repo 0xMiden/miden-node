@@ -514,9 +514,6 @@ pub(crate) fn reconstruct_storage_map_at_block(
 ) -> Result<StorageMap, DatabaseError> {
     use schema::account_storage_map_values as t;
 
-    // Check if the requested block exists (returns error if not)
-    block_exists(conn, block_num)?;
-
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
     let slot_sql = slot_to_raw_sql(slot_index);
@@ -579,8 +576,6 @@ pub(crate) fn select_account_storage_at_block(
     account_id: AccountId,
     block_num: BlockNumber,
 ) -> Result<AccountStorage, DatabaseError> {
-    block_exists(conn, block_num)?;
-
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
@@ -1117,9 +1112,6 @@ pub(crate) fn select_account_vault_at_block(
 ) -> Result<Vec<(Word, Word)>, DatabaseError> {
     use schema::account_vault_assets as t;
 
-    // Check if the requested block exists (returns error if not)
-    block_exists(conn, block_num)?;
-
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
@@ -1167,37 +1159,6 @@ pub(crate) fn select_account_vault_at_block(
     Ok(entries)
 }
 
-/// Helper function to check if a block exists in the `block_headers` table.
-///
-/// This should be called by all `_at_block` query functions to ensure that
-/// queries are only performed against blocks that have been produced.
-///
-/// # Arguments
-///
-/// * `conn` - Database connection
-/// * `block_num` - The block number to check
-///
-/// # Returns
-///
-/// * `Ok(())` - If the block exists
-/// * `Err(DatabaseError::BlockNotFound)` - If the block doesn't exist
-/// * `Err(DatabaseError)` - If there's a database error
-fn block_exists(conn: &mut SqliteConnection, block_num: BlockNumber) -> Result<(), DatabaseError> {
-    use schema::block_headers;
-
-    let count: i64 = SelectDsl::select(
-        block_headers::table.filter(block_headers::block_num.eq(block_num.to_raw_sql())),
-        diesel::dsl::count(block_headers::block_num),
-    )
-    .first(conn)?;
-
-    if count > 0 {
-        Ok(())
-    } else {
-        Err(DatabaseError::BlockNotFound(block_num))
-    }
-}
-
 /// Queries the account code for a specific account at a specific block number.
 ///
 /// Returns `None` if:
@@ -1221,9 +1182,6 @@ pub(crate) fn select_account_code_at_block(
     block_num: BlockNumber,
 ) -> Result<Option<Vec<u8>>, DatabaseError> {
     use schema::{account_codes, accounts};
-
-    // Check if the requested block exists (returns error if not)
-    block_exists(conn, block_num)?;
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = i64::from(block_num.as_u32());
@@ -1276,8 +1234,6 @@ pub(crate) fn select_account_header_at_block(
     block_num: BlockNumber,
 ) -> Result<Option<AccountHeader>, DatabaseError> {
     use schema::{account_vault_headers, accounts};
-
-    block_exists(conn, block_num)?;
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();

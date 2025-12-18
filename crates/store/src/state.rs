@@ -508,8 +508,13 @@ impl State {
         // Step 2: Extract map slots and their entries using InnerForest helper
         let map_slots_to_populate = InnerForest::extract_map_slots_from_storage(&account_storages);
 
-        // Step 3: Update the forest with new SMTs
-        self.populate_forest_with_storage_maps(map_slots_to_populate, block_num).await?;
+        if map_slots_to_populate.is_empty() {
+            return Ok(());
+        }
+
+        // Step 3: Acquire write lock and update the forest with new SMTs
+        let mut forest_guard = self.forest.write().await;
+        forest_guard.populate_storage_maps(map_slots_to_populate, block_num);
 
         Ok(())
     }
@@ -529,27 +534,6 @@ impl State {
         }
 
         Ok(account_storages)
-    }
-
-    /// Populates the forest with storage map SMTs for the given slots
-    #[instrument(target = COMPONENT, skip_all, fields(num_slots = map_slots.len()))]
-    #[allow(clippy::type_complexity)]
-    async fn populate_forest_with_storage_maps(
-        &self,
-        map_slots: Vec<(AccountId, u8, Vec<(&Word, &Word)>)>,
-        block_num: BlockNumber,
-    ) -> Result<(), ApplyBlockError> {
-        if map_slots.is_empty() {
-            return Ok(());
-        }
-
-        // Acquire write lock once for all updates
-        let mut forest_guard = self.forest.write().await;
-
-        // Delegate to InnerForest for the actual population logic
-        forest_guard.populate_storage_maps(map_slots, block_num);
-
-        Ok(())
     }
 
     /// Updates vault SMTs in the forest for changed accounts

@@ -347,7 +347,7 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
-/// Account vault assets
+/// Account vault details
 ///
 /// Represents the assets in an account's vault, with proper handling for vaults
 /// containing many assets.
@@ -359,19 +359,13 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
 /// In such cases, the `LimitExceeded` variant indicates to the client to use the dedicated
 /// `SyncAccountVault` RPC endpoint for incremental retrieval.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AccountVaultAssets {
+pub enum AccountVaultDetails {
     /// The vault has too many assets to return inline.
     /// Clients must use `SyncAccountVault` endpoint instead.
     LimitExceeded,
 
     /// The assets in the vault (up to `MAX_RETURN_ENTRIES`).
     Assets(Vec<Asset>),
-}
-
-/// Account vault details - wrapper for backwards compatibility with protobuf
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccountVaultDetails {
-    pub assets: AccountVaultAssets,
 }
 
 impl AccountVaultDetails {
@@ -381,18 +375,14 @@ impl AccountVaultDetails {
 
     pub fn new(vault: &AssetVault) -> Self {
         if vault.assets().nth(Self::MAX_RETURN_ENTRIES).is_some() {
-            Self::too_many()
+            Self::LimitExceeded
         } else {
-            Self {
-                assets: AccountVaultAssets::Assets(Vec::from_iter(vault.assets())),
-            }
+            Self::Assets(Vec::from_iter(vault.assets()))
         }
     }
 
     pub fn empty() -> Self {
-        Self {
-            assets: AccountVaultAssets::Assets(Vec::new()),
-        }
+        Self::Assets(Vec::new())
     }
 
     /// Creates `AccountVaultDetails` from vault entries (key-value pairs).
@@ -403,22 +393,14 @@ impl AccountVaultDetails {
     /// The entries are `(vault_key, asset)` pairs where `asset` is a Word representation.
     pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, miden_objects::AssetError> {
         if entries.len() > Self::MAX_RETURN_ENTRIES {
-            return Ok(Self::too_many());
+            return Ok(Self::LimitExceeded);
         }
 
         let assets = Result::<Vec<_>, _>::from_iter(
             entries.into_iter().map(|(_key, asset_word)| Asset::try_from(asset_word)),
         )?;
 
-        Ok(Self {
-            assets: AccountVaultAssets::Assets(assets),
-        })
-    }
-
-    fn too_many() -> Self {
-        Self {
-            assets: AccountVaultAssets::LimitExceeded,
-        }
+        Ok(Self::Assets(assets))
     }
 }
 
@@ -429,9 +411,7 @@ impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
         let proto::rpc::AccountVaultDetails { too_many_assets, assets } = value;
 
         if too_many_assets {
-            Ok(Self {
-                assets: AccountVaultAssets::LimitExceeded,
-            })
+            Ok(Self::LimitExceeded)
         } else {
             let parsed_assets =
                 Result::<Vec<_>, ConversionError>::from_iter(assets.into_iter().map(|asset| {
@@ -441,23 +421,19 @@ impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
                     let asset = Word::try_from(asset)?;
                     Asset::try_from(asset).map_err(ConversionError::AssetError)
                 }))?;
-            Ok(Self {
-                assets: AccountVaultAssets::Assets(parsed_assets),
-            })
+            Ok(Self::Assets(parsed_assets))
         }
     }
 }
 
 impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
     fn from(value: AccountVaultDetails) -> Self {
-        let AccountVaultDetails { assets } = value;
-
-        match assets {
-            AccountVaultAssets::LimitExceeded => Self {
+        match value {
+            AccountVaultDetails::LimitExceeded => Self {
                 too_many_assets: true,
                 assets: Vec::new(),
             },
-            AccountVaultAssets::Assets(assets) => Self {
+            AccountVaultDetails::Assets(assets) => Self {
                 too_many_assets: false,
                 assets: Vec::from_iter(assets.into_iter().map(|asset| proto::primitives::Asset {
                     asset: Some(proto::primitives::Digest::from(Word::from(asset))),

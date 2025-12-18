@@ -5,7 +5,8 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
-use miden_objects::block::{BlockNumber, ProvenBlock};
+use miden_objects::block::{BlockBody, BlockHeader, BlockNumber};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
@@ -56,28 +57,34 @@ impl block_producer_server::BlockProducer for StoreApi {
     )]
     async fn apply_block(
         &self,
-        request: Request<proto::blockchain::Block>,
+        request: Request<proto::store::ApplyBlockRequest>,
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
 
-        let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("block deserialization error"))
+        let header = BlockHeader::read_from_bytes(&request.header).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("header deserialization error"))
+        })?;
+        let body = BlockBody::read_from_bytes(&request.body).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("body deserialization error"))
+        })?;
+        let signature = Signature::read_from_bytes(&request.signature).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("signature deserialization error"))
         })?;
 
-        let block_num = block.header().block_num().as_u32();
+        let block_num = header.block_num().as_u32();
 
         info!(
             target: COMPONENT,
             block_num,
-            block_commitment = %block.header().commitment(),
-            account_count = block.body().updated_accounts().len(),
-            note_count = block.body().output_notes().count(),
-            nullifier_count = block.body().created_nullifiers().len(),
+            block_commitment = %header.commitment(),
+            account_count = body.updated_accounts().len(),
+            note_count = body.output_notes().count(),
+            nullifier_count = body.created_nullifiers().len(),
         );
 
-        self.state.apply_block(block).await?;
+        self.state.apply_block(header, body, signature).await?;
 
         Ok(Response::new(()))
     }

@@ -125,8 +125,7 @@ impl BlockProducer {
 
         info!(target: COMPONENT, "Server initialized");
 
-        let block_builder =
-            BlockBuilder::new(store.clone(), validator, self.block_prover_url, self.block_interval);
+        let block_builder = BlockBuilder::new(store.clone(), validator, self.block_interval);
         let batch_builder = BatchBuilder::new(
             store.clone(),
             SERVER_NUM_BATCH_BUILDERS,

@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
 use miden_air::ExecutionProof;
-use miden_block_prover::LocalBlockProver;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::wallets::BasicWallet;
@@ -161,7 +160,7 @@ async fn generate_blocks(
         SecretKey::with_rng(&mut *rng)
     };
 
-    let mut prev_block = genesis_block.clone();
+    let mut prev_block_header = genesis_block.header().clone();
     let mut current_anchor_header = genesis_block.header().clone();
 
     for i in 0..total_blocks {
@@ -193,7 +192,7 @@ async fn generate_blocks(
         note_nullifiers.extend(notes.iter().map(|n| n.nullifier().prefix()));
 
         // create the tx that creates the notes
-        let emit_note_tx = create_emit_note_tx(prev_block.header(), &mut faucet, notes.clone());
+        let emit_note_tx = create_emit_note_tx(&prev_block_header, &mut faucet, notes.clone());
 
         // collect all the txs
         block_txs.push(emit_note_tx);
@@ -202,27 +201,23 @@ async fn generate_blocks(
         // create the batches with [TRANSACTIONS_PER_BATCH] txs each
         let batches: Vec<ProvenBatch> = block_txs
             .par_chunks(TRANSACTIONS_PER_BATCH)
-            .map(|txs| create_batch(txs, prev_block.header()))
+            .map(|txs| create_batch(txs, &prev_block_header))
             .collect();
 
         // create the block and send it to the store
         let block_inputs = get_block_inputs(store_client, &batches, &mut metrics).await;
 
         // update blocks
-        prev_block = apply_block(batches, block_inputs, store_client, &mut metrics).await;
-        if current_anchor_header.block_epoch() != prev_block.header().block_epoch() {
-            current_anchor_header = prev_block.header().clone();
+        prev_block_header = apply_block(batches, block_inputs, store_client, &mut metrics).await;
+        if current_anchor_header.block_epoch() != prev_block_header.block_epoch() {
+            current_anchor_header = prev_block_header.clone();
         }
 
         // create the consume notes txs to be used in the next block
         let batch_inputs =
-            get_batch_inputs(store_client, prev_block.header(), &notes, &mut metrics).await;
-        consume_notes_txs = create_consume_note_txs(
-            prev_block.header(),
-            accounts,
-            notes,
-            &batch_inputs.note_proofs,
-        );
+            get_batch_inputs(store_client, &prev_block_header, &notes, &mut metrics).await;
+        consume_notes_txs =
+            create_consume_note_txs(&prev_block_header, accounts, notes, &batch_inputs.note_proofs);
 
         // track store size every 50 blocks
         if i % 50 == 0 {
@@ -239,30 +234,25 @@ async fn generate_blocks(
     metrics
 }
 
-/// Given a list of batches and block inputs, creates a `ProvenBlock` and sends it to the store.
-/// Tracks the insertion time on the metrics.
+/// Sends block data to the store
 ///
-/// Returns the the inserted block.
+/// Returns the the inserted block header.
 async fn apply_block(
     batches: Vec<ProvenBatch>,
     block_inputs: BlockInputs,
     store_client: &StoreClient,
     metrics: &mut SeedingMetrics,
-) -> ProvenBlock {
+) -> BlockHeader {
     let proposed_block = ProposedBlock::new(block_inputs.clone(), batches).unwrap();
     let (header, body) = build_block(proposed_block.clone()).unwrap();
-    let block_proof = LocalBlockProver::new(0)
-        .prove_dummy(proposed_block.batches().clone(), header.clone(), block_inputs)
-        .unwrap();
     let signature = EcdsaSecretKey::new().sign(header.commitment());
-    let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
-    let block_size: usize = proven_block.to_bytes().len();
+    let block_size: usize = header.to_bytes().len() + body.to_bytes().len();
 
     let start = Instant::now();
-    store_client.apply_block(&proven_block).await.unwrap();
+    store_client.apply_block(header.clone(), body, signature).await.unwrap();
     metrics.track_block_insertion(start.elapsed(), block_size);
 
-    proven_block
+    header
 }
 
 // HELPER FUNCTIONS

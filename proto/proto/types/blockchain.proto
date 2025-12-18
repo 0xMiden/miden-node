@@ -4,15 +4,15 @@ package blockchain;
 import "types/account.proto";
 import "types/primitives.proto";
 
-// BLOCK
-// ================================================================================================
-
-// Represents a block.
-message Block {
-    // Block data encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::block::Block].
-    bytes block = 1;
-}
+//// BLOCK
+//// ================================================================================================
+//
+//// Represents a block.
+//message Block {
+//    // Block data encoded using [winter_utils::Serializable] implementation for
+//    // [miden_objects::block::Block].
+//    bytes block = 1;
+//}
 
 // Represents a proposed block.
 message ProposedBlock {

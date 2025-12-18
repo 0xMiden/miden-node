@@ -26,7 +26,7 @@ use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_objects::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, Blockchain};
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::crypto::merkle::{
     Forest,
@@ -197,11 +197,7 @@ impl State {
     ) -> Result<(), ApplyBlockError> {
         let _lock = self.writer.try_lock().map_err(|_| ApplyBlockError::ConcurrentWrite)?;
 
-        let header = block.header().clone();
-        let block_body = block.body().clone();
-        let signature = block.signature().clone();
-
-        let tx_commitment = block_body.transactions().commitment();
+        let tx_commitment = body.transactions().commitment();
 
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
@@ -212,7 +208,7 @@ impl State {
         }
 
         let block_num = header.block_num();
-        let block_commitment = block.header().commitment();
+        let block_commitment = header.commitment();
 
         // ensures the right block header is being processed
         let prev_block = self
@@ -233,7 +229,7 @@ impl State {
             return Err(InvalidBlockError::NewBlockInvalidPrevCommitment.into());
         }
 
-        let block_data = block.to_bytes();
+        let block_data = body.to_bytes(); // TODO(currentpr): is this correct?
 
         // Save the block to the block store. In a case of a rolled-back DB transaction, the
         // in-memory state will be unchanged, but the block might still be written into the
@@ -257,8 +253,7 @@ impl State {
             let _span = info_span!(target: COMPONENT, "update_in_memory_structs").entered();
 
             // nullifiers can be produced only once
-            let duplicate_nullifiers: Vec<_> = block
-                .body()
+            let duplicate_nullifiers: Vec<_> = body
                 .created_nullifiers()
                 .iter()
                 .filter(|&n| inner.nullifier_tree.get_block_num(n).is_some())
@@ -280,11 +275,7 @@ impl State {
             let nullifier_tree_update = inner
                 .nullifier_tree
                 .compute_mutations(
-                    block
-                        .body()
-                        .created_nullifiers()
-                        .iter()
-                        .map(|nullifier| (*nullifier, block_num)),
+                    body.created_nullifiers().iter().map(|nullifier| (*nullifier, block_num)),
                 )
                 .map_err(InvalidBlockError::NewBlockNullifierAlreadySpent)?;
 
@@ -296,9 +287,7 @@ impl State {
             let account_tree_update = inner
                 .account_tree
                 .compute_mutations(
-                    block
-                        .body()
-                        .updated_accounts()
+                    body.updated_accounts()
                         .iter()
                         .map(|update| (update.account_id(), update.final_state_commitment())),
                 )
@@ -324,13 +313,12 @@ impl State {
         };
 
         // build note tree
-        let note_tree = block.body().compute_block_note_tree();
+        let note_tree = body.compute_block_note_tree();
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
         }
 
-        let notes = block
-            .body()
+        let notes = body
             .output_notes()
             .map(|(note_index, note)| {
                 let (details, nullifier) = match note {
@@ -372,7 +360,7 @@ impl State {
         // spawned.
         let db = Arc::clone(&self.db);
         let db_update_task = tokio::spawn(async move {
-            db.apply_block(allow_acquire, acquire_done, header, block_body, signature, notes)
+            db.apply_block(allow_acquire, acquire_done, header, body, signature, notes)
                 .await
         });
 

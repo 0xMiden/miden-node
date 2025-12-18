@@ -10,7 +10,8 @@ use miden_node_proto::{AccountState, generated as proto};
 use miden_node_utils::formatting::format_opt;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
+use miden_objects::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::Serializable;
@@ -238,8 +239,17 @@ impl StoreClient {
     }
 
     #[instrument(target = COMPONENT, name = "store.client.apply_block", skip_all, err)]
-    pub async fn apply_block(&self, block: &ProvenBlock) -> Result<(), StoreError> {
-        let request = tonic::Request::new(proto::blockchain::Block { block: block.to_bytes() });
+    pub async fn apply_block(
+        &self,
+        header: BlockHeader,
+        body: BlockBody,
+        signature: Signature,
+    ) -> Result<(), StoreError> {
+        let request = tonic::Request::new(proto::store::ApplyBlockRequest {
+            header: header.to_bytes(),
+            body: body.to_bytes(),
+            signature: signature.to_bytes(),
+        });
 
         self.client.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)
     }

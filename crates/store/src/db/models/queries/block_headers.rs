@@ -131,7 +131,7 @@ pub struct BlockHeaderRawRow {
     #[allow(dead_code)]
     pub block_num: i64,
     pub block_header: Vec<u8>,
-    pub signature: Vec<u8>,
+    pub signature: Vec<u8>, // TODO(currentpr): use?
 }
 impl TryInto<BlockHeader> for BlockHeaderRawRow {
     type Error = DatabaseError;

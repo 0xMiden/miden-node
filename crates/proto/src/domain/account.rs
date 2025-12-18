@@ -335,14 +335,13 @@ impl From<AccountHeader> for proto::account::AccountHeader {
 
 impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     fn from(value: AccountStorageHeader) -> Self {
-        let slots = value
-            .slots()
-            .map(|slot_header| proto::account::account_storage_header::StorageSlot {
+        let slots = Vec::from_iter(value.slots().map(|slot_header| {
+            proto::account::account_storage_header::StorageSlot {
                 slot_name: slot_header.name().to_string(),
                 slot_type: storage_slot_type_to_raw(slot_header.slot_type()),
                 commitment: Some(proto::primitives::Digest::from(slot_header.value())),
-            })
-            .collect();
+            }
+        }));
 
         Self { slots }
     }
@@ -407,10 +406,9 @@ impl AccountVaultDetails {
             return Ok(Self::too_many());
         }
 
-        let assets = entries
-            .into_iter()
-            .map(|(_key, asset_word)| Asset::try_from(asset_word))
-            .collect::<Result<Vec<_>, _>>()?;
+        let assets = Result::<Vec<_>, _>::from_iter(
+            entries.into_iter().map(|(_key, asset_word)| Asset::try_from(asset_word)),
+        )?;
 
         Ok(Self {
             assets: AccountVaultAssets::Assets(assets),

@@ -338,14 +338,11 @@ pub(crate) fn select_all_accounts(
     let summaries: Vec<AccountSummary> = vec_raw_try_into(raw).unwrap();
 
     // Backfill account details from database
-    let account_infos = summaries
-        .into_iter()
-        .map(|summary| {
-            let account_id = summary.account_id;
-            let details = reconstruct_full_account_from_db(conn, account_id).ok();
-            AccountInfo { summary, details }
-        })
-        .collect();
+    let account_infos = Vec::from_iter(summaries.into_iter().map(|summary| {
+        let account_id = summary.account_id;
+        let details = reconstruct_full_account_from_db(conn, account_id).ok();
+        AccountInfo { summary, details }
+    }));
 
     Ok(account_infos)
 }
@@ -1005,17 +1002,18 @@ pub(crate) fn select_account_vault_at_block(
 
     // Since Diesel doesn't support composite keys in subqueries easily, we use a two-step approach:
     // Step 1: Get max block_num for each vault_key
-    let latest_blocks_per_vault_key: Vec<(Vec<u8>, i64)> = QueryDsl::select(
-        t::table
-            .filter(t::account_id.eq(&account_id_bytes))
-            .filter(t::block_num.le(block_num_sql))
-            .group_by(t::vault_key),
-        (t::vault_key, diesel::dsl::max(t::block_num)),
-    )
-    .load::<(Vec<u8>, Option<i64>)>(conn)?
-    .into_iter()
-    .filter_map(|(key, maybe_block)| maybe_block.map(|block| (key, block)))
-    .collect();
+    let latest_blocks_per_vault_key = Vec::from_iter(
+        QueryDsl::select(
+            t::table
+                .filter(t::account_id.eq(&account_id_bytes))
+                .filter(t::block_num.le(block_num_sql))
+                .group_by(t::vault_key),
+            (t::vault_key, diesel::dsl::max(t::block_num)),
+        )
+        .load::<(Vec<u8>, Option<i64>)>(conn)?
+        .into_iter()
+        .filter_map(|(key, maybe_block)| maybe_block.map(|block| (key, block))),
+    );
 
     if latest_blocks_per_vault_key.is_empty() {
         return Ok(Vec::new());

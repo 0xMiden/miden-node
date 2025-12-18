@@ -165,8 +165,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::NetworkAccountIdList>, Status> {
         let account_ids = self.state.get_all_network_accounts().await.map_err(internal_error)?;
 
-        let account_ids: Vec<proto::account::AccountId> =
-            account_ids.into_iter().map(Into::into).collect();
+        let account_ids =
+            Vec::from_iter(account_ids.into_iter().map(Into::into));
 
         Ok(Response::new(proto::store::NetworkAccountIdList { account_ids }))
     }

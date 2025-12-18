@@ -112,8 +112,7 @@ impl TransactionRecord {
         self,
         note_records: Vec<NoteRecord>,
     ) -> proto::rpc::TransactionRecord {
-        let output_notes: Vec<proto::note::NoteSyncRecord> =
-            note_records.into_iter().map(Into::into).collect();
+        let output_notes = Vec::from_iter(note_records.into_iter().map(Into::into));
 
         proto::rpc::TransactionRecord {
             header: Some(proto::transaction::TransactionHeader {

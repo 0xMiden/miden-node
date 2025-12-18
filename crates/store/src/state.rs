@@ -171,7 +171,7 @@ impl State {
         // necessary in theory
         let acc_account_ids = me.db.select_all_account_commitments().await?;
         let acc_account_ids =
-            acc_account_ids.into_iter().map(|(account_id, _)| account_id).collect();
+            Vec::from_iter(acc_account_ids.into_iter().map(|(account_id, _)| account_id));
         me.update_storage_forest_from_db(acc_account_ids, latest_block_num)
             .await
             .map_err(|e| {
@@ -337,11 +337,12 @@ impl State {
         };
 
         // build note tree
-        let note_tree_entries: Vec<_> = block
-            .body()
-            .output_notes()
-            .map(|(note_index, note)| (note_index, note.id(), *note.metadata()))
-            .collect();
+        let note_tree_entries = Vec::from_iter(
+            block
+                .body()
+                .output_notes()
+                .map(|(note_index, note)| (note_index, note.id(), *note.metadata())),
+        );
         let note_tree =
             miden_objects::block::BlockNoteTree::with_entries(note_tree_entries.iter().copied())
                 .map_err(|e| InvalidBlockError::FailedToBuildNoteTree(e.to_string()))?;

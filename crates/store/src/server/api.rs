@@ -163,5 +163,5 @@ pub fn validate_note_commitments(notes: &[proto::primitives::Digest]) -> Result<
 
 #[instrument(level = "debug",target = COMPONENT, skip_all)]
 pub fn read_block_numbers(block_numbers: &[u32]) -> BTreeSet<BlockNumber> {
-    block_numbers.iter().map(|raw_number| BlockNumber::from(*raw_number)).collect()
+    BTreeSet::from_iter(block_numbers.iter().map(|raw_number| BlockNumber::from(*raw_number)))
 }

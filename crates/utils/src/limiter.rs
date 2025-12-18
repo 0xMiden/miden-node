@@ -84,7 +84,7 @@ impl QueryParamLimiter for QueryParamNoteTagLimit {
 pub struct QueryParamNoteIdLimit;
 impl QueryParamLimiter for QueryParamNoteIdLimit {
     const PARAM_NAME: &str = "note_id";
-    ///The approximate maximum size for notes is around 32KB.
+    /// The approximate maximum size for notes is around 32KB.
     const LIMIT: usize = 100;
 }
 

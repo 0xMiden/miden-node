@@ -658,8 +658,8 @@ pub mod api_client {
         ///
         /// Each proof demonstrates either:
         ///
-        /// * **Inclusion**: Nullifier exists in the tree (consumed)
-        /// * **Non-inclusion**: Nullifier does not exist (not consumed)
+        /// * **Inclusion**: Nullifier exists in the tree (note was consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (note was not consumed)
         ///
         /// The `leaf` field indicates the status:
         ///
@@ -1074,8 +1074,8 @@ pub mod api_server {
         ///
         /// Each proof demonstrates either:
         ///
-        /// * **Inclusion**: Nullifier exists in the tree (consumed)
-        /// * **Non-inclusion**: Nullifier does not exist (not consumed)
+        /// * **Inclusion**: Nullifier exists in the tree (note was consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (note was not consumed)
         ///
         /// The `leaf` field indicates the status:
         ///

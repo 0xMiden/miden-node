@@ -359,6 +359,12 @@
                                             <span class="metric-label">Success Rate:</span>
                                             <span class="metric-value">${formatSuccessRate(details.NtxIncrement.success_count, details.NtxIncrement.failure_count)}</span>
                                         </div>
+                                        ${details.NtxIncrement.last_latency_blocks !== null && details.NtxIncrement.last_latency_blocks !== undefined ? `
+                                            <div class="metric-row">
+                                                <span class="metric-label">Latency:</span>
+                                                <span class="metric-value">${details.NtxIncrement.last_latency_blocks} blocks</span>
+                                            </div>
+                                        ` : ''}
                                         ${details.NtxIncrement.last_tx_id ? `
                                             <div class="metric-row">
                                                 <span class="metric-label">Last TX ID:</span>

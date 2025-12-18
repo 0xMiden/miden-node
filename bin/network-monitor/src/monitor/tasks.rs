@@ -11,14 +11,14 @@ use miden_node_proto::clients::{
     RemoteProverProxyStatusClient,
     RpcClient,
 };
-use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
+use tokio::sync::{Mutex, watch};
 use tokio::task::{Id, JoinSet};
 use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::counter::{run_counter_tracking_task, run_increment_task};
+use crate::counter::{LatencyState, run_counter_tracking_task, run_increment_task};
 use crate::deploy::ensure_accounts_exist;
 use crate::explorer::{initial_explorer_status, run_explorer_status_task};
 use crate::faucet::run_faucet_test_task;
@@ -49,11 +49,21 @@ impl Tasks {
     }
 
     /// Spawn the RPC status checker task.
-    #[instrument(target = COMPONENT, name = "tasks.spawn-rpc-checker", skip_all)]
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "network_monitor.tasks.spawn_rpc_checker",
+        skip_all,
+        level = "info",
+        ret(level = "debug"),
+        err
+    )]
     pub async fn spawn_rpc_checker(
         &mut self,
         config: &MonitorConfig,
     ) -> Result<Receiver<ServiceStatus>> {
+        debug!(target: COMPONENT, rpc_url = %config.rpc_url, "Spawning RPC status checker task");
+
         // Create initial status for RPC service
         let mut rpc = ClientBuilder::new(config.rpc_url.clone())
             .with_tls()
@@ -80,6 +90,7 @@ impl Tasks {
             .id();
         self.names.insert(id, "rpc-checker".to_string());
 
+        debug!(target: COMPONENT, "RPC status checker task spawned successfully");
         Ok(rpc_rx)
     }
 
@@ -116,11 +127,20 @@ impl Tasks {
     }
 
     /// Spawn prover status and test tasks for all configured provers.
-    #[instrument(target = COMPONENT, name = "tasks.spawn-prover-tasks", skip_all)]
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "network_monitor.tasks.spawn_prover_tasks",
+        skip_all,
+        level = "info",
+        ret(level = "debug"),
+        err
+    )]
     pub async fn spawn_prover_tasks(
         &mut self,
         config: &MonitorConfig,
     ) -> Result<Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>> {
+        debug!(target: COMPONENT, prover_count = config.remote_prover_urls.len(), "Spawning prover tasks");
         let mut prover_rxs = Vec::new();
 
         for (i, prover_url) in config.remote_prover_urls.iter().enumerate() {
@@ -228,11 +248,19 @@ impl Tasks {
             prover_rxs.push((prover_status_rx, prover_test_rx));
         }
 
+        debug!(target: COMPONENT, spawned_provers = prover_rxs.len(), "All prover tasks spawned successfully");
         Ok(prover_rxs)
     }
 
     /// Spawn the faucet testing task.
-    #[instrument(target = COMPONENT, name = "tasks.spawn-faucet", skip_all)]
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "network_monitor.tasks.spawn_faucet",
+        skip_all,
+        level = "info",
+        ret(level = "debug")
+    )]
     pub fn spawn_faucet(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
         let current_time = current_unix_timestamp_secs();
 
@@ -269,8 +297,16 @@ impl Tasks {
         faucet_rx
     }
 
-    /// Spawn the network transaction service checker tasks (increment and tracking).
-    #[instrument(target = COMPONENT, name = "tasks.spawn-ntx-service", skip_all)]
+    /// Spawn the network transaction service checker task.
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "network_monitor.tasks.spawn_ntx_service",
+        skip_all,
+        level = "info",
+        ret(level = "debug"),
+        err
+    )]
     pub async fn spawn_ntx_service(
         &mut self,
         config: &MonitorConfig,
@@ -283,6 +319,9 @@ impl Tasks {
 
         // Create shared atomic counter for tracking expected counter value
         let expected_counter_value = Arc::new(AtomicU64::new(0));
+        let latency_state = Arc::new(Mutex::new(LatencyState::default()));
+        let latency_state_for_increment = latency_state.clone();
+        let latency_state_for_tracking = latency_state.clone();
 
         // Create initial increment status
         let initial_increment_status = ServiceStatus {
@@ -294,6 +333,7 @@ impl Tasks {
                 success_count: 0,
                 failure_count: 0,
                 last_tx_id: None,
+                last_latency_blocks: None,
             }),
         };
 
@@ -320,9 +360,14 @@ impl Tasks {
         let increment_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_increment_task(config_clone, increment_tx, counter_clone))
-                    .await
-                    .expect("Counter increment task runs indefinitely");
+                Box::pin(run_increment_task(
+                    config_clone,
+                    increment_tx,
+                    counter_clone,
+                    latency_state_for_increment,
+                ))
+                .await
+                .expect("Counter increment task runs indefinitely");
             })
             .id();
         self.names.insert(increment_id, "counter-increment".to_string());
@@ -334,9 +379,14 @@ impl Tasks {
         let tracking_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_counter_tracking_task(config_clone, tracking_tx, counter_clone))
-                    .await
-                    .expect("Counter tracking task runs indefinitely");
+                Box::pin(run_counter_tracking_task(
+                    config_clone,
+                    tracking_tx,
+                    counter_clone,
+                    latency_state_for_tracking,
+                ))
+                .await
+                .expect("Counter tracking task runs indefinitely");
             })
             .id();
         self.names.insert(tracking_id, "counter-tracking".to_string());
@@ -345,7 +395,14 @@ impl Tasks {
     }
 
     /// Spawn the HTTP frontend server.
-    #[instrument(target = COMPONENT, name = "tasks.spawn-frontend", skip_all)]
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "network_monitor.tasks.spawn_http_server",
+        skip_all,
+        level = "info",
+        ret(level = "debug")
+    )]
     pub fn spawn_http_server(&mut self, server_state: ServerState, config: &MonitorConfig) {
         let config = config.clone();
         let id = self.handles.spawn(async move { serve(server_state, config).await }).id();

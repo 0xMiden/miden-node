@@ -41,6 +41,7 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--wallet-filepath`: Path where the wallet account is located (default: `wallet_account.mac`)
 - `--counter-filepath`: Path where the network account is located (default: `counter_program.mac`)
 - `--counter-increment-interval`: Interval at which to send the increment counter transaction (default: `30s`)
+- `--counter-latency-timeout`: Maximum time to wait for a counter update after submitting a transaction (default: `2m`)
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -62,6 +63,7 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_WALLET_FILEPATH`: Path where the wallet account is located
 - `MIDEN_MONITOR_COUNTER_FILEPATH`: Path where the network account is located
 - `MIDEN_MONITOR_COUNTER_INCREMENT_INTERVAL`: Interval at which to send the increment counter transaction
+- `MIDEN_MONITOR_COUNTER_LATENCY_TIMEOUT`: Maximum time to wait for a counter update after submitting a transaction
 
 ## Commands
 
@@ -190,6 +192,7 @@ The monitor application provides real-time status monitoring for the following M
 - **Metrics**:
   - Success/Failure counts for increment transactions
   - Last TX ID with copy-to-clipboard
+  - Latency in blocks from submission to observed counter update (with pending measurement tracking)
 
 ### Network Transactions (Counter Tracking)
 - **Service Health**: Real-time monitoring of on-chain counter value changes

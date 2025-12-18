@@ -2,6 +2,13 @@ use miden_node_proto::convert;
 use miden_node_proto::domain::account::AccountInfo;
 use miden_node_proto::generated::store::rpc_server;
 use miden_node_proto::generated::{self as proto};
+use miden_node_utils::limiter::{
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+    QueryParamNullifierLimit,
+};
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::note::NoteId;
@@ -9,7 +16,6 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
 use crate::COMPONENT;
-use crate::constants::{MAX_ACCOUNT_IDS, MAX_NOTE_IDS, MAX_NOTE_TAGS, MAX_NULLIFIERS};
 use crate::errors::{
     CheckNullifiersError,
     GetBlockByNumberError,
@@ -77,13 +83,7 @@ impl rpc_server::Rpc for StoreApi {
         let request = request.into_inner();
 
         // Validate nullifiers count
-        if request.nullifiers.len() > MAX_NULLIFIERS {
-            return Err(CheckNullifiersError::TooManyNullifiers(
-                request.nullifiers.len(),
-                MAX_NULLIFIERS,
-            )
-            .into());
-        }
+        check::<QueryParamNullifierLimit>(request.nullifiers.len())?;
 
         let nullifiers = validate_nullifiers::<CheckNullifiersError>(&request.nullifiers)?;
 
@@ -224,11 +224,7 @@ impl rpc_server::Rpc for StoreApi {
                 .into_inclusive_range::<NoteSyncError>(&chain_tip)?;
 
         // Validate note tags count
-        if request.note_tags.len() > MAX_NOTE_TAGS {
-            return Err(
-                NoteSyncError::TooManyNoteTags(request.note_tags.len(), MAX_NOTE_TAGS).into()
-            );
-        }
+        check::<QueryParamNoteTagLimit>(request.note_tags.len())?;
 
         let (state, mmr_proof, last_block_included) =
             self.state.sync_notes(request.note_tags, block_range).await?;
@@ -268,9 +264,7 @@ impl rpc_server::Rpc for StoreApi {
         let note_ids = request.into_inner().ids;
 
         // Validate note IDs count
-        if note_ids.len() > MAX_NOTE_IDS {
-            return Err(GetNotesByIdError::TooManyNoteIds(note_ids.len(), MAX_NOTE_IDS).into());
-        }
+        check::<QueryParamNoteIdLimit>(note_ids.len())?;
 
         let note_ids: Vec<Word> = convert_digests_to_words::<GetNotesByIdError, _>(note_ids)?;
 
@@ -545,13 +539,7 @@ impl rpc_server::Rpc for StoreApi {
             read_account_ids::<SyncTransactionsError>(&request.account_ids)?;
 
         // Validate account IDs count
-        if account_ids.len() > MAX_ACCOUNT_IDS {
-            return Err(SyncTransactionsError::TooManyAccountIds(
-                account_ids.len(),
-                MAX_ACCOUNT_IDS,
-            )
-            .into());
-        }
+        check::<QueryParamAccountIdLimit>(account_ids.len())?;
 
         let (last_block_included, transaction_records_db) = self
             .state
@@ -603,4 +591,17 @@ impl rpc_server::Rpc for StoreApi {
             transactions,
         }))
     }
+}
+
+// LIMIT HELPERS
+// ================================================================================================
+
+/// Formats an "Out of range" error
+fn out_of_range_error<E: core::fmt::Display>(err: E) -> Status {
+    Status::out_of_range(err.to_string())
+}
+
+/// Check, but don't repeat ourselves mapping the error
+fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
+    <Q as QueryParamLimiter>::check(n).map_err(out_of_range_error)
 }

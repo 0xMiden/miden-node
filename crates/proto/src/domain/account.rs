@@ -90,7 +90,6 @@ impl From<&AccountSummary> for proto::account::AccountSummary {
     }
 }
 
-// TODO #[deprecated(note = "avoid this type, details will be `None` always!")]
 #[derive(Debug, PartialEq)]
 pub struct AccountInfo {
     pub summary: AccountSummary,

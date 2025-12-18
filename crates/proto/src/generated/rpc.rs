@@ -1080,7 +1080,6 @@ pub mod api_server {
         ///
         /// * `empty_leaf_index`: Non-inclusion proof (nullifier not in tree)
         /// * `single` or `multiple`: Inclusion proof only if the requested nullifier appears as a key.
-        ///  The value associated with the nullifier key represents the block number at which it was consumed.
         ///
         /// Verify proofs against the nullifier tree root in the latest block header.
         async fn check_nullifiers(

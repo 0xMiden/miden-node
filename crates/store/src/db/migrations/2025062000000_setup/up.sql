@@ -20,14 +20,15 @@ CREATE TABLE accounts (
     code_commitment                         BLOB,
     nonce                                   INTEGER,
     storage_header                          BLOB, -- Serialized AccountStorage from miden-objects
+    vault_root                              BLOB, -- Vault root commitment
     is_latest                               BOOLEAN NOT NULL DEFAULT 0, -- Indicates if this is the latest state for this account_id
 
     PRIMARY KEY (account_id, block_num),
     CONSTRAINT all_null_or_none_null CHECK
         (
-            (code_commitment IS NOT NULL AND nonce IS NOT NULL AND storage_header IS NOT NULL)
+            (code_commitment IS NOT NULL AND nonce IS NOT NULL AND storage_header IS NOT NULL AND vault_root IS NOT NULL)
             OR
-            (code_commitment IS NULL AND nonce IS NULL AND storage_header IS NULL)
+            (code_commitment IS NULL AND nonce IS NULL AND storage_header IS NULL AND vault_root IS NULL)
         )
 ) WITHOUT ROWID;
 
@@ -119,22 +120,6 @@ CREATE TABLE account_vault_assets (
 CREATE INDEX idx_vault_assets_account_block ON account_vault_assets(account_id, block_num);
 -- Index for querying latest assets
 CREATE INDEX idx_vault_assets_latest ON account_vault_assets(account_id, is_latest) WHERE is_latest = 1;
-
--- Table to store vault headers (vault root commitments)
-CREATE TABLE account_vault_headers (
-    account_id          BLOB NOT NULL,
-    block_num           INTEGER NOT NULL,
-    vault_root          BLOB    NOT NULL,
-    is_latest           BOOLEAN NOT NULL DEFAULT 0,
-
-    PRIMARY KEY (account_id, block_num),
-    FOREIGN KEY (account_id, block_num) REFERENCES accounts(account_id, block_num) ON DELETE CASCADE
-) WITHOUT ROWID;
-
--- Index for joining with accounts table
-CREATE INDEX idx_account_vault_headers_account_block ON account_vault_headers(account_id, block_num);
--- Index for querying latest state
-CREATE INDEX idx_account_vault_headers_latest ON account_vault_headers(account_id, is_latest) WHERE is_latest = 1;
 
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,

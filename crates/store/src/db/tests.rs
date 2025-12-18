@@ -463,27 +463,25 @@ fn sql_unconsumed_network_notes() {
     create_block(&mut conn, 1.into());
 
     // Create an unconsumed note in each block.
-    let notes = (0..2)
-        .map(|i: u32| {
-            let note = NoteRecord {
-                block_num: 0.into(), // Created on same block.
-                note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
-                note_id: num_to_word(i.into()),
-                note_commitment: num_to_word(i.into()),
-                metadata: NoteMetadata::new(
-                    account_note.0,
-                    NoteType::Public,
-                    NoteTag::from_account_id(account_note.0),
-                    NoteExecutionHint::none(),
-                    Felt::default(),
-                )
-                .unwrap(),
-                details: None,
-                inclusion_path: SparseMerklePath::default(),
-            };
-            (note, Some(num_to_nullifier(i.into())))
-        })
-        .collect::<Vec<_>>();
+    let notes = Vec::from_iter((0..2).map(|i: u32| {
+        let note = NoteRecord {
+            block_num: 0.into(), // Created on same block.
+            note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
+            note_id: num_to_word(i.into()),
+            note_commitment: num_to_word(i.into()),
+            metadata: NoteMetadata::new(
+                account_note.0,
+                NoteType::Public,
+                NoteTag::from_account_id(account_note.0),
+                NoteExecutionHint::none(),
+                Felt::default(),
+            )
+            .unwrap(),
+            details: None,
+            inclusion_path: SparseMerklePath::default(),
+        };
+        (note, Some(num_to_nullifier(i.into())))
+    }));
     queries::insert_scripts(&mut conn, notes.iter().map(|(note, _)| note)).unwrap();
     queries::insert_notes(&mut conn, &notes).unwrap();
 

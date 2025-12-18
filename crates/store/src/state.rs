@@ -1376,7 +1376,7 @@ async fn load_account_tree(
     db: &mut Db,
     block_number: BlockNumber,
 ) -> Result<AccountTreeWithHistory<MemoryStorage>, StateInitializationError> {
-    let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
+    let account_data = Vec::from_iter(db.select_all_account_commitments().await?);
 
     let smt_entries = account_data
         .into_iter()

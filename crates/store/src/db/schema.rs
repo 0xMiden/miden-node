@@ -22,15 +22,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    account_vault_headers (account_id, block_num) {
-        account_id -> Binary,
-        block_num -> BigInt,
-        vault_root -> Binary,
-        is_latest -> Bool,
-    }
-}
-
-diesel::table! {
     accounts (account_id, block_num) {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
@@ -38,6 +29,7 @@ diesel::table! {
         code_commitment -> Nullable<Binary>,
         nonce -> Nullable<BigInt>,
         storage_header -> Nullable<Binary>,
+        vault_root -> Nullable<Binary>,
         block_num -> BigInt,
         is_latest -> Bool,
     }
@@ -123,7 +115,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     account_storage_map_values,
     accounts,
     account_vault_assets,
-    account_vault_headers,
     block_headers,
     note_scripts,
     notes,

@@ -885,6 +885,7 @@ pub(crate) fn upsert_accounts(
                 .as_ref()
                 .map(|account| account.code().commitment().to_bytes()),
             storage_header: full_account.as_ref().map(|account| account.storage().to_bytes()),
+            vault_root: full_account.as_ref().map(|account| account.vault().root().to_bytes()),
             is_latest: true,
         };
 
@@ -943,6 +944,7 @@ pub(crate) struct AccountRowInsert {
     pub(crate) code_commitment: Option<Vec<u8>>,
     pub(crate) nonce: Option<i64>,
     pub(crate) storage_header: Option<Vec<u8>>,
+    pub(crate) vault_root: Option<Vec<u8>>,
     pub(crate) is_latest: bool,
 }
 
@@ -1097,9 +1099,8 @@ struct AccountHeaderDataRaw {
 
 /// Queries the account header for a specific account at a specific block number.
 ///
-/// This reconstructs the `AccountHeader` by joining multiple tables:
-/// - `accounts` table for `account_id`, `nonce`, `code_commitment`, `storage_header`
-/// - `account_vault_headers` table for `vault_root`
+/// This reconstructs the `AccountHeader` by reading from the `accounts` table:
+/// - `account_id`, `nonce`, `code_commitment`, `storage_header`, `vault_root`
 ///
 /// Returns `None` if the account doesn't exist at that block.
 ///
@@ -1119,41 +1120,36 @@ pub(crate) fn select_account_header_at_block(
     account_id: AccountId,
     block_num: BlockNumber,
 ) -> Result<Option<AccountHeader>, DatabaseError> {
-    use schema::{account_vault_headers, accounts};
+    use schema::accounts;
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
-    let account_data: Option<AccountHeaderDataRaw> = SelectDsl::select(
+    let account_data: Option<(AccountHeaderDataRaw, Option<Vec<u8>>)> = SelectDsl::select(
         accounts::table
             .filter(accounts::account_id.eq(&account_id_bytes))
             .filter(accounts::block_num.le(block_num_sql))
             .order(accounts::block_num.desc())
             .limit(1),
-        (accounts::code_commitment, accounts::nonce, accounts::storage_header),
+        (
+            (accounts::code_commitment, accounts::nonce, accounts::storage_header),
+            accounts::vault_root,
+        ),
     )
     .first(conn)
     .optional()?;
 
-    let Some(AccountHeaderDataRaw {
-        code_commitment: code_commitment_bytes,
-        nonce: nonce_raw,
-        storage_header: storage_header_blob,
-    }) = account_data
+    let Some((
+        AccountHeaderDataRaw {
+            code_commitment: code_commitment_bytes,
+            nonce: nonce_raw,
+            storage_header: storage_header_blob,
+        },
+        vault_root_bytes,
+    )) = account_data
     else {
         return Ok(None);
     };
-
-    let vault_root_bytes: Option<Vec<u8>> = SelectDsl::select(
-        account_vault_headers::table
-            .filter(account_vault_headers::account_id.eq(&account_id_bytes))
-            .filter(account_vault_headers::block_num.le(block_num_sql))
-            .order(account_vault_headers::block_num.desc())
-            .limit(1),
-        account_vault_headers::vault_root,
-    )
-    .first(conn)
-    .optional()?;
 
     let storage_commitment = match storage_header_blob {
         Some(blob) => {

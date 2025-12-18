@@ -140,7 +140,7 @@ impl RpcService {
                         ?backoff,
                         %retry_counter,
                         %err,
-                        "connection failed while subscribing to the mempool, retrying"
+                        "connection failed while fetching genesis header, retrying"
                     );
 
                     retry_counter += 1;

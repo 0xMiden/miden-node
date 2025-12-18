@@ -32,6 +32,7 @@ miden-node-validator      = { workspace = true }
 miden-objects             = { workspace = true }
 tokio                     = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 url                       = { workspace = true }
+miden-remote-prover-client = { workspace = true }
 
 [dev-dependencies]
 figment          = { features = ["env", "test", "toml"], version = "0.10" }

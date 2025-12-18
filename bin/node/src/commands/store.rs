@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -7,6 +8,7 @@ use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::grpc::UrlExt;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::utils::Deserializable;
+use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use url::Url;
 
 use super::{
@@ -17,6 +19,7 @@ use super::{
 };
 use crate::commands::{
     DEFAULT_TIMEOUT,
+    ENV_BLOCK_PROVER_URL,
     ENV_ENABLE_OTEL,
     ENV_GENESIS_CONFIG_FILE,
     ENV_VALIDATOR_INSECURE_SECRET_KEY,
@@ -72,6 +75,10 @@ pub enum StoreCommand {
         #[arg(long = "block-producer.url", env = ENV_STORE_BLOCK_PRODUCER_URL, value_name = "URL")]
         block_producer_url: Url,
 
+        /// The remote block prover's gRPC url.
+        #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
+        block_prover_url: Url,
+
         /// Directory in which to store the database and raw block data.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
@@ -115,12 +122,14 @@ impl StoreCommand {
                 rpc_url,
                 ntx_builder_url,
                 block_producer_url,
+                block_prover_url,
                 data_directory,
                 enable_otel: _,
                 grpc_timeout,
             } => {
                 Self::start(
                     rpc_url,
+                    block_prover_url,
                     ntx_builder_url,
                     block_producer_url,
                     data_directory,
@@ -143,6 +152,7 @@ impl StoreCommand {
         rpc_url: Url,
         ntx_builder_url: Url,
         block_producer_url: Url,
+        block_prover_url: Url,
         data_directory: PathBuf,
         grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
@@ -167,8 +177,11 @@ impl StoreCommand {
             .await
             .context("Failed to bind to store's block-producer gRPC URL")?;
 
+        let block_prover = Arc::new(RemoteBlockProver::new(block_prover_url));
+
         Store {
             rpc_listener,
+            block_prover,
             ntx_builder_listener,
             block_producer_listener,
             data_directory,

@@ -55,8 +55,6 @@ pub struct BlockProducer {
     pub validator_url: Url,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
-    /// The address of the block prover component.
-    pub block_prover_url: Option<Url>,
     /// The interval at which to produce batches.
     pub batch_interval: Duration,
     /// The interval at which to produce blocks.

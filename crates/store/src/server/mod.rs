@@ -13,6 +13,7 @@ use miden_node_proto_build::{
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_objects::block::BlockSigner;
+use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -36,6 +37,7 @@ pub struct Store {
     pub rpc_listener: TcpListener,
     pub ntx_builder_listener: TcpListener,
     pub block_producer_listener: TcpListener,
+    pub block_prover: Arc<RemoteBlockProver>,
     pub data_directory: PathBuf,
     /// Server-side timeout for an individual gRPC request.
     ///
@@ -98,14 +100,18 @@ impl Store {
         let db_maintenance_service =
             DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
 
-        let rpc_service =
-            store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
+        let rpc_service = store::rpc_server::RpcServer::new(api::StoreApi {
+            state: Arc::clone(&state),
+            block_prover: self.block_prover.clone(),
+        });
         let ntx_builder_service = store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
             state: Arc::clone(&state),
+            block_prover: self.block_prover.clone(),
         });
         let block_producer_service =
             store::block_producer_server::BlockProducerServer::new(api::StoreApi {
                 state: Arc::clone(&state),
+                block_prover: self.block_prover.clone(),
             });
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(store_rpc_api_descriptor())

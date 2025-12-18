@@ -42,6 +42,7 @@ tonic             = { default-features = true, workspace = true }
 tonic-reflection  = { workspace = true }
 tower-http        = { features = ["util"], workspace = true }
 tracing           = { workspace = true }
+miden-remote-prover-client     = { workspace = true }
 
 [dev-dependencies]
 assert_matches        = { workspace = true }

@@ -6,8 +6,12 @@ use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
+use miden_objects::batch::OrderedBatches;
+use miden_objects::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::note::Nullifier;
+use miden_remote_prover_client::RemoteProverClientError;
+use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
@@ -19,6 +23,7 @@ use crate::state::State;
 
 pub struct StoreApi {
     pub(super) state: Arc<State>,
+    pub(super) block_prover: Arc<RemoteBlockProver>,
 }
 
 impl StoreApi {
@@ -41,6 +46,28 @@ impl StoreApi {
             chain_length: mmr_proof.as_ref().map(|p| p.forest.num_leaves() as u32),
             mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
         }))
+    }
+
+    #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
+    async fn prove_block(
+        &self,
+        ordered_batches: OrderedBatches,
+        block_inputs: BlockInputs,
+        header: BlockHeader,
+        signature: Signature,
+        body: BlockBody,
+    ) -> Result<ProvenBlock, RemoteProverClientError> {
+        // Prove block.
+        let block_proof = self
+            .block_prover
+            .prove(ordered_batches.clone(), header.clone(), block_inputs)
+            .await?;
+        //self.simulate_proving().await;
+
+        // SAFETY: The header and body are assumed valid and consistent with the proof.
+        let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
+
+        Ok(proven_block)
     }
 }
 

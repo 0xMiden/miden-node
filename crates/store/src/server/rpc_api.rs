@@ -91,7 +91,7 @@ impl rpc_server::Rpc for StoreApi {
         let proofs = self.state.check_nullifiers(&nullifiers).await;
 
         Ok(Response::new(proto::rpc::CheckNullifiersResponse {
-            proofs: Vec::from_iter(convert(proofs)),
+            proofs: convert(proofs).collect(),
         }))
     }
 
@@ -128,12 +128,13 @@ impl rpc_server::Rpc for StoreApi {
             .await
             .map_err(SyncNullifiersError::from)?;
 
-        let nullifiers = Vec::from_iter(nullifiers.into_iter().map(|nullifier_info| {
-            proto::rpc::sync_nullifiers_response::NullifierUpdate {
+        let nullifiers = nullifiers
+            .into_iter()
+            .map(|nullifier_info| proto::rpc::sync_nullifiers_response::NullifierUpdate {
                 nullifier: Some(nullifier_info.nullifier.into()),
                 block_num: nullifier_info.block_num.as_u32(),
-            }
-        }));
+            })
+            .collect();
 
         Ok(Response::new(proto::rpc::SyncNullifiersResponse {
             pagination_info: Some(proto::rpc::PaginationInfo {
@@ -169,24 +170,27 @@ impl rpc_server::Rpc for StoreApi {
             .await
             .map_err(internal_error)?;
 
-        let accounts = Vec::from_iter(state.account_updates.into_iter().map(|account_info| {
-            proto::account::AccountSummary {
+        let accounts = state
+            .account_updates
+            .into_iter()
+            .map(|account_info| proto::account::AccountSummary {
                 account_id: Some(account_info.account_id.into()),
                 account_commitment: Some(account_info.account_commitment.into()),
                 block_num: account_info.block_num.as_u32(),
-            }
-        }));
+            })
+            .collect();
 
-        let transactions =
-            Vec::from_iter(state.transactions.into_iter().map(|transaction_summary| {
-                proto::transaction::TransactionSummary {
-                    account_id: Some(transaction_summary.account_id.into()),
-                    block_num: transaction_summary.block_num.as_u32(),
-                    transaction_id: Some(transaction_summary.transaction_id.into()),
-                }
-            }));
+        let transactions = state
+            .transactions
+            .into_iter()
+            .map(|transaction_summary| proto::transaction::TransactionSummary {
+                account_id: Some(transaction_summary.account_id.into()),
+                block_num: transaction_summary.block_num.as_u32(),
+                transaction_id: Some(transaction_summary.transaction_id.into()),
+            })
+            .collect();
 
-        let notes = Vec::from_iter(state.notes.into_iter().map(Into::into));
+        let notes = state.notes.into_iter().map(Into::into).collect();
 
         Ok(Response::new(proto::rpc::SyncStateResponse {
             chain_tip: self.state.latest_block_num().await.as_u32(),
@@ -225,7 +229,7 @@ impl rpc_server::Rpc for StoreApi {
         let (state, mmr_proof, last_block_included) =
             self.state.sync_notes(request.note_tags, block_range).await?;
 
-        let notes = Vec::from_iter(state.notes.into_iter().map(Into::into));
+        let notes = state.notes.into_iter().map(Into::into).collect();
 
         Ok(Response::new(proto::rpc::SyncNotesResponse {
             pagination_info: Some(proto::rpc::PaginationInfo {
@@ -264,16 +268,16 @@ impl rpc_server::Rpc for StoreApi {
 
         let note_ids: Vec<Word> = convert_digests_to_words::<GetNotesByIdError, _>(note_ids)?;
 
-        let note_ids = Vec::from_iter(note_ids.into_iter().map(NoteId::from_raw));
+        let note_ids: Vec<NoteId> = note_ids.into_iter().map(NoteId::from_raw).collect();
 
-        let notes = Vec::from_iter(
-            self.state
-                .get_notes_by_id(note_ids)
-                .await
-                .map_err(GetNotesByIdError::from)?
-                .into_iter()
-                .map(Into::into),
-        );
+        let notes = self
+            .state
+            .get_notes_by_id(note_ids)
+            .await
+            .map_err(GetNotesByIdError::from)?
+            .into_iter()
+            .map(Into::into)
+            .collect();
 
         Ok(Response::new(proto::note::CommittedNoteList { notes }))
     }
@@ -383,14 +387,17 @@ impl rpc_server::Rpc for StoreApi {
             .await
             .map_err(SyncAccountVaultError::from)?;
 
-        let updates = Vec::from_iter(updates.into_iter().map(|update| {
-            let vault_key: Word = update.vault_key.into();
-            proto::rpc::AccountVaultUpdate {
-                vault_key: Some(vault_key.into()),
-                asset: update.asset.map(Into::into),
-                block_num: update.block_num.as_u32(),
-            }
-        }));
+        let updates = updates
+            .into_iter()
+            .map(|update| {
+                let vault_key: Word = update.vault_key.into();
+                proto::rpc::AccountVaultUpdate {
+                    vault_key: Some(vault_key.into()),
+                    asset: update.asset.map(Into::into),
+                    block_num: update.block_num.as_u32(),
+                }
+            })
+            .collect();
 
         Ok(Response::new(proto::rpc::SyncAccountVaultResponse {
             pagination_info: Some(proto::rpc::PaginationInfo {
@@ -438,14 +445,16 @@ impl rpc_server::Rpc for StoreApi {
             .await
             .map_err(SyncStorageMapsError::from)?;
 
-        let updates = Vec::from_iter(storage_maps_page.values.into_iter().map(|map_value| {
-            proto::rpc::StorageMapUpdate {
+        let updates = storage_maps_page
+            .values
+            .into_iter()
+            .map(|map_value| proto::rpc::StorageMapUpdate {
                 slot_name: map_value.slot_name.to_string(),
                 key: Some(map_value.key.into()),
                 value: Some(map_value.value.into()),
                 block_num: map_value.block_num.as_u32(),
-            }
-        }));
+            })
+            .collect();
 
         Ok(Response::new(proto::rpc::SyncStorageMapsResponse {
             pagination_info: Some(proto::rpc::PaginationInfo {
@@ -553,23 +562,21 @@ impl rpc_server::Rpc for StoreApi {
             .map_err(SyncTransactionsError::from)?;
 
         // Create a map from note ID to note record for efficient lookup
-        let note_map: std::collections::HashMap<_, _> = std::collections::HashMap::from_iter(
-            all_note_records
-                .into_iter()
-                .map(|note_record| (note_record.note_id, note_record)),
-        );
+        let note_map: std::collections::HashMap<_, _> = all_note_records
+            .into_iter()
+            .map(|note_record| (note_record.note_id, note_record))
+            .collect();
 
         // Convert database TransactionRecord to proto TransactionRecord
         let mut transactions = Vec::with_capacity(transaction_records_db.len());
 
         for tx_header in transaction_records_db {
             // Get note records for this transaction's output notes
-            let note_records = Vec::from_iter(
-                tx_header
-                    .output_notes
-                    .iter()
-                    .filter_map(|note_id| note_map.get(&note_id.as_word()).cloned()),
-            );
+            let note_records: Vec<_> = tx_header
+                .output_notes
+                .iter()
+                .filter_map(|note_id| note_map.get(&note_id.as_word()).cloned())
+                .collect();
 
             // Convert to proto using the helper method
             let proto_record = tx_header.into_proto_with_note_records(note_records);

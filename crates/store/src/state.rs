@@ -50,7 +50,7 @@ use miden_objects::crypto::merkle::{
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
-use miden_objects::{AccountError, EMPTY_WORD, Word};
+use miden_objects::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 
@@ -512,8 +512,8 @@ impl State {
         let account_storages =
             self.query_account_storages_from_db(changed_account_ids, block_num).await?;
 
-        // Step 2: Extract map slots and their entries
-        let map_slots_to_populate = Self::extract_map_slots_from_storage(&account_storages);
+        // Step 2: Extract map slots and their entries using InnerForest helper
+        let map_slots_to_populate = InnerForest::extract_map_slots_from_storage(&account_storages);
 
         // Step 3: Update the forest with new SMTs
         self.populate_forest_with_storage_maps(map_slots_to_populate, block_num).await?;
@@ -538,27 +538,6 @@ impl State {
         Ok(account_storages)
     }
 
-    /// Extracts map-type storage slots and their entries from account storage data
-    #[instrument(target = COMPONENT, skip_all, fields(num_accounts = account_storages.len()))]
-    #[allow(clippy::type_complexity)]
-    fn extract_map_slots_from_storage<'a>(
-        account_storages: &'a [(AccountId, miden_objects::account::AccountStorage)],
-    ) -> Vec<(AccountId, u8, Vec<(&'a Word, &'a Word)>)> {
-        let mut map_slots = Vec::new();
-
-        for (account_id, storage) in account_storages {
-            for (slot_idx, slot) in storage.slots().iter().enumerate() {
-                if let StorageSlot::Map(storage_map) = slot {
-                    let entries = Vec::from_iter(storage_map.entries());
-                    map_slots.push((*account_id, slot_idx as u8, entries));
-                }
-            }
-        }
-
-        tracing::debug!(target: COMPONENT, num_map_slots = map_slots.len());
-        map_slots
-    }
-
     /// Populates the forest with storage map SMTs for the given slots
     #[instrument(target = COMPONENT, skip_all, fields(num_slots = map_slots.len()))]
     #[allow(clippy::type_complexity)]
@@ -573,29 +552,10 @@ impl State {
 
         // Acquire write lock once for all updates
         let mut forest_guard = self.forest.write().await;
-        let prev_block_num = block_num.parent().unwrap_or_default();
 
-        for (account_id, slot_idx, entries) in map_slots {
-            // Get previous root for structural sharing
-            let prev_root = forest_guard
-                .storage_roots
-                .get(&(account_id, slot_idx, prev_block_num))
-                .copied()
-                .unwrap_or(EMPTY_WORD);
+        // Delegate to InnerForest for the actual population logic
+        forest_guard.populate_storage_maps(map_slots, block_num);
 
-            // Build new SMT from entries
-            let updated_root = forest_guard
-                .storage_forest
-                .batch_insert(prev_root, entries.into_iter().map(|(k, v)| (*k, *v)))
-                .expect("Forest insertion should always succeed with valid entries");
-
-            // Track the new root
-            forest_guard
-                .storage_roots
-                .insert((account_id, slot_idx, block_num), updated_root);
-        }
-
-        tracing::debug!(target: COMPONENT, total_tracked_roots = forest_guard.storage_roots.len());
         Ok(())
     }
 
@@ -620,31 +580,10 @@ impl State {
             return Ok(());
         }
 
-        // Acquire a single write lock on the forest for the entire update operation.
-        // Since apply_block() is already serialized by the `writer` Mutex, holding this lock
-        // for the entire duration is acceptable and simplifies the code.
+        // Acquire write lock once for the entire update operation and delegate to InnerForest
         let mut forest_guard = self.forest.write().await;
+        forest_guard.populate_vaults(vault_entries_to_populate, block_num);
 
-        let prev_block_num = block_num.parent().unwrap_or_default();
-
-        // Process each vault: get previous root, build new SMT, track new root
-        for (account_id, entries) in vault_entries_to_populate {
-            let prev_root = forest_guard
-                .vault_roots
-                .get(&(account_id, prev_block_num))
-                .copied()
-                .unwrap_or(EMPTY_WORD);
-
-            let updated_root = forest_guard
-                .storage_forest
-                .batch_insert(prev_root, entries)
-                .expect("Database is consistent and always allows constructing a smt or forest");
-
-            // Track the new vault root
-            forest_guard.vault_roots.insert((account_id, block_num), updated_root);
-        }
-
-        tracing::debug!(target: COMPONENT, total_vault_roots = forest_guard.vault_roots.len());
         Ok(())
     }
 

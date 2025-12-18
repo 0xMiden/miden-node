@@ -202,32 +202,36 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
 
         let slot_name = StorageSlotName::new(slot_name)?;
 
-        // Extract map_entries from the MapEntries message
-        let map_entries = if let Some(entries) = entries {
-            entries
-                .entries
-                .into_iter()
-                .map(|entry| {
-                    let key = entry
-                        .key
-                        .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-                            stringify!(key),
-                        ))?
-                        .try_into()?;
-                    let value = entry
-                        .value
-                        .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-                            stringify!(value),
-                        ))?
-                        .try_into()?;
-                    Ok((key, value))
-                })
-                .collect::<Result<Vec<_>, ConversionError>>()?
+        let entries = if too_many_entries {
+            StorageMapEntries::LimitExceeded
         } else {
-            Vec::new()
+            let map_entries = if let Some(entries) = entries {
+                entries
+    .entries
+.into_iter()
+.map(|entry| {
+let key = entry
+.key
+    .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
+        stringify!(key),
+        ))?
+    .try_into()?;
+let value = entry
+.value
+    .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
+        stringify!(value),
+        ))?
+            .try_into()?;
+        Ok((key, value))
+            })
+        .collect::<Result<Vec<_>, ConversionError>>()?
+            } else {
+                Vec::new()
+            };
+            StorageMapEntries::Entries(map_entries)
         };
 
-        Ok(Self { slot_name, too_many_entries, map_entries })
+        Ok(Self { slot_name, entries })
     }
 }
 
@@ -438,24 +442,31 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
     }
 }
 
-/// Details about an account storage map slot, including overflow handling.
+/// Storage map entries for an account storage slot.
 ///
 /// When a storage map contains many entries (> 1000), returning all entries in a single
-/// RPC response creates performance issues. In such cases, `too_many_entries` is `true`,
-/// `map_entries` is empty, and clients should use the `SyncStorageMaps` endpoint instead.
+/// RPC response creates performance issues. In such cases, the `LimitExceeded` variant
+/// indicates to the client to use the `SyncStorageMaps` endpoint instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageMapEntries {
+    /// The map has too many entries to return inline.
+    /// Clients must use `SyncStorageMaps` endpoint instead.
+    LimitExceeded,
+
+    /// The storage map entries (key-value pairs), up to `MAX_RETURN_ENTRIES`.
+    /// TODO: For partial responses, also include Merkle proofs and inner SMT nodes.
+    Entries(Vec<(Word, Word)>),
+}
+
+/// Details about an account storage map slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageMapDetails {
     pub slot_name: StorageSlotName,
-    pub too_many_entries: bool,
-
-    /// The storage map entries (key-value pairs). Empty if `too_many_entries` is `true`.
-    /// TODO: For partial responses, also include Merkle proofs and inner SMT nodes.
-    pub map_entries: Vec<(Word, Word)>,
+    pub entries: StorageMapEntries,
 }
 
 impl AccountStorageMapDetails {
     /// Maximum number of storage map entries that can be returned in a single response.
-    /// Maps with more entries will have `too_many_entries = true` and empty `map_entries`.
     pub const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(slot_name: StorageSlotName, slot_data: SlotData, storage_map: &StorageMap) -> Self {
@@ -467,13 +478,15 @@ impl AccountStorageMapDetails {
 
     fn from_all_entries(slot_name: StorageSlotName, storage_map: &StorageMap) -> Self {
         if storage_map.num_entries() > Self::MAX_RETURN_ENTRIES {
-            Self::too_many_entries(slot_name)
+            Self {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }
         } else {
             let map_entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
             Self {
                 slot_name,
-                too_many_entries: false,
-                map_entries,
+                entries: StorageMapEntries::Entries(map_entries),
             }
         }
     }
@@ -484,18 +497,13 @@ impl AccountStorageMapDetails {
         storage_map: &StorageMap,
     ) -> Self {
         if keys.len() > Self::MAX_RETURN_ENTRIES {
-            Self::too_many_entries(slot_name)
+            Self {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }
         } else {
             // TODO For now, we return all entries instead of specific keys with proofs
             Self::from_all_entries(slot_name, storage_map)
-        }
-    }
-
-    pub fn too_many_entries(slot_name: StorageSlotName) -> Self {
-        Self {
-            slot_name,
-            too_many_entries: true,
-            map_entries: Vec::new(),
         }
     }
 }
@@ -665,21 +673,30 @@ impl From<AccountStorageMapDetails>
     fn from(value: AccountStorageMapDetails) -> Self {
         use proto::rpc::account_storage_details::account_storage_map_details;
 
-        let AccountStorageMapDetails { slot_name, too_many_entries, map_entries } = value;
+        let AccountStorageMapDetails { slot_name, entries } = value;
 
-        let entries = Some(account_storage_map_details::MapEntries {
-            entries: Vec::from_iter(map_entries.into_iter().map(|(key, value)| {
-                account_storage_map_details::map_entries::StorageMapEntry {
-                    key: Some(key.into()),
-                    value: Some(value.into()),
+        match entries {
+            StorageMapEntries::LimitExceeded => Self {
+                slot_name: slot_name.to_string(),
+                too_many_entries: true,
+                entries: Some(account_storage_map_details::MapEntries { entries: Vec::new() }),
+            },
+            StorageMapEntries::Entries(map_entries) => {
+                let entries = Some(account_storage_map_details::MapEntries {
+                    entries: Vec::from_iter(map_entries.into_iter().map(|(key, value)| {
+                        account_storage_map_details::map_entries::StorageMapEntry {
+                            key: Some(key.into()),
+                            value: Some(value.into()),
+                        }
+                    })),
+                });
+
+                Self {
+                    slot_name: slot_name.to_string(),
+                    too_many_entries: false,
+                    entries,
                 }
-            })),
-        });
-
-        Self {
-            slot_name: slot_name.to_string(),
-            too_many_entries,
-            entries,
+            },
         }
     }
 }

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Queryable, QueryableByName};
@@ -19,7 +18,11 @@ use diesel::{
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
-use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
+use miden_node_utils::limiter::{
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+};
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     Account,
@@ -28,32 +31,20 @@ use miden_objects::account::{
     AccountHeader,
     AccountId,
     AccountStorage,
-    AccountStorageHeader,
     NonFungibleDeltaAction,
-    StorageMap,
-    StorageSlot,
-    StorageSlotType,
+    StorageSlotContent,
+    StorageSlotName,
 };
 use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, FieldElement, Word};
 
-use crate::constants::MAX_PAYLOAD_BYTES;
-use crate::db::models::conv::{
-    SqlTypeConvert,
-    nonce_to_raw_sql,
-    raw_sql_to_nonce,
-    raw_sql_to_slot,
-    slot_to_raw_sql,
-};
+use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
-#[cfg(test)]
-mod tests;
-
-/// Select the latest account info by account id from the DB using the given
+type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
 /// [`SqliteConnection`].
 ///
 /// # Returns
@@ -222,7 +213,7 @@ pub(crate) fn select_account_vault_assets(
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
-    const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -359,10 +350,34 @@ pub(crate) fn select_all_accounts(
     Ok(account_infos)
 }
 
+/// Returns all network account IDs.
+///
+/// # Returns
+///
+/// A vector with network account IDs, or an error.
+pub(crate) fn select_all_network_account_ids(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<AccountId>, DatabaseError> {
+    let account_ids_raw: Vec<Vec<u8>> = QueryDsl::select(
+        schema::accounts::table.filter(schema::accounts::network_account_id_prefix.is_not_null()),
+        schema::accounts::account_id,
+    )
+    .load::<Vec<u8>>(conn)?;
+
+    let account_ids = account_ids_raw
+        .into_iter()
+        .map(|id_bytes| {
+            AccountId::read_from_bytes(&id_bytes).map_err(DatabaseError::DeserializationError)
+        })
+        .collect::<Result<Vec<AccountId>, DatabaseError>>()?;
+
+    Ok(account_ids)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMapValue {
     pub block_num: BlockNumber,
-    pub slot_index: u8,
+    pub slot_name: StorageSlotName,
     pub key: Word,
     pub value: Word,
 }
@@ -376,11 +391,11 @@ pub struct StorageMapValuesPage {
 }
 
 impl StorageMapValue {
-    pub fn from_raw_row(row: (i64, i32, Vec<u8>, Vec<u8>)) -> Result<Self, DatabaseError> {
-        let (block_num, slot_index, key, value) = row;
+    pub fn from_raw_row(row: StorageMapValueRow) -> Result<Self, DatabaseError> {
+        let (block_num, slot_name, key, value) = row;
         Ok(Self {
             block_num: BlockNumber::from_raw_sql(block_num)?,
-            slot_index: raw_sql_to_slot(slot_index),
+            slot_name: StorageSlotName::from_raw_sql(slot_name)?,
             key: Word::read_from_bytes(&key)?,
             value: Word::read_from_bytes(&value)?,
         })
@@ -439,7 +454,7 @@ pub(crate) fn select_account_storage_map_values(
     // See miden-base/issues/1770 for more details
     pub const ROW_OVERHEAD_BYTES: usize =
         2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
-    pub const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    pub const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -452,8 +467,8 @@ pub(crate) fn select_account_storage_map_values(
         });
     }
 
-    let raw: Vec<(i64, i32, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::block_num, t::slot, t::key, t::value))
+    let raw: Vec<StorageMapValueRow> =
+        SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
             .filter(
                 t::account_id
                     .eq(account_id.to_bytes())
@@ -490,85 +505,6 @@ pub(crate) fn select_account_storage_map_values(
     Ok(StorageMapValuesPage { last_block_included, values })
 }
 
-/// Reconstruct a `StorageMap` from database entries using `SmtForest`
-///
-/// This function builds an `SmtForest` from all key-value pairs at the specified block,
-/// enabling efficient proof generation with structural sharing. The forest allows
-/// maintaining multiple SMT versions in memory with shared nodes.
-///
-/// # Arguments
-///
-/// * `conn` - Database connection
-/// * `account_id` - The account ID
-/// * `block_num` - The block number
-/// * `slot_index` - The storage slot index
-///
-/// # Returns
-///
-/// A reconstructed `StorageMap` backed by `SmtForest` with full proof capabilities.
-pub(crate) fn reconstruct_storage_map_at_block(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-    slot_index: u8,
-) -> Result<StorageMap, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    let account_id_bytes = account_id.to_bytes();
-    let block_num_sql = block_num.to_raw_sql();
-    let slot_sql = slot_to_raw_sql(slot_index);
-
-    // Query all entries for this slot at or before the given block
-    let raw: Vec<(i64, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::block_num, t::key, t::value))
-            .filter(
-                t::account_id
-                    .eq(&account_id_bytes)
-                    .and(t::slot.eq(slot_sql))
-                    .and(t::block_num.le(block_num_sql)),
-            )
-            .load(conn)?;
-
-    // Parse entries
-    let entries = Result::<Vec<(BlockNumber, Word, Word)>, DatabaseError>::from_iter(
-        raw.into_iter().map(|(n, key, value)| {
-            Ok((
-                BlockNumber::from_raw_sql(n)?,
-                Word::read_from_bytes(&key)?,
-                Word::read_from_bytes(&value)?,
-            ))
-        }),
-    )?;
-
-    // only keep the latest version of each key around
-    let mut key_map = HashMap::<Word, (BlockNumber, Word)>::new();
-    for (block_num, key, value) in entries {
-        key_map
-            .entry(key)
-            .and_modify(|(existing_block, existing_value)| {
-                if block_num > *existing_block {
-                    *existing_block = block_num;
-                    *existing_value = value;
-                }
-            })
-            .or_insert((block_num, value));
-    }
-
-    // Convert back to vec of (key, value) pairs
-    let entries: Vec<(Word, Word)> =
-        key_map.into_iter().map(|(key, (_block_num, value))| (key, value)).collect();
-
-    let entry_count = entries.len();
-
-    // StorageMap::with_entries internally uses an SMT which can be backed by SmtForest
-    // The SMT is built with structural sharing for memory efficiency
-    StorageMap::with_entries(entries).map_err(|e| {
-        DatabaseError::DataCorrupted(format!(
-            "Failed to create StorageMap from {entry_count} entries: {e}"
-        ))
-    })
-}
-
 /// Returns account storage header at a given block by reading from `accounts.storage_header`
 /// and deserializing the storage header blob.
 pub(crate) fn select_account_storage_at_block(
@@ -579,36 +515,28 @@ pub(crate) fn select_account_storage_at_block(
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
-    // Query storage headers for this account at this block
-    let storage_header: Option<Vec<u8>> =
+    // Query storage blob for this account at this block
+    let storage_blob: Option<Vec<u8>> =
         SelectDsl::select(schema::accounts::table, schema::accounts::storage_header)
             .filter(schema::accounts::account_id.eq(&account_id_bytes))
             .filter(schema::accounts::block_num.le(block_num_sql))
+            .order(schema::accounts::block_num.desc())
             .limit(1)
-            .first(conn)?;
+            .first(conn)
+            .optional()?
+            .flatten();
 
-    let Some(header) = storage_header else {
-        // No storage headers means empty storage
+    let Some(blob) = storage_blob else {
+        // No storage means empty storage
         return Ok(AccountStorage::new(Vec::new())?);
     };
 
-    let header = AccountStorageHeader::read_from_bytes(&header)?;
+    // Deserialize the full AccountStorage from the blob
+    let storage = AccountStorage::read_from_bytes(&blob)?;
 
-    let mut slots = Vec::new();
-    for (idx, (slot_ty, val)) in header.slots().enumerate() {
-        let slot = match slot_ty {
-            StorageSlotType::Map => {
-                let storage_map =
-                    reconstruct_storage_map_at_block(conn, account_id, block_num, idx as u8)?;
-                StorageSlot::Map(storage_map)
-            },
-            StorageSlotType::Value => StorageSlot::Value(*val),
-        };
-        slots.push(slot);
-    }
-
-    Ok(AccountStorage::new(slots)?)
+    Ok(storage)
 }
+
 /// Select latest account storage header by querying `accounts.storage_header` where
 /// `is_latest=true`.
 pub(crate) fn select_latest_account_storage(
@@ -617,8 +545,8 @@ pub(crate) fn select_latest_account_storage(
 ) -> Result<AccountStorage, DatabaseError> {
     let account_id_bytes = account_id.to_bytes();
 
-    // Query storage header for this account where is_latest = true
-    let storage_header: Option<Vec<u8>> =
+    // Query storage blob for this account where is_latest = true
+    let storage_blob: Option<Vec<u8>> =
         SelectDsl::select(schema::accounts::table, schema::accounts::storage_header)
             .filter(schema::accounts::account_id.eq(&account_id_bytes))
             .filter(schema::accounts::is_latest.eq(true))
@@ -626,51 +554,15 @@ pub(crate) fn select_latest_account_storage(
             .optional()?
             .flatten();
 
-    let Some(header) = storage_header else {
-        // No storage headers means empty storage
+    let Some(blob) = storage_blob else {
+        // No storage means empty storage
         return Ok(AccountStorage::new(Vec::new())?);
     };
 
-    let header = AccountStorageHeader::read_from_bytes(&header)?;
+    // Deserialize the full AccountStorage from the blob
+    let storage = AccountStorage::read_from_bytes(&blob)?;
 
-    let mut slots = Vec::new();
-    for (idx, (slot_ty, val)) in header.slots().enumerate() {
-        let slot = match slot_ty {
-            StorageSlotType::Map => {
-                // For latest storage, we need to query all latest storage map values
-                // Note: we do not use `select_account_storage_at_block` here since we can use
-                // `is_latest=true` as a simplified filter.
-                use schema::account_storage_map_values as t;
-
-                let raw: Vec<(Vec<u8>, Vec<u8>)> = SelectDsl::select(t::table, (t::key, t::value))
-                    .filter(
-                        t::account_id
-                            .eq(&account_id_bytes)
-                            .and(t::slot.eq(slot_to_raw_sql(idx as u8)))
-                            .and(t::is_latest.eq(true)),
-                    )
-                    .load(conn)?;
-
-                let entries = Result::<Vec<(Word, Word)>, DatabaseError>::from_iter(
-                    raw.into_iter().map(|(key, value)| {
-                        Ok((Word::read_from_bytes(&key)?, Word::read_from_bytes(&value)?))
-                    }),
-                )?;
-
-                let entry_count = entries.len();
-                let storage_map = StorageMap::with_entries(entries).map_err(|e| {
-                    DatabaseError::DataCorrupted(format!(
-                        "Failed to create StorageMap from {entry_count} entries: {e}"
-                    ))
-                })?;
-                StorageSlot::Map(storage_map)
-            },
-            StorageSlotType::Value => StorageSlot::Value(*val),
-        };
-        slots.push(slot);
-    }
-
-    Ok(AccountStorage::new(slots)?)
+    Ok(storage)
 }
 
 #[derive(Queryable, Selectable)]
@@ -770,21 +662,21 @@ pub(crate) fn insert_account_storage_map_value(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    slot: u8,
+    slot_name: StorageSlotName,
     key: Word,
     value: Word,
 ) -> Result<usize, DatabaseError> {
     let account_id = account_id.to_bytes();
     let key = key.to_bytes();
     let value = value.to_bytes();
-    let slot = slot_to_raw_sql(slot);
+    let slot_name = slot_name.to_raw_sql();
     let block_num = block_num.to_raw_sql();
 
     let update_count = diesel::update(schema::account_storage_map_values::table)
         .filter(
             schema::account_storage_map_values::account_id
                 .eq(&account_id)
-                .and(schema::account_storage_map_values::slot.eq(slot))
+                .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
                 .and(schema::account_storage_map_values::key.eq(&key))
                 .and(schema::account_storage_map_values::is_latest.eq(true)),
         )
@@ -795,7 +687,7 @@ pub(crate) fn insert_account_storage_map_value(
         account_id,
         key,
         value,
-        slot,
+        slot_name,
         block_num,
         is_latest: true,
     };
@@ -907,17 +799,10 @@ pub(crate) fn upsert_accounts(
 
                 // collect storage-map inserts to apply after account upsert
                 let mut storage = Vec::new();
-                for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
-                    if let StorageSlot::Map(storage_map) = slot {
-                        // SAFETY: We can safely unwrap the conversion to u8 because
-                        // accounts have a limit of 255 storage elements
+                for slot in account.storage().slots() {
+                    if let StorageSlotContent::Map(storage_map) = slot.content() {
                         for (key, value) in storage_map.entries() {
-                            storage.push((
-                                account_id,
-                                u8::try_from(slot_idx).unwrap(),
-                                *key,
-                                *value,
-                            ));
+                            storage.push((account_id, slot.name().clone(), *key, *value));
                         }
                     }
                 }
@@ -932,9 +817,9 @@ pub(crate) fn upsert_accounts(
                 // --- collect storage map updates ----------------------------
 
                 let mut storage = Vec::new();
-                for (&slot, map_delta) in delta.storage().maps() {
+                for (slot_name, map_delta) in delta.storage().maps() {
                     for (key, value) in map_delta.entries() {
-                        storage.push((account_id, slot, (*key).into(), *value));
+                        storage.push((account_id, slot_name.clone(), (*key).into(), *value));
                     }
                 }
 
@@ -1007,8 +892,9 @@ pub(crate) fn upsert_accounts(
             .values(&account_value)
             .execute(conn)?;
 
-        for (acc_id, slot, key, value) in pending_storage_inserts {
-            insert_account_storage_map_value(conn, acc_id, block_num, slot, key, value)?;
+        // insert pending storage map entries
+        for (acc_id, slot_name, key, value) in pending_storage_inserts {
+            insert_account_storage_map_value(conn, acc_id, block_num, slot_name, key, value)?;
         }
 
         for (acc_id, vault_key, update) in pending_asset_inserts {
@@ -1098,7 +984,7 @@ impl AccountAssetRowInsert {
 pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) account_id: Vec<u8>,
     pub(crate) block_num: i64,
-    pub(crate) slot: i32,
+    pub(crate) slot_name: String,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
     pub(crate) is_latest: bool,
@@ -1272,7 +1158,7 @@ pub(crate) fn select_account_header_at_block(
     let storage_commitment = match storage_header_blob {
         Some(blob) => {
             let storage = AccountStorage::read_from_bytes(&blob)?;
-            storage.commitment()
+            storage.to_commitment()
         },
         None => Word::default(),
     };

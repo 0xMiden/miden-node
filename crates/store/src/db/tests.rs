@@ -7,8 +7,7 @@ use std::sync::{Arc, Mutex};
 use diesel::{Connection, SqliteConnection};
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
-use miden_lib::transaction::TransactionKernel;
-use miden_lib::utils::Serializable;
+use miden_lib::utils::{CodeBuilder, Serializable};
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::{test_fee, test_fee_params};
 use miden_objects::account::auth::PublicKeyCommitment;
@@ -25,6 +24,7 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
     StorageSlot,
+    StorageSlotName,
 };
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{
@@ -34,6 +34,7 @@ use miden_objects::block::{
     BlockNoteTree,
     BlockNumber,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{
@@ -54,6 +55,7 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
+use miden_objects::testing::random_signer::RandomBlockSigner;
 use miden_objects::transaction::{
     InputNoteCommitment,
     InputNotes,
@@ -89,7 +91,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        SecretKey::new().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -450,139 +452,6 @@ fn make_account_and_note(
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn sql_unconsumed_network_notes() {
-    // Number of notes to generate.
-    const N: u64 = 32;
-
-    let mut conn = create_db();
-    let conn = &mut conn;
-
-    let block_num = BlockNumber::from(1);
-    // An arbitrary public account (network note tag requires public account).
-    create_block(conn, block_num);
-
-    let account_notes = [
-        make_account_and_note(conn, block_num, [0u8; 32], AccountStorageMode::Public),
-        make_account_and_note(conn, block_num, [1u8; 32], AccountStorageMode::Network),
-    ];
-    let network_account_id = account_notes[1].0;
-
-    // Create some notes, of which half are network notes.
-    let notes = (0..N)
-        .map(|i| {
-            let index = (i % 2) as usize;
-            let is_network = account_notes[index].0.storage_mode() == AccountStorageMode::Network;
-            let account_id = account_notes[index].0;
-            let new_note = &account_notes[index].1;
-            let note = NoteRecord {
-                block_num,
-                note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
-                note_id: num_to_word(i),
-                note_commitment: num_to_word(i),
-                metadata: NoteMetadata::new(
-                    account_notes[index].0,
-                    NoteType::Public,
-                    NoteTag::from_account_id(account_id),
-                    NoteExecutionHint::none(),
-                    Felt::default(),
-                )
-                .unwrap(),
-                details: is_network.then_some(NoteDetails::from(new_note)),
-                inclusion_path: SparseMerklePath::default(),
-            };
-
-            (note, is_network.then_some(num_to_nullifier(i)))
-        })
-        .collect::<Vec<_>>();
-
-    // Copy out all network notes to assert against. These will be in chronological order already.
-    let network_notes = notes
-        .iter()
-        .filter_map(|(note, nullifier)| nullifier.is_some().then_some(note.clone()))
-        .collect::<Vec<_>>();
-
-    // Insert the set of notes.
-    queries::insert_scripts(conn, notes.iter().map(|(note, _)| note)).unwrap();
-    queries::insert_notes(conn, &notes).unwrap();
-
-    // Fetch all network notes by setting a limit larger than the amount available.
-    let (result, _) = queries::unconsumed_network_notes(
-        conn,
-        Page {
-            token: None,
-            size: NonZeroUsize::new(N as usize * 10).unwrap(),
-        },
-    )
-    .unwrap();
-    assert_eq!(result, network_notes);
-    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
-        conn,
-        NoteTag::from_account_id(network_account_id).into(),
-        block_num,
-        Page {
-            token: None,
-            size: NonZeroUsize::new(N as usize * 10).unwrap(),
-        },
-    )
-    .unwrap();
-    assert_eq!(result, network_notes);
-
-    // Check pagination works as expected.
-    let limit = 5;
-    let mut page = Page {
-        token: None,
-        size: NonZeroUsize::new(limit).unwrap(),
-    };
-    network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = queries::unconsumed_network_notes(conn, page).unwrap();
-        page = new_page;
-        assert_eq!(result, expected);
-    });
-    network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = queries::select_unconsumed_network_notes_by_tag(
-            conn,
-            NoteTag::from_account_id(network_account_id).into(),
-            block_num,
-            page,
-        )
-        .unwrap();
-        page = new_page;
-        assert_eq!(result, expected);
-    });
-    assert!(page.token.is_none());
-
-    // Consume every third network note and ensure these are now excluded from the results.
-    let consumed = notes
-        .iter()
-        .filter_map(|(_, nullifier)| *nullifier)
-        .step_by(3)
-        .collect::<Vec<_>>();
-    queries::insert_nullifiers_for_block(conn, &consumed, block_num).unwrap();
-
-    let expected = network_notes
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| i % 3 != 0)
-        .map(|(_, note)| note.clone())
-        .collect::<Vec<_>>();
-    let page = Page {
-        token: None,
-        size: NonZeroUsize::new(N as usize * 10).unwrap(),
-    };
-    let (result, _) = queries::unconsumed_network_notes(conn, page).unwrap();
-    assert_eq!(result, expected);
-    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
-        conn,
-        NoteTag::from_account_id(network_account_id).into(),
-        block_num,
-        page,
-    )
-    .unwrap();
-    assert_eq!(result, expected);
-}
-
-#[test]
-#[miden_node_test_macro::enable_logging]
-fn sql_unconsumed_network_notes_for_account() {
     let mut conn = create_db();
 
     // Create account.
@@ -988,7 +857,7 @@ fn db_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        SecretKey::new().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -1020,7 +889,7 @@ fn db_block_header() {
         num_to_word(17),
         num_to_word(18),
         num_to_word(19),
-        num_to_word(20),
+        SecretKey::new().public_key(),
         test_fee_params(),
         21_u8.into(),
     );
@@ -1251,10 +1120,17 @@ fn insert_account_delta(
     block_number: BlockNumber,
     delta: &AccountDelta,
 ) {
-    for (slot, slot_delta) in delta.storage().maps() {
+    for (slot_name, slot_delta) in delta.storage().maps() {
         for (k, v) in slot_delta.entries() {
-            insert_account_storage_map_value(conn, account_id, block_number, *slot, *k.inner(), *v)
-                .unwrap();
+            insert_account_storage_map_value(
+                conn,
+                account_id,
+                block_number,
+                slot_name.clone(),
+                *k.inner(),
+                *v,
+            )
+            .unwrap();
         }
     }
 }
@@ -1277,7 +1153,7 @@ fn sql_account_storage_map_values_insertion() {
     let account_id =
         AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
 
-    let slot = 3u8;
+    let slot_name = StorageSlotName::mock(3);
     let key1 = Word::from([1u32, 2, 3, 4]);
     let key2 = Word::from([5u32, 6, 7, 8]);
     let value1 = Word::from([10u32, 11, 12, 13]);
@@ -1288,7 +1164,7 @@ fn sql_account_storage_map_values_insertion() {
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
-    let maps1: BTreeMap<_, _> = [(slot, map1)].into_iter().collect();
+    let maps1: BTreeMap<_, _> = [(slot_name.clone(), map1)].into_iter().collect();
     let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
@@ -1302,7 +1178,7 @@ fn sql_account_storage_map_values_insertion() {
     // Update key1 at block 2
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
-    let maps2 = BTreeMap::from_iter([(slot, map2)]);
+    let maps2 = BTreeMap::from_iter([(slot_name.clone(), map2)]);
     let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
@@ -1319,14 +1195,14 @@ fn sql_account_storage_map_values_insertion() {
         storage_map_values
             .values
             .iter()
-            .any(|val| val.slot_index == slot && val.key == key1 && val.value == value3),
+            .any(|val| val.slot_name == slot_name && val.key == key1 && val.value == value3),
         "key1 should point to new value at block2"
     );
     assert!(
         storage_map_values
             .values
             .iter()
-            .any(|val| val.slot_index == slot && val.key == key2 && val.value == value2),
+            .any(|val| val.slot_name == slot_name && val.key == key2 && val.value == value2),
         "key2 should stay the same (from block1)"
     );
 }
@@ -1335,7 +1211,7 @@ fn sql_account_storage_map_values_insertion() {
 fn select_storage_map_sync_values() {
     let mut conn = create_db();
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    let slot = 5u8;
+    let slot_name = StorageSlotName::mock(5);
 
     let key1 = num_to_word(1);
     let key2 = num_to_word(2);
@@ -1350,20 +1226,55 @@ fn select_storage_map_sync_values() {
 
     // Insert data across multiple blocks using individual inserts
     // Block 1: key1 -> value1, key2 -> value2
-    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key1, value1)
-        .unwrap();
-    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key2, value2)
-        .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block1,
+        slot_name.clone(),
+        key1,
+        value1,
+    )
+    .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block1,
+        slot_name.clone(),
+        key2,
+        value2,
+    )
+    .unwrap();
 
     // Block 2: key2 -> value3 (update), key3 -> value3 (new)
-    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key2, value3)
-        .unwrap();
-    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key3, value3)
-        .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block2,
+        slot_name.clone(),
+        key2,
+        value3,
+    )
+    .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block2,
+        slot_name.clone(),
+        key3,
+        value3,
+    )
+    .unwrap();
 
     // Block 3: key1 -> value2 (update)
-    queries::insert_account_storage_map_value(&mut conn, account_id, block3, slot, key1, value2)
-        .unwrap();
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block3,
+        slot_name.clone(),
+        key1,
+        value2,
+    )
+    .unwrap();
 
     let page = queries::select_account_storage_map_values(
         &mut conn,
@@ -1377,19 +1288,19 @@ fn select_storage_map_sync_values() {
     // Compare ordered by key using a tuple view to avoid relying on the concrete struct name
     let expected = vec![
         StorageMapValue {
-            slot_index: slot,
+            slot_name: slot_name.clone(),
             key: key2,
             value: value3,
             block_num: block2,
         },
         StorageMapValue {
-            slot_index: slot,
+            slot_name: slot_name.clone(),
             key: key3,
             value: value3,
             block_num: block2,
         },
         StorageMapValue {
-            slot_index: slot,
+            slot_name,
             key: key1,
             value: value2,
             block_num: block3,
@@ -1415,13 +1326,18 @@ fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpd
 
 // Helper function to create account with specific code for tests
 fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
-    let component_storage =
-        vec![StorageSlot::Value(Word::empty()), StorageSlot::Value(num_to_word(1))];
+    let component_storage = vec![
+        StorageSlot::with_value(StorageSlotName::mock(0), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(1), num_to_word(1)),
+    ];
 
-    let component =
-        AccountComponent::compile(code_str, TransactionKernel::assembler(), component_storage)
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountUpdatableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", code_str)
+        .unwrap();
+
+    let component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountUpdatableCode);
 
     AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
@@ -1509,27 +1425,26 @@ fn mock_account_code_and_storage(
     ";
 
     let component_storage = vec![
-        StorageSlot::Value(Word::empty()),
-        StorageSlot::Value(num_to_word(1)),
-        StorageSlot::Value(Word::empty()),
-        StorageSlot::Value(num_to_word(3)),
-        StorageSlot::Value(Word::empty()),
-        StorageSlot::Value(num_to_word(5)),
+        StorageSlot::with_value(StorageSlotName::mock(0), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(1), num_to_word(1)),
+        StorageSlot::with_value(StorageSlotName::mock(2), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(3), num_to_word(3)),
+        StorageSlot::with_value(StorageSlotName::mock(4), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(5), num_to_word(5)),
     ];
 
-    let component = AccountComponent::compile(
-        component_code,
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(account_type);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("counter_contract::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     AccountBuilder::new(init_seed.unwrap_or([0; 32]))
         .account_type(account_type)
         .storage_mode(storage_mode)
         .with_assets(assets)
-        .with_component(component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
@@ -1703,11 +1618,14 @@ fn test_select_account_code_at_block_with_updates() {
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
+    let component_code = "export.foo push.1 end";
 
-    let component =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
@@ -1715,13 +1633,14 @@ fn genesis_with_account_assets() {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1747,25 +1666,30 @@ fn genesis_with_account_storage_map() {
     ])
     .unwrap();
 
-    let component_storage = vec![StorageSlot::Map(storage_map), StorageSlot::Value(Word::empty())];
+    let component_storage = vec![
+        StorageSlot::with_map(StorageSlotName::mock(0), storage_map),
+        StorageSlot::with_empty_value(StorageSlotName::mock(1)),
+    ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component_code = "export.foo push.1 end";
+
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1788,26 +1712,31 @@ fn genesis_with_account_assets_and_storage() {
     )])
     .unwrap();
 
-    let component_storage = vec![StorageSlot::Value(Word::empty()), StorageSlot::Map(storage_map)];
+    let component_storage = vec![
+        StorageSlot::with_empty_value(StorageSlotName::mock(0)),
+        StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
+    ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component_code = "export.foo push.1 end";
+
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1822,15 +1751,17 @@ fn genesis_with_multiple_accounts() {
 
     use crate::genesis::GenesisState;
 
-    let component1 =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", "export.foo push.1 end")
+        .unwrap();
+    let account_component1 = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component1)
+        .with_component(account_component1)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
@@ -1838,15 +1769,17 @@ fn genesis_with_multiple_accounts() {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
-    let component2 =
-        AccountComponent::compile("export.bar push.2 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("bar::interface", "export.bar push.2 end")
+        .unwrap();
+    let account_component2 = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let account2 = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component2)
+        .with_component(account_component2)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
@@ -1858,26 +1791,30 @@ fn genesis_with_multiple_accounts() {
     )])
     .unwrap();
 
-    let component_storage = vec![StorageSlot::Map(storage_map)];
+    let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
-    let component3 = AccountComponent::compile(
-        "export.baz push.3 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("baz::interface", "export.baz push.3 end")
+        .unwrap();
+    let account_component3 = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account3 = AccountBuilder::new([3u8; 32])
-        .account_type(AccountType::RegularAccountImmutableCode)
+        .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component3)
+        .with_component(account_component3)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state =
-        GenesisState::new(vec![account1, account2, account3], test_fee_params(), 1, 0);
+    let genesis_state = GenesisState::new(
+        vec![account1, account2, account3],
+        test_fee_params(),
+        1,
+        0,
+        SecretKey::random(),
+    );
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, Result};
 use miden_lib::AuthScheme;
 use miden_lib::account::interface::AccountInterface;
-use miden_lib::utils::ScriptBuilder;
+use miden_lib::utils::CodeBuilder;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
@@ -195,7 +195,15 @@ async fn setup_increment_task(
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(target = COMPONENT, name = "run-increment-task", skip_all, ret(level = "debug"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.run_increment_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -300,7 +308,7 @@ fn build_increment_status(details: &IncrementDetails, last_error: Option<String>
     };
 
     ServiceStatus {
-        name: "Counter Increment".to_string(),
+        name: "Local Transactions".to_string(),
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,
@@ -332,7 +340,15 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(target = COMPONENT, name = "run-counter-tracking-task", skip_all, ret(level = "debug"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.run_counter_tracking_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -438,7 +454,7 @@ fn build_tracking_status(
     };
 
     ServiceStatus {
-        name: "Counter Tracking".to_string(),
+        name: "Network Transactions".to_string(),
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,
@@ -456,7 +472,15 @@ fn load_counter_account(file_path: &Path) -> Result<Account> {
 
 /// Create and submit a network note that targets the counter account.
 #[allow(clippy::too_many_arguments)]
-#[instrument(target = COMPONENT, name = "create-and-submit-network-note", skip_all, ret)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.create_and_submit_network_note",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 async fn create_and_submit_network_note(
     wallet_account: &Account,
     counter_account: &Account,
@@ -528,7 +552,7 @@ async fn create_and_submit_network_note(
 fn create_increment_script() -> Result<(NoteScript, Library)> {
     let library = get_counter_library()?;
 
-    let script_builder = ScriptBuilder::new(true)
+    let script_builder = CodeBuilder::new(true)
         .with_dynamically_linked_library(&library)
         .context("Failed to create script builder with library")?;
 

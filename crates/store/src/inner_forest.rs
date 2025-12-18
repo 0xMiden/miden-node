@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use miden_objects::account::{AccountId, AccountStorage, StorageSlot};
+use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent};
 use miden_objects::block::BlockNumber;
 use miden_objects::crypto::merkle::SmtForest;
 use miden_objects::{EMPTY_WORD, Word};
@@ -50,7 +50,7 @@ impl InnerForest {
 
         for (account_id, storage) in account_storages {
             for (slot_idx, slot) in storage.slots().iter().enumerate() {
-                if let StorageSlot::Map(storage_map) = slot {
+                if let StorageSlotContent::Map(storage_map) = slot.content() {
                     let entries = Vec::from_iter(storage_map.entries());
                     map_slots.push((*account_id, slot_idx as u8, entries));
                 }
@@ -110,7 +110,8 @@ impl InnerForest {
     ///
     /// # Arguments
     ///
-    /// * `vault_entries` - Vec of `(account_id, entries)` tuples where entries are (key, value) pairs
+    /// * `vault_entries` - Vec of `(account_id, entries)` tuples where entries are (key, value)
+    ///   pairs
     /// * `block_num` - Block number for which these vault SMTs are being created
     pub(crate) fn populate_vaults(
         &mut self,

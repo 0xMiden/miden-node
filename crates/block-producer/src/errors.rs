@@ -213,6 +213,8 @@ pub enum BuildBlockError {
     ProposeBlockFailed(#[source] ProposedBlockError),
     #[error("failed to validate block")]
     ValidateBlockFailed(#[source] Box<ValidatorError>),
+    #[error("block signature is invalid")]
+    InvalidSignature,
     #[error("failed to prove block")]
     ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure

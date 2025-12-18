@@ -345,8 +345,6 @@ pub enum NoteSyncError {
     MmrError(#[from] MmrError),
     #[error("invalid block range")]
     InvalidBlockRange(#[from] InvalidBlockRange),
-    #[error("too many note tags: received {0}, max {1}")]
-    TooManyNoteTags(usize, usize),
     #[error("malformed note tags")]
     DeserializationFailed(#[from] ConversionError),
 }
@@ -456,8 +454,6 @@ pub enum GetNotesByIdError {
     DeserializationFailed(#[from] ConversionError),
     #[error("note {0} not found")]
     NoteNotFound(miden_objects::note::NoteId),
-    #[error("too many note IDs: received {0}, max {1}")]
-    TooManyNoteIds(usize, usize),
     #[error("note {0} is not public")]
     NoteNotPublic(miden_objects::note::NoteId),
 }
@@ -486,8 +482,6 @@ pub enum CheckNullifiersError {
     DatabaseError(#[from] DatabaseError),
     #[error("malformed nullifier")]
     DeserializationFailed(#[from] ConversionError),
-    #[error("too many nullifiers: received {0}, maximum {1}")]
-    TooManyNullifiers(usize, usize),
 }
 
 // SYNC TRANSACTIONS ERRORS
@@ -504,8 +498,6 @@ pub enum SyncTransactionsError {
     DeserializationFailed(#[from] ConversionError),
     #[error("account {0} not found")]
     AccountNotFound(AccountId),
-    #[error("too many account IDs: received {0}, max {1}")]
-    TooManyAccountIds(usize, usize),
 }
 
 // Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear

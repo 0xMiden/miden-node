@@ -1,10 +1,10 @@
 use std::num::NonZeroUsize;
 
+mod actor;
 mod block_producer;
 mod builder;
-mod state;
+mod coordinator;
 mod store;
-mod transaction;
 
 pub use builder::NetworkTransactionBuilder;
 

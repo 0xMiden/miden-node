@@ -1,9 +1,14 @@
 use std::collections::BTreeSet;
-use std::num::NonZeroUsize;
 
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
+use miden_objects::account::{
+    Account,
+    AccountId,
+    PartialAccount,
+    StorageMapWitness,
+    StorageSlotContent,
+};
 use miden_objects::asset::{AssetVaultKey, AssetWitness};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteScript};
@@ -15,6 +20,7 @@ use miden_objects::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionArgs,
+    TransactionId,
     TransactionInputs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -39,8 +45,8 @@ use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
+use crate::actor::account_state::TransactionCandidate;
 use crate::block_producer::BlockProducerClient;
-use crate::state::TransactionCandidate;
 use crate::store::StoreClient;
 
 #[derive(Debug, thiserror::Error)]
@@ -63,7 +69,7 @@ pub enum NtxError {
 
 type NtxResult<T> = Result<T, NtxError>;
 
-// Context and execution of network transactions
+// NETWORK TRANSACTION CONTEXT
 // ================================================================================================
 
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
@@ -85,23 +91,18 @@ pub struct NtxContext {
 }
 
 impl NtxContext {
-    /// Default cache size for note scripts.
-    ///
-    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
-    /// depends on the complexity of the scripts being cached.
-    const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
-
     /// Creates a new [`NtxContext`] instance.
     pub fn new(
         block_producer: BlockProducerClient,
         prover: Option<RemoteTransactionProver>,
         store: StoreClient,
+        script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
         Self {
             block_producer,
             prover,
             store,
-            script_cache: LruCache::new(Self::DEFAULT_SCRIPT_CACHE_SIZE),
+            script_cache,
         }
     }
 
@@ -117,8 +118,8 @@ impl NtxContext {
     ///
     /// # Returns
     ///
-    /// On success, returns the list of [`FailedNote`]s representing notes that were
-    /// filtered out before execution.
+    /// On success, returns the [`TransactionId`] of the executed transaction and a list of
+    /// [`FailedNote`]s representing notes that were filtered out before execution.
     ///
     /// # Errors
     ///
@@ -131,7 +132,7 @@ impl NtxContext {
     pub fn execute_transaction(
         self,
         tx: TransactionCandidate,
-    ) -> impl FutureMaybeSend<NtxResult<Vec<FailedNote>>> {
+    ) -> impl FutureMaybeSend<NtxResult<(TransactionId, Vec<FailedNote>)>> {
         let TransactionCandidate {
             account,
             notes,
@@ -159,8 +160,9 @@ impl NtxContext {
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed.into())).await?;
+                let tx_id = proven.id();
                 self.submit(proven).await?;
-                Ok(failed)
+                Ok((tx_id, failed))
             }
             .in_current_span()
             .await
@@ -264,7 +266,7 @@ impl NtxContext {
     }
 }
 
-// Data store implementation for the transaction execution
+// NETWORK TRANSACTION DATA STORE
 // ================================================================================================
 
 /// A [`DataStore`] implementation which provides transaction inputs for a single account and
@@ -384,7 +386,7 @@ impl DataStore for NtxDataStore {
 
             let mut map_witness = None;
             for slot in self.account.storage().slots() {
-                if let StorageSlot::Map(map) = slot {
+                if let StorageSlotContent::Map(map) = slot.content() {
                     if map.root() == map_root {
                         map_witness = Some(map.open(&map_key));
                     }

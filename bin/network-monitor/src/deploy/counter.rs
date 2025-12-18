@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use miden_lib::testing::account_component::IncrNonceAuthComponent;
-use miden_lib::transaction::TransactionKernel;
+use miden_lib::utils::CodeBuilder;
 use miden_objects::account::{
     Account,
     AccountBuilder,
@@ -14,11 +14,23 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
     StorageSlot,
+    StorageSlotName,
 };
+use miden_objects::utils::sync::LazyLock;
 use miden_objects::{Felt, FieldElement, Word};
 use tracing::instrument;
 
 use crate::COMPONENT;
+
+static OWNER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::monitor::counter_contract::owner")
+        .expect("storage slot name should be valid")
+});
+
+static COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::monitor::counter_contract::counter")
+        .expect("storage slot name should be valid")
+});
 
 /// Create a counter program account with custom MASM script.
 #[instrument(target = COMPONENT, name = "create-counter-account", skip_all, ret(level = "debug"))]
@@ -31,21 +43,18 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
     let owner_account_id_prefix = owner_account_id.prefix().as_felt();
     let owner_account_id_suffix = owner_account_id.suffix();
 
-    let owner_id_slot = StorageSlot::Value(Word::from([
-        Felt::ZERO,
-        Felt::ZERO,
-        owner_account_id_suffix,
-        owner_account_id_prefix,
-    ]));
+    let owner_id_slot = StorageSlot::with_value(
+        OWNER_SLOT_NAME.clone(),
+        Word::from([Felt::ZERO, Felt::ZERO, owner_account_id_suffix, owner_account_id_prefix]),
+    );
 
-    let counter_slot = StorageSlot::Value(Word::empty());
+    let counter_slot = StorageSlot::with_value(COUNTER_SLOT_NAME.clone(), Word::empty());
 
-    let account_code = AccountComponent::compile(
-        script,
-        TransactionKernel::assembler(),
-        vec![counter_slot, owner_id_slot],
-    )?
-    .with_supports_all_types();
+    let component_code =
+        CodeBuilder::default().compile_component_code("counter::program", script)?;
+
+    let account_code = AccountComponent::new(component_code, vec![counter_slot, owner_id_slot])?
+        .with_supports_all_types();
 
     let incr_nonce_auth: AccountComponent = IncrNonceAuthComponent.into();
 

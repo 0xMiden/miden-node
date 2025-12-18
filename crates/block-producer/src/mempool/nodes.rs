@@ -8,6 +8,7 @@ use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteHeader, Nullifier};
 use miden_objects::transaction::{InputNoteCommitment, TransactionHeader, TransactionId};
 
+use crate::domain::batch::SelectedBatch;
 use crate::domain::transaction::AuthenticatedTransaction;
 
 /// Uniquely identifies a node in the mempool.
@@ -49,38 +50,27 @@ impl TransactionNode {
 /// Represents a batch which has been proposed by the mempool and which is undergoing proving.
 ///
 /// Once proven it transitions to a [`ProvenBatchNode`].
-#[derive(Clone, Debug, PartialEq, Default)]
-pub(super) struct ProposedBatchNode(Vec<Arc<AuthenticatedTransaction>>);
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ProposedBatchNode(SelectedBatch);
 
 impl ProposedBatchNode {
-    pub(super) fn push(&mut self, tx: Arc<AuthenticatedTransaction>) {
-        self.0.push(tx);
-    }
-
-    pub(super) fn contains(&mut self, id: TransactionId) -> bool {
-        self.0.iter().any(|tx| tx.id() == id)
-    }
-
-    pub(super) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub(super) fn calculate_id(&self) -> BatchId {
-        BatchId::from_transactions(
-            self.0
-                .iter()
-                .map(AsRef::as_ref)
-                .map(AuthenticatedTransaction::raw_proven_transaction),
-        )
+    pub(super) fn new(batch: SelectedBatch) -> Self {
+        Self(batch)
     }
 
     pub(super) fn into_proven_batch_node(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
-        let Self(txs) = self;
-        ProvenBatchNode { txs, inner: proof }
+        ProvenBatchNode {
+            txs: self.0.into_transactions(),
+            inner: proof,
+        }
     }
 
     pub(super) fn expires_at(&self) -> BlockNumber {
-        self.0.iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
+        self.0.txs().iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
+    }
+
+    pub(super) fn batch_id(&self) -> BatchId {
+        self.0.id()
     }
 }
 
@@ -113,17 +103,48 @@ impl ProvenBatchNode {
 }
 
 /// Represents a block - both committed and in-progress.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct BlockNode {
     txs: Vec<Arc<AuthenticatedTransaction>>,
     batches: Vec<Arc<ProvenBatch>>,
+    number: BlockNumber,
+    /// Aggregated account updates of all batches.
+    account_updates: HashMap<AccountId, (Word, Word)>,
 }
 
 impl BlockNode {
+    pub(super) fn new(number: BlockNumber) -> Self {
+        Self {
+            number,
+            txs: Vec::default(),
+            batches: Vec::default(),
+            account_updates: HashMap::default(),
+        }
+    }
+
     pub(super) fn push(&mut self, batch: ProvenBatchNode) {
-        let ProvenBatchNode { txs, inner } = batch;
+        let ProvenBatchNode { txs, inner: batch } = batch;
+        for (account, update) in batch.account_updates() {
+            self.account_updates
+                .entry(*account)
+                .and_modify(|(_, to)| {
+                    assert!(
+                        to == &update.initial_state_commitment(),
+                        "Cannot select batch {} as its initial commitment {} for account {} does \
+    not match the current commitment {}",
+                        batch.id(),
+                        update.initial_state_commitment(),
+                        update.account_id(),
+                        to
+                    );
+
+                    *to = update.final_state_commitment();
+                })
+                .or_insert((update.initial_state_commitment(), update.final_state_commitment()));
+        }
+
         self.txs.extend(txs);
-        self.batches.push(inner);
+        self.batches.push(batch);
     }
 
     pub(super) fn contains(&self, id: BatchId) -> bool {
@@ -154,8 +175,12 @@ pub(super) trait Node {
     /// The account state commitment updates caused by this node.
     ///
     /// Output tuple represents each updates `(account ID, initial commitment, final commitment)`.
+    ///
+    /// Updates must be aggregates i.e. only a single account ID update allowed.
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_>;
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_>;
+
+    fn id(&self) -> NodeId;
 }
 
 impl Node for TransactionNode {
@@ -183,34 +208,35 @@ impl Node for TransactionNode {
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
         Box::new(std::iter::once(&self.0))
     }
+
+    fn id(&self) -> NodeId {
+        NodeId::Transaction(self.id())
+    }
 }
 
 impl Node for ProposedBatchNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.nullifiers()))
+        Box::new(self.0.txs().iter().flat_map(|tx| tx.nullifiers()))
     }
 
     fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.output_note_commitments()))
+        Box::new(self.0.txs().iter().flat_map(|tx| tx.output_note_commitments()))
     }
 
     fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.unauthenticated_note_commitments()))
+        Box::new(self.0.txs().iter().flat_map(|tx| tx.unauthenticated_note_commitments()))
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| {
-            let update = tx.account_update();
-            std::iter::once((
-                update.account_id(),
-                update.initial_state_commitment(),
-                update.final_state_commitment(),
-            ))
-        }))
+        Box::new(self.0.account_updates())
     }
 
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
-        Box::new(self.0.iter())
+        Box::new(self.0.txs().iter())
+    }
+
+    fn id(&self) -> NodeId {
+        NodeId::ProposedBatch(self.0.id())
     }
 }
 
@@ -252,6 +278,10 @@ impl Node for ProvenBatchNode {
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
         Box::new(self.txs.iter())
     }
+
+    fn id(&self) -> NodeId {
+        NodeId::ProvenBatch(self.id())
+    }
 }
 
 impl Node for BlockNode {
@@ -277,19 +307,15 @@ impl Node for BlockNode {
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
-        Box::new(self.batches.iter().flat_map(|batch| batch.account_updates()).map(
-            |(_, update)| {
-                (
-                    update.account_id(),
-                    update.initial_state_commitment(),
-                    update.final_state_commitment(),
-                )
-            },
-        ))
+        Box::new(self.account_updates.iter().map(|(account, (from, to))| (*account, *from, *to)))
     }
 
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
         Box::new(self.txs.iter())
+    }
+
+    fn id(&self) -> NodeId {
+        NodeId::Block(self.number)
     }
 }
 
@@ -327,8 +353,78 @@ impl Nodes {
 
     pub(super) fn uncommitted_tx_count(&self) -> usize {
         self.txs.len()
-            + self.proposed_batches.values().map(|b| b.0.len()).sum::<usize>()
+            + self.proposed_batches.values().map(|b| b.0.txs().len()).sum::<usize>()
             + self.proven_batches.values().map(|b| b.txs.len()).sum::<usize>()
             + self.proposed_block.as_ref().map(|b| b.1.txs.len()).unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use miden_objects::batch::BatchAccountUpdate;
+    use miden_objects::transaction::{InputNotes, OrderedTransactionHeaders};
+
+    use super::*;
+    use crate::test_utils::MockProvenTxBuilder;
+
+    #[test]
+    fn proposed_batch_aggregates_account_updates() {
+        let mut batch = SelectedBatch::builder();
+        let txs = MockProvenTxBuilder::sequential();
+
+        let account = txs.first().unwrap().account_id();
+        let from = txs.first().unwrap().account_update().initial_state_commitment();
+        let to = txs.last().unwrap().account_update().final_state_commitment();
+        let expected = std::iter::once((account, from, to));
+
+        for tx in txs {
+            batch.push(tx);
+        }
+        let batch = ProposedBatchNode::new(batch.build());
+
+        itertools::assert_equal(batch.account_updates(), expected);
+    }
+
+    #[test]
+    fn block_aggregates_account_updates() {
+        // We map each tx into its own batch.
+        //
+        // This let's us trivially know what the expected aggregate block account update should be.
+        let txs = MockProvenTxBuilder::sequential();
+        let account = txs.first().unwrap().account_id();
+        let from = txs.first().unwrap().account_update().initial_state_commitment();
+        let to = txs.last().unwrap().account_update().final_state_commitment();
+        let expected = std::iter::once((account, from, to));
+
+        let mut block = BlockNode::new(BlockNumber::default());
+
+        for tx in txs {
+            let mut batch = SelectedBatch::builder();
+            batch.push(tx.clone());
+            let batch = batch.build();
+            let batch = ProposedBatchNode::new(batch);
+
+            let account_update = BatchAccountUpdate::from_transaction(tx.raw_proven_transaction());
+
+            let tx_header = TransactionHeader::from(tx.raw_proven_transaction());
+            let proven_batch = ProvenBatch::new(
+                batch.batch_id(),
+                Word::default(),
+                BlockNumber::default(),
+                BTreeMap::from([(account_update.account_id(), account_update)]),
+                InputNotes::default(),
+                Vec::default(),
+                BlockNumber::from(u32::MAX),
+                OrderedTransactionHeaders::new_unchecked(vec![tx_header]),
+            )
+            .unwrap();
+
+            let batch = batch.into_proven_batch_node(Arc::new(proven_batch));
+            block.push(batch);
+        }
+
+        itertools::assert_equal(block.account_updates(), expected);
     }
 }

@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use miden_objects::account::{AccountId, AccountIdPrefix};
-use miden_objects::block::account_tree::{AccountMutationSet, AccountTree};
-use miden_objects::block::{AccountWitness, BlockNumber};
+use miden_objects::block::BlockNumber;
+use miden_objects::block::account_tree::{AccountMutationSet, AccountTree, AccountWitness};
 use miden_objects::crypto::merkle::{
     EmptySubtreeRoots,
     LargeSmt,
@@ -118,7 +118,7 @@ pub struct AccountTreeWithHistory<S: SmtStorage> {
 
 impl<S: SmtStorage> AccountTreeWithHistory<S> {
     /// Maximum number of historical blocks to maintain.
-    pub const MAX_HISTORY: usize = 33;
+    pub const MAX_HISTORY: usize = 50;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------

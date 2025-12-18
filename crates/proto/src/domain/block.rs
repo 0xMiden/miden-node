@@ -2,13 +2,9 @@ use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
 use miden_objects::account::AccountId;
-use miden_objects::block::{
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    FeeParameters,
-    NullifierWitness,
-};
+use miden_objects::block::nullifier_tree::NullifierWitness;
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, FeeParameters};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
 use miden_objects::utils::{Deserializable, Serializable};
@@ -47,7 +43,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.tx_commitment().into()),
             tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
-            proof_commitment: Some(header.proof_commitment().into()),
+            validator_key: Some(header.validator_key().into()),
             timestamp: header.timestamp(),
             fee_parameters: Some(header.fee_parameters().into()),
         }
@@ -108,8 +104,8 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 )))?
                 .try_into()?,
             value
-                .proof_commitment
-                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
+                .validator_key
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(validator_key)))?
                 .try_into()?,
             FeeParameters::try_from(value.fee_parameters.ok_or(
                 proto::blockchain::FeeParameters::missing_field(stringify!(fee_parameters)),
@@ -199,6 +195,52 @@ impl TryFrom<proto::store::BlockInputs> for BlockInputs {
             nullifier_witnesses,
             unauthenticated_note_proofs,
         ))
+    }
+}
+
+// PUBLIC KEY
+// ================================================================================================
+
+impl TryFrom<proto::blockchain::ValidatorPublicKey> for PublicKey {
+    type Error = ConversionError;
+    fn try_from(public_key: proto::blockchain::ValidatorPublicKey) -> Result<Self, Self::Error> {
+        PublicKey::read_from_bytes(&public_key.validator_key)
+            .map_err(|source| ConversionError::deserialization_error("PublicKey", source))
+    }
+}
+
+impl From<PublicKey> for proto::blockchain::ValidatorPublicKey {
+    fn from(value: PublicKey) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<&PublicKey> for proto::blockchain::ValidatorPublicKey {
+    fn from(value: &PublicKey) -> Self {
+        Self { validator_key: value.to_bytes() }
+    }
+}
+
+// SIGNATURE
+// ================================================================================================
+
+impl TryFrom<proto::blockchain::BlockSignature> for Signature {
+    type Error = ConversionError;
+    fn try_from(signature: proto::blockchain::BlockSignature) -> Result<Self, Self::Error> {
+        Signature::read_from_bytes(&signature.signature)
+            .map_err(|source| ConversionError::deserialization_error("Signature", source))
+    }
+}
+
+impl From<Signature> for proto::blockchain::BlockSignature {
+    fn from(value: Signature) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<&Signature> for proto::blockchain::BlockSignature {
+    fn from(value: &Signature) -> Self {
+        Self { signature: value.to_bytes() }
     }
 }
 

@@ -23,18 +23,10 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountId, StorageSlot};
-use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-use miden_objects::block::nullifier_tree::NullifierTree;
-use miden_objects::block::{
-    AccountWitness,
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    Blockchain,
-    NullifierWitness,
-    ProvenBlock,
-};
+use miden_objects::account::{AccountId, StorageSlotContent};
+use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
+use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_objects::crypto::merkle::{
     Forest,
     LargeSmt,
@@ -1099,6 +1091,11 @@ impl State {
         self.db.select_latest_account_storage(account_id).await
     }
 
+    /// Returns account IDs for all public (on-chain) network accounts.
+    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
+        self.db.select_all_network_account_ids().await
+    }
+
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
@@ -1214,17 +1211,20 @@ impl State {
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
-        for StorageMapRequest { slot_index, slot_data } in storage_requests {
-            let Some(slot) = store.slots().get(slot_index as usize) else {
+        for StorageMapRequest { slot_name, slot_data } in storage_requests {
+            let Some(slot) = store.slots().iter().find(|s| s.name() == &slot_name) else {
                 continue;
             };
 
-            let StorageSlot::Map(storage_map) = slot else {
-                // TODO: what to do with value entries? Is it ok to ignore them?
-                return Err(AccountError::StorageSlotNotMap(slot_index).into());
+            let storage_map = match slot.content() {
+                StorageSlotContent::Map(map) => map,
+                StorageSlotContent::Value(_) => {
+                    // TODO: what to do with value entries? Is it ok to ignore them?
+                    return Err(AccountError::StorageSlotNotMap(slot_name).into());
+                },
             };
 
-            let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+            let details = AccountStorageMapDetails::new(slot_name, slot_data, storage_map);
             storage_map_details.push(details);
         }
 
@@ -1301,9 +1301,13 @@ impl State {
     /// Returns the unprocessed network notes, along with the next pagination token.
     pub async fn get_unconsumed_network_notes(
         &self,
+        network_account_id_prefix: NetworkAccountPrefix,
+        block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        self.db.select_unconsumed_network_notes(page).await
+        self.db
+            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
+            .await
     }
 
     /// Returns the network notes for an account that are unconsumed by a specified block number,
@@ -1315,7 +1319,7 @@ impl State {
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db
-            .select_unconsumed_network_notes_for_account(network_account_id_prefix, block_num, page)
+            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
             .await
     }
 

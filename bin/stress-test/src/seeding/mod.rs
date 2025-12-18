@@ -23,6 +23,7 @@ use miden_objects::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
+    AccountStorage,
     AccountStorageMode,
     AccountType,
 };
@@ -36,6 +37,7 @@ use miden_objects::block::{
     ProposedBlock,
     ProvenBlock,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey as EcdsaSecretKey;
 use miden_objects::crypto::dsa::rpo_falcon512::{PublicKey, SecretKey};
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
@@ -89,7 +91,8 @@ pub async fn seed_store(
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
     let fee_params = FeeParameters::new(faucet.id(), 0).unwrap();
-    let genesis_state = GenesisState::new(vec![faucet.clone()], fee_params, 1, 1);
+    let signer = EcdsaSecretKey::new();
+    let genesis_state = GenesisState::new(vec![faucet.clone()], fee_params, 1, 1, signer);
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
@@ -251,7 +254,8 @@ async fn apply_block(
     let block_proof = LocalBlockProver::new(0)
         .prove_dummy(proposed_block.batches().clone(), header.clone(), block_inputs)
         .unwrap();
-    let proven_block = ProvenBlock::new_unchecked(header, body, block_proof);
+    let signature = EcdsaSecretKey::new().sign(header.commitment());
+    let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
     let block_size: usize = proven_block.to_bytes().len();
 
     let start = Instant::now();
@@ -439,10 +443,11 @@ fn create_emit_note_tx(
 ) -> ProvenTransaction {
     let initial_account_hash = faucet.commitment();
 
-    let slot = faucet.storage().get_item(2).unwrap();
+    let metadata_slot_name = AccountStorage::faucet_sysdata_slot();
+    let slot = faucet.storage().get_item(metadata_slot_name).unwrap();
     faucet
         .storage_mut()
-        .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
+        .set_item(metadata_slot_name, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
         .unwrap();
 
     faucet.increment_nonce(ONE).unwrap();

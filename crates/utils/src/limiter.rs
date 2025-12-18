@@ -81,10 +81,12 @@ impl QueryParamLimiter for QueryParamNoteTagLimit {
 
 /// Used for the following RPC endpoints
 /// `select_notes_by_id`
+///
+/// The limit is set to 100 notes to keep responses within the 4 MiB payload cap because individual
+/// notes are bounded to roughly 32 KiB.
 pub struct QueryParamNoteIdLimit;
 impl QueryParamLimiter for QueryParamNoteIdLimit {
     const PARAM_NAME: &str = "note_id";
-    /// The approximate maximum size for notes is around 32KB.
     const LIMIT: usize = 100;
 }
 

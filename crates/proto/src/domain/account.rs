@@ -349,15 +349,9 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
 
 /// Account vault details
 ///
-/// Represents the assets in an account's vault, with proper handling for vaults
-/// containing many assets.
-///
 /// When an account contains a large number of assets (> 1000), including all assets
-/// in a single RPC response would create performance issues on client and server,
-/// consume significant bandwidth, and require additional memory on possibly low-powered clients.
-///
-/// In such cases, the `LimitExceeded` variant indicates to the client to use the dedicated
-/// `SyncAccountVault` RPC endpoint for incremental retrieval.
+/// in a single RPC response creates performance issues. In such cases, the `LimitExceeded`
+/// variant indicates to the client to use the `SyncAccountVault` endpoint instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccountVaultDetails {
     /// The vault has too many assets to return inline.
@@ -445,18 +439,9 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
 
 /// Details about an account storage map slot, including overflow handling.
 ///
-/// ## Rationale for "Too Many Entries" Flag
-///
-/// Similar to `AccountVaultDetails`, when a storage map contains many entries (> 1000),
-/// returning all entries in a single RPC response creates performance issues:
-/// - Large serialization/deserialization costs
-/// - Network bandwidth saturation
-/// - Client memory pressure
-///
-/// When `too_many_entries` is `true`:
-/// - The `map_entries` field is empty (no data included)
-/// - Clients should use the dedicated `SyncStorageMaps` RPC endpoint
-/// - That endpoint supports pagination and block range filtering
+/// When a storage map contains many entries (> 1000), returning all entries in a single
+/// RPC response creates performance issues. In such cases, `too_many_entries` is `true`,
+/// `map_entries` is empty, and clients should use the `SyncStorageMaps` endpoint instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageMapDetails {
     pub slot_name: StorageSlotName,

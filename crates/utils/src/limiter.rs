@@ -1,9 +1,8 @@
 //! Limits for RPC and store parameters and payload sizes.
 //!
 //! # Rationale
-//! - Parameter limits are kept at [`GENERAL_REQUEST_LIMIT`] items across all multi-value RPC
-//!   parameters. This caps worst-case SQL `IN` clauses and keeps responses comfortably under the 4
-//!   MiB payload budget enforced in the store.
+//! - Parameter limits are kept across all multi-value RPC parameters. This caps worst-case SQL `IN`
+//!   clauses and keeps responses comfortably under the 4 MiB payload budget enforced in the store.
 //! - Limits are enforced both at the RPC boundary and inside the store to prevent bypasses and to
 //!   avoid expensive queries even if validation is skipped earlier in the stack.
 //! - `MAX_PAGINATED_PAYLOAD_BYTES` is set to 4 MiB (e.g. 1000 nullifier rows at ~36 B each, 1000
@@ -85,7 +84,8 @@ impl QueryParamLimiter for QueryParamNoteTagLimit {
 pub struct QueryParamNoteIdLimit;
 impl QueryParamLimiter for QueryParamNoteIdLimit {
     const PARAM_NAME: &str = "note_id";
-    const LIMIT: usize = GENERAL_REQUEST_LIMIT;
+    ///The approximate maximum size for notes is around 32KB.
+    const LIMIT: usize = 100;
 }
 
 /// Used for internal queries retrieving note inclusion proofs by commitment.

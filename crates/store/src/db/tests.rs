@@ -24,6 +24,7 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
     StorageSlot,
+    StorageSlotDelta,
     StorageSlotName,
 };
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
@@ -1164,8 +1165,9 @@ fn sql_account_storage_map_values_insertion() {
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
-    let maps1: BTreeMap<_, _> = [(slot_name.clone(), map1)].into_iter().collect();
-    let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
+    let delta1: BTreeMap<_, _> =
+        [(slot_name.clone(), StorageSlotDelta::Map(map1))].into_iter().collect();
+    let storage1 = AccountStorageDelta::from_raw(delta1);
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
     insert_account_delta(conn, account_id, block1, &delta1);
@@ -1178,8 +1180,8 @@ fn sql_account_storage_map_values_insertion() {
     // Update key1 at block 2
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
-    let maps2 = BTreeMap::from_iter([(slot_name.clone(), map2)]);
-    let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
+    let delta2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map2))]);
+    let storage2 = AccountStorageDelta::from_raw(delta2);
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
             .unwrap();

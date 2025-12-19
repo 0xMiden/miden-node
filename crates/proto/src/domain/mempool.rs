@@ -10,6 +10,8 @@ use super::note::NetworkNote;
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::generated as proto;
 
+// TODO: remove this allow, maybe box BlockHeader
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum MempoolEvent {
     TransactionAdded {

@@ -23,13 +23,14 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountId, StorageSlotContent};
+use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent};
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockInputs, BlockNoteTree, BlockNumber, Blockchain, ProvenBlock};
 use miden_objects::crypto::merkle::{
     Forest,
     LargeSmt,
+    LargeSmtError,
     MemoryStorage,
     Mmr,
     MmrDelta,
@@ -148,7 +149,7 @@ impl State {
         let block_headers = db.select_all_block_headers().await?;
         let latest_block_num = block_headers
             .last()
-            .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
+            .map_or(BlockNumber::GENESIS, BlockHeader::block_num);
         let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
@@ -344,7 +345,7 @@ impl State {
                 .map(|(note_index, note)| (note_index, note.id(), *note.metadata())),
         );
         let note_tree =
-            miden_objects::block::BlockNoteTree::with_entries(note_tree_entries.iter().copied())
+            BlockNoteTree::with_entries(note_tree_entries.iter().copied())
                 .map_err(|e| InvalidBlockError::FailedToBuildNoteTree(e.to_string()))?;
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
@@ -394,7 +395,7 @@ impl State {
                 .body()
                 .updated_accounts()
                 .iter()
-                .map(miden_objects::block::BlockAccountUpdate::account_id),
+                .map(BlockAccountUpdate::account_id),
         );
 
         // The DB and in-memory state updates need to be synchronized and are partially
@@ -525,7 +526,7 @@ impl State {
         &self,
         account_ids: &[AccountId],
         block_num: BlockNumber,
-    ) -> Result<Vec<(AccountId, miden_objects::account::AccountStorage)>, ApplyBlockError> {
+    ) -> Result<Vec<(AccountId, AccountStorage)>, ApplyBlockError> {
         let mut account_storages = Vec::with_capacity(account_ids.len());
 
         for &account_id in account_ids {
@@ -1061,7 +1062,7 @@ impl State {
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-    ) -> Result<miden_objects::account::AccountStorage, DatabaseError> {
+    ) -> Result<AccountStorage, DatabaseError> {
         // Validate block exists in the blockchain before querying the database
         self.validate_block_exists(block_num).await?;
 
@@ -1072,7 +1073,7 @@ impl State {
     pub async fn get_latest_account_storage(
         &self,
         account_id: AccountId,
-    ) -> Result<miden_objects::account::AccountStorage, DatabaseError> {
+    ) -> Result<AccountStorage, DatabaseError> {
         self.db.select_latest_account_storage(account_id).await
     }
 
@@ -1369,10 +1370,10 @@ async fn load_account_tree(
 
     let smt =
         LargeSmt::with_entries(MemoryStorage::default(), smt_entries).map_err(|e| match e {
-            miden_objects::crypto::merkle::LargeSmtError::Merkle(merkle_error) => {
+            LargeSmtError::Merkle(merkle_error) => {
                 StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
             },
-            miden_objects::crypto::merkle::LargeSmtError::Storage(err) => {
+            LargeSmtError::Storage(err) => {
                 // large_smt::StorageError is not `Sync` and hence `context` cannot be called
                 // which we want to and do
                 StateInitializationError::AccountTreeIoError(err.as_report())

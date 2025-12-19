@@ -8,7 +8,7 @@ use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
-use miden_objects::account::AccountId;
+use miden_objects::account::{AccountHeader, AccountId, AccountStorage};
 use miden_objects::asset::{Asset, AssetVaultKey};
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
@@ -436,7 +436,7 @@ impl Db {
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-    ) -> Result<miden_objects::account::AccountStorage> {
+    ) -> Result<AccountStorage> {
         self.transact("Get account storage at block", move |conn| {
             queries::select_account_storage_at_block(conn, account_id, block_num)
         })
@@ -491,7 +491,7 @@ impl Db {
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-    ) -> Result<Option<miden_objects::account::AccountHeader>> {
+    ) -> Result<Option<AccountHeader>> {
         self.transact("Get account header at block", move |conn| {
             queries::select_account_header_at_block(conn, account_id, block_num)
         })

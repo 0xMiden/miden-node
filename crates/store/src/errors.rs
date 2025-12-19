@@ -10,7 +10,7 @@ use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::crypto::merkle::MmrError;
 use miden_objects::crypto::utils::DeserializationError;
-use miden_objects::note::Nullifier;
+use miden_objects::note::{NoteId, Nullifier};
 use miden_objects::transaction::OutputNote;
 use miden_objects::{
     AccountDeltaError,
@@ -453,9 +453,9 @@ pub enum GetNotesByIdError {
     #[error("malformed note ID")]
     DeserializationFailed(#[from] ConversionError),
     #[error("note {0} not found")]
-    NoteNotFound(miden_objects::note::NoteId),
+    NoteNotFound(NoteId),
     #[error("note {0} is not public")]
-    NoteNotPublic(miden_objects::note::NoteId),
+    NoteNotPublic(NoteId),
 }
 
 // GET NOTE SCRIPT BY ROOT ERRORS

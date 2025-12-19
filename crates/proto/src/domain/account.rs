@@ -193,6 +193,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
     fn try_from(
         value: proto::rpc::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
+        use proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry;
         let proto::rpc::account_storage_details::AccountStorageMapDetails {
             slot_name,
             too_many_entries,
@@ -206,24 +207,20 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
         } else {
             let map_entries = if let Some(entries) = entries {
                 entries
-    .entries
-.into_iter()
-.map(|entry| {
-let key = entry
-.key
-    .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-        stringify!(key),
-        ))?
-    .try_into()?;
-let value = entry
-.value
-    .ok_or(proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-        stringify!(value),
-        ))?
-            .try_into()?;
-        Ok((key, value))
-            })
-        .collect::<Result<Vec<_>, ConversionError>>()?
+                    .entries
+                    .into_iter()
+                    .map(|entry| {
+                        let key = entry
+                            .key
+                            .ok_or(StorageMapEntry::missing_field(stringify!(key)))?
+                            .try_into()?;
+                        let value = entry
+                            .value
+                            .ok_or(StorageMapEntry::missing_field(stringify!(value)))?
+                            .try_into()?;
+                        Ok((key, value))
+                    })
+                    .collect::<Result<Vec<_>, ConversionError>>()?
             } else {
                 Vec::new()
             };

@@ -45,17 +45,12 @@ use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
 type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
-/// [`SqliteConnection`].
+
+/// Select account by ID from the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
 /// The latest account info, or an error.
-///
-/// # Note
-///
-/// Returns only the account summary. Full account details must be reconstructed
-/// in follow up query, using separate query functions to fetch specific account
-/// components as needed.
 ///
 /// # Raw SQL
 ///

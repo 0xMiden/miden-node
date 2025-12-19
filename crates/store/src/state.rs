@@ -175,8 +175,6 @@ impl State {
         let me = Self { db, block_store, inner, forest, writer };
 
         // load all accounts from the table
-        // TODO: make `select_all_account_at(block_num)` to be precise; if ACID is upheld, it's not
-        // necessary in theory
         let acc_account_ids = me.db.select_all_account_commitments().await?;
         let acc_account_ids =
             Vec::from_iter(acc_account_ids.into_iter().map(|(account_id, _)| account_id));
@@ -462,8 +460,6 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
-        // After successful DB commit, update the SmtForest with account deltas
-        // This uses the deltas directly without DB roundtrips, which is more efficient
         self.update_forest(account_updates, block_num).await?;
 
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");

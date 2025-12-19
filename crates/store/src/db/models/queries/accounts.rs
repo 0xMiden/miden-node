@@ -822,7 +822,20 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                (Some(account), storage, Vec::new())
+                // collect vault-asset inserts to apply after account upsert
+                let mut assets = Vec::new();
+                for asset in account.vault().assets() {
+                    // Only insert assets with non-zero values for fungible assets
+                    let should_insert = match asset {
+                        Asset::Fungible(fungible) => fungible.amount() > 0,
+                        Asset::NonFungible(_) => true,
+                    };
+                    if should_insert {
+                        assets.push((account_id, asset.vault_key(), Some(asset)));
+                    }
+                }
+
+                (Some(account), storage, assets)
             },
 
             AccountUpdateDetails::Delta(delta) => {

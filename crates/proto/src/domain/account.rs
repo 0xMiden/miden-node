@@ -525,7 +525,7 @@ impl AccountStorageMapDetails {
                     // Query specific keys from the storage map
                     let mut entries = Vec::with_capacity(keys.len());
                     for key in keys {
-                        let value = storage_map.get(&key).copied().unwrap_or(miden_objects::EMPTY_WORD);
+                        let value = storage_map.get(&key);
                         entries.push((key, value));
                     }
                     Self {

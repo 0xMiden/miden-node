@@ -14,6 +14,7 @@
 - Renamed card's names in the `miden-network-monitor` binary ([#1441](https://github.com/0xMiden/miden-node/pull/1441)).
 - Improved tracing in `miden-network-monitor` binary ([#1366](https://github.com/0xMiden/miden-node/pull/1366)).
 - Integrated RPC stack with Validator component for transaction validation ([#1457](https://github.com/0xMiden/miden-node/pull/1457)).
+- Add partial storage map queries to RPC ([#1428](https://github.com/0xMiden/miden-node/pull/1428)).
 
 ### Changes
 

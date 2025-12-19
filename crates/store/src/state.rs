@@ -18,16 +18,17 @@ use miden_node_proto::domain::account::{
     AccountStorageMapDetails,
     AccountVaultDetails,
     NetworkAccountPrefix,
+    SlotData,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent, StorageSlotName};
+use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent};
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_objects::block::{
+    BlockAccountUpdate,
     BlockHeader,
     BlockInputs,
     BlockNoteTree,
@@ -180,7 +181,7 @@ impl State {
         let acc_account_ids = me.db.select_all_account_commitments().await?;
         let acc_account_ids =
             Vec::from_iter(acc_account_ids.into_iter().map(|(account_id, _)| account_id));
-        me.initialize_storage_forest_from_db(acc_account_ids, latest_block_num)
+        me.update_storage_forest_from_db(acc_account_ids, latest_block_num)
             .await
             .map_err(|e| {
                 StateInitializationError::DatabaseError(DatabaseError::InteractError(format!(
@@ -394,14 +395,11 @@ impl State {
         // Signals the write lock has been acquired, and the transaction can be committed
         let (inform_acquire_done, acquire_done) = oneshot::channel::<()>();
 
-        // Extract account updates with deltas before block is moved into async task
-        // We'll use these deltas to update the SmtForest without DB roundtrips
-        let account_updates: Vec<_> = block
-            .body()
-            .updated_accounts()
-            .iter()
-            .map(|update| (update.account_id(), update.details().clone()))
-            .collect();
+        // Extract account IDs before block is moved into async task
+        // We'll need these later to populate the SmtForest
+        let updated_account_ids = Vec::<AccountId>::from_iter(
+            block.body().updated_accounts().iter().map(BlockAccountUpdate::account_id),
+        );
 
         // The DB and in-memory state updates need to be synchronized and are partially
         // overlapping. Namely, the DB transaction only proceeds after this task acquires the
@@ -462,117 +460,110 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
-        // After successful DB commit, update the SmtForest with account deltas
-        // This uses the deltas directly without DB roundtrips, which is more efficient
-        self.update_forest(account_updates, block_num).await?;
+        // After successful DB commit, query updated accounts' storage as well as vault data
+        // TODO look into making this consume the `account_tree_update`
+        self.update_storage_forest_from_db(updated_account_ids, block_num).await?;
 
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
 
         Ok(())
     }
 
-    /// Updates `SmtForest` with account deltas from a block
+    /// Updates `SmtForest` after a block is successfully applied
     ///
-    /// This method updates the forest directly using the deltas extracted from the block.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_updates` - Vector of (`AccountId`, `AccountUpdateDetails`) tuples from the block
-    /// * `block_num` - Block number for which these updates apply
-    ///
-    /// # Note
-    ///
-    /// - Private account updates are skipped as their state is not publicly visible.
-    /// - The number of changed accounts is implicitly bounded by the limited number of transactions
-    ///   per block.
-    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = account_updates.len()))]
-    async fn update_forest(
-        &self,
-        account_updates: Vec<(AccountId, AccountUpdateDetails)>,
-        block_num: BlockNumber,
-    ) -> Result<(), ApplyBlockError> {
-        if account_updates.is_empty() {
-            return Ok(());
-        }
-
-        let mut forest_guard = self.forest.write().await;
-
-        for (account_id, details) in account_updates {
-            match details {
-                AccountUpdateDetails::Delta(delta) => {
-                    // Update the forest with vault and storage deltas
-                    forest_guard.update_account(
-                        block_num,
-                        account_id,
-                        delta.vault(),
-                        delta.storage(),
-                    );
-
-                    tracing::debug!(
-                        target: COMPONENT,
-                        %account_id,
-                        %block_num,
-                        "Updated forest with account delta"
-                    );
-                },
-                AccountUpdateDetails::Private => {
-                    // Private accounts don't expose their state changes
-                    tracing::trace!(
-                        target: COMPONENT,
-                        %account_id,
-                        %block_num,
-                        "Skipping private account update"
-                    );
-                },
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Updates `SmtForest` from database state (DB-based)
-    ///
-    /// This method is used during initial `State::load()` where deltas are not available.
-    /// For block application, prefer `fn update_forest` which uses deltas directly.
+    /// Must be called after the DB transaction commits successfully, so we can safely
+    /// query the newly committed storage data.
     ///
     /// # Warning
     ///
     /// Has internal locking to mutate the state, use cautiously in scopes with other
     /// mutex guards around!
-    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num))]
-    async fn initialize_storage_forest_from_db(
+    ///
+    /// # Note
+    ///
+    /// The number of changed accounts is bounded by transactions per block.
+    async fn update_storage_forest_from_db(
         &self,
-        account_ids: Vec<AccountId>,
+        changed_account_ids: Vec<AccountId>,
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        // Acquire write lock once for the entire initialization
-        let mut forest_guard = self.forest.write().await;
-
-        // Process each account, updating both storage maps and vaults
-        for account_id in account_ids {
-            // Query and update storage maps for this account
-            let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
-            let map_slots = extract_map_slots_from_storage(&storage);
-
-            if !map_slots.is_empty() {
-                forest_guard.add_storage_map(account_id, map_slots, block_num);
-            }
-
-            // Query and update vault for this account
-            let vault_entries =
-                self.db.select_account_vault_at_block(account_id, block_num).await?;
-
-            if !vault_entries.is_empty() {
-                forest_guard.add_vault(account_id, &vault_entries, block_num);
-            }
-
-            tracing::debug!(
-                target: COMPONENT,
-                %account_id,
-                %block_num,
-                "Initialized forest for account from DB"
-            );
+        if changed_account_ids.is_empty() {
+            return Ok(());
         }
+
+        self.update_storage_maps_in_forest(&changed_account_ids, block_num).await?;
+
+        self.update_vaults_in_forest(&changed_account_ids, block_num).await?;
+
+        Ok(())
+    }
+
+    /// Updates storage map SMTs in the forest for changed accounts
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = changed_account_ids.len()))]
+    async fn update_storage_maps_in_forest(
+        &self,
+        changed_account_ids: &[AccountId],
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        // Step 1: Query storage from database
+        let account_storages =
+            self.query_account_storages_from_db(changed_account_ids, block_num).await?;
+
+        // Step 2: Extract map slots and their entries using InnerForest helper
+        let map_slots_to_populate = InnerForest::extract_map_slots_from_storage(&account_storages);
+
+        if map_slots_to_populate.is_empty() {
+            return Ok(());
+        }
+
+        // Step 3: Acquire write lock and update the forest with new SMTs
+        let mut forest_guard = self.forest.write().await;
+        forest_guard.populate_storage_maps(map_slots_to_populate, block_num);
+
+        Ok(())
+    }
+
+    /// Queries account storage data from the database for the given accounts at a specific block
+    #[instrument(target = COMPONENT, skip_all, fields(num_accounts = account_ids.len()))]
+    async fn query_account_storages_from_db(
+        &self,
+        account_ids: &[AccountId],
+        block_num: BlockNumber,
+    ) -> Result<Vec<(AccountId, AccountStorage)>, ApplyBlockError> {
+        let mut account_storages = Vec::with_capacity(account_ids.len());
+
+        for &account_id in account_ids {
+            let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
+            account_storages.push((account_id, storage));
+        }
+
+        Ok(account_storages)
+    }
+
+    /// Updates vault SMTs in the forest for changed accounts
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = changed_account_ids.len()))]
+    async fn update_vaults_in_forest(
+        &self,
+        changed_account_ids: &[AccountId],
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        // Query vault assets for each updated account
+        let mut vault_entries_to_populate = Vec::new();
+
+        for &account_id in changed_account_ids {
+            let entries = self.db.select_account_vault_at_block(account_id, block_num).await?;
+            if !entries.is_empty() {
+                vault_entries_to_populate.push((account_id, entries));
+            }
+        }
+
+        if vault_entries_to_populate.is_empty() {
+            return Ok(());
+        }
+
+        // Acquire write lock once for the entire update operation and delegate to InnerForest
+        let mut forest_guard = self.forest.write().await;
+        forest_guard.populate_vaults(vault_entries_to_populate, block_num);
 
         Ok(())
     }
@@ -1209,22 +1200,38 @@ impl State {
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
-        for StorageMapRequest { slot_name, slot_data } in storage_requests {
-            let Some(slot) = store.slots().iter().find(|s| s.name() == &slot_name) else {
-                continue;
-            };
+        // Acquire forest lock for querying specific keys
+        let forest = self.forest.read().await;
 
-            let storage_map = match slot.content() {
-                StorageSlotContent::Map(map) => map,
-                StorageSlotContent::Value(_) => {
-                    // TODO: what to do with value entries? Is it ok to ignore them?
-                    return Err(AccountError::StorageSlotNotMap(slot_name).into());
+        for StorageMapRequest { slot_name, slot_data } in storage_requests {
+            let details = match &slot_data {
+                SlotData::MapKeys(keys) => {
+                    // Query the forest for specific keys
+                    let entries = forest
+                        .query_storage_keys(account_id, &slot_name, block_num, keys)
+                        .map_err(DatabaseError::InteractError)?;
+                    AccountStorageMapDetails::from_forest_entries(slot_name, entries)
+                },
+                SlotData::All => {
+                    // For all entries, load from storage map
+                    let Some(slot) = store.slots().iter().find(|s| s.name() == &slot_name) else {
+                        continue;
+                    };
+                    let storage_map = match slot.content() {
+                        StorageSlotContent::Map(map) => map,
+                        StorageSlotContent::Value(_) => {
+                            return Err(AccountError::StorageSlotNotMap(slot_name).into());
+                        },
+                    };
+                    AccountStorageMapDetails::from_all_entries(slot_name, storage_map)
                 },
             };
 
-            let details = AccountStorageMapDetails::new(slot_name, slot_data, storage_map);
             storage_map_details.push(details);
         }
+
+        // Release forest lock
+        drop(forest);
 
         Ok(AccountDetails {
             account_header,
@@ -1396,32 +1403,4 @@ async fn load_account_tree(
         AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
 
     Ok(AccountTreeWithHistory::new(account_tree, block_number))
-}
-
-// HELPERS
-// =================================================================================================
-
-/// Extract storage map slots from a single `AccountStorage` object.
-///
-/// # Returns
-///
-/// Vector of `(account_id, slot_name, entries)` tuples ready for forest population.
-pub(crate) fn extract_map_slots_from_storage(
-    storage: &miden_objects::account::AccountStorage,
-) -> Vec<(StorageSlotName, Vec<(Word, Word)>)> {
-    use miden_objects::account::StorageSlotContent;
-
-    let mut map_slots = Vec::new();
-
-    for slot in storage.slots() {
-        if let StorageSlotContent::Map(map) = slot.content() {
-            let entries = Vec::from_iter(map.entries().map(|(k, v)| (*k, *v)));
-
-            if !entries.is_empty() {
-                map_slots.push((slot.name().clone(), entries));
-            }
-        }
-    }
-
-    map_slots
 }

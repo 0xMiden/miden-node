@@ -24,7 +24,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent, StorageSlotName};
+use miden_objects::account::{AccountId, StorageSlotContent, StorageSlotName};
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_objects::block::{
@@ -1059,30 +1059,6 @@ impl State {
         id_prefix: u32,
     ) -> Result<Option<AccountInfo>, DatabaseError> {
         self.db.select_network_account_by_prefix(id_prefix).await
-    }
-
-    /// Reconstructs account storage at a specific block
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the block doesn't exist or if there's a database error.
-    pub async fn get_account_storage_at_block(
-        &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountStorage, DatabaseError> {
-        // Validate block exists in the blockchain before querying the database
-        self.validate_block_exists(block_num).await?;
-
-        self.db.select_account_storage_at_block(account_id, block_num).await
-    }
-
-    /// Gets the latest account storage
-    pub async fn get_latest_account_storage(
-        &self,
-        account_id: AccountId,
-    ) -> Result<AccountStorage, DatabaseError> {
-        self.db.select_latest_account_storage(account_id).await
     }
 
     /// Returns account IDs for all public (on-chain) network accounts.

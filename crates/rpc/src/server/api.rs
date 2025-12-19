@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -627,7 +627,7 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<proto::rpc::RpcLimits>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
-        Ok(Response::new(get_rpc_limits()))
+        Ok(Response::new(RPC_LIMITS.clone()))
     }
 }
 
@@ -645,80 +645,41 @@ fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
     <Q as QueryParamLimiter>::check(n).map_err(out_of_range_error)
 }
 
-/// Returns all RPC query parameter limits
-fn get_rpc_limits() -> proto::rpc::RpcLimits {
-    use std::collections::HashMap;
-
-    let mut endpoints = HashMap::new();
-
-    // CheckNullifiers endpoint
-    let mut check_nullifiers_params = HashMap::new();
-    check_nullifiers_params.insert(
-        QueryParamNullifierLimit::PARAM_NAME.to_string(),
-        QueryParamNullifierLimit::LIMIT as u32,
-    );
-    endpoints.insert(
-        "CheckNullifiers".to_string(),
-        proto::rpc::EndpointLimits {
-            parameters: check_nullifiers_params,
-        },
-    );
-
-    // SyncNullifiers endpoint
-    let mut sync_nullifiers_params = HashMap::new();
-    sync_nullifiers_params.insert(
-        QueryParamNullifierLimit::PARAM_NAME.to_string(),
-        QueryParamNullifierLimit::LIMIT as u32,
-    );
-    endpoints.insert(
-        "SyncNullifiers".to_string(),
-        proto::rpc::EndpointLimits {
-            parameters: sync_nullifiers_params,
-        },
-    );
-
-    // SyncState endpoint
-    let mut sync_state_params = HashMap::new();
-    sync_state_params.insert(
-        QueryParamAccountIdLimit::PARAM_NAME.to_string(),
-        QueryParamAccountIdLimit::LIMIT as u32,
-    );
-    sync_state_params.insert(
-        QueryParamNoteTagLimit::PARAM_NAME.to_string(),
-        QueryParamNoteTagLimit::LIMIT as u32,
-    );
-    endpoints.insert(
-        "SyncState".to_string(),
-        proto::rpc::EndpointLimits {
-            parameters: sync_state_params,
-        },
-    );
-
-    // SyncNotes endpoint
-    let mut sync_notes_params = HashMap::new();
-    sync_notes_params.insert(
-        QueryParamNoteTagLimit::PARAM_NAME.to_string(),
-        QueryParamNoteTagLimit::LIMIT as u32,
-    );
-    endpoints.insert(
-        "SyncNotes".to_string(),
-        proto::rpc::EndpointLimits {
-            parameters: sync_notes_params,
-        },
-    );
-
-    // GetNotesById endpoint
-    let mut get_notes_by_id_params = HashMap::new();
-    get_notes_by_id_params.insert(
-        QueryParamNoteIdLimit::PARAM_NAME.to_string(),
-        QueryParamNoteIdLimit::LIMIT as u32,
-    );
-    endpoints.insert(
-        "GetNotesById".to_string(),
-        proto::rpc::EndpointLimits {
-            parameters: get_notes_by_id_params,
-        },
-    );
-
-    proto::rpc::RpcLimits { endpoints }
+/// Helper to build an [`EndpointLimits`](proto::rpc::EndpointLimits) from (name, limit) pairs.
+fn endpoint_limits(params: &[(&str, usize)]) -> proto::rpc::EndpointLimits {
+    proto::rpc::EndpointLimits {
+        parameters: params.iter().map(|(k, v)| ((*k).to_string(), *v as u32)).collect(),
+    }
 }
+
+/// Cached RPC query parameter limits.
+static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
+    use {
+        QueryParamAccountIdLimit as AccountId,
+        QueryParamNoteIdLimit as NoteId,
+        QueryParamNoteTagLimit as NoteTag,
+        QueryParamNullifierLimit as Nullifier,
+    };
+
+    proto::rpc::RpcLimits {
+        endpoints: std::collections::HashMap::from([
+            (
+                "CheckNullifiers".into(),
+                endpoint_limits(&[(Nullifier::PARAM_NAME, Nullifier::LIMIT)]),
+            ),
+            (
+                "SyncNullifiers".into(),
+                endpoint_limits(&[(Nullifier::PARAM_NAME, Nullifier::LIMIT)]),
+            ),
+            (
+                "SyncState".into(),
+                endpoint_limits(&[
+                    (AccountId::PARAM_NAME, AccountId::LIMIT),
+                    (NoteTag::PARAM_NAME, NoteTag::LIMIT),
+                ]),
+            ),
+            ("SyncNotes".into(), endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)])),
+            ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
+        ]),
+    }
+});

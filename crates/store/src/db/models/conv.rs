@@ -141,8 +141,8 @@ impl SqlTypeConvert for StorageSlotType {
         struct ValueError(i32);
 
         Ok(match raw {
-            0 => StorageSlotType::Map,
-            1 => StorageSlotType::Value,
+            0 => StorageSlotType::Value,
+            1 => StorageSlotType::Map,
             invalid => {
                 return Err(Self::map_err(ValueError(invalid)));
             },
@@ -152,8 +152,8 @@ impl SqlTypeConvert for StorageSlotType {
     #[inline(always)]
     fn to_raw_sql(self) -> Self::Raw {
         match self {
-            StorageSlotType::Map => 0,
-            StorageSlotType::Value => 1,
+            StorageSlotType::Value => 0,
+            StorageSlotType::Map => 1,
         }
     }
 }

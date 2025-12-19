@@ -7,7 +7,9 @@ use miden_objects::block::BlockNumber;
 use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH, SmtForest};
 use miden_objects::{EMPTY_WORD, Word};
 
-// Type aliases to reduce complexity
+#[cfg(test)]
+mod tests;
+
 type MapSlotEntries = Vec<(Word, Word)>;
 
 type VaultEntries = Vec<(Word, Word)>;
@@ -237,7 +239,7 @@ impl InnerForest {
     pub(crate) fn add_vault(
         &mut self,
         account_id: AccountId,
-        vault_entries: VaultEntries,
+        vault_entries: &VaultEntries,
         block_num: BlockNumber,
     ) {
         if vault_entries.is_empty() {
@@ -260,6 +262,3 @@ impl InnerForest {
         );
     }
 }
-
-#[cfg(test)]
-mod tests;

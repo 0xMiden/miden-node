@@ -563,7 +563,7 @@ impl State {
                 self.db.select_account_vault_at_block(account_id, block_num).await?;
 
             if !vault_entries.is_empty() {
-                forest_guard.add_vault(account_id, vault_entries, block_num);
+                forest_guard.add_vault(account_id, &vault_entries, block_num);
             }
 
             tracing::debug!(

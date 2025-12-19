@@ -95,7 +95,7 @@ fn test_compare_delta_vs_db_vault_with_fungible_asset() {
     // Approach 2: DB-based population
     let mut forest_db = InnerForest::new();
     let vault_entries = vec![(asset.vault_key().into(), Word::from(asset))];
-    forest_db.add_vault(account_id, vault_entries, block_num);
+    forest_db.add_vault(account_id, &vault_entries, block_num);
 
     // Both approaches must produce identical roots
     let root_delta = forest_delta.vault_roots.get(&(account_id, block_num)).unwrap();

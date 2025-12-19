@@ -23,10 +23,18 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
+use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent};
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockInputs, BlockNoteTree, BlockNumber, Blockchain, ProvenBlock};
+use miden_objects::block::{
+    BlockHeader,
+    BlockInputs,
+    BlockNoteTree,
+    BlockNumber,
+    Blockchain,
+    ProvenBlock,
+};
 use miden_objects::crypto::merkle::{
     Forest,
     LargeSmt,
@@ -147,9 +155,8 @@ impl State {
 
         let chain_mmr = load_mmr(&mut db).await?;
         let block_headers = db.select_all_block_headers().await?;
-        let latest_block_num = block_headers
-            .last()
-            .map_or(BlockNumber::GENESIS, BlockHeader::block_num);
+        let latest_block_num =
+            block_headers.last().map_or(BlockNumber::GENESIS, BlockHeader::block_num);
         let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
@@ -344,9 +351,8 @@ impl State {
                 .output_notes()
                 .map(|(note_index, note)| (note_index, note.id(), *note.metadata())),
         );
-        let note_tree =
-            BlockNoteTree::with_entries(note_tree_entries.iter().copied())
-                .map_err(|e| InvalidBlockError::FailedToBuildNoteTree(e.to_string()))?;
+        let note_tree = BlockNoteTree::with_entries(note_tree_entries.iter().copied())
+            .map_err(|e| InvalidBlockError::FailedToBuildNoteTree(e.to_string()))?;
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
         }
@@ -388,15 +394,14 @@ impl State {
         // Signals the write lock has been acquired, and the transaction can be committed
         let (inform_acquire_done, acquire_done) = oneshot::channel::<()>();
 
-        // Extract account IDs before block is moved into async task
-        // We'll need these later to populate the SmtForest
-        let updated_account_ids = Vec::<AccountId>::from_iter(
-            block
-                .body()
-                .updated_accounts()
-                .iter()
-                .map(BlockAccountUpdate::account_id),
-        );
+        // Extract account updates with deltas before block is moved into async task
+        // We'll use these deltas to update the SmtForest without DB roundtrips
+        let account_updates: Vec<_> = block
+            .body()
+            .updated_accounts()
+            .iter()
+            .map(|update| (update.account_id(), update.details().clone()))
+            .collect();
 
         // The DB and in-memory state updates need to be synchronized and are partially
         // overlapping. Namely, the DB transaction only proceeds after this task acquires the
@@ -457,16 +462,79 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
-        // After successful DB commit, query updated accounts' storage as well as vault data
-        // TODO look into making this consume the `account_tree_update`
-        self.update_storage_forest_from_db(updated_account_ids, block_num).await?;
+        // After successful DB commit, update the SmtForest with account deltas
+        // This uses the deltas directly without DB roundtrips, which is more efficient
+        self.update_forest_with_deltas(account_updates, block_num).await?;
 
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
 
         Ok(())
     }
 
-    /// Updates `SmtForest` after a block is successfully applied
+    /// Updates `SmtForest` with account deltas from a block
+    ///
+    /// This method updates the forest directly using the deltas extracted from the block,
+    /// avoiding database roundtrips. This is more efficient than the legacy DB-based approach.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_updates` - Vector of (`AccountId`, `AccountUpdateDetails`) tuples from the block
+    /// * `block_num` - Block number for which these updates apply
+    ///
+    /// # Note
+    ///
+    /// - Private account updates are skipped as their state is not publicly visible
+    /// - Only accounts with deltas (not Private) are processed
+    /// - The number of changed accounts is bounded by transactions per block
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = account_updates.len()))]
+    async fn update_forest_with_deltas(
+        &self,
+        account_updates: Vec<(AccountId, AccountUpdateDetails)>,
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        if account_updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut forest_guard = self.forest.write().await;
+
+        for (account_id, details) in account_updates {
+            match details {
+                AccountUpdateDetails::Delta(delta) => {
+                    // Update the forest with vault and storage deltas
+                    forest_guard.update_account(
+                        block_num,
+                        account_id,
+                        delta.vault(),
+                        delta.storage(),
+                    );
+
+                    tracing::debug!(
+                        target: COMPONENT,
+                        %account_id,
+                        %block_num,
+                        "Updated forest with account delta"
+                    );
+                },
+                AccountUpdateDetails::Private => {
+                    // Private accounts don't expose their state changes
+                    tracing::trace!(
+                        target: COMPONENT,
+                        %account_id,
+                        %block_num,
+                        "Skipping private account update"
+                    );
+                },
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Updates `SmtForest` from database state (DB-based)
+    ///
+    /// This method is used during initial `State::load()` where deltas are not available.
+    /// For block application, prefer `update_forest_with_deltas` which uses deltas directly.
     ///
     /// Must be called after the DB transaction commits successfully, so we can safely
     /// query the newly committed storage data.

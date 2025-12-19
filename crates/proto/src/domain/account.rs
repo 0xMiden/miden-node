@@ -544,16 +544,16 @@ impl From<AccountStorageDetails> for proto::rpc::AccountStorageDetails {
 
 const fn storage_slot_type_from_raw(slot_type: u32) -> Result<StorageSlotType, ConversionError> {
     Ok(match slot_type {
-        0 => StorageSlotType::Map,
-        1 => StorageSlotType::Value,
+        0 => StorageSlotType::Value,
+        1 => StorageSlotType::Map,
         _ => return Err(ConversionError::EnumDiscriminantOutOfRange),
     })
 }
 
 const fn storage_slot_type_to_raw(slot_type: StorageSlotType) -> u32 {
     match slot_type {
-        StorageSlotType::Map => 0,
-        StorageSlotType::Value => 1,
+        StorageSlotType::Value => 0,
+        StorageSlotType::Map => 1,
     }
 }
 

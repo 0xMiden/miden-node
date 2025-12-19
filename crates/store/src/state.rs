@@ -24,7 +24,7 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent};
+use miden_objects::account::{AccountId, AccountStorage, StorageSlotContent, StorageSlotName};
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_objects::block::{
@@ -498,72 +498,55 @@ impl State {
         Ok(())
     }
 
-    /// Updates storage map SMTs in the forest for changed accounts
-    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = changed_account_ids.len()))]
+    /// Updates storage map SMTs and vaults in the forest for changed accounts
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = account_ids.len()))]
     async fn update_storage_maps_in_forest(
         &self,
-        changed_account_ids: &[AccountId],
+        account_ids: &[AccountId],
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        // Step 1: Query storage from database
-        let account_storages =
-            self.query_account_storages_from_db(changed_account_ids, block_num).await?;
-
-        // Step 2: Extract map slots and their entries using InnerForest helper
-        let map_slots_to_populate = InnerForest::extract_map_slots_from_storage(&account_storages);
-
-        if map_slots_to_populate.is_empty() {
-            return Ok(());
-        }
-
-        // Step 3: Acquire write lock and update the forest with new SMTs
         let mut forest_guard = self.forest.write().await;
-        forest_guard.populate_storage_maps(map_slots_to_populate, block_num);
+
+        // Process each account, updating both storage maps and vaults
+        for account_id in account_ids {
+            // Query and update storage maps for this account
+            let storage = self.db.select_account_storage_at_block(*account_id, block_num).await?;
+            let map_slots = extract_map_slots_from_storage(&storage);
+
+            if !map_slots.is_empty() {
+                forest_guard.add_storage_map(*account_id, map_slots, block_num);
+            }
+        }
 
         Ok(())
     }
 
-    /// Queries account storage data from the database for the given accounts at a specific block
-    #[instrument(target = COMPONENT, skip_all, fields(num_accounts = account_ids.len()))]
-    async fn query_account_storages_from_db(
+    /// Updates vault SMTs in the forest for changed accounts
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = account_ids.len()))]
+    async fn update_vaults_in_forest(
         &self,
         account_ids: &[AccountId],
         block_num: BlockNumber,
-    ) -> Result<Vec<(AccountId, AccountStorage)>, ApplyBlockError> {
-        let mut account_storages = Vec::with_capacity(account_ids.len());
-
-        for &account_id in account_ids {
-            let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
-            account_storages.push((account_id, storage));
-        }
-
-        Ok(account_storages)
-    }
-
-    /// Updates vault SMTs in the forest for changed accounts
-    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = changed_account_ids.len()))]
-    async fn update_vaults_in_forest(
-        &self,
-        changed_account_ids: &[AccountId],
-        block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        // Query vault assets for each updated account
-        let mut vault_entries_to_populate = Vec::new();
-
-        for &account_id in changed_account_ids {
-            let entries = self.db.select_account_vault_at_block(account_id, block_num).await?;
-            if !entries.is_empty() {
-                vault_entries_to_populate.push((account_id, entries));
-            }
-        }
-
-        if vault_entries_to_populate.is_empty() {
-            return Ok(());
-        }
-
-        // Acquire write lock once for the entire update operation and delegate to InnerForest
         let mut forest_guard = self.forest.write().await;
-        forest_guard.populate_vaults(vault_entries_to_populate, block_num);
+
+        // Process each account, updating vaults
+        for account_id in account_ids {
+            // Query and update vault for this account
+            let vault_entries =
+                self.db.select_account_vault_at_block(*account_id, block_num).await?;
+
+            if !vault_entries.is_empty() {
+                forest_guard.add_vault(*account_id, &vault_entries, block_num);
+            }
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                %block_num,
+                "Initialized forest for account from DB"
+            );
+        }
 
         Ok(())
     }
@@ -1403,4 +1386,32 @@ async fn load_account_tree(
         AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
 
     Ok(AccountTreeWithHistory::new(account_tree, block_number))
+}
+
+// HELPERS
+// =================================================================================================
+
+/// Extract storage map slots from a single `AccountStorage` object.
+///
+/// # Returns
+///
+/// Vector of `(slot_name, entries)` tuples ready for forest population.
+pub(crate) fn extract_map_slots_from_storage(
+    storage: &miden_objects::account::AccountStorage,
+) -> Vec<(StorageSlotName, Vec<(Word, Word)>)> {
+    use miden_objects::account::StorageSlotContent;
+
+    let mut map_slots = Vec::new();
+
+    for slot in storage.slots() {
+        if let StorageSlotContent::Map(map) = slot.content() {
+            let entries = Vec::from_iter(map.entries().map(|(k, v)| (*k, *v)));
+
+            if !entries.is_empty() {
+                map_slots.push((slot.name().clone(), entries));
+            }
+        }
+    }
+
+    map_slots
 }

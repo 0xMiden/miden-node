@@ -42,22 +42,6 @@ fn test_inner_forest_basic_initialization() {
 }
 
 #[test]
-fn test_update_account_with_empty_deltas() {
-    let mut forest = InnerForest::new();
-    let account_id = test_account();
-    let block_num = BlockNumber::GENESIS.child();
-
-    let vault_delta = AccountVaultDelta::default();
-    let storage_delta = AccountStorageDelta::default();
-
-    forest.update_account(block_num, account_id, &vault_delta, &storage_delta);
-
-    // Empty deltas should not create entries
-    assert!(!forest.vault_roots.contains_key(&(account_id, block_num)));
-    assert!(forest.storage_roots.is_empty());
-}
-
-#[test]
 fn test_update_vault_with_fungible_asset() {
     let mut forest = InnerForest::new();
     let account_id = test_account();
@@ -65,10 +49,9 @@ fn test_update_vault_with_fungible_asset() {
     let block_num = BlockNumber::GENESIS.child();
 
     let asset = create_fungible_asset(faucet_id, 100);
-    let mut vault_delta = AccountVaultDelta::default();
-    vault_delta.add_asset(asset).unwrap();
+    let vault_entries = vec![(asset.vault_key().into(), Word::from(asset))];
 
-    forest.update_account(block_num, account_id, &vault_delta, &AccountStorageDelta::default());
+    forest.add_vault(account_id, &vault_entries, block_num);
 
     let vault_root = forest.vault_roots[&(account_id, block_num)];
     assert_ne!(vault_root, EMPTY_WORD);
@@ -81,28 +64,14 @@ fn test_compare_delta_vs_db_vault_with_fungible_asset() {
     let block_num = BlockNumber::GENESIS.child();
     let asset = create_fungible_asset(faucet_id, 100);
 
-    // Approach 1: Delta-based update
-    let mut forest_delta = InnerForest::new();
-    let mut vault_delta = AccountVaultDelta::default();
-    vault_delta.add_asset(asset).unwrap();
-    forest_delta.update_account(
-        block_num,
-        account_id,
-        &vault_delta,
-        &AccountStorageDelta::default(),
-    );
-
-    // Approach 2: DB-based population
+    // DB-based population approach
     let mut forest_db = InnerForest::new();
     let vault_entries = vec![(asset.vault_key().into(), Word::from(asset))];
     forest_db.add_vault(account_id, &vault_entries, block_num);
 
-    // Both approaches must produce identical roots
-    let root_delta = forest_delta.vault_roots.get(&(account_id, block_num)).unwrap();
+    // Verify the root is set correctly
     let root_db = forest_db.vault_roots.get(&(account_id, block_num)).unwrap();
-
-    assert_eq!(root_delta, root_db);
-    assert_ne!(*root_delta, EMPTY_WORD);
+    assert_ne!(*root_db, EMPTY_WORD);
 }
 
 #[test]
@@ -116,20 +85,19 @@ fn test_incremental_vault_updates() {
     let mut forest = InnerForest::new();
     let account_id = test_account();
     let faucet_id = test_faucet();
-    let storage_delta = AccountStorageDelta::default();
 
     // Block 1: 100 tokens
     let block_1 = BlockNumber::GENESIS.child();
-    let mut vault_delta_1 = AccountVaultDelta::default();
-    vault_delta_1.add_asset(create_fungible_asset(faucet_id, 100)).unwrap();
-    forest.update_account(block_1, account_id, &vault_delta_1, &storage_delta);
+    let asset_1 = create_fungible_asset(faucet_id, 100);
+    let vault_entries_1 = vec![(asset_1.vault_key().into(), Word::from(asset_1))];
+    forest.add_vault(account_id, &vault_entries_1, block_1);
     let root_1 = forest.vault_roots[&(account_id, block_1)];
 
     // Block 2: 150 tokens
     let block_2 = block_1.child();
-    let mut vault_delta_2 = AccountVaultDelta::default();
-    vault_delta_2.add_asset(create_fungible_asset(faucet_id, 150)).unwrap();
-    forest.update_account(block_2, account_id, &vault_delta_2, &storage_delta);
+    let asset_2 = create_fungible_asset(faucet_id, 150);
+    let vault_entries_2 = vec![(asset_2.vault_key().into(), Word::from(asset_2))];
+    forest.add_vault(account_id, &vault_entries_2, block_2);
     let root_2 = forest.vault_roots[&(account_id, block_2)];
 
     assert_ne!(root_1, root_2);

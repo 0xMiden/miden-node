@@ -555,11 +555,10 @@ impl State {
             }
 
             // Query and update vault for this account
-            let vault_entries =
-                self.db.select_account_vault_at_block(account_id, block_num).await?;
+            let vault_assets = self.db.select_account_vault_at_block(account_id, block_num).await?;
 
-            if !vault_entries.is_empty() {
-                forest_guard.add_vault(account_id, &vault_entries, block_num);
+            if !vault_assets.is_empty() {
+                forest_guard.add_vault(account_id, &vault_assets, block_num);
             }
 
             tracing::debug!(
@@ -1166,11 +1165,9 @@ impl State {
                 AccountVaultDetails::empty()
             },
             Some(_) | None if asset_vault_commitment.is_some() => {
-                let vault_entries =
+                let vault_assets =
                     self.db.select_account_vault_at_block(account_id, block_num).await?;
-                AccountVaultDetails::from_entries(vault_entries).map_err(|e| {
-                    DatabaseError::InteractError(format!("Failed to parse vault assets: {e}"))
-                })?
+                AccountVaultDetails::from_assets(vault_assets)
             },
             _ => AccountVaultDetails::empty(),
         };

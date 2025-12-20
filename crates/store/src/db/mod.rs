@@ -449,7 +449,7 @@ impl Db {
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-    ) -> Result<Vec<(Word, Word)>> {
+    ) -> Result<Vec<Asset>> {
         self.transact("Get account vault at block", move |conn| {
             queries::select_account_vault_at_block(conn, account_id, block_num)
         })

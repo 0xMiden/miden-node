@@ -12,8 +12,6 @@ mod tests;
 
 type MapSlotEntries = Vec<(Word, Word)>;
 
-type VaultEntries = Vec<(Word, Word)>;
-
 /// Container for forest-related state that needs to be updated atomically.
 pub(crate) struct InnerForest {
     /// `SmtForest` for efficient account storage reconstruction.
@@ -234,21 +232,27 @@ impl InnerForest {
     /// # Arguments
     ///
     /// * `account_id` - The account whose vault is being initialized
-    /// * `vault_entries` - (key, value) Word pairs for the vault
+    /// * `assets` - Assets to populate the vault with
     /// * `block_num` - Block number for which this state applies
     pub(crate) fn add_vault(
         &mut self,
         account_id: AccountId,
-        vault_entries: &VaultEntries,
+        assets: &[Asset],
         block_num: BlockNumber,
     ) {
-        if vault_entries.is_empty() {
+        if assets.is_empty() {
             return;
         }
 
+        // Convert assets to (key, value) pairs for SMT insertion
+        let entries: Vec<(Word, Word)> = assets
+            .iter()
+            .map(|asset| (asset.vault_key().into(), Word::from(*asset)))
+            .collect();
+
         let updated_root = self
             .storage_forest
-            .batch_insert(Self::empty_smt_root(), vault_entries.iter().copied())
+            .batch_insert(Self::empty_smt_root(), entries.iter().copied())
             .expect("Forest insertion should succeed");
 
         self.vault_roots.insert((account_id, block_num), updated_root);
@@ -257,7 +261,7 @@ impl InnerForest {
             target: crate::COMPONENT,
             account_id = %account_id,
             block_num = %block_num,
-            vault_entries = vault_entries.len(),
+            vault_entries = assets.len(),
             "Populated vault in forest from DB"
         );
     }

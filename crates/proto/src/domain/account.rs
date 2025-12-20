@@ -381,6 +381,15 @@ impl AccountVaultDetails {
         Self::Assets(Vec::new())
     }
 
+    /// Creates `AccountVaultDetails` from a list of assets.
+    pub fn from_assets(assets: Vec<Asset>) -> Self {
+        if assets.len() > Self::MAX_RETURN_ENTRIES {
+            Self::LimitExceeded
+        } else {
+            Self::Assets(assets)
+        }
+    }
+
     /// Creates `AccountVaultDetails` from vault entries (key-value pairs).
     ///
     /// This is useful when entries have been fetched directly from the database

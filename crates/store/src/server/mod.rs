@@ -28,6 +28,7 @@ use crate::{COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GenesisState};
 
 mod api;
 mod block_producer;
+mod block_prover;
 mod db_maintenance;
 mod ntx_builder;
 mod rpc_api;

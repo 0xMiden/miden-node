@@ -95,8 +95,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         // Apply the block to the state.
         self.state.apply_block(header.clone(), body.clone(), signature.clone()).await?;
 
-        // TODO(currentpr): this need to be a separate task or set of tasks?
-        // Prove the block.
+        // TODO(sergerad): Make block proving async/deferred. I.E. return from this fn before block
+        // is proven. Prove the block.
         self.prove_block(ordered_batches, block_inputs, header, signature, body)
             .await
             .map_err(|err| Status::internal(err.as_report_context("failed to prove block")))?;

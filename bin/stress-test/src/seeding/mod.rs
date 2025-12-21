@@ -234,9 +234,9 @@ async fn generate_blocks(
     metrics
 }
 
-/// Sends block data to the store
+/// Sends block data to the store for committal.
 ///
-/// Returns the the inserted block header.
+/// Returns the the applied block header.
 async fn apply_block(
     batches: Vec<ProvenBatch>,
     block_inputs: BlockInputs,

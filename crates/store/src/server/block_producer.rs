@@ -63,10 +63,13 @@ impl block_producer_server::BlockProducer for StoreApi {
         // Read the request.
         let request = request.into_inner();
         debug!(target: COMPONENT, ?request);
-        let ordered_batches = OrderedBatches::read_from_bytes(&request.header).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("failed to deserialize ordered batches"))
-        })?;
-        let block_inputs = BlockInputs::read_from_bytes(&request.header).map_err(|err| {
+        let ordered_batches =
+            OrderedBatches::read_from_bytes(&request.ordered_batches).map_err(|err| {
+                Status::invalid_argument(
+                    err.as_report_context("failed to deserialize ordered batches"),
+                )
+            })?;
+        let block_inputs = BlockInputs::read_from_bytes(&request.block_inputs).map_err(|err| {
             Status::invalid_argument(err.as_report_context("failed to deserialize block inputs"))
         })?;
         let header = BlockHeader::read_from_bytes(&request.header).map_err(|err| {

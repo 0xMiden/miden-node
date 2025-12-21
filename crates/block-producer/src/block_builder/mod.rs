@@ -233,38 +233,6 @@ impl BlockBuilder {
         Ok((ordered_batches, block_inputs, header, body, signature))
     }
 
-    //#[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
-    //async fn prove_block(
-    //    &self,
-    //    ordered_batches: OrderedBatches,
-    //    block_inputs: BlockInputs,
-    //    header: BlockHeader,
-    //    signature: Signature,
-    //    body: BlockBody,
-    //) -> Result<ProvenBlock, BuildBlockError> {
-    //    // Prove block using header and body from validator.
-    //    let block_proof = self
-    //        .block_prover
-    //        .prove(ordered_batches.clone(), header.clone(), block_inputs)
-    //        .await?;
-    //    self.simulate_proving().await;
-
-    //    // SAFETY: The header and body are assumed valid and consistent with the proof.
-    //    let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
-    //    if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
-    //        return Err(BuildBlockError::SecurityLevelTooLow(
-    //            proven_block.proof_security_level(),
-    //            MIN_PROOF_SECURITY_LEVEL,
-    //        ));
-    //    }
-    //    // TODO(sergerad): Consider removing this validation. Once block proving is implemented,
-    //    // this would be replaced with verifying the proof returned from the prover against
-    //    // the block header.
-    //    validate_tx_headers(&proven_block, &ordered_batches.to_transactions())?;
-
-    //    Ok(proven_block)
-    //}
-
     #[instrument(target = COMPONENT, name = "block_builder.commit_block", skip_all, err)]
     async fn commit_block(
         &self,

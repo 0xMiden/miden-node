@@ -1,15 +1,23 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use miden_block_prover::{BlockProverError, LocalBlockProver};
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
-use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::batch::OrderedBatches;
-use miden_objects::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
+use miden_objects::block::{
+    BlockBody,
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    BlockProof,
+    ProvenBlock,
+};
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::note::Nullifier;
+use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use tonic::{Request, Response, Status};
@@ -18,12 +26,63 @@ use tracing::{info, instrument};
 use crate::COMPONENT;
 use crate::state::State;
 
+// TODO(currentpr): move error
+
+#[derive(Debug, thiserror::Error)]
+pub enum StoreProverError {
+    #[error("local proving failed")]
+    LocalProvingFailed(#[from] BlockProverError),
+    #[error("remote proving failed")]
+    RemoteProvingFailed(#[from] RemoteProverClientError),
+}
+
+// TODO(currentpr): move block prover
+// BLOCK PROVER
+// ================================================================================================
+
+/// Block prover which allows for proving via either local or remote backend.
+///
+/// The local proving variant is intended for development and testing purposes.
+/// The remote proving variant is intended for production use.
+pub enum BlockProver {
+    Local(LocalBlockProver),
+    Remote(RemoteBlockProver),
+}
+
+impl BlockProver {
+    pub fn new_local(security_level: Option<u32>) -> Self {
+        info!(target: COMPONENT, "Using local block prover");
+        let security_level = security_level.unwrap_or(MIN_PROOF_SECURITY_LEVEL);
+        Self::Local(LocalBlockProver::new(security_level))
+    }
+
+    pub fn new_remote(endpoint: impl Into<String>) -> Self {
+        info!(target: COMPONENT, "Using remote block prover");
+        Self::Remote(RemoteBlockProver::new(endpoint))
+    }
+
+    #[instrument(target = COMPONENT, skip_all, err)]
+    pub async fn prove(
+        &self,
+        tx_batches: OrderedBatches,
+        block_header: BlockHeader,
+        block_inputs: BlockInputs,
+    ) -> Result<BlockProof, StoreProverError> {
+        match self {
+            Self::Local(prover) => Ok(prover.prove(tx_batches, block_header, block_inputs)?),
+            Self::Remote(prover) => {
+                Ok(prover.prove(tx_batches, block_header, block_inputs).await?)
+            },
+        }
+    }
+}
+
 // STORE API
 // ================================================================================================
 
 pub struct StoreApi {
     pub(super) state: Arc<State>,
-    pub(super) block_prover: Arc<RemoteBlockProver>,
+    pub(super) block_prover: Arc<BlockProver>,
 }
 
 impl StoreApi {
@@ -48,20 +107,22 @@ impl StoreApi {
         }))
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
-    async fn prove_block(
+    #[instrument(target = COMPONENT, name = "store.prove_block", skip_all, err)]
+    pub async fn prove_block(
         &self,
         ordered_batches: OrderedBatches,
         block_inputs: BlockInputs,
         header: BlockHeader,
         signature: Signature,
         body: BlockBody,
-    ) -> Result<ProvenBlock, RemoteProverClientError> {
+    ) -> Result<ProvenBlock, StoreProverError> {
         // Prove block.
         let block_proof = self
             .block_prover
             .prove(ordered_batches.clone(), header.clone(), block_inputs)
             .await?;
+
+        // TODO(currentpr): reinstate simulation
         //self.simulate_proving().await;
 
         // SAFETY: The header and body are assumed valid and consistent with the proof.

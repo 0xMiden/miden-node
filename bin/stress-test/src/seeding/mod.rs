@@ -14,7 +14,7 @@ use miden_lib::utils::Serializable;
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::generated::store::rpc_client::RpcClient;
-use miden_node_store::{DataDirectory, GenesisState, Store};
+use miden_node_store::{BlockProver, DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
@@ -247,9 +247,14 @@ async fn apply_block(
     let (header, body) = build_block(proposed_block.clone()).unwrap();
     let signature = EcdsaSecretKey::new().sign(header.commitment());
     let block_size: usize = header.to_bytes().len() + body.to_bytes().len();
+    let ordered_batches = proposed_block.batches().clone();
 
     let start = Instant::now();
-    store_client.apply_block(header.clone(), body, signature).await.unwrap();
+
+    store_client
+        .apply_block(ordered_batches, block_inputs, header.clone(), body, signature)
+        .await
+        .unwrap();
     metrics.track_block_insertion(start.elapsed(), block_size);
 
     header
@@ -515,6 +520,15 @@ async fn get_block_inputs(
 pub async fn start_store(
     data_directory: PathBuf,
 ) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, Url) {
+    start_store_with_prover(data_directory, None).await
+}
+
+/// Starts the store with an optional remote block prover URL.
+/// If `block_prover_url` is None, the store will use a local block prover.
+pub async fn start_store_with_prover(
+    data_directory: PathBuf,
+    block_prover_url: Option<Url>,
+) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, Url) {
     let rpc_listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind store RPC gRPC endpoint");
@@ -531,10 +545,19 @@ pub async fn start_store(
     let dir = data_directory.clone();
 
     task::spawn(async move {
+        let block_prover = {
+            if let Some(url) = block_prover_url {
+                Arc::new(BlockProver::new_remote(url))
+            } else {
+                Arc::new(BlockProver::new_local(None))
+            }
+        };
+
         Store {
             rpc_listener,
             ntx_builder_listener,
             block_producer_listener,
+            block_prover,
             data_directory: dir,
             grpc_timeout: Duration::from_secs(30),
         }

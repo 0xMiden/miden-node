@@ -7,13 +7,12 @@ use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
-use miden_node_store::Store;
+use miden_node_store::{BlockProver, Store};
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
 use miden_objects::block::BlockSigner;
 use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::utils::Deserializable;
-use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use tokio::net::TcpListener;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;
@@ -181,7 +180,7 @@ impl BundledCommand {
             .await
             .context("Failed to bind to RPC gRPC endpoint")?;
 
-        let block_prover = Arc::new(RemoteBlockProver::new(block_prover_url));
+        let block_prover = Arc::new(BlockProver::new_remote(block_prover_url));
 
         let block_producer_address = TcpListener::bind("127.0.0.1:0")
             .await

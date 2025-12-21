@@ -112,7 +112,7 @@ impl BlockBuilder {
                 ProposedBlock::inject_telemetry(proposed_block);
             })
             .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
-            .and_then(|(_ordered_batches, _block_inputs, header, body, signature)| self.commit_block(mempool, header, body, signature))
+            .and_then(|(ordered_batches, block_inputs, header, body, signature)| self.commit_block(mempool, ordered_batches, block_inputs, header, body, signature))
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
             .or_else(|_err| self.rollback_block(mempool, block_num).never_error())
@@ -269,12 +269,14 @@ impl BlockBuilder {
     async fn commit_block(
         &self,
         mempool: &SharedMempool,
+        ordered_batches: OrderedBatches,
+        block_inputs: BlockInputs,
         header: BlockHeader,
         body: BlockBody,
         signature: Signature,
     ) -> Result<(), BuildBlockError> {
         self.store
-            .apply_block(header.clone(), body, signature)
+            .apply_block(ordered_batches, block_inputs, header.clone(), body, signature)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 

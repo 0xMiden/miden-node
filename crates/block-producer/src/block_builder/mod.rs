@@ -112,6 +112,7 @@ impl BlockBuilder {
                 ProposedBlock::inject_telemetry(proposed_block);
             })
             .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
+            // TODO(sergerad): Add SignedBlock to miden-base and update validate_block to return it.
             .and_then(|(ordered_batches, block_inputs, header, body, signature)| self.commit_block(mempool, ordered_batches, block_inputs, header, body, signature))
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))

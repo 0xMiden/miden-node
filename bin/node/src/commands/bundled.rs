@@ -71,9 +71,9 @@ pub enum BundledCommand {
         #[arg(long = "rpc.url", env = ENV_RPC_URL, value_name = "URL")]
         rpc_url: Url,
 
-        /// The remote block prover's gRPC url.
+        /// The remote block prover's gRPC url. If not provided, a local block prover will be used.
         #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
-        block_prover_url: Url,
+        block_prover_url: Option<Url>,
 
         /// Directory in which the Store component should store the database and raw block data.
         #[arg(long = "data-directory", env = ENV_DATA_DIRECTORY, value_name = "DIR")]
@@ -163,7 +163,7 @@ impl BundledCommand {
     #[allow(clippy::too_many_lines)]
     async fn start(
         rpc_url: Url,
-        block_prover_url: Url,
+        block_prover_url: Option<Url>,
         data_directory: PathBuf,
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
@@ -180,7 +180,12 @@ impl BundledCommand {
             .await
             .context("Failed to bind to RPC gRPC endpoint")?;
 
-        let block_prover = Arc::new(BlockProver::new_remote(block_prover_url));
+        // Initialize local or remote block prover.
+        let block_prover = if let Some(url) = block_prover_url {
+            Arc::new(BlockProver::new_remote(url))
+        } else {
+            Arc::new(BlockProver::new_local(None))
+        };
 
         let block_producer_address = TcpListener::bind("127.0.0.1:0")
             .await

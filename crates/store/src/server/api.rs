@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use miden_block_prover::{BlockProverError, LocalBlockProver};
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::AccountId;
 use miden_objects::batch::OrderedBatches;
 use miden_objects::block::{
@@ -20,8 +22,9 @@ use miden_objects::note::Nullifier;
 use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
+use rand::Rng;
 use tonic::{Request, Response, Status};
-use tracing::{info, instrument};
+use tracing::{Span, info, instrument};
 
 use crate::COMPONENT;
 use crate::state::State;
@@ -122,13 +125,25 @@ impl StoreApi {
             .prove(ordered_batches.clone(), header.clone(), block_inputs)
             .await?;
 
-        // TODO(currentpr): reinstate simulation
-        //self.simulate_proving().await;
+        // TODO: remove simulation when block proving is implemented.
+        self.simulate_proving().await;
 
         // SAFETY: The header and body are assumed valid and consistent with the proof.
         let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
 
         Ok(proven_block)
+    }
+
+    #[instrument(target = COMPONENT, name = "store.simulate_proving", skip_all)]
+    async fn simulate_proving(&self) {
+        let simulated_proof_time = Duration::ZERO..Duration::from_millis(1);
+        let proving_duration = rand::rng().random_range(simulated_proof_time.clone());
+
+        Span::current().set_attribute("range.min_s", simulated_proof_time.start);
+        Span::current().set_attribute("range.max_s", simulated_proof_time.end);
+        Span::current().set_attribute("dice_roll_s", proving_duration);
+
+        tokio::time::sleep(proving_duration).await;
     }
 }
 

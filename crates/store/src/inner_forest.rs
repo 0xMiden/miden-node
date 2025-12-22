@@ -44,12 +44,6 @@ impl InnerForest {
     }
 
     /// Populates storage map SMTs in the forest from full database state for a single account.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account whose storage maps are being initialized
-    /// * `map_slots_to_populate` - List of `(slot_name, entries)` tuples
-    /// * `block_num` - Block number for which this state applies
     pub(crate) fn add_storage_map(
         &mut self,
         account_id: AccountId,
@@ -81,12 +75,6 @@ impl InnerForest {
     }
 
     /// Populates a vault SMT in the forest from full database state.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account whose vault is being initialized
-    /// * `vault_entries` - (key, value) Word pairs for the vault
-    /// * `block_num` - Block number for which this state applies
     pub(crate) fn add_vault(
         &mut self,
         account_id: AccountId,
@@ -115,20 +103,7 @@ impl InnerForest {
 
     /// Queries specific storage keys for a given account and slot at a specific block.
     ///
-    /// This method retrieves key-value pairs from the forest without loading the entire
-    /// storage map from the database. It returns the values along with their Merkle proofs.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account to query
-    /// * `slot_name` - The storage slot name
-    /// * `block_num` - The block number at which to query
-    /// * `keys` - The keys to retrieve
-    ///
-    /// # Returns
-    ///
-    /// A vector of key-value pairs for the requested keys. Keys that don't exist in the
-    /// storage map will have a value of `EMPTY_WORD`.
+    /// Keys that don't exist in the storage map will have a value of `EMPTY_WORD`.
     ///
     /// # Errors
     ///

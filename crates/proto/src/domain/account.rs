@@ -499,19 +499,8 @@ impl AccountStorageMapDetails {
 
     /// Creates storage map details based on the requested slot data.
     ///
-    /// This method handles both "all entries" and "specific keys" requests:
-    /// - For `SlotData::All`: Returns all entries from the storage map
-    /// - For `SlotData::MapKeys`: Returns only the requested keys with their values
-    ///
-    /// # Arguments
-    ///
-    /// * `slot_name` - The name of the storage slot
-    /// * `slot_data` - The type of data requested (all or specific keys)
-    /// * `storage_map` - The storage map to query
-    ///
-    /// # Returns
-    ///
-    /// Storage map details containing the requested entries or `LimitExceeded` if too many.
+    /// Handles both "all entries" and "specific keys" requests.
+    /// Returns `LimitExceeded` if too many entries.
     pub fn new(slot_name: StorageSlotName, slot_data: SlotData, storage_map: &StorageMap) -> Self {
         match slot_data {
             SlotData::All => Self::from_all_entries(slot_name, storage_map),
@@ -537,19 +526,9 @@ impl AccountStorageMapDetails {
         }
     }
 
-    /// Creates storage map details from entries queried from storage forest with proofs.
+    /// Creates storage map details from forest-queried entries.
     ///
-    /// This method should be used when specific keys are requested and we want to include
-    /// Merkle proofs for verification. It avoids loading the entire storage map from the database.
-    ///
-    /// # Arguments
-    ///
-    /// * `slot_name` - The name of the storage slot
-    /// * `entries` - Key-value pairs with their Merkle proofs from the storage forest
-    ///
-    /// # Returns
-    ///
-    /// Storage map details containing the requested entries or `LimitExceeded` if too many keys.
+    /// Returns `LimitExceeded` if too many entries.
     pub fn from_forest_entries(slot_name: StorageSlotName, entries: Vec<(Word, Word)>) -> Self {
         if entries.len() > Self::MAX_RETURN_ENTRIES {
             Self {
@@ -564,26 +543,10 @@ impl AccountStorageMapDetails {
         }
     }
 
-    /// Creates storage map details with SMT proofs for specific keys using the storage forest.
+    /// Creates storage map details with SMT proofs for specific keys.
     ///
-    /// This method queries the forest for specific keys and extracts key-value pairs from
-    /// the SMT proofs. The forest must be available and contain the data for the specified
-    /// SMT root.
-    ///
-    /// # Arguments
-    ///
-    /// * `slot_name` - The name of the storage slot
-    /// * `keys` - The keys to query
-    /// * `storage_forest` - The SMT forest containing the storage data
-    /// * `smt_root` - The root of the SMT for this storage slot
-    ///
-    /// # Returns
-    ///
-    /// Storage map details containing the requested entries or `LimitExceeded` if too many keys.
-    ///
-    /// # Errors
-    ///
-    /// Returns `MerkleError` if the forest doesn't contain sufficient data to provide proofs.
+    /// Returns `LimitExceeded` if too many keys, or `MerkleError` if the forest
+    /// doesn't contain sufficient data.
     pub fn from_specific_keys(
         slot_name: StorageSlotName,
         keys: &[Word],

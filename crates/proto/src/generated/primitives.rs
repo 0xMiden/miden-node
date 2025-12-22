@@ -96,34 +96,3 @@ pub struct Digest {
     #[prost(fixed64, tag = "4")]
     pub d3: u64,
 }
-/// Represents a partial Sparse Merkle Tree containing only a subset of leaves and their paths.
-/// This allows verifying and updating tracked keys without requiring the full tree.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PartialSmt {
-    /// The root hash of the SMT
-    #[prost(message, optional, tag = "1")]
-    pub root: ::core::option::Option<Digest>,
-    /// All tracked leaves in the partial SMT, keyed by their leaf index
-    #[prost(message, repeated, tag = "2")]
-    pub leaves: ::prost::alloc::vec::Vec<SmtLeafWithIndex>,
-    /// Inner nodes stored in deterministic order (by scalar index) for reconstruction
-    #[prost(message, repeated, tag = "3")]
-    pub inner_nodes: ::prost::alloc::vec::Vec<InnerNode>,
-}
-/// Represents a leaf with its index for partial SMT serialization
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SmtLeafWithIndex {
-    /// The leaf index (0 to 2^64 - 1 for leaves at depth 64)
-    #[prost(uint64, tag = "1")]
-    pub leaf_index: u64,
-    /// The leaf data
-    #[prost(message, optional, tag = "2")]
-    pub leaf: ::core::option::Option<SmtLeaf>,
-}
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct InnerNode {
-    #[prost(message, optional, tag = "1")]
-    pub left: ::core::option::Option<Digest>,
-    #[prost(message, optional, tag = "2")]
-    pub right: ::core::option::Option<Digest>,
-}

@@ -215,7 +215,7 @@ impl NetworkTransactionBuilder {
             },
             // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, txs } => {
-                self.update_chain_tip(header.clone(), chain_state).await;
+                self.update_chain_tip(header.as_ref().clone(), chain_state).await;
                 self.coordinator.broadcast(event.clone()).await;
 
                 // All transactions pertaining to predating events should now be available through

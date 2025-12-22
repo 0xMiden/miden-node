@@ -10,8 +10,6 @@ use super::note::NetworkNote;
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::generated as proto;
 
-// TODO: remove this allow, maybe box BlockHeader
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum MempoolEvent {
     TransactionAdded {
@@ -21,7 +19,8 @@ pub enum MempoolEvent {
         account_delta: Option<AccountUpdateDetails>,
     },
     BlockCommitted {
-        header: BlockHeader,
+        // Box'd as this struct is quite large and triggers clippy.
+        header: Box<BlockHeader>,
         txs: Vec<TransactionId>,
     },
     TransactionsReverted(HashSet<TransactionId>),
@@ -60,7 +59,7 @@ impl From<MempoolEvent> for proto::block_producer::MempoolEvent {
             MempoolEvent::BlockCommitted { header, txs } => {
                 proto::block_producer::mempool_event::Event::BlockCommitted(
                     proto::block_producer::mempool_event::BlockCommitted {
-                        block_header: Some(header.into()),
+                        block_header: Some(header.as_ref().into()),
                         transactions: txs.into_iter().map(Into::into).collect(),
                     },
                 )
@@ -122,6 +121,7 @@ impl TryFrom<proto::block_producer::MempoolEvent> for MempoolEvent {
                         "block_header",
                     ))?
                     .try_into()?;
+                let header = Box::new(header);
                 let txs = block_committed
                     .transactions
                     .into_iter()

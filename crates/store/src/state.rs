@@ -24,7 +24,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{AccountId, StorageSlotContent, StorageSlotName};
+use miden_objects::account::{AccountId, StorageSlotContent};
 use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_objects::block::{
@@ -495,19 +495,15 @@ impl State {
 
         for (account_id, details) in account_updates {
             match details {
-                AccountUpdateDetails::Delta(delta) => {
-                    // Update the forest with vault and storage deltas
-                    forest_guard.update_account(
-                        block_num,
-                        account_id,
-                        delta.vault(),
-                        delta.storage(),
-                    );
+                AccountUpdateDetails::Delta(ref delta) => {
+                    // Update the forest with the delta (handles both full-state and partial)
+                    forest_guard.update_account(block_num, delta);
 
                     tracing::debug!(
                         target: COMPONENT,
                         %account_id,
                         %block_num,
+                        is_full_state = delta.is_full_state(),
                         "Updated forest with account delta"
                     );
                 },
@@ -526,10 +522,10 @@ impl State {
         Ok(())
     }
 
-    /// Updates `SmtForest` from database state (DB-based)
+    /// Updates `SmtForest` from database state using the unified delta
     ///
-    /// This method is used during initial `State::load()` where deltas are not available.
-    /// For block application, prefer `fn update_forest` which uses deltas directly.
+    /// Primarily used in `State::load()` where we need to reconstruct
+    /// the forest from full account state recovered from the database.
     ///
     /// # Warning
     ///
@@ -541,25 +537,36 @@ impl State {
         account_ids: Vec<AccountId>,
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
+        use miden_objects::account::delta::AccountDelta;
+
         // Acquire write lock once for the entire initialization
         let mut forest_guard = self.forest.write().await;
 
-        // Process each account, updating both storage maps and vaults
+        // Process each account
         for account_id in account_ids {
-            // Query and update storage maps for this account
-            let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
-            let map_slots = extract_map_slots_from_storage(&storage);
-
-            if !map_slots.is_empty() {
-                forest_guard.add_storage_map(account_id, map_slots, block_num);
+            // Skip private accounts - they don't have public state to reconstruct
+            if !account_id.is_public() {
+                tracing::trace!(
+                    target: COMPONENT,
+                    %account_id,
+                    %block_num,
+                    "Skipping private account during forest initialization"
+                );
+                continue;
             }
 
-            // Query and update vault for this account
-            let vault_assets = self.db.select_account_vault_at_block(account_id, block_num).await?;
+            // Get the full account from the database
+            let account_info = self.db.select_account(account_id).await?;
+            let account = account_info
+                .details
+                .expect("public accounts always have details in DB");
 
-            if !vault_assets.is_empty() {
-                forest_guard.add_vault(account_id, &vault_assets, block_num);
-            }
+            // Convert the full account to a full-state delta
+            let delta = AccountDelta::try_from(account)
+                .expect("accounts from DB should not have seeds");
+
+            // Use the unified update method (will recognize it's a full-state delta)
+            forest_guard.update_account(block_num, &delta);
 
             tracing::debug!(
                 target: COMPONENT,
@@ -1365,32 +1372,4 @@ async fn load_account_tree(
         AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
 
     Ok(AccountTreeWithHistory::new(account_tree, block_number))
-}
-
-// HELPERS
-// =================================================================================================
-
-/// Extract storage map slots from a single `AccountStorage` object.
-///
-/// # Returns
-///
-/// Vector of `(account_id, slot_name, entries)` tuples ready for forest population.
-pub(crate) fn extract_map_slots_from_storage(
-    storage: &miden_objects::account::AccountStorage,
-) -> Vec<(StorageSlotName, Vec<(Word, Word)>)> {
-    use miden_objects::account::StorageSlotContent;
-
-    let mut map_slots = Vec::new();
-
-    for slot in storage.slots() {
-        if let StorageSlotContent::Map(map) = slot.content() {
-            let entries = Vec::from_iter(map.entries().map(|(k, v)| (*k, *v)));
-
-            if !entries.is_empty() {
-                map_slots.push((slot.name().clone(), entries));
-            }
-        }
-    }
-
-    map_slots
 }

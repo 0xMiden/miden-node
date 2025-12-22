@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use miden_objects::account::delta::{AccountStorageDelta, AccountVaultDelta};
+use miden_objects::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_objects::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
 use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::block::BlockNumber;
@@ -9,8 +9,6 @@ use miden_objects::{EMPTY_WORD, Word};
 
 #[cfg(test)]
 mod tests;
-
-type MapSlotEntries = Vec<(Word, Word)>;
 
 /// Container for forest-related state that needs to be updated atomically.
 pub(crate) struct InnerForest {
@@ -44,29 +42,29 @@ impl InnerForest {
     /// Updates the forest with account vault and storage changes from a delta.
     ///
     /// This is the unified interface for updating all account state in the forest.
-    /// It processes both vault and storage map deltas and updates the forest accordingly.
+    /// It handles both full-state deltas (new accounts or reconstruction from DB)
+    /// and partial deltas (incremental updates during block application).
+    ///
+    /// For full-state deltas (`delta.is_full_state() == true`), the forest is populated
+    /// from scratch using an empty SMT root. For partial deltas, changes are applied
+    /// on top of the previous block's state.
     ///
     /// # Arguments
     ///
     /// * `block_num` - Block number for which these changes are being applied
-    /// * `account_id` - The account being updated
-    /// * `vault_delta` - Changes to the account's asset vault
-    /// * `storage_delta` - Changes to the account's storage maps
-    pub(crate) fn update_account(
-        &mut self,
-        block_num: BlockNumber,
-        account_id: AccountId,
-        vault_delta: &AccountVaultDelta,
-        storage_delta: &AccountStorageDelta,
-    ) {
+    /// * `delta` - The account delta containing vault and storage changes
+    pub(crate) fn update_account(&mut self, block_num: BlockNumber, delta: &AccountDelta) {
+        let account_id = delta.id();
+        let is_full_state = delta.is_full_state();
+
         // Update vault if there are any changes
-        if !vault_delta.is_empty() {
-            self.update_account_vault(block_num, account_id, vault_delta);
+        if !delta.vault().is_empty() {
+            self.update_account_vault(block_num, account_id, delta.vault(), is_full_state);
         }
 
         // Update storage maps if there are any changes
-        if !storage_delta.is_empty() {
-            self.update_account_storage(block_num, account_id, storage_delta);
+        if !delta.storage().is_empty() {
+            self.update_account_storage(block_num, account_id, delta.storage(), is_full_state);
         }
     }
 
@@ -80,18 +78,25 @@ impl InnerForest {
     /// * `block_num` - Block number for this update
     /// * `account_id` - The account being updated
     /// * `vault_delta` - Changes to the account's asset vault
+    /// * `is_full_state` - If true, start from empty root; otherwise use previous block's root
     fn update_account_vault(
         &mut self,
         block_num: BlockNumber,
         account_id: AccountId,
         vault_delta: &AccountVaultDelta,
+        is_full_state: bool,
     ) {
-        let prev_block_num = block_num.parent().unwrap_or_default();
-        let prev_root = self
-            .vault_roots
-            .get(&(account_id, prev_block_num))
-            .copied()
-            .unwrap_or_else(Self::empty_smt_root);
+        // For full-state deltas (new accounts or reconstruction), start from empty root.
+        // For partial deltas, look up the previous block's root.
+        let prev_root = if is_full_state {
+            Self::empty_smt_root()
+        } else {
+            let prev_block_num = block_num.parent().unwrap_or_default();
+            self.vault_roots
+                .get(&(account_id, prev_block_num))
+                .copied()
+                .unwrap_or_else(Self::empty_smt_root)
+        };
 
         // Collect all vault entry updates
         let mut entries = Vec::new();
@@ -147,20 +152,26 @@ impl InnerForest {
     /// * `block_num` - Block number for this update
     /// * `account_id` - The account being updated
     /// * `storage_delta` - Changes to the account's storage maps
+    /// * `is_full_state` - If true, start from empty root; otherwise use previous block's root
     fn update_account_storage(
         &mut self,
         block_num: BlockNumber,
         account_id: AccountId,
         storage_delta: &AccountStorageDelta,
+        is_full_state: bool,
     ) {
-        let prev_block_num = block_num.parent().unwrap_or_default();
-
         for (slot_name, map_delta) in storage_delta.maps() {
-            let prev_root = self
-                .storage_roots
-                .get(&(account_id, slot_name.clone(), prev_block_num))
-                .copied()
-                .unwrap_or_else(Self::empty_smt_root);
+            // For full-state deltas (new accounts or reconstruction), start from empty root.
+            // For partial deltas, look up the previous block's root.
+            let prev_root = if is_full_state {
+                Self::empty_smt_root()
+            } else {
+                let prev_block_num = block_num.parent().unwrap_or_default();
+                self.storage_roots
+                    .get(&(account_id, slot_name.clone(), prev_block_num))
+                    .copied()
+                    .unwrap_or_else(Self::empty_smt_root)
+            };
 
             // Collect entries from the delta
             let entries = map_delta
@@ -188,81 +199,5 @@ impl InnerForest {
                 );
             }
         }
-    }
-
-    /// Populates storage map SMTs in the forest from full database state for a single account.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account whose storage maps are being initialized
-    /// * `map_slots_to_populate` - List of `(slot_name, entries)` tuples
-    /// * `block_num` - Block number for which this state applies
-    pub(crate) fn add_storage_map(
-        &mut self,
-        account_id: AccountId,
-        map_slots_to_populate: Vec<(StorageSlotName, MapSlotEntries)>,
-        block_num: BlockNumber,
-    ) {
-        for (slot_name, entries) in map_slots_to_populate {
-            if entries.is_empty() {
-                continue;
-            }
-
-            let updated_root = self
-                .storage_forest
-                .batch_insert(Self::empty_smt_root(), entries.iter().copied())
-                .expect("Forest insertion should succeed");
-
-            self.storage_roots
-                .insert((account_id, slot_name.clone(), block_num), updated_root);
-
-            tracing::debug!(
-                target: crate::COMPONENT,
-                account_id = %account_id,
-                block_num = %block_num,
-                slot_name = ?slot_name,
-                entries = entries.len(),
-                "Populated storage map in forest from DB"
-            );
-        }
-    }
-
-    /// Populates a vault SMT in the forest from full database state.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account whose vault is being initialized
-    /// * `assets` - Assets to populate the vault with
-    /// * `block_num` - Block number for which this state applies
-    pub(crate) fn add_vault(
-        &mut self,
-        account_id: AccountId,
-        assets: &[Asset],
-        block_num: BlockNumber,
-    ) {
-        if assets.is_empty() {
-            return;
-        }
-
-        // Convert assets to (key, value) pairs for SMT insertion
-        let entries: Vec<(Word, Word)> = assets
-            .iter()
-            .map(|asset| (asset.vault_key().into(), Word::from(*asset)))
-            .collect();
-
-        let updated_root = self
-            .storage_forest
-            .batch_insert(Self::empty_smt_root(), entries.iter().copied())
-            .expect("Forest insertion should succeed");
-
-        self.vault_roots.insert((account_id, block_num), updated_root);
-
-        tracing::debug!(
-            target: crate::COMPONENT,
-            account_id = %account_id,
-            block_num = %block_num,
-            vault_entries = assets.len(),
-            "Populated vault in forest from DB"
-        );
     }
 }

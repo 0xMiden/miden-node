@@ -557,13 +557,11 @@ impl State {
 
             // Get the full account from the database
             let account_info = self.db.select_account(account_id).await?;
-            let account = account_info
-                .details
-                .expect("public accounts always have details in DB");
+            let account = account_info.details.expect("public accounts always have details in DB");
 
             // Convert the full account to a full-state delta
-            let delta = AccountDelta::try_from(account)
-                .expect("accounts from DB should not have seeds");
+            let delta =
+                AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
 
             // Use the unified update method (will recognize it's a full-state delta)
             forest_guard.update_account(block_num, &delta);

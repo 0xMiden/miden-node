@@ -41,6 +41,13 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
     debug!(target: COMPONENT, "Initializing RPC status checker");
     let rpc_rx = tasks.spawn_rpc_checker(&config).await?;
 
+    // Initialize the explorer status checker task.
+    let explorer_rx = if config.explorer_url.is_some() {
+        Some(tasks.spawn_explorer_checker(&config).await?)
+    } else {
+        None
+    };
+
     // Initialize the prover checkers & tests tasks, only if URLs were provided.
     let prover_rxs = if config.remote_prover_urls.is_empty() {
         debug!(target: COMPONENT, "No remote prover URLs configured, skipping prover tasks");
@@ -77,6 +84,7 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         faucet: faucet_rx,
         ntx_increment: ntx_increment_rx,
         ntx_tracking: ntx_tracking_rx,
+        explorer: explorer_rx,
     };
     tasks.spawn_http_server(server_state, &config);
 

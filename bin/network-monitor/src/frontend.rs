@@ -25,6 +25,7 @@ pub struct ServerState {
     pub faucet: Option<watch::Receiver<ServiceStatus>>,
     pub ntx_increment: Option<watch::Receiver<ServiceStatus>>,
     pub ntx_tracking: Option<watch::Receiver<ServiceStatus>>,
+    pub explorer: Option<watch::Receiver<ServiceStatus>>,
 }
 
 /// Runs the frontend server.
@@ -75,6 +76,11 @@ async fn get_status(
 
     // Collect RPC status
     services.push(server_state.rpc.borrow().clone());
+
+    // Collect explorer status if available
+    if let Some(explorer_rx) = &server_state.explorer {
+        services.push(explorer_rx.borrow().clone());
+    }
 
     // Collect all remote prover statuses
     for (prover_status_rx, prover_test_rx) in &server_state.provers {

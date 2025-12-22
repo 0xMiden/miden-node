@@ -106,7 +106,10 @@ impl SubscriptionProvider {
             self.inflight_txs.remove(tx);
         }
 
-        Self::send_event(&mut self.subscription, MempoolEvent::BlockCommitted { header, txs });
+        Self::send_event(
+            &mut self.subscription,
+            MempoolEvent::BlockCommitted { header: Box::new(header), txs },
+        );
     }
 
     pub(super) fn txs_reverted(&mut self, txs: HashSet<TransactionId>) {

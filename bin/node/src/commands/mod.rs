@@ -15,6 +15,10 @@ pub mod rpc;
 pub mod store;
 pub mod validator;
 
+/// A predefined, insecure validator key for development purposes.
+const INSECURE_VALIDATOR_KEY_HEX: &str =
+    "0101010101010101010101010101010101010101010101010101010101010101";
+
 const ENV_BLOCK_PRODUCER_URL: &str = "MIDEN_NODE_BLOCK_PRODUCER_URL";
 const ENV_VALIDATOR_URL: &str = "MIDEN_NODE_VALIDATOR_URL";
 const ENV_BATCH_PROVER_URL: &str = "MIDEN_NODE_BATCH_PROVER_URL";
@@ -31,6 +35,7 @@ const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_GENESIS_CONFIG_FILE";
 const ENV_MAX_TXS_PER_BATCH: &str = "MIDEN_MAX_TXS_PER_BATCH";
 const ENV_MAX_BATCHES_PER_BLOCK: &str = "MIDEN_MAX_BATCHES_PER_BLOCK";
 const ENV_MEMPOOL_TX_CAPACITY: &str = "MIDEN_NODE_MEMPOOL_TX_CAPACITY";
+const ENV_VALIDATOR_INSECURE_SECRET_KEY: &str = "MIDEN_NODE_VALIDATOR_INSECURE_SECRET_KEY";
 
 const DEFAULT_NTX_TICKER_INTERVAL: Duration = Duration::from_millis(200);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -44,7 +49,7 @@ fn duration_to_human_readable_string(duration: Duration) -> String {
 #[derive(clap::Args)]
 pub struct NtxBuilderConfig {
     /// Disable spawning the network transaction builder.
-    #[arg(long = "no-ntb", default_value_t = false)]
+    #[arg(long = "no-ntx-builder", default_value_t = false)]
     pub disabled: bool,
 
     /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
@@ -54,7 +59,7 @@ pub struct NtxBuilderConfig {
 
     /// Interval at which to run the network transaction builder's ticker.
     #[arg(
-        long = "ntb.interval",
+        long = "ntx-builder.interval",
         default_value = &duration_to_human_readable_string(DEFAULT_NTX_TICKER_INTERVAL),
         value_parser = humantime::parse_duration,
         value_name = "DURATION"

@@ -445,6 +445,13 @@ impl Db {
         .await
     }
 
+    /// Loads all network account IDs from the DB.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_all_network_account_ids(&self) -> Result<Vec<AccountId>> {
+        self.transact("Get all network account IDs", queries::select_all_network_account_ids)
+            .await
+    }
+
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,
@@ -570,21 +577,9 @@ impl Db {
         Ok(())
     }
 
-    /// Loads the network notes that have not been consumed yet, using pagination to limit the
-    /// number of notes returned.
-    pub(crate) async fn select_unconsumed_network_notes(
-        &self,
-        page: Page,
-    ) -> Result<(Vec<NoteRecord>, Page)> {
-        self.transact("unconsumed network notes", move |conn| {
-            models::queries::unconsumed_network_notes(conn, page)
-        })
-        .await
-    }
-
     /// Loads the network notes for an account that are unconsumed by a specified block number.
     /// Pagination is used to limit the number of notes returned.
-    pub(crate) async fn select_unconsumed_network_notes_for_account(
+    pub(crate) async fn select_unconsumed_network_notes(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,
         block_num: BlockNumber,

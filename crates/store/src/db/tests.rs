@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use diesel::{Connection, SqliteConnection};
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
-use miden_lib::transaction::TransactionKernel;
+use miden_lib::utils::CodeBuilder;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::{test_fee, test_fee_params};
 use miden_objects::account::auth::PublicKeyCommitment;
@@ -24,6 +24,7 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
     StorageSlot,
+    StorageSlotDelta,
     StorageSlotName,
 };
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
@@ -34,6 +35,7 @@ use miden_objects::block::{
     BlockNoteTree,
     BlockNumber,
 };
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{
@@ -54,6 +56,7 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
+use miden_objects::testing::random_signer::RandomBlockSigner;
 use miden_objects::transaction::{
     InputNoteCommitment,
     InputNotes,
@@ -89,7 +92,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        SecretKey::new().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -452,144 +455,6 @@ fn make_account_and_note(
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn sql_unconsumed_network_notes() {
-    // Number of notes to generate.
-    const N: u64 = 32;
-
-    let mut conn = create_db();
-    let conn = &mut conn;
-
-    let block_num = BlockNumber::from(1);
-    // An arbitrary public account (network note tag requires public account).
-    create_block(conn, block_num);
-
-    let account_notes = [
-        make_account_and_note(conn, block_num, [0u8; 32], AccountStorageMode::Public),
-        make_account_and_note(conn, block_num, [1u8; 32], AccountStorageMode::Network),
-    ];
-    let network_account_id = account_notes[1].0;
-
-    // Create some notes, of which half are network notes.
-    let notes = (0..N)
-        .map(|i| {
-            let index = (i % 2) as usize;
-            let is_network = account_notes[index].0.storage_mode() == AccountStorageMode::Network;
-            let account_id = account_notes[index].0;
-            let new_note = &account_notes[index].1;
-            let note = NoteRecord {
-                block_num,
-                note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
-                note_id: num_to_word(i),
-                note_commitment: num_to_word(i),
-                metadata: NoteMetadata::new(
-                    account_notes[index].0,
-                    NoteType::Public,
-                    NoteTag::from_account_id(account_id),
-                    NoteExecutionHint::none(),
-                    Felt::default(),
-                )
-                .unwrap(),
-                details: is_network.then_some(NoteDetails::from(new_note)),
-                inclusion_path: SparseMerklePath::default(),
-            };
-
-            (note, is_network.then_some(num_to_nullifier(i)))
-        })
-        .collect::<Vec<_>>();
-
-    // Copy out all network notes to assert against. These will be in chronological order already.
-    let network_notes = notes
-        .iter()
-        .filter_map(|(note, nullifier)| nullifier.is_some().then_some(note.clone()))
-        .collect::<Vec<_>>();
-
-    // Insert the set of notes.
-    queries::insert_scripts(conn, notes.iter().map(|(note, _)| note)).unwrap();
-    let dummy_tx_id = vec![0u8; 32];
-    let notes_with_tx_id = notes
-        .iter()
-        .map(|(note, nullifier)| (note.clone(), *nullifier, dummy_tx_id.clone()))
-        .collect::<Vec<_>>();
-    queries::insert_notes(conn, &notes_with_tx_id).unwrap();
-
-    // Fetch all network notes by setting a limit larger than the amount available.
-    let (result, _) = queries::unconsumed_network_notes(
-        conn,
-        Page {
-            token: None,
-            size: NonZeroUsize::new(N as usize * 10).unwrap(),
-        },
-    )
-    .unwrap();
-    assert_eq!(result, network_notes);
-    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
-        conn,
-        NoteTag::from_account_id(network_account_id).into(),
-        block_num,
-        Page {
-            token: None,
-            size: NonZeroUsize::new(N as usize * 10).unwrap(),
-        },
-    )
-    .unwrap();
-    assert_eq!(result, network_notes);
-
-    // Check pagination works as expected.
-    let limit = 5;
-    let mut page = Page {
-        token: None,
-        size: NonZeroUsize::new(limit).unwrap(),
-    };
-    network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = queries::unconsumed_network_notes(conn, page).unwrap();
-        page = new_page;
-        assert_eq!(result, expected);
-    });
-    network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = queries::select_unconsumed_network_notes_by_tag(
-            conn,
-            NoteTag::from_account_id(network_account_id).into(),
-            block_num,
-            page,
-        )
-        .unwrap();
-        page = new_page;
-        assert_eq!(result, expected);
-    });
-    assert!(page.token.is_none());
-
-    // Consume every third network note and ensure these are now excluded from the results.
-    let consumed = notes
-        .iter()
-        .filter_map(|(_, nullifier)| *nullifier)
-        .step_by(3)
-        .collect::<Vec<_>>();
-    queries::insert_nullifiers_for_block(conn, &consumed, block_num).unwrap();
-
-    let expected = network_notes
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| i % 3 != 0)
-        .map(|(_, note)| note.clone())
-        .collect::<Vec<_>>();
-    let page = Page {
-        token: None,
-        size: NonZeroUsize::new(N as usize * 10).unwrap(),
-    };
-    let (result, _) = queries::unconsumed_network_notes(conn, page).unwrap();
-    assert_eq!(result, expected);
-    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
-        conn,
-        NoteTag::from_account_id(network_account_id).into(),
-        block_num,
-        page,
-    )
-    .unwrap();
-    assert_eq!(result, expected);
-}
-
-#[test]
-#[miden_node_test_macro::enable_logging]
-fn sql_unconsumed_network_notes_for_account() {
     let mut conn = create_db();
 
     // Create account.
@@ -1000,7 +865,7 @@ fn db_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        num_to_word(10),
+        SecretKey::new().public_key(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -1032,7 +897,7 @@ fn db_block_header() {
         num_to_word(17),
         num_to_word(18),
         num_to_word(19),
-        num_to_word(20),
+        SecretKey::new().public_key(),
         test_fee_params(),
         21_u8.into(),
     );
@@ -1308,8 +1173,9 @@ fn sql_account_storage_map_values_insertion() {
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
-    let maps1: BTreeMap<_, _> = [(slot_name.clone(), map1)].into_iter().collect();
-    let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
+    let delta1: BTreeMap<_, _> =
+        [(slot_name.clone(), StorageSlotDelta::Map(map1))].into_iter().collect();
+    let storage1 = AccountStorageDelta::from_raw(delta1);
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
     insert_account_delta(conn, account_id, block1, &delta1);
@@ -1322,8 +1188,8 @@ fn sql_account_storage_map_values_insertion() {
     // Update key1 at block 2
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
-    let maps2 = BTreeMap::from_iter([(slot_name.clone(), map2)]);
-    let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
+    let delta2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map2))]);
+    let storage2 = AccountStorageDelta::from_raw(delta2);
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
             .unwrap();
@@ -1553,19 +1419,18 @@ fn mock_account_code_and_storage(
         StorageSlot::with_value(StorageSlotName::mock(5), num_to_word(5)),
     ];
 
-    let component = AccountComponent::compile(
-        component_code,
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(account_type);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("counter_contract::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     AccountBuilder::new(init_seed.unwrap_or([0; 32]))
         .account_type(account_type)
         .storage_mode(storage_mode)
         .with_assets(assets)
-        .with_component(component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
@@ -1579,11 +1444,14 @@ fn mock_account_code_and_storage(
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
+    let component_code = "export.foo push.1 end";
 
-    let component =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 1000).unwrap();
@@ -1591,13 +1459,14 @@ fn genesis_with_account_assets() {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1628,23 +1497,25 @@ fn genesis_with_account_storage_map() {
         StorageSlot::with_empty_value(StorageSlotName::mock(1)),
     ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component_code = "export.foo push.1 end";
+
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1672,24 +1543,26 @@ fn genesis_with_account_assets_and_storage() {
         StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
     ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let component_code = "export.foo push.1 end";
+
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component)
+        .with_component(account_component)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state = GenesisState::new(vec![account], test_fee_params(), 1, 0);
+    let genesis_state =
+        GenesisState::new(vec![account], test_fee_params(), 1, 0, SecretKey::random());
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
@@ -1704,15 +1577,17 @@ fn genesis_with_multiple_accounts() {
 
     use crate::genesis::GenesisState;
 
-    let component1 =
-        AccountComponent::compile("export.foo push.1 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("foo::interface", "export.foo push.1 end")
+        .unwrap();
+    let account_component1 = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component1)
+        .with_component(account_component1)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
@@ -1720,15 +1595,17 @@ fn genesis_with_multiple_accounts() {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
-    let component2 =
-        AccountComponent::compile("export.bar push.2 end", TransactionKernel::assembler(), vec![])
-            .unwrap()
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("bar::interface", "export.bar push.2 end")
+        .unwrap();
+    let account_component2 = AccountComponent::new(account_component_code, Vec::new())
+        .unwrap()
+        .with_supports_all_types();
 
     let account2 = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component2)
+        .with_component(account_component2)
         .with_assets([fungible_asset.into()])
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
@@ -1742,25 +1619,74 @@ fn genesis_with_multiple_accounts() {
 
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
-    let component3 = AccountComponent::compile(
-        "export.baz push.3 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("baz::interface", "export.baz push.3 end")
+        .unwrap();
+    let account_component3 = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
 
     let account3 = AccountBuilder::new([3u8; 32])
-        .account_type(AccountType::RegularAccountImmutableCode)
+        .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(component3)
+        .with_component(account_component3)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
-    let genesis_state =
-        GenesisState::new(vec![account1, account2, account3], test_fee_params(), 1, 0);
+    let genesis_state = GenesisState::new(
+        vec![account1, account2, account3],
+        test_fee_params(),
+        1,
+        0,
+        SecretKey::random(),
+    );
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn regression_1461_full_state_delta_inserts_vault_assets() {
+    let mut conn = create_db();
+    let block_num: BlockNumber = 1.into();
+    create_block(&mut conn, block_num);
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
+
+    let account = mock_account_code_and_storage(
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+        [fungible_asset.into()],
+        Some([42u8; 32]),
+    );
+    let account_id = account.id();
+
+    // Convert to full state delta, same as genesis
+    let account_delta = AccountDelta::try_from(account.clone()).unwrap();
+    assert!(account_delta.is_full_state());
+
+    let block_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(account_delta),
+    );
+
+    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+
+    let (_, vault_assets) = queries::select_account_vault_assets(
+        &mut conn,
+        account_id,
+        BlockNumber::GENESIS..=block_num,
+    )
+    .unwrap();
+
+    // Before the fix, vault_assets was empty
+    let vault_asset = vault_assets.first().unwrap();
+    let expected_asset: Asset = fungible_asset.into();
+    assert_eq!(vault_asset.block_num, block_num);
+    assert_eq!(vault_asset.asset, Some(expected_asset));
+    assert_eq!(vault_asset.vault_key, expected_asset.vault_key());
 }

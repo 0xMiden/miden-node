@@ -15,14 +15,17 @@ use diesel::{
     SqliteConnection,
 };
 use miden_lib::utils::Deserializable;
-use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
+use miden_node_utils::limiter::{
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+};
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
 
 use super::DatabaseError;
-use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::queries::NoteRecordRawRow;
 use crate::db::models::queries::notes::NoteRecordWithScriptRawJoined;
@@ -278,6 +281,9 @@ pub fn select_transactions_records_with_notes(
 ) -> Result<(BlockNumber, Vec<TransactionRecordWithNotes>), DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
+    let max_payload_bytes =
+        i64::try_from(MAX_RESPONSE_PAYLOAD_BYTES).expect("payload limit fits within i64");
+
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
             from: *block_range.start(),
@@ -339,8 +345,6 @@ pub fn select_transactions_records_with_notes(
     let mut current_key: Option<(i64, Vec<u8>)> = None;
     let mut current: Option<(TransactionRecordRaw, Vec<NoteRecordWithScriptRawJoined>)> = None;
 
-    let max_payload = i64::try_from(MAX_PAYLOAD_BYTES).expect("MAX_PAYLOAD_BYTES fits within i64");
-
     for (tx_raw, note_raw, script) in joined_rows {
         let note = note_raw.map(|note| NoteRecordWithScriptRawJoined::from((note, script.clone())));
         let tx_key = (tx_raw.block_num, tx_raw.transaction_id.clone());
@@ -351,7 +355,7 @@ pub fn select_transactions_records_with_notes(
                 &mut grouped,
                 &mut total_size,
                 &mut limit_hit,
-                max_payload,
+                max_payload_bytes,
             );
             if limit_hit {
                 break;
@@ -368,7 +372,13 @@ pub fn select_transactions_records_with_notes(
         }
     }
 
-    finalize_current(&mut current, &mut grouped, &mut total_size, &mut limit_hit, max_payload);
+    finalize_current(
+        &mut current,
+        &mut grouped,
+        &mut total_size,
+        &mut limit_hit,
+        max_payload_bytes,
+    );
 
     let mut last_block_included = *block_range.end();
 

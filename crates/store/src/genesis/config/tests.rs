@@ -1,5 +1,6 @@
 use assert_matches::assert_matches;
 use miden_objects::ONE;
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 
 use super::*;
 
@@ -10,7 +11,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 fn parsing_yields_expected_default_values() -> TestResult {
     let s = include_str!("./samples/01-simple.toml");
     let gcfg = GenesisConfig::read_toml(s)?;
-    let (state, _secrets) = gcfg.into_state()?;
+    let (state, _secrets) = gcfg.into_state(SecretKey::new())?;
     let _ = state;
     // faucets always precede wallet accounts
     let native_faucet = state.accounts[0].clone();
@@ -44,10 +45,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
 
     // check total issuance of the faucet
     assert_eq!(
-        native_faucet
-            .storage()
-            .get_item(AccountStorage::faucet_metadata_slot())
-            .unwrap()[3],
+        native_faucet.storage().get_item(AccountStorage::faucet_sysdata_slot()).unwrap()[3],
         Felt::new(999_777),
         "Issuance mismatch"
     );
@@ -59,7 +57,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
 #[miden_node_test_macro::enable_logging]
 fn genesis_accounts_have_nonce_one() -> TestResult {
     let gcfg = GenesisConfig::default();
-    let (state, secrets) = gcfg.into_state().unwrap();
+    let (state, secrets) = gcfg.into_state(SecretKey::new()).unwrap();
     let mut iter = secrets.as_account_files(&state);
     let AccountFileWithName { account_file: status_quo, .. } = iter.next().unwrap().unwrap();
     assert!(iter.next().is_none());

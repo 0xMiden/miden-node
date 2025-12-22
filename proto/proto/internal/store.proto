@@ -18,7 +18,17 @@ service Rpc {
     // Returns the status info.
     rpc Status(google.protobuf.Empty) returns (rpc.StoreStatus) {}
 
-    // Returns a nullifier proof for each of the requested nullifiers.
+    // Returns a Sparse Merkle Tree opening proof for each requested nullifier
+    //
+    // Each proof demonstrates either:
+    // - **Inclusion**: Nullifier exists in the tree (note was consumed)
+    // - **Non-inclusion**: Nullifier does not exist (note was not consumed)
+    //
+    // The `leaf` field indicates the status:
+    // - `empty_leaf_index`: Non-inclusion proof
+    // - `single` or `multiple`: Inclusion proof if the nullifier key is present
+    //
+    // Verify proofs against the nullifier tree root in the latest block header.
     rpc CheckNullifiers(rpc.NullifierList) returns (rpc.CheckNullifiersResponse) {}
 
     // Returns the latest state of an account with the specified ID.
@@ -175,10 +185,10 @@ message BatchInputsRequest {
 message BatchInputs {
     // The block header that the transaction batch should reference.
     blockchain.BlockHeader batch_reference_block_header = 1;
-  
+
     // Proof of each _found_ unauthenticated note's inclusion in a block.
     repeated note.NoteInclusionInBlockProof note_proofs = 2;
-  
+
     // The serialized chain MMR which includes proofs for all blocks referenced by the
     // above note inclusion proofs as well as proofs for inclusion of the blocks referenced
     // by the transactions in the batch.
@@ -249,9 +259,6 @@ service NtxBuilder {
     // Returns a paginated list of unconsumed network notes.
     rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
 
-    // Returns a paginated list of a network account's unconsumed notes up to a specified block number.
-    rpc GetUnconsumedNetworkNotesForAccount(UnconsumedNetworkNotesForAccountRequest) returns (UnconsumedNetworkNotes) {}
-
     // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
     // header for executing network transactions. If the block number is not provided, the latest
     // header and peaks will be retrieved.
@@ -259,6 +266,9 @@ service NtxBuilder {
 
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
+
+    // Returns a list of all network account ids.
+    rpc GetNetworkAccountIds(google.protobuf.Empty) returns (NetworkAccountIdList) {}
 
     // Returns the script for a note by its root.
     rpc GetNoteScriptByRoot(note.NoteRoot) returns (rpc.MaybeNoteScript) {}
@@ -282,22 +292,10 @@ message MaybeAccountDetails {
 // GET UNCONSUMED NETWORK NOTES
 // ================================================================================================
 
-// Returns a list of unconsumed network notes using pagination.
-message UnconsumedNetworkNotesRequest {
-    // An opaque token used to paginate through the notes.
-    //
-    // This should be null on the first call, and set to the response  token until the response token
-    // is null, at which point all data has been fetched.
-    optional uint64 page_token = 1;
-
-    // Number of notes to retrieve per page.
-    uint64 page_size = 2;
-}
-
 // Returns a paginated list of unconsumed network notes for an account.
 //
 // Notes created or consumed after the specified block are excluded from the result.
-message UnconsumedNetworkNotesForAccountRequest {
+message UnconsumedNetworkNotesRequest {
     // This should be null on the first call, and set to the response token until the response token
     // is null, at which point all data has been fetched.
     //
@@ -329,6 +327,16 @@ message UnconsumedNetworkNotes {
     // The list of unconsumed network notes.
     repeated note.NetworkNote notes = 2;
 }
+
+// GET NETWORK ACCOUNTS
+// ================================================================================================
+
+// Represents the result of getting the network account ids.
+message NetworkAccountIdList {
+  // The list of network account ids.
+  repeated account.AccountId account_ids = 1;
+}
+
 
 // GET CURRENT BLOCKCHAIN DATA
 // ================================================================================================

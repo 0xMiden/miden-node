@@ -107,8 +107,10 @@ impl InflightState {
         }
 
         for (account, from, to) in node.account_updates() {
-            let Entry::Occupied(entry) =
-                self.accounts.entry(account).and_modify(|entry| entry.remove(from, to))
+            let Entry::Occupied(entry) = self
+                .accounts
+                .entry(account)
+                .and_modify(|entry| entry.remove(node.id(), from, to))
             else {
                 panic!("Account {account} update ({from} -> {to}) was not present for removal");
             };
@@ -145,8 +147,8 @@ impl InflightState {
 
         let account_parents = node
             .account_updates()
-            .filter_map(|(account, from, _to)| {
-                self.accounts.get(&account).map(|account| account.parent(&from))
+            .filter_map(|(account, from, to)| {
+                self.accounts.get(&account).map(|account| account.parents(from, to))
             })
             .flatten();
 
@@ -169,8 +171,8 @@ impl InflightState {
 
         let account_children = node
             .account_updates()
-            .filter_map(|(account, _from, to)| {
-                self.accounts.get(&account).map(|account| account.child(&to))
+            .filter_map(|(account, from, to)| {
+                self.accounts.get(&account).map(|account| account.children(from, to))
             })
             .flatten();
 
@@ -197,6 +199,27 @@ impl InflightState {
 struct AccountUpdates {
     from: HashMap<Word, NodeId>,
     to: HashMap<Word, NodeId>,
+    /// This holds updates from nodes where the initial commitment is the same as the final
+    /// commitment aka no actual change was made to the account.
+    ///
+    /// This sounds counter-intuitive, but is caused by so-called pass-through transactions which
+    /// use an account at some state `A` but only consume and emit notes without changing the
+    /// account state itself.
+    ///
+    /// These still need to be tracked as part of account updates since they require that an
+    /// account is in the given state. Since we want these node's to be processed before the
+    /// account state is changed, this implies that they must be considered children of the
+    /// non-pass-through node that created the state. Similarly, they must be considered
+    /// parents of any non-pass-through node that changes to another state as otherwise this
+    /// node might be processed before the pass-through nodes are.
+    ///
+    /// Pass-through nodes with the same state are considered siblings of each as they don't
+    /// actually depend on each other, and may be processed in any order.
+    ///
+    /// Note also that its possible for any node's updates to an account to solely consist of
+    /// pass-through transactions and therefore in turn is a pass-through node from the perspective
+    /// of that account.
+    pass_through: HashMap<Word, HashSet<NodeId>>,
 }
 
 impl AccountUpdates {
@@ -206,53 +229,105 @@ impl AccountUpdates {
         self.to
             .keys()
             .find(|commitment| !self.from.contains_key(commitment))
+            .or(self.pass_through.keys().next())
             .copied()
             .unwrap_or_default()
     }
 
     fn is_empty(&self) -> bool {
-        self.from.is_empty() && self.to.is_empty()
+        self.from.is_empty() && self.to.is_empty() && self.pass_through.is_empty()
     }
 
-    fn remove(&mut self, from: Word, to: Word) {
-        let from_removed = self
-            .from
-            .remove(&from)
-            .expect("should only be removing account updates from nodes that are present");
-        let to_removed = self
-            .to
-            .remove(&to)
-            .expect("should only be removing account updates from nodes that are present");
-        assert_eq!(
-            from_removed, to_removed,
-            "Account updates should be removed as a pair with the same node ID"
-        );
+    fn remove(&mut self, id: NodeId, from: Word, to: Word) {
+        if from == to {
+            let entry = self.pass_through.entry(from).or_default();
+            assert!(
+                entry.remove(&id),
+                "Account pass through commitment removal of {from} for {id:?} does not exist"
+            );
+            if entry.is_empty() {
+                self.pass_through.remove(&from);
+            }
+        } else {
+            let from_removed = self
+                .from
+                .remove(&from)
+                .expect("should only be removing account updates from nodes that are present");
+            let to_removed = self
+                .to
+                .remove(&to)
+                .expect("should only be removing account updates from nodes that are present");
+            assert_eq!(
+                from_removed, to_removed,
+                "Account updates should be removed as a pair with the same node ID"
+            );
+            assert_eq!(from_removed, id, "Account update removal should match the input node ID",);
+        }
     }
 
     fn insert(&mut self, id: NodeId, from: Word, to: Word) {
-        assert!(
-            self.from.insert(from, id).is_none(),
-            "Account already contained the commitment {from} when inserting {id:?}"
-        );
-        assert!(
-            self.to.insert(to, id).is_none(),
-            "Account already contained the commitment {to} when inserting {id:?}"
-        );
+        if from == to {
+            assert!(
+                self.pass_through.entry(from).or_default().insert(id),
+                "Account already contained the pass through commitment {from} for node {id:?}"
+            );
+        } else {
+            assert!(
+                self.from.insert(from, id).is_none(),
+                "Account already contained the commitment {from} when inserting {id:?}"
+            );
+            assert!(
+                self.to.insert(to, id).is_none(),
+                "Account already contained the commitment {to} when inserting {id:?}"
+            );
+        }
     }
 
-    /// Returns the node ID that updated this account's commitment to the given value.
+    /// Returns the node IDs that updated this account's commitment to the given value.
     ///
-    /// In other words, this returns the ID of `node` where `node.to == from`. This infers the
+    /// Note that this might be multiple IDs due to pass through transactions. When the input
+    /// is itself a pass through transaction (`from == to`), then its sibling pass through
+    /// transactions are not considered parents as they are siblings.
+    ///
+    /// In other words, this returns the IDs of `node` where `node.to == from`. This infers the
     /// parent-child relationship where `parent.to == child.from`.
-    fn parent(&self, from: &Word) -> Option<&NodeId> {
-        self.to.get(from)
+    fn parents(&self, from: Word, to: Word) -> impl Iterator<Item = &NodeId> {
+        let direct_parent = self.to.get(&from).into_iter();
+
+        // If the node query isn't for a pass-through node, then it must also consider pass-through
+        // nodes at its `from` commitment as parents.
+        //
+        // This means the query node depends on the pass-through nodes since these must be processed
+        // before the account commitment may change.
+        let pass_through_parents = (from != to)
+            .then(|| self.pass_through.get(&from).map(HashSet::iter))
+            .flatten()
+            .unwrap_or_default();
+
+        direct_parent.chain(pass_through_parents)
     }
 
     /// Returns the node ID that consumed the given commitment.
     ///
+    /// Note that this might be multiple IDs due to pass through transactions. When the input
+    /// is itself a pass through transaction (`from == to`), then its sibling pass through
+    /// transactions are not considered children as they are siblings.
+    ///
     /// In other words, this returns the ID of `node` where `node.from == to`. This infers the
     /// parent-child relationship where `parent.to == child.from`.
-    fn child(&self, to: &Word) -> Option<&NodeId> {
-        self.from.get(to)
+    fn children(&self, from: Word, to: Word) -> impl Iterator<Item = &NodeId> {
+        let direct_child = self.from.get(&to).into_iter();
+
+        // If the node query isn't for a pass-through node, then it must also consider pass-through
+        // nodes at its `to` commitment as children.
+        //
+        // This means the pass-through nodes depend on the query node since it changes the account
+        // commitment to the state required by the pass-through nodes.
+        let pass_through_children = (from != to)
+            .then(|| self.pass_through.get(&to).map(HashSet::iter))
+            .flatten()
+            .unwrap_or_default();
+
+        direct_child.chain(pass_through_children)
     }
 }

@@ -7,7 +7,7 @@ use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_objects::Word;
-use miden_objects::account::Account;
+use miden_objects::account::{Account, AccountId};
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
 use miden_objects::note::NoteScript;
@@ -105,33 +105,6 @@ impl StoreClient {
         }
     }
 
-    /// Returns the list of unconsumed network notes.
-    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
-    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
-        let mut all_notes = Vec::new();
-        let mut page_token: Option<u64> = None;
-
-        loop {
-            let req = proto::store::UnconsumedNetworkNotesRequest { page_token, page_size: 128 };
-            let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
-
-            let page: Vec<NetworkNote> = resp
-                .notes
-                .into_iter()
-                .map(NetworkNote::try_from)
-                .collect::<Result<Vec<_>, _>>()?;
-
-            all_notes.extend(page);
-
-            match resp.next_token {
-                Some(tok) => page_token = Some(tok),
-                None => break,
-            }
-        }
-
-        Ok(all_notes)
-    }
-
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,
@@ -159,6 +132,61 @@ impl StoreClient {
         };
 
         Ok(account)
+    }
+
+    /// Returns the list of unconsumed network notes for a specific network account up to a
+    /// specified block.
+    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
+    pub async fn get_unconsumed_network_notes(
+        &self,
+        network_account_prefix: NetworkAccountPrefix,
+        block_num: u32,
+    ) -> Result<Vec<NetworkNote>, StoreError> {
+        // Upper bound of each note is ~10KB. Limit page size to ~10MB.
+        const PAGE_SIZE: u64 = 1024;
+
+        let mut all_notes = Vec::new();
+        let mut page_token: Option<u64> = None;
+
+        let mut store_client = self.inner.clone();
+        loop {
+            let req = proto::store::UnconsumedNetworkNotesRequest {
+                page_token,
+                page_size: PAGE_SIZE,
+                network_account_id_prefix: network_account_prefix.inner(),
+                block_num,
+            };
+            let resp = store_client.get_unconsumed_network_notes(req).await?.into_inner();
+
+            all_notes.reserve(resp.notes.len());
+            for note in resp.notes {
+                all_notes.push(NetworkNote::try_from(note)?);
+            }
+
+            match resp.next_token {
+                Some(token) => page_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_notes)
+    }
+
+    // TODO: add pagination.
+    #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
+    pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
+        let response = self.inner.clone().get_network_account_ids(()).await?.into_inner();
+
+        let accounts: Result<Vec<AccountId>, ConversionError> = response
+            .account_ids
+            .into_iter()
+            .map(|account_id| {
+                AccountId::read_from_bytes(&account_id.id)
+                    .map_err(|err| ConversionError::deserialization_error("account_id", err))
+            })
+            .collect();
+
+        Ok(accounts?)
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]

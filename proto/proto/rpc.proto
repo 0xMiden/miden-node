@@ -98,7 +98,11 @@ service Api {
     // Returns transactions records for specific accounts within a block range.
     rpc SyncTransactions(SyncTransactionsRequest) returns (SyncTransactionsResponse) {}
 
-    // Returns the query parameter limits configured for RPC endpoints.
+    // Returns the query parameter limits configured for RPC methods.
+    //
+    // These define the maximum number of each parameter a method will accept.
+    // Exceeding the limit will result in the request being rejected and you should instead send
+    // multiple smaller requests.
     rpc GetLimits(google.protobuf.Empty) returns (RpcLimits) {}
 }
 

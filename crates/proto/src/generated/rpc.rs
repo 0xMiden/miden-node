@@ -1058,7 +1058,11 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncTransactions"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the query parameter limits configured for RPC endpoints.
+        /// Returns the query parameter limits configured for RPC methods.
+        ///
+        /// These define the maximum number of each parameter a method will accept.
+        /// Exceeding the limit will result in the request being rejected and you should instead send
+        /// multiple smaller requests.
         pub async fn get_limits(
             &mut self,
             request: impl tonic::IntoRequest<()>,
@@ -1250,7 +1254,11 @@ pub mod api_server {
             tonic::Response<super::SyncTransactionsResponse>,
             tonic::Status,
         >;
-        /// Returns the query parameter limits configured for RPC endpoints.
+        /// Returns the query parameter limits configured for RPC methods.
+        ///
+        /// These define the maximum number of each parameter a method will accept.
+        /// Exceeding the limit will result in the request being rejected and you should instead send
+        /// multiple smaller requests.
         async fn get_limits(
             &self,
             request: tonic::Request<()>,

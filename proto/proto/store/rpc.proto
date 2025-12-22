@@ -227,14 +227,13 @@ message AccountStorageDetails {
         bool too_many_entries = 2;
 
         oneof data {
-            // By default we provide all storage entries when `all_entries` is requested
-            // or when the storage map is small.
-            MapEntries entries = 3;
+            // Contains the full key-value entries of the map.
+            // Returned if the map is small enough or all_entries is requested.
+            MapEntries full = 3;
 
-            // When specific keys are requested and the storage map is not small,
-            // we provide a set of SMT proofs (openings) for the requested keys.
+            // Contains SMT proofs for the entries requested.
             // This allows the receiver to reconstruct the partial tree or validate individual proofs.
-            SmtProofSet smt_proofs = 4;
+            SmtProofSet partial = 4;
         }
     }
 

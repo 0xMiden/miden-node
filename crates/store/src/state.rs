@@ -1190,9 +1190,8 @@ impl State {
             let details = match &slot_data {
                 SlotData::MapKeys(keys) => {
                     // Query the forest for specific keys
-                    let entries = forest
-                        .query_storage_keys(account_id, &slot_name, block_num, keys)
-                        .map_err(DatabaseError::InteractError)?;
+                    let entries =
+                        forest.query_storage_keys(account_id, &slot_name, block_num, keys)?;
                     AccountStorageMapDetails::from_forest_entries(slot_name, entries)
                 },
                 SlotData::All => {

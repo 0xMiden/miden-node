@@ -127,6 +127,12 @@ pub enum DatabaseError {
     SqlValueConversion(#[from] DatabaseTypeConversionError),
     #[error("Not implemented: {0}")]
     NotImplemented(String),
+    #[error("storage root not found for account {account_id}, slot {slot_name}, block {block_num}")]
+    StorageRootNotFound {
+        account_id: AccountId,
+        slot_name: String,
+        block_num: BlockNumber,
+    },
 }
 
 impl DatabaseError {

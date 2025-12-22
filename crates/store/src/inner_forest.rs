@@ -5,6 +5,8 @@ use miden_objects::block::BlockNumber;
 use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH, SmtForest};
 use miden_objects::{EMPTY_WORD, Word};
 
+use crate::errors::DatabaseError;
+
 #[cfg(test)]
 mod tests;
 
@@ -139,44 +141,33 @@ impl InnerForest {
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
         keys: &[Word],
-    ) -> Result<Vec<(Word, Word)>, String> {
+    ) -> Result<Vec<(Word, Word)>, DatabaseError> {
         // Get the storage root for this account/slot/block
         let root = self
             .storage_roots
             .get(&(account_id, slot_name.clone(), block_num))
             .copied()
-            .ok_or_else(|| {
-                format!(
-                    "Storage root not found for account {account_id:?}, slot {slot_name}, block {block_num}"
-                )
+            .ok_or_else(|| DatabaseError::StorageRootNotFound {
+                account_id,
+                slot_name: slot_name.to_string(),
+                block_num,
             })?;
 
         let mut results = Vec::with_capacity(keys.len());
 
         for key in keys {
-            // Open a proof for this key in the forest
-            match self.storage_forest.open(root, *key) {
-                Ok(proof) => {
-                    // Extract the value from the proof
-                    let value = proof.get(key).unwrap_or(EMPTY_WORD);
-                    results.push((*key, value));
-                },
-                Err(e) => {
-                    tracing::debug!(
-                        target: crate::COMPONENT,
-                        "Failed to open proof for key in storage forest: {}. Using empty value.",
-                        e
-                    );
-                    // Return empty value for keys that can't be proven
-                    results.push((*key, EMPTY_WORD));
-                },
-            }
+            let proof = self.storage_forest.open(root, *key)?;
+            let value = proof.get(key).unwrap_or(EMPTY_WORD);
+            results.push((*key, value));
         }
 
         tracing::debug!(
             target: crate::COMPONENT,
-            "Queried {len} storage keys from forest for account {account_id:?}, slot {slot_name} at block {block_num}",
-            len = results.len(),
+            %account_id,
+            %block_num,
+            ?slot_name,
+            num_keys = results.len(),
+            "Queried storage keys from forest"
         );
 
         Ok(results)

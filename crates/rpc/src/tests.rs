@@ -470,7 +470,7 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
 }
 
 #[tokio::test]
-async fn test_get_limits_endpoint() {
+async fn get_limits_endpoint() {
     // Start the RPC and store
     let (mut rpc_client, _rpc_addr, store_addr) = start_rpc().await;
     let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;

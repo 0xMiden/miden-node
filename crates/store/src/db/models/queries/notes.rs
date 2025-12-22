@@ -908,14 +908,12 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRawRow {
 /// transaction.
 pub(crate) fn insert_notes(
     conn: &mut SqliteConnection,
-    notes: &[(NoteRecord, Option<Nullifier>)],
+    notes: &[(NoteRecord, Option<Nullifier>, Vec<u8>)],
 ) -> Result<usize, DatabaseError> {
     let count = diesel::insert_into(schema::notes::table)
-        .values(Vec::from_iter(
-            notes
-                .iter()
-                .map(|(note, nullifier)| NoteInsertRowInsert::from((note.clone(), *nullifier))),
-        ))
+        .values(Vec::from_iter(notes.iter().map(|(note, nullifier, transaction_id)| {
+            NoteInsertRowInsert::from((note.clone(), *nullifier, transaction_id.clone()))
+        })))
         .execute(conn)?;
     Ok(count)
 }
@@ -957,6 +955,7 @@ pub struct NoteInsertRowInsert {
     pub batch_index: i32,
     pub note_index: i32, // index within batch
 
+    pub transaction_id: Vec<u8>,
     pub note_id: Vec<u8>,
     pub note_commitment: Vec<u8>,
 
@@ -976,12 +975,13 @@ pub struct NoteInsertRowInsert {
     pub inclusion_path: Vec<u8>,
 }
 
-impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
-    fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
+impl From<(NoteRecord, Option<Nullifier>, Vec<u8>)> for NoteInsertRowInsert {
+    fn from((note, nullifier, transaction_id): (NoteRecord, Option<Nullifier>, Vec<u8>)) -> Self {
         Self {
             committed_at: note.block_num.to_raw_sql(),
             batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
             note_index: idx_to_raw_sql(note.note_index.note_idx_in_batch()),
+            transaction_id,
             note_id: note.note_id.to_bytes(),
             note_commitment: note.note_commitment.to_bytes(),
             note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),

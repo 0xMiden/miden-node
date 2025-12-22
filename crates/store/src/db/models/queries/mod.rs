@@ -30,7 +30,10 @@
     reason = "The parent scope does own it, passing by value avoids additional boilerplate"
 )]
 
+use std::collections::HashMap;
+
 use diesel::SqliteConnection;
+use miden_lib::utils::Serializable;
 use miden_objects::account::AccountId;
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_objects::note::Nullifier;
@@ -68,9 +71,35 @@ pub(crate) fn apply_block(
     // Note: ordering here is important as the relevant tables have FK dependencies.
     count += insert_block_header(conn, block_header)?;
     count += upsert_accounts(conn, accounts, block_header.block_num())?;
-    count += insert_scripts(conn, notes.iter().map(|(note, _)| note))?;
-    count += insert_notes(conn, notes)?;
     count += insert_transactions(conn, block_header.block_num(), transactions)?;
+
+    // Map output note IDs to transaction ID
+    let mut tx_id_by_note_id: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+
+    for tx in transactions.as_slice() {
+        let tx_id = tx.id().as_bytes().to_vec();
+        for note in tx.output_notes() {
+            let note_id = note.id().as_word().as_bytes().to_vec();
+            tx_id_by_note_id.insert(note_id, tx_id.clone());
+        }
+    }
+
+    let notes_with_transaction_id = notes
+        .iter()
+        .map(|(note, nullifier)| {
+            let note_id = note.note_id.to_bytes();
+            let tx_id = tx_id_by_note_id.get(&note_id).cloned().ok_or_else(|| {
+                DatabaseError::DataCorrupted(format!(
+                    "no transaction id found for committed note_id={}",
+                    hex::encode(note_id)
+                ))
+            })?;
+            Ok((note.clone(), *nullifier, tx_id))
+        })
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+    count += insert_scripts(conn, notes.iter().map(|(note, _)| note))?;
+    count += insert_notes(conn, &notes_with_transaction_id)?;
     count += insert_nullifiers_for_block(conn, nullifiers, block_header.block_num())?;
     Ok(count)
 }

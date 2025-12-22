@@ -44,6 +44,7 @@ CREATE TABLE notes (
     committed_at             INTEGER NOT NULL, -- Block number when the note was committed
     batch_index              INTEGER NOT NULL, -- Index of batch in block, starting from 0
     note_index               INTEGER NOT NULL, -- Index of note in batch, starting from 0
+    transaction_id           BLOB    NOT NULL, -- ID of the transaction which emitted this note
     note_id                  BLOB    NOT NULL,
     note_commitment          BLOB    NOT NULL,
     note_type                INTEGER NOT NULL, -- 1-Public (0b01), 2-Private (0b10), 3-Encrypted (0b11)
@@ -63,12 +64,15 @@ CREATE TABLE notes (
     PRIMARY KEY (committed_at, batch_index, note_index),
     CONSTRAINT notes_type_in_enum CHECK (note_type BETWEEN 1 AND 3),
     CONSTRAINT notes_execution_mode_in_enum CHECK (execution_mode BETWEEN 0 AND 1),
+    CONSTRAINT notes_transaction_id_is_digest CHECK (length(transaction_id) = 32),
     CONSTRAINT notes_consumed_at_is_u32 CHECK (consumed_at BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_batch_index_is_u32 CHECK (batch_index BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_note_index_is_u32 CHECK (note_index BETWEEN 0 AND 0xFFFFFFFF)
 );
 
 CREATE INDEX idx_notes_note_id ON notes(note_id);
+CREATE INDEX idx_notes_transaction_id ON notes(transaction_id);
+CREATE INDEX idx_notes_tx_join ON notes(sender, committed_at, transaction_id);
 CREATE INDEX idx_notes_note_commitment ON notes(note_commitment);
 CREATE INDEX idx_notes_sender ON notes(sender, committed_at);
 CREATE INDEX idx_notes_tag ON notes(tag, committed_at);

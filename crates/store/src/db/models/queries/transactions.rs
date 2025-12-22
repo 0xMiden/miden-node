@@ -256,8 +256,9 @@ type TxNoteRow = (TransactionRecordRaw, Option<NoteRecordRawRow>, Option<Vec<u8>
 ///
 /// FROM transactions AS tx
 ///     LEFT JOIN notes AS n ON
-///         x.block_num = n.committed_at
+///         tx.block_num = n.committed_at
 ///         AND tx.account_id = n.sender
+///         AND tx.transaction_id = n.transaction_id
 ///     LEFT JOIN note_scripts AS s ON
 ///         n.script_root = s.script_root
 /// WHERE
@@ -288,12 +289,16 @@ pub fn select_transactions_records_with_notes(
 
     // FROM transactions AS tx
     let base = schema::transactions::table
-        // LEFT JOIN notes AS n ON tx.block_num = n.committed_at AND tx.account_id = n.sender
+        // LEFT JOIN notes AS n ON
+        //   tx.block_num = n.committed_at
+        //   AND tx.account_id = n.sender
+        //   AND tx.transaction_id = n.transaction_id
         .left_join(
             notes::table.on(
                 notes::committed_at
                     .eq(transactions::block_num)
-                    .and(notes::sender.eq(transactions::account_id)),
+                    .and(notes::sender.eq(transactions::account_id))
+                    .and(notes::transaction_id.eq(transactions::transaction_id)),
             ),
         )
         // LEFT JOIN note_scripts AS s ON n.script_root = s.script_root

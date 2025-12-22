@@ -61,6 +61,7 @@ diesel::table! {
         committed_at -> BigInt,
         batch_index -> Integer,
         note_index -> Integer,
+        transaction_id -> Binary,
         note_id -> Binary,
         note_commitment -> Binary,
         note_type -> Integer,

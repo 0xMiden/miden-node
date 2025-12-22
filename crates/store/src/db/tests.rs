@@ -242,6 +242,7 @@ fn sql_select_notes() {
     queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block_num).unwrap();
 
     let new_note = create_note(account_id);
+    let dummy_tx_id = vec![0u8; 32];
 
     // test multiple entries
     let mut state = vec![];
@@ -266,7 +267,7 @@ fn sql_select_notes() {
         }
 
         // insert notes
-        let res = queries::insert_notes(conn, &[(note, None)]);
+        let res = queries::insert_notes(conn, &[(note, None, dummy_tx_id.clone())]);
         assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
         let notes = queries::select_all_notes(conn).unwrap();
@@ -295,6 +296,7 @@ fn sql_select_notes_different_execution_hints() {
     let mut state = vec![];
 
     let new_note = create_note(sender);
+    let dummy_tx_id = vec![0u8; 32];
 
     let note_none = NoteRecord {
         block_num,
@@ -315,7 +317,7 @@ fn sql_select_notes_different_execution_hints() {
     state.push(note_none.clone());
 
     queries::insert_scripts(conn, [&note_none]).unwrap(); // only necessary for the first note
-    let res = queries::insert_notes(conn, &[(note_none, None)]);
+    let res = queries::insert_notes(conn, &[(note_none, None, dummy_tx_id.clone())]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
     let note_id = NoteId::from_raw(num_to_word(0));
@@ -341,7 +343,7 @@ fn sql_select_notes_different_execution_hints() {
     };
     state.push(note_always.clone());
 
-    let res = queries::insert_notes(conn, &[(note_always, None)]);
+    let res = queries::insert_notes(conn, &[(note_always, None, dummy_tx_id.clone())]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
     let note_id = NoteId::from_raw(num_to_word(1));
@@ -366,7 +368,7 @@ fn sql_select_notes_different_execution_hints() {
     };
     state.push(note_after_block.clone());
 
-    let res = queries::insert_notes(conn, &[(note_after_block, None)]);
+    let res = queries::insert_notes(conn, &[(note_after_block, None, dummy_tx_id.clone())]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
     let note_id = NoteId::from_raw(num_to_word(2));
     let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
@@ -502,7 +504,12 @@ fn sql_unconsumed_network_notes() {
 
     // Insert the set of notes.
     queries::insert_scripts(conn, notes.iter().map(|(note, _)| note)).unwrap();
-    queries::insert_notes(conn, &notes).unwrap();
+    let dummy_tx_id = vec![0u8; 32];
+    let notes_with_tx_id = notes
+        .iter()
+        .map(|(note, nullifier)| (note.clone(), *nullifier, dummy_tx_id.clone()))
+        .collect::<Vec<_>>();
+    queries::insert_notes(conn, &notes_with_tx_id).unwrap();
 
     // Fetch all network notes by setting a limit larger than the amount available.
     let (result, _) = queries::unconsumed_network_notes(
@@ -616,7 +623,12 @@ fn sql_unconsumed_network_notes_for_account() {
         })
         .collect::<Vec<_>>();
     queries::insert_scripts(&mut conn, notes.iter().map(|(note, _)| note)).unwrap();
-    queries::insert_notes(&mut conn, &notes).unwrap();
+    let dummy_tx_id = vec![0u8; 32];
+    let notes_with_tx_id = notes
+        .iter()
+        .map(|(note, nullifier)| (note.clone(), *nullifier, dummy_tx_id.clone()))
+        .collect::<Vec<_>>();
+    queries::insert_notes(&mut conn, &notes_with_tx_id).unwrap();
 
     // Both notes are unconsumed, query should return both notes on both blocks.
     (0..2).for_each(|i: u32| {
@@ -1171,7 +1183,8 @@ fn notes() {
     };
 
     queries::insert_scripts(conn, [&note]).unwrap();
-    queries::insert_notes(conn, &[(note.clone(), None)]).unwrap();
+    let dummy_tx_id = vec![0u8; 32];
+    queries::insert_notes(conn, &[(note.clone(), None, dummy_tx_id.clone())]).unwrap();
 
     // test empty tags
     let (res, last_included_block) =
@@ -1210,7 +1223,7 @@ fn notes() {
         inclusion_path: inclusion_path.clone(),
     };
 
-    queries::insert_notes(conn, &[(note2.clone(), None)]).unwrap();
+    queries::insert_notes(conn, &[(note2.clone(), None, dummy_tx_id.clone())]).unwrap();
 
     let block_range = 0.into()..=2.into();
 

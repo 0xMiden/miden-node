@@ -14,6 +14,7 @@ use diesel::{
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
 use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use super::DatabaseError;
 use crate::db::models::conv::SqlTypeConvert;
@@ -130,6 +131,7 @@ pub struct BlockHeaderRawRow {
     #[allow(dead_code)]
     pub block_num: i64,
     pub block_header: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 impl TryInto<BlockHeader> for BlockHeaderRawRow {
     type Error = DatabaseError;
@@ -145,14 +147,7 @@ impl TryInto<BlockHeader> for BlockHeaderRawRow {
 pub struct BlockHeaderInsert {
     pub block_num: i64,
     pub block_header: Vec<u8>,
-}
-impl From<&BlockHeader> for BlockHeaderInsert {
-    fn from(block_header: &BlockHeader) -> Self {
-        Self {
-            block_num: block_header.block_num().to_raw_sql(),
-            block_header: block_header.to_bytes(),
-        }
-    }
+    pub signature: Vec<u8>,
 }
 
 /// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
@@ -168,10 +163,15 @@ impl From<&BlockHeader> for BlockHeaderInsert {
 pub(crate) fn insert_block_header(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,
+    signature: &Signature,
 ) -> Result<usize, DatabaseError> {
-    let block_header = BlockHeaderInsert::from(block_header);
+    let block_header_insert = BlockHeaderInsert {
+        block_num: block_header.block_num().to_raw_sql(),
+        block_header: block_header.to_bytes(),
+        signature: signature.to_bytes(),
+    };
     let count = diesel::insert_into(schema::block_headers::table)
-        .values(&[block_header])
+        .values(&[block_header_insert])
         .execute(conn)?;
     Ok(count)
 }

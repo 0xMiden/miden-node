@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
@@ -7,8 +8,8 @@ use miden_lib::account::wallets::BasicWallet;
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
-use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
+use miden_node_store::{BlockProver, Store};
 use miden_node_utils::fee::test_fee;
 use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -141,11 +142,15 @@ async fn rpc_startup_is_robust_to_network_failures() {
         .expect("Failed to bind store ntx-builder gRPC endpoint");
     let block_producer_listener =
         TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
+
+    let block_prover = Arc::new(BlockProver::new_local(None));
+
     task::spawn(async move {
         Store {
             rpc_listener,
             ntx_builder_listener,
             block_producer_listener,
+            block_prover,
             data_directory: data_directory.path().to_path_buf(),
             grpc_timeout: Duration::from_secs(10),
         }
@@ -443,11 +448,13 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     // kill the runtime.
     let store_runtime =
         runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
+    let block_prover = Arc::new(BlockProver::new_local(None));
     store_runtime.spawn(async move {
         Store {
             rpc_listener,
             ntx_builder_listener,
             block_producer_listener,
+            block_prover,
             data_directory: dir,
             grpc_timeout: Duration::from_secs(30),
         }

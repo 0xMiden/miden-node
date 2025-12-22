@@ -21,12 +21,14 @@ use tracing::{info, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::Db;
+pub use crate::server::api::BlockProver;
 use crate::server::db_maintenance::DbMaintenance;
 use crate::state::State;
 use crate::{COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GenesisState};
 
 mod api;
 mod block_producer;
+mod block_prover;
 mod db_maintenance;
 mod ntx_builder;
 mod rpc_api;
@@ -36,6 +38,7 @@ pub struct Store {
     pub rpc_listener: TcpListener,
     pub ntx_builder_listener: TcpListener,
     pub block_producer_listener: TcpListener,
+    pub block_prover: Arc<BlockProver>,
     pub data_directory: PathBuf,
     /// Server-side timeout for an individual gRPC request.
     ///
@@ -98,14 +101,18 @@ impl Store {
         let db_maintenance_service =
             DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
 
-        let rpc_service =
-            store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
+        let rpc_service = store::rpc_server::RpcServer::new(api::StoreApi {
+            state: Arc::clone(&state),
+            block_prover: self.block_prover.clone(),
+        });
         let ntx_builder_service = store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
             state: Arc::clone(&state),
+            block_prover: self.block_prover.clone(),
         });
         let block_producer_service =
             store::block_producer_server::BlockProducerServer::new(api::StoreApi {
                 state: Arc::clone(&state),
+                block_prover: self.block_prover.clone(),
             });
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(store_rpc_api_descriptor())

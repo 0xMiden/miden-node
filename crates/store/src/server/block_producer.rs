@@ -5,7 +5,9 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
-use miden_objects::block::{BlockNumber, ProvenBlock};
+use miden_objects::batch::OrderedBatches;
+use miden_objects::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber};
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_objects::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
@@ -56,28 +58,48 @@ impl block_producer_server::BlockProducer for StoreApi {
     )]
     async fn apply_block(
         &self,
-        request: Request<proto::blockchain::Block>,
+        request: Request<proto::store::ApplyBlockRequest>,
     ) -> Result<Response<()>, Status> {
+        // Read the request.
         let request = request.into_inner();
-
         debug!(target: COMPONENT, ?request);
-
-        let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("block deserialization error"))
+        let ordered_batches =
+            OrderedBatches::read_from_bytes(&request.ordered_batches).map_err(|err| {
+                Status::invalid_argument(
+                    err.as_report_context("failed to deserialize ordered batches"),
+                )
+            })?;
+        let block_inputs = BlockInputs::read_from_bytes(&request.block_inputs).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize block inputs"))
+        })?;
+        let header = BlockHeader::read_from_bytes(&request.header).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize block header"))
+        })?;
+        let body = BlockBody::read_from_bytes(&request.body).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize block body"))
+        })?;
+        let signature = Signature::read_from_bytes(&request.signature).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize signature"))
         })?;
 
-        let block_num = block.header().block_num().as_u32();
-
+        let block_num = header.block_num().as_u32();
         info!(
             target: COMPONENT,
             block_num,
-            block_commitment = %block.header().commitment(),
-            account_count = block.body().updated_accounts().len(),
-            note_count = block.body().output_notes().count(),
-            nullifier_count = block.body().created_nullifiers().len(),
+            block_commitment = %header.commitment(),
+            account_count = body.updated_accounts().len(),
+            note_count = body.output_notes().count(),
+            nullifier_count = body.created_nullifiers().len(),
         );
 
-        self.state.apply_block(block).await?;
+        // Apply the block to the state.
+        self.state.apply_block(header.clone(), body.clone(), signature.clone()).await?;
+
+        // TODO(sergerad): Make block proving async/deferred. I.E. return from this fn before block
+        // is proven. Prove the block.
+        self.prove_block(ordered_batches, block_inputs, header, signature, body)
+            .await
+            .map_err(|err| Status::internal(err.as_report_context("failed to prove block")))?;
 
         Ok(Response::new(()))
     }

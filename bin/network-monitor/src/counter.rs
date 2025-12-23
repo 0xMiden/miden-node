@@ -114,17 +114,16 @@ async fn fetch_counter_value(
         // The counter value is in the first storage slot (index 0)
         let first_slot = storage_header.slots.first().context("no storage slots found")?;
 
-        let commitment =
-            first_slot.commitment.as_ref().context("missing storage slot commitment")?;
-
-        // The commitment is a Word containing the counter value
-        // For a value slot, the Word directly contains the value
-        let word: Word =
-            (*commitment).try_into().context("failed to convert commitment to word")?;
+        // For value slots, the slot data is the value itself (not a hash commitment)
+        let slot_value: Word = first_slot
+            .commitment
+            .as_ref()
+            .context("missing storage slot value")?
+            .try_into()
+            .context("failed to convert slot value to word")?;
 
         // The counter value is stored in the last element of the Word
-        // A Word always has 4 elements, so this is safe
-        let value = word.as_elements().last().expect("word always has 4 elements").as_int();
+        let value = slot_value.as_elements().last().expect("word has 4 elements").as_int();
 
         return Ok(Some(value));
     }
@@ -171,6 +170,12 @@ async fn fetch_wallet_account(
     };
 
     let Some(details) = response.details else {
+        if response.witness.is_some() {
+            info!(
+                account.id = %account_id,
+                "account found on-chain but cannot reconstruct full account from RPC response"
+            );
+        }
         return Ok(None);
     };
 

@@ -38,11 +38,13 @@ message AccountStorageHeader {
         // The type of the storage slot.
         uint32 slot_type = 2;
 
-        // The commitment (Word) for this storage slot.
+        // The data (Word) for this storage slot.
+        // For value slots (slot_type=0), this is the actual value stored in the slot.
+        // For map slots (slot_type=1), this is the root commitment of the storage map.
         primitives.Digest commitment = 3;
     }
 
-    // Storage slots with their types and commitments.
+    // Storage slots with their types and data.
     repeated StorageSlot slots = 1;
 }
 

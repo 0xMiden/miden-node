@@ -12,6 +12,7 @@ pub mod commands;
 pub mod config;
 pub mod counter;
 mod deploy;
+pub mod explorer;
 pub mod faucet;
 pub mod frontend;
 mod monitor;

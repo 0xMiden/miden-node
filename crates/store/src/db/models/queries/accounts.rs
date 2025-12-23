@@ -301,7 +301,7 @@ pub(crate) fn select_account_vault_assets(
 
     // Discard the last block in the response (assumes more than one block may be present)
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
@@ -542,7 +542,7 @@ pub(crate) fn select_account_storage_map_values(
     // Discard the last block in the response (assumes more than one block may be present)
 
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at

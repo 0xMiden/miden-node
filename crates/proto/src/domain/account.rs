@@ -265,17 +265,23 @@ pub enum SlotData {
     MapKeys(Vec<Word>),
 }
 
-impl TryFrom<proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData>
-    for SlotData
+impl
+    TryFrom<
+        proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData,
+    > for SlotData
 {
     type Error = ConversionError;
 
-    fn try_from(value: proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData) -> Result<Self, Self::Error> {
+    fn try_from(
+        value: proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData,
+    ) -> Result<Self, Self::Error> {
         use proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData as ProtoSlotData;
 
         Ok(match value {
             ProtoSlotData::AllEntries(true) => SlotData::All,
-            ProtoSlotData::AllEntries(false) => return Err(ConversionError::EnumDiscriminantOutOfRange),
+            ProtoSlotData::AllEntries(false) => {
+                return Err(ConversionError::EnumDiscriminantOutOfRange);
+            },
             ProtoSlotData::MapKeys(keys) => {
                 let keys = try_convert(keys.map_keys).collect::<Result<Vec<_>, _>>()?;
                 SlotData::MapKeys(keys)
@@ -683,9 +689,7 @@ impl From<AccountResponse> for proto::rpc::AccountResponse {
 impl TryFrom<proto::rpc::account_response::AccountDetails> for AccountDetails {
     type Error = ConversionError;
 
-    fn try_from(
-        value: proto::rpc::account_response::AccountDetails,
-    ) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::rpc::account_response::AccountDetails) -> Result<Self, Self::Error> {
         let proto::rpc::account_response::AccountDetails {
             header,
             code,
@@ -694,9 +698,7 @@ impl TryFrom<proto::rpc::account_response::AccountDetails> for AccountDetails {
         } = value;
 
         let account_header = header
-            .ok_or(proto::rpc::account_response::AccountDetails::missing_field(stringify!(
-                header
-            )))?
+            .ok_or(proto::rpc::account_response::AccountDetails::missing_field(stringify!(header)))?
             .try_into()?;
 
         let storage_details = storage_details

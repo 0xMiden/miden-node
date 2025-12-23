@@ -96,21 +96,18 @@ async fn fetch_counter_value(
     let request = miden_node_proto::generated::rpc::AccountRequest {
         account_id: Some(account_id_proto),
         block_num: None,
-        details: Some(
-            miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
-                code_commitment: None,
-                asset_vault_commitment: None,
-                storage_maps: vec![],
-            },
-        ),
+        details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
+            code_commitment: None,
+            asset_vault_commitment: None,
+            storage_maps: vec![],
+        }),
     };
 
     let resp = rpc_client.get_account(request).await?.into_inner();
 
     // Extract the counter value from the storage header
     if let Some(details) = resp.details {
-        let storage_details =
-            details.storage_details.context("missing storage details")?;
+        let storage_details = details.storage_details.context("missing storage details")?;
 
         let storage_header = storage_details.header.context("missing storage header")?;
 
@@ -122,7 +119,8 @@ async fn fetch_counter_value(
 
         // The commitment is a Word containing the counter value
         // For a value slot, the Word directly contains the value
-        let word: Word = (*commitment).try_into().context("failed to convert commitment to word")?;
+        let word: Word =
+            (*commitment).try_into().context("failed to convert commitment to word")?;
 
         // The counter value is stored in the last element of the Word
         // A Word always has 4 elements, so this is safe
@@ -134,43 +132,121 @@ async fn fetch_counter_value(
     Ok(None)
 }
 
-/// Fetch the wallet account from RPC to get the latest nonce.
+/// Fetch the wallet account from RPC and reconstruct the full Account.
 ///
-/// Note: Currently returns None because the RPC API returns commitments but not the full
-/// account data (code, vault assets, storage). To properly sync the account, we would need
-/// either:
-/// 1. The RPC to return full account data, or
-/// 2. To reconstruct the account from commitments + cached data
-///
-/// For now, we rely on the file-based account and update only the nonce after successful
-/// transactions.
+/// Uses the local account's commitments to request updated data from the server.
+/// If code/vault haven't changed, uses the local versions.
 async fn fetch_wallet_account(
     rpc_client: &mut RpcClient,
-    account_id: AccountId,
+    local_account: &Account,
 ) -> Result<Option<Account>> {
+    use miden_objects::account::{AccountCode, AccountStorage, StorageSlot, StorageSlotContent};
+    use miden_objects::asset::AssetVault;
+    use miden_objects::utils::Deserializable;
+
+    let account_id = local_account.id();
     let id_bytes: [u8; 15] = account_id.into();
     let account_id_proto =
         miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
 
-    // Request account header to check if account exists and get nonce
+    // Pass local commitments - server returns data only if it changed
     let request = miden_node_proto::generated::rpc::AccountRequest {
         account_id: Some(account_id_proto),
         block_num: None,
-        details: None,
+        details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
+            code_commitment: Some(local_account.code().commitment().into()),
+            asset_vault_commitment: Some(local_account.vault().root().into()),
+            storage_maps: vec![],
+        }),
     };
 
     match rpc_client.get_account(request).await {
         Ok(response) => {
             let resp = response.into_inner();
-            if resp.witness.is_some() {
-                info!(
-                    account.id = %account_id,
-                    "wallet found on-chain but cannot reconstruct full account from RPC response"
-                );
+            let Some(details) = resp.details else {
+                return Ok(None);
+            };
+
+            // Extract account header for nonce
+            let header = details.header.context("missing account header")?;
+            let nonce: u64 = header.nonce;
+
+            // Use updated code if provided, otherwise keep local
+            let code = if let Some(code_bytes) = details.code {
+                AccountCode::read_from_bytes(&code_bytes)
+                    .context("failed to deserialize account code")?
+            } else {
+                local_account.code().clone()
+            };
+
+            // Use updated vault if provided, otherwise keep local
+            let vault = if let Some(vault_details) = details.vault_details {
+                if vault_details.too_many_assets {
+                    warn!(
+                        account.id = %account_id,
+                        "account has too many assets, using local vault"
+                    );
+                    local_account.vault().clone()
+                } else {
+                    let assets: Vec<miden_objects::asset::Asset> = vault_details
+                        .assets
+                        .into_iter()
+                        .map(TryInto::try_into)
+                        .collect::<Result<_, _>>()
+                        .context("failed to convert assets")?;
+                    AssetVault::new(&assets).context("failed to create vault")?
+                }
+            } else {
+                local_account.vault().clone()
+            };
+
+            // Reconstruct storage from header, using local account's maps for map slots
+            let storage_details = details.storage_details.context("missing storage details")?;
+            let storage_header = storage_details.header.context("missing storage header")?;
+            let local_slots = local_account.storage().slots();
+
+            let mut slots = Vec::new();
+            for (idx, slot) in storage_header.slots.into_iter().enumerate() {
+                let slot_name =
+                    miden_objects::account::StorageSlotName::new(slot.slot_name.clone())
+                        .context("invalid slot name")?;
+                let commitment: Word = slot
+                    .commitment
+                    .context("missing slot commitment")?
+                    .try_into()
+                    .context("invalid slot commitment")?;
+
+                // slot_type: 0 = Value, 1 = Map
+                let storage_slot = if slot.slot_type == 0 {
+                    StorageSlot::with_value(slot_name, commitment)
+                } else {
+                    // For map slots, use the local account's map data
+                    let local_slot = local_slots.get(idx).context("slot index out of bounds")?;
+                    if let StorageSlotContent::Map(local_map) = local_slot.content() {
+                        StorageSlot::with_map(slot_name, local_map.clone())
+                    } else {
+                        // Local slot is not a map but remote says it is - unexpected
+                        warn!(
+                            account.id = %account_id,
+                            slot_index = idx,
+                            "remote storage slot is Map but local is Value, using empty map"
+                        );
+                        StorageSlot::with_map(
+                            slot_name,
+                            miden_objects::account::StorageMap::default(),
+                        )
+                    }
+                };
+                slots.push(storage_slot);
             }
-            // We can't reconstruct the full Account without the actual code, vault, and storage
-            // data The RPC returns only commitments, so we fall back to the file-based account
-            Ok(None)
+
+            let storage = AccountStorage::new(slots).context("failed to create account storage")?;
+
+            let account = Account::new(account_id, vault, storage, code, Felt::new(nonce), None)
+                .context("failed to create account")?;
+
+            info!(account.id = %account_id, "reconstructed wallet account from RPC");
+            Ok(Some(account))
         },
         Err(e) => {
             warn!(
@@ -199,7 +275,7 @@ async fn setup_increment_task(
     // Load accounts from files
     let wallet_account_file =
         AccountFile::read(config.wallet_filepath).context("Failed to read wallet account file")?;
-    let wallet_account = fetch_wallet_account(rpc_client, wallet_account_file.account.id())
+    let wallet_account = fetch_wallet_account(rpc_client, &wallet_account_file.account)
         .await?
         .unwrap_or(wallet_account_file.account.clone());
 

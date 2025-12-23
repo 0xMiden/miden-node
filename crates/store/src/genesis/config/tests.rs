@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
-use miden_objects::ONE;
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::ONE;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 
 use super::*;
 

@@ -16,13 +16,13 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
 };
-use miden_objects::account::AccountId;
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::{Note, NoteRecipient, NoteScript};
-use miden_objects::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
-use miden_objects::utils::serde::{Deserializable, Serializable};
-use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::account::AccountId;
+use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::{Note, NoteRecipient, NoteScript};
+use miden_protocol::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
+use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
 use tracing::{debug, info, instrument, warn};

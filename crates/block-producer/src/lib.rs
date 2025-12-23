@@ -69,12 +69,12 @@ pub const DEFAULT_MEMPOOL_TX_CAPACITY: NonZeroUsize = NonZeroUsize::new(
 .unwrap();
 
 const _: () = assert!(
-    DEFAULT_MAX_BATCHES_PER_BLOCK <= miden_objects::MAX_BATCHES_PER_BLOCK,
+    DEFAULT_MAX_BATCHES_PER_BLOCK <= miden_protocol::MAX_BATCHES_PER_BLOCK,
     "Server constraint cannot exceed the protocol's constraint"
 );
 
 const _: () = assert!(
-    DEFAULT_MAX_TXS_PER_BATCH <= miden_objects::MAX_ACCOUNTS_PER_BATCH,
+    DEFAULT_MAX_TXS_PER_BATCH <= miden_protocol::MAX_ACCOUNTS_PER_BATCH,
     "Server constraint cannot exceed the protocol's constraint"
 );
 

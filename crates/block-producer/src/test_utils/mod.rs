@@ -1,8 +1,8 @@
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::crypto::rand::{FeltRng, RpoRandomCoin};
-use miden_objects::testing::account_id::AccountIdBuilder;
-use miden_objects::transaction::TransactionId;
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
+use miden_protocol::testing::account_id::AccountIdBuilder;
+use miden_protocol::transaction::TransactionId;
 
 mod proven_tx;
 

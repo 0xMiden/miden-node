@@ -6,13 +6,13 @@ use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::MmrError;
-use miden_objects::crypto::utils::DeserializationError;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::OutputNote;
-use miden_objects::{
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::mmr::MmrError;
+use miden_protocol::crypto::utils::DeserializationError;
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::OutputNote;
+use miden_protocol::{
     AccountDeltaError,
     AccountError,
     AccountTreeError,
@@ -56,7 +56,7 @@ pub enum DatabaseError {
     #[error("I/O error")]
     IoError(#[from] io::Error),
     #[error("merkle error")]
-    MerkleError(#[from] miden_objects::crypto::merkle::MerkleError),
+    MerkleError(#[from] miden_protocol::crypto::merkle::MerkleError),
     #[error("network account error")]
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
@@ -447,9 +447,9 @@ pub enum GetNotesByIdError {
     #[error("malformed note ID")]
     DeserializationFailed(#[from] ConversionError),
     #[error("note {0} not found")]
-    NoteNotFound(miden_objects::note::NoteId),
+    NoteNotFound(miden_protocol::note::NoteId),
     #[error("note {0} is not public")]
-    NoteNotPublic(miden_objects::note::NoteId),
+    NoteNotPublic(miden_protocol::note::NoteId),
 }
 
 // GET NOTE SCRIPT BY ROOT ERRORS

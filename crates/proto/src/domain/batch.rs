@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use miden_objects::block::BlockHeader;
-use miden_objects::note::{NoteId, NoteInclusionProof};
-use miden_objects::transaction::PartialBlockchain;
-use miden_objects::utils::{Deserializable, Serializable};
+use miden_protocol::block::BlockHeader;
+use miden_protocol::note::{NoteId, NoteInclusionProof};
+use miden_protocol::transaction::PartialBlockchain;
+use miden_protocol::utils::{Deserializable, Serializable};
 
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::generated as proto;

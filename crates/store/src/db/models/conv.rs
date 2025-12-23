@@ -33,10 +33,10 @@
 )]
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_objects::Felt;
-use miden_objects::account::StorageSlotName;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteExecutionMode, NoteTag};
+use miden_protocol::Felt;
+use miden_protocol::account::StorageSlotName;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert from database type {from_type} into {into_type}")]

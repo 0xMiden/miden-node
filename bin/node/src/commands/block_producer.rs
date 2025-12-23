@@ -70,16 +70,16 @@ impl BlockProducerCommand {
             url.to_socket().context("Failed to extract socket address from store URL")?;
 
         // Runtime validation for protocol constraints
-        if block_producer.max_batches_per_block > miden_objects::MAX_BATCHES_PER_BLOCK {
+        if block_producer.max_batches_per_block > miden_protocol::MAX_BATCHES_PER_BLOCK {
             anyhow::bail!(
                 "max-batches-per-block cannot exceed protocol limit of {}",
-                miden_objects::MAX_BATCHES_PER_BLOCK
+                miden_protocol::MAX_BATCHES_PER_BLOCK
             );
         }
-        if block_producer.max_txs_per_batch > miden_objects::MAX_ACCOUNTS_PER_BATCH {
+        if block_producer.max_txs_per_batch > miden_protocol::MAX_ACCOUNTS_PER_BATCH {
             anyhow::bail!(
                 "max-txs-per-batch cannot exceed protocol limit of {}",
-                miden_objects::MAX_ACCOUNTS_PER_BATCH
+                miden_protocol::MAX_ACCOUNTS_PER_BATCH
             );
         }
 
@@ -132,7 +132,7 @@ mod tests {
                 block_interval: std::time::Duration::from_secs(1),
                 batch_interval: std::time::Duration::from_secs(1),
                 max_txs_per_batch: 8,
-                max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
+                max_batches_per_block: miden_protocol::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
                 mempool_tx_capacity: NonZeroUsize::new(1000).unwrap(),
             },
             enable_otel: false,
@@ -155,9 +155,9 @@ mod tests {
                 block_prover_url: None,
                 block_interval: std::time::Duration::from_secs(1),
                 batch_interval: std::time::Duration::from_secs(1),
-                max_txs_per_batch: miden_objects::MAX_ACCOUNTS_PER_BATCH + 1, /* Use protocol
-                                                                               * limit
-                                                                               * (should fail) */
+                max_txs_per_batch: miden_protocol::MAX_ACCOUNTS_PER_BATCH + 1, /* Use protocol
+                                                                                * limit
+                                                                                * (should fail) */
                 max_batches_per_block: 8,
                 mempool_tx_capacity: NonZeroUsize::new(1000).unwrap(),
             },

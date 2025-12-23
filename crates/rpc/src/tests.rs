@@ -3,16 +3,15 @@ use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
-use miden_lib::account::wallets::BasicWallet;
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_utils::fee::test_fee;
-use miden_objects::Word;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_protocol::Word;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
@@ -20,11 +19,12 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_objects::testing::noop_auth_component::NoopAuthComponent;
-use miden_objects::transaction::ProvenTransactionBuilder;
-use miden_objects::utils::Serializable;
-use miden_objects::vm::ExecutionProof;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_protocol::transaction::ProvenTransactionBuilder;
+use miden_protocol::utils::Serializable;
+use miden_protocol::vm::ExecutionProof;
+use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::runtime::{self, Runtime};

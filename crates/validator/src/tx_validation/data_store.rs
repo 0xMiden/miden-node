@@ -2,13 +2,13 @@
 /// when it is added to this repository.
 use std::collections::BTreeSet;
 
-use miden_objects::Word;
-use miden_objects::account::{AccountId, PartialAccount, StorageMapWitness};
-use miden_objects::asset::{AssetVaultKey, AssetWitness};
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::NoteScript;
-use miden_objects::transaction::{AccountInputs, PartialBlockchain, TransactionInputs};
-use miden_objects::vm::FutureMaybeSend;
+use miden_protocol::Word;
+use miden_protocol::account::{AccountId, PartialAccount, StorageMapWitness};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::NoteScript;
+use miden_protocol::transaction::{AccountInputs, PartialBlockchain, TransactionInputs};
+use miden_protocol::vm::FutureMaybeSend;
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 
 // TRANSACTION INPUTS DATA STORE
@@ -119,7 +119,7 @@ impl DataStore for TransactionInputsDataStore {
 }
 
 impl MastForestStore for TransactionInputsDataStore {
-    fn get(&self, procedure_hash: &Word) -> Option<std::sync::Arc<miden_objects::MastForest>> {
+    fn get(&self, procedure_hash: &Word) -> Option<std::sync::Arc<miden_protocol::MastForest>> {
         self.mast_store.get(procedure_hash)
     }
 }

@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_objects::Word;
-use miden_objects::account::{
+use miden_protocol::Word;
+use miden_protocol::account::{
     Account,
     AccountHeader,
     AccountId,
@@ -12,12 +12,12 @@ use miden_objects::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::BlockNumber;
-use miden_objects::block::account_tree::AccountWitness;
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{NoteExecutionMode, NoteTag};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::asset::{Asset, AssetVault};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
 
 use super::try_convert;
@@ -99,7 +99,7 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
-            details: details.as_ref().map(miden_objects::utils::Serializable::to_bytes),
+            details: details.as_ref().map(miden_protocol::utils::Serializable::to_bytes),
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use miden_objects::Word;
-use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_protocol::Word;
+use miden_protocol::block::{BlockHeader, BlockNumber};
 use pretty_assertions::assert_eq;
 use serial_test::serial;
 

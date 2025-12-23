@@ -1,6 +1,6 @@
 use miden_node_proto::domain::note::SingleTargetNetworkNote;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Note;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Note;
 
 use crate::actor::has_backoff_passed;
 

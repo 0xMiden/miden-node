@@ -3,12 +3,12 @@
 use std::path::Path;
 
 use anyhow::Result;
-use miden_lib::AuthScheme;
-use miden_lib::account::wallets::create_basic_wallet;
 use miden_node_utils::crypto::get_rpo_random_coin;
-use miden_objects::account::auth::AuthSecretKey;
-use miden_objects::account::{Account, AccountFile, AccountStorageMode, AccountType};
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
+use miden_protocol::account::auth::AuthSecretKey;
+use miden_protocol::account::{Account, AccountFile, AccountStorageMode, AccountType};
+use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
+use miden_standards::AuthScheme;
+use miden_standards::account::wallets::create_basic_wallet;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use tracing::instrument;

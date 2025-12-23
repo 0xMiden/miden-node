@@ -12,7 +12,7 @@ use miden_node_proto_build::{
 };
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_objects::block::BlockSigner;
+use miden_protocol::block::BlockSigner;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio_stream::wrappers::TcpListenerStream;

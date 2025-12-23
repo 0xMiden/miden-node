@@ -5,14 +5,11 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use diesel::{Connection, SqliteConnection};
-use miden_lib::account::auth::AuthRpoFalcon512;
-use miden_lib::note::create_p2id_note;
-use miden_lib::utils::CodeBuilder;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::{test_fee, test_fee_params};
-use miden_objects::account::auth::PublicKeyCommitment;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
@@ -27,18 +24,18 @@ use miden_objects::account::{
     StorageSlotDelta,
     StorageSlotName,
 };
-use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
-use miden_objects::block::{
+use miden_protocol::asset::{Asset, AssetVaultKey, FungibleAsset};
+use miden_protocol::block::{
     BlockAccountUpdate,
     BlockHeader,
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
 };
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::crypto::rand::RpoRandomCoin;
-use miden_objects::note::{
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::crypto::rand::RpoRandomCoin;
+use miden_protocol::note::{
     Note,
     NoteDetails,
     NoteExecutionHint,
@@ -49,22 +46,25 @@ use miden_objects::note::{
     NoteType,
     Nullifier,
 };
-use miden_objects::testing::account_id::{
+use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
-use miden_objects::testing::random_signer::RandomBlockSigner;
-use miden_objects::transaction::{
+use miden_protocol::testing::random_signer::RandomBlockSigner;
+use miden_protocol::transaction::{
     InputNoteCommitment,
     InputNotes,
     OrderedTransactionHeaders,
     TransactionHeader,
     TransactionId,
 };
-use miden_objects::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
+use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
+use miden_standards::account::auth::AuthRpoFalcon512;
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::create_p2id_note;
 use pretty_assertions::assert_eq;
 use rand::Rng;
 
@@ -1141,7 +1141,7 @@ fn insert_account_delta(
 fn sql_account_storage_map_values_insertion() {
     use std::collections::BTreeMap;
 
-    use miden_objects::account::StorageMapDelta;
+    use miden_protocol::account::StorageMapDelta;
 
     let mut conn = create_db();
     let conn = &mut conn;
@@ -1396,7 +1396,7 @@ fn mock_account_code_and_storage(
     init_seed: Option<[u8; 32]>,
 ) -> Account {
     let component_code = "\
-    export.account_procedure_1
+    pub proc account_procedure_1
         push.1.2
         add
     end
@@ -1436,7 +1436,7 @@ fn mock_account_code_and_storage(
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
-    let component_code = "export.foo push.1 end";
+    let component_code = "pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1468,7 +1468,7 @@ fn genesis_with_account_assets() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_storage_map() {
-    use miden_objects::account::StorageMap;
+    use miden_protocol::account::StorageMap;
 
     use crate::genesis::GenesisState;
 
@@ -1489,7 +1489,7 @@ fn genesis_with_account_storage_map() {
         StorageSlot::with_empty_value(StorageSlotName::mock(1)),
     ];
 
-    let component_code = "export.foo push.1 end";
+    let component_code = "pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1517,7 +1517,7 @@ fn genesis_with_account_storage_map() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets_and_storage() {
-    use miden_objects::account::StorageMap;
+    use miden_protocol::account::StorageMap;
 
     use crate::genesis::GenesisState;
 
@@ -1535,7 +1535,7 @@ fn genesis_with_account_assets_and_storage() {
         StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
     ];
 
-    let component_code = "export.foo push.1 end";
+    let component_code = "pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1565,12 +1565,12 @@ fn genesis_with_account_assets_and_storage() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_multiple_accounts() {
-    use miden_objects::account::StorageMap;
+    use miden_protocol::account::StorageMap;
 
     use crate::genesis::GenesisState;
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("foo::interface", "export.foo push.1 end")
+        .compile_component_code("foo::interface", "pub proc foo push.1 end")
         .unwrap();
     let account_component1 = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
@@ -1588,7 +1588,7 @@ fn genesis_with_multiple_accounts() {
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("bar::interface", "export.bar push.2 end")
+        .compile_component_code("bar::interface", "pub proc bar push.2 end")
         .unwrap();
     let account_component2 = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
@@ -1612,7 +1612,7 @@ fn genesis_with_multiple_accounts() {
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("baz::interface", "export.baz push.3 end")
+        .compile_component_code("baz::interface", "pub proc baz push.3 end")
         .unwrap();
     let account_component3 = AccountComponent::new(account_component_code, component_storage)
         .unwrap()

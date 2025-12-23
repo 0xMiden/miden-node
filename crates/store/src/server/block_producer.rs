@@ -4,9 +4,9 @@ use miden_node_proto::generated::store::block_producer_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
-use miden_objects::Word;
-use miden_objects::block::{BlockNumber, ProvenBlock};
-use miden_objects::utils::Deserializable;
+use miden_protocol::Word;
+use miden_protocol::block::{BlockNumber, ProvenBlock};
+use miden_protocol::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 

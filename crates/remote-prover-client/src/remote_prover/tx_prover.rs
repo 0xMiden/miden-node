@@ -3,9 +3,9 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
-use miden_objects::vm::FutureMaybeSend;
+use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::vm::FutureMaybeSend;
 use miden_tx::TransactionProverError;
 use tokio::sync::Mutex;
 
@@ -107,7 +107,7 @@ impl RemoteTransactionProver {
         tx_inputs: TransactionInputs,
     ) -> impl FutureMaybeSend<Result<ProvenTransaction, TransactionProverError>> {
         async move {
-            use miden_objects::utils::Serializable;
+            use miden_protocol::utils::Serializable;
             self.connect().await.map_err(|err| {
                 TransactionProverError::other_with_source(
                     "failed to connect to the remote prover",

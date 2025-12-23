@@ -420,7 +420,7 @@ pub(crate) fn select_all_network_account_ids(
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(Vec<AccountId>, BlockNumber), DatabaseError> {
     const ROW_OVERHEAD_BYTES: usize = AccountId::SERIALIZED_SIZE;
-    const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     const _: () = assert!(
         MAX_ROWS > miden_objects::MAX_ACCOUNTS_PER_BLOCK,

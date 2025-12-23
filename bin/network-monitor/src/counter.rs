@@ -132,131 +132,177 @@ async fn fetch_counter_value(
     Ok(None)
 }
 
-/// Fetch the wallet account from RPC and reconstruct the full Account.
+/// Fetch an account from RPC and reconstruct the full Account.
 ///
-/// Uses the local account's commitments to request updated data from the server.
-/// If code/vault haven't changed, uses the local versions.
+/// Uses dummy commitments to force the server to return all data (code, vault, storage header).
+/// Storage map slots will have empty maps since we don't request map entries.
 async fn fetch_wallet_account(
     rpc_client: &mut RpcClient,
-    local_account: &Account,
+    account_id: AccountId,
 ) -> Result<Option<Account>> {
-    use miden_objects::account::{AccountCode, AccountStorage, StorageSlot, StorageSlotContent};
+    use miden_objects::account::AccountCode;
     use miden_objects::asset::AssetVault;
     use miden_objects::utils::Deserializable;
 
-    let account_id = local_account.id();
     let id_bytes: [u8; 15] = account_id.into();
     let account_id_proto =
         miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
 
-    // Pass local commitments - server returns data only if it changed
+    // Pass dummy commitments to force server to return code and vault
+    // (server returns data only if commitment differs from what we send)
+    let dummy_commitment: miden_node_proto::generated::primitives::Digest = Word::default().into();
+
     let request = miden_node_proto::generated::rpc::AccountRequest {
         account_id: Some(account_id_proto),
         block_num: None,
         details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
-            code_commitment: Some(local_account.code().commitment().into()),
-            asset_vault_commitment: Some(local_account.vault().root().into()),
+            code_commitment: Some(dummy_commitment),
+            asset_vault_commitment: Some(dummy_commitment),
             storage_maps: vec![],
         }),
     };
 
-    match rpc_client.get_account(request).await {
-        Ok(response) => {
-            let resp = response.into_inner();
-            let Some(details) = resp.details else {
-                return Ok(None);
-            };
-
-            // Extract account header for nonce
-            let header = details.header.context("missing account header")?;
-            let nonce: u64 = header.nonce;
-
-            // Use updated code if provided, otherwise keep local
-            let code = if let Some(code_bytes) = details.code {
-                AccountCode::read_from_bytes(&code_bytes)
-                    .context("failed to deserialize account code")?
-            } else {
-                local_account.code().clone()
-            };
-
-            // Use updated vault if provided, otherwise keep local
-            let vault = if let Some(vault_details) = details.vault_details {
-                if vault_details.too_many_assets {
-                    warn!(
-                        account.id = %account_id,
-                        "account has too many assets, using local vault"
-                    );
-                    local_account.vault().clone()
-                } else {
-                    let assets: Vec<miden_objects::asset::Asset> = vault_details
-                        .assets
-                        .into_iter()
-                        .map(TryInto::try_into)
-                        .collect::<Result<_, _>>()
-                        .context("failed to convert assets")?;
-                    AssetVault::new(&assets).context("failed to create vault")?
-                }
-            } else {
-                local_account.vault().clone()
-            };
-
-            // Reconstruct storage from header, using local account's maps for map slots
-            let storage_details = details.storage_details.context("missing storage details")?;
-            let storage_header = storage_details.header.context("missing storage header")?;
-            let local_slots = local_account.storage().slots();
-
-            let mut slots = Vec::new();
-            for (idx, slot) in storage_header.slots.into_iter().enumerate() {
-                let slot_name =
-                    miden_objects::account::StorageSlotName::new(slot.slot_name.clone())
-                        .context("invalid slot name")?;
-                let commitment: Word = slot
-                    .commitment
-                    .context("missing slot commitment")?
-                    .try_into()
-                    .context("invalid slot commitment")?;
-
-                // slot_type: 0 = Value, 1 = Map
-                let storage_slot = if slot.slot_type == 0 {
-                    StorageSlot::with_value(slot_name, commitment)
-                } else {
-                    // For map slots, use the local account's map data
-                    let local_slot = local_slots.get(idx).context("slot index out of bounds")?;
-                    if let StorageSlotContent::Map(local_map) = local_slot.content() {
-                        StorageSlot::with_map(slot_name, local_map.clone())
-                    } else {
-                        // Local slot is not a map but remote says it is - unexpected
-                        warn!(
-                            account.id = %account_id,
-                            slot_index = idx,
-                            "remote storage slot is Map but local is Value, using empty map"
-                        );
-                        StorageSlot::with_map(
-                            slot_name,
-                            miden_objects::account::StorageMap::default(),
-                        )
-                    }
-                };
-                slots.push(storage_slot);
-            }
-
-            let storage = AccountStorage::new(slots).context("failed to create account storage")?;
-
-            let account = Account::new(account_id, vault, storage, code, Felt::new(nonce), None)
-                .context("failed to create account")?;
-
-            info!(account.id = %account_id, "reconstructed wallet account from RPC");
-            Ok(Some(account))
-        },
+    let response = match rpc_client.get_account(request).await {
+        Ok(response) => response.into_inner(),
         Err(e) => {
-            warn!(
-                account.id = %account_id,
-                err = %e,
-                "failed to fetch wallet account via RPC"
-            );
-            Ok(None)
+            warn!(account.id = %account_id, err = %e, "failed to fetch wallet account via RPC");
+            return Ok(None);
         },
+    };
+
+    let Some(details) = response.details else {
+        return Ok(None);
+    };
+
+    let header = details.header.context("missing account header")?;
+    let nonce: u64 = header.nonce;
+
+    let code = details
+        .code
+        .map(|code_bytes| AccountCode::read_from_bytes(&code_bytes))
+        .transpose()
+        .context("failed to deserialize account code")?
+        .context("server did not return account code")?;
+
+    let vault = match details.vault_details {
+        Some(vault_details) if vault_details.too_many_assets => {
+            anyhow::bail!("account {account_id} has too many assets, cannot fetch full account");
+        },
+        Some(vault_details) => {
+            let assets: Vec<miden_objects::asset::Asset> = vault_details
+                .assets
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()
+                .context("failed to convert assets")?;
+            AssetVault::new(&assets).context("failed to create vault")?
+        },
+        None => anyhow::bail!("server did not return asset vault for account {account_id}"),
+    };
+
+    let storage_details = details.storage_details.context("missing storage details")?;
+    let storage = build_account_storage(account_id, storage_details)?;
+
+    let account = Account::new(account_id, vault, storage, code, Felt::new(nonce), None)
+        .context("failed to create account")?;
+
+    // Sanity check: verify reconstructed account matches header commitments
+    let expected_code_commitment: Word = header
+        .code_commitment
+        .context("missing code commitment in header")?
+        .try_into()
+        .context("invalid code commitment")?;
+    let expected_vault_root: Word = header
+        .vault_root
+        .context("missing vault root in header")?
+        .try_into()
+        .context("invalid vault root")?;
+    let expected_storage_commitment: Word = header
+        .storage_commitment
+        .context("missing storage commitment in header")?
+        .try_into()
+        .context("invalid storage commitment")?;
+
+    anyhow::ensure!(
+        account.code().commitment() == expected_code_commitment,
+        "code commitment mismatch: rebuilt={:?}, expected={:?}",
+        account.code().commitment(),
+        expected_code_commitment
+    );
+    anyhow::ensure!(
+        account.vault().root() == expected_vault_root,
+        "vault root mismatch: rebuilt={:?}, expected={:?}",
+        account.vault().root(),
+        expected_vault_root
+    );
+    anyhow::ensure!(
+        account.storage().to_commitment() == expected_storage_commitment,
+        "storage commitment mismatch: rebuilt={:?}, expected={:?}",
+        account.storage().to_commitment(),
+        expected_storage_commitment
+    );
+
+    info!(account.id = %account_id, "fetched wallet account from RPC");
+    Ok(Some(account))
+}
+
+/// Build account storage from the storage details returned by the server.
+fn build_account_storage(
+    account_id: AccountId,
+    storage_details: miden_node_proto::generated::rpc::AccountStorageDetails,
+) -> Result<miden_objects::account::AccountStorage> {
+    use miden_objects::account::{AccountStorage, StorageSlot};
+
+    let storage_header = storage_details.header.context("missing storage header")?;
+
+    // Build a map of slot_name -> map entries from the response
+    let map_entries: std::collections::HashMap<String, Vec<(Word, Word)>> = storage_details
+        .map_details
+        .into_iter()
+        .filter_map(|map_detail| {
+            let entries = map_detail.entries?.entries;
+            let converted: Vec<(Word, Word)> = entries
+                .into_iter()
+                .filter_map(|e| {
+                    let key: Word = e.key?.try_into().ok()?;
+                    let value: Word = e.value?.try_into().ok()?;
+                    Some((key, value))
+                })
+                .collect();
+            Some((map_detail.slot_name, converted))
+        })
+        .collect();
+
+    let mut slots = Vec::new();
+    for slot in storage_header.slots {
+        let slot_name = miden_objects::account::StorageSlotName::new(slot.slot_name.clone())
+            .context("invalid slot name")?;
+        let commitment: Word = slot
+            .commitment
+            .context("missing slot commitment")?
+            .try_into()
+            .context("invalid slot commitment")?;
+
+        // slot_type: 0 = Value, 1 = Map
+        let storage_slot = if slot.slot_type == 0 {
+            StorageSlot::with_value(slot_name, commitment)
+        } else {
+            let entries = map_entries.get(&slot.slot_name).cloned().unwrap_or_default();
+            if entries.is_empty() {
+                warn!(
+                    account.id = %account_id,
+                    slot_name = %slot.slot_name,
+                    "storage map slot has no entries (not requested or empty)"
+                );
+            }
+            let storage_map = miden_objects::account::StorageMap::with_entries(entries)
+                .context("failed to create storage map")?;
+            StorageSlot::with_map(slot_name, storage_map)
+        };
+        slots.push(storage_slot);
     }
+
+    AccountStorage::new(slots).context("failed to create account storage")
 }
 
 async fn setup_increment_task(
@@ -275,7 +321,7 @@ async fn setup_increment_task(
     // Load accounts from files
     let wallet_account_file =
         AccountFile::read(config.wallet_filepath).context("Failed to read wallet account file")?;
-    let wallet_account = fetch_wallet_account(rpc_client, &wallet_account_file.account)
+    let wallet_account = fetch_wallet_account(rpc_client, wallet_account_file.account.id())
         .await?
         .unwrap_or(wallet_account_file.account.clone());
 

@@ -419,6 +419,11 @@ pub(crate) fn select_all_network_account_ids(
     const ROW_OVERHEAD_BYTES: usize = AccountId::SERIALIZED_SIZE;
     const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
+    const _: () = assert!(
+        MAX_ROWS > miden_objects::MAX_ACCOUNTS_PER_BLOCK,
+        "Block pagination limit must exceed maximum block capacity"
+    );
+
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
             from: *block_range.start(),

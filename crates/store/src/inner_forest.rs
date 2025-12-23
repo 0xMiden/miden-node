@@ -114,9 +114,8 @@ impl InnerForest {
         // Process fungible assets
         for (faucet_id, amount) in vault_delta.fungible().iter() {
             let amount_u64: u64 = (*amount).try_into().expect("amount is non-negative");
-            let asset: Asset = FungibleAsset::new(*faucet_id, amount_u64)
-                .expect("valid fungible asset")
-                .into();
+            let asset: Asset =
+                FungibleAsset::new(*faucet_id, amount_u64).expect("valid fungible asset").into();
             entries.push((asset.vault_key().into(), Word::from(asset)));
         }
 
@@ -169,11 +168,8 @@ impl InnerForest {
                 self.get_storage_root(account_id, slot_name, parent_block)
             };
 
-            let entries: Vec<_> = map_delta
-                .entries()
-                .iter()
-                .map(|(key, value)| ((*key).into(), *value))
-                .collect();
+            let entries: Vec<_> =
+                map_delta.entries().iter().map(|(key, value)| ((*key).into(), *value)).collect();
 
             if entries.is_empty() {
                 continue;
@@ -184,7 +180,8 @@ impl InnerForest {
                 .batch_insert(prev_root, entries.iter().copied())
                 .expect("forest insertion should succeed");
 
-            self.storage_roots.insert((account_id, slot_name.clone(), block_num), updated_root);
+            self.storage_roots
+                .insert((account_id, slot_name.clone(), block_num), updated_root);
 
             tracing::debug!(
                 target: crate::COMPONENT,

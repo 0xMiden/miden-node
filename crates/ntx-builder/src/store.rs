@@ -1,4 +1,3 @@
-use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
@@ -174,34 +173,56 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    // TODO: add pagination.
+    /// Get all network account IDs.
+    ///
+    /// Since the `GetNetworkAccountIds` method is paginated, we loop through all pages until we
+    /// reach the end.
     #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
-    pub async fn get_network_account_ids(
-        &self,
-        block_range: Option<RangeInclusive<BlockNumber>>,
-    ) -> Result<Vec<AccountId>, StoreError> {
-        let block_range = match block_range {
-            Some(range) => range,
-            None => BlockNumber::from(0)..=BlockNumber::from(u32::MAX),
-        };
+    pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
+        const MAX_ITERATIONS: u32 = 1000;
 
-        let response = self
-            .inner
-            .clone()
-            .get_network_account_ids(Into::<BlockRange>::into(block_range))
-            .await?
-            .into_inner();
+        let block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
 
-        let accounts: Result<Vec<AccountId>, ConversionError> = response
-            .account_ids
-            .into_iter()
-            .map(|account_id| {
-                AccountId::read_from_bytes(&account_id.id)
-                    .map_err(|err| ConversionError::deserialization_error("account_id", err))
-            })
-            .collect();
+        let mut ids = Vec::new();
+        let mut iterations_count = 0;
 
-        Ok(accounts?)
+        loop {
+            let response = self
+                .inner
+                .clone()
+                .get_network_account_ids(Into::<BlockRange>::into(block_range.clone()))
+                .await?
+                .into_inner();
+
+            let accounts: Result<Vec<AccountId>, ConversionError> = response
+                .account_ids
+                .into_iter()
+                .map(|account_id| {
+                    AccountId::read_from_bytes(&account_id.id)
+                        .map_err(|err| ConversionError::deserialization_error("account_id", err))
+                })
+                .collect();
+
+            let pagination_info = response.pagination_info.ok_or(
+                ConversionError::MissingFieldInProtobufRepresentation {
+                    entity: "NetworkAccountIdList",
+                    field_name: "pagination_info",
+                },
+            )?;
+
+            ids.extend(accounts?);
+            iterations_count += 1;
+
+            if pagination_info.block_num == pagination_info.chain_tip {
+                break;
+            }
+
+            if iterations_count >= MAX_ITERATIONS {
+                return Err(StoreError::MaxIterationsReached("GetNetworkAccountIds".to_string()));
+            }
+        }
+
+        Ok(ids)
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]
@@ -241,4 +262,6 @@ pub enum StoreError {
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
+    #[error("max iterations reached: {0}")]
+    MaxIterationsReached(String),
 }

@@ -153,7 +153,7 @@ impl NetworkTransactionBuilder {
         };
 
         // Create initial set of actors based on all known network accounts.
-        let account_ids = store.get_network_account_ids(None).await?;
+        let account_ids = store.get_network_account_ids().await?;
         for account_id in account_ids {
             if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
                 self.coordinator

@@ -45,17 +45,12 @@ use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
 type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
-/// [`SqliteConnection`].
+
+/// Select account by ID from the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
 /// The latest account info, or an error.
-///
-/// # Note
-///
-/// Returns only the account summary. Full account details must be reconstructed
-/// in follow up query, using separate query functions to fetch specific account
-/// components as needed.
 ///
 /// # Raw SQL
 ///
@@ -804,7 +799,20 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                (Some(account), storage, Vec::new())
+                // collect vault-asset inserts to apply after account upsert
+                let mut assets = Vec::new();
+                for asset in account.vault().assets() {
+                    // Only insert assets with non-zero values for fungible assets
+                    let should_insert = match asset {
+                        Asset::Fungible(fungible) => fungible.amount() > 0,
+                        Asset::NonFungible(_) => true,
+                    };
+                    if should_insert {
+                        assets.push((account_id, asset.vault_key(), Some(asset)));
+                    }
+                }
+
+                (Some(account), storage, assets)
             },
 
             AccountUpdateDetails::Delta(delta) => {
@@ -994,7 +1002,7 @@ pub(crate) fn select_account_vault_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-) -> Result<Vec<(Word, Word)>, DatabaseError> {
+) -> Result<Vec<Asset>, DatabaseError> {
     use schema::account_vault_assets as t;
 
     let account_id_bytes = account_id.to_bytes();
@@ -1020,29 +1028,29 @@ pub(crate) fn select_account_vault_at_block(
     }
 
     // Step 2: Fetch the full rows matching (vault_key, block_num) pairs
-    let mut entries = Vec::new();
+    let mut assets = Vec::new();
     for (vault_key_bytes, max_block) in latest_blocks_per_vault_key {
-        let result: Option<(Vec<u8>, Option<Vec<u8>>)> = QueryDsl::select(
+        let result: Option<Option<Vec<u8>>> = QueryDsl::select(
             t::table.filter(
                 t::account_id
                     .eq(&account_id_bytes)
                     .and(t::vault_key.eq(&vault_key_bytes))
                     .and(t::block_num.eq(max_block)),
             ),
-            (t::vault_key, t::asset),
+            t::asset,
         )
         .first(conn)
         .optional()?;
-        if let Some((key_bytes, Some(asset_bytes))) = result {
-            entries
-                .push((Word::read_from_bytes(&key_bytes)?, Word::read_from_bytes(&asset_bytes)?));
+        if let Some(Some(asset_bytes)) = result {
+            let asset = Asset::read_from_bytes(&asset_bytes)?;
+            assets.push(asset);
         }
     }
 
     // Sort by vault_key for consistent ordering
-    entries.sort_by_key(|(key, _)| *key);
+    assets.sort_by_key(Asset::vault_key);
 
-    Ok(entries)
+    Ok(assets)
 }
 
 /// Queries the account code for a specific account at a specific block number.

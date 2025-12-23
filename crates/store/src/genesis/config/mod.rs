@@ -221,7 +221,7 @@ impl GenesisConfig {
                 storage_delta.set_item(
                     AccountStorage::faucet_sysdata_slot().clone(),
                     [ZERO, ZERO, ZERO, Felt::new(total_issuance)].into(),
-                );
+                )?;
                 tracing::debug!(
                     "Reducing faucet account {faucet} for {symbol} by {amount}",
                     faucet = faucet_id.to_hex(),

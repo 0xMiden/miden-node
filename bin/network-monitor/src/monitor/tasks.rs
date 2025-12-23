@@ -11,15 +11,16 @@ use miden_node_proto::clients::{
     RemoteProverProxyStatusClient,
     RpcClient,
 };
-use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
+use tokio::sync::{Mutex, watch};
 use tokio::task::{Id, JoinSet};
 use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::counter::{run_counter_tracking_task, run_increment_task};
+use crate::counter::{LatencyState, run_counter_tracking_task, run_increment_task};
 use crate::deploy::ensure_accounts_exist;
+use crate::explorer::{initial_explorer_status, run_explorer_status_task};
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload, run_remote_prover_test_task};
@@ -91,6 +92,38 @@ impl Tasks {
 
         debug!(target: COMPONENT, "RPC status checker task spawned successfully");
         Ok(rpc_rx)
+    }
+
+    /// Spawn the explorer status checker task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-explorer-checker", skip_all)]
+    pub async fn spawn_explorer_checker(
+        &mut self,
+        config: &MonitorConfig,
+    ) -> Result<Receiver<ServiceStatus>> {
+        let explorer_url = config.explorer_url.clone().expect("Explorer URL exists");
+        let name = "Explorer".to_string();
+        let status_check_interval = config.status_check_interval;
+        let request_timeout = config.request_timeout;
+        let (explorer_status_tx, explorer_status_rx) = watch::channel(initial_explorer_status());
+
+        let id = self
+            .handles
+            .spawn(async move {
+                run_explorer_status_task(
+                    explorer_url,
+                    name,
+                    explorer_status_tx,
+                    status_check_interval,
+                    request_timeout,
+                )
+                .await;
+            })
+            .id();
+        self.names.insert(id, "explorer-checker".to_string());
+
+        println!("Spawned explorer status checker task");
+
+        Ok(explorer_status_rx)
     }
 
     /// Spawn prover status and test tasks for all configured provers.
@@ -286,6 +319,9 @@ impl Tasks {
 
         // Create shared atomic counter for tracking expected counter value
         let expected_counter_value = Arc::new(AtomicU64::new(0));
+        let latency_state = Arc::new(Mutex::new(LatencyState::default()));
+        let latency_state_for_increment = latency_state.clone();
+        let latency_state_for_tracking = latency_state.clone();
 
         // Create initial increment status
         let initial_increment_status = ServiceStatus {
@@ -297,6 +333,7 @@ impl Tasks {
                 success_count: 0,
                 failure_count: 0,
                 last_tx_id: None,
+                last_latency_blocks: None,
             }),
         };
 
@@ -323,9 +360,14 @@ impl Tasks {
         let increment_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_increment_task(config_clone, increment_tx, counter_clone))
-                    .await
-                    .expect("Counter increment task runs indefinitely");
+                Box::pin(run_increment_task(
+                    config_clone,
+                    increment_tx,
+                    counter_clone,
+                    latency_state_for_increment,
+                ))
+                .await
+                .expect("Counter increment task runs indefinitely");
             })
             .id();
         self.names.insert(increment_id, "counter-increment".to_string());
@@ -337,9 +379,14 @@ impl Tasks {
         let tracking_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_counter_tracking_task(config_clone, tracking_tx, counter_clone))
-                    .await
-                    .expect("Counter tracking task runs indefinitely");
+                Box::pin(run_counter_tracking_task(
+                    config_clone,
+                    tracking_tx,
+                    counter_clone,
+                    latency_state_for_tracking,
+                ))
+                .await
+                .expect("Counter tracking task runs indefinitely");
             })
             .id();
         self.names.insert(tracking_id, "counter-tracking".to_string());

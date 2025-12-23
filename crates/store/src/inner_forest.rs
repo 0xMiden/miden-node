@@ -1,18 +1,14 @@
 use std::collections::BTreeMap;
 
-use miden_objects::account::{AccountId, StorageSlotName};
+use miden_objects::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
+use miden_objects::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
+use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::block::BlockNumber;
 use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH, SmtForest};
 use miden_objects::{EMPTY_WORD, Word};
 
-use crate::errors::DatabaseError;
-
 #[cfg(test)]
 mod tests;
-
-type MapSlotEntries = Vec<(Word, Word)>;
-
-type VaultEntries = Vec<(Word, Word)>;
 
 /// Container for forest-related state that needs to be updated atomically.
 pub(crate) struct InnerForest {
@@ -38,113 +34,163 @@ impl InnerForest {
         }
     }
 
+    // HELPERS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns the root of an empty SMT.
     fn empty_smt_root() -> Word {
         *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
     }
 
-    /// Populates storage map SMTs in the forest from full database state for a single account.
-    pub(crate) fn add_storage_map(
-        &mut self,
+    /// Retrieves the vault SMT root for an account at a given block, defaulting to empty.
+    fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
+        self.vault_roots
+            .get(&(account_id, block_num))
+            .copied()
+            .unwrap_or_else(Self::empty_smt_root)
+    }
+
+    /// Retrieves the storage map SMT root for an account slot at a given block, defaulting to
+    /// empty.
+    fn get_storage_root(
+        &self,
         account_id: AccountId,
-        map_slots_to_populate: Vec<(StorageSlotName, MapSlotEntries)>,
+        slot_name: &StorageSlotName,
         block_num: BlockNumber,
+    ) -> Word {
+        self.storage_roots
+            .get(&(account_id, slot_name.clone(), block_num))
+            .copied()
+            .unwrap_or_else(Self::empty_smt_root)
+    }
+
+    // PUBLIC INTERFACE
+    // --------------------------------------------------------------------------------------------
+
+    /// Updates the forest with account vault and storage changes from a delta.
+    ///
+    /// Unified interface for updating all account state in the forest, handling both
+    /// full-state deltas (new accounts or reconstruction from DB) and partial deltas
+    /// (incremental updates during block application).
+    ///
+    /// Full-state deltas (`delta.is_full_state() == true`) populate the forest from
+    /// scratch using an empty SMT root. Partial deltas apply changes on top of the
+    /// previous block's state.
+    pub(crate) fn update_account(&mut self, block_num: BlockNumber, delta: &AccountDelta) {
+        let account_id = delta.id();
+        let is_full_state = delta.is_full_state();
+
+        if !delta.vault().is_empty() {
+            self.update_account_vault(block_num, account_id, delta.vault(), is_full_state);
+        }
+
+        if !delta.storage().is_empty() {
+            self.update_account_storage(block_num, account_id, delta.storage(), is_full_state);
+        }
+    }
+
+    // PRIVATE METHODS
+    // --------------------------------------------------------------------------------------------
+
+    /// Updates the forest with vault changes from a delta.
+    ///
+    /// Processes both fungible and non-fungible asset changes, building entries
+    /// for the vault SMT and tracking the new root.
+    fn update_account_vault(
+        &mut self,
+        block_num: BlockNumber,
+        account_id: AccountId,
+        vault_delta: &AccountVaultDelta,
+        is_full_state: bool,
     ) {
-        for (slot_name, entries) in map_slots_to_populate {
+        let prev_root = if is_full_state {
+            Self::empty_smt_root()
+        } else {
+            self.get_vault_root(account_id, block_num.parent().unwrap_or_default())
+        };
+
+        let mut entries = Vec::new();
+
+        // Process fungible assets
+        for (faucet_id, amount) in vault_delta.fungible().iter() {
+            let amount_u64: u64 = (*amount).try_into().expect("amount is non-negative");
+            let asset: Asset =
+                FungibleAsset::new(*faucet_id, amount_u64).expect("valid fungible asset").into();
+            entries.push((asset.vault_key().into(), Word::from(asset)));
+        }
+
+        // Process non-fungible assets
+        for (asset, action) in vault_delta.non_fungible().iter() {
+            let value = match action {
+                NonFungibleDeltaAction::Add => Word::from(Asset::NonFungible(*asset)),
+                NonFungibleDeltaAction::Remove => EMPTY_WORD,
+            };
+            entries.push((asset.vault_key().into(), value));
+        }
+
+        if entries.is_empty() {
+            return;
+        }
+
+        let updated_root = self
+            .storage_forest
+            .batch_insert(prev_root, entries.iter().copied())
+            .expect("forest insertion should succeed");
+
+        self.vault_roots.insert((account_id, block_num), updated_root);
+
+        tracing::debug!(
+            target: crate::COMPONENT,
+            %account_id,
+            %block_num,
+            vault_entries = entries.len(),
+            "Updated vault in forest"
+        );
+    }
+
+    /// Updates the forest with storage map changes from a delta.
+    ///
+    /// Processes storage map slot deltas, building SMTs for each modified slot
+    /// and tracking the new roots.
+    fn update_account_storage(
+        &mut self,
+        block_num: BlockNumber,
+        account_id: AccountId,
+        storage_delta: &AccountStorageDelta,
+        is_full_state: bool,
+    ) {
+        let parent_block = block_num.parent().unwrap_or_default();
+
+        for (slot_name, map_delta) in storage_delta.maps() {
+            let prev_root = if is_full_state {
+                Self::empty_smt_root()
+            } else {
+                self.get_storage_root(account_id, slot_name, parent_block)
+            };
+
+            let entries: Vec<_> =
+                map_delta.entries().iter().map(|(key, value)| ((*key).into(), *value)).collect();
+
             if entries.is_empty() {
                 continue;
             }
 
             let updated_root = self
                 .storage_forest
-                .batch_insert(Self::empty_smt_root(), entries.iter().copied())
-                .expect("Forest insertion should succeed");
+                .batch_insert(prev_root, entries.iter().copied())
+                .expect("forest insertion should succeed");
 
             self.storage_roots
                 .insert((account_id, slot_name.clone(), block_num), updated_root);
 
             tracing::debug!(
                 target: crate::COMPONENT,
-                account_id = %account_id,
-                block_num = %block_num,
-                slot_name = ?slot_name,
+                %account_id,
+                %block_num,
+                ?slot_name,
                 entries = entries.len(),
-                "Populated storage map in forest from DB"
+                "Updated storage map in forest"
             );
         }
-    }
-
-    /// Populates a vault SMT in the forest from full database state.
-    pub(crate) fn add_vault(
-        &mut self,
-        account_id: AccountId,
-        vault_entries: &VaultEntries,
-        block_num: BlockNumber,
-    ) {
-        if vault_entries.is_empty() {
-            return;
-        }
-
-        let updated_root = self
-            .storage_forest
-            .batch_insert(Self::empty_smt_root(), vault_entries.iter().copied())
-            .expect("Forest insertion should succeed");
-
-        self.vault_roots.insert((account_id, block_num), updated_root);
-
-        tracing::debug!(
-            target: crate::COMPONENT,
-            account_id = %account_id,
-            block_num = %block_num,
-            vault_entries = vault_entries.len(),
-            "Populated vault in forest from DB"
-        );
-    }
-
-    /// Queries specific storage keys for a given account and slot at a specific block.
-    ///
-    /// Keys that don't exist in the storage map will have a value of `EMPTY_WORD`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The storage root for this account/slot/block is not tracked
-    /// - The forest doesn't have sufficient data to provide proofs for the keys
-    pub(crate) fn query_storage_keys(
-        &self,
-        account_id: AccountId,
-        slot_name: &StorageSlotName,
-        block_num: BlockNumber,
-        keys: &[Word],
-    ) -> Result<Vec<(Word, Word)>, DatabaseError> {
-        // Get the storage root for this account/slot/block
-        let root = self
-            .storage_roots
-            .get(&(account_id, slot_name.clone(), block_num))
-            .copied()
-            .ok_or_else(|| DatabaseError::StorageRootNotFound {
-                account_id,
-                slot_name: slot_name.to_string(),
-                block_num,
-            })?;
-
-        let mut results = Vec::with_capacity(keys.len());
-
-        for key in keys {
-            let proof = self.storage_forest.open(root, *key)?;
-            let value = proof.get(key).unwrap_or(EMPTY_WORD);
-            results.push((*key, value));
-        }
-
-        tracing::debug!(
-            target: crate::COMPONENT,
-            %account_id,
-            %block_num,
-            ?slot_name,
-            num_keys = results.len(),
-            "Queried storage keys from forest"
-        );
-
-        Ok(results)
     }
 }

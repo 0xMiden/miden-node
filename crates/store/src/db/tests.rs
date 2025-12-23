@@ -24,6 +24,7 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
     StorageSlot,
+    StorageSlotDelta,
     StorageSlotName,
 };
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
@@ -1162,8 +1163,8 @@ fn sql_account_storage_map_values_insertion() {
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
-    let maps1 = BTreeMap::from_iter([(slot_name.clone(), map1)]);
-    let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
+    let delta1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map1))]);
+    let storage1 = AccountStorageDelta::from_raw(delta1);
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
     insert_account_delta(conn, account_id, block1, &delta1);
@@ -1176,8 +1177,8 @@ fn sql_account_storage_map_values_insertion() {
     // Update key1 at block 2
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
-    let maps2 = BTreeMap::from_iter([(slot_name.clone(), map2)]);
-    let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
+    let delta2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map2))]);
+    let storage2 = AccountStorageDelta::from_raw(delta2);
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
             .unwrap();
@@ -1816,4 +1817,49 @@ fn genesis_with_multiple_accounts() {
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn regression_1461_full_state_delta_inserts_vault_assets() {
+    let mut conn = create_db();
+    let block_num: BlockNumber = 1.into();
+    create_block(&mut conn, block_num);
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
+
+    let account = mock_account_code_and_storage(
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+        [fungible_asset.into()],
+        Some([42u8; 32]),
+    );
+    let account_id = account.id();
+
+    // Convert to full state delta, same as genesis
+    let account_delta = AccountDelta::try_from(account.clone()).unwrap();
+    assert!(account_delta.is_full_state());
+
+    let block_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(account_delta),
+    );
+
+    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+
+    let (_, vault_assets) = queries::select_account_vault_assets(
+        &mut conn,
+        account_id,
+        BlockNumber::GENESIS..=block_num,
+    )
+    .unwrap();
+
+    // Before the fix, vault_assets was empty
+    let vault_asset = vault_assets.first().unwrap();
+    let expected_asset: Asset = fungible_asset.into();
+    assert_eq!(vault_asset.block_num, block_num);
+    assert_eq!(vault_asset.asset, Some(expected_asset));
+    assert_eq!(vault_asset.vault_key, expected_asset.vault_key());
 }

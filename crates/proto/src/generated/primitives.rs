@@ -15,10 +15,10 @@ pub struct SmtLeafEntry {
     #[prost(message, optional, tag = "2")]
     pub value: ::core::option::Option<Digest>,
 }
-/// Represents multiple leaf entries in an SMT.
+/// Multiple leaf entries when hash collisions occur at the same leaf position.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SmtLeafEntryList {
-    /// The entries list.
+    /// The list of entries at this leaf.
     #[prost(message, repeated, tag = "1")]
     pub entries: ::prost::alloc::vec::Vec<SmtLeafEntry>,
 }

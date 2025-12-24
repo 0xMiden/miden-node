@@ -9,7 +9,13 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_utils::fee::test_fee;
-use miden_protocol::Word;
+use miden_node_utils::limiter::{
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+    QueryParamNullifierLimit,
+};
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     AccountBuilder,
@@ -460,4 +466,59 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
         data_directory,
         genesis_state.into_block().unwrap().inner().header().commitment(),
     )
+}
+
+#[tokio::test]
+async fn get_limits_endpoint() {
+    // Start the RPC and store
+    let (mut rpc_client, _rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
+
+    // Call the get_limits endpoint
+    let response = rpc_client.get_limits(()).await.expect("get_limits should succeed");
+    let limits = response.into_inner();
+
+    // Verify the response contains expected endpoints and limits
+    assert!(!limits.endpoints.is_empty(), "endpoints should not be empty");
+
+    // Verify CheckNullifiers endpoint
+    let check_nullifiers =
+        limits.endpoints.get("CheckNullifiers").expect("CheckNullifiers should exist");
+
+    assert_eq!(
+        check_nullifiers.parameters.get("nullifier"),
+        Some(&(QueryParamNullifierLimit::LIMIT as u32)),
+        "CheckNullifiers nullifier limit should be {}",
+        QueryParamNullifierLimit::LIMIT
+    );
+
+    // Verify SyncState endpoint has multiple parameters
+    let sync_state = limits.endpoints.get("SyncState").expect("SyncState should exist");
+    assert_eq!(
+        sync_state.parameters.get(QueryParamAccountIdLimit::PARAM_NAME),
+        Some(&(QueryParamAccountIdLimit::LIMIT as u32)),
+        "SyncState {} limit should be {}",
+        QueryParamAccountIdLimit::PARAM_NAME,
+        QueryParamAccountIdLimit::LIMIT
+    );
+    assert_eq!(
+        sync_state.parameters.get(QueryParamNoteTagLimit::PARAM_NAME),
+        Some(&(QueryParamNoteTagLimit::LIMIT as u32)),
+        "SyncState {} limit should be {}",
+        QueryParamNoteTagLimit::PARAM_NAME,
+        QueryParamNoteTagLimit::LIMIT
+    );
+
+    // Verify GetNotesById endpoint
+    let get_notes_by_id = limits.endpoints.get("GetNotesById").expect("GetNotesById should exist");
+    assert_eq!(
+        get_notes_by_id.parameters.get(QueryParamNoteIdLimit::PARAM_NAME),
+        Some(&(QueryParamNoteIdLimit::LIMIT as u32)),
+        "GetNotesById {} limit should be {}",
+        QueryParamNoteIdLimit::PARAM_NAME,
+        QueryParamNoteIdLimit::LIMIT
+    );
+
+    // Shutdown to avoid runtime drop error.
+    store_runtime.shutdown_background();
 }

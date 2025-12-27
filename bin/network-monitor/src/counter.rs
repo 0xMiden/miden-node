@@ -9,18 +9,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use miden_lib::AuthScheme;
-use miden_lib::account::interface::AccountInterface;
-use miden_lib::utils::CodeBuilder;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
-use miden_objects::account::auth::AuthSecretKey;
-use miden_objects::account::{Account, AccountFile, AccountHeader, AccountId};
-use miden_objects::assembly::Library;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
-use miden_objects::note::{
+use miden_protocol::account::auth::AuthSecretKey;
+use miden_protocol::account::{Account, AccountFile, AccountHeader, AccountId};
+use miden_protocol::assembly::Library;
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
+use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteExecutionHint,
@@ -31,9 +28,11 @@ use miden_objects::note::{
     NoteTag,
     NoteType,
 };
-use miden_objects::transaction::{InputNotes, PartialBlockchain, TransactionArgs};
-use miden_objects::utils::Deserializable;
-use miden_objects::{Felt, Word, ZERO};
+use miden_protocol::transaction::{InputNotes, PartialBlockchain, TransactionArgs};
+use miden_protocol::utils::Deserializable;
+use miden_protocol::{Felt, Word, ZERO};
+use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_standards::code_builder::CodeBuilder;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::Serializable;
 use miden_tx::{LocalTransactionProver, TransactionExecutor};
@@ -621,15 +620,11 @@ async fn create_and_submit_network_note(
     // Create authenticator for transaction signing
     let authenticator = BasicAuthenticator::new(&[AuthSecretKey::RpoFalcon512(secret_key.clone())]);
 
-    let account_interface = AccountInterface::new(
-        wallet_account.id(),
-        vec![AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key().into() }],
-        wallet_account.code(),
-    );
+    let account_interface = AccountInterface::from_account(wallet_account);
 
     let (network_note, note_recipient) =
         create_network_note(wallet_account, counter_account, increment_script.clone(), rng)?;
-    let script = account_interface.build_send_notes_script(&[network_note.into()], None, false)?;
+    let script = account_interface.build_send_notes_script(&[network_note.into()], None)?;
 
     // Create transaction executor
     let executor = TransactionExecutor::new(data_store).with_authenticator(&authenticator);
@@ -679,7 +674,7 @@ async fn create_and_submit_network_note(
 fn create_increment_script() -> Result<(NoteScript, Library)> {
     let library = get_counter_library()?;
 
-    let script_builder = CodeBuilder::new(true)
+    let script_builder = CodeBuilder::new()
         .with_dynamically_linked_library(&library)
         .context("Failed to create script builder with library")?;
 

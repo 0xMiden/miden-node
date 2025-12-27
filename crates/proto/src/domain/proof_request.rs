@@ -1,9 +1,9 @@
 // PROOF REQUEST
 // ================================================================================================
 
-use miden_objects::batch::OrderedBatches;
-use miden_objects::block::{BlockHeader, BlockInputs};
-use miden_objects::utils::{
+use miden_protocol::batch::OrderedBatches;
+use miden_protocol::block::{BlockHeader, BlockInputs};
+use miden_protocol::utils::{
     ByteReader,
     ByteWriter,
     Deserializable,

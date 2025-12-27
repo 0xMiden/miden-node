@@ -12,16 +12,16 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::Deserializable;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamAccountIdLimit,
     QueryParamLimiter,
 };
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteId, Nullifier};
-use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{NoteId, Nullifier};
+use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionId};
+use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::DatabaseError;
 use crate::db::models::conv::SqlTypeConvert;
@@ -116,8 +116,7 @@ impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
 impl TryInto<crate::db::TransactionRecord> for TransactionRecordRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<crate::db::TransactionRecord, Self::Error> {
-        use miden_lib::utils::Deserializable;
-        use miden_objects::Word;
+        use miden_protocol::Word;
 
         let initial_state_commitment = self.initial_state_commitment;
         let final_state_commitment = self.final_state_commitment;
@@ -186,11 +185,9 @@ impl TransactionSummaryRowInsert {
         reason = "We will not approach the item count where i64 and usize cause issues"
     )]
     fn new(
-        transaction_header: &miden_objects::transaction::TransactionHeader,
+        transaction_header: &miden_protocol::transaction::TransactionHeader,
         block_num: BlockNumber,
     ) -> Self {
-        use miden_lib::utils::Serializable;
-
         const HEADER_BASE_SIZE: usize = 4 + 32 + 16 + 64; // block_num + tx_id + account_id + commitments
 
         // Serialize input notes using binary format (store nullifiers)

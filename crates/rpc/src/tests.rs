@@ -3,16 +3,22 @@ use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
-use miden_lib::account::wallets::BasicWallet;
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_utils::fee::test_fee;
-use miden_objects::Word;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_node_utils::limiter::{
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+    QueryParamNullifierLimit,
+};
+use miden_protocol::Word;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
@@ -20,11 +26,12 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_objects::testing::noop_auth_component::NoopAuthComponent;
-use miden_objects::transaction::ProvenTransactionBuilder;
-use miden_objects::utils::Serializable;
-use miden_objects::vm::ExecutionProof;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_protocol::transaction::ProvenTransactionBuilder;
+use miden_protocol::utils::Serializable;
+use miden_protocol::vm::ExecutionProof;
+use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::runtime::{self, Runtime};
@@ -460,4 +467,59 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
         data_directory,
         genesis_state.into_block().unwrap().inner().header().commitment(),
     )
+}
+
+#[tokio::test]
+async fn get_limits_endpoint() {
+    // Start the RPC and store
+    let (mut rpc_client, _rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
+
+    // Call the get_limits endpoint
+    let response = rpc_client.get_limits(()).await.expect("get_limits should succeed");
+    let limits = response.into_inner();
+
+    // Verify the response contains expected endpoints and limits
+    assert!(!limits.endpoints.is_empty(), "endpoints should not be empty");
+
+    // Verify CheckNullifiers endpoint
+    let check_nullifiers =
+        limits.endpoints.get("CheckNullifiers").expect("CheckNullifiers should exist");
+
+    assert_eq!(
+        check_nullifiers.parameters.get("nullifier"),
+        Some(&(QueryParamNullifierLimit::LIMIT as u32)),
+        "CheckNullifiers nullifier limit should be {}",
+        QueryParamNullifierLimit::LIMIT
+    );
+
+    // Verify SyncState endpoint has multiple parameters
+    let sync_state = limits.endpoints.get("SyncState").expect("SyncState should exist");
+    assert_eq!(
+        sync_state.parameters.get(QueryParamAccountIdLimit::PARAM_NAME),
+        Some(&(QueryParamAccountIdLimit::LIMIT as u32)),
+        "SyncState {} limit should be {}",
+        QueryParamAccountIdLimit::PARAM_NAME,
+        QueryParamAccountIdLimit::LIMIT
+    );
+    assert_eq!(
+        sync_state.parameters.get(QueryParamNoteTagLimit::PARAM_NAME),
+        Some(&(QueryParamNoteTagLimit::LIMIT as u32)),
+        "SyncState {} limit should be {}",
+        QueryParamNoteTagLimit::PARAM_NAME,
+        QueryParamNoteTagLimit::LIMIT
+    );
+
+    // Verify GetNotesById endpoint
+    let get_notes_by_id = limits.endpoints.get("GetNotesById").expect("GetNotesById should exist");
+    assert_eq!(
+        get_notes_by_id.parameters.get(QueryParamNoteIdLimit::PARAM_NAME),
+        Some(&(QueryParamNoteIdLimit::LIMIT as u32)),
+        "GetNotesById {} limit should be {}",
+        QueryParamNoteIdLimit::PARAM_NAME,
+        QueryParamNoteIdLimit::LIMIT
+    );
+
+    // Shutdown to avoid runtime drop error.
+    store_runtime.shutdown_background();
 }

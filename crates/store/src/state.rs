@@ -23,35 +23,22 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{AccountId, StorageSlotContent};
-use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
-use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_objects::block::{
-    BlockHeader,
-    BlockInputs,
-    BlockNoteTree,
-    BlockNumber,
-    Blockchain,
-    ProvenBlock,
-};
-use miden_objects::crypto::merkle::{
-    Forest,
+use miden_protocol::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
+use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
+use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_protocol::crypto::merkle::mmr::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
+use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
     LargeSmtError,
     MemoryStorage,
-    Mmr,
-    MmrDelta,
-    MmrPeaks,
-    MmrProof,
-    PartialMmr,
     SmtProof,
     SmtStorage,
 };
-use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
-use miden_objects::transaction::{OutputNote, PartialBlockchain};
-use miden_objects::utils::Serializable;
-use miden_objects::{AccountError, Word};
+use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
+use miden_protocol::transaction::{OutputNote, PartialBlockchain};
+use miden_protocol::utils::Serializable;
+use miden_protocol::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 

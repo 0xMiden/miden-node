@@ -11,9 +11,9 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
-use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::DatabaseError;
 use crate::db::models::conv::SqlTypeConvert;

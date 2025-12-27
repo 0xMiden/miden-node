@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_objects::transaction::TransactionId;
+use miden_protocol::transaction::TransactionId;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;

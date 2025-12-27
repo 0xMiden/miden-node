@@ -1,6 +1,6 @@
-use miden_lib::testing::note::NoteBuilder;
-use miden_objects::note::Note;
-use miden_objects::transaction::OutputNote;
+use miden_protocol::note::Note;
+use miden_protocol::transaction::OutputNote;
+use miden_standards::testing::note::NoteBuilder;
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
 

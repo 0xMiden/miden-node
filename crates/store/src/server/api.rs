@@ -4,10 +4,10 @@ use std::sync::Arc;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Nullifier;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
@@ -128,7 +128,7 @@ where
     id.ok_or_else(|| {
         ConversionError::deserialization_error(
             "AccountId",
-            miden_objects::crypto::utils::DeserializationError::InvalidValue(
+            miden_protocol::crypto::utils::DeserializationError::InvalidValue(
                 "Missing account ID".to_string(),
             ),
         )

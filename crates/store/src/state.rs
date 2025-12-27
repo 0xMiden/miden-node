@@ -109,7 +109,16 @@ where
     }
 }
 
-/// The rollup state
+// CHAIN STATE
+// ================================================================================================
+
+/// The chain state.
+///
+/// The chain state consists of three main components:
+/// - A persistent database that stores notes, nullifiers, recent account states, and related data.
+/// - In-memory data structures contain Merkle paths for various objects - e.g., all accounts,
+///   nullifiers, public account vaults and storage, MMR of all block headers.
+/// - Raw block data for all blocks that is stored on disk as flat files.
 pub struct State {
     /// The database which stores block headers, nullifiers, notes, and the latest states of
     /// accounts.
@@ -132,6 +141,9 @@ pub struct State {
 }
 
 impl State {
+    // CONSTRUCTOR
+    // --------------------------------------------------------------------------------------------
+
     /// Loads the state from the `db`.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
@@ -183,6 +195,64 @@ impl State {
 
         Ok(me)
     }
+
+    /// Updates `SmtForest` from database state using the unified delta.
+    ///
+    /// Primarily used in `State::load()` where we need to reconstruct the forest from full account
+    /// state recovered from the database.
+    ///
+    /// # Warning
+    ///
+    /// Has internal locking to mutate the state, use cautiously in scopes with other mutex guards
+    /// around!
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num))]
+    async fn initialize_storage_forest_from_db(
+        &self,
+        account_ids: Vec<AccountId>,
+        block_num: BlockNumber,
+    ) -> Result<(), ApplyBlockError> {
+        use miden_protocol::account::delta::AccountDelta;
+
+        // Acquire write lock once for the entire initialization
+        let mut forest_guard = self.forest.write().await;
+
+        // Process each account
+        for account_id in account_ids {
+            // Skip private accounts - they don't have public state to reconstruct
+            if !account_id.is_public() {
+                tracing::trace!(
+                    target: COMPONENT,
+                    %account_id,
+                    %block_num,
+                    "Skipping private account during forest initialization"
+                );
+                continue;
+            }
+
+            // Get the full account from the database
+            let account_info = self.db.select_account(account_id).await?;
+            let account = account_info.details.expect("public accounts always have details in DB");
+
+            // Convert the full account to a full-state delta
+            let delta =
+                AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
+
+            // Use the unified update method (will recognize it's a full-state delta)
+            forest_guard.update_account(block_num, &delta);
+
+            tracing::debug!(
+                target: COMPONENT,
+                %account_id,
+                %block_num,
+                "Initialized forest for account from DB"
+            );
+        }
+
+        Ok(())
+    }
+
+    // STATE MUTATOR
+    // --------------------------------------------------------------------------------------------
 
     /// Apply changes of a new block to the DB and in-memory data structures.
     ///
@@ -517,60 +587,8 @@ impl State {
         Ok(())
     }
 
-    /// Updates `SmtForest` from database state using the unified delta
-    ///
-    /// Primarily used in `State::load()` where we need to reconstruct
-    /// the forest from full account state recovered from the database.
-    ///
-    /// # Warning
-    ///
-    /// Has internal locking to mutate the state, use cautiously in scopes with other
-    /// mutex guards around!
-    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num))]
-    async fn initialize_storage_forest_from_db(
-        &self,
-        account_ids: Vec<AccountId>,
-        block_num: BlockNumber,
-    ) -> Result<(), ApplyBlockError> {
-        use miden_protocol::account::delta::AccountDelta;
-
-        // Acquire write lock once for the entire initialization
-        let mut forest_guard = self.forest.write().await;
-
-        // Process each account
-        for account_id in account_ids {
-            // Skip private accounts - they don't have public state to reconstruct
-            if !account_id.is_public() {
-                tracing::trace!(
-                    target: COMPONENT,
-                    %account_id,
-                    %block_num,
-                    "Skipping private account during forest initialization"
-                );
-                continue;
-            }
-
-            // Get the full account from the database
-            let account_info = self.db.select_account(account_id).await?;
-            let account = account_info.details.expect("public accounts always have details in DB");
-
-            // Convert the full account to a full-state delta
-            let delta =
-                AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
-
-            // Use the unified update method (will recognize it's a full-state delta)
-            forest_guard.update_account(block_num, &delta);
-
-            tracing::debug!(
-                target: COMPONENT,
-                %account_id,
-                %block_num,
-                "Initialized forest for account from DB"
-            );
-        }
-
-        Ok(())
-    }
+    // STATE ACCESSORS
+    // --------------------------------------------------------------------------------------------
 
     /// Queries a [BlockHeader] from the database, and returns it alongside its inclusion proof.
     ///

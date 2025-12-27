@@ -1516,7 +1516,7 @@ fn test_select_account_code_at_block_with_updates() {
 
     // Create initial account with code v1 at block 1
     let code_v1_str = "\
-        export.account_procedure_1
+        pub proc account_procedure_1
             push.1.2
             add
         end
@@ -1539,7 +1539,7 @@ fn test_select_account_code_at_block_with_updates() {
 
     // Create account with different code v2 at block 2
     let code_v2_str = "\
-        export.account_procedure_1
+        pub proc account_procedure_1
             push.3.4
             mul
         end
@@ -1567,7 +1567,7 @@ fn test_select_account_code_at_block_with_updates() {
 
     // Create account with different code v3 at block 3
     let code_v3_str = "\
-        export.account_procedure_1
+        pub proc account_procedure_1
             push.5.6
             sub
         end

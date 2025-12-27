@@ -61,6 +61,7 @@ use miden_protocol::transaction::{
     TransactionHeader,
     TransactionId,
 };
+use miden_protocol::utils::Serializable;
 use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
 use miden_standards::account::auth::AuthRpoFalcon512;
 use miden_standards::code_builder::CodeBuilder;

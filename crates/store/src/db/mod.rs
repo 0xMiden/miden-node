@@ -7,7 +7,7 @@ use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
+use miden_protocol::account::{AccountHeader, AccountId, AccountStorage};
 use miden_protocol::asset::{Asset, AssetVaultKey};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;

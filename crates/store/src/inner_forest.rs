@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 
-use miden_objects::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
-use miden_objects::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
-use miden_objects::asset::{Asset, FungibleAsset};
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH, SmtForest};
-use miden_objects::{EMPTY_WORD, Word};
+use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
+use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::EmptySubtreeRoots;
+use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
+use miden_protocol::{EMPTY_WORD, Word};
 
 #[cfg(test)]
 mod tests;

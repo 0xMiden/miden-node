@@ -1,10 +1,10 @@
-use miden_objects::account::AccountCode;
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset};
-use miden_objects::testing::account_id::{
+use miden_protocol::account::AccountCode;
+use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
+use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
 };
-use miden_objects::{Felt, FieldElement};
+use miden_protocol::{Felt, FieldElement};
 
 use super::*;
 
@@ -37,7 +37,7 @@ fn dummy_partial_delta(
 
 /// Creates a full-state `AccountDelta` (with code) for testing DB reconstruction.
 fn dummy_full_state_delta(account_id: AccountId, assets: &[Asset]) -> AccountDelta {
-    use miden_objects::account::{Account, AccountStorage};
+    use miden_protocol::account::{Account, AccountStorage};
 
     // Create a minimal account with the given assets
     let vault = AssetVault::new(assets).unwrap();
@@ -53,7 +53,7 @@ fn dummy_full_state_delta(account_id: AccountId, assets: &[Asset]) -> AccountDel
 
 #[test]
 fn test_empty_smt_root_is_recognized() {
-    use miden_objects::crypto::merkle::Smt;
+    use miden_protocol::crypto::merkle::smt::Smt;
 
     let empty_root = InnerForest::empty_smt_root();
 

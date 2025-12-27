@@ -37,7 +37,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::{Deserializable, Serializable};
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, FieldElement, Word};
 
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{serialize_vec, vec_raw_try_into};

@@ -23,10 +23,18 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_protocol::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{AccountId, StorageSlotContent};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_protocol::block::{
+    BlockHeader,
+    BlockInputs,
+    BlockNoteTree,
+    BlockNumber,
+    Blockchain,
+    ProvenBlock,
+};
 use miden_protocol::crypto::merkle::mmr::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
@@ -524,7 +532,7 @@ impl State {
         account_ids: Vec<AccountId>,
         block_num: BlockNumber,
     ) -> Result<(), ApplyBlockError> {
-        use miden_objects::account::delta::AccountDelta;
+        use miden_protocol::account::delta::AccountDelta;
 
         // Acquire write lock once for the entire initialization
         let mut forest_guard = self.forest.write().await;

@@ -8,9 +8,10 @@ use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::crypto::merkle::mmr::MmrError;
 use miden_protocol::crypto::utils::DeserializationError;
-use miden_protocol::note::Nullifier;
+use miden_protocol::note::{NoteId, Nullifier};
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{
     AccountDeltaError,
@@ -56,7 +57,7 @@ pub enum DatabaseError {
     #[error("I/O error")]
     IoError(#[from] io::Error),
     #[error("merkle error")]
-    MerkleError(#[from] miden_protocol::crypto::merkle::MerkleError),
+    MerkleError(#[from] MerkleError),
     #[error("network account error")]
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]

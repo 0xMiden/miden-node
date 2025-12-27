@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
     AccountHeader,
@@ -18,6 +17,7 @@ use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{NoteExecutionMode, NoteTag};
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::{AssetError, Word};
 use thiserror::Error;
 
 use super::try_convert;
@@ -100,7 +100,7 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
-            details: details.as_ref().map(miden_protocol::utils::Serializable::to_bytes),
+            details: details.as_ref().map(Serializable::to_bytes),
         }
     }
 }
@@ -396,7 +396,7 @@ impl AccountVaultDetails {
     /// rather than extracted from an `AssetVault`.
     ///
     /// The entries are `(vault_key, asset)` pairs where `asset` is a Word representation.
-    pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, miden_objects::AssetError> {
+    pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, AssetError> {
         if entries.len() > Self::MAX_RETURN_ENTRIES {
             return Ok(Self::LimitExceeded);
         }

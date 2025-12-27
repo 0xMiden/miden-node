@@ -35,7 +35,7 @@ use miden_protocol::block::{
     Blockchain,
     ProvenBlock,
 };
-use miden_protocol::crypto::merkle::mmr::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
+use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
     LargeSmtError,
@@ -160,95 +160,19 @@ impl State {
             .await
             .map_err(StateInitializationError::DatabaseLoadError)?;
 
-        let chain_mmr = load_mmr(&mut db).await?;
-        let block_headers = db.select_all_block_headers().await?;
-        let latest_block_num =
-            block_headers.last().map_or(BlockNumber::GENESIS, BlockHeader::block_num);
+        let blockchain = load_mmr(&mut db).await?;
+        let latest_block_num = blockchain.chain_tip().unwrap_or(BlockNumber::GENESIS);
         let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
+        let forest = load_smt_forest(&mut db, latest_block_num).await?;
 
-        let inner = RwLock::new(InnerState {
-            nullifier_tree,
-            // SAFETY: We assume the loaded MMR is valid and does not have more than u32::MAX
-            // entries.
-            blockchain: Blockchain::from_mmr_unchecked(chain_mmr),
-            account_tree,
-        });
+        let inner = RwLock::new(InnerState { nullifier_tree, blockchain, account_tree });
 
-        let forest = RwLock::new(InnerForest::new());
+        let forest = RwLock::new(forest);
         let writer = Mutex::new(());
         let db = Arc::new(db);
 
-        let me = Self { db, block_store, inner, forest, writer };
-
-        // load all accounts from the table
-        let acc_account_ids = me.db.select_all_account_commitments().await?;
-        let acc_account_ids =
-            Vec::from_iter(acc_account_ids.into_iter().map(|(account_id, _)| account_id));
-        me.initialize_storage_forest_from_db(acc_account_ids, latest_block_num)
-            .await
-            .map_err(|e| {
-                StateInitializationError::DatabaseError(DatabaseError::InteractError(format!(
-                    "Failed to update storage forest: {e}"
-                )))
-            })?;
-
-        Ok(me)
-    }
-
-    /// Updates `SmtForest` from database state using the unified delta.
-    ///
-    /// Primarily used in `State::load()` where we need to reconstruct the forest from full account
-    /// state recovered from the database.
-    ///
-    /// # Warning
-    ///
-    /// Has internal locking to mutate the state, use cautiously in scopes with other mutex guards
-    /// around!
-    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num))]
-    async fn initialize_storage_forest_from_db(
-        &self,
-        account_ids: Vec<AccountId>,
-        block_num: BlockNumber,
-    ) -> Result<(), ApplyBlockError> {
-        use miden_protocol::account::delta::AccountDelta;
-
-        // Acquire write lock once for the entire initialization
-        let mut forest_guard = self.forest.write().await;
-
-        // Process each account
-        for account_id in account_ids {
-            // Skip private accounts - they don't have public state to reconstruct
-            if !account_id.is_public() {
-                tracing::trace!(
-                    target: COMPONENT,
-                    %account_id,
-                    %block_num,
-                    "Skipping private account during forest initialization"
-                );
-                continue;
-            }
-
-            // Get the full account from the database
-            let account_info = self.db.select_account(account_id).await?;
-            let account = account_info.details.expect("public accounts always have details in DB");
-
-            // Convert the full account to a full-state delta
-            let delta =
-                AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
-
-            // Use the unified update method (will recognize it's a full-state delta)
-            forest_guard.update_account(block_num, &delta);
-
-            tracing::debug!(
-                target: COMPONENT,
-                %account_id,
-                %block_num,
-                "Initialized forest for account from DB"
-            );
-        }
-
-        Ok(())
+        Ok(Self { db, block_store, inner, forest, writer })
     }
 
     // STATE MUTATOR
@@ -1327,8 +1251,24 @@ impl State {
     }
 }
 
-// UTILITIES
+// INNER STATE LOADING
 // ================================================================================================
+
+#[instrument(level = "info", target = COMPONENT, skip_all)]
+async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationError> {
+    let block_commitments: Vec<Word> = db
+        .select_all_block_headers()
+        .await?
+        .iter()
+        .map(BlockHeader::commitment)
+        .collect();
+
+    // SAFETY: We assume the loaded MMR is valid and does not have more than u32::MAX
+    // entries.
+    let chain_mmr = Blockchain::from_mmr_unchecked(block_commitments.into());
+
+    Ok(chain_mmr)
+}
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
 async fn load_nullifier_tree(
@@ -1342,18 +1282,6 @@ async fn load_nullifier_tree(
 
     NullifierTree::with_storage_from_entries(MemoryStorage::default(), entries)
         .map_err(StateInitializationError::FailedToCreateNullifierTree)
-}
-
-#[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
-    let block_commitments: Vec<Word> = db
-        .select_all_block_headers()
-        .await?
-        .iter()
-        .map(BlockHeader::commitment)
-        .collect();
-
-    Ok(block_commitments.into())
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
@@ -1383,4 +1311,47 @@ async fn load_account_tree(
         AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
 
     Ok(AccountTreeWithHistory::new(account_tree, block_number))
+}
+
+/// Loads SMT forest with storage map and vault Merkle paths for all public accounts.
+#[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num))]
+async fn load_smt_forest(
+    db: &mut Db,
+    block_num: BlockNumber,
+) -> Result<InnerForest, StateInitializationError> {
+    use miden_protocol::account::delta::AccountDelta;
+
+    // Skip private accounts - they don't have public state to reconstruct
+    let public_account_ids: Vec<AccountId> = db
+        .select_all_account_commitments()
+        .await?
+        .iter()
+        .filter_map(|(id, _commitment)| if id.has_public_state() { Some(*id) } else { None })
+        .collect();
+
+    // Acquire write lock once for the entire initialization
+    let mut forest = InnerForest::new();
+
+    // Process each account
+    for account_id in public_account_ids {
+        // Get the full account from the database
+        let account_info = db.select_account(account_id).await?;
+        let account = account_info.details.expect("public accounts always have details in DB");
+
+        // Convert the full account to a full-state delta
+        let delta =
+            AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
+
+        // Use the unified update method (will recognize it's a full-state delta)
+        forest.update_account(block_num, &delta);
+
+        tracing::debug!(
+            target: COMPONENT,
+            %account_id,
+            %block_num,
+            "Initialized forest for account from DB"
+        );
+    }
+
+    Ok(forest)
 }

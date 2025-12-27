@@ -11,11 +11,14 @@ use miden_protocol::{EMPTY_WORD, Word};
 #[cfg(test)]
 mod tests;
 
+// INNER FOREST
+// ================================================================================================
+
 /// Container for forest-related state that needs to be updated atomically.
 pub(crate) struct InnerForest {
     /// `SmtForest` for efficient account storage reconstruction.
     /// Populated during block import with storage and vault SMTs.
-    pub(crate) storage_forest: SmtForest,
+    forest: SmtForest,
 
     /// Maps (`account_id`, `slot_name`, `block_num`) to SMT root.
     /// Populated during block import for all storage map slots.
@@ -29,7 +32,7 @@ pub(crate) struct InnerForest {
 impl InnerForest {
     pub(crate) fn new() -> Self {
         Self {
-            storage_forest: SmtForest::new(),
+            forest: SmtForest::new(),
             storage_roots: BTreeMap::new(),
             vault_roots: BTreeMap::new(),
         }
@@ -39,7 +42,7 @@ impl InnerForest {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the root of an empty SMT.
-    fn empty_smt_root() -> Word {
+    const fn empty_smt_root() -> Word {
         *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
     }
 
@@ -70,13 +73,12 @@ impl InnerForest {
 
     /// Updates the forest with account vault and storage changes from a delta.
     ///
-    /// Unified interface for updating all account state in the forest, handling both
-    /// full-state deltas (new accounts or reconstruction from DB) and partial deltas
-    /// (incremental updates during block application).
+    /// Unified interface for updating all account state in the forest, handling both full-state
+    /// deltas (new accounts or reconstruction from DB) and partial deltas (incremental updates
+    /// during block application).
     ///
-    /// Full-state deltas (`delta.is_full_state() == true`) populate the forest from
-    /// scratch using an empty SMT root. Partial deltas apply changes on top of the
-    /// previous block's state.
+    /// Full-state deltas (`delta.is_full_state() == true`) populate the forest from scratch using
+    /// an empty SMT root. Partial deltas apply changes on top of the previous block's state.
     pub(crate) fn update_account(&mut self, block_num: BlockNumber, delta: &AccountDelta) {
         let account_id = delta.id();
         let is_full_state = delta.is_full_state();
@@ -95,8 +97,8 @@ impl InnerForest {
 
     /// Updates the forest with vault changes from a delta.
     ///
-    /// Processes both fungible and non-fungible asset changes, building entries
-    /// for the vault SMT and tracking the new root.
+    /// Processes both fungible and non-fungible asset changes, building entries for the vault SMT
+    /// and tracking the new root.
     fn update_account_vault(
         &mut self,
         block_num: BlockNumber,
@@ -134,7 +136,7 @@ impl InnerForest {
         }
 
         let updated_root = self
-            .storage_forest
+            .forest
             .batch_insert(prev_root, entries.iter().copied())
             .expect("forest insertion should succeed");
 
@@ -177,7 +179,7 @@ impl InnerForest {
             }
 
             let updated_root = self
-                .storage_forest
+                .forest
                 .batch_insert(prev_root, entries.iter().copied())
                 .expect("forest insertion should succeed");
 

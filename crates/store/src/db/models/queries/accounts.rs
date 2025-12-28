@@ -17,7 +17,6 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_utils::limiter::{
@@ -25,8 +24,8 @@ use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
 };
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     Account,
     AccountCode,
     AccountDelta,
@@ -36,9 +35,10 @@ use miden_objects::account::{
     StorageSlotContent,
     StorageSlotName,
 };
-use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
-use miden_objects::block::{BlockAccountUpdate, BlockNumber};
-use miden_objects::{Felt, Word};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
+use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::{Felt, Word};
 
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
@@ -301,7 +301,7 @@ pub(crate) fn select_account_vault_assets(
 
     // Discard the last block in the response (assumes more than one block may be present)
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
@@ -584,7 +584,7 @@ pub(crate) fn select_account_storage_map_values(
     // Discard the last block in the response (assumes more than one block may be present)
 
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at

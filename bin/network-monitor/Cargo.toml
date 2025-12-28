@@ -20,10 +20,10 @@ axum             = { version = "0.8" }
 clap             = { features = ["env"], workspace = true }
 hex              = { version = "0.4" }
 humantime        = { workspace = true }
-miden-lib        = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
-miden-objects    = { features = ["std", "testing"], workspace = true }
+miden-protocol   = { features = ["std", "testing"], workspace = true }
+miden-standards  = { workspace = true }
 miden-testing    = { workspace = true }
 miden-tx         = { features = ["std"], workspace = true }
 rand             = { version = "0.9" }

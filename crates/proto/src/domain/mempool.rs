@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::block::BlockHeader;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::TransactionId;
-use miden_objects::utils::{Deserializable, Serializable};
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::block::BlockHeader;
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::TransactionId;
+use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::note::NetworkNote;
 use crate::errors::{ConversionError, MissingFieldHelper};

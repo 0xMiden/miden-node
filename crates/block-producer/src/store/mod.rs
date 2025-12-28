@@ -8,12 +8,12 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
 use miden_node_proto::{AccountState, generated as proto};
 use miden_node_utils::formatting::format_opt;
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::ProvenTransaction;
-use miden_objects::utils::Serializable;
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::ProvenTransaction;
+use miden_protocol::utils::Serializable;
 use tracing::{debug, info, instrument};
 use url::Url;
 

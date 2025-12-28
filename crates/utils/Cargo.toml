@@ -18,7 +18,7 @@ workspace = true
 # Enables depedencies intended for build script generation of version metadata.
 vergen = ["dep:vergen", "dep:vergen-gitcl"]
 # Enables utility functions for testing traces created by some other crate's stack.
-testing = ["miden-objects/testing"]
+testing = ["miden-protocol/testing"]
 
 [dependencies]
 anyhow                = { workspace = true }
@@ -29,7 +29,7 @@ http                  = { workspace = true }
 http-body-util        = { version = "0.1" }
 itertools             = { workspace = true }
 lru                   = { workspace = true }
-miden-objects         = { workspace = true }
+miden-protocol        = { workspace = true }
 opentelemetry         = { version = "0.31" }
 opentelemetry-otlp    = { default-features = false, features = ["grpc-tonic", "tls-roots", "trace"], version = "0.31" }
 opentelemetry_sdk     = { features = ["rt-tokio", "testing"], version = "0.31" }

@@ -2,13 +2,13 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use miden_node_store::AccountTreeWithHistory;
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-use miden_objects::crypto::hash::rpo::Rpo256;
-use miden_objects::crypto::merkle::{LargeSmt, MemoryStorage};
-use miden_objects::testing::account_id::AccountIdBuilder;
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::{AccountTree, account_id_to_smt_key};
+use miden_protocol::crypto::hash::rpo::Rpo256;
+use miden_protocol::crypto::merkle::smt::{LargeSmt, MemoryStorage};
+use miden_protocol::testing::account_id::AccountIdBuilder;
 
 // HELPER FUNCTIONS
 // ================================================================================================

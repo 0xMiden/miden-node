@@ -3,9 +3,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use miden_lib::testing::account_component::IncrNonceAuthComponent;
-use miden_lib::utils::CodeBuilder;
-use miden_objects::account::{
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
@@ -16,8 +14,10 @@ use miden_objects::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_objects::utils::sync::LazyLock;
-use miden_objects::{Felt, FieldElement, Word};
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, FieldElement, Word};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use tracing::instrument;
 
 use crate::COMPONENT;

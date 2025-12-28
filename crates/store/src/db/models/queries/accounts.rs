@@ -423,7 +423,7 @@ pub(crate) fn select_all_network_account_ids(
     const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     const _: () = assert!(
-        MAX_ROWS > miden_objects::MAX_ACCOUNTS_PER_BLOCK,
+        MAX_ROWS > miden_protocol::MAX_ACCOUNTS_PER_BLOCK,
         "Block pagination limit must exceed maximum block capacity"
     );
 

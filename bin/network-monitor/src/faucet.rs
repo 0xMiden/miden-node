@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use anyhow::Context;
 use hex;
-use miden_objects::account::AccountId;
-use miden_objects::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::account::AccountId;
+use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

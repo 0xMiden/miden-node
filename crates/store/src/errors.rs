@@ -6,13 +6,14 @@ use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::MmrError;
-use miden_objects::crypto::utils::DeserializationError;
-use miden_objects::note::{NoteId, Nullifier};
-use miden_objects::transaction::OutputNote;
-use miden_objects::{
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::MerkleError;
+use miden_protocol::crypto::merkle::mmr::MmrError;
+use miden_protocol::crypto::utils::DeserializationError;
+use miden_protocol::note::{NoteId, Nullifier};
+use miden_protocol::transaction::OutputNote;
+use miden_protocol::{
     AccountDeltaError,
     AccountError,
     AccountTreeError,
@@ -21,6 +22,7 @@ use miden_objects::{
     FeeError,
     NoteError,
     NullifierTreeError,
+    StorageMapError,
     Word,
 };
 use thiserror::Error;
@@ -56,11 +58,13 @@ pub enum DatabaseError {
     #[error("I/O error")]
     IoError(#[from] io::Error),
     #[error("merkle error")]
-    MerkleError(#[from] miden_objects::crypto::merkle::MerkleError),
+    MerkleError(#[from] MerkleError),
     #[error("network account error")]
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
+    #[error("storage map error")]
+    StorageMapError(#[from] StorageMapError),
     #[error("setup deadpool connection pool failed")]
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error("setup deadpool connection pool failed")]

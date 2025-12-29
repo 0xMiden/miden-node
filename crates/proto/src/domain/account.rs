@@ -1,8 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_objects::Word;
-use miden_objects::account::{
+use miden_protocol::account::{
     Account,
     AccountHeader,
     AccountId,
@@ -12,12 +11,14 @@ use miden_objects::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::BlockNumber;
-use miden_objects::block::account_tree::AccountWitness;
-use miden_objects::crypto::merkle::{MerkleError, SmtForest, SmtProof, SparseMerklePath};
-use miden_objects::note::{NoteExecutionMode, NoteTag};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::asset::{Asset, AssetVault};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::crypto::merkle::smt::{SmtForest, SmtProof};
+use miden_protocol::crypto::merkle::{MerkleError, SparseMerklePath};
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::{AssetError, Word};
 use thiserror::Error;
 
 use super::try_convert;
@@ -100,7 +101,7 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
-            details: details.as_ref().map(miden_objects::utils::Serializable::to_bytes),
+            details: details.as_ref().map(Serializable::to_bytes),
         }
     }
 }
@@ -419,7 +420,7 @@ impl AccountVaultDetails {
     /// rather than extracted from an `AssetVault`.
     ///
     /// The entries are `(vault_key, asset)` pairs where `asset` is a Word representation.
-    pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, miden_objects::AssetError> {
+    pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, AssetError> {
         if entries.len() > Self::MAX_RETURN_ENTRIES {
             return Ok(Self::LimitExceeded);
         }
@@ -768,8 +769,8 @@ impl From<AccountStorageMapDetails>
     fn from(value: AccountStorageMapDetails) -> Self {
         use proto::rpc::account_storage_details::account_storage_map_details::{
             AllMapEntries,
-            MapEntriesWithProofs,
             Entries as ProtoEntries,
+            MapEntriesWithProofs,
         };
 
         let AccountStorageMapDetails { slot_name, entries } = value;
@@ -788,18 +789,18 @@ impl From<AccountStorageMapDetails>
                 Some(ProtoEntries::AllEntries(all))
             },
             StorageMapEntries::EntriesWithProofs(proofs) => {
-                use miden_objects::crypto::merkle::SmtLeaf;
+                use miden_protocol::crypto::merkle::smt::SmtLeaf;
 
                 let with_proofs = MapEntriesWithProofs {
                     entries: Vec::from_iter(proofs.into_iter().map(|proof| {
                         // Get key/value from the leaf before consuming the proof
                         let (key, value) = match proof.leaf() {
                             SmtLeaf::Empty(_) => {
-                                (miden_objects::EMPTY_WORD, miden_objects::EMPTY_WORD)
+                                (miden_protocol::EMPTY_WORD, miden_protocol::EMPTY_WORD)
                             },
                             SmtLeaf::Single((k, v)) => (*k, *v),
                             SmtLeaf::Multiple(entries) => entries.iter().next().map_or(
-                                (miden_objects::EMPTY_WORD, miden_objects::EMPTY_WORD),
+                                (miden_protocol::EMPTY_WORD, miden_protocol::EMPTY_WORD),
                                 |(k, v)| (*k, *v),
                             ),
                         };
@@ -815,7 +816,10 @@ impl From<AccountStorageMapDetails>
             },
         };
 
-        Self { slot_name: slot_name.to_string(), entries: proto_entries }
+        Self {
+            slot_name: slot_name.to_string(),
+            entries: proto_entries,
+        }
     }
 }
 // ACCOUNT WITNESS
@@ -1083,7 +1087,8 @@ fn get_account_id_tag_prefix(id: AccountId) -> AccountPrefix {
 
 #[cfg(test)]
 mod tests {
-    use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH};
+    use miden_protocol::crypto::merkle::EmptySubtreeRoots;
+    use miden_protocol::crypto::merkle::smt::SMT_DEPTH;
 
     use super::*;
 
@@ -1161,7 +1166,7 @@ mod tests {
         assert_eq!(details.slot_name, slot_name);
         match details.entries {
             StorageMapEntries::EntriesWithProofs(proofs) => {
-                use miden_objects::crypto::merkle::SmtLeaf;
+                use miden_protocol::crypto::merkle::smt::SmtLeaf;
 
                 assert_eq!(proofs.len(), 2);
 
@@ -1173,8 +1178,8 @@ mod tests {
                             .iter()
                             .find(|(k, _)| *k == expected_key)
                             .map(|(_, v)| *v)
-                            .unwrap_or(miden_objects::EMPTY_WORD),
-                        _ => miden_objects::EMPTY_WORD,
+                            .unwrap_or(miden_protocol::EMPTY_WORD),
+                        _ => miden_protocol::EMPTY_WORD,
                     }
                 };
 

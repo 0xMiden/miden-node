@@ -5,7 +5,7 @@ use miden_node_proto::generated::{
     self as proto, block_producer::api_client as block_producer_client,
 };
 use miden_node_store::{GenesisState, Store};
-use miden_objects::{
+use miden_protocol::{
     Digest,
     account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType},
     transaction::ProvenTransactionBuilder,

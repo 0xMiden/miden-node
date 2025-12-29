@@ -1,8 +1,8 @@
 mod data_store;
 
 pub use data_store::TransactionInputsDataStore;
-use miden_objects::MIN_PROOF_SECURITY_LEVEL;
-use miden_objects::transaction::{ProvenTransaction, TransactionHeader, TransactionInputs};
+use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
+use miden_protocol::transaction::{ProvenTransaction, TransactionHeader, TransactionInputs};
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{TransactionExecutor, TransactionExecutorError, TransactionVerifier};
 

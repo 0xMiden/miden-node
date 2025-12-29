@@ -1,5 +1,5 @@
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{
     Note,
     NoteDetails,
     NoteExecutionHint,
@@ -11,8 +11,8 @@ use miden_objects::note::{
     NoteType,
     Nullifier,
 };
-use miden_objects::utils::{Deserializable, Serializable};
-use miden_objects::{Felt, Word};
+use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
 use super::account::NetworkAccountPrefix;

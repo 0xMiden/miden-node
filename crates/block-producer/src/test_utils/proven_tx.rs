@@ -3,18 +3,18 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use miden_node_utils::fee::test_fee;
-use miden_objects::account::AccountId;
-use miden_objects::asset::FungibleAsset;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::{Note, Nullifier};
-use miden_objects::transaction::{
+use miden_protocol::account::AccountId;
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{Note, Nullifier};
+use miden_protocol::transaction::{
     InputNote,
     OutputNote,
     ProvenTransaction,
     ProvenTransactionBuilder,
 };
-use miden_objects::vm::ExecutionProof;
-use miden_objects::{Felt, ONE, Word};
+use miden_protocol::vm::ExecutionProof;
+use miden_protocol::{Felt, ONE, Word};
 use rand::Rng;
 
 use super::MockPrivateAccount;

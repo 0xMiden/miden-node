@@ -4,11 +4,10 @@ use std::sync::Arc;
 use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
-use miden_lib::block::build_block;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::MIN_PROOF_SECURITY_LEVEL;
-use miden_objects::batch::{OrderedBatches, ProvenBatch};
-use miden_objects::block::{
+use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
+use miden_protocol::batch::{OrderedBatches, ProvenBatch};
+use miden_protocol::block::{
     BlockBody,
     BlockHeader,
     BlockInputs,
@@ -17,9 +16,9 @@ use miden_objects::block::{
     ProposedBlock,
     ProvenBlock,
 };
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
-use miden_objects::note::NoteHeader;
-use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_protocol::note::NoteHeader;
+use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
@@ -181,9 +180,9 @@ impl BlockBuilder {
             // Note: .cloned() shouldn't be necessary but not having it produces an odd lifetime
             // error in BlockProducer::serve. Not sure if there's a better fix. Error:
             // implementation of `FnOnce` is not general enough
-            // closure with signature `fn(&InputNoteCommitment) -> miden_objects::note::NoteId` must
-            // implement `FnOnce<(&InputNoteCommitment,)>` ...but it actually implements
-            // `FnOnce<(&InputNoteCommitment,)>`
+            // closure with signature `fn(&InputNoteCommitment) -> miden_protocol::note::NoteId`
+            // must implement `FnOnce<(&InputNoteCommitment,)>` ...but it actually
+            // implements `FnOnce<(&InputNoteCommitment,)>`
             batch
                 .input_notes()
                 .iter()
@@ -235,7 +234,7 @@ impl BlockBuilder {
         // Concurrently build the block and validate it via the validator.
         let build_result = tokio::task::spawn_blocking({
             let proposed_block = proposed_block.clone();
-            move || build_block(proposed_block)
+            move || proposed_block.into_header_and_body()
         });
         let signature = self
             .validator

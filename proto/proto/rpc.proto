@@ -107,6 +107,13 @@ service Api {
 
     // Returns transactions records for specific accounts within a block range.
     rpc SyncTransactions(SyncTransactionsRequest) returns (SyncTransactionsResponse) {}
+
+    // Returns the query parameter limits configured for RPC methods.
+    //
+    // These define the maximum number of each parameter a method will accept.
+    // Exceeding the limit will result in the request being rejected and you should instead send
+    // multiple smaller requests.
+    rpc GetLimits(google.protobuf.Empty) returns (RpcLimits) {}
 }
 
 // RPC STATUS
@@ -638,4 +645,23 @@ message TransactionRecord {
 
     // A transaction header.
     transaction.TransactionHeader header = 2;
+}
+
+// RPC LIMITS
+// ================================================================================================
+
+// Represents the query parameter limits for RPC endpoints.
+message RpcLimits {
+    // Maps RPC endpoint names to their parameter limits.
+    // Key: endpoint name (e.g., "CheckNullifiers", "SyncState")
+    // Value: map of parameter names to their limit values
+    map<string, EndpointLimits> endpoints = 1;
+}
+
+// Represents the parameter limits for a single endpoint.
+message EndpointLimits {
+    // Maps parameter names to their limit values.
+    // Key: parameter name (e.g., "nullifier", "account_id")
+    // Value: limit value
+    map<string, uint32> parameters = 1;
 }

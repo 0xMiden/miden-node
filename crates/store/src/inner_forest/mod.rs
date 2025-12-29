@@ -1,20 +1,24 @@
 use std::collections::BTreeMap;
 
-use miden_objects::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
-use miden_objects::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
-use miden_objects::asset::{Asset, FungibleAsset};
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::{EmptySubtreeRoots, SMT_DEPTH, SmtForest};
-use miden_objects::{EMPTY_WORD, Word};
+use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
+use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::EmptySubtreeRoots;
+use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
+use miden_protocol::{EMPTY_WORD, Word};
 
 #[cfg(test)]
 mod tests;
+
+// INNER FOREST
+// ================================================================================================
 
 /// Container for forest-related state that needs to be updated atomically.
 pub(crate) struct InnerForest {
     /// `SmtForest` for efficient account storage reconstruction.
     /// Populated during block import with storage and vault SMTs.
-    pub(crate) storage_forest: SmtForest,
+    forest: SmtForest,
 
     /// Maps (`account_id`, `slot_name`, `block_num`) to SMT root.
     /// Populated during block import for all storage map slots.
@@ -32,7 +36,7 @@ pub(crate) struct InnerForest {
 impl InnerForest {
     pub(crate) fn new() -> Self {
         Self {
-            storage_forest: SmtForest::new(),
+            forest: SmtForest::new(),
             storage_roots: BTreeMap::new(),
             storage_entries: BTreeMap::new(),
             vault_roots: BTreeMap::new(),
@@ -43,20 +47,31 @@ impl InnerForest {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the root of an empty SMT.
-    fn empty_smt_root() -> Word {
+    const fn empty_smt_root() -> Word {
         *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
     }
 
-    /// Retrieves the vault SMT root for an account at a given block, defaulting to empty.
+    /// Retrieves the vault SMT root for an account at or before the given block.
+    ///
+    /// Finds the most recent vault root entry for the account, since vault state persists
+    /// across blocks where no changes occur.
+    //
+    // TODO: a fallback to DB lookup is required once pruning lands.
+    // Currently returns empty root which would be incorrect
     fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
         self.vault_roots
-            .get(&(account_id, block_num))
-            .copied()
-            .unwrap_or_else(Self::empty_smt_root)
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
+            .next_back()
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
-    /// Retrieves the storage map SMT root for an account slot at a given block, defaulting to
-    /// empty.
+    /// Retrieves the storage map SMT root for an account slot at or before the given block.
+    ///
+    /// Finds the most recent storage root entry for the slot, since storage state persists
+    /// across blocks where no changes occur.
+    //
+    // TODO: a fallback to DB lookup is required once pruning lands.
+    // Currently returns empty root which would be incorrect
     fn get_storage_root(
         &self,
         account_id: AccountId,
@@ -64,9 +79,12 @@ impl InnerForest {
         block_num: BlockNumber,
     ) -> Word {
         self.storage_roots
-            .get(&(account_id, slot_name.clone(), block_num))
-            .copied()
-            .unwrap_or_else(Self::empty_smt_root)
+            .range(
+                (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                    ..=(account_id, slot_name.clone(), block_num),
+            )
+            .next_back()
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
     /// Returns the storage forest and the root for a specific account storage slot at a block.
@@ -80,7 +98,7 @@ impl InnerForest {
         block_num: BlockNumber,
     ) -> Option<(&SmtForest, Word)> {
         let root = self.storage_roots.get(&(account_id, slot_name.clone(), block_num))?;
-        Some((&self.storage_forest, *root))
+        Some((&self.forest, *root))
     }
 
     /// Returns all key-value entries for a specific account storage slot at a block.
@@ -99,15 +117,41 @@ impl InnerForest {
     // PUBLIC INTERFACE
     // --------------------------------------------------------------------------------------------
 
+    /// Applies account updates from a block to the forest.
+    ///
+    /// Iterates through account updates and applies each delta to the forest.
+    /// Private accounts should be filtered out before calling this method.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_num` - Block number for which these updates apply
+    /// * `account_updates` - Iterator of `AccountDelta` for public accounts
+    pub(crate) fn apply_block_updates(
+        &mut self,
+        block_num: BlockNumber,
+        account_updates: impl IntoIterator<Item = AccountDelta>,
+    ) {
+        for delta in account_updates {
+            self.update_account(block_num, &delta);
+
+            tracing::debug!(
+                target: crate::COMPONENT,
+                account_id = %delta.id(),
+                %block_num,
+                is_full_state = delta.is_full_state(),
+                "Updated forest with account delta"
+            );
+        }
+    }
+
     /// Updates the forest with account vault and storage changes from a delta.
     ///
-    /// Unified interface for updating all account state in the forest, handling both
-    /// full-state deltas (new accounts or reconstruction from DB) and partial deltas
-    /// (incremental updates during block application).
+    /// Unified interface for updating all account state in the forest, handling both full-state
+    /// deltas (new accounts or reconstruction from DB) and partial deltas (incremental updates
+    /// during block application).
     ///
-    /// Full-state deltas (`delta.is_full_state() == true`) populate the forest from
-    /// scratch using an empty SMT root. Partial deltas apply changes on top of the
-    /// previous block's state.
+    /// Full-state deltas (`delta.is_full_state() == true`) populate the forest from scratch using
+    /// an empty SMT root. Partial deltas apply changes on top of the previous block's state.
     pub(crate) fn update_account(&mut self, block_num: BlockNumber, delta: &AccountDelta) {
         let account_id = delta.id();
         let is_full_state = delta.is_full_state();
@@ -126,8 +170,8 @@ impl InnerForest {
 
     /// Updates the forest with vault changes from a delta.
     ///
-    /// Processes both fungible and non-fungible asset changes, building entries
-    /// for the vault SMT and tracking the new root.
+    /// Processes both fungible and non-fungible asset changes, building entries for the vault SMT
+    /// and tracking the new root.
     fn update_account_vault(
         &mut self,
         block_num: BlockNumber,
@@ -144,11 +188,39 @@ impl InnerForest {
         let mut entries = Vec::new();
 
         // Process fungible assets
-        for (faucet_id, amount) in vault_delta.fungible().iter() {
-            let amount_u64: u64 = (*amount).try_into().expect("amount is non-negative");
-            let asset: Asset =
-                FungibleAsset::new(*faucet_id, amount_u64).expect("valid fungible asset").into();
-            entries.push((asset.vault_key().into(), Word::from(asset)));
+        for (faucet_id, amount_delta) in vault_delta.fungible().iter() {
+            let key: Word =
+                FungibleAsset::new(*faucet_id, 0).expect("valid faucet id").vault_key().into();
+
+            let new_amount = if is_full_state {
+                // For full-state deltas, amount is the absolute value
+                (*amount_delta).try_into().expect("full-state amount should be non-negative")
+            } else {
+                // For partial deltas, amount is a change that must be applied to previous balance.
+                //
+                // TODO: SmtForest only exposes `fn open()` which computes a full Merkle
+                // proof. We only need the leaf, so a direct `fn get()` method would be faster.
+                let prev_amount = self
+                    .forest
+                    .open(prev_root, key)
+                    .ok()
+                    .and_then(|proof| proof.get(&key))
+                    .and_then(|word| FungibleAsset::try_from(word).ok())
+                    .map_or(0, |asset| asset.amount());
+
+                let new_balance = i128::from(prev_amount) + i128::from(*amount_delta);
+                u64::try_from(new_balance.max(0)).expect("balance fits in u64")
+            };
+
+            let value = if new_amount == 0 {
+                EMPTY_WORD
+            } else {
+                let asset: Asset = FungibleAsset::new(*faucet_id, new_amount)
+                    .expect("valid fungible asset")
+                    .into();
+                Word::from(asset)
+            };
+            entries.push((key, value));
         }
 
         // Process non-fungible assets
@@ -165,7 +237,7 @@ impl InnerForest {
         }
 
         let updated_root = self
-            .storage_forest
+            .forest
             .batch_insert(prev_root, entries.iter().copied())
             .expect("forest insertion should succeed");
 
@@ -208,7 +280,7 @@ impl InnerForest {
             }
 
             let updated_root = self
-                .storage_forest
+                .forest
                 .batch_insert(prev_root, delta_entries.iter().copied())
                 .expect("forest insertion should succeed");
 

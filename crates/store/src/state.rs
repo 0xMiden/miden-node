@@ -103,13 +103,7 @@ where
 // CHAIN STATE
 // ================================================================================================
 
-/// The chain state.
-///
-/// The chain state consists of three main components:
-/// - A persistent database that stores notes, nullifiers, recent account states, and related data.
-/// - In-memory data structures contain Merkle paths for various objects - e.g., all accounts,
-///   nullifiers, public account vaults and storage, MMR of all block headers.
-/// - Raw block data for all blocks that is stored on disk as flat files.
+/// The rollup state.
 pub struct State {
     /// The database which stores block headers, nullifiers, notes, and the latest states of
     /// accounts.
@@ -1041,7 +1035,6 @@ impl State {
             let storage_map = match slot.content() {
                 StorageSlotContent::Map(map) => map,
                 StorageSlotContent::Value(_) => {
-                    // TODO: what to do with value entries? Is it ok to ignore them?
                     return Err(AccountError::StorageSlotNotMap(slot_name).into());
                 },
             };
@@ -1118,18 +1111,6 @@ impl State {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
         self.db.get_account_vault_sync(account_id, block_range).await
-    }
-
-    /// Returns the unprocessed network notes, along with the next pagination token.
-    pub async fn get_unconsumed_network_notes(
-        &self,
-        network_account_id_prefix: NetworkAccountPrefix,
-        block_num: BlockNumber,
-        page: Page,
-    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        self.db
-            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
-            .await
     }
 
     /// Returns the network notes for an account that are unconsumed by a specified block number,

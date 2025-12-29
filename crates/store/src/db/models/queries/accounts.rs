@@ -454,11 +454,14 @@ pub(crate) fn select_all_accounts(
     let summaries: Vec<AccountSummary> = vec_raw_try_into(raw)?;
 
     // Backfill account details from database
-    let account_infos = Vec::from_iter(summaries.into_iter().map(|summary| {
-        let account_id = summary.account_id;
-        let details = select_full_account(conn, account_id).ok();
-        AccountInfo { summary, details }
-    }));
+    let account_infos = summaries
+        .into_iter()
+        .map(|summary| {
+            let account_id = summary.account_id;
+            let details = select_full_account(conn, account_id).ok();
+            AccountInfo { summary, details }
+        })
+        .collect();
 
     Ok(account_infos)
 }

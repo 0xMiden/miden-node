@@ -112,7 +112,8 @@ impl TransactionRecord {
         self,
         note_records: Vec<NoteRecord>,
     ) -> proto::rpc::TransactionRecord {
-        let output_notes = Vec::from_iter(note_records.into_iter().map(Into::into));
+        let output_notes: Vec<proto::note::NoteSyncRecord> =
+            note_records.into_iter().map(Into::into).collect();
 
         proto::rpc::TransactionRecord {
             header: Some(proto::transaction::TransactionHeader {
@@ -322,7 +323,7 @@ impl Db {
 
     /// Loads all the nullifiers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub(crate) async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
+    pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
         self.transact("all nullifiers", move |conn| {
             let nullifiers = queries::select_all_nullifiers(conn)?;
             Ok(nullifiers)
@@ -592,7 +593,7 @@ impl Db {
         .await
     }
 
-    /// Selects storage map values for syncing storage maps for a specific account ID
+    /// Selects storage map values for syncing storage maps for a specific account ID.
     ///
     /// The returned values are the latest known values up to `block_range.end()`, and no values
     /// earlier than `block_range.start()` are returned.

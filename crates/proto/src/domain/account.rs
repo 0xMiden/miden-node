@@ -71,8 +71,6 @@ impl From<AccountId> for proto::account::AccountId {
 
 // ACCOUNT UPDATE
 // ================================================================================================
-
-// TODO should be called `AccountStateRef` or so
 #[derive(Debug, PartialEq)]
 pub struct AccountSummary {
     pub account_id: AccountId,

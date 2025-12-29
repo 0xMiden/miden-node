@@ -233,9 +233,12 @@ pub mod account_storage_details {
         /// Storage slot name.
         #[prost(string, tag = "1")]
         pub slot_name: ::prost::alloc::string::String,
-        /// Either the map entries (with or without proofs) or an indicator that the limit was exceeded.
-        /// When `limit_exceeded` is set, clients should use the `SyncStorageMaps` endpoint.
-        #[prost(oneof = "account_storage_map_details::Entries", tags = "2, 3, 4")]
+        /// True when the number of entries exceeds the response limit.
+        /// When set, clients should use the `SyncStorageMaps` endpoint.
+        #[prost(bool, tag = "2")]
+        pub limit_exceeded: bool,
+        /// The map entries (with or without proofs). Empty when limit_exceeded is true.
+        #[prost(oneof = "account_storage_map_details::Entries", tags = "3, 4")]
         pub entries: ::core::option::Option<account_storage_map_details::Entries>,
     }
     /// Nested message and enum types in `AccountStorageMapDetails`.
@@ -290,19 +293,15 @@ pub mod account_storage_details {
                 >,
             }
         }
-        /// Either the map entries (with or without proofs) or an indicator that the limit was exceeded.
-        /// When `limit_exceeded` is set, clients should use the `SyncStorageMaps` endpoint.
+        /// The map entries (with or without proofs). Empty when limit_exceeded is true.
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Entries {
             /// All storage entries without proofs (for small maps or full requests).
-            #[prost(message, tag = "2")]
+            #[prost(message, tag = "3")]
             AllEntries(AllMapEntries),
             /// Specific entries with their SMT proofs (for partial requests).
-            #[prost(message, tag = "3")]
+            #[prost(message, tag = "4")]
             EntriesWithProofs(MapEntriesWithProofs),
-            /// Set to true when the number of entries exceeds the response limit.
-            #[prost(bool, tag = "4")]
-            LimitExceeded(bool),
         }
     }
 }

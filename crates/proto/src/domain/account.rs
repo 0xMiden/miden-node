@@ -202,52 +202,58 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
             Entries as ProtoEntries,
         };
 
-        let proto::rpc::account_storage_details::AccountStorageMapDetails { slot_name, entries } =
-            value;
+        let proto::rpc::account_storage_details::AccountStorageMapDetails {
+            slot_name,
+            limit_exceeded,
+            entries,
+        } = value;
 
         let slot_name = StorageSlotName::new(slot_name)?;
 
-        let map_entries = match entries {
-            Some(ProtoEntries::LimitExceeded(true)) | None => StorageMapEntries::LimitExceeded,
-            Some(ProtoEntries::LimitExceeded(false)) => StorageMapEntries::AllEntries(Vec::new()),
-            Some(ProtoEntries::AllEntries(AllMapEntries { entries })) => {
-                let map_entries = entries
-                    .into_iter()
-                    .map(|entry| {
-                        let key = entry
-                            .key
-                            .ok_or(StorageMapEntry::missing_field(stringify!(key)))?
-                            .try_into()?;
-                        let value = entry
-                            .value
-                            .ok_or(StorageMapEntry::missing_field(stringify!(value)))?
-                            .try_into()?;
-                        Ok((key, value))
-                    })
-                    .collect::<Result<Vec<_>, ConversionError>>()?;
-                StorageMapEntries::AllEntries(map_entries)
-            },
-            Some(ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries })) => {
-                let proofs = entries
-                    .into_iter()
-                    .map(|entry| {
-                        let _key: Word = entry
-                            .key
-                            .ok_or(StorageMapEntryWithProof::missing_field(stringify!(key)))?
-                            .try_into()?;
-                        let _value: Word = entry
-                            .value
-                            .ok_or(StorageMapEntryWithProof::missing_field(stringify!(value)))?
-                            .try_into()?;
-                        let smt_opening = entry
-                            .proof
-                            .ok_or(StorageMapEntryWithProof::missing_field(stringify!(proof)))?;
-                        let smt_proof = SmtProof::try_from(smt_opening)?;
-                        Ok(smt_proof)
-                    })
-                    .collect::<Result<Vec<_>, ConversionError>>()?;
-                StorageMapEntries::EntriesWithProofs(proofs)
-            },
+        let map_entries = if limit_exceeded {
+            StorageMapEntries::LimitExceeded
+        } else {
+            match entries {
+                None => StorageMapEntries::AllEntries(Vec::new()),
+                Some(ProtoEntries::AllEntries(AllMapEntries { entries })) => {
+                    let map_entries = entries
+                        .into_iter()
+                        .map(|entry| {
+                            let key = entry
+                                .key
+                                .ok_or(StorageMapEntry::missing_field(stringify!(key)))?
+                                .try_into()?;
+                            let value = entry
+                                .value
+                                .ok_or(StorageMapEntry::missing_field(stringify!(value)))?
+                                .try_into()?;
+                            Ok((key, value))
+                        })
+                        .collect::<Result<Vec<_>, ConversionError>>()?;
+                    StorageMapEntries::AllEntries(map_entries)
+                },
+                Some(ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries })) => {
+                    let proofs = entries
+                        .into_iter()
+                        .map(|entry| {
+                            let _key: Word = entry
+                                .key
+                                .ok_or(StorageMapEntryWithProof::missing_field(stringify!(key)))?
+                                .try_into()?;
+                            let _value: Word = entry
+                                .value
+                                .ok_or(StorageMapEntryWithProof::missing_field(stringify!(value)))?
+                                .try_into()?;
+                            let smt_opening = entry.proof.ok_or(
+                                StorageMapEntryWithProof::missing_field(stringify!(proof)),
+                            )?;
+                            let smt_proof = SmtProof::try_from(smt_opening)?;
+                            Ok(smt_proof)
+                        })
+                        .collect::<Result<Vec<_>, ConversionError>>()?;
+                    StorageMapEntries::EntriesWithProofs(proofs)
+                },
+            }
         };
 
         Ok(Self { slot_name, entries: map_entries })
@@ -775,8 +781,8 @@ impl From<AccountStorageMapDetails>
 
         let AccountStorageMapDetails { slot_name, entries } = value;
 
-        let proto_entries = match entries {
-            StorageMapEntries::LimitExceeded => Some(ProtoEntries::LimitExceeded(true)),
+        let (limit_exceeded, proto_entries) = match entries {
+            StorageMapEntries::LimitExceeded => (true, None),
             StorageMapEntries::AllEntries(map_entries) => {
                 let all = AllMapEntries {
                     entries: Vec::from_iter(map_entries.into_iter().map(|(key, value)| {
@@ -786,7 +792,7 @@ impl From<AccountStorageMapDetails>
                         }
                     })),
                 };
-                Some(ProtoEntries::AllEntries(all))
+                (false, Some(ProtoEntries::AllEntries(all)))
             },
             StorageMapEntries::EntriesWithProofs(proofs) => {
                 use miden_protocol::crypto::merkle::smt::SmtLeaf;
@@ -812,12 +818,13 @@ impl From<AccountStorageMapDetails>
                         }
                     })),
                 };
-                Some(ProtoEntries::EntriesWithProofs(with_proofs))
+                (false, Some(ProtoEntries::EntriesWithProofs(with_proofs)))
             },
         };
 
         Self {
             slot_name: slot_name.to_string(),
+            limit_exceeded,
             entries: proto_entries,
         }
     }

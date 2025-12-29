@@ -1022,11 +1022,11 @@ impl State {
         // Validate block exists in the blockchain before querying the database
         self.validate_block_exists(block_num).await?;
 
-        let account_header = self
-            .db
-            .select_account_header_at_block(account_id, block_num)
-            .await?
-            .ok_or(DatabaseError::AccountAtBlockHeightNotFoundInDb(account_id, block_num))?;
+        let account_header =
+            self.db
+                .select_account_header_at_block(account_id, block_num)
+                .await?
+                .ok_or(DatabaseError::AccountAtBlockHeightNotFoundInDb(account_id, block_num))?;
 
         let account_code = match code_commitment {
             Some(commitment) if commitment == account_header.code_commitment() => None,

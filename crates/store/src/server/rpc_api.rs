@@ -348,9 +348,9 @@ impl rpc_server::Rpc for StoreApi {
         let request = request.into_inner();
         let account_request = request.try_into()?;
 
-        let proof = self.state.get_account(account_request).await?;
+        let account_data = self.state.get_account(account_request).await?;
 
-        Ok(Response::new(proof.into()))
+        Ok(Response::new(account_data.into()))
     }
 
     #[instrument(

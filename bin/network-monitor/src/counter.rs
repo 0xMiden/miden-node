@@ -88,20 +88,8 @@ async fn fetch_counter_value(
     rpc_client: &mut RpcClient,
     account_id: AccountId,
 ) -> Result<Option<u64>> {
-    let id_bytes: [u8; 15] = account_id.into();
-    let account_id_proto =
-        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-
-    // Request account details with storage header (but no storage maps needed)
-    let request = miden_node_proto::generated::rpc::AccountRequest {
-        account_id: Some(account_id_proto),
-        block_num: None,
-        details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
-            code_commitment: None,
-            asset_vault_commitment: None,
-            storage_maps: vec![],
-        }),
-    };
+    // Request account details with storage header (but no code or vault needed)
+    let request = build_account_request(account_id, false);
 
     let resp = rpc_client.get_account(request).await?.into_inner();
 
@@ -111,10 +99,9 @@ async fn fetch_counter_value(
 
         let storage_header = storage_details.header.context("missing storage header")?;
 
-        // The counter value is in the first storage slot (index 0)
         let first_slot = storage_header.slots.first().context("no storage slots found")?;
 
-        // For value slots, the slot data is the value itself (not a hash commitment)
+        // The counter value is stored as a Word, with the actual u64 value in the last element
         let slot_value: Word = first_slot
             .commitment
             .as_ref()
@@ -122,8 +109,7 @@ async fn fetch_counter_value(
             .try_into()
             .context("failed to convert slot value to word")?;
 
-        // The counter value is stored in the last element of the Word
-        let value = slot_value.as_elements().last().expect("word has 4 elements").as_int();
+        let value = slot_value.as_elements().last().expect("Word has 4 elements").as_int();
 
         return Ok(Some(value));
     }
@@ -131,10 +117,40 @@ async fn fetch_counter_value(
     Ok(None)
 }
 
+/// Build an account request for the given account ID.
+///
+/// If `include_code_and_vault` is true, uses dummy commitments to force the server
+/// to return code and vault data (server only returns data when our commitment differs).
+fn build_account_request(
+    account_id: AccountId,
+    include_code_and_vault: bool,
+) -> miden_node_proto::generated::rpc::AccountRequest {
+    let id_bytes: [u8; 15] = account_id.into();
+    let account_id_proto =
+        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
+
+    let (code_commitment, asset_vault_commitment) = if include_code_and_vault {
+        let dummy: miden_node_proto::generated::primitives::Digest = Word::default().into();
+        (Some(dummy), Some(dummy))
+    } else {
+        (None, None)
+    };
+
+    miden_node_proto::generated::rpc::AccountRequest {
+        account_id: Some(account_id_proto),
+        block_num: None,
+        details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
+            code_commitment,
+            asset_vault_commitment,
+            storage_maps: vec![],
+        }),
+    }
+}
+
 /// Fetch an account from RPC and reconstruct the full Account.
 ///
 /// Uses dummy commitments to force the server to return all data (code, vault, storage header).
-/// Storage map slots will have empty maps since we don't request map entries.
+/// Only supports accounts with value slots; returns an error if storage maps are present.
 async fn fetch_wallet_account(
     rpc_client: &mut RpcClient,
     account_id: AccountId,
@@ -143,23 +159,7 @@ async fn fetch_wallet_account(
     use miden_objects::asset::AssetVault;
     use miden_objects::utils::Deserializable;
 
-    let id_bytes: [u8; 15] = account_id.into();
-    let account_id_proto =
-        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-
-    // Pass dummy commitments to force server to return code and vault
-    // (server returns data only if commitment differs from what we send)
-    let dummy_commitment: miden_node_proto::generated::primitives::Digest = Word::default().into();
-
-    let request = miden_node_proto::generated::rpc::AccountRequest {
-        account_id: Some(account_id_proto),
-        block_num: None,
-        details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
-            code_commitment: Some(dummy_commitment),
-            asset_vault_commitment: Some(dummy_commitment),
-            storage_maps: vec![],
-        }),
-    };
+    let request = build_account_request(account_id, true);
 
     let response = match rpc_client.get_account(request).await {
         Ok(response) => response.into_inner(),
@@ -206,7 +206,7 @@ async fn fetch_wallet_account(
     };
 
     let storage_details = details.storage_details.context("missing storage details")?;
-    let storage = build_account_storage(account_id, storage_details)?;
+    let storage = build_account_storage(storage_details)?;
 
     let account = Account::new(account_id, vault, storage, code, Felt::new(nonce), None)
         .context("failed to create account")?;
@@ -252,59 +252,33 @@ async fn fetch_wallet_account(
 }
 
 /// Build account storage from the storage details returned by the server.
+///
+/// This function only supports accounts with value slots. If any storage map slots
+/// are encountered, an error is returned since the monitor only uses simple accounts.
 fn build_account_storage(
-    account_id: AccountId,
     storage_details: miden_node_proto::generated::rpc::AccountStorageDetails,
 ) -> Result<miden_objects::account::AccountStorage> {
     use miden_objects::account::{AccountStorage, StorageSlot};
 
     let storage_header = storage_details.header.context("missing storage header")?;
 
-    // Build a map of slot_name -> map entries from the response
-    let map_entries: std::collections::HashMap<String, Vec<(Word, Word)>> = storage_details
-        .map_details
-        .into_iter()
-        .filter_map(|map_detail| {
-            let entries = map_detail.entries?.entries;
-            let converted: Vec<(Word, Word)> = entries
-                .into_iter()
-                .filter_map(|e| {
-                    let key: Word = e.key?.try_into().ok()?;
-                    let value: Word = e.value?.try_into().ok()?;
-                    Some((key, value))
-                })
-                .collect();
-            Some((map_detail.slot_name, converted))
-        })
-        .collect();
-
     let mut slots = Vec::new();
     for slot in storage_header.slots {
         let slot_name = miden_objects::account::StorageSlotName::new(slot.slot_name.clone())
             .context("invalid slot name")?;
-        let commitment: Word = slot
+        let value: Word = slot
             .commitment
-            .context("missing slot commitment")?
+            .context("missing slot value")?
             .try_into()
-            .context("invalid slot commitment")?;
+            .context("invalid slot value")?;
 
         // slot_type: 0 = Value, 1 = Map
-        let storage_slot = if slot.slot_type == 0 {
-            StorageSlot::with_value(slot_name, commitment)
-        } else {
-            let entries = map_entries.get(&slot.slot_name).cloned().unwrap_or_default();
-            if entries.is_empty() {
-                warn!(
-                    account.id = %account_id,
-                    slot_name = %slot.slot_name,
-                    "storage map slot has no entries (not requested or empty)"
-                );
-            }
-            let storage_map = miden_objects::account::StorageMap::with_entries(entries)
-                .context("failed to create storage map")?;
-            StorageSlot::with_map(slot_name, storage_map)
-        };
-        slots.push(storage_slot);
+        anyhow::ensure!(
+            slot.slot_type == 0,
+            "storage map slots are not supported for this account"
+        );
+
+        slots.push(StorageSlot::with_value(slot_name, value));
     }
 
     AccountStorage::new(slots).context("failed to create account storage")

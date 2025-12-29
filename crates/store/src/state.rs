@@ -1070,11 +1070,14 @@ impl State {
         self.db.select_all_network_account_ids().await
     }
 
-    /// Returns the respective account proof with optional details, such as asset and storage
-    /// entries.
+    /// Returns an account witness (Merkle proof of inclusion in the account tree) and optionally
+    /// the account details (header, code, vault, and storage) at a specific block.
     ///
-    /// When `block_num` is provided, this method will return the account state at that specific
-    /// block using both the historical account tree witness and historical database state.
+    /// The witness proves the account's state commitment in the account tree. If `details` is
+    /// requested, the method also returns the account's code, vault assets, and storage data.
+    ///
+    /// If `block_num` is provided, returns the state at that historical block; otherwise, returns
+    /// the latest state.
     pub async fn get_account(
         &self,
         account_request: AccountRequest,

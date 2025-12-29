@@ -93,7 +93,7 @@ impl InnerForest {
     /// # Arguments
     ///
     /// * `block_num` - Block number for which these updates apply
-    /// * `account_updates` - Iterator of (`AccountId`, `AccountDelta`) tuples for public accounts
+    /// * `account_updates` - Iterator of `AccountDelta` for public accounts
     pub(crate) fn apply_block_updates(
         &mut self,
         block_num: BlockNumber,

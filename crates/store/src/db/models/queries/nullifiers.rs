@@ -132,6 +132,7 @@ pub(crate) fn select_all_nullifiers(
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     let nullifiers_raw =
         SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
+            .order(schema::nullifiers::block_num.asc())
             .load::<NullifierWithoutPrefixRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }

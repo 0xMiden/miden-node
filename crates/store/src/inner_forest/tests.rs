@@ -140,12 +140,6 @@ fn test_compare_partial_vs_full_state_delta_vault() {
 }
 
 #[test]
-fn test_slot_names_are_tracked() {
-    let forest = InnerForest::new();
-    let _: &BTreeMap<(AccountId, StorageSlotName, BlockNumber), Word> = &forest.storage_roots;
-}
-
-#[test]
 fn test_incremental_vault_updates() {
     let mut forest = InnerForest::new();
     let account_id = dummy_account();
@@ -325,7 +319,8 @@ fn test_partial_delta_across_long_block_range() {
     let block_101 = BlockNumber::from(101);
     let mut vault_delta_101 = AccountVaultDelta::default();
     vault_delta_101.add_asset(dummy_fungible_asset(faucet_id, 500)).unwrap();
-    let delta_101 = dummy_partial_delta(account_id, vault_delta_101, AccountStorageDelta::default());
+    let delta_101 =
+        dummy_partial_delta(account_id, vault_delta_101, AccountStorageDelta::default());
     forest.update_account(block_101, &delta_101);
     let root_after_1500 = forest.vault_roots[&(account_id, block_101)];
 
@@ -339,4 +334,84 @@ fn test_partial_delta_across_long_block_range() {
     let root_full_state_1500 = fresh_forest.vault_roots[&(account_id, block_101)];
 
     assert_eq!(root_after_1500, root_full_state_1500);
+}
+
+#[test]
+fn test_update_storage_map() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let block_num = BlockNumber::GENESIS.child();
+
+    let slot_name = StorageSlotName::mock(3);
+    let key = Word::from([1u32, 2, 3, 4]);
+    let value = Word::from([5u32, 6, 7, 8]);
+
+    let mut map_delta = StorageMapDelta::default();
+    map_delta.insert(key, value);
+    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta))]);
+    let storage_delta = AccountStorageDelta::from_raw(raw);
+
+    let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
+    forest.update_account(block_num, &delta);
+
+    // Verify storage root was created
+    assert!(forest.storage_roots.contains_key(&(account_id, slot_name.clone(), block_num)));
+    let storage_root = forest.storage_roots[&(account_id, slot_name, block_num)];
+    assert_ne!(storage_root, InnerForest::empty_smt_root());
+}
+
+#[test]
+fn test_storage_map_incremental_updates() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+
+    let slot_name = StorageSlotName::mock(3);
+    let key1 = Word::from([1u32, 0, 0, 0]);
+    let key2 = Word::from([2u32, 0, 0, 0]);
+    let value1 = Word::from([10u32, 0, 0, 0]);
+    let value2 = Word::from([20u32, 0, 0, 0]);
+    let value3 = Word::from([30u32, 0, 0, 0]);
+
+    // Block 1: Insert key1 -> value1
+    let block_1 = BlockNumber::GENESIS.child();
+    let mut map_delta_1 = StorageMapDelta::default();
+    map_delta_1.insert(key1, value1);
+    let raw_1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta_1))]);
+    let storage_delta_1 = AccountStorageDelta::from_raw(raw_1);
+    let delta_1 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_1);
+    forest.update_account(block_1, &delta_1);
+    let root_1 = forest.storage_roots[&(account_id, slot_name.clone(), block_1)];
+
+    // Block 2: Insert key2 -> value2 (key1 should persist)
+    let block_2 = block_1.child();
+    let mut map_delta_2 = StorageMapDelta::default();
+    map_delta_2.insert(key2, value2);
+    let raw_2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta_2))]);
+    let storage_delta_2 = AccountStorageDelta::from_raw(raw_2);
+    let delta_2 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_2);
+    forest.update_account(block_2, &delta_2);
+    let root_2 = forest.storage_roots[&(account_id, slot_name.clone(), block_2)];
+
+    // Block 3: Update key1 -> value3
+    let block_3 = block_2.child();
+    let mut map_delta_3 = StorageMapDelta::default();
+    map_delta_3.insert(key1, value3);
+    let raw_3 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta_3))]);
+    let storage_delta_3 = AccountStorageDelta::from_raw(raw_3);
+    let delta_3 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_3);
+    forest.update_account(block_3, &delta_3);
+    let root_3 = forest.storage_roots[&(account_id, slot_name, block_3)];
+
+    // All roots should be different
+    assert_ne!(root_1, root_2);
+    assert_ne!(root_2, root_3);
+    assert_ne!(root_1, root_3);
 }

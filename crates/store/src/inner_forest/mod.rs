@@ -157,10 +157,8 @@ impl InnerForest {
 
         // Process fungible assets
         for (faucet_id, amount_delta) in vault_delta.fungible().iter() {
-            let key: Word = FungibleAsset::new(*faucet_id, 0)
-                .expect("valid faucet id")
-                .vault_key()
-                .into();
+            let key: Word =
+                FungibleAsset::new(*faucet_id, 0).expect("valid faucet id").vault_key().into();
 
             let new_amount = if is_full_state {
                 // For full-state deltas, amount is the absolute value
@@ -176,18 +174,18 @@ impl InnerForest {
                     .ok()
                     .and_then(|proof| proof.get(&key))
                     .and_then(|word| FungibleAsset::try_from(word).ok())
-                    .map(|asset| asset.amount())
-                    .unwrap_or(0);
+                    .map_or(0, |asset| asset.amount());
 
-                let new_balance = (prev_amount as i128) + (*amount_delta as i128);
-                new_balance.max(0) as u64
+                let new_balance = i128::from(prev_amount) + i128::from(*amount_delta);
+                u64::try_from(new_balance.max(0)).expect("balance fits in u64")
             };
 
             let value = if new_amount == 0 {
                 EMPTY_WORD
             } else {
-                let asset: Asset =
-                    FungibleAsset::new(*faucet_id, new_amount).expect("valid fungible asset").into();
+                let asset: Asset = FungibleAsset::new(*faucet_id, new_amount)
+                    .expect("valid fungible asset")
+                    .into();
                 Word::from(asset)
             };
             entries.push((key, value));

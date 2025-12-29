@@ -27,13 +27,7 @@ use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{AccountId, StorageSlotContent};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_protocol::block::{
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    Blockchain,
-    ProvenBlock,
-};
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 use miden_protocol::crypto::merkle::smt::{
     LargeSmt,

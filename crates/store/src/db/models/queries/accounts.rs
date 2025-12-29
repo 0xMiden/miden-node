@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Queryable, QueryableByName};
@@ -30,9 +31,13 @@ use miden_protocol::account::{
     AccountDelta,
     AccountId,
     AccountStorage,
+    AccountStorageHeader,
     NonFungibleDeltaAction,
+    StorageMap,
+    StorageSlot,
     StorageSlotContent,
     StorageSlotName,
+    StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
@@ -241,6 +246,47 @@ pub(crate) fn select_all_account_commitments(
             Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
         },
     ))
+}
+
+/// Select all account IDs that have public state.
+///
+/// This filters accounts in-memory after loading only the account IDs (not commitments),
+/// which is more efficient than loading full commitments when only IDs are needed.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id
+/// FROM
+///     accounts
+/// WHERE
+///     is_latest = 1
+/// ORDER BY
+///     block_num ASC
+/// ```
+pub(crate) fn select_all_public_account_ids(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<AccountId>, DatabaseError> {
+    // We could technically use a `LIKE` constraint for both postgres and sqlite backends,
+    // but diesel doesn't expose that.
+    let raw: Vec<Vec<u8>> =
+        SelectDsl::select(schema::accounts::table, schema::accounts::account_id)
+            .filter(schema::accounts::is_latest.eq(true))
+            .order_by(schema::accounts::block_num.asc())
+            .load::<Vec<u8>>(conn)?;
+
+    Result::from_iter(
+        raw.into_iter()
+            .map(|bytes| {
+                AccountId::read_from_bytes(&bytes).map_err(DatabaseError::DeserializationError)
+            })
+            .filter_map(|result| match result {
+                Ok(id) if id.has_public_state() => Some(Ok(id)),
+                Ok(_) => None,
+                Err(e) => Some(Err(e)),
+            }),
+    )
 }
 
 /// Select account vault assets within a block range (inclusive).
@@ -568,15 +614,18 @@ pub(crate) fn select_account_storage_map_values(
     Ok(StorageMapValuesPage { last_block_included, values })
 }
 
-/// Select latest account storage header by querying `accounts.storage_header` where
-/// `is_latest=true`.
+/// Select latest account storage by querying `accounts.storage_header` where `is_latest=true`
+/// and reconstructing full storage from the header plus map values from
+/// `account_storage_map_values`.
 pub(crate) fn select_latest_account_storage(
     conn: &mut SqliteConnection,
     account_id: AccountId,
 ) -> Result<AccountStorage, DatabaseError> {
+    use schema::account_storage_map_values as t;
+
     let account_id_bytes = account_id.to_bytes();
 
-    // Query storage blob for this account where is_latest = true
+    // Query storage header blob for this account where is_latest = true
     let storage_blob: Option<Vec<u8>> =
         SelectDsl::select(schema::accounts::table, schema::accounts::storage_header)
             .filter(schema::accounts::account_id.eq(&account_id_bytes))
@@ -590,10 +639,46 @@ pub(crate) fn select_latest_account_storage(
         return Ok(AccountStorage::new(Vec::new())?);
     };
 
-    // Deserialize the full AccountStorage from the blob
-    let storage = AccountStorage::read_from_bytes(&blob)?;
+    // Deserialize the AccountStorageHeader from the blob
+    let header = AccountStorageHeader::read_from_bytes(&blob)?;
 
-    Ok(storage)
+    // Query all latest map values for this account
+    let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
+        SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
+            .filter(t::account_id.eq(&account_id_bytes))
+            .filter(t::is_latest.eq(true))
+            .load(conn)?;
+
+    // Group map values by slot name
+    let mut map_entries_by_slot: BTreeMap<StorageSlotName, Vec<(Word, Word)>> = BTreeMap::new();
+    for (slot_name_str, key_bytes, value_bytes) in map_values {
+        let slot_name: StorageSlotName = slot_name_str.parse().map_err(|_| {
+            DatabaseError::DataCorrupted(format!("Invalid slot name: {slot_name_str}"))
+        })?;
+        let key = Word::read_from_bytes(&key_bytes)?;
+        let value = Word::read_from_bytes(&value_bytes)?;
+        map_entries_by_slot.entry(slot_name).or_default().push((key, value));
+    }
+
+    // Reconstruct StorageSlots from header slots + map entries
+    let mut slots = Vec::new();
+    for slot_header in header.slots() {
+        let slot = match slot_header.slot_type() {
+            StorageSlotType::Value => {
+                // For value slots, the header value IS the slot value
+                StorageSlot::with_value(slot_header.name().clone(), slot_header.value())
+            },
+            StorageSlotType::Map => {
+                // For map slots, reconstruct from map entries
+                let entries = map_entries_by_slot.remove(slot_header.name()).unwrap_or_default();
+                let storage_map = StorageMap::with_entries(entries)?;
+                StorageSlot::with_map(slot_header.name().clone(), storage_map)
+            },
+        };
+        slots.push(slot);
+    }
+
+    Ok(AccountStorage::new(slots)?)
 }
 
 // ACCOUNT MUTATION
@@ -870,7 +955,10 @@ pub(crate) fn upsert_accounts(
             code_commitment: full_account
                 .as_ref()
                 .map(|account| account.code().commitment().to_bytes()),
-            storage_header: full_account.as_ref().map(|account| account.storage().to_bytes()),
+            // Store only the header (slot metadata + map roots), not full storage with map contents
+            storage_header: full_account
+                .as_ref()
+                .map(|account| account.storage().to_header().to_bytes()),
             vault_root: full_account.as_ref().map(|account| account.vault().root().to_bytes()),
             is_latest: true,
         };

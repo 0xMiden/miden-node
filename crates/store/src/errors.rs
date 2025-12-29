@@ -22,6 +22,7 @@ use miden_protocol::{
     FeeError,
     NoteError,
     NullifierTreeError,
+    StorageMapError,
     Word,
 };
 use thiserror::Error;
@@ -62,6 +63,8 @@ pub enum DatabaseError {
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
+    #[error("storage map error")]
+    StorageMapError(#[from] StorageMapError),
     #[error("setup deadpool connection pool failed")]
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error("setup deadpool connection pool failed")]

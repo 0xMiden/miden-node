@@ -18,7 +18,7 @@ mod account_tree_with_history_tests {
     /// Helper function to create an `AccountTree` from entries using the new API
     fn create_account_tree(
         entries: impl IntoIterator<Item = (AccountId, Word)>,
-    ) -> AccountTree<LargeSmt<MemoryStorage>> {
+    ) -> InMemoryAccountTree {
         let smt_entries = entries
             .into_iter()
             .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));

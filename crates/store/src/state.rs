@@ -381,13 +381,18 @@ impl State {
         // Signals the write lock has been acquired, and the transaction can be committed
         let (inform_acquire_done, acquire_done) = oneshot::channel::<()>();
 
-        // Extract account updates with deltas before block is moved into async task
-        // We'll use these deltas to update the SmtForest without DB roundtrips
+        // Extract public account updates with deltas before block is moved into async task.
+        // Private accounts are filtered out since they don't expose their state changes.
         let account_updates: Vec<_> = block
             .body()
             .updated_accounts()
             .iter()
-            .map(|update| (update.account_id(), update.details().clone()))
+            .filter_map(|update| match update.details() {
+                AccountUpdateDetails::Delta(delta) => {
+                    Some((update.account_id(), AccountUpdateDetails::Delta(delta.clone())))
+                },
+                AccountUpdateDetails::Private => None,
+            })
             .collect();
 
         // The DB and in-memory state updates need to be synchronized and are partially
@@ -456,20 +461,18 @@ impl State {
         Ok(())
     }
 
-    /// Updates `SmtForest` with account deltas from a block
-    ///
-    /// This method updates the forest directly using the deltas extracted from the block.
+    /// Updates `SmtForest` with account deltas from a block.
     ///
     /// # Arguments
     ///
-    /// * `account_updates` - Vector of (`AccountId`, `AccountUpdateDetails`) tuples from the block
+    /// * `account_updates` - Vector of (`AccountId`, `AccountUpdateDetails`) tuples for public
+    ///   accounts. Private accounts must be filtered out before calling this method.
     /// * `block_num` - Block number for which these updates apply
     ///
     /// # Note
     ///
-    /// - Private account updates are skipped as their state is not publicly visible.
-    /// - The number of changed accounts is implicitly bounded by the limited number of transactions
-    ///   per block.
+    /// The number of changed accounts is implicitly bounded by the limited number of transactions
+    /// per block.
     #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = account_updates.len()))]
     async fn update_forest(
         &self,
@@ -485,7 +488,6 @@ impl State {
         for (account_id, details) in account_updates {
             match details {
                 AccountUpdateDetails::Delta(ref delta) => {
-                    // Update the forest with the delta (handles both full-state and partial)
                     forest_guard.update_account(block_num, delta);
 
                     tracing::debug!(
@@ -496,15 +498,7 @@ impl State {
                         "Updated forest with account delta"
                     );
                 },
-                AccountUpdateDetails::Private => {
-                    // Private accounts don't expose their state changes
-                    tracing::trace!(
-                        target: COMPONENT,
-                        %account_id,
-                        %block_num,
-                        "Skipping private account update"
-                    );
-                },
+                AccountUpdateDetails::Private => unreachable!("private accounts are filtered out"),
             }
         }
 
@@ -1321,13 +1315,7 @@ async fn load_smt_forest(
 ) -> Result<InnerForest, StateInitializationError> {
     use miden_protocol::account::delta::AccountDelta;
 
-    // Skip private accounts - they don't have public state to reconstruct
-    let public_account_ids: Vec<AccountId> = db
-        .select_all_account_commitments()
-        .await?
-        .iter()
-        .filter_map(|(id, _commitment)| if id.has_public_state() { Some(*id) } else { None })
-        .collect();
+    let public_account_ids = db.select_all_public_account_ids().await?;
 
     // Acquire write lock once for the entire initialization
     let mut forest = InnerForest::new();

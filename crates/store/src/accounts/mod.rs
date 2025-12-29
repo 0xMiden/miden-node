@@ -8,7 +8,6 @@ use miden_protocol::block::account_tree::{AccountMutationSet, AccountTree, Accou
 use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
     LeafIndex,
-    MemoryStorage,
     NodeMutation,
     SMT_DEPTH,
     SmtLeaf,
@@ -27,6 +26,7 @@ use miden_protocol::{AccountTreeError, EMPTY_WORD, Word};
 mod tests;
 
 /// Convenience for an in-memory-only account tree.
+#[cfg(test)]
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
 
 // HISTORICAL ERROR TYPES
@@ -62,7 +62,9 @@ enum HistoricalSelector {
 /// Captures reversion state for historical queries at a specific block.
 #[derive(Debug, Clone)]
 struct HistoricalOverlay {
+    #[allow(dead_code)]
     block_number: BlockNumber,
+    #[allow(dead_code)]
     root: Word,
     node_mutations: HashMap<NodeIndex, Word>,
     account_updates: HashMap<LeafIndex<SMT_DEPTH>, (Word, Word)>,
@@ -157,6 +159,7 @@ impl<S: SmtStorage> AccountTreeWithHistory<S> {
     /// Returns the root hash at a specific historical block.
     ///
     /// Returns `None` if the block is in the future or too old (pruned).
+    #[cfg(test)]
     pub fn root_at(&self, block_number: BlockNumber) -> Option<Word> {
         match self.historical_selector(block_number) {
             HistoricalSelector::Latest => Some(self.latest.root()),

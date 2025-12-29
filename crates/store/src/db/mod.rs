@@ -400,6 +400,15 @@ impl Db {
         .await
     }
 
+    /// Returns all account IDs that have public state.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_all_public_account_ids(&self) -> Result<Vec<AccountId>> {
+        self.transact("read all public account IDs", move |conn| {
+            queries::select_all_public_account_ids(conn)
+        })
+        .await
+    }
+
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {

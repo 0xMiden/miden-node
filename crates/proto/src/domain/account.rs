@@ -204,19 +204,19 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
 
         let proto::rpc::account_storage_details::AccountStorageMapDetails {
             slot_name,
-            limit_exceeded,
+            too_many_entries,
             entries,
         } = value;
 
         let slot_name = StorageSlotName::new(slot_name)?;
 
-        let map_entries = if limit_exceeded {
+        let entries = if too_many_entries {
             StorageMapEntries::LimitExceeded
         } else {
             match entries {
                 None => StorageMapEntries::AllEntries(Vec::new()),
                 Some(ProtoEntries::AllEntries(AllMapEntries { entries })) => {
-                    let map_entries = entries
+                    let entries = entries
                         .into_iter()
                         .map(|entry| {
                             let key = entry
@@ -230,7 +230,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
                             Ok((key, value))
                         })
                         .collect::<Result<Vec<_>, ConversionError>>()?;
-                    StorageMapEntries::AllEntries(map_entries)
+                    StorageMapEntries::AllEntries(entries)
                 },
                 Some(ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries })) => {
                     let proofs = entries
@@ -256,7 +256,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
             }
         };
 
-        Ok(Self { slot_name, entries: map_entries })
+        Ok(Self { slot_name, entries })
     }
 }
 
@@ -520,10 +520,10 @@ impl AccountStorageMapDetails {
                 entries: StorageMapEntries::LimitExceeded,
             }
         } else {
-            let map_entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
+            let entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
             Self {
                 slot_name,
-                entries: StorageMapEntries::AllEntries(map_entries),
+                entries: StorageMapEntries::AllEntries(entries),
             }
         }
     }
@@ -781,11 +781,11 @@ impl From<AccountStorageMapDetails>
 
         let AccountStorageMapDetails { slot_name, entries } = value;
 
-        let (limit_exceeded, proto_entries) = match entries {
+        let (too_many_entries, proto_entries) = match entries {
             StorageMapEntries::LimitExceeded => (true, None),
-            StorageMapEntries::AllEntries(map_entries) => {
+            StorageMapEntries::AllEntries(entries) => {
                 let all = AllMapEntries {
-                    entries: Vec::from_iter(map_entries.into_iter().map(|(key, value)| {
+                    entries: Vec::from_iter(entries.into_iter().map(|(key, value)| {
                         proto::rpc::account_storage_details::account_storage_map_details::all_map_entries::StorageMapEntry {
                             key: Some(key.into()),
                             value: Some(value.into()),
@@ -824,7 +824,7 @@ impl From<AccountStorageMapDetails>
 
         Self {
             slot_name: slot_name.to_string(),
-            limit_exceeded,
+            too_many_entries,
             entries: proto_entries,
         }
     }

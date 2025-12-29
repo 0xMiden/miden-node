@@ -348,9 +348,9 @@ message AccountStorageDetails {
 
         // True when the number of entries exceeds the response limit.
         // When set, clients should use the `SyncStorageMaps` endpoint.
-        bool limit_exceeded = 2;
+        bool too_many_entries = 2;
 
-        // The map entries (with or without proofs). Empty when limit_exceeded is true.
+        // The map entries (with or without proofs). Empty when too_many_entries is true.
         oneof entries {
             // All storage entries without proofs (for small maps or full requests).
             AllMapEntries all_entries = 3;

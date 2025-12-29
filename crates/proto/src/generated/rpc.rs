@@ -236,8 +236,8 @@ pub mod account_storage_details {
         /// True when the number of entries exceeds the response limit.
         /// When set, clients should use the `SyncStorageMaps` endpoint.
         #[prost(bool, tag = "2")]
-        pub limit_exceeded: bool,
-        /// The map entries (with or without proofs). Empty when limit_exceeded is true.
+        pub too_many_entries: bool,
+        /// The map entries (with or without proofs). Empty when too_many_entries is true.
         #[prost(oneof = "account_storage_map_details::Entries", tags = "3, 4")]
         pub entries: ::core::option::Option<account_storage_map_details::Entries>,
     }
@@ -293,7 +293,7 @@ pub mod account_storage_details {
                 >,
             }
         }
-        /// The map entries (with or without proofs). Empty when limit_exceeded is true.
+        /// The map entries (with or without proofs). Empty when too_many_entries is true.
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Entries {
             /// All storage entries without proofs (for small maps or full requests).

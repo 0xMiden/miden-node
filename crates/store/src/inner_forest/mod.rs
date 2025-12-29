@@ -46,16 +46,23 @@ impl InnerForest {
         *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
     }
 
-    /// Retrieves the vault SMT root for an account at a given block, defaulting to empty.
+    /// Retrieves the vault SMT root for an account at or before the given block.
+    ///
+    /// Finds the most recent vault root entry for the account, since vault state persists
+    /// across blocks where no changes occur.
     fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
         self.vault_roots
-            .get(&(account_id, block_num))
-            .copied()
+            .range(..=(account_id, block_num))
+            .rev()
+            .find(|((id, _), _)| *id == account_id)
+            .map(|(_, root)| *root)
             .unwrap_or_else(Self::empty_smt_root)
     }
 
-    /// Retrieves the storage map SMT root for an account slot at a given block, defaulting to
-    /// empty.
+    /// Retrieves the storage map SMT root for an account slot at or before the given block.
+    ///
+    /// Finds the most recent storage root entry for the slot, since storage state persists
+    /// across blocks where no changes occur.
     fn get_storage_root(
         &self,
         account_id: AccountId,
@@ -63,8 +70,10 @@ impl InnerForest {
         block_num: BlockNumber,
     ) -> Word {
         self.storage_roots
-            .get(&(account_id, slot_name.clone(), block_num))
-            .copied()
+            .range(..=(account_id, slot_name.clone(), block_num))
+            .rev()
+            .find(|((id, name, _), _)| *id == account_id && name == slot_name)
+            .map(|(_, root)| *root)
             .unwrap_or_else(Self::empty_smt_root)
     }
 

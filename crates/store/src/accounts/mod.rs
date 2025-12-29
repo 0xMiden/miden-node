@@ -8,6 +8,7 @@ use miden_protocol::block::account_tree::{AccountMutationSet, AccountTree, Accou
 use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
     LeafIndex,
+    MemoryStorage,
     NodeMutation,
     SMT_DEPTH,
     SmtLeaf,
@@ -26,7 +27,6 @@ use miden_protocol::{AccountTreeError, EMPTY_WORD, Word};
 mod tests;
 
 /// Convenience for an in-memory-only account tree.
-#[cfg(test)]
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
 
 // HISTORICAL ERROR TYPES

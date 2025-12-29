@@ -202,3 +202,48 @@ fn test_full_state_delta_starts_from_empty_root() {
     // The full-state delta should produce the same root regardless of prior state
     assert_eq!(updated_root, fresh_root);
 }
+
+#[test]
+fn test_vault_state_persists_across_blocks_without_changes() {
+    // Regression test for issue #7: vault state should persist across blocks
+    // where no changes occur, not reset to empty.
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    // Block 1: Add 100 tokens
+    let block_1 = BlockNumber::GENESIS.child();
+    let mut vault_delta_1 = AccountVaultDelta::default();
+    vault_delta_1.add_asset(dummy_fungible_asset(faucet_id, 100)).unwrap();
+    let delta_1 = dummy_partial_delta(account_id, vault_delta_1, AccountStorageDelta::default());
+    forest.update_account(block_1, &delta_1);
+    let root_after_block_1 = forest.vault_roots[&(account_id, block_1)];
+
+    // Blocks 2-5: No changes to this account (simulated by not calling update_account)
+    // This means no entries are added to vault_roots for these blocks.
+
+    // Block 6: Add 50 more tokens
+    // The previous root lookup should find block_1's root, not return empty.
+    let block_6 = BlockNumber::from(6);
+    let mut vault_delta_6 = AccountVaultDelta::default();
+    vault_delta_6.add_asset(dummy_fungible_asset(faucet_id, 150)).unwrap(); // 100 + 50 = 150
+    let delta_6 = dummy_partial_delta(account_id, vault_delta_6, AccountStorageDelta::default());
+    forest.update_account(block_6, &delta_6);
+
+    // The root at block 6 should be different from block 1 (we added more tokens)
+    let root_after_block_6 = forest.vault_roots[&(account_id, block_6)];
+    assert_ne!(root_after_block_1, root_after_block_6);
+
+    // Verify get_vault_root finds the correct previous root for intermediate blocks
+    // Block 3 should return block 1's root (most recent before block 3)
+    let root_at_block_3 = forest.get_vault_root(account_id, BlockNumber::from(3));
+    assert_eq!(root_at_block_3, root_after_block_1);
+
+    // Block 5 should also return block 1's root
+    let root_at_block_5 = forest.get_vault_root(account_id, BlockNumber::from(5));
+    assert_eq!(root_at_block_5, root_after_block_1);
+
+    // Block 6 should return block 6's root
+    let root_at_block_6 = forest.get_vault_root(account_id, block_6);
+    assert_eq!(root_at_block_6, root_after_block_6);
+}

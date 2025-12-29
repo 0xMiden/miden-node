@@ -8,9 +8,10 @@ use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::crypto::merkle::mmr::MmrError;
 use miden_protocol::crypto::utils::DeserializationError;
-use miden_protocol::note::Nullifier;
+use miden_protocol::note::{NoteId, Nullifier};
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{
     AccountDeltaError,
@@ -21,6 +22,7 @@ use miden_protocol::{
     FeeError,
     NoteError,
     NullifierTreeError,
+    StorageMapError,
     Word,
 };
 use thiserror::Error;
@@ -56,11 +58,13 @@ pub enum DatabaseError {
     #[error("I/O error")]
     IoError(#[from] io::Error),
     #[error("merkle error")]
-    MerkleError(#[from] miden_protocol::crypto::merkle::MerkleError),
+    MerkleError(#[from] MerkleError),
     #[error("network account error")]
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
+    #[error("storage map error")]
+    StorageMapError(#[from] StorageMapError),
     #[error("setup deadpool connection pool failed")]
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error("setup deadpool connection pool failed")]
@@ -98,16 +102,18 @@ pub enum DatabaseError {
     AccountNotFoundInDb(AccountId),
     #[error("account {0} state at block height {1} not found")]
     AccountAtBlockHeightNotFoundInDb(AccountId, BlockNumber),
+    #[error("block {0} not found in database")]
+    BlockNotFound(BlockNumber),
     #[error("historical block {block_num} not available: {reason}")]
     HistoricalBlockNotAvailable { block_num: BlockNumber, reason: String },
     #[error("accounts {0:?} not found")]
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
     AccountNotPublic(AccountId),
-    #[error("account {0} details missing")]
-    AccountDetailsMissing(AccountId),
     #[error("invalid block parameters: block_from ({from}) > block_to ({to})")]
     InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("invalid storage slot type: {0}")]
+    InvalidStorageSlotType(i32),
     #[error("data corrupted: {0}")]
     DataCorrupted(String),
     #[error("SQLite pool interaction failed: {0}")]
@@ -175,6 +181,8 @@ impl From<DatabaseError> for Status {
 pub enum StateInitializationError {
     #[error("account tree IO error: {0}")]
     AccountTreeIoError(String),
+    #[error("nullifier tree IO error: {0}")]
+    NullifierTreeIoError(String),
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("failed to create nullifier tree")]
@@ -248,6 +256,8 @@ pub enum InvalidBlockError {
     NewBlockNullifierAlreadySpent(#[source] NullifierTreeError),
     #[error("duplicate account ID prefix in new block")]
     NewBlockDuplicateAccountIdPrefix(#[source] AccountTreeError),
+    #[error("failed to build note tree: {0}")]
+    FailedToBuildNoteTree(String),
 }
 
 #[derive(Error, Debug)]
@@ -447,9 +457,9 @@ pub enum GetNotesByIdError {
     #[error("malformed note ID")]
     DeserializationFailed(#[from] ConversionError),
     #[error("note {0} not found")]
-    NoteNotFound(miden_protocol::note::NoteId),
+    NoteNotFound(NoteId),
     #[error("note {0} is not public")]
-    NoteNotPublic(miden_protocol::note::NoteId),
+    NoteNotPublic(NoteId),
 }
 
 // GET NOTE SCRIPT BY ROOT ERRORS

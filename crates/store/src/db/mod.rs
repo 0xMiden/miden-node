@@ -7,7 +7,7 @@ use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
+use miden_protocol::account::{AccountHeader, AccountId, AccountStorage};
 use miden_protocol::asset::{Asset, AssetVaultKey};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
@@ -112,8 +112,7 @@ impl TransactionRecord {
         self,
         note_records: Vec<NoteRecord>,
     ) -> proto::rpc::TransactionRecord {
-        let output_notes: Vec<proto::note::NoteSyncRecord> =
-            note_records.into_iter().map(Into::into).collect();
+        let output_notes = Vec::from_iter(note_records.into_iter().map(Into::into));
 
         proto::rpc::TransactionRecord {
             header: Some(proto::transaction::TransactionHeader {
@@ -323,7 +322,7 @@ impl Db {
 
     /// Loads all the nullifiers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
+    pub(crate) async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
         self.transact("all nullifiers", move |conn| {
             let nullifiers = queries::select_all_nullifiers(conn)?;
             Ok(nullifiers)
@@ -392,11 +391,21 @@ impl Db {
         .await
     }
 
-    /// Loads all the account commitments from the DB.
+    /// TODO marked for removal, replace with paged version
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {
             queries::select_all_account_commitments(conn)
+        })
+        .await
+    }
+
+    /// Returns all account IDs that have public state.
+    #[allow(dead_code)] // Will be used by InnerForest in next PR
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_all_public_account_ids(&self) -> Result<Vec<AccountId>> {
+        self.transact("read all public account IDs", move |conn| {
+            queries::select_all_public_account_ids(conn)
         })
         .await
     }
@@ -406,19 +415,6 @@ impl Db {
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
         self.transact("Get account details", move |conn| queries::select_account(conn, id))
             .await
-    }
-
-    /// Loads account details at a specific block number from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_historical_account_at(
-        &self,
-        id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountInfo> {
-        self.transact("Get historical account details", move |conn| {
-            queries::select_historical_account_at(conn, id, block_num)
-        })
-        .await
     }
 
     /// Loads public account details from the DB based on the account ID's prefix.
@@ -438,6 +434,64 @@ impl Db {
     pub async fn select_all_network_account_ids(&self) -> Result<Vec<AccountId>> {
         self.transact("Get all network account IDs", queries::select_all_network_account_ids)
             .await
+    }
+
+    /// Reconstructs account storage at a specific block from the database
+    ///
+    /// This method queries the decomposed storage tables and reconstructs the full
+    /// `AccountStorage` with SMT backing for Map slots.
+    // TODO split querying the header from the content
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_account_storage_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<AccountStorage> {
+        self.transact("Get account storage at block", move |conn| {
+            queries::select_account_storage_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Queries vault assets at a specific block
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_account_vault_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Vec<Asset>> {
+        self.transact("Get account vault at block", move |conn| {
+            queries::select_account_vault_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Queries the account code for a specific account at a specific block number.
+    ///
+    /// Returns `None` if the account doesn't exist at that block or has no code.
+    pub async fn select_account_code_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Option<Vec<u8>>> {
+        self.transact("Get account code at block", move |conn| {
+            queries::select_account_code_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Queries the account header for a specific account at a specific block number.
+    ///
+    /// Returns `None` if the account doesn't exist at that block.
+    pub async fn select_account_header_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Option<AccountHeader>> {
+        self.transact("Get account header at block", move |conn| {
+            queries::select_account_header_at_block(conn, account_id, block_num)
+        })
+        .await
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
@@ -538,7 +592,7 @@ impl Db {
         .await
     }
 
-    /// Selects storage map values for syncing storage maps for a specific account ID.
+    /// Selects storage map values for syncing storage maps for a specific account ID
     ///
     /// The returned values are the latest known values up to `block_range.end()`, and no values
     /// earlier than `block_range.start()` are returned.

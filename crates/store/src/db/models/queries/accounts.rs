@@ -31,6 +31,7 @@ use miden_objects::account::{
     AccountHeader,
     AccountId,
     AccountStorage,
+    AccountStorageHeader,
     NonFungibleDeltaAction,
     StorageSlotContent,
     StorageSlotName,
@@ -527,6 +528,19 @@ pub(crate) fn select_account_storage_at_block(
     let storage = AccountStorage::read_from_bytes(&blob)?;
 
     Ok(storage)
+}
+
+/// Returns account storage header (without map entries) at a given block.
+///
+/// This reads the storage blob and extracts just the header information (slot types and roots),
+/// avoiding the need to deserialize all map entries.
+pub(crate) fn select_account_storage_header_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<AccountStorageHeader, DatabaseError> {
+    let storage = select_account_storage_at_block(conn, account_id, block_num)?;
+    Ok(storage.to_header())
 }
 
 /// Select latest account storage header by querying `accounts.storage_header` where

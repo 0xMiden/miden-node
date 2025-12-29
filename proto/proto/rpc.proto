@@ -311,8 +311,22 @@ message AccountVaultDetails {
 // Account storage details for AccountProofResponse
 message AccountStorageDetails {
     message AccountStorageMapDetails {
-        // Wrapper for repeated storage map entries
-        message MapEntries {
+        // Wrapper for repeated storage map entries including their proofs.
+        // Used when specific keys are requested to enable client-side verification.
+        message MapEntriesWithProofs {
+            // Definition of individual storage entries including a proof.
+            message StorageMapEntryWithProof {
+                primitives.Digest key = 1;
+                primitives.Digest value = 2;
+                primitives.SmtOpening proof = 3;
+            }
+
+            repeated StorageMapEntryWithProof entries = 1;
+        }
+
+        // Wrapper for repeated storage map entries (without proofs).
+        // Used when all entries are requested for small maps.
+        message AllMapEntries {
             // Definition of individual storage entries.
             message StorageMapEntry {
                 primitives.Digest key = 1;
@@ -325,13 +339,18 @@ message AccountStorageDetails {
         // Storage slot name.
         string slot_name = 1;
 
-        // A flag that is set to `true` if the number of to-be-returned entries in the
-        // storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
-        // endpoint should be used to get all storage map data.
-        bool too_many_entries = 2;
+        // Either the map entries (with or without proofs) or an indicator that the limit was exceeded.
+        // When `limit_exceeded` is set, clients should use the `SyncStorageMaps` endpoint.
+        oneof entries {
+            // All storage entries without proofs (for small maps or full requests).
+            AllMapEntries all_entries = 2;
 
-        // By default we provide all storage entries.
-        MapEntries entries = 3;
+            // Specific entries with their SMT proofs (for partial requests).
+            MapEntriesWithProofs entries_with_proofs = 3;
+
+            // Set to true when the number of entries exceeds the response limit.
+            bool limit_exceeded = 4;
+        }
     }
 
     // Account storage header (storage slot info for up to 256 slots)

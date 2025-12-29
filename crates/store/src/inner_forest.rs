@@ -20,6 +20,10 @@ pub(crate) struct InnerForest {
     /// Populated during block import for all storage map slots.
     storage_roots: BTreeMap<(AccountId, StorageSlotName, BlockNumber), Word>,
 
+    /// Maps (`account_id`, `slot_name`, `block_num`) to all key-value entries in that storage map.
+    /// Accumulated from deltas - each block's entries include all entries up to that point.
+    storage_entries: BTreeMap<(AccountId, StorageSlotName, BlockNumber), BTreeMap<Word, Word>>,
+
     /// Maps (`account_id`, `block_num`) to vault SMT root.
     /// Tracks asset vault versions across all blocks with structural sharing.
     vault_roots: BTreeMap<(AccountId, BlockNumber), Word>,
@@ -30,6 +34,7 @@ impl InnerForest {
         Self {
             storage_forest: SmtForest::new(),
             storage_roots: BTreeMap::new(),
+            storage_entries: BTreeMap::new(),
             vault_roots: BTreeMap::new(),
         }
     }
@@ -62,6 +67,33 @@ impl InnerForest {
             .get(&(account_id, slot_name.clone(), block_num))
             .copied()
             .unwrap_or_else(Self::empty_smt_root)
+    }
+
+    /// Returns the storage forest and the root for a specific account storage slot at a block.
+    ///
+    /// This allows callers to query specific keys from the storage map using `SmtForest::open()`.
+    /// Returns `None` if no storage root is tracked for this account/slot/block combination.
+    pub(crate) fn storage_map_forest_with_root(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+        block_num: BlockNumber,
+    ) -> Option<(&SmtForest, Word)> {
+        let root = self.storage_roots.get(&(account_id, slot_name.clone(), block_num))?;
+        Some((&self.storage_forest, *root))
+    }
+
+    /// Returns all key-value entries for a specific account storage slot at a block.
+    ///
+    /// Returns `None` if no entries are tracked for this account/slot/block combination.
+    pub(crate) fn storage_map_entries(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+        block_num: BlockNumber,
+    ) -> Option<Vec<(Word, Word)>> {
+        let entries = self.storage_entries.get(&(account_id, slot_name.clone(), block_num))?;
+        Some(entries.iter().map(|(k, v)| (*k, *v)).collect())
     }
 
     // PUBLIC INTERFACE
@@ -151,7 +183,7 @@ impl InnerForest {
     /// Updates the forest with storage map changes from a delta.
     ///
     /// Processes storage map slot deltas, building SMTs for each modified slot
-    /// and tracking the new roots.
+    /// and tracking the new roots and accumulated entries.
     fn update_account_storage(
         &mut self,
         block_num: BlockNumber,
@@ -168,27 +200,49 @@ impl InnerForest {
                 self.get_storage_root(account_id, slot_name, parent_block)
             };
 
-            let entries: Vec<_> =
+            let delta_entries: Vec<_> =
                 map_delta.entries().iter().map(|(key, value)| ((*key).into(), *value)).collect();
 
-            if entries.is_empty() {
+            if delta_entries.is_empty() {
                 continue;
             }
 
             let updated_root = self
                 .storage_forest
-                .batch_insert(prev_root, entries.iter().copied())
+                .batch_insert(prev_root, delta_entries.iter().copied())
                 .expect("forest insertion should succeed");
 
             self.storage_roots
                 .insert((account_id, slot_name.clone(), block_num), updated_root);
+
+            // Accumulate entries: start from parent block's entries or empty for full state
+            let mut accumulated_entries = if is_full_state {
+                BTreeMap::new()
+            } else {
+                self.storage_entries
+                    .get(&(account_id, slot_name.clone(), parent_block))
+                    .cloned()
+                    .unwrap_or_default()
+            };
+
+            // Apply delta entries (insert or remove if value is EMPTY_WORD)
+            for (key, value) in delta_entries.iter() {
+                if *value == EMPTY_WORD {
+                    accumulated_entries.remove(key);
+                } else {
+                    accumulated_entries.insert(*key, *value);
+                }
+            }
+
+            self.storage_entries
+                .insert((account_id, slot_name.clone(), block_num), accumulated_entries);
 
             tracing::debug!(
                 target: crate::COMPONENT,
                 %account_id,
                 %block_num,
                 ?slot_name,
-                entries = entries.len(),
+                delta_entries = delta_entries.len(),
                 "Updated storage map in forest"
             );
         }

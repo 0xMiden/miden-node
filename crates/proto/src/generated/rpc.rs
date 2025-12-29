@@ -233,25 +233,50 @@ pub mod account_storage_details {
         /// Storage slot name.
         #[prost(string, tag = "1")]
         pub slot_name: ::prost::alloc::string::String,
-        /// A flag that is set to `true` if the number of to-be-returned entries in the
-        /// storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
-        /// endpoint should be used to get all storage map data.
-        #[prost(bool, tag = "2")]
-        pub too_many_entries: bool,
-        /// By default we provide all storage entries.
-        #[prost(message, optional, tag = "3")]
-        pub entries: ::core::option::Option<account_storage_map_details::MapEntries>,
+        /// Either the map entries (with or without proofs) or an indicator that the limit was exceeded.
+        /// When `limit_exceeded` is set, clients should use the `SyncStorageMaps` endpoint.
+        #[prost(oneof = "account_storage_map_details::Entries", tags = "2, 3, 4")]
+        pub entries: ::core::option::Option<account_storage_map_details::Entries>,
     }
     /// Nested message and enum types in `AccountStorageMapDetails`.
     pub mod account_storage_map_details {
-        /// Wrapper for repeated storage map entries
+        /// Wrapper for repeated storage map entries including their proofs.
+        /// Used when specific keys are requested to enable client-side verification.
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct MapEntries {
+        pub struct MapEntriesWithProofs {
             #[prost(message, repeated, tag = "1")]
-            pub entries: ::prost::alloc::vec::Vec<map_entries::StorageMapEntry>,
+            pub entries: ::prost::alloc::vec::Vec<
+                map_entries_with_proofs::StorageMapEntryWithProof,
+            >,
         }
-        /// Nested message and enum types in `MapEntries`.
-        pub mod map_entries {
+        /// Nested message and enum types in `MapEntriesWithProofs`.
+        pub mod map_entries_with_proofs {
+            /// Definition of individual storage entries including a proof.
+            #[derive(Clone, PartialEq, ::prost::Message)]
+            pub struct StorageMapEntryWithProof {
+                #[prost(message, optional, tag = "1")]
+                pub key: ::core::option::Option<
+                    super::super::super::super::primitives::Digest,
+                >,
+                #[prost(message, optional, tag = "2")]
+                pub value: ::core::option::Option<
+                    super::super::super::super::primitives::Digest,
+                >,
+                #[prost(message, optional, tag = "3")]
+                pub proof: ::core::option::Option<
+                    super::super::super::super::primitives::SmtOpening,
+                >,
+            }
+        }
+        /// Wrapper for repeated storage map entries (without proofs).
+        /// Used when all entries are requested for small maps.
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct AllMapEntries {
+            #[prost(message, repeated, tag = "1")]
+            pub entries: ::prost::alloc::vec::Vec<all_map_entries::StorageMapEntry>,
+        }
+        /// Nested message and enum types in `AllMapEntries`.
+        pub mod all_map_entries {
             /// Definition of individual storage entries.
             #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
             pub struct StorageMapEntry {
@@ -264,6 +289,20 @@ pub mod account_storage_details {
                     super::super::super::super::primitives::Digest,
                 >,
             }
+        }
+        /// Either the map entries (with or without proofs) or an indicator that the limit was exceeded.
+        /// When `limit_exceeded` is set, clients should use the `SyncStorageMaps` endpoint.
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Entries {
+            /// All storage entries without proofs (for small maps or full requests).
+            #[prost(message, tag = "2")]
+            AllEntries(AllMapEntries),
+            /// Specific entries with their SMT proofs (for partial requests).
+            #[prost(message, tag = "3")]
+            EntriesWithProofs(MapEntriesWithProofs),
+            /// Set to true when the number of entries exceeds the response limit.
+            #[prost(bool, tag = "4")]
+            LimitExceeded(bool),
         }
     }
 }

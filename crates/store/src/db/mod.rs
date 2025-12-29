@@ -8,7 +8,7 @@ use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
-use miden_objects::account::{AccountHeader, AccountId, AccountStorage};
+use miden_objects::account::{AccountHeader, AccountId, AccountStorageHeader};
 use miden_objects::asset::{Asset, AssetVaultKey};
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
@@ -426,19 +426,15 @@ impl Db {
             .await
     }
 
-    /// Reconstructs account storage at a specific block from the database
-    ///
-    /// This method queries the decomposed storage tables and reconstructs the full
-    /// `AccountStorage` with SMT backing for Map slots.
-    // TODO split querying the header from the content
+    /// Queries just the storage header (slot types and roots) at a specific block.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_account_storage_at_block(
+    pub async fn select_account_storage_header_at_block(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-    ) -> Result<AccountStorage> {
-        self.transact("Get account storage at block", move |conn| {
-            queries::select_account_storage_at_block(conn, account_id, block_num)
+    ) -> Result<AccountStorageHeader> {
+        self.transact("Get account storage header at block", move |conn| {
+            queries::select_account_storage_header_at_block(conn, account_id, block_num)
         })
         .await
     }

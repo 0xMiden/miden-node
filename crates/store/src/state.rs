@@ -952,14 +952,14 @@ impl State {
     ) -> Result<AccountProofResponse, DatabaseError> {
         let AccountProofRequest { block_num, account_id, details } = account_request;
 
-        if details.is_some() && !account_id.is_public() {
+        if details.is_some() && !account_id.has_public_state() {
             return Err(DatabaseError::AccountNotPublic(account_id));
         }
 
         let (block_num, witness) = self.get_account_witness(block_num, account_id).await?;
 
         let details = if let Some(request) = details {
-            Some(self.fetch_requested_account_details(account_id, block_num, request).await?)
+            Some(self.fetch_public_account_details(account_id, block_num, request).await?)
         } else {
             None
         };
@@ -1005,7 +1005,7 @@ impl State {
     ///
     /// This method queries the database to fetch the account state and processes the detail
     /// request to return only the requested information.
-    async fn fetch_requested_account_details(
+    async fn fetch_public_account_details(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
@@ -1017,7 +1017,7 @@ impl State {
             storage_requests,
         } = detail_request;
 
-        if !account_id.is_public() {
+        if !account_id.has_public_state() {
             return Err(DatabaseError::AccountNotPublic(account_id));
         }
 

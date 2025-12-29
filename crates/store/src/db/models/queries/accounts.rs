@@ -95,7 +95,7 @@ pub(crate) fn select_account(
 
     // Backfill account details from database
     // For private accounts, we don't store full details in the database
-    let details = if account_id.is_public() {
+    let details = if account_id.has_public_state() {
         Some(select_full_account(conn, account_id)?)
     } else {
         None

@@ -214,7 +214,9 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
             StorageMapEntries::LimitExceeded
         } else {
             match entries {
-                None => StorageMapEntries::AllEntries(Vec::new()),
+                None => {
+                    return Err(proto::rpc::account_storage_details::AccountStorageMapDetails::missing_field(stringify!(entries)));
+                },
                 Some(ProtoEntries::AllEntries(AllMapEntries { entries })) => {
                     let entries = entries
                         .into_iter()

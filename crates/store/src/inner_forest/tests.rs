@@ -247,3 +247,53 @@ fn test_vault_state_persists_across_blocks_without_changes() {
     let root_at_block_6 = forest.get_vault_root(account_id, block_6);
     assert_eq!(root_at_block_6, root_after_block_6);
 }
+
+#[test]
+fn test_partial_delta_applies_fungible_changes_correctly() {
+    // Regression test for issue #8: partial deltas should apply changes to previous balance,
+    // not treat amounts as absolute values.
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    // Block 1: Add 100 tokens (partial delta with +100)
+    let block_1 = BlockNumber::GENESIS.child();
+    let mut vault_delta_1 = AccountVaultDelta::default();
+    vault_delta_1.add_asset(dummy_fungible_asset(faucet_id, 100)).unwrap();
+    let delta_1 = dummy_partial_delta(account_id, vault_delta_1, AccountStorageDelta::default());
+    forest.update_account(block_1, &delta_1);
+    let root_after_100 = forest.vault_roots[&(account_id, block_1)];
+
+    // Block 2: Add 50 more tokens (partial delta with +50)
+    // Result should be 150 tokens, not 50 tokens
+    let block_2 = block_1.child();
+    let mut vault_delta_2 = AccountVaultDelta::default();
+    vault_delta_2.add_asset(dummy_fungible_asset(faucet_id, 50)).unwrap();
+    let delta_2 = dummy_partial_delta(account_id, vault_delta_2, AccountStorageDelta::default());
+    forest.update_account(block_2, &delta_2);
+    let root_after_150 = forest.vault_roots[&(account_id, block_2)];
+
+    // Roots should be different (100 tokens vs 150 tokens)
+    assert_ne!(root_after_100, root_after_150);
+
+    // Block 3: Remove 30 tokens (partial delta with -30)
+    // Result should be 120 tokens
+    let block_3 = block_2.child();
+    let mut vault_delta_3 = AccountVaultDelta::default();
+    vault_delta_3.remove_asset(dummy_fungible_asset(faucet_id, 30)).unwrap();
+    let delta_3 = dummy_partial_delta(account_id, vault_delta_3, AccountStorageDelta::default());
+    forest.update_account(block_3, &delta_3);
+    let root_after_120 = forest.vault_roots[&(account_id, block_3)];
+
+    // Root should change again
+    assert_ne!(root_after_150, root_after_120);
+
+    // Verify by creating a fresh forest with a full-state delta of 120 tokens
+    // The roots should match
+    let mut fresh_forest = InnerForest::new();
+    let full_delta = dummy_full_state_delta(account_id, &[dummy_fungible_asset(faucet_id, 120)]);
+    fresh_forest.update_account(block_3, &full_delta);
+    let root_full_state_120 = fresh_forest.vault_roots[&(account_id, block_3)];
+
+    assert_eq!(root_after_120, root_full_state_120);
+}

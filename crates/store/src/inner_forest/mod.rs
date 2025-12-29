@@ -152,11 +152,41 @@ impl InnerForest {
         let mut entries = Vec::new();
 
         // Process fungible assets
-        for (faucet_id, amount) in vault_delta.fungible().iter() {
-            let amount_u64: u64 = (*amount).try_into().expect("amount is non-negative");
-            let asset: Asset =
-                FungibleAsset::new(*faucet_id, amount_u64).expect("valid fungible asset").into();
-            entries.push((asset.vault_key().into(), Word::from(asset)));
+        for (faucet_id, amount_delta) in vault_delta.fungible().iter() {
+            let key: Word = FungibleAsset::new(*faucet_id, 0)
+                .expect("valid faucet id")
+                .vault_key()
+                .into();
+
+            let new_amount = if is_full_state {
+                // For full-state deltas, amount is the absolute value
+                (*amount_delta).try_into().expect("full-state amount should be non-negative")
+            } else {
+                // For partial deltas, amount is a change that must be applied to previous balance.
+                //
+                // TODO: SmtForest only exposes `fn open()` which computes a full Merkle
+                // proof. We only need the leaf, so a direct `fn get()` method would be faster.
+                let prev_amount = self
+                    .forest
+                    .open(prev_root, key)
+                    .ok()
+                    .and_then(|proof| proof.get(&key))
+                    .and_then(|word| FungibleAsset::try_from(word).ok())
+                    .map(|asset| asset.amount())
+                    .unwrap_or(0);
+
+                let new_balance = (prev_amount as i128) + (*amount_delta as i128);
+                new_balance.max(0) as u64
+            };
+
+            let value = if new_amount == 0 {
+                EMPTY_WORD
+            } else {
+                let asset: Asset =
+                    FungibleAsset::new(*faucet_id, new_amount).expect("valid fungible asset").into();
+                Word::from(asset)
+            };
+            entries.push((key, value));
         }
 
         // Process non-fungible assets

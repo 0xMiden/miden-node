@@ -97,14 +97,14 @@ impl InnerForest {
     pub(crate) fn apply_block_updates(
         &mut self,
         block_num: BlockNumber,
-        account_updates: impl IntoIterator<Item = (AccountId, AccountDelta)>,
+        account_updates: impl IntoIterator<Item = AccountDelta>,
     ) {
-        for (account_id, delta) in account_updates {
+        for delta in account_updates {
             self.update_account(block_num, &delta);
 
             tracing::debug!(
                 target: crate::COMPONENT,
-                %account_id,
+                account_id = %delta.id(),
                 %block_num,
                 is_full_state = delta.is_full_state(),
                 "Updated forest with account delta"

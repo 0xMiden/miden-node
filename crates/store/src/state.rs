@@ -369,15 +369,13 @@ impl State {
 
         // Extract public account updates with deltas before block is moved into async task.
         // Private accounts are filtered out since they don't expose their state changes.
-        let account_deltas: Vec<_> = block
-            .body()
-            .updated_accounts()
-            .iter()
-            .filter_map(|update| match update.details() {
-                AccountUpdateDetails::Delta(delta) => Some((update.account_id(), delta.clone())),
-                AccountUpdateDetails::Private => None,
-            })
-            .collect();
+        let account_deltas =
+            Vec::from_iter(block.body().updated_accounts().iter().filter_map(|update| {
+                match update.details() {
+                    AccountUpdateDetails::Delta(delta) => Some(delta.clone()),
+                    AccountUpdateDetails::Private => None,
+                }
+            }));
 
         // The DB and in-memory state updates need to be synchronized and are partially
         // overlapping. Namely, the DB transaction only proceeds after this task acquires the

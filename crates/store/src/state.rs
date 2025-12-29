@@ -375,14 +375,12 @@ impl State {
 
         // Extract public account updates with deltas before block is moved into async task.
         // Private accounts are filtered out since they don't expose their state changes.
-        let account_updates: Vec<_> = block
+        let account_deltas: Vec<_> = block
             .body()
             .updated_accounts()
             .iter()
             .filter_map(|update| match update.details() {
-                AccountUpdateDetails::Delta(delta) => {
-                    Some((update.account_id(), AccountUpdateDetails::Delta(delta.clone())))
-                },
+                AccountUpdateDetails::Delta(delta) => Some((update.account_id(), delta.clone())),
                 AccountUpdateDetails::Private => None,
             })
             .collect();
@@ -446,53 +444,9 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
-        self.update_forest(account_updates, block_num).await?;
+        self.forest.write().await.apply_block_updates(block_num, account_deltas);
 
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
-
-        Ok(())
-    }
-
-    /// Updates `SmtForest` with account deltas from a block.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_updates` - Vector of (`AccountId`, `AccountUpdateDetails`) tuples for public
-    ///   accounts. Private accounts must be filtered out before calling this method.
-    /// * `block_num` - Block number for which these updates apply
-    ///
-    /// # Note
-    ///
-    /// The number of changed accounts is implicitly bounded by the limited number of transactions
-    /// per block.
-    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num, num_accounts = account_updates.len()))]
-    async fn update_forest(
-        &self,
-        account_updates: Vec<(AccountId, AccountUpdateDetails)>,
-        block_num: BlockNumber,
-    ) -> Result<(), ApplyBlockError> {
-        if account_updates.is_empty() {
-            return Ok(());
-        }
-
-        let mut forest_guard = self.forest.write().await;
-
-        for (account_id, details) in account_updates {
-            match details {
-                AccountUpdateDetails::Delta(ref delta) => {
-                    forest_guard.update_account(block_num, delta);
-
-                    tracing::debug!(
-                        target: COMPONENT,
-                        %account_id,
-                        %block_num,
-                        is_full_state = delta.is_full_state(),
-                        "Updated forest with account delta"
-                    );
-                },
-                AccountUpdateDetails::Private => unreachable!("private accounts are filtered out"),
-            }
-        }
 
         Ok(())
     }

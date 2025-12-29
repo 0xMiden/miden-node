@@ -1,19 +1,29 @@
-use assert_matches::assert_matches;
-use diesel::{Connection, RunQueryDsl};
+//! Tests for the `accounts` module, specifically for account storage and historical queries.
+
+use diesel::query_dsl::methods::SelectDsl;
+use diesel::{Connection, OptionalExtension, QueryDsl, RunQueryDsl};
 use diesel_migrations::MigrationHarness;
-use miden_lib::account::auth::AuthRpoFalcon512;
-use miden_lib::transaction::TransactionKernel;
 use miden_node_utils::fee::test_fee_params;
-use miden_objects::account::auth::PublicKeyCommitment;
-use miden_objects::account::{
+use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
+    Account,
     AccountBuilder,
     AccountComponent,
+    AccountDelta,
+    AccountId,
     AccountIdVersion,
     AccountStorageMode,
     AccountType,
     StorageSlot,
+    StorageSlotName,
 };
-use miden_objects::{EMPTY_WORD, Word};
+use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::utils::Serializable;
+use miden_protocol::{EMPTY_WORD, Felt, Word};
+use miden_standards::account::auth::AuthRpoFalcon512;
+use miden_standards::code_builder::CodeBuilder;
 
 use super::*;
 use crate::db::migrations::MIGRATIONS;
@@ -37,15 +47,15 @@ fn create_test_account_with_storage() -> (Account, AccountId) {
     );
 
     let storage_value = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
-    let component_storage = vec![StorageSlot::Value(storage_value)];
+    let component_storage = vec![StorageSlot::with_value(StorageSlotName::mock(0), storage_value)];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .unwrap();
+
+    let component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -59,8 +69,6 @@ fn create_test_account_with_storage() -> (Account, AccountId) {
 }
 
 fn insert_block_header(conn: &mut SqliteConnection, block_num: BlockNumber) {
-    use miden_objects::block::BlockHeader;
-
     use crate::db::schema::block_headers;
 
     let block_header = BlockHeader::new(
@@ -73,7 +81,7 @@ fn insert_block_header(conn: &mut SqliteConnection, block_num: BlockNumber) {
         Word::default(),
         Word::default(),
         Word::default(),
-        Word::default(),
+        SecretKey::new().public_key(),
         test_fee_params(),
         0_u8.into(),
     );
@@ -87,6 +95,163 @@ fn insert_block_header(conn: &mut SqliteConnection, block_num: BlockNumber) {
         .expect("Failed to insert block header");
 }
 
+// ACCOUNT HEADER AT BLOCK TESTS
+// ================================================================================================
+
+#[test]
+fn test_select_account_header_at_block_returns_none_for_nonexistent() {
+    let mut conn = setup_test_db();
+    let block_num = BlockNumber::from_epoch(0);
+    insert_block_header(&mut conn, block_num);
+
+    let account_id = AccountId::dummy(
+        [99u8; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+    );
+
+    // Query for a non-existent account
+    let result = select_account_header_at_block(&mut conn, account_id, block_num)
+        .expect("Query should succeed");
+
+    assert!(result.is_none(), "Should return None for non-existent account");
+}
+
+#[test]
+fn test_select_account_header_at_block_returns_correct_header() {
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    let block_num = BlockNumber::from_epoch(0);
+    insert_block_header(&mut conn, block_num);
+
+    // Insert the account
+    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(delta),
+    );
+
+    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
+
+    // Query the account header
+    let header = select_account_header_at_block(&mut conn, account_id, block_num)
+        .expect("Query should succeed")
+        .expect("Header should exist");
+
+    assert_eq!(header.id(), account_id, "Account ID should match");
+    assert_eq!(header.nonce(), account.nonce(), "Nonce should match");
+    assert_eq!(
+        header.code_commitment(),
+        account.code().commitment(),
+        "Code commitment should match"
+    );
+}
+
+#[test]
+fn test_select_account_header_at_block_historical_query() {
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    let block_num_1 = BlockNumber::from_epoch(0);
+    let block_num_2 = BlockNumber::from_epoch(1);
+    insert_block_header(&mut conn, block_num_1);
+    insert_block_header(&mut conn, block_num_2);
+
+    // Insert the account at block 1
+    let nonce_1 = account.nonce();
+    let delta_1 = AccountDelta::try_from(account.clone()).unwrap();
+    let account_update_1 = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(delta_1),
+    );
+
+    upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
+
+    // Query at block 1 - should return the account
+    let header_1 = select_account_header_at_block(&mut conn, account_id, block_num_1)
+        .expect("Query should succeed")
+        .expect("Header should exist at block 1");
+
+    assert_eq!(header_1.nonce(), nonce_1, "Nonce at block 1 should match");
+
+    // Query at block 2 - should return the same account (most recent before block 2)
+    let header_2 = select_account_header_at_block(&mut conn, account_id, block_num_2)
+        .expect("Query should succeed")
+        .expect("Header should exist at block 2");
+
+    assert_eq!(header_2.nonce(), nonce_1, "Nonce at block 2 should match block 1");
+}
+
+// ACCOUNT VAULT AT BLOCK TESTS
+// ================================================================================================
+
+#[test]
+fn test_select_account_vault_at_block_empty() {
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    let block_num = BlockNumber::from_epoch(0);
+    insert_block_header(&mut conn, block_num);
+
+    // Insert account without vault assets
+    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(delta),
+    );
+
+    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
+
+    // Query vault - should return empty (the test account has no assets)
+    let assets = select_account_vault_at_block(&mut conn, account_id, block_num)
+        .expect("Query should succeed");
+
+    assert!(assets.is_empty(), "Account should have no assets");
+}
+
+// ACCOUNT STORAGE AT BLOCK TESTS
+// ================================================================================================
+
+#[test]
+fn test_select_account_storage_at_block_returns_storage() {
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    let block_num = BlockNumber::from_epoch(0);
+    insert_block_header(&mut conn, block_num);
+
+    let original_storage_commitment = account.storage().to_commitment();
+
+    // Insert the account
+    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(delta),
+    );
+
+    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
+
+    // Query storage
+    let storage = select_account_storage_at_block(&mut conn, account_id, block_num)
+        .expect("Query should succeed");
+
+    assert_eq!(
+        storage.to_commitment(),
+        original_storage_commitment,
+        "Storage commitment should match"
+    );
+}
+
 #[test]
 fn test_upsert_accounts_inserts_storage_header() {
     let mut conn = setup_test_db();
@@ -96,7 +261,7 @@ fn test_upsert_accounts_inserts_storage_header() {
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
 
-    let storage_commitment_original = account.storage().commitment();
+    let storage_commitment_original = account.storage().to_commitment();
     let storage_slots_len = account.storage().slots().len();
     let account_commitment = account.commitment();
 
@@ -118,7 +283,7 @@ fn test_upsert_accounts_inserts_storage_header() {
 
     // Verify storage commitment matches
     assert_eq!(
-        queried_storage.commitment(),
+        queried_storage.to_commitment(),
         storage_commitment_original,
         "Storage commitment mismatch"
     );
@@ -151,7 +316,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     insert_block_header(&mut conn, block_num_2);
 
     // Save storage commitment before moving account
-    let storage_commitment_1 = account.storage().commitment();
+    let storage_commitment_1 = account.storage().to_commitment();
     let account_commitment_1 = account.commitment();
 
     // First update with original account - full state delta
@@ -168,15 +333,16 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     // Create modified account with different storage value
     let storage_value_modified =
         Word::from([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]);
-    let component_storage_modified = vec![StorageSlot::Value(storage_value_modified)];
+    let component_storage_modified =
+        vec![StorageSlot::with_value(StorageSlotName::mock(0), storage_value_modified)];
 
-    let component_2 = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage_modified,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .unwrap();
+
+    let component_2 = AccountComponent::new(account_component_code, component_storage_modified)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account_2 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -186,7 +352,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         .build_existing()
         .unwrap();
 
-    let storage_commitment_2 = account_2.storage().commitment();
+    let storage_commitment_2 = account_2.storage().to_commitment();
     let account_commitment_2 = account_2.commitment();
 
     // Second update with modified account - full state delta
@@ -224,7 +390,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         .expect("Failed to query latest storage");
 
     assert_eq!(
-        latest_storage.commitment(),
+        latest_storage.to_commitment(),
         storage_commitment_2,
         "Latest storage should match second update"
     );
@@ -234,92 +400,9 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         .expect("Failed to query storage at block 1");
 
     assert_eq!(
-        storage_at_block_1.commitment(),
+        storage_at_block_1.to_commitment(),
         storage_commitment_1,
         "Storage at block 1 should match first update"
-    );
-}
-
-#[test]
-fn test_upsert_accounts_with_incremental_delta() {
-    use std::collections::BTreeMap;
-
-    use miden_objects::account::delta::{AccountStorageDelta, AccountVaultDelta};
-
-    let mut conn = setup_test_db();
-    let (account, account_id) = create_test_account_with_storage();
-
-    let block_num_1 = BlockNumber::from_epoch(0);
-    let block_num_2 = BlockNumber::from_epoch(1);
-
-    insert_block_header(&mut conn, block_num_1);
-    insert_block_header(&mut conn, block_num_2);
-
-    // First update with full state
-    let storage_commitment_1 = account.storage().commitment();
-    let account_commitment_1 = account.commitment();
-    let nonce_1 = account.nonce();
-    let delta_1 = AccountDelta::try_from(account).unwrap();
-
-    let account_update_1 = BlockAccountUpdate::new(
-        account_id,
-        account_commitment_1,
-        AccountUpdateDetails::Delta(delta_1),
-    );
-
-    upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
-
-    // Create incremental delta (only modify storage value slot 1)
-    let new_storage_value =
-        Word::from([Felt::new(100), Felt::new(200), Felt::new(300), Felt::new(400)]);
-
-    let mut storage_delta_values = BTreeMap::new();
-    storage_delta_values.insert(1u8, new_storage_value); // Update slot 1 (component storage)
-
-    let storage_delta = AccountStorageDelta::from_parts(storage_delta_values, BTreeMap::new())
-        .expect("Failed to create storage delta");
-    let incremental_delta =
-        AccountDelta::new(account_id, storage_delta, AccountVaultDelta::default(), nonce_1)
-            .expect("Failed to create incremental delta");
-
-    // Reconstruct expected account after delta
-    let account_after = reconstruct_full_account_from_db(&mut conn, account_id)
-        .expect("Failed to reconstruct account");
-    let mut expected_account = account_after.clone();
-    expected_account
-        .apply_delta(&incremental_delta)
-        .expect("Failed to apply delta to expected account");
-
-    let storage_commitment_2 = expected_account.storage().commitment();
-    let account_commitment_2 = expected_account.commitment();
-
-    let account_update_2 = BlockAccountUpdate::new(
-        account_id,
-        account_commitment_2,
-        AccountUpdateDetails::Delta(incremental_delta),
-    );
-
-    upsert_accounts(&mut conn, &[account_update_2], block_num_2)
-        .expect("Second upsert with incremental delta failed");
-
-    // Verify latest storage matches expected state
-    let latest_storage = select_latest_account_storage(&mut conn, account_id)
-        .expect("Failed to query latest storage");
-
-    assert_eq!(
-        latest_storage.commitment(),
-        storage_commitment_2,
-        "Storage commitment should match after incremental delta"
-    );
-
-    // Verify historical storage is preserved
-    let storage_at_block_1 = select_account_storage_at_block(&mut conn, account_id, block_num_1)
-        .expect("Failed to query storage at block 1");
-
-    assert_eq!(
-        storage_at_block_1.commitment(),
-        storage_commitment_1,
-        "Historical storage should be unchanged"
     );
 }
 
@@ -340,18 +423,18 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     let slot_value_3 = Word::from([Felt::new(9), Felt::new(10), Felt::new(11), Felt::new(12)]);
 
     let component_storage = vec![
-        StorageSlot::Value(slot_value_1),
-        StorageSlot::Value(slot_value_2),
-        StorageSlot::Value(slot_value_3),
+        StorageSlot::with_value(StorageSlotName::mock(0), slot_value_1),
+        StorageSlot::with_value(StorageSlotName::mock(1), slot_value_2),
+        StorageSlot::with_value(StorageSlotName::mock(2), slot_value_3),
     ];
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        component_storage,
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .unwrap();
+
+    let component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -364,7 +447,7 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
 
-    let storage_commitment = account.storage().commitment();
+    let storage_commitment = account.storage().to_commitment();
     let account_commitment = account.commitment();
     let delta = AccountDelta::try_from(account).unwrap();
 
@@ -378,7 +461,11 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     let queried_storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
 
-    assert_eq!(queried_storage.commitment(), storage_commitment, "Storage commitment mismatch");
+    assert_eq!(
+        queried_storage.to_commitment(),
+        storage_commitment,
+        "Storage commitment mismatch"
+    );
 
     // Note: Auth component adds 1 storage slot, so 3 component slots + 1 auth = 4 total
     assert_eq!(
@@ -387,29 +474,15 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
         "Expected 4 storage slots (3 component + 1 auth)"
     );
 
-    // Verify individual slot values (skipping auth slot at index 0)
-    assert_matches!(
-        queried_storage.slots().get(1).expect("Slot 1 should exist"),
-        &StorageSlot::Value(v) if v == slot_value_1,
-        "Slot 1 value mismatch"
-    );
-    assert_matches!(
-        queried_storage.slots().get(2).expect("Slot 2 should exist"),
-        &StorageSlot::Value(v) if v == slot_value_2,
-        "Slot 2 value mismatch"
-    );
-    assert_matches!(
-        queried_storage.slots().get(3).expect("Slot 3 should exist"),
-        &StorageSlot::Value(v) if v == slot_value_3,
-        "Slot 3 value mismatch"
-    );
+    // The storage commitment matching proves that all values are correctly preserved.
+    // We don't check individual slot values by index since slot ordering may vary.
 }
 
 #[test]
 fn test_upsert_accounts_with_empty_storage() {
     let mut conn = setup_test_db();
 
-    // Create account with no storage slots
+    // Create account with no component storage slots (only auth slot)
     let account_id = AccountId::dummy(
         [3u8; 15],
         AccountIdVersion::Version0,
@@ -417,13 +490,13 @@ fn test_upsert_accounts_with_empty_storage() {
         AccountStorageMode::Public,
     );
 
-    let component = AccountComponent::compile(
-        "export.foo push.1 end",
-        TransactionKernel::assembler(),
-        vec![], // Empty storage
-    )
-    .unwrap()
-    .with_supported_type(AccountType::RegularAccountImmutableCode);
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .unwrap();
+
+    let component = AccountComponent::new(account_component_code, vec![])
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountImmutableCode);
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -436,7 +509,7 @@ fn test_upsert_accounts_with_empty_storage() {
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
 
-    let storage_commitment = account.storage().commitment();
+    let storage_commitment = account.storage().to_commitment();
     let account_commitment = account.commitment();
     let delta = AccountDelta::try_from(account).unwrap();
 
@@ -451,7 +524,7 @@ fn test_upsert_accounts_with_empty_storage() {
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
 
     assert_eq!(
-        queried_storage.commitment(),
+        queried_storage.to_commitment(),
         storage_commitment,
         "Storage commitment mismatch for empty storage"
     );

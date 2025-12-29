@@ -1019,12 +1019,12 @@ impl State {
             Some(commitment) if commitment == account_header.vault_root() => {
                 AccountVaultDetails::empty()
             },
-            Some(_) | None if asset_vault_commitment.is_some() => {
+            Some(_) => {
                 let vault_assets =
                     self.db.select_account_vault_at_block(account_id, block_num).await?;
                 AccountVaultDetails::from_assets(vault_assets)
             },
-            _ => AccountVaultDetails::empty(),
+            None => AccountVaultDetails::empty(),
         };
 
         // TODO: don't load the entire store at once, load what is required

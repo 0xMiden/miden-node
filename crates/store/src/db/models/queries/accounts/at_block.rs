@@ -279,12 +279,11 @@ pub(crate) fn select_account_storage_at_block(
             DatabaseError::DataCorrupted(format!("Invalid slot name: {slot_name_str}"))
         })?;
         let key = Word::read_from_bytes(&key_bytes)?;
+        let value = Word::read_from_bytes(&value_bytes)?;
 
         // Only insert if we haven't seen this (slot_name, key) yet
         // (since results are ordered by block_num desc, first one is latest)
-        latest_map_entries
-            .entry((slot_name, key))
-            .or_insert_with(|| Word::read_from_bytes(&value_bytes).unwrap_or_default());
+        latest_map_entries.entry((slot_name, key)).or_insert(value);
     }
 
     // Group entries by slot name

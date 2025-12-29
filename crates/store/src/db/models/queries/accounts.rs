@@ -56,6 +56,9 @@ pub(crate) use at_block::{
     select_account_vault_at_block,
 };
 
+#[cfg(test)]
+mod tests;
+
 type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
 
 // ACCOUNT RETRIEVAL
@@ -448,7 +451,7 @@ pub(crate) fn select_all_accounts(
         .order_by(schema::accounts::block_num.asc())
         .load::<AccountSummaryRaw>(conn)?;
 
-    let summaries: Vec<AccountSummary> = vec_raw_try_into(raw).unwrap();
+    let summaries: Vec<AccountSummary> = vec_raw_try_into(raw)?;
 
     // Backfill account details from database
     let account_infos = Vec::from_iter(summaries.into_iter().map(|summary| {

@@ -50,18 +50,23 @@ impl InnerForest {
     ///
     /// Finds the most recent vault root entry for the account, since vault state persists
     /// across blocks where no changes occur.
+    //
+    // TODO: a fallback to DB lookup is required once pruning lands.
+    // Currently returns empty root which would be incorrect
     fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
         self.vault_roots
             .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
             .next_back()
-            .map(|(_, root)| *root)
-            .unwrap_or_else(Self::empty_smt_root)
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
     /// Retrieves the storage map SMT root for an account slot at or before the given block.
     ///
     /// Finds the most recent storage root entry for the slot, since storage state persists
     /// across blocks where no changes occur.
+    //
+    // TODO: a fallback to DB lookup is required once pruning lands.
+    // Currently returns empty root which would be incorrect
     fn get_storage_root(
         &self,
         account_id: AccountId,
@@ -74,8 +79,7 @@ impl InnerForest {
                     ..=(account_id, slot_name.clone(), block_num),
             )
             .next_back()
-            .map(|(_, root)| *root)
-            .unwrap_or_else(Self::empty_smt_root)
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
     // PUBLIC INTERFACE

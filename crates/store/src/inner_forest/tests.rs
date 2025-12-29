@@ -297,3 +297,46 @@ fn test_partial_delta_applies_fungible_changes_correctly() {
 
     assert_eq!(root_after_120, root_full_state_120);
 }
+
+#[test]
+fn test_partial_delta_across_long_block_range() {
+    // Validation test: partial deltas should work across 101+ blocks.
+    //
+    // This test passes now because InnerForest keeps all history. Once pruning is implemented
+    // (estimated ~50 blocks), this test will fail unless DB fallback is also implemented.
+    // When that happens, the test should be updated to use DB fallback or converted to an
+    // integration test that has DB access.
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    // Block 1: Add 1000 tokens
+    let block_1 = BlockNumber::GENESIS.child();
+    let mut vault_delta_1 = AccountVaultDelta::default();
+    vault_delta_1.add_asset(dummy_fungible_asset(faucet_id, 1000)).unwrap();
+    let delta_1 = dummy_partial_delta(account_id, vault_delta_1, AccountStorageDelta::default());
+    forest.update_account(block_1, &delta_1);
+    let root_after_1000 = forest.vault_roots[&(account_id, block_1)];
+
+    // Blocks 2-100: No changes to this account (simulating long gap)
+
+    // Block 101: Add 500 more tokens (partial delta with +500)
+    // This requires looking up block 1's state across a 100-block gap.
+    let block_101 = BlockNumber::from(101);
+    let mut vault_delta_101 = AccountVaultDelta::default();
+    vault_delta_101.add_asset(dummy_fungible_asset(faucet_id, 500)).unwrap();
+    let delta_101 = dummy_partial_delta(account_id, vault_delta_101, AccountStorageDelta::default());
+    forest.update_account(block_101, &delta_101);
+    let root_after_1500 = forest.vault_roots[&(account_id, block_101)];
+
+    // Roots should be different (1000 tokens vs 1500 tokens)
+    assert_ne!(root_after_1000, root_after_1500);
+
+    // Verify the final state matches a fresh forest with 1500 tokens
+    let mut fresh_forest = InnerForest::new();
+    let full_delta = dummy_full_state_delta(account_id, &[dummy_fungible_asset(faucet_id, 1500)]);
+    fresh_forest.update_account(block_101, &full_delta);
+    let root_full_state_1500 = fresh_forest.vault_roots[&(account_id, block_101)];
+
+    assert_eq!(root_after_1500, root_full_state_1500);
+}

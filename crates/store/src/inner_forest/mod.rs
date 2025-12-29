@@ -52,9 +52,8 @@ impl InnerForest {
     /// across blocks where no changes occur.
     fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
         self.vault_roots
-            .range(..=(account_id, block_num))
-            .rev()
-            .find(|((id, _), _)| *id == account_id)
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
+            .next_back()
             .map(|(_, root)| *root)
             .unwrap_or_else(Self::empty_smt_root)
     }
@@ -70,9 +69,11 @@ impl InnerForest {
         block_num: BlockNumber,
     ) -> Word {
         self.storage_roots
-            .range(..=(account_id, slot_name.clone(), block_num))
-            .rev()
-            .find(|((id, name, _), _)| *id == account_id && name == slot_name)
+            .range(
+                (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                    ..=(account_id, slot_name.clone(), block_num),
+            )
+            .next_back()
             .map(|(_, root)| *root)
             .unwrap_or_else(Self::empty_smt_root)
     }

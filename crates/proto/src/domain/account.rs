@@ -18,7 +18,7 @@ use miden_protocol::crypto::merkle::smt::{SmtForest, SmtProof};
 use miden_protocol::crypto::merkle::{MerkleError, SparseMerklePath};
 use miden_protocol::note::{NoteExecutionMode, NoteTag};
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
-use miden_protocol::{AssetError, Word};
+use miden_protocol::Word;
 use thiserror::Error;
 
 use super::try_convert;
@@ -73,7 +73,6 @@ impl From<AccountId> for proto::account::AccountId {
 // ACCOUNT UPDATE
 // ================================================================================================
 
-// TODO should be called `AccountStateRef` or so
 #[derive(Debug, PartialEq)]
 pub struct AccountSummary {
     pub account_id: AccountId,
@@ -420,24 +419,6 @@ impl AccountVaultDetails {
         } else {
             Self::Assets(assets)
         }
-    }
-
-    /// Creates `AccountVaultDetails` from vault entries (key-value pairs).
-    ///
-    /// This is useful when entries have been fetched directly from the database
-    /// rather than extracted from an `AssetVault`.
-    ///
-    /// The entries are `(vault_key, asset)` pairs where `asset` is a Word representation.
-    pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, AssetError> {
-        if entries.len() > Self::MAX_RETURN_ENTRIES {
-            return Ok(Self::LimitExceeded);
-        }
-
-        let assets = Result::<Vec<_>, _>::from_iter(
-            entries.into_iter().map(|(_key, asset_word)| Asset::try_from(asset_word)),
-        )?;
-
-        Ok(Self::Assets(assets))
     }
 }
 

@@ -1031,7 +1031,7 @@ impl State {
             .db
             .select_account_header_at_block(account_id, block_num)
             .await?
-            .ok_or_else(|| DatabaseError::AccountNotPublic(account_id))?;
+            .ok_or(DatabaseError::AccountAtBlockHeightNotFoundInDb(account_id, block_num))?;
 
         let account_code = match code_commitment {
             Some(commitment) if commitment == account_header.code_commitment() => None,
@@ -1043,12 +1043,12 @@ impl State {
             Some(commitment) if commitment == account_header.vault_root() => {
                 AccountVaultDetails::empty()
             },
-            Some(_) | None if asset_vault_commitment.is_some() => {
+            Some(_) => {
                 let vault_assets =
                     self.db.select_account_vault_at_block(account_id, block_num).await?;
                 AccountVaultDetails::from_assets(vault_assets)
             },
-            _ => AccountVaultDetails::empty(),
+            None => AccountVaultDetails::empty(),
         };
 
         // Load storage header from DB (map entries come from forest)
@@ -1166,19 +1166,6 @@ impl State {
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
         self.db.get_account_vault_sync(account_id, block_range).await
     }
-
-    /// Returns the unprocessed network notes, along with the next pagination token.
-    pub async fn get_unconsumed_network_notes(
-        &self,
-        network_account_id_prefix: NetworkAccountPrefix,
-        block_num: BlockNumber,
-        page: Page,
-    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        self.db
-            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
-            .await
-    }
-
     /// Returns the network notes for an account that are unconsumed by a specified block number,
     /// along with the next pagination token.
     pub async fn get_unconsumed_network_notes_for_account(

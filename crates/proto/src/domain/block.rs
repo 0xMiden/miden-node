@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
-use miden_objects::account::AccountId;
-use miden_objects::block::nullifier_tree::NullifierWitness;
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, FeeParameters};
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
-use miden_objects::note::{NoteId, NoteInclusionProof};
-use miden_objects::transaction::PartialBlockchain;
-use miden_objects::utils::{Deserializable, Serializable};
+use miden_protocol::account::AccountId;
+use miden_protocol::block::nullifier_tree::NullifierWitness;
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, FeeParameters};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
+use miden_protocol::note::{NoteId, NoteInclusionProof};
+use miden_protocol::transaction::PartialBlockchain;
+use miden_protocol::utils::{Deserializable, Serializable};
 use thiserror::Error;
 
 use crate::errors::{ConversionError, MissingFieldHelper};

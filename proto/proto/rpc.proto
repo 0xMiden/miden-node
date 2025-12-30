@@ -107,6 +107,13 @@ service Api {
 
     // Returns transactions records for specific accounts within a block range.
     rpc SyncTransactions(SyncTransactionsRequest) returns (SyncTransactionsResponse) {}
+
+    // Returns the query parameter limits configured for RPC methods.
+    //
+    // These define the maximum number of each parameter a method will accept.
+    // Exceeding the limit will result in the request being rejected and you should instead send
+    // multiple smaller requests.
+    rpc GetLimits(google.protobuf.Empty) returns (RpcLimits) {}
 }
 
 // RPC STATUS
@@ -311,8 +318,22 @@ message AccountVaultDetails {
 // Account storage details for AccountResponse
 message AccountStorageDetails {
     message AccountStorageMapDetails {
-        // Wrapper for repeated storage map entries
-        message MapEntries {
+        // Wrapper for repeated storage map entries including their proofs.
+        // Used when specific keys are requested to enable client-side verification.
+        message MapEntriesWithProofs {
+            // Definition of individual storage entries including a proof.
+            message StorageMapEntryWithProof {
+                primitives.Digest key = 1;
+                primitives.Digest value = 2;
+                primitives.SmtOpening proof = 3;
+            }
+
+            repeated StorageMapEntryWithProof entries = 1;
+        }
+
+        // Wrapper for repeated storage map entries (without proofs).
+        // Used when all entries are requested for small maps.
+        message AllMapEntries {
             // Definition of individual storage entries.
             message StorageMapEntry {
                 primitives.Digest key = 1;
@@ -325,13 +346,18 @@ message AccountStorageDetails {
         // Storage slot name.
         string slot_name = 1;
 
-        // A flag that is set to `true` if the number of to-be-returned entries in the
-        // storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
-        // endpoint should be used to get all storage map data.
+        // True when the number of entries exceeds the response limit.
+        // When set, clients should use the `SyncStorageMaps` endpoint.
         bool too_many_entries = 2;
 
-        // By default we provide all storage entries.
-        MapEntries entries = 3;
+        // The map entries (with or without proofs). Empty when too_many_entries is true.
+        oneof entries {
+            // All storage entries without proofs (for small maps or full requests).
+            AllMapEntries all_entries = 3;
+
+            // Specific entries with their SMT proofs (for partial requests).
+            MapEntriesWithProofs entries_with_proofs = 4;
+        }
     }
 
     // Account storage header (storage slot info for up to 256 slots)
@@ -619,4 +645,23 @@ message TransactionRecord {
 
     // A transaction header.
     transaction.TransactionHeader header = 2;
+}
+
+// RPC LIMITS
+// ================================================================================================
+
+// Represents the query parameter limits for RPC endpoints.
+message RpcLimits {
+    // Maps RPC endpoint names to their parameter limits.
+    // Key: endpoint name (e.g., "CheckNullifiers", "SyncState")
+    // Value: map of parameter names to their limit values
+    map<string, EndpointLimits> endpoints = 1;
+}
+
+// Represents the parameter limits for a single endpoint.
+message EndpointLimits {
+    // Maps parameter names to their limit values.
+    // Key: parameter name (e.g., "nullifier", "account_id")
+    // Value: limit value
+    map<string, uint32> parameters = 1;
 }

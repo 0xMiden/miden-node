@@ -5,11 +5,11 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::{NetworkNote, SingleTargetNetworkNote};
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::Account;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::{Note, Nullifier};
-use miden_objects::transaction::{PartialBlockchain, TransactionId};
+use miden_protocol::account::Account;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::{Note, Nullifier};
+use miden_protocol::transaction::{PartialBlockchain, TransactionId};
 use tracing::instrument;
 
 use super::ActorShutdownReason;

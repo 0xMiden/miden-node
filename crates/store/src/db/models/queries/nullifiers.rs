@@ -11,15 +11,15 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamLimiter,
     QueryParamNullifierLimit,
     QueryParamNullifierPrefixLimit,
 };
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Nullifier;
+use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::DatabaseError;
 use crate::db::models::conv::{SqlTypeConvert, nullifier_prefix_to_raw_sql};

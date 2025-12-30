@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-mod accounts;
+pub mod accounts;
 mod blocks;
 mod db;
 mod errors;
@@ -9,7 +9,7 @@ mod inner_forest;
 mod server;
 pub mod state;
 
-pub use accounts::{AccountTreeWithHistory, HistoricalError, InMemoryAccountTree};
+pub(crate) use accounts::{AccountTreeWithHistory, HistoricalError};
 pub use genesis::GenesisState;
 pub use server::{DataDirectory, Store};
 

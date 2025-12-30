@@ -31,10 +31,10 @@
 )]
 
 use diesel::SqliteConnection;
-use miden_objects::account::AccountId;
-use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_protocol::account::AccountId;
+use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::OrderedTransactionHeaders;
 
 use super::DatabaseError;
 use crate::db::{NoteRecord, StateSyncUpdate};

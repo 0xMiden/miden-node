@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_objects::Word;
-use miden_objects::account::{
+use miden_protocol::Word;
+use miden_protocol::account::{
     Account,
     AccountHeader,
     AccountId,
@@ -12,12 +12,13 @@ use miden_objects::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::BlockNumber;
-use miden_objects::block::account_tree::AccountWitness;
-use miden_objects::crypto::merkle::{MerkleError, SmtForest, SmtProof, SparseMerklePath};
-use miden_objects::note::{NoteExecutionMode, NoteTag};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::asset::{Asset, AssetVault};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::crypto::merkle::smt::{SmtForest, SmtProof};
+use miden_protocol::crypto::merkle::{MerkleError, SparseMerklePath};
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
 
 use super::try_convert;
@@ -72,7 +73,6 @@ impl From<AccountId> for proto::account::AccountId {
 // ACCOUNT UPDATE
 // ================================================================================================
 
-// TODO should be called `AccountStateRef` or so
 #[derive(Debug, PartialEq)]
 pub struct AccountSummary {
     pub account_id: AccountId,
@@ -100,7 +100,7 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
-            details: details.as_ref().map(miden_objects::utils::Serializable::to_bytes),
+            details: details.as_ref().map(Serializable::to_bytes),
         }
     }
 }
@@ -193,7 +193,13 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
     fn try_from(
         value: proto::rpc::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
-        use proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry;
+        use proto::rpc::account_storage_details::account_storage_map_details::{
+            all_map_entries::StorageMapEntry,
+            map_entries_with_proofs::StorageMapEntryWithProof,
+            AllMapEntries,
+            MapEntriesWithProofs,
+            Entries as ProtoEntries,
+        };
 
         let proto::rpc::account_storage_details::AccountStorageMapDetails {
             slot_name,
@@ -206,26 +212,49 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
         let entries = if too_many_entries {
             StorageMapEntries::LimitExceeded
         } else {
-            let map_entries = if let Some(entries) = entries {
-                entries
-                    .entries
-                    .into_iter()
-                    .map(|entry| {
-                        let key = entry
-                            .key
-                            .ok_or(StorageMapEntry::missing_field(stringify!(key)))?
-                            .try_into()?;
-                        let value = entry
-                            .value
-                            .ok_or(StorageMapEntry::missing_field(stringify!(value)))?
-                            .try_into()?;
-                        Ok((key, value))
-                    })
-                    .collect::<Result<Vec<_>, ConversionError>>()?
-            } else {
-                Vec::new()
-            };
-            StorageMapEntries::Entries(map_entries)
+            match entries {
+                None => {
+                    return Err(proto::rpc::account_storage_details::AccountStorageMapDetails::missing_field(stringify!(entries)));
+                },
+                Some(ProtoEntries::AllEntries(AllMapEntries { entries })) => {
+                    let entries = entries
+                        .into_iter()
+                        .map(|entry| {
+                            let key = entry
+                                .key
+                                .ok_or(StorageMapEntry::missing_field(stringify!(key)))?
+                                .try_into()?;
+                            let value = entry
+                                .value
+                                .ok_or(StorageMapEntry::missing_field(stringify!(value)))?
+                                .try_into()?;
+                            Ok((key, value))
+                        })
+                        .collect::<Result<Vec<_>, ConversionError>>()?;
+                    StorageMapEntries::AllEntries(entries)
+                },
+                Some(ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries })) => {
+                    let proofs = entries
+                        .into_iter()
+                        .map(|entry| {
+                            let _key: Word = entry
+                                .key
+                                .ok_or(StorageMapEntryWithProof::missing_field(stringify!(key)))?
+                                .try_into()?;
+                            let _value: Word = entry
+                                .value
+                                .ok_or(StorageMapEntryWithProof::missing_field(stringify!(value)))?
+                                .try_into()?;
+                            let smt_opening = entry.proof.ok_or(
+                                StorageMapEntryWithProof::missing_field(stringify!(proof)),
+                            )?;
+                            let smt_proof = SmtProof::try_from(smt_opening)?;
+                            Ok(smt_proof)
+                        })
+                        .collect::<Result<Vec<_>, ConversionError>>()?;
+                    StorageMapEntries::EntriesWithProofs(proofs)
+                },
+            }
         };
 
         Ok(Self { slot_name, entries })
@@ -398,24 +427,6 @@ impl AccountVaultDetails {
             Self::Assets(assets)
         }
     }
-
-    /// Creates `AccountVaultDetails` from vault entries (key-value pairs).
-    ///
-    /// This is useful when entries have been fetched directly from the database
-    /// rather than extracted from an `AssetVault`.
-    ///
-    /// The entries are `(vault_key, asset)` pairs where `asset` is a Word representation.
-    pub fn from_entries(entries: Vec<(Word, Word)>) -> Result<Self, miden_objects::AssetError> {
-        if entries.len() > Self::MAX_RETURN_ENTRIES {
-            return Ok(Self::LimitExceeded);
-        }
-
-        let assets = Result::<Vec<_>, _>::from_iter(
-            entries.into_iter().map(|(_key, asset_word)| Asset::try_from(asset_word)),
-        )?;
-
-        Ok(Self::Assets(assets))
-    }
 }
 
 impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
@@ -463,28 +474,22 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
 /// returning all entries in a single RPC response creates performance issues. In such cases,
 /// the `LimitExceeded` variant indicates to the client to use the `SyncStorageMaps` endpoint
 /// instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StorageMapEntries {
     /// The map has too many entries to return inline.
     /// Clients must use `SyncStorageMaps` endpoint instead.
     LimitExceeded,
 
-    /// The storage map entries (key-value pairs), up to `MAX_RETURN_ENTRIES`.
-    /// TODO: For partial responses, also include Merkle proofs and inner SMT nodes.
-    Entries(Vec<(Word, Word)>),
-}
-
-/// Details about an account storage map slot.
-#[derive(Debug, Clone, PartialEq)]
-pub enum StorageMapData {
-    /// All entries are included used for small storage maps or when `all_entries` is requested.
+    /// All storage map entries (key-value pairs) without proofs.
+    /// Used when all entries are requested for small maps.
     AllEntries(Vec<(Word, Word)>),
 
-    /// Specific entries with their Merkle proofs for partial responses.
+    /// Specific entries with their SMT proofs for client-side verification.
+    /// Used when specific keys are requested from the storage map.
     EntriesWithProofs(Vec<SmtProof>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AccountStorageMapDetails {
     pub slot_name: StorageSlotName,
     pub entries: StorageMapEntries,
@@ -505,10 +510,10 @@ impl AccountStorageMapDetails {
                 entries: StorageMapEntries::LimitExceeded,
             }
         } else {
-            let map_entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
+            let entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
             Self {
                 slot_name,
-                entries: StorageMapEntries::Entries(map_entries),
+                entries: StorageMapEntries::AllEntries(entries),
             }
         }
     }
@@ -527,7 +532,8 @@ impl AccountStorageMapDetails {
                         entries: StorageMapEntries::LimitExceeded,
                     }
                 } else {
-                    // Query specific keys from the storage map
+                    // Query specific keys from the storage map - returns all entries without proofs
+                    // For proofs, use from_specific_keys with SmtForest
                     let mut entries = Vec::with_capacity(keys.len());
                     for key in keys {
                         let value = storage_map.get(&key);
@@ -535,7 +541,7 @@ impl AccountStorageMapDetails {
                     }
                     Self {
                         slot_name,
-                        entries: StorageMapEntries::Entries(entries),
+                        entries: StorageMapEntries::AllEntries(entries),
                     }
                 }
             },
@@ -554,12 +560,15 @@ impl AccountStorageMapDetails {
         } else {
             Self {
                 slot_name,
-                entries: StorageMapEntries::Entries(entries),
+                entries: StorageMapEntries::AllEntries(entries),
             }
         }
     }
 
     /// Creates storage map details with SMT proofs for specific keys.
+    ///
+    /// This method queries the forest for specific keys and returns proofs that
+    /// enable client-side verification of the values.
     ///
     /// Returns `LimitExceeded` if too many keys, or `MerkleError` if the forest
     /// doesn't contain sufficient data.
@@ -576,23 +585,22 @@ impl AccountStorageMapDetails {
             });
         }
 
-        // Collect key-value pairs by opening proofs for each key
-        let mut entries = Vec::with_capacity(keys.len());
+        // Collect SMT proofs for each key
+        let mut proofs = Vec::with_capacity(keys.len());
 
         for key in keys {
             let proof = storage_forest.open(smt_root, *key)?;
-            let value = proof.get(key).unwrap_or(miden_objects::EMPTY_WORD);
-            entries.push((*key, value));
+            proofs.push(proof);
         }
 
         Ok(Self {
             slot_name,
-            entries: StorageMapEntries::Entries(entries),
+            entries: StorageMapEntries::EntriesWithProofs(proofs),
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AccountStorageDetails {
     pub header: AccountStorageHeader,
     pub map_details: Vec<AccountStorageMapDetails>,
@@ -751,32 +759,59 @@ impl From<AccountStorageMapDetails>
     for proto::rpc::account_storage_details::AccountStorageMapDetails
 {
     fn from(value: AccountStorageMapDetails) -> Self {
-        use proto::rpc::account_storage_details::account_storage_map_details;
+        use proto::rpc::account_storage_details::account_storage_map_details::{
+            AllMapEntries,
+            Entries as ProtoEntries,
+            MapEntriesWithProofs,
+        };
 
         let AccountStorageMapDetails { slot_name, entries } = value;
 
-        match entries {
-            StorageMapEntries::LimitExceeded => Self {
-                slot_name: slot_name.to_string(),
-                too_many_entries: true,
-                entries: Some(account_storage_map_details::MapEntries { entries: Vec::new() }),
-            },
-            StorageMapEntries::Entries(map_entries) => {
-                let entries = Some(account_storage_map_details::MapEntries {
-                    entries: Vec::from_iter(map_entries.into_iter().map(|(key, value)| {
-                        account_storage_map_details::map_entries::StorageMapEntry {
+        let (too_many_entries, proto_entries) = match entries {
+            StorageMapEntries::LimitExceeded => (true, None),
+            StorageMapEntries::AllEntries(entries) => {
+                let all = AllMapEntries {
+                    entries: Vec::from_iter(entries.into_iter().map(|(key, value)| {
+                        proto::rpc::account_storage_details::account_storage_map_details::all_map_entries::StorageMapEntry {
                             key: Some(key.into()),
                             value: Some(value.into()),
                         }
                     })),
-                });
-
-                Self {
-                    slot_name: slot_name.to_string(),
-                    too_many_entries: false,
-                    entries,
-                }
+                };
+                (false, Some(ProtoEntries::AllEntries(all)))
             },
+            StorageMapEntries::EntriesWithProofs(proofs) => {
+                use miden_protocol::crypto::merkle::smt::SmtLeaf;
+
+                let with_proofs = MapEntriesWithProofs {
+                    entries: Vec::from_iter(proofs.into_iter().map(|proof| {
+                        // Get key/value from the leaf before consuming the proof
+                        let (key, value) = match proof.leaf() {
+                            SmtLeaf::Empty(_) => {
+                                (miden_protocol::EMPTY_WORD, miden_protocol::EMPTY_WORD)
+                            },
+                            SmtLeaf::Single((k, v)) => (*k, *v),
+                            SmtLeaf::Multiple(entries) => entries.iter().next().map_or(
+                                (miden_protocol::EMPTY_WORD, miden_protocol::EMPTY_WORD),
+                                |(k, v)| (*k, *v),
+                            ),
+                        };
+                        let smt_opening = proto::primitives::SmtOpening::from(proof);
+                        proto::rpc::account_storage_details::account_storage_map_details::map_entries_with_proofs::StorageMapEntryWithProof {
+                            key: Some(key.into()),
+                            value: Some(value.into()),
+                            proof: Some(smt_opening),
+                        }
+                    })),
+                };
+                (false, Some(ProtoEntries::EntriesWithProofs(with_proofs)))
+            },
+        };
+
+        Self {
+            slot_name: slot_name.to_string(),
+            too_many_entries,
+            entries: proto_entries,
         }
     }
 }
@@ -1041,4 +1076,171 @@ pub enum NetworkAccountError {
 /// Gets the 30-bit prefix of the account ID.
 fn get_account_id_tag_prefix(id: AccountId) -> AccountPrefix {
     (id.prefix().as_u64() >> 34) as AccountPrefix
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::crypto::merkle::EmptySubtreeRoots;
+    use miden_protocol::crypto::merkle::smt::SMT_DEPTH;
+
+    use super::*;
+
+    fn word_from_u32(arr: [u32; 4]) -> Word {
+        Word::from(arr)
+    }
+
+    fn test_slot_name() -> StorageSlotName {
+        StorageSlotName::new("miden::test::storage::slot").unwrap()
+    }
+
+    fn empty_smt_root() -> Word {
+        *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
+    }
+
+    #[test]
+    fn account_storage_map_details_from_forest_entries() {
+        let slot_name = test_slot_name();
+        let entries = vec![
+            (word_from_u32([1, 2, 3, 4]), word_from_u32([5, 6, 7, 8])),
+            (word_from_u32([9, 10, 11, 12]), word_from_u32([13, 14, 15, 16])),
+        ];
+
+        let details =
+            AccountStorageMapDetails::from_forest_entries(slot_name.clone(), entries.clone());
+
+        assert_eq!(details.slot_name, slot_name);
+        assert_eq!(details.entries, StorageMapEntries::AllEntries(entries));
+    }
+
+    #[test]
+    fn account_storage_map_details_from_forest_entries_limit_exceeded() {
+        let slot_name = test_slot_name();
+        // Create more entries than MAX_RETURN_ENTRIES
+        let entries: Vec<_> = (0..AccountStorageMapDetails::MAX_RETURN_ENTRIES + 1)
+            .map(|i| {
+                let key = word_from_u32([i as u32, 0, 0, 0]);
+                let value = word_from_u32([0, 0, 0, i as u32]);
+                (key, value)
+            })
+            .collect();
+
+        let details = AccountStorageMapDetails::from_forest_entries(slot_name.clone(), entries);
+
+        assert_eq!(details.slot_name, slot_name);
+        assert_eq!(details.entries, StorageMapEntries::LimitExceeded);
+    }
+
+    #[test]
+    fn account_storage_map_details_from_specific_keys() {
+        let slot_name = test_slot_name();
+
+        // Create an SmtForest and populate it with some data
+        let mut forest = SmtForest::new();
+        let entries = vec![
+            (word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0])),
+            (word_from_u32([2, 0, 0, 0]), word_from_u32([20, 0, 0, 0])),
+            (word_from_u32([3, 0, 0, 0]), word_from_u32([30, 0, 0, 0])),
+        ];
+
+        // Insert entries into the forest starting from an empty root
+        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
+
+        // Query specific keys
+        let keys = vec![word_from_u32([1, 0, 0, 0]), word_from_u32([3, 0, 0, 0])];
+
+        let details = AccountStorageMapDetails::from_specific_keys(
+            slot_name.clone(),
+            &keys,
+            &forest,
+            smt_root,
+        )
+        .unwrap();
+
+        assert_eq!(details.slot_name, slot_name);
+        match details.entries {
+            StorageMapEntries::EntriesWithProofs(proofs) => {
+                use miden_protocol::crypto::merkle::smt::SmtLeaf;
+
+                assert_eq!(proofs.len(), 2);
+
+                // Helper to extract key-value from any leaf type
+                let get_value = |proof: &SmtProof, expected_key: Word| -> Word {
+                    match proof.leaf() {
+                        SmtLeaf::Single((k, v)) if *k == expected_key => *v,
+                        SmtLeaf::Multiple(entries) => entries
+                            .iter()
+                            .find(|(k, _)| *k == expected_key)
+                            .map(|(_, v)| *v)
+                            .unwrap_or(miden_protocol::EMPTY_WORD),
+                        _ => miden_protocol::EMPTY_WORD,
+                    }
+                };
+
+                let key1 = word_from_u32([1, 0, 0, 0]);
+                let key2 = word_from_u32([3, 0, 0, 0]);
+                let value1 = get_value(&proofs[0], key1);
+                let value2 = get_value(&proofs[1], key2);
+
+                assert_eq!(value1, word_from_u32([10, 0, 0, 0]));
+                assert_eq!(value2, word_from_u32([30, 0, 0, 0]));
+            },
+            _ => panic!("Expected EntriesWithProofs"),
+        }
+    }
+
+    #[test]
+    fn account_storage_map_details_from_specific_keys_nonexistent_returns_proof() {
+        let slot_name = test_slot_name();
+
+        // Create an SmtForest with one entry so the root is tracked
+        let mut forest = SmtForest::new();
+        let entries = vec![(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
+        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
+
+        // Query a key that doesn't exist in the tree - should return a proof
+        // (the proof will show non-membership or point to an adjacent leaf)
+        let keys = vec![word_from_u32([99, 0, 0, 0])];
+
+        let details = AccountStorageMapDetails::from_specific_keys(
+            slot_name.clone(),
+            &keys,
+            &forest,
+            smt_root,
+        )
+        .unwrap();
+
+        match details.entries {
+            StorageMapEntries::EntriesWithProofs(proofs) => {
+                // We got a proof for the non-existent key
+                assert_eq!(proofs.len(), 1);
+                // The proof exists and can be used to verify non-membership
+            },
+            _ => panic!("Expected EntriesWithProofs"),
+        }
+    }
+
+    #[test]
+    fn account_storage_map_details_from_specific_keys_limit_exceeded() {
+        let slot_name = test_slot_name();
+        let mut forest = SmtForest::new();
+
+        // Create a forest with some data to get a valid root
+        let entries = vec![(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
+        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
+
+        // Create more keys than MAX_RETURN_ENTRIES
+        let keys: Vec<_> = (0..AccountStorageMapDetails::MAX_RETURN_ENTRIES + 1)
+            .map(|i| word_from_u32([i as u32, 0, 0, 0]))
+            .collect();
+
+        let details = AccountStorageMapDetails::from_specific_keys(
+            slot_name.clone(),
+            &keys,
+            &forest,
+            smt_root,
+        )
+        .unwrap();
+
+        assert_eq!(details.entries, StorageMapEntries::LimitExceeded);
+    }
 }

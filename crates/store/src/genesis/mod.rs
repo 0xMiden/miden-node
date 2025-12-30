@@ -1,9 +1,8 @@
-use miden_lib::transaction::TransactionKernel;
-use miden_objects::Word;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountDelta};
-use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-use miden_objects::block::{
+use miden_protocol::Word;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{Account, AccountDelta};
+use miden_protocol::block::account_tree::{AccountTree, account_id_to_smt_key};
+use miden_protocol::block::{
     BlockAccountUpdate,
     BlockBody,
     BlockHeader,
@@ -14,9 +13,10 @@ use miden_objects::block::{
     FeeParameters,
     ProvenBlock,
 };
-use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks};
+use miden_protocol::crypto::merkle::smt::{LargeSmt, MemoryStorage, Smt};
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionKernel};
 
 use crate::errors::GenesisError;
 

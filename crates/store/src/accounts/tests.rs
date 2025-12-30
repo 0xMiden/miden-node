@@ -6,19 +6,19 @@
 #[allow(clippy::uninlined_format_args)]
 #[allow(clippy::cast_sign_loss)]
 mod account_tree_with_history_tests {
-    use miden_objects::Word;
-    use miden_objects::account::AccountId;
-    use miden_objects::block::BlockNumber;
-    use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-    use miden_objects::crypto::merkle::{LargeSmt, MemoryStorage};
-    use miden_objects::testing::account_id::AccountIdBuilder;
+    use miden_protocol::Word;
+    use miden_protocol::account::AccountId;
+    use miden_protocol::block::BlockNumber;
+    use miden_protocol::block::account_tree::{AccountTree, account_id_to_smt_key};
+    use miden_protocol::crypto::merkle::smt::{LargeSmt, MemoryStorage};
+    use miden_protocol::testing::account_id::AccountIdBuilder;
 
     use super::super::*;
 
     /// Helper function to create an `AccountTree` from entries using the new API
     fn create_account_tree(
         entries: impl IntoIterator<Item = (AccountId, Word)>,
-    ) -> AccountTree<LargeSmt<MemoryStorage>> {
+    ) -> InMemoryAccountTree {
         let smt_entries = entries
             .into_iter()
             .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));

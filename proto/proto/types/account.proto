@@ -12,7 +12,7 @@ import "types/primitives.proto";
 // and a random user-provided seed.
 message AccountId {
     // 15 bytes (120 bits) encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::account::account_id::AccountId].
+    // [miden_protocol::account::account_id::AccountId].
     bytes id = 1;
 }
 
@@ -54,7 +54,7 @@ message AccountDetails {
     AccountSummary summary = 1;
 
     // Account details encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::account::Account].
+    // [miden_protocol::account::Account].
     optional bytes details = 2;
 }
 

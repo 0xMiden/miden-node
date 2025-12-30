@@ -3,7 +3,7 @@
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Block {
     /// Block data encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::block::Block\].
+    /// \[miden_protocol::block::Block\].
     #[prost(bytes = "vec", tag = "1")]
     pub block: ::prost::alloc::vec::Vec<u8>,
 }
@@ -11,7 +11,7 @@ pub struct Block {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProposedBlock {
     /// Block data encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::block::ProposedBlock\].
+    /// \[miden_protocol::block::ProposedBlock\].
     #[prost(bytes = "vec", tag = "1")]
     pub proposed_block: ::prost::alloc::vec::Vec<u8>,
 }
@@ -19,7 +19,7 @@ pub struct ProposedBlock {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MaybeBlock {
     /// The requested block data encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::block::Block\].
+    /// \[miden_protocol::block::Block\].
     #[prost(bytes = "vec", optional, tag = "1")]
     pub block: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
@@ -107,7 +107,7 @@ pub struct FeeParameters {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockBody {
     /// Block body data encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::block::BlockBody\].
+    /// \[miden_protocol::block::BlockBody\].
     #[prost(bytes = "vec", tag = "1")]
     pub block_body: ::prost::alloc::vec::Vec<u8>,
 }

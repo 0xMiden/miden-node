@@ -1,6 +1,6 @@
-use miden_objects::Word;
-use miden_objects::crypto::merkle::SmtProof;
-use miden_objects::note::Nullifier;
+use miden_protocol::Word;
+use miden_protocol::crypto::merkle::smt::SmtProof;
+use miden_protocol::note::Nullifier;
 
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::generated as proto;

@@ -9,9 +9,9 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
 };
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::note::NoteId;
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::note::NoteId;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 

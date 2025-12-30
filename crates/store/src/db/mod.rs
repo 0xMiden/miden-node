@@ -4,15 +4,14 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
-use miden_objects::Word;
-use miden_objects::account::{AccountHeader, AccountId, AccountStorage};
-use miden_objects::asset::{Asset, AssetVaultKey};
-use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
+use miden_protocol::Word;
+use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader};
+use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{
     NoteDetails,
     NoteId,
     NoteInclusionProof,
@@ -20,7 +19,8 @@ use miden_objects::note::{
     NoteScript,
     Nullifier,
 };
-use miden_objects::transaction::TransactionId;
+use miden_protocol::transaction::TransactionId;
+use miden_protocol::utils::{Deserializable, Serializable};
 use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
 
@@ -400,6 +400,15 @@ impl Db {
         .await
     }
 
+    /// Returns all account IDs that have public state.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_all_public_account_ids(&self) -> Result<Vec<AccountId>> {
+        self.transact("read all public account IDs", move |conn| {
+            queries::select_all_public_account_ids(conn)
+        })
+        .await
+    }
+
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
@@ -426,19 +435,15 @@ impl Db {
             .await
     }
 
-    /// Reconstructs account storage at a specific block from the database
-    ///
-    /// This method queries the decomposed storage tables and reconstructs the full
-    /// `AccountStorage` with SMT backing for Map slots.
-    // TODO split querying the header from the content
+    /// Queries just the storage header (slot types and roots) at a specific block.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_account_storage_at_block(
+    pub async fn select_account_storage_header_at_block(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-    ) -> Result<AccountStorage> {
-        self.transact("Get account storage at block", move |conn| {
-            queries::select_account_storage_at_block(conn, account_id, block_num)
+    ) -> Result<AccountStorageHeader> {
+        self.transact("Get account storage header at block", move |conn| {
+            queries::select_account_storage_header_at_block(conn, account_id, block_num)
         })
         .await
     }
@@ -509,7 +514,7 @@ impl Db {
         .await
     }
 
-    /// Loads all the [`miden_objects::note::Note`]s matching a certain [`NoteId`] from the
+    /// Loads all the [`miden_protocol::note::Note`]s matching a certain [`NoteId`] from the
     /// database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {

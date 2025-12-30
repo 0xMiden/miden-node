@@ -15,7 +15,7 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 - [ApplyBlock](#applyblock)
 - [CheckNullifiers](#checknullifiers)
 - [GetAccountDetails](#getaccountdetails)
-- [GetAccountProofs](#getaccountproofs)
+- [GetAccount](#getaccount)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetBlockInputs](#getblockinputs)
@@ -61,9 +61,13 @@ Returns the latest state of an account with the specified ID.
 
 ---
 
-### GetAccountProofs
+### GetAccount
 
-Returns the latest state proofs of the specified accounts.
+Returns an account witness (Merkle proof of inclusion in the account tree) and optionally account details.
+
+The witness proves the account's state commitment in the account tree. If details are requested, the response also includes the account's header, code, vault assets, and storage data. Account details are only available for public accounts.
+
+If `block_num` is provided, returns the state at that historical block; otherwise, returns the latest state.
 
 ---
 

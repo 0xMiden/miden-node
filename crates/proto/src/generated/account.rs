@@ -44,7 +44,7 @@ pub mod account_storage_header {
         pub slot_type: u32,
         /// The data (Word) for this storage slot.
         /// For value slots (slot_type=0), this is the actual value stored in the slot.
-        /// For map slots (slot_type=1), this is the root commitment of the storage map.
+        /// For map slots (slot_type=1), this is the root of the storage map.
         #[prost(message, optional, tag = "3")]
         pub commitment: ::core::option::Option<super::super::primitives::Digest>,
     }

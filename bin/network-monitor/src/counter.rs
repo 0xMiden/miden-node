@@ -83,38 +83,48 @@ async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHea
     Ok(block_header)
 }
 
+/// Fetch the storage header of the given account from RPC.
+///
+/// Returns `None` if the account does not exist or has no details available.
+async fn fetch_account_storage_header(
+    rpc_client: &mut RpcClient,
+    account_id: AccountId,
+) -> Result<Option<miden_node_proto::generated::account::AccountStorageHeader>> {
+    let request = build_account_request(account_id, false);
+    let resp = rpc_client.get_account(request).await?.into_inner();
+
+    let Some(details) = resp.details else {
+        return Ok(None);
+    };
+
+    let storage_details = details.storage_details.context("missing storage details")?;
+    let storage_header = storage_details.header.context("missing storage header")?;
+
+    Ok(Some(storage_header))
+}
+
 /// Fetch the latest nonce of the given account from RPC.
 async fn fetch_counter_value(
     rpc_client: &mut RpcClient,
     account_id: AccountId,
 ) -> Result<Option<u64>> {
-    // Request account details with storage header (but no code or vault needed)
-    let request = build_account_request(account_id, false);
+    let Some(storage_header) = fetch_account_storage_header(rpc_client, account_id).await? else {
+        return Ok(None);
+    };
 
-    let resp = rpc_client.get_account(request).await?.into_inner();
+    let first_slot = storage_header.slots.first().context("no storage slots found")?;
 
-    // Extract the counter value from the storage header
-    if let Some(details) = resp.details {
-        let storage_details = details.storage_details.context("missing storage details")?;
+    // The counter value is stored as a Word, with the actual u64 value in the last element
+    let slot_value: Word = first_slot
+        .commitment
+        .as_ref()
+        .context("missing storage slot value")?
+        .try_into()
+        .context("failed to convert slot value to word")?;
 
-        let storage_header = storage_details.header.context("missing storage header")?;
+    let value = slot_value.as_elements().last().expect("Word has 4 elements").as_int();
 
-        let first_slot = storage_header.slots.first().context("no storage slots found")?;
-
-        // The counter value is stored as a Word, with the actual u64 value in the last element
-        let slot_value: Word = first_slot
-            .commitment
-            .as_ref()
-            .context("missing storage slot value")?
-            .try_into()
-            .context("failed to convert slot value to word")?;
-
-        let value = slot_value.as_elements().last().expect("Word has 4 elements").as_int();
-
-        return Ok(Some(value));
-    }
-
-    Ok(None)
+    Ok(Some(value))
 }
 
 /// Build an account request for the given account ID.

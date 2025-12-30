@@ -246,13 +246,14 @@ impl TryFrom<proto::rpc::account_request::account_detail_request::StorageMapDeta
     fn try_from(
         value: proto::rpc::account_request::account_detail_request::StorageMapDetailRequest,
     ) -> Result<Self, Self::Error> {
-        let proto::rpc::account_request::account_detail_request::StorageMapDetailRequest {
-            slot_name,
-            slot_data,
-        } = value;
+        use proto::rpc::account_request::account_detail_request::StorageMapDetailRequest;
+
+        let StorageMapDetailRequest { slot_name, slot_data } = value;
 
         let slot_name = StorageSlotName::new(slot_name)?;
-        let slot_data = slot_data.ok_or(proto::rpc::account_request::account_detail_request::StorageMapDetailRequest::missing_field(stringify!(slot_data)))?.try_into()?;
+        let slot_data = slot_data
+            .ok_or(StorageMapDetailRequest::missing_field(stringify!(slot_data)))?
+            .try_into()?;
 
         Ok(StorageMapRequest { slot_name, slot_data })
     }

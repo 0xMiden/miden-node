@@ -1070,11 +1070,11 @@ impl State {
         self.db.select_all_network_account_ids().await
     }
 
-    /// Returns an account witness (Merkle proof of inclusion in the account tree) and optionally
-    /// the account details (header, code, vault, and storage) at a specific block.
+    /// Returns an account witness and optionally account details at a specific block.
     ///
-    /// The witness proves the account's state commitment in the account tree. If `details` is
-    /// requested, the method also returns the account's code, vault assets, and storage data.
+    /// The witness is a Merkle proof of inclusion in the account tree, proving the account's
+    /// state commitment. If `details` is requested, the method also returns the account's code,
+    /// vault assets, and storage data. Account details are only available for public accounts.
     ///
     /// If `block_num` is provided, returns the state at that historical block; otherwise, returns
     /// the latest state.
@@ -1099,10 +1099,10 @@ impl State {
         Ok(AccountResponse { block_num, witness, details })
     }
 
-    /// Gets the block witness (account tree proof) for the specified account
+    /// Returns an account witness (Merkle proof of inclusion in the account tree).
     ///
-    /// If `block_num` is provided, returns the witness at that historical block,
-    /// if not present, returns the witness at the latest block.
+    /// If `block_num` is provided, returns the witness at that historical block;
+    /// otherwise, returns the witness at the latest block.
     async fn get_account_witness(
         &self,
         block_num: Option<BlockNumber>,

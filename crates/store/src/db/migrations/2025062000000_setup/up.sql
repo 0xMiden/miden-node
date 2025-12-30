@@ -19,7 +19,7 @@ CREATE TABLE accounts (
     account_commitment                      BLOB NOT NULL,
     code_commitment                         BLOB,
     nonce                                   INTEGER,
-    storage_header                          BLOB, -- Serialized AccountStorage from miden-objects
+    storage_header                          BLOB, -- Serialized AccountStorageHeader from miden-objects
     vault_root                              BLOB, -- Vault root commitment
     is_latest                               BOOLEAN NOT NULL DEFAULT 0, -- Indicates if this is the latest state for this account_id
 

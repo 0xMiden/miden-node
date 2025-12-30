@@ -1113,7 +1113,7 @@ mod tests {
     fn account_storage_map_details_from_forest_entries_limit_exceeded() {
         let slot_name = test_slot_name();
         // Create more entries than MAX_RETURN_ENTRIES
-        let entries: Vec<_> = (0..AccountStorageMapDetails::MAX_RETURN_ENTRIES + 1)
+        let entries: Vec<_> = (0..=AccountStorageMapDetails::MAX_RETURN_ENTRIES)
             .map(|i| {
                 let key = word_from_u32([i as u32, 0, 0, 0]);
                 let value = word_from_u32([0, 0, 0, i as u32]);
@@ -1133,7 +1133,7 @@ mod tests {
 
         // Create an SmtForest and populate it with some data
         let mut forest = SmtForest::new();
-        let entries = vec![
+        let entries = [
             (word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0])),
             (word_from_u32([2, 0, 0, 0]), word_from_u32([20, 0, 0, 0])),
             (word_from_u32([3, 0, 0, 0]), word_from_u32([30, 0, 0, 0])),
@@ -1167,21 +1167,22 @@ mod tests {
                         SmtLeaf::Multiple(entries) => entries
                             .iter()
                             .find(|(k, _)| *k == expected_key)
-                            .map(|(_, v)| *v)
-                            .unwrap_or(miden_protocol::EMPTY_WORD),
+                            .map_or(miden_protocol::EMPTY_WORD, |(_, v)| *v),
                         _ => miden_protocol::EMPTY_WORD,
                     }
                 };
 
-                let key1 = word_from_u32([1, 0, 0, 0]);
-                let key2 = word_from_u32([3, 0, 0, 0]);
-                let value1 = get_value(&proofs[0], key1);
-                let value2 = get_value(&proofs[1], key2);
+                let first_key = word_from_u32([1, 0, 0, 0]);
+                let second_key = word_from_u32([3, 0, 0, 0]);
+                let first_value = get_value(&proofs[0], first_key);
+                let second_value = get_value(&proofs[1], second_key);
 
-                assert_eq!(value1, word_from_u32([10, 0, 0, 0]));
-                assert_eq!(value2, word_from_u32([30, 0, 0, 0]));
+                assert_eq!(first_value, word_from_u32([10, 0, 0, 0]));
+                assert_eq!(second_value, word_from_u32([30, 0, 0, 0]));
             },
-            _ => panic!("Expected EntriesWithProofs"),
+            StorageMapEntries::LimitExceeded | StorageMapEntries::AllEntries(_) => {
+                panic!("Expected EntriesWithProofs")
+            },
         }
     }
 
@@ -1191,7 +1192,7 @@ mod tests {
 
         // Create an SmtForest with one entry so the root is tracked
         let mut forest = SmtForest::new();
-        let entries = vec![(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
+        let entries = [(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
         let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
 
         // Query a key that doesn't exist in the tree - should return a proof
@@ -1212,7 +1213,9 @@ mod tests {
                 assert_eq!(proofs.len(), 1);
                 // The proof exists and can be used to verify non-membership
             },
-            _ => panic!("Expected EntriesWithProofs"),
+            StorageMapEntries::LimitExceeded | StorageMapEntries::AllEntries(_) => {
+                panic!("Expected EntriesWithProofs")
+            },
         }
     }
 
@@ -1222,11 +1225,11 @@ mod tests {
         let mut forest = SmtForest::new();
 
         // Create a forest with some data to get a valid root
-        let entries = vec![(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
+        let entries = [(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
         let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
 
         // Create more keys than MAX_RETURN_ENTRIES
-        let keys: Vec<_> = (0..AccountStorageMapDetails::MAX_RETURN_ENTRIES + 1)
+        let keys: Vec<_> = (0..=AccountStorageMapDetails::MAX_RETURN_ENTRIES)
             .map(|i| word_from_u32([i as u32, 0, 0, 0]))
             .collect();
 

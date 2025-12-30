@@ -50,7 +50,6 @@ use crate::errors::DatabaseError;
 
 mod at_block;
 pub(crate) use at_block::{
-    select_account_code_at_block,
     select_account_header_at_block,
     select_account_storage_at_block,
     select_account_vault_at_block,
@@ -60,6 +59,38 @@ pub(crate) use at_block::{
 mod tests;
 
 type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
+
+// ACCOUNT CODE
+// ================================================================================================
+
+/// Select account code by its commitment hash from the `account_codes` table.
+///
+/// # Returns
+///
+/// The account code bytes if found, or `None` if no code exists with that commitment.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT code FROM account_codes WHERE code_commitment = ?1
+/// ```
+pub(crate) fn select_account_code_by_commitment(
+    conn: &mut SqliteConnection,
+    code_commitment: Word,
+) -> Result<Option<Vec<u8>>, DatabaseError> {
+    use schema::account_codes;
+
+    let code_commitment_bytes = code_commitment.to_bytes();
+
+    let result: Option<Vec<u8>> = SelectDsl::select(
+        account_codes::table.filter(account_codes::code_commitment.eq(&code_commitment_bytes)),
+        account_codes::code,
+    )
+    .first(conn)
+    .optional()?;
+
+    Ok(result)
+}
 
 // ACCOUNT RETRIEVAL
 // ================================================================================================

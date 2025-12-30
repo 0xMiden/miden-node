@@ -1452,11 +1452,11 @@ fn mock_account_code_and_storage(
         .unwrap()
 }
 
-// STORAGE RECONSTRUCTION TESTS
+// ACCOUNT CODE TESTS
 // ================================================================================================
 
 #[test]
-fn test_select_account_code_at_block() {
+fn test_select_account_code_by_commitment() {
     let mut conn = create_db();
 
     let block_num_1 = BlockNumber::from(1);
@@ -1472,17 +1472,15 @@ fn test_select_account_code_at_block() {
         None,
     );
 
-    // Use the actual account ID from the created account
-    let account_id = account.id();
-
-    // Get the code bytes before inserting
+    // Get the code commitment and bytes before inserting
+    let code_commitment = account.code().commitment();
     let expected_code = account.code().to_bytes();
 
     // Insert the account at block 1
     queries::upsert_accounts(
         &mut conn,
         &[BlockAccountUpdate::new(
-            account_id,
+            account.id(),
             account.commitment(),
             AccountUpdateDetails::Delta(AccountDelta::try_from(account).unwrap()),
         )],
@@ -1490,33 +1488,32 @@ fn test_select_account_code_at_block() {
     )
     .unwrap();
 
-    // Query code at block 1 - should return the code
-    let code_at_1 = queries::select_account_code_at_block(&mut conn, account_id, block_num_1)
+    // Query code by commitment - should return the code
+    let code = queries::select_account_code_by_commitment(&mut conn, code_commitment)
         .unwrap()
-        .expect("Code should exist at block 1");
-    assert_eq!(code_at_1, expected_code);
+        .expect("Code should exist");
+    assert_eq!(code, expected_code);
 
-    // Query code for non-existent account - should return None
-    let other_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    // Query code for non-existent commitment - should return None
+    let non_existent_commitment = [0u8; 32];
+    let non_existent_commitment = Word::read_from_bytes(&non_existent_commitment).unwrap();
     let code_other =
-        queries::select_account_code_at_block(&mut conn, other_account_id, block_num_1).unwrap();
-    assert!(code_other.is_none(), "Code should not exist for non-existent account");
+        queries::select_account_code_by_commitment(&mut conn, non_existent_commitment).unwrap();
+    assert!(code_other.is_none(), "Code should not exist for non-existent commitment");
 }
 
 #[test]
-fn test_select_account_code_at_block_with_updates() {
+fn test_select_account_code_by_commitment_multiple_codes() {
     let mut conn = create_db();
 
     let block_num_1 = BlockNumber::from(1);
     let block_num_2 = BlockNumber::from(2);
-    let block_num_3 = BlockNumber::from(3);
 
-    // Create all blocks
+    // Create blocks
     create_block(&mut conn, block_num_1);
     create_block(&mut conn, block_num_2);
-    create_block(&mut conn, block_num_3);
 
-    // Create initial account with code v1 at block 1
+    // Create account with code v1 at block 1
     let code_v1_str = "\
         pub proc account_procedure_1
             push.1.2
@@ -1524,14 +1521,14 @@ fn test_select_account_code_at_block_with_updates() {
         end
     ";
     let account_v1 = create_account_with_code(code_v1_str, [1u8; 32]);
-    let account_id = account_v1.id();
+    let code_v1_commitment = account_v1.code().commitment();
     let code_v1 = account_v1.code().to_bytes();
 
     // Insert the account at block 1
     queries::upsert_accounts(
         &mut conn,
         &[BlockAccountUpdate::new(
-            account_id,
+            account_v1.id(),
             account_v1.commitment(),
             AccountUpdateDetails::Delta(AccountDelta::try_from(account_v1).unwrap()),
         )],
@@ -1547,6 +1544,7 @@ fn test_select_account_code_at_block_with_updates() {
         end
     ";
     let account_v2 = create_account_with_code(code_v2_str, [1u8; 32]); // Same seed to keep same account_id
+    let code_v2_commitment = account_v2.code().commitment();
     let code_v2 = account_v2.code().to_bytes();
 
     // Verify that the codes are actually different
@@ -1554,12 +1552,16 @@ fn test_select_account_code_at_block_with_updates() {
         code_v1, code_v2,
         "Test setup error: codes should be different for different code strings"
     );
+    assert_ne!(
+        code_v1_commitment, code_v2_commitment,
+        "Test setup error: code commitments should be different"
+    );
 
     // Insert the updated account at block 2
     queries::upsert_accounts(
         &mut conn,
         &[BlockAccountUpdate::new(
-            account_id,
+            account_v2.id(),
             account_v2.commitment(),
             AccountUpdateDetails::Delta(AccountDelta::try_from(account_v2).unwrap()),
         )],
@@ -1567,49 +1569,18 @@ fn test_select_account_code_at_block_with_updates() {
     )
     .unwrap();
 
-    // Create account with different code v3 at block 3
-    let code_v3_str = "\
-        pub proc account_procedure_1
-            push.5.6
-            sub
-        end
-    ";
-    let account_v3 = create_account_with_code(code_v3_str, [1u8; 32]); // Same seed to keep same account_id
-    let code_v3 = account_v3.code().to_bytes();
+    // Both codes should be retrievable by their respective commitments
+    let code_from_v1_commitment =
+        queries::select_account_code_by_commitment(&mut conn, code_v1_commitment)
+            .unwrap()
+            .expect("v1 code should exist");
+    assert_eq!(code_from_v1_commitment, code_v1, "v1 commitment should return v1 code");
 
-    // Verify that v3 code is different from v2 and v1
-    assert_ne!(code_v2, code_v3, "Test setup error: v3 code should differ from v2");
-    assert_ne!(code_v1, code_v3, "Test setup error: v3 code should differ from v1");
-
-    // Insert the updated account at block 3
-    queries::upsert_accounts(
-        &mut conn,
-        &[BlockAccountUpdate::new(
-            account_id,
-            account_v3.commitment(),
-            AccountUpdateDetails::Delta(AccountDelta::try_from(account_v3).unwrap()),
-        )],
-        block_num_3,
-    )
-    .unwrap();
-
-    // Test: Query code at block 1 - should return v1 code
-    let code_at_1 = queries::select_account_code_at_block(&mut conn, account_id, block_num_1)
-        .unwrap()
-        .expect("Code should exist at block 1");
-    assert_eq!(code_at_1, code_v1, "Block 1 should return v1 code");
-
-    // Test: Query code at block 2 - should return v2 code (even though we're at block 3)
-    let code_at_2 = queries::select_account_code_at_block(&mut conn, account_id, block_num_2)
-        .unwrap()
-        .expect("Code should exist at block 2");
-    assert_eq!(code_at_2, code_v2, "Block 2 should return v2 code");
-
-    // Test: Query code at block 3 - should return v3 code
-    let code_at_3 = queries::select_account_code_at_block(&mut conn, account_id, block_num_3)
-        .unwrap()
-        .expect("Code should exist at block 3");
-    assert_eq!(code_at_3, code_v3, "Block 3 should return v3 code");
+    let code_from_v2_commitment =
+        queries::select_account_code_by_commitment(&mut conn, code_v2_commitment)
+            .unwrap()
+            .expect("v2 code should exist");
+    assert_eq!(code_from_v2_commitment, code_v2, "v2 commitment should return v2 code");
 }
 
 // GENESIS REGRESSION TESTS

@@ -8,6 +8,8 @@ use miden_protocol::utils::Serializable;
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
@@ -53,9 +55,9 @@ impl std::str::FromStr for ProofType {
 /// This enum is used to store the prover for the remote prover.
 /// Only one prover is enabled at a time.
 enum Prover {
-    Transaction(Mutex<LocalTransactionProver>),
-    Batch(Mutex<LocalBatchProver>),
-    Block(Mutex<LocalBlockProver>),
+    Transaction(Arc<Mutex<LocalTransactionProver>>),
+    Batch(Arc<Mutex<LocalBatchProver>>),
+    Block(Arc<Mutex<LocalBlockProver>>),
 }
 
 impl Prover {
@@ -63,15 +65,15 @@ impl Prover {
         match proof_type {
             ProofType::Transaction => {
                 info!(target: COMPONENT, proof_type = ?proof_type, "Transaction prover initialized");
-                Self::Transaction(Mutex::new(LocalTransactionProver::default()))
+                Self::Transaction(Arc::new(Mutex::new(LocalTransactionProver::default())))
             },
             ProofType::Batch => {
                 info!(target: COMPONENT, proof_type = ?proof_type, security_level = MIN_PROOF_SECURITY_LEVEL, "Batch prover initialized");
-                Self::Batch(Mutex::new(LocalBatchProver::new(MIN_PROOF_SECURITY_LEVEL)))
+                Self::Batch(Arc::new(Mutex::new(LocalBatchProver::new(MIN_PROOF_SECURITY_LEVEL))))
             },
             ProofType::Block => {
                 info!(target: COMPONENT, proof_type = ?proof_type, security_level = MIN_PROOF_SECURITY_LEVEL, "Block prover initialized");
-                Self::Block(Mutex::new(LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL)))
+                Self::Block(Arc::new(Mutex::new(LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL))))
             },
         }
     }
@@ -102,19 +104,33 @@ impl ProverRpcApi {
         tx_inputs: TransactionInputs,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
-        let Prover::Transaction(prover) = &self.prover else {
-            return Err(Status::unimplemented("Transaction prover is not enabled"));
-        };
-
-        let locked_prover = prover
-            .try_lock()
-            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?;
-
         // Add a small delay to simulate longer proving time for testing
         #[cfg(test)]
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let proof = locked_prover.prove(tx_inputs).map_err(internal_error)?;
+        // Spawn the proving in a separate OS thread since prove() uses prove_sync internally
+        // which detects Tokio runtime and panics. We cannot use spawn_blocking because
+        // it still runs within the Tokio runtime context.
+        let proof = match &self.prover {
+            Prover::Transaction(prover) => {
+                let prover = Arc::clone(prover);
+                let (tx, rx) = tokio::sync::oneshot::channel();
+
+                std::thread::spawn(move || {
+                    let result = prover
+                        .try_lock()
+                        .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))
+                        .and_then(|locked_prover| {
+                            locked_prover.prove(tx_inputs).map_err(internal_error)
+                        });
+                    let _ = tx.send(result);
+                });
+
+                rx.await
+                    .map_err(|_| Status::internal("Proving thread panicked or was cancelled"))??
+            },
+            _ => return Err(Status::unimplemented("Transaction prover is not enabled")),
+        };
 
         // Record the transaction_id in the current tracing span
         let transaction_id = proof.id();

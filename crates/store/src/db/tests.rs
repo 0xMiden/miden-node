@@ -2337,4 +2337,14 @@ fn db_roundtrip_account_storage_with_maps() {
             _ => unreachable!(),
         }
     }
+
+    // Also verify full account reconstruction via select_account (which calls select_full_account)
+    let account_info = queries::select_account(&mut conn, account_id).unwrap();
+    assert!(account_info.details.is_some(), "Public account should have details");
+    let retrieved_account = account_info.details.unwrap();
+    assert_eq!(
+        account.commitment(),
+        retrieved_account.commitment(),
+        "Full account commitment must match after DB roundtrip"
+    );
 }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use miden_block_prover::LocalBlockProver;
 use miden_node_proto::BlockProofRequest;
 use miden_node_utils::ErrorReport;
@@ -8,8 +10,6 @@ use miden_protocol::utils::Serializable;
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
@@ -119,7 +119,9 @@ impl ProverRpcApi {
                 std::thread::spawn(move || {
                     let result = prover
                         .try_lock()
-                        .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))
+                        .map_err(|_| {
+                            Status::resource_exhausted("Server is busy handling another request")
+                        })
                         .and_then(|locked_prover| {
                             locked_prover.prove(tx_inputs).map_err(internal_error)
                         });

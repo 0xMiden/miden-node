@@ -427,12 +427,13 @@ fn create_consume_note_tx(
         {
             use miden_protocol::vm::ExecutionProof;
             // Create a dummy ExecutionProof by deserializing a minimal valid proof
-            let proof_bytes = ExecutionProof {
+
+            #[allow(clippy::missing_transmute_annotations)]
+            ExecutionProof {
                 proof: vec![],
                 hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0
                 pc_requests: vec![],
-            };
-            proof_bytes
+            }
         },
     )
     .add_input_notes(vec![input_note])
@@ -475,12 +476,13 @@ fn create_emit_note_tx(
         {
             use miden_protocol::vm::ExecutionProof;
             // Create a dummy ExecutionProof by deserializing a minimal valid proof
-            let proof_bytes = ExecutionProof {
+
+            #[allow(clippy::missing_transmute_annotations)]
+            ExecutionProof {
                 proof: vec![],
                 hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0
                 pc_requests: vec![],
-            };
-            proof_bytes
+            }
         },
     )
     .add_output_notes(output_notes.into_iter().map(OutputNote::Full).collect::<Vec<OutputNote>>())

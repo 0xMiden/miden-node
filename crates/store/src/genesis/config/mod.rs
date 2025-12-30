@@ -349,8 +349,7 @@ impl FungibleFaucetConfig {
         let auth = AuthRpoFalcon512::new(secret_key.public_key().into());
         let init_seed: [u8; 32] = rng.random();
 
-        let max_supply = Felt::try_from(max_supply)
-            .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
+        let max_supply = Felt::from(max_supply);
 
         let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
 

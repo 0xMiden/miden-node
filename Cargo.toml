@@ -57,10 +57,13 @@ miden-tx              = { branch = "huitseeker/update-miden-deps-p3", default-fe
 miden-tx-batch-prover = { branch = "huitseeker/update-miden-deps-p3", git = "https://github.com/0xMiden/miden-base.git" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air    = { branch = "al-migrate-p3-ver2", git = "https://github.com/0xMiden/miden-vm.git", features = ["std", "testing"] }
-miden-core   = { branch = "al-migrate-p3-ver2", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-air = { branch = "al-migrate-p3-ver2", features = [
+  "std",
+  "testing",
+], git = "https://github.com/0xMiden/miden-vm.git" }
+miden-core = { branch = "al-migrate-p3-ver2", git = "https://github.com/0xMiden/miden-vm.git" }
 miden-crypto = { version = "0.20" }
-miden-vm     = { branch = "al-migrate-p3-ver2", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-vm = { branch = "al-migrate-p3-ver2", git = "https://github.com/0xMiden/miden-vm.git" }
 
 # External dependencies
 anyhow            = { version = "1.0" }

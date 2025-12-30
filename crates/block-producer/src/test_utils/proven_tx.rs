@@ -148,6 +148,7 @@ impl MockProvenTxBuilder {
             Word::empty(),
             self.fee,
             self.expiration_block_num,
+            #[allow(clippy::missing_transmute_annotations)]
             ExecutionProof {
                 proof: vec![],
                 hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0

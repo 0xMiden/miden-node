@@ -32,7 +32,7 @@ impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
 
         let execution_hint = NoteExecutionHint::try_from(value.execution_hint)?;
 
-        let aux = Felt::try_from(value.aux).map_err(|_| ConversionError::NotAValidFelt)?;
+        let aux = Felt::from(value.aux);
 
         Ok(NoteMetadata::new(sender, note_type, tag, execution_hint, aux)?)
     }

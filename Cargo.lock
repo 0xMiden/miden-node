@@ -2961,7 +2961,6 @@ dependencies = [
  "clap 4.5.53",
  "fs-err",
  "futures",
- "miden-air 0.21.0 (git+https://github.com/0xMiden/miden-vm.git?branch=al-migrate-p3-ver2)",
  "miden-block-prover",
  "miden-node-block-producer",
  "miden-node-proto",

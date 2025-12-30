@@ -263,6 +263,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         u32::MAX.into(),
         {
             use miden_protocol::vm::ExecutionProof;
+            #[allow(clippy::missing_transmute_annotations)]
             ExecutionProof {
                 proof: vec![],
                 hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0
@@ -345,6 +346,7 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
         u32::MAX.into(),
         {
             use miden_protocol::vm::ExecutionProof;
+            #[allow(clippy::missing_transmute_annotations)]
             ExecutionProof {
                 proof: vec![],
                 hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0

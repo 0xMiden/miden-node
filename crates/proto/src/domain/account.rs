@@ -307,7 +307,7 @@ impl TryFrom<proto::account::AccountHeader> for AccountHeader {
         let code_commitment = code_commitment
             .ok_or(proto::account::AccountHeader::missing_field(stringify!(code_commitment)))?
             .try_into()?;
-        let nonce = nonce.try_into().map_err(|_e| ConversionError::NotAValidFelt)?;
+        let nonce = nonce.into();
 
         Ok(AccountHeader::new(
             account_id,

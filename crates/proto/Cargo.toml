@@ -18,6 +18,7 @@ workspace = true
 anyhow                      = { workspace = true }
 hex                         = { version = "0.4" }
 http                        = { workspace = true }
+miden-core                  = { workspace = true }
 miden-node-grpc-error-macro = { workspace = true }
 miden-node-utils            = { workspace = true }
 miden-protocol              = { workspace = true }

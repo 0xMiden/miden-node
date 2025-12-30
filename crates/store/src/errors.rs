@@ -96,6 +96,10 @@ pub enum DatabaseError {
     AccountCommitmentsMismatch { expected: Word, calculated: Word },
     #[error("account {0} not found")]
     AccountNotFoundInDb(AccountId),
+    #[error("root mismatch (expected {expected}, but got {actual})")]
+    MismatchedRoot { expected: String, actual: String },
+    #[error("{0}")]
+    Other(String),
     #[error("account {0} state at block height {1} not found")]
     AccountAtBlockHeightNotFoundInDb(AccountId, BlockNumber),
     #[error("historical block {block_num} not available: {reason}")]

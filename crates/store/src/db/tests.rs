@@ -61,7 +61,7 @@ use miden_protocol::transaction::{
     TransactionHeader,
     TransactionId,
 };
-use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
+use miden_protocol::{EMPTY_WORD, Felt, ONE, Word, ZERO};
 use miden_standards::account::auth::AuthRpoFalcon512;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::create_p2id_note;
@@ -1169,7 +1169,7 @@ fn sql_account_storage_map_values_insertion() {
         [(slot_name.clone(), StorageSlotDelta::Map(map1))].into_iter().collect();
     let storage1 = AccountStorageDelta::from_raw(delta1);
     let delta1 =
-        AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
+        AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), ONE).unwrap();
     insert_account_delta(conn, account_id, block1, &delta1);
 
     let storage_map_page =
@@ -1315,7 +1315,7 @@ fn select_storage_map_sync_values() {
 // UTILITIES
 // -------------------------------------------------------------------------------------------
 fn num_to_word(n: u64) -> Word {
-    [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)].into()
+    [ZERO, ZERO, ZERO, Felt::new(n)].into()
 }
 
 fn num_to_nullifier(n: u64) -> Nullifier {
@@ -1474,11 +1474,11 @@ fn genesis_with_account_storage_map() {
 
     let storage_map = StorageMap::with_entries(vec![
         (
-            Word::from([Felt::new(1), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(1), ZERO, ZERO, ZERO]),
             Word::from([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]),
         ),
         (
-            Word::from([Felt::new(2), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(2), ZERO, ZERO, ZERO]),
             Word::from([Felt::new(50), Felt::new(60), Felt::new(70), Felt::new(80)]),
         ),
     ])
@@ -1525,7 +1525,7 @@ fn genesis_with_account_assets_and_storage() {
     let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
 
     let storage_map = StorageMap::with_entries(vec![(
-        Word::from([Felt::new(100), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        Word::from([Felt::new(100), ZERO, ZERO, ZERO]),
         Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]),
     )])
     .unwrap();
@@ -1604,7 +1604,7 @@ fn genesis_with_multiple_accounts() {
         .unwrap();
 
     let storage_map = StorageMap::with_entries(vec![(
-        Word::from([Felt::new(5), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        Word::from([Felt::new(5), ZERO, ZERO, ZERO]),
         Word::from([Felt::new(15), Felt::new(25), Felt::new(35), Felt::new(45)]),
     )])
     .unwrap();

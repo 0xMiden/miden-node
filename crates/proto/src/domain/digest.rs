@@ -1,8 +1,9 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use hex::{FromHex, ToHex};
+use miden_core::PrimeField64;
 use miden_protocol::note::NoteId;
-use miden_protocol::{Felt, StarkField, Word};
+use miden_protocol::{Felt, Word};
 
 use crate::errors::ConversionError;
 use crate::generated as proto;
@@ -163,7 +164,7 @@ impl TryFrom<proto::primitives::Digest> for [Felt; 4] {
     fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
         if [value.d0, value.d1, value.d2, value.d3]
             .iter()
-            .any(|v| *v >= <Felt as StarkField>::MODULUS)
+            .any(|v| *v >= <Felt as PrimeField64>::ORDER_U64)
         {
             return Err(ConversionError::NotAValidFelt);
         }

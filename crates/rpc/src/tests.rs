@@ -30,7 +30,6 @@ use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::ProvenTransactionBuilder;
 use miden_protocol::utils::Serializable;
-use miden_protocol::vm::ExecutionProof;
 use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
@@ -262,7 +261,14 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         Word::default(),
         test_fee(),
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        {
+            use miden_protocol::vm::ExecutionProof;
+            ExecutionProof {
+                proof: vec![],
+                hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0
+                pc_requests: vec![],
+            }
+        },
     )
     .account_update_details(AccountUpdateDetails::Delta(account_delta))
     .build()
@@ -337,7 +343,14 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
         Word::default(),
         test_fee(),
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        {
+            use miden_protocol::vm::ExecutionProof;
+            ExecutionProof {
+                proof: vec![],
+                hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0
+                pc_requests: vec![],
+            }
+        },
     )
     .account_update_details(AccountUpdateDetails::Delta(account_delta))
     .build()

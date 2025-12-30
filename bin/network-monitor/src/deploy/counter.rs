@@ -15,7 +15,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use tracing::instrument;
@@ -45,7 +45,7 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     let owner_id_slot = StorageSlot::with_value(
         OWNER_SLOT_NAME.clone(),
-        Word::from([Felt::ZERO, Felt::ZERO, owner_account_id_suffix, owner_account_id_prefix]),
+        Word::from([ZERO, ZERO, owner_account_id_suffix, owner_account_id_prefix]),
     );
 
     let counter_slot = StorageSlot::with_value(COUNTER_SLOT_NAME.clone(), Word::empty());

@@ -12,7 +12,6 @@ The gRPC service definition can be found in the Miden node's `proto` [directory]
 <!--toc:start-->
 
 - [CheckNullifiers](#checknullifiers)
-- [GetAccountDetails](#getaccountdetails)
 - [GetAccount](#getaccount)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
@@ -99,10 +98,6 @@ match proof.verify_unset(&nullifier, &nullifier_tree_root) {
 ```
 
 **Limits:** `nullifier` (1000)
-
-### GetAccountDetails
-
-Request the latest state of an account.
 
 ### GetAccount
 

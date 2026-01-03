@@ -1,5 +1,4 @@
 use miden_node_proto::convert;
-use miden_node_proto::domain::account::AccountInfo;
 use miden_node_proto::generated::store::rpc_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::limiter::{
@@ -280,29 +279,6 @@ impl rpc_server::Rpc for StoreApi {
             .collect();
 
         Ok(Response::new(proto::note::CommittedNoteList { notes }))
-    }
-
-    /// Returns details for public (public) account by id.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_account_details",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_details(
-        &self,
-        request: Request<proto::account::AccountId>,
-    ) -> Result<Response<proto::account::AccountDetails>, Status> {
-        let request = request.into_inner();
-        let account_id = read_account_id::<Status>(Some(request))?;
-        let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
-
-        // TODO: revisit this, previous implementation was just returning only the summary, but it
-        // is weird since the details are not empty.
-        Ok(Response::new((&account_info).into()))
     }
 
     #[instrument(

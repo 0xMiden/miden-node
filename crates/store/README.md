@@ -14,7 +14,6 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 <!--toc:start-->
 - [ApplyBlock](#applyblock)
 - [CheckNullifiers](#checknullifiers)
-- [GetAccountDetails](#getaccountdetails)
 - [GetAccount](#getaccount)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
@@ -52,12 +51,6 @@ When nullifier checking fails, detailed error information is provided through gR
 | `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
 | `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed nullifier format            |
 | `TOO_MANY_NULLIFIERS`     | 2     | `INVALID_ARGUMENT` | Too many nullifiers in request        |
-
----
-
-### GetAccountDetails
-
-Returns the latest state of an account with the specified ID.
 
 ---
 

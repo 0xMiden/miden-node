@@ -30,9 +30,6 @@ service Api {
     // Verify proofs against the nullifier tree root in the latest block header.
     rpc CheckNullifiers(NullifierList) returns (CheckNullifiersResponse) {}
 
-    // Returns the latest state of an account with the specified ID.
-    rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
-
     // Returns the latest state proof of the specified account.
     rpc GetAccount(AccountRequest) returns (AccountResponse) {}
 

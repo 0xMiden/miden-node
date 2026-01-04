@@ -31,32 +31,21 @@ pub async fn validate_block<S: BlockSigner>(
     validated_transactions: Arc<ValidatedTransactions>,
 ) -> Result<Signature, BlockValidationError> {
     // Check that all transactions in the proposed block have been validated
-    let validated_txs = validated_transactions.read().await;
     for tx_header in proposed_block.transactions() {
         let tx_id = tx_header.id();
-        if !validated_txs.contains_key(&tx_id) {
+        if validated_transactions.get(&tx_id).await.is_none() {
             return Err(BlockValidationError::TransactionNotValidated(
                 tx_id,
                 proposed_block.block_num(),
             ));
         }
     }
-    // Release the validated transactions read lock.
-    drop(validated_txs);
 
-    // Build the block.
-    let (header, body) = proposed_block.into_header_and_body()?;
+    // Build the block header.
+    let (header, _) = proposed_block.into_header_and_body()?;
 
     // Sign the header.
     let signature = signer.sign(&header);
-
-    // Remove the validated transactions from the cache.
-    let mut validated_txs = validated_transactions.write().await;
-    for tx_header in body.transactions().as_slice() {
-        validated_txs.remove(&tx_header.id());
-    }
-    // Release the validated transactions write lock.
-    drop(validated_txs);
 
     Ok(signature)
 }

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,6 +8,7 @@ use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_protocol::block::{BlockSigner, ProposedBlock};
@@ -19,7 +20,6 @@ use miden_protocol::transaction::{
 };
 use miden_tx::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -29,8 +29,11 @@ use crate::COMPONENT;
 use crate::block_validation::validate_block;
 use crate::tx_validation::validate_transaction;
 
-/// A type alias for a read-write lock that stores validated transactions.
-pub type ValidatedTransactions = RwLock<HashMap<TransactionId, TransactionHeader>>;
+/// Number of transactions to keep in the validated transactions cache.
+const NUM_VALIDATED_TRANSACTIONS: NonZeroUsize = NonZeroUsize::new(7000).unwrap();
+
+/// A type alias for a LRU cache that stores validated transactions.
+pub type ValidatedTransactions = LruCache<TransactionId, TransactionHeader>;
 
 // VALIDATOR
 // ================================================================================
@@ -103,7 +106,8 @@ struct ValidatorServer<S> {
 
 impl<S> ValidatorServer<S> {
     fn new(signer: S) -> Self {
-        let validated_transactions = Arc::new(ValidatedTransactions::default());
+        let validated_transactions =
+            Arc::new(ValidatedTransactions::new(NUM_VALIDATED_TRANSACTIONS));
         Self { signer, validated_transactions }
     }
 }
@@ -149,7 +153,7 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
 
         // Register the validated transaction.
         let tx_id = validated_tx_header.id();
-        self.validated_transactions.write().await.insert(tx_id, validated_tx_header);
+        self.validated_transactions.put(tx_id, validated_tx_header).await;
 
         Ok(tonic::Response::new(()))
     }

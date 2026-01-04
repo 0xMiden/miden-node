@@ -3,11 +3,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate};
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate};
 
 use crate::errors::VerifyTxError;
 use crate::store::TransactionInputs;
@@ -95,7 +95,7 @@ impl AuthenticatedTransaction {
         self.inner
             .output_notes()
             .iter()
-            .map(miden_objects::transaction::OutputNote::commitment)
+            .map(miden_protocol::transaction::OutputNote::commitment)
     }
 
     pub fn output_notes(&self) -> impl Iterator<Item = &OutputNote> + '_ {
@@ -144,7 +144,7 @@ impl AuthenticatedTransaction {
     /// Short-hand for `Self::new` where the input's are setup to match the transaction's initial
     /// account state. This covers the account's initial state and nullifiers being set to unspent.
     pub fn from_inner(inner: ProvenTransaction) -> Self {
-        use miden_objects::Word;
+        use miden_protocol::Word;
 
         let store_account_state = match inner.account_update().initial_state_commitment() {
             zero if zero == Word::empty() => None,

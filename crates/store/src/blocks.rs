@@ -2,8 +2,8 @@ use std::io::ErrorKind;
 use std::ops::Not;
 use std::path::PathBuf;
 
-use miden_lib::utils::Serializable;
-use miden_objects::block::BlockNumber;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::utils::Serializable;
 use tracing::instrument;
 
 use crate::COMPONENT;

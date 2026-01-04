@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -16,13 +16,13 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
 };
-use miden_objects::account::AccountId;
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::{Note, NoteRecipient, NoteScript};
-use miden_objects::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
-use miden_objects::utils::serde::{Deserializable, Serializable};
-use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::account::AccountId;
+use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::{Note, NoteRecipient, NoteScript};
+use miden_protocol::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
+use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
 use tracing::{debug, info, instrument, warn};
@@ -140,7 +140,7 @@ impl RpcService {
                         ?backoff,
                         %retry_counter,
                         %err,
-                        "connection failed while subscribing to the mempool, retrying"
+                        "connection failed while fetching genesis header, retrying"
                     );
 
                     retry_counter += 1;
@@ -612,6 +612,23 @@ impl api_server::Api for RpcService {
 
         self.store.clone().sync_transactions(request).await
     }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.get_limits",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_limits(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<proto::rpc::RpcLimits>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        Ok(Response::new(RPC_LIMITS.clone()))
+    }
 }
 
 // LIMIT HELPERS
@@ -627,3 +644,42 @@ fn out_of_range_error<E: core::fmt::Display>(err: E) -> Status {
 fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
     <Q as QueryParamLimiter>::check(n).map_err(out_of_range_error)
 }
+
+/// Helper to build an [`EndpointLimits`](proto::rpc::EndpointLimits) from (name, limit) pairs.
+fn endpoint_limits(params: &[(&str, usize)]) -> proto::rpc::EndpointLimits {
+    proto::rpc::EndpointLimits {
+        parameters: params.iter().map(|(k, v)| ((*k).to_string(), *v as u32)).collect(),
+    }
+}
+
+/// Cached RPC query parameter limits.
+static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
+    use {
+        QueryParamAccountIdLimit as AccountId,
+        QueryParamNoteIdLimit as NoteId,
+        QueryParamNoteTagLimit as NoteTag,
+        QueryParamNullifierLimit as Nullifier,
+    };
+
+    proto::rpc::RpcLimits {
+        endpoints: std::collections::HashMap::from([
+            (
+                "CheckNullifiers".into(),
+                endpoint_limits(&[(Nullifier::PARAM_NAME, Nullifier::LIMIT)]),
+            ),
+            (
+                "SyncNullifiers".into(),
+                endpoint_limits(&[(Nullifier::PARAM_NAME, Nullifier::LIMIT)]),
+            ),
+            (
+                "SyncState".into(),
+                endpoint_limits(&[
+                    (AccountId::PARAM_NAME, AccountId::LIMIT),
+                    (NoteTag::PARAM_NAME, NoteTag::LIMIT),
+                ]),
+            ),
+            ("SyncNotes".into(), endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)])),
+            ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
+        ]),
+    }
+});

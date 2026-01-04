@@ -2,10 +2,10 @@ use std::collections::{HashMap, VecDeque};
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::SingleTargetNetworkNote;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountDelta, AccountId};
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{Account, AccountDelta, AccountId};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Nullifier;
 
 use crate::actor::inflight_note::InflightNetworkNote;
 
@@ -228,7 +228,7 @@ impl NetworkAccountEffect {
 
 #[cfg(test)]
 mod tests {
-    use miden_objects::block::BlockNumber;
+    use miden_protocol::block::BlockNumber;
 
     #[rstest::rstest]
     #[test]

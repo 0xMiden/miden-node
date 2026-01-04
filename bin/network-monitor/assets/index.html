@@ -48,6 +48,23 @@
     <script>
         let statusData = null;
         let updateInterval = null;
+        const EXPLORER_LAG_TOLERANCE = 20; // max allowed block delta vs RPC, roughly 1 minute
+        const COPY_ICON = `
+            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+        `;
+
+        function renderCopyButton(value, label) {
+            if (!value) return '';
+            const escapedValue = JSON.stringify(value);
+            return `
+                <button class="copy-button" onclick="copyToClipboard(${escapedValue}, event)" title="Copy full ${label}">
+                    ${COPY_ICON}
+                </button>
+            `;
+        }
 
         function formatSuccessRate(successCount, failureCount) {
             const total = successCount + failureCount;
@@ -135,6 +152,11 @@
 
             // Group remote prover status + test into single cards
             const processedServices = mergeProverStatusAndTests(statusData.services);
+            const rpcService = processedServices.find(s => s.details && s.details.RpcStatus);
+            const rpcChainTip =
+                rpcService?.details?.RpcStatus?.store_status?.chain_tip ??
+                rpcService?.details?.RpcStatus?.block_producer_status?.chain_tip ??
+                null;
 
             // Count healthy vs unhealthy services
             const healthyServices = processedServices.filter(s => s.status === 'Healthy').length;
@@ -147,10 +169,32 @@
             servicesCount.textContent = `${totalServices} Services`;
 
             // Generate status cards
-            container.innerHTML = processedServices.map(service => {
+            const serviceCardsHtml = processedServices.map(service => {
                 const isHealthy = service.status === 'Healthy';
                 const statusColor = isHealthy ? '#22C55D' : '#ff5500';
                 const statusIcon = isHealthy ? '✓' : '✗';
+                const numOrDash = value => isHealthy ? (value?.toLocaleString?.() ?? value ?? '-') : '-';
+                const timeOrDash = ts => {
+                    if (!isHealthy) return '-';
+                    return ts ? new Date(ts * 1000).toLocaleString() : '-';
+                };
+                const commitmentOrDash = (value, label) => isHealthy && value
+                    ? `
+                        ${value.substring(0, 20)}...
+                        ${renderCopyButton(value, label)}
+                    `
+                    : '-';
+
+                const explorerStats = service.details?.ExplorerStatus;
+                const isExplorerService = service.name?.toLowerCase().includes('explorer');
+                const deltaBlock = (isHealthy && explorerStats && rpcChainTip !== null)
+                    ? explorerStats.block_number - rpcChainTip
+                    : null;
+                const deltaWarning =
+                    deltaBlock !== null && Math.abs(deltaBlock) > EXPLORER_LAG_TOLERANCE
+                        ? `Explorer tip is ${Math.abs(deltaBlock)} blocks ${deltaBlock > 0 ? 'ahead' : 'behind'}`
+                        : null;
+                let explorerWarningHtml = '';
 
                 let detailsHtml = '';
                 if (service.details) {
@@ -163,12 +207,7 @@
                                     <div class="detail-item">
                                         <strong>Genesis:</strong>
                                         <span class="genesis-value">0x${details.RpcStatus.genesis_commitment.substring(0, 20)}...</span>
-                                        <button class="copy-button" onclick="copyToClipboard('${details.RpcStatus.genesis_commitment}', event)" title="Copy full genesis commitment">
-                                            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                            </svg>
-                                        </button>
+                                        ${renderCopyButton(details.RpcStatus.genesis_commitment, 'genesis commitment')}
                                     </div>
                                 ` : ''}
                                 ${details.RpcStatus.store_status ? `
@@ -257,14 +296,7 @@
                                         ${details.FaucetTest.last_tx_id ? `
                                             <div class="metric-row">
                                                 <span class="metric-label">Last TX ID:</span>
-                                                <span class="metric-value">${details.FaucetTest.last_tx_id.substring(0, 16)}...
-                                                    <button class="copy-button" onclick="copyToClipboard('${details.FaucetTest.last_tx_id}', event)" title="Copy full TX ID">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
+                                                <span class="metric-value">${details.FaucetTest.last_tx_id.substring(0, 16)}...${renderCopyButton(details.FaucetTest.last_tx_id, 'TX ID')}</span>
                                             </div>
                                         ` : ''}
                                         ${details.FaucetTest.challenge_difficulty ? `
@@ -281,14 +313,7 @@
                                         <div class="test-metrics ${service.status === "Healthy" ? "healthy" : "unhealthy"}">
                                             <div class="metric-row">
                                                 <span class="metric-label">Token ID:</span>
-                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.id.substring(0, 16)}...
-                                                    <button class="copy-button" onclick="copyToClipboard('${details.FaucetTest.faucet_metadata.id}', event)" title="Copy full token ID">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.id.substring(0, 16)}...${renderCopyButton(details.FaucetTest.faucet_metadata.id, 'token ID')}</span>
                                             </div>
                                             <div class="metric-row">
                                                 <span class="metric-label">Version:</span>
@@ -334,17 +359,16 @@
                                             <span class="metric-label">Success Rate:</span>
                                             <span class="metric-value">${formatSuccessRate(details.NtxIncrement.success_count, details.NtxIncrement.failure_count)}</span>
                                         </div>
+                                        ${details.NtxIncrement.last_latency_blocks !== null && details.NtxIncrement.last_latency_blocks !== undefined ? `
+                                            <div class="metric-row">
+                                                <span class="metric-label">Latency:</span>
+                                                <span class="metric-value">${details.NtxIncrement.last_latency_blocks} blocks</span>
+                                            </div>
+                                        ` : ''}
                                         ${details.NtxIncrement.last_tx_id ? `
                                             <div class="metric-row">
                                                 <span class="metric-label">Last TX ID:</span>
-                                                <span class="metric-value">${details.NtxIncrement.last_tx_id.substring(0, 16)}...
-                                                    <button class="copy-button" onclick="copyToClipboard('${details.NtxIncrement.last_tx_id}', event)" title="Copy full TX ID">
-                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                                        </svg>
-                                                    </button>
-                                                </span>
+                                                <span class="metric-value">${details.NtxIncrement.last_tx_id.substring(0, 16)}...${renderCopyButton(details.NtxIncrement.last_tx_id, 'TX ID')}</span>
                                             </div>
                                         ` : ''}
                                     </div>
@@ -402,6 +426,68 @@
                     `;
                 }
 
+                // Always render explorer block for explorer services, even if stats are missing.
+                if (isExplorerService) {
+                    detailsHtml += `
+                        <div class="service-details">
+                            <div class="nested-status">
+                                <strong>Explorer:</strong>
+                                <div class="metric-row">
+                                    <span class="metric-label">Block Height:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.block_number) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">RPC Chain Tip:</span>
+                                    <span class="metric-value">${isHealthy && rpcChainTip !== null ? rpcChainTip : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Block Time:</span>
+                                    <span class="metric-value">${explorerStats ? timeOrDash(explorerStats.timestamp) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Block Commitment:</span>
+                                    <span class="metric-value">${explorerStats ? commitmentOrDash(explorerStats.block_commitment, 'block commitment') : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Chain Commitment:</span>
+                                    <span class="metric-value">${explorerStats ? commitmentOrDash(explorerStats.chain_commitment, 'chain commitment') : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Proof Commitment:</span>
+                                    <span class="metric-value">${explorerStats ? commitmentOrDash(explorerStats.proof_commitment, 'proof commitment') : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Transactions:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_transactions) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Nullifiers:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_nullifiers) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Notes:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_notes) : '-'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Account Updates:</span>
+                                    <span class="metric-value">${explorerStats ? numOrDash(explorerStats.number_of_account_updates) : '-'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    if (deltaWarning) {
+                        explorerWarningHtml = `
+                            <div class="warning-banner">
+                                <div class="metric-row">
+                                    <span class="metric-label">Explorer vs RPC</span>
+                                </div>
+                                <div class="warning-text">${deltaWarning}</div>
+                            </div>
+                        `;
+                    }
+                }
+
                 return `
                     <div class="service-card ${isHealthy ? 'healthy' : 'unhealthy'}">
                         <div class="service-header">
@@ -412,6 +498,7 @@
                         </div>
                         <div class="service-content">
                             ${detailsHtml}
+                            ${explorerWarningHtml}
                         </div>
                         <div class="service-timestamp">
                             Last checked: ${new Date(service.last_checked * 1000).toLocaleString()}
@@ -419,6 +506,8 @@
                     </div>
                 `;
             }).join('');
+
+            container.innerHTML = serviceCardsHtml;
 
             // Add refresh button that spans the full grid
             container.innerHTML += `

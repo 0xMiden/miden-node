@@ -543,6 +543,27 @@ pub struct TransactionRecord {
     #[prost(message, optional, tag = "2")]
     pub header: ::core::option::Option<super::transaction::TransactionHeader>,
 }
+/// Represents the query parameter limits for RPC endpoints.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RpcLimits {
+    /// Maps RPC endpoint names to their parameter limits.
+    /// Key: endpoint name (e.g., "CheckNullifiers", "SyncState")
+    /// Value: map of parameter names to their limit values
+    #[prost(map = "string, message", tag = "1")]
+    pub endpoints: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        EndpointLimits,
+    >,
+}
+/// Represents the parameter limits for a single endpoint.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EndpointLimits {
+    /// Maps parameter names to their limit values.
+    /// Key: parameter name (e.g., "nullifier", "account_id")
+    /// Value: limit value
+    #[prost(map = "string, uint32", tag = "1")]
+    pub parameters: ::std::collections::HashMap<::prost::alloc::string::String, u32>,
+}
 /// Generated client implementations.
 pub mod api_client {
     #![allow(
@@ -654,7 +675,19 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "Status"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (note was consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (note was not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof (nullifier not in tree)
+        /// * `single` or `multiple`: Inclusion proof only if the requested nullifier appears as a key.
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         pub async fn check_nullifiers(
             &mut self,
             request: impl tonic::IntoRequest<super::NullifierList>,
@@ -1037,6 +1070,29 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncTransactions"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the query parameter limits configured for RPC methods.
+        ///
+        /// These define the maximum number of each parameter a method will accept.
+        /// Exceeding the limit will result in the request being rejected and you should instead send
+        /// multiple smaller requests.
+        pub async fn get_limits(
+            &mut self,
+            request: impl tonic::IntoRequest<()>,
+        ) -> std::result::Result<tonic::Response<super::RpcLimits>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/rpc.Api/GetLimits");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "GetLimits"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1057,7 +1113,19 @@ pub mod api_server {
             &self,
             request: tonic::Request<()>,
         ) -> std::result::Result<tonic::Response<super::RpcStatus>, tonic::Status>;
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (note was consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (note was not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof (nullifier not in tree)
+        /// * `single` or `multiple`: Inclusion proof only if the requested nullifier appears as a key.
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         async fn check_nullifiers(
             &self,
             request: tonic::Request<super::NullifierList>,
@@ -1210,6 +1278,15 @@ pub mod api_server {
             tonic::Response<super::SyncTransactionsResponse>,
             tonic::Status,
         >;
+        /// Returns the query parameter limits configured for RPC methods.
+        ///
+        /// These define the maximum number of each parameter a method will accept.
+        /// Exceeding the limit will result in the request being rejected and you should instead send
+        /// multiple smaller requests.
+        async fn get_limits(
+            &self,
+            request: tonic::Request<()>,
+        ) -> std::result::Result<tonic::Response<super::RpcLimits>, tonic::Status>;
     }
     /// RPC API for the RPC component
     #[derive(Debug)]
@@ -1988,6 +2065,45 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SyncTransactionsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rpc.Api/GetLimits" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetLimitsSvc<T: Api>(pub Arc<T>);
+                    impl<T: Api> tonic::server::UnaryService<()> for GetLimitsSvc<T> {
+                        type Response = super::RpcLimits;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(&mut self, request: tonic::Request<()>) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::get_limits(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetLimitsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

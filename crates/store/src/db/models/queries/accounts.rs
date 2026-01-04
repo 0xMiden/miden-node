@@ -17,12 +17,15 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
-use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_node_utils::limiter::{
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+};
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     Account,
     AccountCode,
     AccountDelta,
@@ -32,11 +35,11 @@ use miden_objects::account::{
     StorageSlotContent,
     StorageSlotName,
 };
-use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
-use miden_objects::block::{BlockAccountUpdate, BlockNumber};
-use miden_objects::{Felt, Word};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
+use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::{Felt, Word};
 
-use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
@@ -271,7 +274,7 @@ pub(crate) fn select_account_vault_assets(
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
-    const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -298,7 +301,7 @@ pub(crate) fn select_account_vault_assets(
 
     // Discard the last block in the response (assumes more than one block may be present)
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
@@ -511,7 +514,7 @@ pub(crate) fn select_account_storage_map_values(
     // See miden-base/issues/1770 for more details
     pub const ROW_OVERHEAD_BYTES: usize =
         2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
-    pub const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    pub const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -539,7 +542,7 @@ pub(crate) fn select_account_storage_map_values(
     // Discard the last block in the response (assumes more than one block may be present)
 
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
@@ -836,7 +839,20 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                (Some(account), storage, Vec::new())
+                // collect vault-asset inserts to apply after account upsert
+                let mut assets = Vec::new();
+                for asset in account.vault().assets() {
+                    // Only insert assets with non-zero values for fungible assets
+                    let should_insert = match asset {
+                        Asset::Fungible(fungible) => fungible.amount() > 0,
+                        Asset::NonFungible(_) => true,
+                    };
+                    if should_insert {
+                        assets.push((account_id, asset.vault_key(), Some(asset)));
+                    }
+                }
+
+                (Some(account), storage, assets)
             },
 
             AccountUpdateDetails::Delta(delta) => {

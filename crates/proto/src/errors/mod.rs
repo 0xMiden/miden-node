@@ -3,9 +3,9 @@ use std::num::TryFromIntError;
 
 // Re-export the GrpcError derive macro for convenience
 pub use miden_node_grpc_error_macro::GrpcError;
-use miden_objects::crypto::merkle::{SmtLeafError, SmtProofError};
-use miden_objects::utils::DeserializationError;
-use miden_objects::{AccountError, AssetError, FeeError, StorageSlotNameError};
+use miden_protocol::crypto::merkle::smt::{SmtLeafError, SmtProofError};
+use miden_protocol::utils::DeserializationError;
+use miden_protocol::{AccountError, AssetError, FeeError, StorageSlotNameError};
 use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;
@@ -24,7 +24,7 @@ pub enum ConversionError {
     #[error("hex error")]
     HexError(#[from] hex::FromHexError),
     #[error("note error")]
-    NoteError(#[from] miden_objects::NoteError),
+    NoteError(#[from] miden_protocol::NoteError),
     #[error("network note error")]
     NetworkNoteError(#[from] NetworkNoteError),
     #[error("SMT leaf error")]
@@ -42,14 +42,14 @@ pub enum ConversionError {
     #[error("value is not in the range 0..MODULUS")]
     NotAValidFelt,
     #[error("merkle error")]
-    MerkleError(#[from] miden_objects::crypto::merkle::MerkleError),
+    MerkleError(#[from] miden_protocol::crypto::merkle::MerkleError),
     #[error("field `{entity}::{field_name}` is missing")]
     MissingFieldInProtobufRepresentation {
         entity: &'static str,
         field_name: &'static str,
     },
     #[error("MMR error")]
-    MmrError(#[from] miden_objects::crypto::merkle::MmrError),
+    MmrError(#[from] miden_protocol::crypto::merkle::mmr::MmrError),
     #[error("failed to deserialize {entity}")]
     DeserializationError {
         entity: &'static str,

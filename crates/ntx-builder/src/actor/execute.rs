@@ -2,17 +2,17 @@ use std::collections::BTreeSet;
 
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::{
+use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
     StorageMapWitness,
     StorageSlotContent,
 };
-use miden_objects::asset::{AssetVaultKey, AssetWitness};
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::{Note, NoteScript};
-use miden_objects::transaction::{
+use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::{Note, NoteScript};
+use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
     InputNote,
@@ -23,8 +23,8 @@ use miden_objects::transaction::{
     TransactionId,
     TransactionInputs,
 };
-use miden_objects::vm::FutureMaybeSend;
-use miden_objects::{TransactionInputError, Word};
+use miden_protocol::vm::FutureMaybeSend;
+use miden_protocol::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
@@ -442,8 +442,8 @@ impl DataStore for NtxDataStore {
 impl MastForestStore for NtxDataStore {
     fn get(
         &self,
-        procedure_hash: &miden_objects::Word,
-    ) -> Option<std::sync::Arc<miden_objects::MastForest>> {
+        procedure_hash: &miden_protocol::Word,
+    ) -> Option<std::sync::Arc<miden_protocol::MastForest>> {
         self.mast_store.get(procedure_hash)
     }
 }

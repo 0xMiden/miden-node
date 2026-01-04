@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use miden_lib::block::build_block;
-use miden_objects::ProposedBlockError;
-use miden_objects::block::{BlockNumber, BlockSigner, ProposedBlock};
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::Signature;
-use miden_objects::transaction::TransactionId;
+use miden_protocol::ProposedBlockError;
+use miden_protocol::block::{BlockNumber, BlockSigner, ProposedBlock};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_protocol::transaction::TransactionId;
 
 use crate::server::ValidatedTransactions;
 
@@ -32,7 +31,7 @@ pub async fn validate_block<S: BlockSigner>(
     validated_transactions: Arc<ValidatedTransactions>,
 ) -> Result<Signature, BlockValidationError> {
     // Build the block.
-    let (header, body) = build_block(proposed_block)?;
+    let (header, body) = proposed_block.into_header_and_body()?;
 
     // Check that all transactions in the proposed block have been validated
     let validated_txs = validated_transactions.read().await;

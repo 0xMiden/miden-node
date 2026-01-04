@@ -4,8 +4,8 @@ use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
 use miden_node_proto::generated::store::ntx_builder_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Note;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Note;
 use tonic::{Request, Response, Status};
 use tracing::{debug, instrument};
 

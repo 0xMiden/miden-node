@@ -6,20 +6,18 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
-use miden_lib::AuthScheme;
-use miden_lib::account::interface::AccountInterface;
-use miden_lib::utils::CodeBuilder;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
-use miden_objects::account::auth::AuthSecretKey;
-use miden_objects::account::{Account, AccountFile, AccountHeader, AccountId};
-use miden_objects::assembly::Library;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
-use miden_objects::note::{
+use miden_protocol::account::auth::AuthSecretKey;
+use miden_protocol::account::{Account, AccountFile, AccountHeader, AccountId};
+use miden_protocol::assembly::Library;
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
+use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteExecutionHint,
@@ -30,15 +28,17 @@ use miden_objects::note::{
     NoteTag,
     NoteType,
 };
-use miden_objects::transaction::{InputNotes, PartialBlockchain, TransactionArgs};
-use miden_objects::utils::Deserializable;
-use miden_objects::{Felt, Word, ZERO};
+use miden_protocol::transaction::{InputNotes, PartialBlockchain, TransactionArgs};
+use miden_protocol::utils::Deserializable;
+use miden_protocol::{Felt, Word, ZERO};
+use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_standards::code_builder::CodeBuilder;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::Serializable;
 use miden_tx::{LocalTransactionProver, TransactionExecutor};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use tokio::sync::watch;
+use tokio::sync::{Mutex, watch};
 use tracing::{error, info, instrument, warn};
 
 use crate::COMPONENT;
@@ -47,10 +47,18 @@ use crate::deploy::{MonitorDataStore, create_genesis_aware_rpc_client, get_count
 use crate::status::{
     CounterTrackingDetails,
     IncrementDetails,
+    PendingLatencyDetails,
     ServiceDetails,
     ServiceStatus,
     Status,
 };
+
+#[derive(Debug, Default, Clone)]
+pub struct LatencyState {
+    pending: Option<PendingLatencyDetails>,
+    pending_started: Option<Instant>,
+    last_latency_blocks: Option<u32>,
+}
 
 /// Get the genesis block header.
 async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHeader> {
@@ -195,11 +203,20 @@ async fn setup_increment_task(
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(target = COMPONENT, name = "run-increment-task", skip_all, ret(level = "debug"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.run_increment_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
     expected_counter_value: Arc<AtomicU64>,
+    latency_state: Arc<Mutex<LatencyState>>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client =
@@ -221,7 +238,9 @@ pub async fn run_increment_task(
     loop {
         interval.tick().await;
 
-        let last_error = match create_and_submit_network_note(
+        let mut last_error = None;
+
+        match create_and_submit_network_note(
             &wallet_account,
             &counter_account,
             &secret_key,
@@ -233,16 +252,34 @@ pub async fn run_increment_task(
         )
         .await
         {
-            Ok((tx_id, final_account, _block_height)) => handle_increment_success(
-                &mut wallet_account,
-                &final_account,
-                &mut data_store,
-                &mut details,
-                tx_id,
-                &expected_counter_value,
-            )?,
-            Err(e) => Some(handle_increment_failure(&mut details, &e)),
-        };
+            Ok((tx_id, final_account, block_height)) => {
+                let target_value = handle_increment_success(
+                    &mut wallet_account,
+                    &final_account,
+                    &mut data_store,
+                    &mut details,
+                    tx_id,
+                    &expected_counter_value,
+                )?;
+
+                {
+                    let mut guard = latency_state.lock().await;
+                    guard.pending = Some(PendingLatencyDetails {
+                        submit_height: block_height.as_u32(),
+                        target_value,
+                    });
+                    guard.pending_started = Some(Instant::now());
+                }
+            },
+            Err(e) => {
+                last_error = Some(handle_increment_failure(&mut details, &e));
+            },
+        }
+
+        {
+            let guard = latency_state.lock().await;
+            details.last_latency_blocks = guard.last_latency_blocks;
+        }
 
         let status = build_increment_status(&details, last_error);
         send_status(&tx, status)?;
@@ -250,6 +287,8 @@ pub async fn run_increment_task(
 }
 
 /// Handle the success path for increment operations.
+///
+/// Returns the next expected counter value after a successful increment.
 fn handle_increment_success(
     wallet_account: &mut Account,
     final_account: &AccountHeader,
@@ -257,7 +296,7 @@ fn handle_increment_success(
     details: &mut IncrementDetails,
     tx_id: String,
     expected_counter_value: &Arc<AtomicU64>,
-) -> Result<Option<String>> {
+) -> Result<u64> {
     let updated_wallet = Account::new(
         wallet_account.id(),
         wallet_account.vault().clone(),
@@ -273,9 +312,9 @@ fn handle_increment_success(
     details.last_tx_id = Some(tx_id);
 
     // Increment the expected counter value
-    expected_counter_value.fetch_add(1, Ordering::Relaxed);
+    let new_expected = expected_counter_value.fetch_add(1, Ordering::Relaxed) + 1;
 
-    Ok(None)
+    Ok(new_expected)
 }
 
 /// Handle the failure path when creating/submitting the network note fails.
@@ -332,11 +371,20 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(target = COMPONENT, name = "run-counter-tracking-task", skip_all, ret(level = "debug"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.run_counter_tracking_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
     expected_counter_value: Arc<AtomicU64>,
+    latency_state: Arc<Mutex<LatencyState>>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client =
@@ -352,11 +400,45 @@ pub async fn run_counter_tracking_task(
     };
 
     let mut details = CounterTrackingDetails::default();
+    initialize_counter_tracking_state(
+        &mut rpc_client,
+        &counter_account,
+        &expected_counter_value,
+        &mut details,
+    )
+    .await;
 
-    // Initialize the expected counter value by fetching the current value from the node
-    match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
+    let mut poll_interval = tokio::time::interval(config.counter_increment_interval / 2);
+
+    loop {
+        poll_interval.tick().await;
+
+        let last_error = poll_counter_once(
+            &mut rpc_client,
+            &counter_account,
+            &expected_counter_value,
+            &latency_state,
+            &mut details,
+            &config,
+        )
+        .await;
+        let status = build_tracking_status(&details, last_error);
+        send_status(&tx, status)?;
+    }
+}
+
+/// Initialize tracking state by fetching the current counter value from the node.
+///
+/// Populates `expected_counter_value` and seeds `details` with the latest observed
+/// values so the first poll iteration starts from a consistent snapshot.
+async fn initialize_counter_tracking_state(
+    rpc_client: &mut RpcClient,
+    counter_account: &Account,
+    expected_counter_value: &Arc<AtomicU64>,
+    details: &mut CounterTrackingDetails,
+) {
+    match fetch_counter_value(rpc_client, counter_account.id()).await {
         Ok(Some(initial_value)) => {
-            // Set the expected value to the current value from the node
             expected_counter_value.store(initial_value, Ordering::Relaxed);
             details.current_value = Some(initial_value);
             details.expected_value = Some(initial_value);
@@ -364,61 +446,121 @@ pub async fn run_counter_tracking_task(
             info!("Initialized counter tracking with value: {}", initial_value);
         },
         Ok(None) => {
-            // Counter doesn't exist yet, initialize to 0
             expected_counter_value.store(0, Ordering::Relaxed);
             warn!("Counter account not found, initializing expected value to 0");
         },
         Err(e) => {
-            // Failed to fetch, initialize to 0 but log the error
             expected_counter_value.store(0, Ordering::Relaxed);
             error!("Failed to fetch initial counter value, initializing to 0: {:?}", e);
         },
     }
+}
 
-    let mut poll_interval = tokio::time::interval(config.counter_increment_interval / 2);
+/// Poll the counter once, updating details and latency tracking state.
+///
+/// Returns a human-readable error string when the poll fails or latency tracking
+/// cannot complete; otherwise returns `None`.
+async fn poll_counter_once(
+    rpc_client: &mut RpcClient,
+    counter_account: &Account,
+    expected_counter_value: &Arc<AtomicU64>,
+    latency_state: &Arc<Mutex<LatencyState>>,
+    details: &mut CounterTrackingDetails,
+    config: &MonitorConfig,
+) -> Option<String> {
+    let mut last_error = None;
+    let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
 
-    loop {
-        poll_interval.tick().await;
+    match fetch_counter_value(rpc_client, counter_account.id()).await {
+        Ok(Some(value)) => {
+            details.current_value = Some(value);
+            details.last_updated = Some(current_time);
 
-        let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
-        let last_error = match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
-            Ok(Some(value)) => {
-                // Update current value and timestamp
-                details.current_value = Some(value);
-                details.last_updated = Some(current_time);
+            update_expected_and_pending(details, expected_counter_value, value);
+            handle_latency_tracking(rpc_client, latency_state, config, value, &mut last_error)
+                .await;
+        },
+        Ok(None) => {
+            // Counter value not available, but not an error
+        },
+        Err(e) => {
+            error!("Failed to fetch counter value: {:?}", e);
+            last_error = Some(format!("fetch counter value failed: {e}"));
+        },
+    }
 
-                // Get expected value and calculate pending increments
-                let expected = expected_counter_value.load(Ordering::Relaxed);
-                details.expected_value = Some(expected);
+    last_error
+}
 
-                // Calculate how many increments are pending (expected - current)
-                // Use saturating_sub to avoid negative values if current > expected (shouldn't
-                // happen normally, but could due to race conditions)
-                if expected >= value {
-                    details.pending_increments = Some(expected - value);
-                } else {
-                    // This shouldn't happen, but log it if it does
-                    warn!(
-                        "Expected counter value ({}) is less than current value ({}), setting pending to 0",
-                        expected, value
-                    );
-                    details.pending_increments = Some(0);
+/// Update expected and pending counters based on the latest observed value.
+fn update_expected_and_pending(
+    details: &mut CounterTrackingDetails,
+    expected_counter_value: &Arc<AtomicU64>,
+    observed_value: u64,
+) {
+    let expected = expected_counter_value.load(Ordering::Relaxed);
+    details.expected_value = Some(expected);
+
+    if expected >= observed_value {
+        details.pending_increments = Some(expected - observed_value);
+    } else {
+        warn!(
+            "Expected counter value ({}) is less than current value ({}), setting pending to 0",
+            expected, observed_value
+        );
+        details.pending_increments = Some(0);
+    }
+}
+
+/// Update latency tracking state, performing RPC as needed while minimizing lock hold time.
+///
+/// Populates `last_error` when latency bookkeeping fails or times out.
+async fn handle_latency_tracking(
+    rpc_client: &mut RpcClient,
+    latency_state: &Arc<Mutex<LatencyState>>,
+    config: &MonitorConfig,
+    observed_value: u64,
+    last_error: &mut Option<String>,
+) {
+    let (pending, pending_started) = {
+        let guard = latency_state.lock().await;
+        (guard.pending.clone(), guard.pending_started)
+    };
+
+    if let Some(pending) = pending {
+        if observed_value >= pending.target_value {
+            match fetch_chain_tip(rpc_client).await {
+                Ok(observed_height) => {
+                    let latency_blocks = observed_height.saturating_sub(pending.submit_height);
+                    let mut guard = latency_state.lock().await;
+                    if guard.pending.as_ref().map(|p| p.target_value) == Some(pending.target_value)
+                    {
+                        guard.last_latency_blocks = Some(latency_blocks);
+                        guard.pending = None;
+                        guard.pending_started = None;
+                    }
+                },
+                Err(e) => {
+                    *last_error = Some(format!("Failed to fetch chain tip for latency calc: {e}"));
+                },
+            }
+        } else if let Some(started) = pending_started {
+            if Instant::now().saturating_duration_since(started) >= config.counter_latency_timeout {
+                warn!(
+                    "Latency measurement timed out after {:?} for target value {}",
+                    config.counter_latency_timeout, pending.target_value
+                );
+                let mut guard = latency_state.lock().await;
+                if guard.pending.as_ref().map(|p| p.target_value) == Some(pending.target_value) {
+                    guard.pending = None;
+                    guard.pending_started = None;
                 }
-
-                None
-            },
-            Ok(None) => {
-                // Counter value not available, but not an error
-                None
-            },
-            Err(e) => {
-                error!("Failed to fetch counter value: {:?}", e);
-                Some(format!("fetch counter value failed: {e}"))
-            },
-        };
-
-        let status = build_tracking_status(&details, last_error);
-        send_status(&tx, status)?;
+                *last_error = Some(format!(
+                    "Timed out after {:?} waiting for counter to reach {}",
+                    config.counter_latency_timeout, pending.target_value
+                ));
+            }
+        }
     }
 }
 
@@ -456,7 +598,15 @@ fn load_counter_account(file_path: &Path) -> Result<Account> {
 
 /// Create and submit a network note that targets the counter account.
 #[allow(clippy::too_many_arguments)]
-#[instrument(target = COMPONENT, name = "create-and-submit-network-note", skip_all, ret)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.counter.create_and_submit_network_note",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 async fn create_and_submit_network_note(
     wallet_account: &Account,
     counter_account: &Account,
@@ -470,15 +620,11 @@ async fn create_and_submit_network_note(
     // Create authenticator for transaction signing
     let authenticator = BasicAuthenticator::new(&[AuthSecretKey::RpoFalcon512(secret_key.clone())]);
 
-    let account_interface = AccountInterface::new(
-        wallet_account.id(),
-        vec![AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key().into() }],
-        wallet_account.code(),
-    );
+    let account_interface = AccountInterface::from_account(wallet_account);
 
     let (network_note, note_recipient) =
         create_network_note(wallet_account, counter_account, increment_script.clone(), rng)?;
-    let script = account_interface.build_send_notes_script(&[network_note.into()], None, false)?;
+    let script = account_interface.build_send_notes_script(&[network_note.into()], None)?;
 
     // Create transaction executor
     let executor = TransactionExecutor::new(data_store).with_authenticator(&authenticator);
@@ -528,7 +674,7 @@ async fn create_and_submit_network_note(
 fn create_increment_script() -> Result<(NoteScript, Library)> {
     let library = get_counter_library()?;
 
-    let script_builder = CodeBuilder::new(true)
+    let script_builder = CodeBuilder::new()
         .with_dynamically_linked_library(&library)
         .context("Failed to create script builder with library")?;
 
@@ -569,4 +715,17 @@ fn create_network_note(
 
     let network_note = Note::new(NoteAssets::new(vec![])?, metadata, recipient.clone());
     Ok((network_note, recipient))
+}
+
+/// Fetch the current chain tip height from RPC status.
+async fn fetch_chain_tip(rpc_client: &mut RpcClient) -> Result<u32> {
+    let status = rpc_client.status(()).await?.into_inner();
+
+    if let Some(block_producer_status) = status.block_producer {
+        Ok(block_producer_status.chain_tip)
+    } else if let Some(store_status) = status.store {
+        Ok(store_status.chain_tip)
+    } else {
+        anyhow::bail!("RPC status response did not include a chain tip")
+    }
 }

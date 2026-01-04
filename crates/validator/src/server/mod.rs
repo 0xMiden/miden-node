@@ -10,14 +10,14 @@ use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_objects::block::{BlockSigner, ProposedBlock};
-use miden_objects::transaction::{
+use miden_protocol::block::{BlockSigner, ProposedBlock};
+use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionHeader,
     TransactionId,
     TransactionInputs,
 };
-use miden_objects::utils::{Deserializable, Serializable};
+use miden_tx::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::TcpListenerStream;

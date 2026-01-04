@@ -23,26 +23,22 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
-use miden_objects::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
-use miden_objects::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
-use miden_objects::crypto::merkle::{
-    Forest,
+use miden_protocol::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
+use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
+use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_protocol::crypto::merkle::mmr::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
+use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
+    LargeSmtError,
     MemoryStorage,
-    Mmr,
-    MmrDelta,
-    MmrPeaks,
-    MmrProof,
-    PartialMmr,
     SmtProof,
     SmtStorage,
 };
-use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
-use miden_objects::transaction::{OutputNote, PartialBlockchain};
-use miden_objects::utils::Serializable;
-use miden_objects::{AccountError, Word};
+use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
+use miden_protocol::transaction::{OutputNote, PartialBlockchain};
+use miden_protocol::utils::Serializable;
+use miden_protocol::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 
@@ -144,7 +140,7 @@ impl State {
         let block_headers = db.select_all_block_headers().await?;
         let latest_block_num = block_headers
             .last()
-            .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
+            .map_or(BlockNumber::GENESIS, miden_protocol::block::BlockHeader::block_num);
         let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
@@ -1168,10 +1164,10 @@ async fn load_account_tree(
 
     let smt =
         LargeSmt::with_entries(MemoryStorage::default(), smt_entries).map_err(|e| match e {
-            miden_objects::crypto::merkle::LargeSmtError::Merkle(merkle_error) => {
+            LargeSmtError::Merkle(merkle_error) => {
                 StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
             },
-            miden_objects::crypto::merkle::LargeSmtError::Storage(err) => {
+            LargeSmtError::Storage(err) => {
                 // large_smt::StorageError is not `Sync` and hence `context` cannot be called
                 // which we want to and do
                 StateInitializationError::AccountTreeIoError(err.as_report())

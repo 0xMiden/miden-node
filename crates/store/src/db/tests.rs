@@ -5,14 +5,11 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use diesel::{Connection, SqliteConnection};
-use miden_lib::account::auth::AuthRpoFalcon512;
-use miden_lib::note::create_p2id_note;
-use miden_lib::utils::CodeBuilder;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::{test_fee, test_fee_params};
-use miden_objects::account::auth::PublicKeyCommitment;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
@@ -24,20 +21,21 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
     StorageSlot,
+    StorageSlotDelta,
     StorageSlotName,
 };
-use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};
-use miden_objects::block::{
+use miden_protocol::asset::{Asset, AssetVaultKey, FungibleAsset};
+use miden_protocol::block::{
     BlockAccountUpdate,
     BlockHeader,
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
 };
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::crypto::rand::RpoRandomCoin;
-use miden_objects::note::{
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::crypto::rand::RpoRandomCoin;
+use miden_protocol::note::{
     Note,
     NoteDetails,
     NoteExecutionHint,
@@ -48,22 +46,25 @@ use miden_objects::note::{
     NoteType,
     Nullifier,
 };
-use miden_objects::testing::account_id::{
+use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
-use miden_objects::testing::random_signer::RandomBlockSigner;
-use miden_objects::transaction::{
+use miden_protocol::testing::random_signer::RandomBlockSigner;
+use miden_protocol::transaction::{
     InputNoteCommitment,
     InputNotes,
     OrderedTransactionHeaders,
     TransactionHeader,
     TransactionId,
 };
-use miden_objects::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
+use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
+use miden_standards::account::auth::AuthRpoFalcon512;
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::create_p2id_note;
 use pretty_assertions::assert_eq;
 use rand::Rng;
 
@@ -1140,7 +1141,7 @@ fn insert_account_delta(
 fn sql_account_storage_map_values_insertion() {
     use std::collections::BTreeMap;
 
-    use miden_objects::account::StorageMapDelta;
+    use miden_protocol::account::StorageMapDelta;
 
     let mut conn = create_db();
     let conn = &mut conn;
@@ -1164,8 +1165,9 @@ fn sql_account_storage_map_values_insertion() {
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
-    let maps1: BTreeMap<_, _> = [(slot_name.clone(), map1)].into_iter().collect();
-    let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
+    let delta1: BTreeMap<_, _> =
+        [(slot_name.clone(), StorageSlotDelta::Map(map1))].into_iter().collect();
+    let storage1 = AccountStorageDelta::from_raw(delta1);
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
     insert_account_delta(conn, account_id, block1, &delta1);
@@ -1178,8 +1180,8 @@ fn sql_account_storage_map_values_insertion() {
     // Update key1 at block 2
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
-    let maps2 = BTreeMap::from_iter([(slot_name.clone(), map2)]);
-    let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
+    let delta2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map2))]);
+    let storage2 = AccountStorageDelta::from_raw(delta2);
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
             .unwrap();
@@ -1394,7 +1396,7 @@ fn mock_account_code_and_storage(
     init_seed: Option<[u8; 32]>,
 ) -> Account {
     let component_code = "\
-    export.account_procedure_1
+    pub proc account_procedure_1
         push.1.2
         add
     end
@@ -1434,7 +1436,7 @@ fn mock_account_code_and_storage(
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
-    let component_code = "export.foo push.1 end";
+    let component_code = "pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1466,7 +1468,7 @@ fn genesis_with_account_assets() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_storage_map() {
-    use miden_objects::account::StorageMap;
+    use miden_protocol::account::StorageMap;
 
     use crate::genesis::GenesisState;
 
@@ -1487,7 +1489,7 @@ fn genesis_with_account_storage_map() {
         StorageSlot::with_empty_value(StorageSlotName::mock(1)),
     ];
 
-    let component_code = "export.foo push.1 end";
+    let component_code = "pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1515,7 +1517,7 @@ fn genesis_with_account_storage_map() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_account_assets_and_storage() {
-    use miden_objects::account::StorageMap;
+    use miden_protocol::account::StorageMap;
 
     use crate::genesis::GenesisState;
 
@@ -1533,7 +1535,7 @@ fn genesis_with_account_assets_and_storage() {
         StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
     ];
 
-    let component_code = "export.foo push.1 end";
+    let component_code = "pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1563,12 +1565,12 @@ fn genesis_with_account_assets_and_storage() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn genesis_with_multiple_accounts() {
-    use miden_objects::account::StorageMap;
+    use miden_protocol::account::StorageMap;
 
     use crate::genesis::GenesisState;
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("foo::interface", "export.foo push.1 end")
+        .compile_component_code("foo::interface", "pub proc foo push.1 end")
         .unwrap();
     let account_component1 = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
@@ -1586,7 +1588,7 @@ fn genesis_with_multiple_accounts() {
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("bar::interface", "export.bar push.2 end")
+        .compile_component_code("bar::interface", "pub proc bar push.2 end")
         .unwrap();
     let account_component2 = AccountComponent::new(account_component_code, Vec::new())
         .unwrap()
@@ -1610,7 +1612,7 @@ fn genesis_with_multiple_accounts() {
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("baz::interface", "export.baz push.3 end")
+        .compile_component_code("baz::interface", "pub proc baz push.3 end")
         .unwrap();
     let account_component3 = AccountComponent::new(account_component_code, component_storage)
         .unwrap()
@@ -1634,4 +1636,49 @@ fn genesis_with_multiple_accounts() {
     let genesis_block = genesis_state.into_block().unwrap();
 
     crate::db::Db::bootstrap(":memory:".into(), &genesis_block).unwrap();
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn regression_1461_full_state_delta_inserts_vault_assets() {
+    let mut conn = create_db();
+    let block_num: BlockNumber = 1.into();
+    create_block(&mut conn, block_num);
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
+
+    let account = mock_account_code_and_storage(
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+        [fungible_asset.into()],
+        Some([42u8; 32]),
+    );
+    let account_id = account.id();
+
+    // Convert to full state delta, same as genesis
+    let account_delta = AccountDelta::try_from(account.clone()).unwrap();
+    assert!(account_delta.is_full_state());
+
+    let block_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(account_delta),
+    );
+
+    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+
+    let (_, vault_assets) = queries::select_account_vault_assets(
+        &mut conn,
+        account_id,
+        BlockNumber::GENESIS..=block_num,
+    )
+    .unwrap();
+
+    // Before the fix, vault_assets was empty
+    let vault_asset = vault_assets.first().unwrap();
+    let expected_asset: Asset = fungible_asset.into();
+    assert_eq!(vault_asset.block_num, block_num);
+    assert_eq!(vault_asset.asset, Some(expected_asset));
+    assert_eq!(vault_asset.vault_key, expected_asset.vault_key());
 }

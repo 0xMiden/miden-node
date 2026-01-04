@@ -4,13 +4,9 @@ use std::cmp::Ordering;
 use std::str::FromStr;
 
 use indexmap::IndexMap;
-use miden_lib::AuthScheme;
-use miden_lib::account::auth::AuthRpoFalcon512;
-use miden_lib::account::faucets::BasicFungibleFaucet;
-use miden_lib::account::wallets::create_basic_wallet;
 use miden_node_utils::crypto::get_rpo_random_coin;
-use miden_objects::account::auth::AuthSecretKey;
-use miden_objects::account::{
+use miden_protocol::account::auth::AuthSecretKey;
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountDelta,
@@ -24,10 +20,14 @@ use miden_objects::account::{
     FungibleAssetDelta,
     NonFungibleAssetDelta,
 };
-use miden_objects::asset::{FungibleAsset, TokenSymbol};
-use miden_objects::block::FeeParameters;
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey as RpoSecretKey;
-use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
+use miden_protocol::asset::{FungibleAsset, TokenSymbol};
+use miden_protocol::block::FeeParameters;
+use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey as RpoSecretKey;
+use miden_protocol::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
+use miden_standards::AuthScheme;
+use miden_standards::account::auth::AuthRpoFalcon512;
+use miden_standards::account::faucets::BasicFungibleFaucet;
+use miden_standards::account::wallets::create_basic_wallet;
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -221,7 +221,7 @@ impl GenesisConfig {
                 storage_delta.set_item(
                     AccountStorage::faucet_sysdata_slot().clone(),
                     [ZERO, ZERO, ZERO, Felt::new(total_issuance)].into(),
-                );
+                )?;
                 tracing::debug!(
                     "Reducing faucet account {faucet} for {symbol} by {amount}",
                     faucet = faucet_id.to_hex(),

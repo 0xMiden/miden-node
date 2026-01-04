@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use itertools::Itertools;
-use miden_objects::transaction::{InputNoteCommitment, InputNotes, OutputNotes};
+use miden_protocol::transaction::{InputNoteCommitment, InputNotes, OutputNotes};
 
 pub fn format_opt<T: Display>(opt: Option<&T>) -> String {
     opt.map_or("None".to_owned(), ToString::to_string)

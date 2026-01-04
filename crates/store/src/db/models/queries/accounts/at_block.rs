@@ -122,52 +122,6 @@ pub(crate) fn select_account_header_at_block(
     )))
 }
 
-// ACCOUNT CODE
-// ================================================================================================
-
-/// Queries the account code for a specific account at a specific block number.
-///
-/// Returns `None` if:
-/// - The account doesn't exist at that block
-/// - The account has no code (private account or account without code commitment)
-///
-/// # Arguments
-///
-/// * `conn` - Database connection
-/// * `account_id` - The account ID to query
-/// * `block_num` - The block number at which to query the account code
-///
-/// # Returns
-///
-/// * `Ok(Some(Vec<u8>))` - The account code bytes if found
-/// * `Ok(None)` - If account doesn't exist or has no code
-/// * `Err(DatabaseError)` - If there's a database error
-pub(crate) fn select_account_code_at_block(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<Option<Vec<u8>>, DatabaseError> {
-    use schema::{account_codes, accounts};
-
-    let account_id_bytes = account_id.to_bytes();
-    let block_num_sql = i64::from(block_num.as_u32());
-    // Query the accounts table to get the code_commitment at the specified block or earlier
-    // Then join with account_codes to get the actual code
-    let result: Option<Vec<u8>> = SelectDsl::select(
-        accounts::table
-            .inner_join(account_codes::table)
-            .filter(accounts::account_id.eq(&account_id_bytes))
-            .filter(accounts::block_num.le(block_num_sql))
-            .order(accounts::block_num.desc())
-            .limit(1),
-        account_codes::code,
-    )
-    .first(conn)
-    .optional()?;
-
-    Ok(result)
-}
-
 // ACCOUNT VAULT
 // ================================================================================================
 

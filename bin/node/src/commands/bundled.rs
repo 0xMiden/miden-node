@@ -102,9 +102,10 @@ pub enum BundledCommand {
         #[arg(
             long = "validator.insecure.secret-key",
             env = ENV_VALIDATOR_INSECURE_SECRET_KEY,
-            value_name = "VALIDATOR_INSECURE_SECRET_KEY"
+            value_name = "VALIDATOR_INSECURE_SECRET_KEY",
+            default_value = INSECURE_VALIDATOR_KEY_HEX
         )]
-        validator_insecure_secret_key: Option<String>,
+        validator_insecure_secret_key: String,
     },
 }
 
@@ -137,9 +138,8 @@ impl BundledCommand {
                 grpc_timeout,
                 validator_insecure_secret_key,
             } => {
-                let secret_key_hex =
-                    validator_insecure_secret_key.unwrap_or(INSECURE_VALIDATOR_KEY_HEX.into());
-                let signer = SecretKey::read_from_bytes(hex::decode(secret_key_hex)?.as_ref())?;
+                let secret_key_bytes = hex::decode(validator_insecure_secret_key)?;
+                let signer = SecretKey::read_from_bytes(&secret_key_bytes)?;
                 Self::start(
                     rpc_url,
                     data_directory,

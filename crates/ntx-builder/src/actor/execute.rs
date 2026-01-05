@@ -341,7 +341,17 @@ impl DataStore for NtxDataStore {
         foreign_account_id: AccountId,
         _ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
-        async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
+        async move {
+            if foreign_account_id == self.account.id() {
+                // todo(currentpr): proper error
+                return Err(DataStoreError::AccountNotFound(foreign_account_id));
+            }
+            // TODO(currentpr): We don't have tx inputs here so what do we do?
+            let foreign_inputs =
+                self.tx_inputs.read_foreign_account_inputs(foreign_account_id).unwrap(); // todo unwrap
+
+            Ok(foreign_inputs)
+        }
     }
 
     fn get_vault_asset_witnesses(

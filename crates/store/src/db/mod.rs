@@ -36,6 +36,7 @@ use crate::genesis::GenesisBlock;
 pub(crate) mod manager;
 
 mod migrations;
+mod schema_hash;
 
 #[cfg(test)]
 mod tests;

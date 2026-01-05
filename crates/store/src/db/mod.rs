@@ -461,16 +461,15 @@ impl Db {
         .await
     }
 
-    /// Queries the account code for a specific account at a specific block number.
+    /// Queries the account code by its commitment hash.
     ///
-    /// Returns `None` if the account doesn't exist at that block or has no code.
-    pub async fn select_account_code_at_block(
+    /// Returns `None` if no code exists with that commitment.
+    pub async fn select_account_code_by_commitment(
         &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
+        code_commitment: Word,
     ) -> Result<Option<Vec<u8>>> {
-        self.transact("Get account code at block", move |conn| {
-            queries::select_account_code_at_block(conn, account_id, block_num)
+        self.transact("Get account code by commitment", move |conn| {
+            queries::select_account_code_by_commitment(conn, code_commitment)
         })
         .await
     }

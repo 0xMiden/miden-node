@@ -1035,7 +1035,11 @@ impl State {
 
         let account_code = match code_commitment {
             Some(commitment) if commitment == account_header.code_commitment() => None,
-            Some(_) => self.db.select_account_code_at_block(account_id, block_num).await?,
+            Some(_) => {
+                self.db
+                    .select_account_code_by_commitment(account_header.code_commitment())
+                    .await?
+            },
             None => None,
         };
 

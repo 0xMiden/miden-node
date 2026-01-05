@@ -214,6 +214,34 @@ The web dashboard provides a clean, responsive interface with the following feat
 - **Interactive Elements**: Copy-to-clipboard functionality for genesis commitments, transaction IDs, and note IDs
 - **Responsive Design**: Optimized for both desktop and mobile viewing
 
+### gRPC-Web Browser Probe
+
+The dashboard includes an on-demand **"Probe gRPC-Web"** button for RPC and Remote Prover services. This feature allows you to test whether the browser can successfully communicate with these services using gRPC-Web protocol.
+
+**What it checks:**
+- Browser connectivity to the service endpoint
+- CORS configuration (the probe is a real cross-origin request from the browser)
+- gRPC-Web protocol handling (proper framing and trailers)
+- Basic service availability (calls the `Status` endpoint)
+
+**How to use:**
+1. Click the "Probe gRPC-Web" button on any RPC or Remote Prover card
+2. The probe sends a gRPC-Web request to the service's `Status` endpoint
+3. Results are displayed inline showing:
+   - **OK** / **FAILED** status
+   - Response latency in milliseconds
+   - Error details (if failed)
+   - Time since last probe
+
+**Common failure scenarios:**
+- **CORS / Network error**: The service is not configured to accept cross-origin requests from the browser, or the service is unreachable
+- **HTTP 4xx/5xx**: The service returned an HTTP error (check server logs)
+- **grpc-status non-zero**: The gRPC call failed at the application level
+
+**Note:** The probe uses the same URLs configured for `--rpc-url` and `--remote-prover-urls`. For the probe to work from a browser, these services must:
+1. Have gRPC-Web support enabled (e.g., via Envoy, grpc-web proxy, or native tonic-web)
+2. Allow CORS requests from the monitor's origin (or use `Access-Control-Allow-Origin: *`)
+
 ## Account Management
 
 When the network transaction service is enabled, the monitor manages the necessary Miden accounts:

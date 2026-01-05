@@ -42,6 +42,7 @@ pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     let app = Router::new()
         // Serve embedded assets
         .route("/assets/index.css", get(serve_css))
+        .route("/assets/index.js", get(serve_js))
         .route("/assets/favicon.ico", get(serve_favicon))
         // Main dashboard route
         .route("/", get(get_dashboard))
@@ -112,6 +113,14 @@ async fn serve_css() -> Response {
     (
         [(header::CONTENT_TYPE, header::HeaderValue::from_static("text/css"))],
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.css")),
+    )
+        .into_response()
+}
+
+async fn serve_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("text/javascript"))],
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.js")),
     )
         .into_response()
 }

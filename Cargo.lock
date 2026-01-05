@@ -2490,7 +2490,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#eb0c396d48506c30c3fdc859ddaabbb8bfaf6b00"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#0b46cc5ca19b8257446108c38ae2e79188aec83c"
 dependencies = [
  "miden-protocol",
  "thiserror 2.0.17",
@@ -2980,7 +2980,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#eb0c396d48506c30c3fdc859ddaabbb8bfaf6b00"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#0b46cc5ca19b8257446108c38ae2e79188aec83c"
 dependencies = [
  "bech32",
  "fs-err",
@@ -3010,7 +3010,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol-macros"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#eb0c396d48506c30c3fdc859ddaabbb8bfaf6b00"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#0b46cc5ca19b8257446108c38ae2e79188aec83c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3100,7 +3100,7 @@ dependencies = [
 [[package]]
 name = "miden-standards"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#eb0c396d48506c30c3fdc859ddaabbb8bfaf6b00"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#0b46cc5ca19b8257446108c38ae2e79188aec83c"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -3117,7 +3117,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#eb0c396d48506c30c3fdc859ddaabbb8bfaf6b00"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#0b46cc5ca19b8257446108c38ae2e79188aec83c"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3135,7 +3135,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#eb0c396d48506c30c3fdc859ddaabbb8bfaf6b00"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#0b46cc5ca19b8257446108c38ae2e79188aec83c"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -3148,7 +3148,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#eb0c396d48506c30c3fdc859ddaabbb8bfaf6b00"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#0b46cc5ca19b8257446108c38ae2e79188aec83c"
 dependencies = [
  "miden-protocol",
  "miden-tx",

@@ -147,7 +147,10 @@ mod tests {
             .execute(&mut conn)
             .unwrap();
 
-        assert!(matches!(verify_schema(&mut conn), Err(SchemaVerificationError::Mismatch { .. })));
+        assert!(matches!(
+            verify_schema(&mut conn),
+            Err(SchemaVerificationError::Mismatch { .. })
+        ));
     }
 
     #[test]
@@ -157,7 +160,10 @@ mod tests {
 
         diesel::sql_query("DROP TABLE transactions").execute(&mut conn).unwrap();
 
-        assert!(matches!(verify_schema(&mut conn), Err(SchemaVerificationError::Mismatch { .. })));
+        assert!(matches!(
+            verify_schema(&mut conn),
+            Err(SchemaVerificationError::Mismatch { .. })
+        ));
     }
 
     #[test]

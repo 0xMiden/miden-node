@@ -424,7 +424,7 @@ pub(crate) fn select_all_network_account_ids(
 
     const _: () = assert!(
         MAX_ROWS > miden_protocol::MAX_ACCOUNTS_PER_BLOCK,
-        "Block pagination limit must exceed maximum block capacity"
+        "Block pagination limit must exceed maximum block capacity to uphold assumed logic invariant"
     );
 
     if block_range.is_empty() {

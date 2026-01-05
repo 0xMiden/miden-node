@@ -177,6 +177,10 @@ impl StoreClient {
     ///
     /// Since the `GetNetworkAccountIds` method is paginated, we loop through all pages until we
     /// reach the end.
+    ///
+    /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
+    /// accounts (~289,000). With 1000 iterations, this supports up to ~524 million network
+    /// accounts, which is assumed to be sufficient for the foreseeable future.
     #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
     pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
         const MAX_ITERATIONS: u32 = 1000;

@@ -410,11 +410,19 @@ pub(crate) fn select_all_accounts(
     Ok(account_infos)
 }
 
-/// Returns all network account IDs.
+/// Returns network account IDs within the specified block range (based on account creation
+/// block).
+///
+/// The function may return fewer accounts than exist in the range if the result would exceed
+/// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+/// truncated at a block boundary to ensure all accounts from included blocks are returned.
 ///
 /// # Returns
 ///
-/// A vector with network account IDs, or an error.
+/// A tuple containing:
+/// - A vector of network account IDs.
+/// - The last block number that was fully included in the result. When truncated, this will be less
+///   than the requested range end.
 pub(crate) fn select_all_network_account_ids(
     conn: &mut SqliteConnection,
     block_range: RangeInclusive<BlockNumber>,
@@ -449,9 +457,10 @@ pub(crate) fn select_all_network_account_ids(
     )
     .load::<(Vec<u8>, i64)>(conn)?;
 
-    if let Some(&(_, last_created_at_block)) = account_ids_raw.last()
-        && account_ids_raw.len() > MAX_ROWS
-    {
+    if account_ids_raw.len() > MAX_ROWS {
+        // SAFETY: We just checked that len > MAX_ROWS, so the vec is not empty.
+        let last_created_at_block = account_ids_raw.last().expect("vec is not empty").1;
+
         let account_ids = account_ids_raw
             .into_iter()
             .take_while(|(_, created_at_block)| *created_at_block != last_created_at_block)

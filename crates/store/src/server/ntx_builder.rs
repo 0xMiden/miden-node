@@ -151,7 +151,14 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         }))
     }
 
-    // TODO: add pagination.
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// The response includes pagination info with the last block number that was fully included.
     #[instrument(
         parent = None,
         target = COMPONENT,

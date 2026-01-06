@@ -352,7 +352,7 @@ impl DataStore for NtxDataStore {
 
             // TODO(currentpr): handle account not found properly
             let account_proof = store
-                .get_account(foreign_account_id, ref_block.as_u32())
+                .get_account(foreign_account_id, Some(ref_block.as_u32()))
                 .await
                 .map_err(|err| DataStoreError::Other {
                     error_msg: format!("Failed to get account inputs from store: {err}").into(),
@@ -387,26 +387,30 @@ impl DataStore for NtxDataStore {
         vault_root: Word,
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
+        let store = self.store.clone();
         async move {
-            if self.account.id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
-            }
-
-            if self.account.vault().root() != vault_root {
-                return Err(DataStoreError::Other {
-                    error_msg: "vault root mismatch".into(),
-                    source: None,
-                });
-            }
-
-            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-                AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
+            if self.account.id() == account_id {
+                if self.account.vault().root() != vault_root {
+                    return Err(DataStoreError::Other {
+                        error_msg: "vault root mismatch".into(),
+                        source: None,
+                    });
+                }
+                get_asset_witnesses(vault_keys, self.account.vault())
+            } else {
+                // Get foreign account.
+                let account_proof = store.get_account(account_id, None).await.map_err(|err| {
                     DataStoreError::Other {
-                        error_msg: "failed to open vault asset tree".into(),
+                        error_msg: format!("Failed to get account inputs from store: {err}").into(),
                         source: Some(Box::new(err)),
                     }
-                })
-            }))
+                })?;
+                let account_details = account_proof.details.expect("todo");
+
+                let asset_vault =
+                    AssetVault::new(&account_details.vault_details.assets).expect("todo");
+                get_asset_witnesses(vault_keys, &asset_vault)
+            }
         }
     }
 
@@ -481,4 +485,19 @@ impl MastForestStore for NtxDataStore {
     ) -> Option<std::sync::Arc<miden_protocol::MastForest>> {
         self.mast_store.get(procedure_hash)
     }
+}
+
+// HELPERS
+// ================================================================================================
+
+fn get_asset_witnesses(
+    vault_keys: BTreeSet<AssetVaultKey>,
+    vault: &AssetVault,
+) -> Result<Vec<AssetWitness>, DataStoreError> {
+    Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+        AssetWitness::new(vault.open(vault_key).into()).map_err(|err| DataStoreError::Other {
+            error_msg: "failed to open vault asset tree".into(),
+            source: Some(Box::new(err)),
+        })
+    }))
 }

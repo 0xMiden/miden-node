@@ -221,11 +221,11 @@ impl StoreClient {
     pub async fn get_account(
         &self,
         account_id: AccountId,
-        ref_block: u32,
+        ref_block: Option<u32>,
     ) -> Result<AccountProofResponse, StoreError> {
         let request = proto::rpc::AccountProofRequest {
             account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
-            block_num: Some(BlockNumber { block_num: ref_block }),
+            block_num: ref_block.map(|block_num| BlockNumber { block_num }),
             // TODO(currentpr): fill these in properly?
             details: Some(AccountDetailRequest {
                 code_commitment: None,

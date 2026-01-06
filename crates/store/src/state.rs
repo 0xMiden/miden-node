@@ -1025,7 +1025,7 @@ impl State {
             None => AccountVaultDetails::empty(),
         };
 
-        // TODO: don't load the entire store at once, load what is required
+        // TODO: don't load the entire storage at once, load what is required
         let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
         let storage_header = storage.to_header();
         let mut storage_map_details =

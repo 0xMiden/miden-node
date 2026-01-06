@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use miden_node_proto::clients::ValidatorClient;
+use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::account::{
@@ -27,6 +29,7 @@ use miden_protocol::vm::FutureMaybeSend;
 use miden_protocol::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
+use miden_tx::utils::Serializable;
 use miden_tx::{
     DataStore,
     DataStoreError,
@@ -46,7 +49,6 @@ use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
 use crate::actor::account_state::TransactionCandidate;
-use crate::rpc::RpcClient;
 use crate::store::StoreClient;
 
 #[derive(Debug, thiserror::Error)]
@@ -75,8 +77,8 @@ type NtxResult<T> = Result<T, NtxError>;
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
 #[derive(Clone)]
 pub struct NtxContext {
-    /// Client for submitting transactions to the network.
-    rpc_client: RpcClient,
+    /// Client for validating transactions via the Validator.
+    validator_client: ValidatorClient,
 
     /// The prover to delegate proofs to.
     ///
@@ -94,12 +96,17 @@ pub struct NtxContext {
 impl NtxContext {
     /// Creates a new [`NtxContext`] instance.
     pub fn new(
-        rpc_client: RpcClient,
+        validator_client: ValidatorClient,
         prover: Option<RemoteTransactionProver>,
         store: StoreClient,
         script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
-        Self { rpc_client, prover, store, script_cache }
+        Self {
+            validator_client,
+            prover,
+            store,
+            script_cache,
+        }
     }
 
     /// Executes a transaction end-to-end: filtering, executing, proving, and submitted to the block
@@ -159,7 +166,7 @@ impl NtxContext {
                 let tx_inputs: TransactionInputs = executed_tx.into();
                 let proven_tx = Box::pin(self.prove(tx_inputs.clone())).await?;
                 let tx_id = proven_tx.id();
-                self.submit(proven_tx, tx_inputs).await?;
+                self.validate(proven_tx, tx_inputs).await?;
                 Ok((tx_id, failed_notes))
             })
             .in_current_span()
@@ -254,13 +261,19 @@ impl NtxContext {
         .map_err(NtxError::Proving)
     }
 
-    /// Submits the transaction to the RPC server with transaction inputs.
-    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
-    async fn submit(&self, tx: ProvenTransaction, tx_inputs: TransactionInputs) -> NtxResult<()> {
-        self.rpc_client
-            .submit_proven_transaction(tx, tx_inputs)
+    /// Validates the transaction against the Validator.
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.validate", skip_all, err)]
+    async fn validate(&self, tx: ProvenTransaction, tx_inputs: TransactionInputs) -> NtxResult<()> {
+        let request = proto::transaction::ProvenTransaction {
+            transaction: tx.to_bytes(),
+            transaction_inputs: Some(tx_inputs.to_bytes()),
+        };
+        self.validator_client
+            .clone()
+            .submit_proven_transaction(request)
             .await
-            .map_err(NtxError::Submission)
+            .map_err(NtxError::Submission)?;
+        Ok(())
     }
 }
 

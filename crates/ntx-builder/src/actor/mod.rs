@@ -8,6 +8,7 @@ use std::sync::Arc;
 use account_state::{NetworkAccountState, TransactionCandidate};
 use execute::NtxError;
 use futures::FutureExt;
+use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
@@ -23,7 +24,6 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use crate::builder::ChainState;
-use crate::rpc::RpcClient;
 use crate::store::StoreClient;
 
 // ACTOR SHUTDOWN REASON
@@ -52,8 +52,8 @@ pub enum ActorShutdownReason {
 pub struct AccountActorContext {
     /// Client for interacting with the store in order to load account state.
     pub store: StoreClient,
-    /// Address of the RPC gRPC server.
-    pub rpc_url: Url,
+    /// Address of the Validator server.
+    pub validator_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     // undesirable due to the performance impact.
     pub tx_prover_url: Option<Url>,
@@ -153,7 +153,7 @@ pub struct AccountActor {
     mode: ActorMode,
     event_rx: mpsc::Receiver<Arc<MempoolEvent>>,
     cancel_token: CancellationToken,
-    rpc_client: RpcClient,
+    validator_client: ValidatorClient,
     prover: Option<RemoteTransactionProver>,
     chain_state: Arc<RwLock<ChainState>>,
     script_cache: LruCache<Word, NoteScript>,
@@ -168,7 +168,13 @@ impl AccountActor {
         event_rx: mpsc::Receiver<Arc<MempoolEvent>>,
         cancel_token: CancellationToken,
     ) -> Self {
-        let rpc_client = RpcClient::new(actor_context.rpc_url.clone());
+        let validator_client = Builder::new(actor_context.validator_url.clone())
+            .without_tls()
+            .without_timeout()
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .with_otel_context_injection()
+            .connect_lazy::<ValidatorClient>();
         let prover = actor_context.tx_prover_url.clone().map(RemoteTransactionProver::new);
         Self {
             origin,
@@ -176,7 +182,7 @@ impl AccountActor {
             mode: ActorMode::NoViableNotes,
             event_rx,
             cancel_token,
-            rpc_client,
+            validator_client,
             prover,
             chain_state: actor_context.chain_state.clone(),
             script_cache: actor_context.script_cache.clone(),
@@ -275,7 +281,7 @@ impl AccountActor {
 
         // Execute the selected transaction.
         let context = execute::NtxContext::new(
-            self.rpc_client.clone(),
+            self.validator_client.clone(),
             self.prover.clone(),
             self.store.clone(),
             self.script_cache.clone(),

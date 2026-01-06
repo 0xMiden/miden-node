@@ -339,18 +339,25 @@ impl DataStore for NtxDataStore {
     fn get_foreign_account_inputs(
         &self,
         foreign_account_id: AccountId,
-        _ref_block: BlockNumber,
+        ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
+        let store = self.store.clone();
         async move {
             if foreign_account_id == self.account.id() {
-                // todo(currentpr): proper error
+                // TODO(currentpr): proper error
                 return Err(DataStoreError::AccountNotFound(foreign_account_id));
             }
-            // TODO(currentpr): We don't have tx inputs here so what do we do?
-            let foreign_inputs =
-                self.tx_inputs.read_foreign_account_inputs(foreign_account_id).unwrap(); // todo unwrap
 
-            Ok(foreign_inputs)
+            // TODO(currentpr): handle account not found properly
+            let account_inputs = store
+                .get_account_inputs(foreign_account_id, ref_block.as_u32())
+                .await
+                .map_err(|err| DataStoreError::Other {
+                    error_msg: format!("Failed to get account inputs from store: {err}").into(),
+                    source: Some(Box::new(err)),
+                })?;
+
+            Ok(account_inputs)
         }
     }
 

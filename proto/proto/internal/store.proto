@@ -272,6 +272,9 @@ service NtxBuilder {
 
     // Returns the script for a note by its root.
     rpc GetNoteScriptByRoot(note.NoteRoot) returns (rpc.MaybeNoteScript) {}
+
+    // Returns account inputs for the specified account ID.
+    rpc GetAccountInputs(GetAccountInputsRequest) returns (GetAccountInputsResponse) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX
@@ -347,4 +350,23 @@ message CurrentBlockchainData {
     repeated primitives.Digest current_peaks = 1;
     // Current block header.
     optional blockchain.BlockHeader current_block_header = 2;
+}
+
+// GET ACCOUNT INPUTS
+// ================================================================================================
+
+// Request for account inputs by account ID.
+message GetAccountInputsRequest {
+    // The account ID to retrieve inputs for.
+    account.AccountId account_id = 1;
+    
+    // The reference block number for the account state.
+    fixed32 ref_block = 2;
+}
+
+// Response containing account inputs.
+message GetAccountInputsResponse {
+    // Account inputs encoded using [winter_utils::Serializable] implementation for
+    // [miden_protocol::transaction::AccountInputs].
+    bytes account_inputs = 1;
 }

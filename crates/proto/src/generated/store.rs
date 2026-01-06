@@ -220,6 +220,24 @@ pub struct CurrentBlockchainData {
     #[prost(message, optional, tag = "2")]
     pub current_block_header: ::core::option::Option<super::blockchain::BlockHeader>,
 }
+/// Request for account inputs by account ID.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetAccountInputsRequest {
+    /// The account ID to retrieve inputs for.
+    #[prost(message, optional, tag = "1")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+    /// The reference block number for the account state.
+    #[prost(fixed32, tag = "2")]
+    pub ref_block: u32,
+}
+/// Response containing account inputs.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetAccountInputsResponse {
+    /// Account inputs encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_protocol::transaction::AccountInputs\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub account_inputs: ::prost::alloc::vec::Vec<u8>,
+}
 /// Generated client implementations.
 pub mod rpc_client {
     #![allow(
@@ -2479,6 +2497,31 @@ pub mod ntx_builder_client {
                 .insert(GrpcMethod::new("store.NtxBuilder", "GetNoteScriptByRoot"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns account inputs for the specified account ID.
+        pub async fn get_account_inputs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetAccountInputsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAccountInputsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/store.NtxBuilder/GetAccountInputs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("store.NtxBuilder", "GetAccountInputs"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2543,6 +2586,14 @@ pub mod ntx_builder_server {
             request: tonic::Request<super::super::note::NoteRoot>,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc::MaybeNoteScript>,
+            tonic::Status,
+        >;
+        /// Returns account inputs for the specified account ID.
+        async fn get_account_inputs(
+            &self,
+            request: tonic::Request<super::GetAccountInputsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetAccountInputsResponse>,
             tonic::Status,
         >;
     }
@@ -2899,6 +2950,51 @@ pub mod ntx_builder_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNoteScriptByRootSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/store.NtxBuilder/GetAccountInputs" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetAccountInputsSvc<T: NtxBuilder>(pub Arc<T>);
+                    impl<
+                        T: NtxBuilder,
+                    > tonic::server::UnaryService<super::GetAccountInputsRequest>
+                    for GetAccountInputsSvc<T> {
+                        type Response = super::GetAccountInputsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetAccountInputsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as NtxBuilder>::get_account_inputs(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetAccountInputsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

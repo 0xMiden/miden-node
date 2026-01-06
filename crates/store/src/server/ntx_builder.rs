@@ -6,6 +6,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
+use miden_protocol::utils::Serializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, instrument};
 
@@ -195,6 +196,37 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         Ok(Response::new(proto::rpc::MaybeNoteScript {
             script: note_script.map(Into::into),
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.ntx_builder_server.get_account_inputs",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_account_inputs(
+        &self,
+        request: Request<proto::store::GetAccountInputsRequest>,
+    ) -> Result<Response<proto::store::GetAccountInputsResponse>, Status> {
+        let request = request.into_inner();
+
+        let account_id = request
+            .account_id
+            .ok_or_else(|| Status::invalid_argument("missing account_id"))?
+            .try_into()
+            .map_err(|_| Status::invalid_argument("invalid account_id"))?;
+
+        let account_inputs = self
+            .state
+            .get_account_inputs(account_id, request.ref_block.into())
+            .await
+            .map_err(internal_error)?;
+
+        Ok(Response::new(proto::store::GetAccountInputsResponse {
+            account_inputs: account_inputs.to_bytes(),
         }))
     }
 }

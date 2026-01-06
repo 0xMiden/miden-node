@@ -11,6 +11,8 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::NoteScript;
+use miden_protocol::transaction::AccountInputs;
+use miden_protocol::utils::Serializable;
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tracing::{info, instrument};
@@ -212,6 +214,29 @@ impl StoreClient {
         } else {
             Ok(None)
         }
+    }
+
+    #[instrument(target = COMPONENT, name = "store.client.get_account_inputs", skip_all, err)]
+    pub async fn get_account_inputs(
+        &self,
+        account_id: AccountId,
+        ref_block: u32,
+    ) -> Result<AccountInputs, StoreError> {
+        let request = proto::store::GetAccountInputsRequest {
+            account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+            ref_block,
+        };
+
+        let response = self.inner.clone().get_account_inputs(request).await?.into_inner();
+        let account_inputs =
+            AccountInputs::read_from_bytes(&response.account_inputs).map_err(|err| {
+                StoreError::DeserializationError(ConversionError::deserialization_error(
+                    "account inputs",
+                    err,
+                ))
+            })?;
+
+        Ok(account_inputs)
     }
 }
 

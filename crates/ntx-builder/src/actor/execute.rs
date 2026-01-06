@@ -8,6 +8,7 @@ use miden_protocol::account::{
     AccountId,
     AccountStorage,
     PartialAccount,
+    StorageMap,
     StorageMapWitness,
     StorageSlotContent,
 };
@@ -420,28 +421,48 @@ impl DataStore for NtxDataStore {
         map_root: Word,
         map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
+        let store = self.store.clone();
         async move {
-            if self.account.id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
-            }
-
-            let mut map_witness = None;
-            for slot in self.account.storage().slots() {
-                if let StorageSlotContent::Map(map) = slot.content() {
-                    if map.root() == map_root {
-                        map_witness = Some(map.open(&map_key));
+            let map_witness = if self.account.id() == account_id {
+                // Search through local account's storage slots
+                self.account.storage().slots().iter().find_map(|slot| {
+                    if let StorageSlotContent::Map(map) = slot.content() {
+                        if map.root() == map_root {
+                            Some(map.open(&map_key))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
                     }
-                }
-            }
-
-            if let Some(map_witness) = map_witness {
-                Ok(map_witness)
-            } else {
-                Err(DataStoreError::Other {
-                    error_msg: "account storage does not contain the expected root".into(),
-                    source: None,
                 })
-            }
+            } else {
+                // Get foreign account.
+                let account_proof = store.get_account(account_id, None).await.map_err(|err| {
+                    DataStoreError::Other {
+                        error_msg: format!("Failed to get account inputs from store: {err}").into(),
+                        source: Some(Box::new(err)),
+                    }
+                })?;
+                let account_details = account_proof.details.expect("todo");
+
+                // Search through foreign account's storage maps
+                account_details.storage_details.map_details.iter().find_map(|map_details| {
+                    let storage_map =
+                        StorageMap::with_entries(map_details.map_entries.iter().copied())
+                            .expect("todo");
+                    if storage_map.root() == map_root {
+                        Some(storage_map.open(&map_key))
+                    } else {
+                        None
+                    }
+                })
+            };
+
+            map_witness.ok_or_else(|| DataStoreError::Other {
+                error_msg: "account storage does not contain the expected root".into(),
+                source: None,
+            })
         }
     }
 

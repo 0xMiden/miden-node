@@ -1026,13 +1026,13 @@ impl State {
         };
 
         // TODO: don't load the entire store at once, load what is required
-        let store = self.db.select_account_storage_at_block(account_id, block_num).await?;
-        let storage_header = store.to_header();
+        let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
+        let storage_header = storage.to_header();
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
         for StorageMapRequest { slot_name, slot_data } in storage_requests {
-            let Some(slot) = store.slots().iter().find(|s| s.name() == &slot_name) else {
+            let Some(slot) = storage.slots().iter().find(|s| s.name() == &slot_name) else {
                 continue;
             };
 

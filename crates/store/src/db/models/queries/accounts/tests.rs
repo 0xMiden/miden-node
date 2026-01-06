@@ -138,9 +138,10 @@ fn test_select_account_header_at_block_returns_correct_header() {
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
 
     // Query the account header
-    let header = select_account_header_at_block(&mut conn, account_id, block_num)
-        .expect("Query should succeed")
-        .expect("Header should exist");
+    let (header, _storage_header) =
+        select_account_header_at_block(&mut conn, account_id, block_num)
+            .expect("Query should succeed")
+            .expect("Header should exist");
 
     assert_eq!(header.id(), account_id, "Account ID should match");
     assert_eq!(header.nonce(), account.nonce(), "Nonce should match");
@@ -174,14 +175,14 @@ fn test_select_account_header_at_block_historical_query() {
     upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
 
     // Query at block 1 - should return the account
-    let header_1 = select_account_header_at_block(&mut conn, account_id, block_num_1)
+    let (header_1, _) = select_account_header_at_block(&mut conn, account_id, block_num_1)
         .expect("Query should succeed")
         .expect("Header should exist at block 1");
 
     assert_eq!(header_1.nonce(), nonce_1, "Nonce at block 1 should match");
 
     // Query at block 2 - should return the same account (most recent before block 2)
-    let header_2 = select_account_header_at_block(&mut conn, account_id, block_num_2)
+    let (header_2, _) = select_account_header_at_block(&mut conn, account_id, block_num_2)
         .expect("Query should succeed")
         .expect("Header should exist at block 2");
 

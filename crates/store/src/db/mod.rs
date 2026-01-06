@@ -490,6 +490,7 @@ impl Db {
     ) -> Result<Option<AccountHeader>> {
         self.transact("Get account header at block", move |conn| {
             queries::select_account_header_at_block(conn, account_id, block_num)
+                .map(|opt| opt.map(|(header, _storage_header)| header))
         })
         .await
     }

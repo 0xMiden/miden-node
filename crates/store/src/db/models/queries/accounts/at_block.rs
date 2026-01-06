@@ -135,48 +135,41 @@ pub(crate) fn select_account_vault_at_block(
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
-    // Since Diesel doesn't support composite keys in subqueries easily, we use a two-step approach:
-    // Step 1: Get max block_num for each vault_key
-    let latest_blocks_per_vault_key = Vec::from_iter(
-        QueryDsl::select(
-            t::table
-                .filter(t::account_id.eq(&account_id_bytes))
-                .filter(t::block_num.le(block_num_sql))
-                .group_by(t::vault_key),
-            (t::vault_key, diesel::dsl::max(t::block_num)),
-        )
-        .load::<(Vec<u8>, Option<i64>)>(conn)?
-        .into_iter()
-        .filter_map(|(key, maybe_block)| maybe_block.map(|block| (key, block))),
-    );
+    // Query all vault entries for this account up to and including this block.
+    // Order by vault_key ascending, then block_num descending so the first entry
+    // for each vault_key is the latest one.
+    let all_entries: Vec<(Vec<u8>, i64, Option<Vec<u8>>)> = SelectDsl::select(
+        t::table
+            .filter(t::account_id.eq(&account_id_bytes))
+            .filter(t::block_num.le(block_num_sql))
+            .order((t::vault_key.asc(), t::block_num.desc())),
+        (t::vault_key, t::block_num, t::asset),
+    )
+    .load(conn)?;
 
-    if latest_blocks_per_vault_key.is_empty() {
+    if all_entries.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Step 2: Fetch the full rows matching (vault_key, block_num) pairs
+    // For each vault_key, keep only the latest entry (first one due to ordering)
     let mut assets = Vec::new();
-    for (vault_key_bytes, max_block) in latest_blocks_per_vault_key {
-        // TODO we should not make a query per vault key, but query many at once or
-        // or find an alternative approach
-        let result: Option<Option<Vec<u8>>> = QueryDsl::select(
-            t::table.filter(
-                t::account_id
-                    .eq(&account_id_bytes)
-                    .and(t::vault_key.eq(&vault_key_bytes))
-                    .and(t::block_num.eq(max_block)),
-            ),
-            t::asset,
-        )
-        .first(conn)
-        .optional()?;
-        if let Some(Some(asset_bytes)) = result {
+    let mut last_vault_key: Option<Vec<u8>> = None;
+
+    for (vault_key_bytes, _block_num, asset_bytes) in all_entries {
+        // Skip if we've already processed this vault_key
+        if last_vault_key.as_ref() == Some(&vault_key_bytes) {
+            continue;
+        }
+        last_vault_key = Some(vault_key_bytes);
+
+        // Only include if the asset exists (not deleted)
+        if let Some(asset_bytes) = asset_bytes {
             let asset = Asset::read_from_bytes(&asset_bytes)?;
             assets.push(asset);
         }
     }
 
-    // Sort by vault_key for consistent ordering
+    // Sort by vault_key for consistent ordering (should already be sorted, but ensure it)
     assets.sort_by_key(Asset::vault_key);
 
     Ok(assets)

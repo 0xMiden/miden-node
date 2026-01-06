@@ -220,24 +220,6 @@ pub struct CurrentBlockchainData {
     #[prost(message, optional, tag = "2")]
     pub current_block_header: ::core::option::Option<super::blockchain::BlockHeader>,
 }
-/// Request for account inputs by account ID.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetAccountInputsRequest {
-    /// The account ID to retrieve inputs for.
-    #[prost(message, optional, tag = "1")]
-    pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// The reference block number for the account state.
-    #[prost(fixed32, tag = "2")]
-    pub ref_block: u32,
-}
-/// Response containing account inputs.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct GetAccountInputsResponse {
-    /// Account inputs encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_protocol::transaction::AccountInputs\].
-    #[prost(bytes = "vec", tag = "1")]
-    pub account_inputs: ::prost::alloc::vec::Vec<u8>,
-}
 /// Generated client implementations.
 pub mod rpc_client {
     #![allow(
@@ -2497,12 +2479,12 @@ pub mod ntx_builder_client {
                 .insert(GrpcMethod::new("store.NtxBuilder", "GetNoteScriptByRoot"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns account inputs for the specified account ID.
-        pub async fn get_account_inputs(
+        /// Returns the latest state proof of the specified account.
+        pub async fn get_account_proof(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetAccountInputsRequest>,
+            request: impl tonic::IntoRequest<super::super::rpc::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetAccountInputsResponse>,
+            tonic::Response<super::super::rpc::AccountProofResponse>,
             tonic::Status,
         > {
             self.inner
@@ -2515,11 +2497,11 @@ pub mod ntx_builder_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/store.NtxBuilder/GetAccountInputs",
+                "/store.NtxBuilder/GetAccountProof",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("store.NtxBuilder", "GetAccountInputs"));
+                .insert(GrpcMethod::new("store.NtxBuilder", "GetAccountProof"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -2588,12 +2570,12 @@ pub mod ntx_builder_server {
             tonic::Response<super::super::rpc::MaybeNoteScript>,
             tonic::Status,
         >;
-        /// Returns account inputs for the specified account ID.
-        async fn get_account_inputs(
+        /// Returns the latest state proof of the specified account.
+        async fn get_account_proof(
             &self,
-            request: tonic::Request<super::GetAccountInputsRequest>,
+            request: tonic::Request<super::super::rpc::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetAccountInputsResponse>,
+            tonic::Response<super::super::rpc::AccountProofResponse>,
             tonic::Status,
         >;
     }
@@ -2965,25 +2947,27 @@ pub mod ntx_builder_server {
                     };
                     Box::pin(fut)
                 }
-                "/store.NtxBuilder/GetAccountInputs" => {
+                "/store.NtxBuilder/GetAccountProof" => {
                     #[allow(non_camel_case_types)]
-                    struct GetAccountInputsSvc<T: NtxBuilder>(pub Arc<T>);
+                    struct GetAccountProofSvc<T: NtxBuilder>(pub Arc<T>);
                     impl<
                         T: NtxBuilder,
-                    > tonic::server::UnaryService<super::GetAccountInputsRequest>
-                    for GetAccountInputsSvc<T> {
-                        type Response = super::GetAccountInputsResponse;
+                    > tonic::server::UnaryService<super::super::rpc::AccountProofRequest>
+                    for GetAccountProofSvc<T> {
+                        type Response = super::super::rpc::AccountProofResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetAccountInputsRequest>,
+                            request: tonic::Request<
+                                super::super::rpc::AccountProofRequest,
+                            >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as NtxBuilder>::get_account_inputs(&inner, request).await
+                                <T as NtxBuilder>::get_account_proof(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -2994,7 +2978,7 @@ pub mod ntx_builder_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetAccountInputsSvc(inner);
+                        let method = GetAccountProofSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

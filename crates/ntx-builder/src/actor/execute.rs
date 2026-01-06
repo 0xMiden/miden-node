@@ -4,12 +4,14 @@ use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountId,
+    AccountStorage,
     PartialAccount,
     StorageMapWitness,
     StorageSlotContent,
 };
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript};
 use miden_protocol::transaction::{
@@ -349,15 +351,33 @@ impl DataStore for NtxDataStore {
             }
 
             // TODO(currentpr): handle account not found properly
-            let account_inputs = store
-                .get_account_inputs(foreign_account_id, ref_block.as_u32())
+            let account_proof = store
+                .get_account(foreign_account_id, ref_block.as_u32())
                 .await
                 .map_err(|err| DataStoreError::Other {
                     error_msg: format!("Failed to get account inputs from store: {err}").into(),
                     source: Some(Box::new(err)),
                 })?;
 
-            Ok(account_inputs)
+            // TODO(currentpr): replace this with From<AccountDetails> for Account?
+            let account_details = account_proof.details.expect("todo");
+            let asset_vault = AssetVault::new(&account_details.vault_details.assets).expect("todo");
+            let account_storage = AccountStorage::new(Vec::new()).expect("todo");
+            let account_code = account_details.account_code.expect("todo");
+            let account_code = AccountCode::from_bytes(&account_code).expect("todo");
+            let account = Account::new(
+                account_details.account_header.id(),
+                asset_vault,
+                account_storage,
+                account_code,
+                account_details.account_header.nonce(),
+                None, // TODO(currentpr): add seed?
+            )
+            .expect("todo");
+
+            let partial_account = PartialAccount::from(&account);
+
+            Ok(AccountInputs::new(partial_account, account_proof.witness))
         }
     }
 

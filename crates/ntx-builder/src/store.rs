@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::{AccountProofResponse, NetworkAccountPrefix};
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::blockchain::BlockNumber;
+use miden_node_proto::generated::rpc::account_proof_request::AccountDetailRequest;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_protocol::Word;
@@ -11,7 +13,6 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::NoteScript;
-use miden_protocol::transaction::AccountInputs;
 use miden_protocol::utils::Serializable;
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -216,27 +217,25 @@ impl StoreClient {
         }
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.get_account_inputs", skip_all, err)]
-    pub async fn get_account_inputs(
+    #[instrument(target = COMPONENT, name = "store.client.get_account", skip_all, err)]
+    pub async fn get_account(
         &self,
         account_id: AccountId,
         ref_block: u32,
-    ) -> Result<AccountInputs, StoreError> {
-        let request = proto::store::GetAccountInputsRequest {
+    ) -> Result<AccountProofResponse, StoreError> {
+        let request = proto::rpc::AccountProofRequest {
             account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
-            ref_block,
+            block_num: Some(BlockNumber { block_num: ref_block }),
+            // TODO(currentpr): fill these in properly?
+            details: Some(AccountDetailRequest {
+                code_commitment: None,
+                asset_vault_commitment: None,
+                storage_maps: Vec::new(),
+            }),
         };
 
-        let response = self.inner.clone().get_account_inputs(request).await?.into_inner();
-        let account_inputs =
-            AccountInputs::read_from_bytes(&response.account_inputs).map_err(|err| {
-                StoreError::DeserializationError(ConversionError::deserialization_error(
-                    "account inputs",
-                    err,
-                ))
-            })?;
-
-        Ok(account_inputs)
+        let response = self.inner.clone().get_account_proof(request).await?.into_inner();
+        Ok(response.try_into().expect("todo"))
     }
 }
 

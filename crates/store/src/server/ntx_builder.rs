@@ -6,7 +6,6 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
-use miden_protocol::utils::Serializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, instrument};
 
@@ -199,34 +198,26 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         }))
     }
 
+    // TODO: this is duplicate to rpc_api.rs
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.ntx_builder_server.get_account_inputs",
+        name = "store.ntx_builder_server.get_account_proof",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
-    async fn get_account_inputs(
+    async fn get_account_proof(
         &self,
-        request: Request<proto::store::GetAccountInputsRequest>,
-    ) -> Result<Response<proto::store::GetAccountInputsResponse>, Status> {
+        request: Request<proto::rpc::AccountProofRequest>,
+    ) -> Result<Response<proto::rpc::AccountProofResponse>, Status> {
+        debug!(target: COMPONENT, ?request);
         let request = request.into_inner();
+        let account_proof_request = request.try_into()?;
 
-        let account_id = request
-            .account_id
-            .ok_or_else(|| Status::invalid_argument("missing account_id"))?
-            .try_into()
-            .map_err(|_| Status::invalid_argument("invalid account_id"))?;
+        let proof = self.state.get_account_proof(account_proof_request).await?;
 
-        let account_inputs = self
-            .state
-            .get_account_inputs(account_id, request.ref_block.into())
-            .await
-            .map_err(internal_error)?;
-
-        Ok(Response::new(proto::store::GetAccountInputsResponse {
-            account_inputs: account_inputs.to_bytes(),
-        }))
+        Ok(Response::new(proof.into()))
     }
 }

@@ -159,14 +159,22 @@ impl NtxContext {
                     self.script_cache.clone(),
                 );
 
+                // Filter notes.
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful_notes, failed_notes) =
                     self.filter_notes(&data_store, notes).await?;
+
+                // Execute transaction.
                 let executed_tx = Box::pin(self.execute(&data_store, successful_notes)).await?;
+
+                // Prove transaction.
                 let tx_inputs: TransactionInputs = executed_tx.into();
                 let proven_tx = Box::pin(self.prove(tx_inputs.clone())).await?;
                 let tx_id = proven_tx.id();
+
+                // Validate proven transaction.
                 self.validate(proven_tx, tx_inputs).await?;
+
                 Ok((tx_id, failed_notes))
             })
             .in_current_span()

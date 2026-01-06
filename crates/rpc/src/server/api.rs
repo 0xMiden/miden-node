@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::clients::{BlockProducerClient, Builder, StoreRpcClient};
+use miden_node_proto::clients::{BlockProducerClient, Builder, StoreRpcClient, ValidatorClient};
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::MempoolStats;
 use miden_node_proto::generated::rpc::api_server::{self, Api};
@@ -16,25 +16,19 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
 };
-use miden_objects::account::AccountId;
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::{Note, NoteRecipient, NoteScript};
-use miden_objects::transaction::{
-    OutputNote,
-    ProvenTransaction,
-    ProvenTransactionBuilder,
-    TransactionInputs,
-};
-use miden_objects::utils::serde::{Deserializable, Serializable};
-use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_protocol::account::AccountId;
+use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::{Note, NoteRecipient, NoteScript};
+use miden_protocol::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
+use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument};
 use url::Url;
 
 use crate::COMPONENT;
-use crate::server::validator;
 
 // RPC SERVICE
 // ================================================================================================
@@ -42,11 +36,12 @@ use crate::server::validator;
 pub struct RpcService {
     store: StoreRpcClient,
     block_producer: Option<BlockProducerClient>,
+    validator: ValidatorClient,
     genesis_commitment: Option<Word>,
 }
 
 impl RpcService {
-    pub(super) fn new(store_url: Url, block_producer_url: Option<Url>) -> Self {
+    pub(super) fn new(store_url: Url, block_producer_url: Option<Url>, validator_url: Url) -> Self {
         let store = {
             info!(target: COMPONENT, store_endpoint = %store_url, "Initializing store client");
             Builder::new(store_url)
@@ -73,9 +68,25 @@ impl RpcService {
                 .connect_lazy::<BlockProducerClient>()
         });
 
+        let validator = {
+            info!(
+                target: COMPONENT,
+                validator_endpoint = %validator_url,
+                "Initializing validator client",
+            );
+            Builder::new(validator_url)
+                .without_tls()
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
+                .with_otel_context_injection()
+                .connect_lazy::<ValidatorClient>()
+        };
+
         Self {
             store,
             block_producer,
+            validator,
             genesis_commitment: None,
         }
     }
@@ -129,7 +140,7 @@ impl RpcService {
                         ?backoff,
                         %retry_counter,
                         %err,
-                        "connection failed while subscribing to the mempool, retrying"
+                        "connection failed while fetching genesis header, retrying"
                     );
 
                     retry_counter += 1;
@@ -379,29 +390,9 @@ impl api_server::Api for RpcService {
         })?;
 
         // If transaction inputs are provided, re-execute the transaction to validate it.
-        if let Some(tx_inputs_bytes) = &request.transaction_inputs {
-            // Deserialize the transaction inputs.
-            let tx_inputs = TransactionInputs::read_from_bytes(tx_inputs_bytes).map_err(|err| {
-                Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
-            })?;
-            // Re-execute the transaction.
-            match validator::re_execute_transaction(tx_inputs).await {
-                Ok(_executed_tx) => {
-                    debug!(
-                        target = COMPONENT,
-                        tx_id = %tx.id().to_hex(),
-                        "Transaction re-execution successful"
-                    );
-                },
-                Err(e) => {
-                    warn!(
-                        target = COMPONENT,
-                        tx_id = %tx.id().to_hex(),
-                        error = %e,
-                        "Transaction re-execution failed, but continuing with submission"
-                    );
-                },
-            }
+        if request.transaction_inputs.is_some() {
+            // Re-execute the transaction via the Validator.
+            self.validator.clone().submit_proven_transaction(request.clone()).await?;
         }
 
         block_producer.clone().submit_proven_transaction(request).await
@@ -605,6 +596,23 @@ impl api_server::Api for RpcService {
 
         self.store.clone().sync_transactions(request).await
     }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.get_limits",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_limits(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<proto::rpc::RpcLimits>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        Ok(Response::new(RPC_LIMITS.clone()))
+    }
 }
 
 // LIMIT HELPERS
@@ -620,3 +628,42 @@ fn out_of_range_error<E: core::fmt::Display>(err: E) -> Status {
 fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
     <Q as QueryParamLimiter>::check(n).map_err(out_of_range_error)
 }
+
+/// Helper to build an [`EndpointLimits`](proto::rpc::EndpointLimits) from (name, limit) pairs.
+fn endpoint_limits(params: &[(&str, usize)]) -> proto::rpc::EndpointLimits {
+    proto::rpc::EndpointLimits {
+        parameters: params.iter().map(|(k, v)| ((*k).to_string(), *v as u32)).collect(),
+    }
+}
+
+/// Cached RPC query parameter limits.
+static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
+    use {
+        QueryParamAccountIdLimit as AccountId,
+        QueryParamNoteIdLimit as NoteId,
+        QueryParamNoteTagLimit as NoteTag,
+        QueryParamNullifierLimit as Nullifier,
+    };
+
+    proto::rpc::RpcLimits {
+        endpoints: std::collections::HashMap::from([
+            (
+                "CheckNullifiers".into(),
+                endpoint_limits(&[(Nullifier::PARAM_NAME, Nullifier::LIMIT)]),
+            ),
+            (
+                "SyncNullifiers".into(),
+                endpoint_limits(&[(Nullifier::PARAM_NAME, Nullifier::LIMIT)]),
+            ),
+            (
+                "SyncState".into(),
+                endpoint_limits(&[
+                    (AccountId::PARAM_NAME, AccountId::LIMIT),
+                    (NoteTag::PARAM_NAME, NoteTag::LIMIT),
+                ]),
+            ),
+            ("SyncNotes".into(), endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)])),
+            ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
+        ]),
+    }
+});

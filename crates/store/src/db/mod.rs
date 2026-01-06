@@ -4,15 +4,14 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::asset::{Asset, AssetVaultKey};
-use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{
     NoteDetails,
     NoteId,
     NoteInclusionProof,
@@ -20,7 +19,8 @@ use miden_objects::note::{
     NoteScript,
     Nullifier,
 };
-use miden_objects::transaction::TransactionId;
+use miden_protocol::transaction::TransactionId;
+use miden_protocol::utils::{Deserializable, Serializable};
 use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
 
@@ -433,11 +433,28 @@ impl Db {
         .await
     }
 
-    /// Loads all network account IDs from the DB.
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - A vector of network account IDs.
+    /// - The last block number that was fully included in the result. When truncated, this will be
+    ///   less than the requested range end.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_network_account_ids(&self) -> Result<Vec<AccountId>> {
-        self.transact("Get all network account IDs", queries::select_all_network_account_ids)
-            .await
+    pub async fn select_all_network_account_ids(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<AccountId>, BlockNumber)> {
+        self.transact("Get all network account IDs", move |conn| {
+            queries::select_all_network_account_ids(conn, block_range)
+        })
+        .await
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
@@ -465,7 +482,7 @@ impl Db {
         .await
     }
 
-    /// Loads all the [`miden_objects::note::Note`]s matching a certain [`NoteId`] from the
+    /// Loads all the [`miden_protocol::note::Note`]s matching a certain [`NoteId`] from the
     /// database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {

@@ -2,11 +2,11 @@ use core::error::Error as CoreError;
 
 use miden_block_prover::BlockProverError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::TransactionId;
-use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::TransactionId;
+use miden_protocol::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -119,7 +119,7 @@ pub enum AddTransactionError {
     },
 
     #[error("transaction deserialization failed")]
-    TransactionDeserializationFailed(#[source] miden_objects::utils::DeserializationError),
+    TransactionDeserializationFailed(#[source] miden_protocol::utils::DeserializationError),
 
     #[error(
         "transaction expired at block height {expired_at} but the block height limit was {limit}"
@@ -167,7 +167,7 @@ impl From<VerifyTxError> for AddTransactionError {
 #[grpc(internal)]
 pub enum SubmitProvenBatchError {
     #[error("batch deserialization failed")]
-    Deserialization(#[source] miden_objects::utils::DeserializationError),
+    Deserialization(#[source] miden_protocol::utils::DeserializationError),
 }
 
 // Batch building errors
@@ -213,6 +213,8 @@ pub enum BuildBlockError {
     ProposeBlockFailed(#[source] ProposedBlockError),
     #[error("failed to validate block")]
     ValidateBlockFailed(#[source] Box<ValidatorError>),
+    #[error("block signature is invalid")]
+    InvalidSignature,
     #[error("failed to prove block")]
     ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure

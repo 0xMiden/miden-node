@@ -1,10 +1,10 @@
 use miden_block_prover::LocalBlockProver;
 use miden_node_proto::BlockProofRequest;
 use miden_node_utils::ErrorReport;
-use miden_objects::MIN_PROOF_SECURITY_LEVEL;
-use miden_objects::batch::ProposedBatch;
-use miden_objects::transaction::TransactionInputs;
-use miden_objects::utils::Serializable;
+use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
+use miden_protocol::batch::ProposedBatch;
+use miden_protocol::transaction::TransactionInputs;
+use miden_protocol::utils::Serializable;
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use serde::{Deserialize, Serialize};
@@ -252,13 +252,13 @@ mod test {
     use std::time::Duration;
 
     use miden_node_utils::cors::cors_for_grpc_web_layer;
-    use miden_objects::asset::{Asset, FungibleAsset};
-    use miden_objects::note::NoteType;
-    use miden_objects::testing::account_id::{
+    use miden_protocol::asset::{Asset, FungibleAsset};
+    use miden_protocol::note::NoteType;
+    use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_SENDER,
     };
-    use miden_objects::transaction::ProvenTransaction;
+    use miden_protocol::transaction::ProvenTransaction;
     use miden_testing::{Auth, MockChainBuilder};
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;

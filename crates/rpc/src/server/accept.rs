@@ -6,7 +6,7 @@ use futures::future::BoxFuture;
 use http::header::{ACCEPT, ToStrError};
 use mediatype::{Name, ReadParams};
 use miden_node_utils::{ErrorReport, FlattenResult};
-use miden_objects::{Word, WordError};
+use miden_protocol::{Word, WordError};
 use semver::{Comparator, Version, VersionReq};
 use tower::{Layer, Service};
 
@@ -357,7 +357,7 @@ impl FromStr for QValue {
 
 #[cfg(test)]
 mod tests {
-    use miden_objects::Word;
+    use miden_protocol::Word;
     use semver::Version;
 
     use super::{AcceptHeaderLayer, QParsingError};

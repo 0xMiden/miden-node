@@ -16,6 +16,7 @@ The gRPC service definition can be found in the Miden node's `proto` [directory]
 - [GetAccountProofs](#getaccountproofs)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
+- [GetLimits](#getlimits)
 - [GetNotesById](#getnotesbyid)
 - [GetNoteScriptByRoot](#getnotescriptbyroot)
 - [SubmitProvenTransaction](#submitproventransaction)
@@ -33,7 +34,71 @@ The gRPC service definition can be found in the Miden node's `proto` [directory]
 
 ### CheckNullifiers
 
-Request proofs for a set of nullifiers.
+Request Sparse Merkle Tree opening proofs to verify whether nullifiers have been consumed.
+
+#### Request
+
+```protobuf
+message NullifierList {
+    repeated Digest nullifiers = 1;  // List of nullifiers to check
+}
+```
+
+#### Response
+
+```protobuf
+message CheckNullifiersResponse {
+    repeated SmtOpening proofs = 1;  // One proof per requested nullifier
+}
+
+message SmtOpening {
+    SparseMerklePath path = 1;  // Merkle authentication path
+    SmtLeaf leaf = 2;           // Leaf at this position
+}
+
+message SmtLeaf {
+    oneof leaf {
+        uint64 empty_leaf_index = 1;
+        SmtLeafEntry single = 2;
+        SmtLeafEntryList multiple = 3;
+    }
+}
+```
+
+#### Understanding Proofs
+
+**Non-Inclusion (Nullifier NOT consumed):**
+- `leaf` contains `empty_leaf_index`
+- Note can still be consumed
+
+**Inclusion (Nullifier IS consumed):**
+- `leaf` contains `single` or `multiple` with key-value pairs, including the `nullifier` key
+- Note has been spent
+
+#### Verification
+
+```rust
+use miden_crypto::merkle::{SmtProof, SmtProofError};
+
+let block_header = get_latest_block_header();
+let nullifier_tree_root = block_header.state_commitment().nullifier_root();
+
+let proof: SmtProof = smt_opening.try_into()?;
+
+match proof.verify_unset(&nullifier, &nullifier_tree_root) {
+    Ok(()) => {
+        // Nullifier is NOT in the tree - note can be consumed
+    }
+    Err(SmtProofError::ValueMismatch { .. }) => {
+        // Proof is valid, but nullifier has a value (not empty) - note already consumed
+    }
+    Err(_) => {
+        // Proof is invalid (wrong root, wrong key, etc.)
+    }
+}
+```
+
+**Limits:** `nullifier` (1000)
 
 ### GetAccountDetails
 
@@ -51,9 +116,31 @@ Request the raw data for a specific block.
 
 Request a specific block header and its inclusion proof.
 
+### GetLimits
+
+Returns the query parameter limits configured for RPC endpoints.
+
+This endpoint allows clients to discover the maximum number of items that can be requested in a single call for various endpoints. The response contains a map of endpoint names to their parameter limits.
+
+**Example response structure:**
+
+```json
+{
+  "endpoints": {
+    "CheckNullifiers": { "parameters": { "nullifier": 1000 } },
+    "SyncNullifiers": { "parameters": { "nullifier": 1000 } },
+    "SyncState": { "parameters": { "account_id": 1000, "note_tag": 1000 } },
+    "SyncNotes": { "parameters": { "note_tag": 1000 } },
+    "GetNotesById": { "parameters": { "note_id": 100 } }
+  }
+}
+```
+
 ### GetNotesById
 
 Request a set of notes.
+
+**Limits:** `note_id` (100)
 
 ### GetNoteScriptByRoot
 
@@ -88,6 +175,8 @@ Caller specifies the `prefix_len` (currently only 16), the list of prefix values
 
 If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with `block_from = block_num + 1` to retrieve subsequent updates.
 
+**Limits:** `nullifier` (1000)
+
 ### SyncAccountVault
 
 Returns information that allows clients to sync asset values for specific public accounts within a block range.
@@ -104,6 +193,8 @@ The response includes each note's metadata and inclusion proof.
 
 A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of the chain.
 
+**Limits:** `note_tag` (1000)
+
 ### SyncState
 
 Iteratively sync data for specific notes and accounts.
@@ -113,6 +204,8 @@ This request returns the next block containing data of interest. Client is expec
 Each update response also contains info about new notes, accounts etc. created. It also returns Chain MMR delta that can be used to update the state of Chain MMR. This includes both chain MMR peaks and chain MMR nodes.
 
 The low part of note tags are redacted to preserve some degree of privacy. Returned data therefore contains additional notes which should be filtered out by the client.
+
+**Limits:** `account_id` (1000), `note_tag` (1000)
 
 ### SyncStorageMaps
 

@@ -7,12 +7,12 @@ use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::lru_cache::LruCache;
-use miden_objects::Word;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::block::BlockHeader;
-use miden_objects::crypto::merkle::PartialMmr;
-use miden_objects::note::NoteScript;
-use miden_objects::transaction::PartialBlockchain;
+use miden_protocol::Word;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::block::BlockHeader;
+use miden_protocol::crypto::merkle::mmr::PartialMmr;
+use miden_protocol::note::NoteScript;
+use miden_protocol::transaction::PartialBlockchain;
 use tokio::sync::{Barrier, RwLock};
 use tokio::time;
 use url::Url;
@@ -233,7 +233,7 @@ impl NetworkTransactionBuilder {
             },
             // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, txs } => {
-                self.update_chain_tip(header.clone(), chain_state).await;
+                self.update_chain_tip(header.as_ref().clone(), chain_state).await;
                 self.coordinator.broadcast(event.clone()).await;
 
                 // All transactions pertaining to predating events should now be available through

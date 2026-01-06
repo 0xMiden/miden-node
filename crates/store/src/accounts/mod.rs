@@ -2,24 +2,26 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use miden_objects::account::{AccountId, AccountIdPrefix};
-use miden_objects::block::account_tree::{AccountMutationSet, AccountTree};
-use miden_objects::block::{AccountWitness, BlockNumber};
-use miden_objects::crypto::merkle::{
-    EmptySubtreeRoots,
+use miden_protocol::account::{AccountId, AccountIdPrefix};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::{AccountMutationSet, AccountTree, AccountWitness};
+use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
     LeafIndex,
     MemoryStorage,
-    MerkleError,
-    MerklePath,
-    NodeIndex,
     NodeMutation,
     SMT_DEPTH,
     SmtLeaf,
     SmtStorage,
+};
+use miden_protocol::crypto::merkle::{
+    EmptySubtreeRoots,
+    MerkleError,
+    MerklePath,
+    NodeIndex,
     SparseMerklePath,
 };
-use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
+use miden_protocol::{AccountTreeError, EMPTY_WORD, Word};
 
 #[cfg(test)]
 mod tests;

@@ -450,6 +450,24 @@ body {
     font-weight: 500;
 }
 
+.metric-value.warning-delta,
+.warning-text {
+    color: #ff8c00;
+}
+
+.warning-text {
+    font-weight: 500;
+    font-size: 12px;
+}
+
+.warning-banner {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    background: rgba(255, 85, 0, 0.08);
+    border-left: 3px solid #ff8c00;
+}
+
 .test-metrics.healthy .metric-value {
     color: #22C55D;
 }

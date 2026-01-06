@@ -4,13 +4,14 @@ use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
-use miden_objects::Word;
-use miden_objects::account::{Account, AccountId};
-use miden_objects::block::BlockHeader;
-use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
-use miden_objects::note::NoteScript;
+use miden_protocol::Word;
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
+use miden_protocol::note::NoteScript;
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tracing::{info, instrument};
@@ -172,21 +173,60 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    // TODO: add pagination.
+    /// Get all network account IDs.
+    ///
+    /// Since the `GetNetworkAccountIds` method is paginated, we loop through all pages until we
+    /// reach the end.
+    ///
+    /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
+    /// accounts (~289,000). With 1000 iterations, this supports up to ~524 million network
+    /// accounts, which is assumed to be sufficient for the foreseeable future.
     #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
     pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
-        let response = self.inner.clone().get_network_account_ids(()).await?.into_inner();
+        const MAX_ITERATIONS: u32 = 1000;
 
-        let accounts: Result<Vec<AccountId>, ConversionError> = response
-            .account_ids
-            .into_iter()
-            .map(|account_id| {
-                AccountId::read_from_bytes(&account_id.id)
-                    .map_err(|err| ConversionError::deserialization_error("account_id", err))
-            })
-            .collect();
+        let block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
 
-        Ok(accounts?)
+        let mut ids = Vec::new();
+        let mut iterations_count = 0;
+
+        loop {
+            let response = self
+                .inner
+                .clone()
+                .get_network_account_ids(Into::<BlockRange>::into(block_range.clone()))
+                .await?
+                .into_inner();
+
+            let accounts: Result<Vec<AccountId>, ConversionError> = response
+                .account_ids
+                .into_iter()
+                .map(|account_id| {
+                    AccountId::read_from_bytes(&account_id.id)
+                        .map_err(|err| ConversionError::deserialization_error("account_id", err))
+                })
+                .collect();
+
+            let pagination_info = response.pagination_info.ok_or(
+                ConversionError::MissingFieldInProtobufRepresentation {
+                    entity: "NetworkAccountIdList",
+                    field_name: "pagination_info",
+                },
+            )?;
+
+            ids.extend(accounts?);
+            iterations_count += 1;
+
+            if pagination_info.block_num == pagination_info.chain_tip {
+                break;
+            }
+
+            if iterations_count >= MAX_ITERATIONS {
+                return Err(StoreError::MaxIterationsReached("GetNetworkAccountIds".to_string()));
+            }
+        }
+
+        Ok(ids)
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]
@@ -226,4 +266,6 @@ pub enum StoreError {
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
+    #[error("max iterations reached: {0}")]
+    MaxIterationsReached(String),
 }

@@ -8,10 +8,10 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverClient};
 use miden_node_proto::generated as proto;
-use miden_objects::asset::{Asset, FungibleAsset};
-use miden_objects::note::NoteType;
-use miden_objects::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
-use miden_objects::transaction::TransactionInputs;
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::note::NoteType;
+use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
+use miden_protocol::transaction::TransactionInputs;
 use miden_testing::{Auth, MockChainBuilder};
 use miden_tx::utils::Serializable;
 use serde::{Deserialize, Serialize};
@@ -87,7 +87,14 @@ pub struct ProverTestDetails {
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(target = COMPONENT, name = "remote-prover-test-task", skip_all)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.remote_prover.run_remote_prover_test_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub async fn run_remote_prover_test_task(
     prover_url: Url,
     name: &str,
@@ -154,7 +161,14 @@ pub async fn run_remote_prover_test_task(
 /// # Returns
 ///
 /// A `ServiceStatus` containing the results of the proof test.
-#[instrument(target = COMPONENT, name = "test-remote-prover", skip_all, ret(level = "info"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.remote_prover.test_remote_prover",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 async fn test_remote_prover(
     client: &mut miden_node_proto::clients::RemoteProverClient,
     name: &str,
@@ -257,6 +271,15 @@ fn tonic_status_to_json(status: &tonic::Status) -> String {
 /// This function creates a mock transaction using `MockChainBuilder` similar to what's done
 /// in the remote prover tests. The transaction is generated once and can be reused for
 /// multiple proof test calls.
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.remote_prover.generate_mock_transaction",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 pub async fn generate_mock_transaction() -> anyhow::Result<TransactionInputs> {
     let mut mock_chain_builder = MockChainBuilder::new();
 
@@ -304,6 +327,14 @@ pub async fn generate_mock_transaction() -> anyhow::Result<TransactionInputs> {
 // GENERATE TEST REQUEST PAYLOAD
 // ================================================================================================
 
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.remote_prover.generate_prover_test_payload",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub(crate) async fn generate_prover_test_payload() -> proto::remote_prover::ProofRequest {
     proto::remote_prover::ProofRequest {
         proof_type: proto::remote_prover::ProofType::Transaction.into(),

@@ -3,9 +3,14 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use miden_objects::batch::{ProposedBatch, ProvenBatch};
-use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionHeader, TransactionId};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::batch::{ProposedBatch, ProvenBatch};
+use miden_protocol::transaction::{
+    OutputNote,
+    ProvenTransaction,
+    TransactionHeader,
+    TransactionId,
+};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
@@ -105,7 +110,7 @@ impl RemoteBatchProver {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, RemoteProverClientError> {
-        use miden_objects::utils::Serializable;
+        use miden_protocol::utils::Serializable;
         self.connect().await?;
 
         let mut client = self

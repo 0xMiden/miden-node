@@ -5,7 +5,7 @@ use miden_node_rpc::Rpc;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
-use super::{ENV_BLOCK_PRODUCER_URL, ENV_RPC_URL, ENV_STORE_RPC_URL};
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_RPC_URL, ENV_STORE_RPC_URL, ENV_VALIDATOR_URL};
 use crate::commands::{DEFAULT_TIMEOUT, ENV_ENABLE_OTEL, duration_to_human_readable_string};
 
 #[derive(clap::Subcommand)]
@@ -24,6 +24,10 @@ pub enum RpcCommand {
         /// i.e. without a block-producer.
         #[arg(long = "block-producer.url", env = ENV_BLOCK_PRODUCER_URL, value_name = "URL")]
         block_producer_url: Option<Url>,
+
+        /// The validator's gRPC url.
+        #[arg(long = "validator.url", env = ENV_VALIDATOR_URL, value_name = "URL")]
+        validator_url: Url,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
@@ -51,6 +55,7 @@ impl RpcCommand {
             url,
             store_url,
             block_producer_url,
+            validator_url,
             enable_otel: _,
             grpc_timeout,
         } = self;
@@ -64,6 +69,7 @@ impl RpcCommand {
             listener,
             store_url,
             block_producer_url,
+            validator_url,
             grpc_timeout,
         }
         .serve()

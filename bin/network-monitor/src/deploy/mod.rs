@@ -8,18 +8,29 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
-use miden_objects::account::{Account, AccountId, PartialAccount, PartialStorage};
-use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};
-use miden_objects::asset::{AssetVaultKey, AssetWitness, PartialVault};
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
-use miden_objects::note::NoteScript;
-use miden_objects::transaction::{AccountInputs, InputNotes, PartialBlockchain, TransactionArgs};
-use miden_objects::{MastForest, Word};
+use miden_protocol::account::{Account, AccountId, PartialAccount, PartialStorage};
+use miden_protocol::assembly::{
+    DefaultSourceManager,
+    Library,
+    Module,
+    ModuleKind,
+    Path as MidenPath,
+};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness, PartialVault};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
+use miden_protocol::note::NoteScript;
+use miden_protocol::transaction::{
+    AccountInputs,
+    InputNotes,
+    PartialBlockchain,
+    TransactionArgs,
+    TransactionKernel,
+};
+use miden_protocol::{MastForest, Word};
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::Serializable;
 use miden_tx::{
@@ -174,7 +185,7 @@ pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) ->
     data_store.add_account(counter_account.clone());
 
     let executor: TransactionExecutor<'_, '_, _, BasicAuthenticator> =
-        TransactionExecutor::new(&data_store);
+        TransactionExecutor::new(&data_store).with_debug_mode();
 
     let tx_args = TransactionArgs::default();
 
@@ -206,16 +217,15 @@ pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) ->
 }
 
 pub(crate) fn get_counter_library() -> Result<Library> {
-    let assembler = TransactionKernel::assembler().with_debug_mode(true);
+    let assembler = TransactionKernel::assembler();
     let source_manager = Arc::new(DefaultSourceManager::default());
     let script =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
 
-    let library_path = LibraryPath::new("external_contract::counter_contract")
-        .context("Failed to create library path")?;
+    let library_path = MidenPath::new("external_contract::counter_contract");
 
     let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, script, &source_manager)
+        .parse_str(library_path, script, source_manager)
         .map_err(|e| anyhow::anyhow!("Failed to parse module: {e}"))?;
 
     assembler
@@ -297,7 +307,7 @@ impl DataStore for MonitorDataStore {
         _account_id: AccountId,
         _map_root: Word,
         _map_key: Word,
-    ) -> Result<miden_objects::account::StorageMapWitness, DataStoreError> {
+    ) -> Result<miden_protocol::account::StorageMapWitness, DataStoreError> {
         unimplemented!("Not needed")
     }
 

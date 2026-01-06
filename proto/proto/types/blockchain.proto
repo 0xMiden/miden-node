@@ -10,21 +10,21 @@ import "types/primitives.proto";
 // Represents a block.
 message Block {
     // Block data encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::block::Block].
+    // [miden_protocol::block::Block].
     bytes block = 1;
 }
 
 // Represents a proposed block.
 message ProposedBlock {
     // Block data encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::block::ProposedBlock].
+    // [miden_protocol::block::ProposedBlock].
     bytes proposed_block = 1;
 }
 
 // Represents a block or nothing.
 message MaybeBlock {
     // The requested block data encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::block::Block].
+    // [miden_protocol::block::Block].
     optional bytes block = 1;
 }
 
@@ -66,8 +66,8 @@ message BlockHeader {
     // A commitment to a set of IDs of transactions which affected accounts in this block.
     primitives.Digest tx_commitment = 8;
 
-    // A commitment to a STARK proof attesting to the correct state transition.
-    primitives.Digest proof_commitment = 9;
+    // The validator's ECDSA public key.
+    ValidatorPublicKey validator_key = 9;
 
     // A commitment to all transaction kernels supported by this block.
     primitives.Digest tx_kernel_commitment = 10;
@@ -78,6 +78,27 @@ message BlockHeader {
     // The time when the block was created.
     fixed32 timestamp = 12;
 }
+
+// PUBLIC KEY
+// ================================================================================================
+
+// Validator ECDSA public key.
+message ValidatorPublicKey {
+    // Signature encoded using [winter_utils::Serializable] implementation for
+    // [crypto::dsa::ecdsa_k256_keccak::PublicKey].
+    bytes validator_key = 1;
+}
+
+// BLOCK SIGNATURE
+// ================================================================================================
+
+// Block ECDSA Signature.
+message BlockSignature {
+    // Signature encoded using [winter_utils::Serializable] implementation for
+    // [crypto::dsa::ecdsa_k256_keccak::Signature].
+    bytes signature = 1;
+}
+
 
 // FEE PARAMETERS
 // ================================================================================================
@@ -96,6 +117,6 @@ message FeeParameters {
 // Represents a block body.
 message BlockBody {
     // Block body data encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::block::BlockBody].
+    // [miden_protocol::block::BlockBody].
     bytes block_body = 1;
 }

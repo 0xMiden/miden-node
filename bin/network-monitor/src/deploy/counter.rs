@@ -3,9 +3,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use miden_lib::testing::account_component::IncrNonceAuthComponent;
-use miden_lib::transaction::TransactionKernel;
-use miden_objects::account::{
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
@@ -16,8 +14,10 @@ use miden_objects::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_objects::utils::sync::LazyLock;
-use miden_objects::{Felt, FieldElement, Word};
+use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, FieldElement, Word};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use tracing::instrument;
 
 use crate::COMPONENT;
@@ -50,12 +50,11 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     let counter_slot = StorageSlot::with_value(COUNTER_SLOT_NAME.clone(), Word::empty());
 
-    let account_code = AccountComponent::compile(
-        script,
-        TransactionKernel::assembler(),
-        vec![counter_slot, owner_id_slot],
-    )?
-    .with_supports_all_types();
+    let component_code =
+        CodeBuilder::default().compile_component_code("counter::program", script)?;
+
+    let account_code = AccountComponent::new(component_code, vec![counter_slot, owner_id_slot])?
+        .with_supports_all_types();
 
     let incr_nonce_auth: AccountComponent = IncrNonceAuthComponent.into();
 

@@ -23,34 +23,22 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
-use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-use miden_objects::block::nullifier_tree::NullifierTree;
-use miden_objects::block::{
-    AccountWitness,
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    Blockchain,
-    NullifierWitness,
-    ProvenBlock,
-};
-use miden_objects::crypto::merkle::{
-    Forest,
+use miden_protocol::account::{AccountHeader, AccountId, StorageSlot, StorageSlotContent};
+use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
+use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_protocol::crypto::merkle::mmr::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
+use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
+    LargeSmtError,
     MemoryStorage,
-    Mmr,
-    MmrDelta,
-    MmrPeaks,
-    MmrProof,
-    PartialMmr,
     SmtProof,
     SmtStorage,
 };
-use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
-use miden_objects::transaction::{OutputNote, PartialBlockchain};
-use miden_objects::utils::Serializable;
-use miden_objects::{AccountError, Word};
+use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
+use miden_protocol::transaction::{OutputNote, PartialBlockchain};
+use miden_protocol::utils::Serializable;
+use miden_protocol::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 
@@ -152,7 +140,7 @@ impl State {
         let block_headers = db.select_all_block_headers().await?;
         let latest_block_num = block_headers
             .last()
-            .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
+            .map_or(BlockNumber::GENESIS, miden_protocol::block::BlockHeader::block_num);
         let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
@@ -918,9 +906,19 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
-    /// Returns account IDs for all public (on-chain) network accounts.
-    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
-        self.db.select_all_network_account_ids().await
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// The response includes the last block number that was fully included in the result.
+    pub async fn get_all_network_accounts(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<AccountId>, BlockNumber), DatabaseError> {
+        self.db.select_all_network_account_ids(block_range).await
     }
 
     /// Returns the respective account proof with optional details, such as asset and storage
@@ -934,7 +932,7 @@ impl State {
     ) -> Result<AccountProofResponse, DatabaseError> {
         let AccountProofRequest { block_num, account_id, details } = account_request;
 
-        if details.is_some() && !account_id.is_public() {
+        if details.is_some() && !account_id.has_public_state() {
             return Err(DatabaseError::AccountNotPublic(account_id));
         }
 
@@ -1176,10 +1174,10 @@ async fn load_account_tree(
 
     let smt =
         LargeSmt::with_entries(MemoryStorage::default(), smt_entries).map_err(|e| match e {
-            miden_objects::crypto::merkle::LargeSmtError::Merkle(merkle_error) => {
+            LargeSmtError::Merkle(merkle_error) => {
                 StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
             },
-            miden_objects::crypto::merkle::LargeSmtError::Storage(err) => {
+            LargeSmtError::Storage(err) => {
                 // large_smt::StorageError is not `Sync` and hence `context` cannot be called
                 // which we want to and do
                 StateInitializationError::AccountTreeIoError(err.as_report())

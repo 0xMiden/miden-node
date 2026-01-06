@@ -2,8 +2,8 @@
 // ================================================================================================
 
 use miden_node_proto::BlockProofRequest;
-use miden_objects::batch::ProposedBatch;
-use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
+use miden_protocol::batch::ProposedBatch;
+use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
 use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
 use crate::api::ProofType;

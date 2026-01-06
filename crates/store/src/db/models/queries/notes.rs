@@ -25,17 +25,16 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
     QueryParamNoteCommitmentLimit,
     QueryParamNoteTagLimit,
 };
-use miden_objects::account::AccountId;
-use miden_objects::block::{BlockNoteIndex, BlockNumber};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
+use miden_protocol::account::AccountId;
+use miden_protocol::block::{BlockNoteIndex, BlockNumber};
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{
     NoteAssets,
     NoteDetails,
     NoteExecutionHint,
@@ -50,7 +49,8 @@ use miden_objects::note::{
     NoteType,
     Nullifier,
 };
-use miden_objects::{Felt, Word};
+use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::{Felt, Word};
 
 use crate::db::models::conv::{
     SqlTypeConvert,

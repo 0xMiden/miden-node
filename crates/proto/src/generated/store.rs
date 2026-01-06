@@ -206,8 +206,11 @@ pub struct UnconsumedNetworkNotes {
 /// Represents the result of getting the network account ids.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NetworkAccountIdList {
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<super::rpc::PaginationInfo>,
     /// The list of network account ids.
-    #[prost(message, repeated, tag = "1")]
+    #[prost(message, repeated, tag = "2")]
     pub account_ids: ::prost::alloc::vec::Vec<super::account::AccountId>,
 }
 /// Current blockchain data based on the requested block number.
@@ -334,7 +337,19 @@ pub mod rpc_client {
             req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "Status"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (note was consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (note was not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof
+        /// * `single` or `multiple`: Inclusion proof if the nullifier key is present
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         pub async fn check_nullifiers(
             &mut self,
             request: impl tonic::IntoRequest<super::super::rpc::NullifierList>,
@@ -694,7 +709,19 @@ pub mod rpc_server {
             tonic::Response<super::super::rpc::StoreStatus>,
             tonic::Status,
         >;
-        /// Returns a nullifier proof for each of the requested nullifiers.
+        /// Returns a Sparse Merkle Tree opening proof for each requested nullifier
+        ///
+        /// Each proof demonstrates either:
+        ///
+        /// * **Inclusion**: Nullifier exists in the tree (note was consumed)
+        /// * **Non-inclusion**: Nullifier does not exist (note was not consumed)
+        ///
+        /// The `leaf` field indicates the status:
+        ///
+        /// * `empty_leaf_index`: Non-inclusion proof
+        /// * `single` or `multiple`: Inclusion proof if the nullifier key is present
+        ///
+        /// Verify proofs against the nullifier tree root in the latest block header.
         async fn check_nullifiers(
             &self,
             request: tonic::Request<super::super::rpc::NullifierList>,
@@ -2408,7 +2435,7 @@ pub mod ntx_builder_client {
         /// Returns a list of all network account ids.
         pub async fn get_network_account_ids(
             &mut self,
-            request: impl tonic::IntoRequest<()>,
+            request: impl tonic::IntoRequest<super::super::rpc::BlockRange>,
         ) -> std::result::Result<
             tonic::Response<super::NetworkAccountIdList>,
             tonic::Status,
@@ -2508,7 +2535,7 @@ pub mod ntx_builder_server {
         /// Returns a list of all network account ids.
         async fn get_network_account_ids(
             &self,
-            request: tonic::Request<()>,
+            request: tonic::Request<super::super::rpc::BlockRange>,
         ) -> std::result::Result<
             tonic::Response<super::NetworkAccountIdList>,
             tonic::Status,
@@ -2806,14 +2833,19 @@ pub mod ntx_builder_server {
                 "/store.NtxBuilder/GetNetworkAccountIds" => {
                     #[allow(non_camel_case_types)]
                     struct GetNetworkAccountIdsSvc<T: NtxBuilder>(pub Arc<T>);
-                    impl<T: NtxBuilder> tonic::server::UnaryService<()>
+                    impl<
+                        T: NtxBuilder,
+                    > tonic::server::UnaryService<super::super::rpc::BlockRange>
                     for GetNetworkAccountIdsSvc<T> {
                         type Response = super::NetworkAccountIdList;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
-                        fn call(&mut self, request: tonic::Request<()>) -> Self::Future {
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::super::rpc::BlockRange>,
+                        ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 <T as NtxBuilder>::get_network_account_ids(&inner, request)

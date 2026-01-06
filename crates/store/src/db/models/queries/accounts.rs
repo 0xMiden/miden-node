@@ -17,12 +17,15 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
-use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_node_utils::limiter::{
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+};
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     Account,
     AccountCode,
     AccountDelta,
@@ -32,11 +35,11 @@ use miden_objects::account::{
     StorageSlotContent,
     StorageSlotName,
 };
-use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
-use miden_objects::block::{BlockAccountUpdate, BlockNumber};
-use miden_objects::{Felt, Word};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
+use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::{Felt, Word};
 
-use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
@@ -271,7 +274,7 @@ pub(crate) fn select_account_vault_assets(
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
-    const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -298,7 +301,7 @@ pub(crate) fn select_account_vault_assets(
 
     // Discard the last block in the response (assumes more than one block may be present)
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
@@ -407,28 +410,79 @@ pub(crate) fn select_all_accounts(
     Ok(account_infos)
 }
 
-/// Returns all network account IDs.
+/// Returns network account IDs within the specified block range (based on account creation
+/// block).
+///
+/// The function may return fewer accounts than exist in the range if the result would exceed
+/// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+/// truncated at a block boundary to ensure all accounts from included blocks are returned.
 ///
 /// # Returns
 ///
-/// A vector with network account IDs, or an error.
+/// A tuple containing:
+/// - A vector of network account IDs.
+/// - The last block number that was fully included in the result. When truncated, this will be less
+///   than the requested range end.
 pub(crate) fn select_all_network_account_ids(
     conn: &mut SqliteConnection,
-) -> Result<Vec<AccountId>, DatabaseError> {
-    let account_ids_raw: Vec<Vec<u8>> = QueryDsl::select(
-        schema::accounts::table.filter(schema::accounts::network_account_id_prefix.is_not_null()),
-        schema::accounts::account_id,
+    block_range: RangeInclusive<BlockNumber>,
+) -> Result<(Vec<AccountId>, BlockNumber), DatabaseError> {
+    const ROW_OVERHEAD_BYTES: usize = AccountId::SERIALIZED_SIZE;
+    const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+
+    const _: () = assert!(
+        MAX_ROWS > miden_protocol::MAX_ACCOUNTS_PER_BLOCK,
+        "Block pagination limit must exceed maximum block capacity to uphold assumed logic invariant"
+    );
+
+    if block_range.is_empty() {
+        return Err(DatabaseError::InvalidBlockRange {
+            from: *block_range.start(),
+            to: *block_range.end(),
+        });
+    }
+
+    let account_ids_raw: Vec<(Vec<u8>, i64)> = Box::new(
+        QueryDsl::select(
+            schema::accounts::table
+                .filter(schema::accounts::network_account_id_prefix.is_not_null()),
+            (schema::accounts::account_id, schema::accounts::created_at_block),
+        )
+        .filter(
+            schema::accounts::block_num
+                .between(block_range.start().to_raw_sql(), block_range.end().to_raw_sql()),
+        )
+        .order(schema::accounts::created_at_block.asc())
+        .limit(i64::try_from(MAX_ROWS + 1).expect("limit fits within i64")),
     )
-    .load::<Vec<u8>>(conn)?;
+    .load::<(Vec<u8>, i64)>(conn)?;
 
-    let account_ids = account_ids_raw
-        .into_iter()
-        .map(|id_bytes| {
-            AccountId::read_from_bytes(&id_bytes).map_err(DatabaseError::DeserializationError)
-        })
-        .collect::<Result<Vec<AccountId>, DatabaseError>>()?;
+    if account_ids_raw.len() > MAX_ROWS {
+        // SAFETY: We just checked that len > MAX_ROWS, so the vec is not empty.
+        let last_created_at_block = account_ids_raw.last().expect("vec is not empty").1;
 
-    Ok(account_ids)
+        let account_ids = account_ids_raw
+            .into_iter()
+            .take_while(|(_, created_at_block)| *created_at_block != last_created_at_block)
+            .map(|(id_bytes, _)| {
+                AccountId::read_from_bytes(&id_bytes).map_err(DatabaseError::DeserializationError)
+            })
+            .collect::<Result<Vec<AccountId>, DatabaseError>>()?;
+
+        let last_block_included =
+            BlockNumber::from_raw_sql(last_created_at_block.saturating_sub(1))?;
+
+        Ok((account_ids, last_block_included))
+    } else {
+        let account_ids = account_ids_raw
+            .into_iter()
+            .map(|(id_bytes, _)| {
+                AccountId::read_from_bytes(&id_bytes).map_err(DatabaseError::DeserializationError)
+            })
+            .collect::<Result<Vec<AccountId>, DatabaseError>>()?;
+
+        Ok((account_ids, *block_range.end()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -511,7 +565,7 @@ pub(crate) fn select_account_storage_map_values(
     // See miden-base/issues/1770 for more details
     pub const ROW_OVERHEAD_BYTES: usize =
         2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
-    pub const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    pub const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -539,7 +593,7 @@ pub(crate) fn select_account_storage_map_values(
     // Discard the last block in the response (assumes more than one block may be present)
 
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= MAX_ROWS
+        && raw.len() > MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
@@ -800,12 +854,28 @@ pub(crate) fn upsert_accounts(
     let mut count = 0;
     for update in accounts {
         let account_id = update.account_id();
+        let account_id_bytes = account_id.to_bytes();
+        let block_num_raw = block_num.to_raw_sql();
 
         let network_account_id_prefix = if account_id.is_network() {
             Some(NetworkAccountPrefix::try_from(account_id)?)
         } else {
             None
         };
+
+        // Preserve the original creation block when updating existing accounts.
+        let created_at_block = QueryDsl::select(
+            schema::accounts::table.filter(
+                schema::accounts::account_id
+                    .eq(&account_id_bytes)
+                    .and(schema::accounts::is_latest.eq(true)),
+            ),
+            schema::accounts::created_at_block,
+        )
+        .first::<i64>(conn)
+        .optional()
+        .map_err(DatabaseError::Diesel)?
+        .unwrap_or(block_num_raw);
 
         // NOTE: we collect storage / asset inserts to apply them only after the  account row is
         // written. The storage and vault tables have FKs pointing to `accounts (account_id,
@@ -836,7 +906,20 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                (Some(account), storage, Vec::new())
+                // collect vault-asset inserts to apply after account upsert
+                let mut assets = Vec::new();
+                for asset in account.vault().assets() {
+                    // Only insert assets with non-zero values for fungible assets
+                    let should_insert = match asset {
+                        Asset::Fungible(fungible) => fungible.amount() > 0,
+                        Asset::NonFungible(_) => true,
+                    };
+                    if should_insert {
+                        assets.push((account_id, asset.vault_key(), Some(asset)));
+                    }
+                }
+
+                (Some(account), storage, assets)
             },
 
             AccountUpdateDetails::Delta(delta) => {
@@ -900,18 +983,18 @@ pub(crate) fn upsert_accounts(
         diesel::update(schema::accounts::table)
             .filter(
                 schema::accounts::account_id
-                    .eq(&account_id.to_bytes())
+                    .eq(&account_id_bytes)
                     .and(schema::accounts::is_latest.eq(true)),
             )
             .set(schema::accounts::is_latest.eq(false))
             .execute(conn)?;
 
         let account_value = AccountRowInsert {
-            account_id: account_id.to_bytes(),
+            account_id: account_id_bytes,
             network_account_id_prefix: network_account_id_prefix
                 .map(NetworkAccountPrefix::to_raw_sql),
             account_commitment: update.final_state_commitment().to_bytes(),
-            block_num: block_num.to_raw_sql(),
+            block_num: block_num_raw,
             nonce: full_account.as_ref().map(|account| nonce_to_raw_sql(account.nonce())),
             storage: full_account.as_ref().map(|account| account.storage().to_bytes()),
             vault: full_account.as_ref().map(|account| account.vault().to_bytes()),
@@ -919,6 +1002,7 @@ pub(crate) fn upsert_accounts(
                 .as_ref()
                 .map(|account| account.code().commitment().to_bytes()),
             is_latest: true,
+            created_at_block,
         };
 
         diesel::insert_into(schema::accounts::table)
@@ -979,6 +1063,7 @@ pub(crate) struct AccountRowInsert {
     pub(crate) vault: Option<Vec<u8>>,
     pub(crate) nonce: Option<i64>,
     pub(crate) is_latest: bool,
+    pub(crate) created_at_block: i64,
 }
 
 #[derive(Insertable, AsChangeset, Debug, Clone)]

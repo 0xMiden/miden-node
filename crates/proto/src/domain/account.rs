@@ -1,21 +1,23 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_objects::Word;
-use miden_objects::account::{
+use miden_protocol::Word;
+use miden_protocol::account::{
     Account,
     AccountHeader,
     AccountId,
     AccountStorageHeader,
     StorageMap,
+    StorageSlotHeader,
     StorageSlotName,
     StorageSlotType,
 };
-use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::{AccountWitness, BlockNumber};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{NoteExecutionMode, NoteTag};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::asset::{Asset, AssetVault};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
 
 use super::try_convert;
@@ -97,7 +99,7 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
-            details: details.as_ref().map(miden_objects::utils::Serializable::to_bytes),
+            details: details.as_ref().map(miden_protocol::utils::Serializable::to_bytes),
         }
     }
 }
@@ -167,18 +169,18 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     fn try_from(value: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
         let proto::account::AccountStorageHeader { slots } = value;
 
-        let items = slots
+        let slot_headers = slots
             .into_iter()
             .map(|slot| {
                 let slot_name = StorageSlotName::new(slot.slot_name)?;
                 let slot_type = storage_slot_type_from_raw(slot.slot_type)?;
                 let commitment =
                     slot.commitment.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
-                Ok((slot_name, slot_type, commitment))
+                Ok(StorageSlotHeader::new(slot_name, slot_type, commitment))
             })
             .collect::<Result<Vec<_>, ConversionError>>()?;
 
-        Ok(AccountStorageHeader::new(items)?)
+        Ok(AccountStorageHeader::new(slot_headers)?)
     }
 }
 
@@ -333,12 +335,10 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     fn from(value: AccountStorageHeader) -> Self {
         let slots = value
             .slots()
-            .map(|(slot_name, slot_type, slot_value)| {
-                proto::account::account_storage_header::StorageSlot {
-                    slot_name: slot_name.to_string(),
-                    slot_type: storage_slot_type_to_raw(*slot_type),
-                    commitment: Some(proto::primitives::Digest::from(*slot_value)),
-                }
+            .map(|slot_header| proto::account::account_storage_header::StorageSlot {
+                slot_name: slot_header.name().to_string(),
+                slot_type: storage_slot_type_to_raw(slot_header.slot_type()),
+                commitment: Some(proto::primitives::Digest::from(slot_header.value())),
             })
             .collect();
 

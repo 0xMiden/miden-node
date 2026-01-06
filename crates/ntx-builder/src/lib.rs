@@ -13,7 +13,8 @@ pub use builder::NetworkTransactionBuilder;
 
 const COMPONENT: &str = "miden-ntx-builder";
 
-pub const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
+pub const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize =
+    NetworkTransactionBuilder::DEFAULT_SCRIPT_CACHE_SIZE;
 
 /// Maximum number of network notes a network transaction is allowed to consume.
 const MAX_NOTES_PER_TX: NonZeroUsize = NonZeroUsize::new(50).unwrap();

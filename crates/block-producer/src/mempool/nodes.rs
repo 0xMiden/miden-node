@@ -1,12 +1,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::batch::{BatchId, ProvenBatch};
-use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteHeader, Nullifier};
-use miden_objects::transaction::{InputNoteCommitment, TransactionHeader, TransactionId};
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::batch::{BatchId, ProvenBatch};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{NoteHeader, Nullifier};
+use miden_protocol::transaction::{InputNoteCommitment, TransactionHeader, TransactionId};
 
 use crate::domain::batch::SelectedBatch;
 use crate::domain::transaction::AuthenticatedTransaction;
@@ -363,8 +363,8 @@ impl Nodes {
 mod tests {
     use std::collections::BTreeMap;
 
-    use miden_objects::batch::BatchAccountUpdate;
-    use miden_objects::transaction::{InputNotes, OrderedTransactionHeaders};
+    use miden_protocol::batch::BatchAccountUpdate;
+    use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders};
 
     use super::*;
     use crate::test_utils::MockProvenTxBuilder;

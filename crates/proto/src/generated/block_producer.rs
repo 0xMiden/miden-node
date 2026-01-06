@@ -45,7 +45,7 @@ pub mod mempool_event {
         /// Changes to a network account, if any. This includes creation of new network accounts.
         ///
         /// The account delta is encoded using \[winter_utils::Serializable\] implementation
-        /// for \[miden_objects::account::delta::AccountDelta\].
+        /// for \[miden_protocol::account::delta::AccountDelta\].
         #[prost(bytes = "vec", optional, tag = "4")]
         pub network_account_delta: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
     }

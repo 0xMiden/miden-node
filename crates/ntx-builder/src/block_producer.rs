@@ -5,7 +5,7 @@ use miden_node_proto::clients::{BlockProducerClient as InnerBlockProducerClient,
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::FlattenResult;
-use miden_objects::block::BlockNumber;
+use miden_protocol::block::BlockNumber;
 use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::{info, instrument};

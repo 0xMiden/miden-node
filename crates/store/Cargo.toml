@@ -24,12 +24,12 @@ diesel_migrations      = { features = ["sqlite"], version = "2.3" }
 fs-err                 = { workspace = true }
 hex                    = { version = "0.4" }
 indexmap               = { workspace = true }
-miden-lib              = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }
-# TODO remove `testing` from `miden-objects`, required for `BlockProof::new_dummy`
-miden-objects     = { features = ["std", "testing"], workspace = true }
+miden-standards        = { workspace = true }
+# TODO remove `testing` from `miden-protocol`, required for `BlockProof::new_dummy`
+miden-protocol    = { features = ["std", "testing"], workspace = true }
 pretty_assertions = { workspace = true }
 rand              = { workspace = true }
 rand_chacha       = { workspace = true }
@@ -47,10 +47,10 @@ tracing           = { workspace = true }
 assert_matches        = { workspace = true }
 criterion             = { version = "0.5" }
 fs-err                = { workspace = true }
-miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["testing", "tracing-forest"], workspace = true }
-miden-objects         = { default-features = true, features = ["testing"], workspace = true }
+miden-protocol        = { default-features = true, features = ["testing"], workspace = true }
+miden-standards       = { features = ["testing"], workspace = true }
 rand                  = { workspace = true }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }

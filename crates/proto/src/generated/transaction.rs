@@ -3,18 +3,18 @@
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProvenTransaction {
     /// Transaction encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::transaction::proven_tx::ProvenTransaction\].
+    /// \[miden_protocol::transaction::proven_tx::ProvenTransaction\].
     #[prost(bytes = "vec", tag = "1")]
     pub transaction: ::prost::alloc::vec::Vec<u8>,
     /// Transaction inputs encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::transaction::TransactionInputs\].
+    /// \[miden_protocol::transaction::TransactionInputs\].
     #[prost(bytes = "vec", optional, tag = "2")]
     pub transaction_inputs: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProvenTransactionBatch {
     /// Encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::transaction::proven_tx::ProvenTransaction\].
+    /// \[miden_protocol::transaction::proven_tx::ProvenTransaction\].
     #[prost(bytes = "vec", tag = "1")]
     pub encoded: ::prost::alloc::vec::Vec<u8>,
 }

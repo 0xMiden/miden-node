@@ -46,9 +46,9 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_objects::batch::{BatchId, ProvenBatch};
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::transaction::TransactionId;
+use miden_protocol::batch::{BatchId, ProvenBatch};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::transaction::TransactionId;
 use subscription::SubscriptionProvider;
 use tokio::sync::{Mutex, MutexGuard, mpsc};
 use tracing::{instrument, warn};

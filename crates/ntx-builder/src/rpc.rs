@@ -1,6 +1,6 @@
 use miden_node_proto::clients::{Builder, RpcClient as InnerRpcClient};
 use miden_node_proto::generated::{self as proto};
-use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
+use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
 use miden_tx::utils::Serializable;
 use tonic::Status;
 use tracing::{info, instrument};

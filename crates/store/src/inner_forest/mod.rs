@@ -89,29 +89,6 @@ impl InnerForest {
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
-    /// Retrieves the storage map SMT root for an account slot at or before the given block.
-    ///
-    /// Finds the most recent storage root entry for the slot, since storage state persists
-    /// across blocks where no changes occur.
-    //
-    // TODO: a fallback to DB lookup is required once pruning lands.
-    // Currently returns empty root which would be incorrect
-    #[cfg(test)]
-    fn get_storage_root(
-        &self,
-        account_id: AccountId,
-        slot_name: &StorageSlotName,
-        block_num: BlockNumber,
-    ) -> Word {
-        self.storage_roots
-            .range(
-                (account_id, slot_name.clone(), BlockNumber::GENESIS)
-                    ..=(account_id, slot_name.clone(), block_num),
-            )
-            .next_back()
-            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
-    }
-
     // PUBLIC INTERFACE
     // --------------------------------------------------------------------------------------------
 

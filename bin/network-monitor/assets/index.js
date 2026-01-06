@@ -142,32 +142,64 @@ function parseGrpcWebTrailers(data) {
     return null;
 }
 
+// Interval for periodic gRPC-Web probing
+let grpcWebProbeInterval = null;
+const GRPC_WEB_PROBE_INTERVAL_MS = 30000; // Probe every 30 seconds
+
 /**
- * Handles the "Probe gRPC-Web" button click for a service.
- * Reads parameters from data attributes on the button.
+ * Collects all gRPC-Web endpoints that need to be probed from the current status data.
  *
- * @param {Event} event - The click event
+ * @returns {Array<{serviceKey: string, baseUrl: string, grpcPath: string}>}
  */
-async function handleProbeClick(event) {
-    const button = event.target.closest('.probe-button');
-    if (!button) return;
+function collectGrpcWebEndpoints() {
+    if (!statusData || !statusData.services) return [];
 
-    const { serviceKey, baseUrl, grpcPath } = button.dataset;
-    if (!serviceKey || !baseUrl || !grpcPath) return;
+    const endpoints = [];
 
-    // Disable button and show loading state
-    button.disabled = true;
-    button.innerHTML = '<span class="probe-spinner"></span> Probing...';
+    for (const service of statusData.services) {
+        if (service.details) {
+            // RPC service
+            if (service.details.RpcStatus && service.details.RpcStatus.url) {
+                endpoints.push({
+                    serviceKey: service.details.RpcStatus.url,
+                    baseUrl: service.details.RpcStatus.url,
+                    grpcPath: '/rpc.Api/Status',
+                });
+            }
+            // Remote Prover service
+            if (service.details.RemoteProverStatus && service.details.RemoteProverStatus.url) {
+                endpoints.push({
+                    serviceKey: service.details.RemoteProverStatus.url,
+                    baseUrl: service.details.RemoteProverStatus.url,
+                    grpcPath: '/remote_prover.ProxyStatusApi/Status',
+                });
+            }
+        }
+    }
 
-    const result = await probeGrpcWeb(baseUrl, grpcPath);
+    return endpoints;
+}
 
-    // Store result
-    grpcWebProbeResults.set(serviceKey, {
-        ...result,
-        timestamp: Date.now(),
+/**
+ * Runs gRPC-Web probes for all collected endpoints.
+ * Results are stored in grpcWebProbeResults and display is updated.
+ */
+async function runGrpcWebProbes() {
+    const endpoints = collectGrpcWebEndpoints();
+    if (endpoints.length === 0) return;
+
+    // Run all probes in parallel
+    const probePromises = endpoints.map(async ({ serviceKey, baseUrl, grpcPath }) => {
+        const result = await probeGrpcWeb(baseUrl, grpcPath);
+        grpcWebProbeResults.set(serviceKey, {
+            ...result,
+            timestamp: Date.now(),
+        });
     });
 
-    // Re-render to show the result
+    await Promise.all(probePromises);
+
+    // Re-render to show updated results
     updateDisplay();
 }
 
@@ -189,7 +221,7 @@ function renderProbeResult(serviceKey) {
 
     return `
         <div class="probe-result ${statusClass}">
-            <span class="probe-status-badge">${statusText}</span>
+            <span class="probe-status-badge">gRPC-Web: ${statusText}</span>
             <span class="probe-latency">${result.latencyMs}ms</span>
             ${result.error ? `<span class="probe-error" title="${result.error}">${errorDisplay}</span>` : ''}
             <span class="probe-time">${timeAgo}</span>
@@ -198,19 +230,28 @@ function renderProbeResult(serviceKey) {
 }
 
 /**
- * Renders the probe button for a service.
+ * Renders the gRPC-Web probe result section for a service.
+ * Shows "Checking..." if no result yet, otherwise shows the probe result.
  *
- * @param {string} serviceKey - Unique key for the service
- * @param {string} baseUrl - The base URL of the service
- * @param {string} grpcPath - The gRPC method path
- * @returns {string} - HTML string for the probe button
+ * @param {string} serviceKey - Unique key for the service (the URL)
+ * @returns {string} - HTML string for the probe result section
  */
-function renderProbeButton(serviceKey, baseUrl, grpcPath) {
+function renderGrpcWebProbeSection(serviceKey) {
+    const result = grpcWebProbeResults.get(serviceKey);
+
+    if (!result) {
+        return `
+            <div class="probe-section">
+                <div class="probe-result probe-pending">
+                    <span class="probe-spinner"></span>
+                    <span class="probe-status-badge">gRPC-Web: Checking...</span>
+                </div>
+            </div>
+        `;
+    }
+
     return `
         <div class="probe-section">
-            <button class="probe-button" data-service-key="${serviceKey}" data-base-url="${baseUrl}" data-grpc-path="${grpcPath}">
-                Probe gRPC-Web
-            </button>
             ${renderProbeResult(serviceKey)}
         </div>
     `;
@@ -378,7 +419,7 @@ function updateDisplay() {
                                 ${renderCopyButton(details.RpcStatus.genesis_commitment, 'genesis commitment')}
                             </div>
                         ` : ''}
-                        ${details.RpcStatus.url ? renderProbeButton(details.RpcStatus.url, details.RpcStatus.url, '/rpc.Api/Status') : ''}
+                        ${details.RpcStatus.url ? renderGrpcWebProbeSection(details.RpcStatus.url) : ''}
                         ${details.RpcStatus.store_status ? `
                             <div class="nested-status">
                                 <div class="detail-item"><strong>Store</strong></div>
@@ -448,7 +489,7 @@ function updateDisplay() {
                                     `).join('')}
                                 </div>
                             ` : ''}
-                            ${renderProbeButton(details.RemoteProverStatus.url, details.RemoteProverStatus.url, '/remote_prover.ProxyStatusApi/Status')}
+                            ${renderGrpcWebProbeSection(details.RemoteProverStatus.url)}
                         </div>
                     ` : ''}
                     ${details.FaucetTest ? `
@@ -736,15 +777,12 @@ async function copyToClipboard(text, event) {
 
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
-    // Event delegation for probe buttons
-    document.getElementById('status-container').addEventListener('click', (e) => {
-        if (e.target.closest('.probe-button')) {
-            handleProbeClick(e);
-        }
-    });
-
     // Initial load and set up auto-refresh
-    fetchStatus();
+    fetchStatus().then(() => {
+        // Start gRPC-Web probing after initial status fetch
+        runGrpcWebProbes();
+        grpcWebProbeInterval = setInterval(runGrpcWebProbes, GRPC_WEB_PROBE_INTERVAL_MS);
+    });
     updateInterval = setInterval(fetchStatus, 10000); // Refresh every 10 seconds
 });
 
@@ -752,6 +790,9 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('beforeunload', () => {
     if (updateInterval) {
         clearInterval(updateInterval);
+    }
+    if (grpcWebProbeInterval) {
+        clearInterval(grpcWebProbeInterval);
     }
 });
 

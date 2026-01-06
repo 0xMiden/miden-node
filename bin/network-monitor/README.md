@@ -216,7 +216,7 @@ The web dashboard provides a clean, responsive interface with the following feat
 
 ### gRPC-Web Browser Probe
 
-The dashboard includes an on-demand **"Probe gRPC-Web"** button for RPC and Remote Prover services. This feature allows you to test whether the browser can successfully communicate with these services using gRPC-Web protocol.
+The dashboard automatically probes RPC and Remote Prover services every 30 seconds using gRPC-Web protocol. This tests whether the browser can successfully communicate with these services.
 
 **What it checks:**
 - Browser connectivity to the service endpoint
@@ -224,14 +224,11 @@ The dashboard includes an on-demand **"Probe gRPC-Web"** button for RPC and Remo
 - gRPC-Web protocol handling (proper framing and trailers)
 - Basic service availability (calls the `Status` endpoint)
 
-**How to use:**
-1. Click the "Probe gRPC-Web" button on any RPC or Remote Prover card
-2. The probe sends a gRPC-Web request to the service's `Status` endpoint
-3. Results are displayed inline showing:
-   - **OK** / **FAILED** status
-   - Response latency in milliseconds
-   - Error details (if failed)
-   - Time since last probe
+**Results displayed:**
+- **gRPC-Web: OK** / **gRPC-Web: FAILED** status
+- Response latency in milliseconds
+- Error details (if failed)
+- Time since last probe
 
 **Common failure scenarios:**
 - **CORS / Network error**: The service is not configured to accept cross-origin requests from the browser, or the service is unreachable

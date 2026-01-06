@@ -60,7 +60,7 @@ impl DataStore for TransactionInputsDataStore {
             }
 
             let foreign_inputs =
-                self.tx_inputs.read_foreign_account_inputs(foreign_account_id).unwrap(); // todo unwrap
+                self.tx_inputs.read_foreign_account_inputs(foreign_account_id).expect("todo");
 
             Ok(foreign_inputs)
         }
@@ -85,7 +85,7 @@ impl DataStore for TransactionInputsDataStore {
                 get_asset_witnesses_from_account(self.tx_inputs.account(), vault_keys)
             } else {
                 let foreign_inputs =
-                    self.tx_inputs.read_foreign_account_inputs(account_id).unwrap(); // todo unwrap
+                    self.tx_inputs.read_foreign_account_inputs(account_id).expect("todo");
                 get_asset_witnesses_from_account(foreign_inputs.account(), vault_keys)
             }
         }

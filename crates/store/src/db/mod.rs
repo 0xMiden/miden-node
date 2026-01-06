@@ -391,7 +391,7 @@ impl Db {
         .await
     }
 
-    /// TODO marked for removal, replace with paged version
+    /// TODO marked for removal, replace with paged version.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {

@@ -9,7 +9,6 @@ mod inner_forest;
 mod server;
 pub mod state;
 
-pub(crate) use accounts::{AccountTreeWithHistory, HistoricalError};
 pub use genesis::GenesisState;
 pub use server::{DataDirectory, Store};
 

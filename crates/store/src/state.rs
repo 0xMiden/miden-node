@@ -43,6 +43,7 @@ use miden_protocol::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 
+use crate::accounts::{AccountTreeWithHistory, HistoricalError};
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::models::queries::StorageMapValuesPage;
@@ -67,7 +68,7 @@ use crate::errors::{
     StateSyncError,
 };
 use crate::inner_forest::InnerForest;
-use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
+use crate::{COMPONENT, DataDirectory};
 
 // STRUCTURES
 // ================================================================================================
@@ -304,10 +305,10 @@ impl State {
                         .map(|update| (update.account_id(), update.final_state_commitment())),
                 )
                 .map_err(|e| match e {
-                    crate::HistoricalError::AccountTreeError(err) => {
+                    HistoricalError::AccountTreeError(err) => {
                         InvalidBlockError::NewBlockDuplicateAccountIdPrefix(err)
                     },
-                    crate::HistoricalError::MerkleError(_) => {
+                    HistoricalError::MerkleError(_) => {
                         panic!("Unexpected MerkleError during account tree mutation computation")
                     },
                 })?;

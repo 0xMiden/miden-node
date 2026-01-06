@@ -46,6 +46,18 @@ impl InnerForest {
         *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
     }
 
+    /// Retrieves the most recent vault SMT root for an account.
+    ///
+    /// Returns the latest vault root entry regardless of block number.
+    /// Used when applying incremental deltas where we always want the previous state.
+    fn get_latest_vault_root(&self, account_id: AccountId) -> Word {
+        self.vault_roots
+            .range((account_id, BlockNumber::GENESIS)..)
+            .take_while(|((id, _), _)| *id == account_id)
+            .last()
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+    }
+
     /// Retrieves the vault SMT root for an account at or before the given block.
     ///
     /// Finds the most recent vault root entry for the account, since vault state persists
@@ -53,10 +65,27 @@ impl InnerForest {
     //
     // TODO: a fallback to DB lookup is required once pruning lands.
     // Currently returns empty root which would be incorrect
+    #[cfg(test)]
     fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
         self.vault_roots
             .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
             .next_back()
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+    }
+
+    /// Retrieves the most recent storage map SMT root for an account slot.
+    ///
+    /// Returns the latest storage root entry regardless of block number.
+    /// Used when applying incremental deltas where we always want the previous state.
+    fn get_latest_storage_map_root(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+    ) -> Word {
+        self.storage_roots
+            .range((account_id, slot_name.clone(), BlockNumber::GENESIS)..)
+            .take_while(|((id, name, _), _)| *id == account_id && name == slot_name)
+            .last()
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
@@ -67,6 +96,7 @@ impl InnerForest {
     //
     // TODO: a fallback to DB lookup is required once pruning lands.
     // Currently returns empty root which would be incorrect
+    #[cfg(test)]
     fn get_storage_root(
         &self,
         account_id: AccountId,
@@ -150,7 +180,7 @@ impl InnerForest {
         let prev_root = if is_full_state {
             Self::empty_smt_root()
         } else {
-            self.get_vault_root(account_id, block_num.parent().unwrap_or_default())
+            self.get_latest_vault_root(account_id)
         };
 
         let mut entries = Vec::new();
@@ -231,13 +261,11 @@ impl InnerForest {
         storage_delta: &AccountStorageDelta,
         is_full_state: bool,
     ) {
-        let parent_block = block_num.parent().unwrap_or_default();
-
         for (slot_name, map_delta) in storage_delta.maps() {
             let prev_root = if is_full_state {
                 Self::empty_smt_root()
             } else {
-                self.get_storage_root(account_id, slot_name, parent_block)
+                self.get_latest_storage_map_root(account_id, slot_name)
             };
 
             let entries: Vec<_> =

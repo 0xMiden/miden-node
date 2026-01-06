@@ -1100,16 +1100,16 @@ mod tests {
     #[test]
     fn account_storage_map_details_from_forest_entries() {
         let slot_name = test_slot_name();
-        let entries = vec![
+        let entries = [
             (word_from_u32([1, 2, 3, 4]), word_from_u32([5, 6, 7, 8])),
             (word_from_u32([9, 10, 11, 12]), word_from_u32([13, 14, 15, 16])),
         ];
 
         let details =
-            AccountStorageMapDetails::from_forest_entries(slot_name.clone(), entries.clone());
+            AccountStorageMapDetails::from_forest_entries(slot_name.clone(), entries.to_vec());
 
         assert_eq!(details.slot_name, slot_name);
-        assert_eq!(details.entries, StorageMapEntries::AllEntries(entries));
+        assert_eq!(details.entries, StorageMapEntries::AllEntries(entries.to_vec()));
     }
 
     #[test]
@@ -1136,17 +1136,17 @@ mod tests {
 
         // Create an SmtForest and populate it with some data
         let mut forest = SmtForest::new();
-        let entries = vec![
+        let entries = [
             (word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0])),
             (word_from_u32([2, 0, 0, 0]), word_from_u32([20, 0, 0, 0])),
             (word_from_u32([3, 0, 0, 0]), word_from_u32([30, 0, 0, 0])),
         ];
 
         // Insert entries into the forest starting from an empty root
-        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
+        let smt_root = forest.batch_insert(empty_smt_root(), entries).unwrap();
 
         // Query specific keys
-        let keys = vec![word_from_u32([1, 0, 0, 0]), word_from_u32([3, 0, 0, 0])];
+        let keys = [word_from_u32([1, 0, 0, 0]), word_from_u32([3, 0, 0, 0])];
 
         let details = AccountStorageMapDetails::from_specific_keys(
             slot_name.clone(),
@@ -1194,12 +1194,12 @@ mod tests {
 
         // Create an SmtForest with one entry so the root is tracked
         let mut forest = SmtForest::new();
-        let entries = vec![(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
-        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
+        let entries = [(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
+        let smt_root = forest.batch_insert(empty_smt_root(), entries).unwrap();
 
         // Query a key that doesn't exist in the tree - should return a proof
         // (the proof will show non-membership or point to an adjacent leaf)
-        let keys = vec![word_from_u32([99, 0, 0, 0])];
+        let keys = [word_from_u32([99, 0, 0, 0])];
 
         let details = AccountStorageMapDetails::from_specific_keys(
             slot_name.clone(),
@@ -1225,8 +1225,8 @@ mod tests {
         let mut forest = SmtForest::new();
 
         // Create a forest with some data to get a valid root
-        let entries = vec![(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
-        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
+        let entries = [(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
+        let smt_root = forest.batch_insert(empty_smt_root(), entries).unwrap();
 
         // Create more keys than MAX_RETURN_ENTRIES
         let keys: Vec<_> = (0..AccountStorageMapDetails::MAX_RETURN_ENTRIES + 1)

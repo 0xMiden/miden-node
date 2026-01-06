@@ -298,7 +298,7 @@ impl InnerForest {
             };
 
             // Apply delta entries (insert or remove if value is EMPTY_WORD)
-            for (key, value) in delta_entries.iter() {
+            for (key, value) in &delta_entries {
                 if *value == EMPTY_WORD {
                     accumulated_entries.remove(key);
                 } else {

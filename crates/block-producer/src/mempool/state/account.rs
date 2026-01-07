@@ -8,7 +8,7 @@ use miden_protocol::block::BlockNumber;
 
 use crate::mempool::NodeId;
 
-/// The commitment updates made to a account.
+/// The commitment updates made to an account.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct AccountStates {
     /// A sequential series of updates to this account.
@@ -35,6 +35,10 @@ struct Update {
     by: NodeId,
     /// Nodes which have both initial and final state `commitment`. These are known as pass through
     /// nodes.
+    ///
+    /// These are modelled as being "siblings" without any dependency between each other. This is
+    /// correct from the perspective of the account, but note that these can have dependencies
+    /// caused by notes (this is handled externally).
     pass_through: HashSet<NodeId>,
 }
 
@@ -215,6 +219,7 @@ impl AccountStates {
             if from.by == target {
                 let mut output = from.pass_through.clone();
                 output.insert(to.by);
+                return output;
             } else if from.pass_through.contains(&target) {
                 return [to.by].into();
             }

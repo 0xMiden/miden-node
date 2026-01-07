@@ -70,7 +70,7 @@ fn test_empty_smt_root_is_recognized() {
 #[test]
 fn test_inner_forest_basic_initialization() {
     let forest = InnerForest::new();
-    assert!(forest.storage_roots.is_empty());
+    assert!(forest.storage_map_roots.is_empty());
     assert!(forest.vault_roots.is_empty());
 }
 
@@ -90,7 +90,7 @@ fn test_update_account_with_empty_deltas() {
 
     // Empty deltas should not create entries
     assert!(!forest.vault_roots.contains_key(&(account_id, block_num)));
-    assert!(forest.storage_roots.is_empty());
+    assert!(forest.storage_map_roots.is_empty());
 }
 
 #[test]
@@ -359,8 +359,12 @@ fn test_update_storage_map() {
     forest.update_account(block_num, &delta);
 
     // Verify storage root was created
-    assert!(forest.storage_roots.contains_key(&(account_id, slot_name.clone(), block_num)));
-    let storage_root = forest.storage_roots[&(account_id, slot_name, block_num)];
+    assert!(
+        forest
+            .storage_map_roots
+            .contains_key(&(account_id, slot_name.clone(), block_num))
+    );
+    let storage_root = forest.storage_map_roots[&(account_id, slot_name, block_num)];
     assert_ne!(storage_root, InnerForest::empty_smt_root());
 }
 
@@ -388,7 +392,7 @@ fn test_storage_map_incremental_updates() {
     let storage_delta_1 = AccountStorageDelta::from_raw(raw_1);
     let delta_1 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_1);
     forest.update_account(block_1, &delta_1);
-    let root_1 = forest.storage_roots[&(account_id, slot_name.clone(), block_1)];
+    let root_1 = forest.storage_map_roots[&(account_id, slot_name.clone(), block_1)];
 
     // Block 2: Insert key2 -> value2 (key1 should persist)
     let block_2 = block_1.child();
@@ -398,7 +402,7 @@ fn test_storage_map_incremental_updates() {
     let storage_delta_2 = AccountStorageDelta::from_raw(raw_2);
     let delta_2 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_2);
     forest.update_account(block_2, &delta_2);
-    let root_2 = forest.storage_roots[&(account_id, slot_name.clone(), block_2)];
+    let root_2 = forest.storage_map_roots[&(account_id, slot_name.clone(), block_2)];
 
     // Block 3: Update key1 -> value3
     let block_3 = block_2.child();
@@ -408,7 +412,7 @@ fn test_storage_map_incremental_updates() {
     let storage_delta_3 = AccountStorageDelta::from_raw(raw_3);
     let delta_3 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_3);
     forest.update_account(block_3, &delta_3);
-    let root_3 = forest.storage_roots[&(account_id, slot_name, block_3)];
+    let root_3 = forest.storage_map_roots[&(account_id, slot_name, block_3)];
 
     // All roots should be different
     assert_ne!(root_1, root_2);

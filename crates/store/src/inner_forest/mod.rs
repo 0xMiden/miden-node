@@ -22,7 +22,7 @@ pub(crate) struct InnerForest {
 
     /// Maps (`account_id`, `slot_name`, `block_num`) to SMT root.
     /// Populated during block import for all storage map slots.
-    storage_roots: BTreeMap<(AccountId, StorageSlotName, BlockNumber), Word>,
+    storage_map_roots: BTreeMap<(AccountId, StorageSlotName, BlockNumber), Word>,
 
     /// Maps (`account_id`, `block_num`) to vault SMT root.
     /// Tracks asset vault versions across all blocks with structural sharing.
@@ -33,7 +33,7 @@ impl InnerForest {
     pub(crate) fn new() -> Self {
         Self {
             forest: SmtForest::new(),
-            storage_roots: BTreeMap::new(),
+            storage_map_roots: BTreeMap::new(),
             vault_roots: BTreeMap::new(),
         }
     }
@@ -82,7 +82,7 @@ impl InnerForest {
         account_id: AccountId,
         slot_name: &StorageSlotName,
     ) -> Word {
-        self.storage_roots
+        self.storage_map_roots
             .range((account_id, slot_name.clone(), BlockNumber::GENESIS)..)
             .take_while(|((id, name, _), _)| *id == account_id && name == slot_name)
             .last()
@@ -257,7 +257,7 @@ impl InnerForest {
                 .batch_insert(prev_root, entries.iter().copied())
                 .expect("forest insertion should succeed");
 
-            self.storage_roots
+            self.storage_map_roots
                 .insert((account_id, slot_name.clone(), block_num), updated_root);
 
             tracing::debug!(

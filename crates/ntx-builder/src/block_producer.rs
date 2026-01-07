@@ -6,7 +6,7 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::FlattenResult;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::transaction::ProvenTransaction;
+use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
 use miden_tx::utils::Serializable;
 use tokio_stream::StreamExt;
 use tonic::Status;
@@ -45,10 +45,11 @@ impl BlockProducerClient {
     pub async fn submit_proven_transaction(
         &self,
         proven_tx: ProvenTransaction,
+        tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
         let request = proto::transaction::ProvenTransaction {
             transaction: proven_tx.to_bytes(),
-            transaction_inputs: None,
+            transaction_inputs: Some(tx_inputs.to_bytes()),
         };
 
         self.client.clone().submit_proven_transaction(request).await?;

@@ -247,7 +247,7 @@ impl AccountActor {
                             let chain_state = self.chain_state.read().await.clone();
                             // Find a candidate transaction and execute it.
                             if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX, chain_state) {
-                                self.execute_transactions(&mut state, tx_candidate).await;
+                                Box::pin(self.execute_transactions(&mut state, tx_candidate)).await;
                             } else {
                                 // No transactions to execute, wait for events.
                                 self.mode = ActorMode::NoViableNotes;
@@ -281,7 +281,7 @@ impl AccountActor {
             self.script_cache.clone(),
         );
 
-        let execution_result = context.execute_transaction(tx_candidate).await;
+        let execution_result = Box::pin(context.execute_transaction(tx_candidate)).await;
         match execution_result {
             // Execution completed without failed notes.
             Ok((tx_id, failed)) if failed.is_empty() => {

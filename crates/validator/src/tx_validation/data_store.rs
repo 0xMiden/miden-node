@@ -74,20 +74,24 @@ impl DataStore for TransactionInputsDataStore {
                 });
             }
 
-            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-                match self.tx_inputs.account().vault().open(vault_key) {
-                    Ok(vault_proof) => {
-                        AssetWitness::new(vault_proof.into()).map_err(|err| DataStoreError::Other {
-                            error_msg: "failed to open vault asset tree".into(),
-                            source: Some(err.into()),
+            let stored_witnesses = self.tx_inputs.asset_witnesses();
+
+            vault_keys
+                .into_iter()
+                .map(|vault_key| {
+                    stored_witnesses
+                        .iter()
+                        .find(|w| w.authenticates_asset_vault_key(vault_key))
+                        .cloned()
+                        .ok_or_else(|| DataStoreError::Other {
+                            error_msg: format!(
+                                "asset witness not found for vault key {vault_key}",
+                            )
+                            .into(),
+                            source: None,
                         })
-                    },
-                    Err(err) => Err(DataStoreError::Other {
-                        error_msg: "failed to open vault".into(),
-                        source: Some(err.into()),
-                    }),
-                }
-            }))
+                })
+                .collect()
         }
     }
 

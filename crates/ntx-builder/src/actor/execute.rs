@@ -159,9 +159,10 @@ impl NtxContext {
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
+                let tx_inputs = executed.tx_inputs().clone();
                 let proven = Box::pin(self.prove(executed.into())).await?;
                 let tx_id = proven.id();
-                self.submit(proven).await?;
+                self.submit(proven, &tx_inputs).await?;
                 Ok((tx_id, failed))
             }
             .in_current_span()
@@ -258,9 +259,9 @@ impl NtxContext {
 
     /// Submits the transaction to the block producer.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
-    async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
+    async fn submit(&self, tx: ProvenTransaction, tx_inputs: &TransactionInputs) -> NtxResult<()> {
         self.block_producer
-            .submit_proven_transaction(tx)
+            .submit_proven_transaction(tx, tx_inputs)
             .await
             .map_err(NtxError::Submission)
     }

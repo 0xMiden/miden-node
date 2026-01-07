@@ -199,13 +199,15 @@ pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) ->
         .await
         .context("Failed to execute transaction")?;
 
+    let tx_inputs = executed_tx.tx_inputs().to_bytes();
+
     let prover = LocalTransactionProver::default();
 
     let proven_tx = prover.prove(executed_tx).context("Failed to prove transaction")?;
 
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
-        transaction_inputs: None,
+        transaction_inputs: Some(tx_inputs),
     };
 
     rpc_client

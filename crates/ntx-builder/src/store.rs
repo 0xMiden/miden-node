@@ -217,7 +217,7 @@ impl StoreClient {
             ids.extend(accounts?);
             iterations_count += 1;
 
-            if pagination_info.block_num == pagination_info.chain_tip {
+            if pagination_info.block_num >= pagination_info.chain_tip {
                 break;
             }
 

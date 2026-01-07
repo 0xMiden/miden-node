@@ -906,9 +906,19 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
-    /// Returns account IDs for all public (on-chain) network accounts.
-    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
-        self.db.select_all_network_account_ids().await
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// The response includes the last block number that was fully included in the result.
+    pub async fn get_all_network_accounts(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<AccountId>, BlockNumber), DatabaseError> {
+        self.db.select_all_network_account_ids(block_range).await
     }
 
     /// Returns the respective account proof with optional details, such as asset and storage

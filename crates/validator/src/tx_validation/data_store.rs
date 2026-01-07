@@ -111,7 +111,23 @@ impl DataStore for TransactionInputsDataStore {
                     .ok_or_else(|| DataStoreError::Other { error_msg: "todo".into(), source: None })
             } else {
                 // Foreign account.
-                Err(DataStoreError::AccountNotFound(account_id))
+                let foreign_inputs = self
+                    .tx_inputs
+                    .read_foreign_account_inputs(account_id)
+                    .map_err(|_| DataStoreError::AccountNotFound(account_id))?;
+
+                // Search through the foreign account's partial storage maps.
+                let storage_map_witness =
+                    foreign_inputs.account().storage().maps().find_map(|partial_map| {
+                        if partial_map.root() == map_root {
+                            partial_map.open(&map_key).ok()
+                        } else {
+                            None
+                        }
+                    });
+
+                storage_map_witness
+                    .ok_or_else(|| DataStoreError::Other { error_msg: "todo".into(), source: None })
             }
         }
     }

@@ -57,6 +57,32 @@ impl Update {
             pass_through: HashSet::default(),
         }
     }
+
+    fn unfold_pass_through(&mut self, target: NodeId, unfolded: Vec<(NodeId, Word, Word)>) {
+        // Check preconditions:
+        //   1. target must exist in pass through node set
+        //   2. All unfolded nodes must be pass through nodes with the same commitment
+        for (id, from, to) in &unfolded {
+            assert_eq!(
+                from, &self.commitment,
+                "unfolded passthrough node {id:?} must have initial account commitment {} but has {from}",
+                self.commitment
+            );
+            assert_eq!(
+                to, &self.commitment,
+                "unfolded passthrough node {id:?} must have final account commitment {} but has {to}",
+                self.commitment
+            );
+        }
+
+        assert!(self.pass_through.remove(&target), "target must exist as pass through node");
+
+        self.pass_through.extend(unfolded.into_iter().map(|(id, ..)| id));
+    }
+
+    fn contains_pass_through(&self, target: &NodeId) -> bool {
+        self.pass_through.contains(target)
+    }
 }
 
 impl AccountStates {
@@ -251,8 +277,76 @@ impl AccountStates {
     /// - the target node cannot be found
     /// - the unfolded nodes aren't sequential
     /// - unfolded nodes beginning and end don't match the target
-    pub(super) fn unfold(&mut self, _target: NodeId, _unfolded: Vec<(NodeId, Word, Word)>) {
-        todo!();
+    pub(super) fn unfold(&mut self, target: NodeId, unfolded: Vec<(NodeId, Word, Word)>) {
+        assert!(!unfolded.is_empty(), "cannot unfold into no nodes");
+
+        // Handle the case where target is a pass through node itself.
+        for update in &mut self.updates {
+            if update.contains_pass_through(&target) {
+                update.unfold_pass_through(target, unfolded);
+                return;
+            }
+        }
+
+        // Check continuity of unfolded nodes.
+        for (from, to) in unfolded.iter().tuple_windows() {
+            assert_eq!(from.2, to.1, "unfolded node commitments must form a sequence");
+        }
+
+        // Find target node (we know it can't be a pass through node because this was checked).
+        for (idx, (a, b)) in self.updates.iter().tuple_windows().enumerate() {
+            if b.by == target {
+                // Check preconditions i.e. start and end commitments match.
+                let first = unfolded.first().expect("unfolded must contain at least one item");
+                let last = unfolded.last().expect("unfolded must contain at least one item");
+                assert_eq!(
+                    a.commitment, first.1,
+                    "first unfolded commitment must match initial commitment"
+                );
+                assert_eq!(
+                    b.commitment, last.1,
+                    "last unfolded commitment must match final commitment"
+                );
+
+                // Actually unfold the node.
+                //
+                // Important to note here is that unfolded can begin with pass through nodes for
+                // target.from, and end with pass through nodes for target.to, _and_ that these
+                // can already contain existing pass through nodes which need to be merged.
+
+                // Split out a,b such that we have [head.., a, b, ..tail]. head & tail are both
+                // immutable since our target causes the a->b transition and we want to unfold that.
+                //
+                // SAFETY:
+                //   - idx is the index of `a` which exists by definition.
+                //   - (a, b) must both exist since we are in a 2-tuple iteration at idx.
+                let mut tail = self.updates.split_off(idx);
+                let a = tail.pop_front().unwrap();
+                let b = tail.pop_front().unwrap();
+
+                let mut current = a;
+                for node in unfolded {
+                    if node.2 == current.commitment {
+                        current.pass_through.insert(node.0);
+                    } else {
+                        self.updates.push_back(current);
+                        current = Update::new(node.2, node.0);
+                    }
+                }
+
+                // At this stage current should contain the final unfolded update. This needs to be
+                // merged with the original target update's pre-existing pass through nodes.
+                current.pass_through.extend(b.pass_through);
+                self.updates.push_back(current);
+
+                // Re-attach the tail.
+                self.updates.extend(tail);
+
+                return;
+            }
+        }
+
+        panic!("unfold target node {target:?} not found");
     }
 
     /// Replaces existing sequential target nodes with a single node.
@@ -266,7 +360,7 @@ impl AccountStates {
     /// - the target nodes cannot be found
     /// - the target nodes aren't sequential
     /// - some nodes are left behind (e.g. pass through nodes are skipped)
-    pub(super) fn fold(&mut self, _targets: Vec<(NodeId, Word, Word)>, _folded: NodeId) {
-        todo!();
+    pub(super) fn fold(&mut self, targets: Vec<(NodeId, Word, Word)>, _folded: NodeId) {
+        assert!(!targets.is_empty(), "cannot fold no nodes");
     }
 }

@@ -426,6 +426,20 @@ pub enum SyncStorageMapsError {
     AccountNotPublic(AccountId),
 }
 
+// GET NETWORK ACCOUNT IDS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetNetworkAccountIdsError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("malformed nullifier prefix")]
+    DeserializationFailed(#[from] ConversionError),
+}
+
 // GET BLOCK BY NUMBER ERRORS
 // ================================================================================================
 

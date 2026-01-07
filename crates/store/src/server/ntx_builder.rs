@@ -12,8 +12,8 @@ use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::db::models::Page;
-use crate::errors::GetNoteScriptByRootError;
-use crate::server::api::{StoreApi, internal_error, invalid_argument, read_root};
+use crate::errors::{GetNetworkAccountIdsError, GetNoteScriptByRootError};
+use crate::server::api::{StoreApi, internal_error, invalid_argument, read_block_range, read_root};
 
 // NTX BUILDER ENDPOINTS
 // ================================================================================================
@@ -171,18 +171,22 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         &self,
         request: Request<BlockRange>,
     ) -> Result<Response<proto::store::NetworkAccountIdList>, Status> {
-        let block_range = request.into_inner();
+        let request = request.into_inner();
+
         let chain_tip = self.state.latest_block_num().await;
+        let block_range =
+            read_block_range::<GetNetworkAccountIdsError>(Some(request), "GetNetworkAccountIds")?
+                .into_inclusive_range::<GetNetworkAccountIdsError>(&chain_tip)?;
 
-        let block_from = BlockNumber::from(block_range.block_from);
-        let block_to = block_range.block_to.map_or(chain_tip, BlockNumber::from);
-        let block_range = block_from..=block_to;
-
-        let (account_ids, last_block_included) =
+        let (account_ids, mut last_block_included) =
             self.state.get_all_network_accounts(block_range).await.map_err(internal_error)?;
 
         let account_ids: Vec<proto::account::AccountId> =
             account_ids.into_iter().map(Into::into).collect();
+
+        if last_block_included > chain_tip {
+            last_block_included = chain_tip;
+        }
 
         Ok(Response::new(proto::store::NetworkAccountIdList {
             account_ids,

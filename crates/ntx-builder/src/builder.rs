@@ -91,12 +91,6 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
-    /// Default cache size for note scripts.
-    ///
-    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
-    /// depends on the complexity of the scripts being cached.
-    pub const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
-
     /// Creates a new instance of the network transaction builder.
     pub fn new(
         store_url: Url,

@@ -7,7 +7,6 @@ use miden_node_block_producer::{
     DEFAULT_MAX_BATCHES_PER_BLOCK,
     DEFAULT_MAX_TXS_PER_BATCH,
 };
-use miden_node_ntx_builder::DEFAULT_SCRIPT_CACHE_SIZE;
 use url::Url;
 
 pub mod block_producer;
@@ -41,6 +40,7 @@ const ENV_VALIDATOR_INSECURE_SECRET_KEY: &str = "MIDEN_NODE_VALIDATOR_INSECURE_S
 
 const DEFAULT_NTX_TICKER_INTERVAL: Duration = Duration::from_millis(200);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_NTX_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
 
 // Formats a Duration into a human-readable string for display in clap help text.
 fn duration_to_human_readable_string(duration: Duration) -> String {
@@ -72,7 +72,7 @@ pub struct NtxBuilderConfig {
         long = "ntx-builder.script-cache-size",
         env = ENV_NTX_SCRIPT_CACHE_SIZE,
         value_name = "NUM",
-        default_value_t = DEFAULT_SCRIPT_CACHE_SIZE
+        default_value_t = DEFAULT_NTX_SCRIPT_CACHE_SIZE
     )]
     pub script_cache_size: NonZeroUsize,
 }

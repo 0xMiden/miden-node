@@ -94,19 +94,25 @@ impl DataStore for TransactionInputsDataStore {
     fn get_storage_map_witness(
         &self,
         account_id: AccountId,
-        _map_root: Word,
-        _map_key: Word,
+        map_root: Word,
+        map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
-            if self.tx_inputs.account().id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
+            if self.tx_inputs.account().id() == account_id {
+                let storage_map_witness =
+                    self.tx_inputs.account().storage().maps().find_map(|partial_map| {
+                        if partial_map.root() == map_root {
+                            partial_map.open(&map_key).ok()
+                        } else {
+                            None
+                        }
+                    });
+                storage_map_witness
+                    .ok_or_else(|| DataStoreError::Other { error_msg: "todo".into(), source: None })
+            } else {
+                // Foreign account.
+                Err(DataStoreError::AccountNotFound(account_id))
             }
-
-            // For partial accounts, storage map witness is not available.
-            Err(DataStoreError::Other {
-                error_msg: "storage map witness not available with partial account state".into(),
-                source: None,
-            })
         }
     }
 

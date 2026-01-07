@@ -55,13 +55,17 @@ impl DataStore for TransactionInputsDataStore {
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
         async move {
             if foreign_account_id == self.tx_inputs.account().id() {
-                // todo(currentpr): proper error
-                return Err(DataStoreError::AccountNotFound(foreign_account_id));
+                return Err(DataStoreError::Other {
+                    error_msg: format!(
+                        "requested account with id {foreign_account_id} is local, not foreign"
+                    )
+                    .into(),
+                    source: None,
+                });
             }
 
             let foreign_inputs =
                 self.tx_inputs.read_foreign_account_inputs(foreign_account_id).expect("todo");
-
             Ok(foreign_inputs)
         }
     }
@@ -110,7 +114,7 @@ impl DataStore for TransactionInputsDataStore {
                 storage_map_witness
                     .ok_or_else(|| DataStoreError::Other { error_msg: "todo".into(), source: None })
             } else {
-                // Foreign account.
+                // Get foreign account inputs.
                 let foreign_inputs = self
                     .tx_inputs
                     .read_foreign_account_inputs(account_id)

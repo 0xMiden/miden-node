@@ -4,9 +4,7 @@ use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::account::{
     Account,
-    AccountCode,
     AccountId,
-    AccountStorage,
     PartialAccount,
     StorageMap,
     StorageMapWitness,
@@ -347,16 +345,20 @@ impl DataStore for NtxDataStore {
         let store = self.store.clone();
         async move {
             if foreign_account_id == self.account.id() {
-                // TODO(currentpr): proper error
-                return Err(DataStoreError::AccountNotFound(foreign_account_id));
+                return Err(DataStoreError::Other {
+                    error_msg: format!(
+                        "requested account with id {foreign_account_id} is local, not foreign"
+                    )
+                    .into(),
+                    source: None,
+                });
             }
 
-            // TODO(currentpr): handle account not found properly
             let account_proof = store
                 .get_account(foreign_account_id, Some(ref_block.as_u32()))
                 .await
                 .map_err(|err| DataStoreError::Other {
-                    error_msg: format!("Failed to get account inputs from store: {err}").into(),
+                    error_msg: format!("failed to get account proof from store: {err}").into(),
                     source: Some(Box::new(err)),
                 })?;
 
@@ -410,7 +412,7 @@ impl DataStore for NtxDataStore {
         let store = self.store.clone();
         async move {
             let map_witness = if self.account.id() == account_id {
-                // Search through local account's storage slots
+                // Search through local account's storage slots.
                 self.account.storage().slots().iter().find_map(|slot| {
                     if let StorageSlotContent::Map(map) = slot.content() {
                         if map.root() == map_root {
@@ -426,13 +428,13 @@ impl DataStore for NtxDataStore {
                 // Get foreign account.
                 let account_proof = store.get_account(account_id, None).await.map_err(|err| {
                     DataStoreError::Other {
-                        error_msg: format!("Failed to get account inputs from store: {err}").into(),
+                        error_msg: format!("failed to get account proof from store: {err}").into(),
                         source: Some(Box::new(err)),
                     }
                 })?;
                 let account_details = account_proof.details.expect("todo");
 
-                // Search through foreign account's storage maps
+                // Search through foreign account's storage maps.
                 account_details.storage_details.map_details.iter().find_map(|map_details| {
                     let storage_map =
                         StorageMap::with_entries(map_details.map_entries.iter().copied())

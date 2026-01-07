@@ -226,7 +226,6 @@ impl StoreClient {
         let request = proto::rpc::AccountProofRequest {
             account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
             block_num: ref_block.map(|block_num| BlockNumber { block_num }),
-            // TODO(currentpr): fill these in properly?
             details: Some(AccountDetailRequest {
                 code_commitment: None,
                 asset_vault_commitment: None,

@@ -26,7 +26,7 @@ where
     }
 
     /// Puts a value into the cache.
-    pub async fn put(&mut self, key: K, value: V) {
+    pub async fn put(&self, key: K, value: V) {
         self.0.lock().await.put(key, value);
     }
 }

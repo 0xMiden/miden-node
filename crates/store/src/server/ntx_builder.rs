@@ -1,6 +1,7 @@
 use std::num::{NonZero, TryFromIntError};
 
 use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
+use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::store::ntx_builder_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
@@ -150,7 +151,14 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         }))
     }
 
-    // TODO: add pagination.
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// The response includes pagination info with the last block number that was fully included.
     #[instrument(
         parent = None,
         target = COMPONENT,
@@ -161,14 +169,28 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_network_account_ids(
         &self,
-        _request: Request<()>,
+        request: Request<BlockRange>,
     ) -> Result<Response<proto::store::NetworkAccountIdList>, Status> {
-        let account_ids = self.state.get_all_network_accounts().await.map_err(internal_error)?;
+        let block_range = request.into_inner();
+        let chain_tip = self.state.latest_block_num().await;
+
+        let block_from = BlockNumber::from(block_range.block_from);
+        let block_to = block_range.block_to.map_or(chain_tip, BlockNumber::from);
+        let block_range = block_from..=block_to;
+
+        let (account_ids, last_block_included) =
+            self.state.get_all_network_accounts(block_range).await.map_err(internal_error)?;
 
         let account_ids: Vec<proto::account::AccountId> =
             account_ids.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(proto::store::NetworkAccountIdList { account_ids }))
+        Ok(Response::new(proto::store::NetworkAccountIdList {
+            account_ids,
+            pagination_info: Some(proto::rpc::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: last_block_included.as_u32(),
+            }),
+        }))
     }
 
     #[instrument(

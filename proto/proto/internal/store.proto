@@ -268,7 +268,7 @@ service NtxBuilder {
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
 
     // Returns a list of all network account ids.
-    rpc GetNetworkAccountIds(google.protobuf.Empty) returns (NetworkAccountIdList) {}
+    rpc GetNetworkAccountIds(rpc.BlockRange) returns (NetworkAccountIdList) {}
 
     // Returns the script for a note by its root.
     rpc GetNoteScriptByRoot(note.NoteRoot) returns (rpc.MaybeNoteScript) {}
@@ -333,10 +333,12 @@ message UnconsumedNetworkNotes {
 
 // Represents the result of getting the network account ids.
 message NetworkAccountIdList {
-  // The list of network account ids.
-  repeated account.AccountId account_ids = 1;
-}
+  // Pagination information.
+  rpc.PaginationInfo pagination_info = 1;
 
+  // The list of network account ids.
+  repeated account.AccountId account_ids = 2;
+}
 
 // GET CURRENT BLOCKCHAIN DATA
 // ================================================================================================

@@ -36,6 +36,7 @@ use crate::genesis::GenesisBlock;
 pub(crate) mod manager;
 
 mod migrations;
+mod schema_hash;
 
 #[cfg(test)]
 mod tests;
@@ -433,11 +434,28 @@ impl Db {
         .await
     }
 
-    /// Loads all network account IDs from the DB.
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - A vector of network account IDs.
+    /// - The last block number that was fully included in the result. When truncated, this will be
+    ///   less than the requested range end.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_network_account_ids(&self) -> Result<Vec<AccountId>> {
-        self.transact("Get all network account IDs", queries::select_all_network_account_ids)
-            .await
+    pub async fn select_all_network_account_ids(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<AccountId>, BlockNumber)> {
+        self.transact("Get all network account IDs", move |conn| {
+            queries::select_all_network_account_ids(conn, block_range)
+        })
+        .await
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

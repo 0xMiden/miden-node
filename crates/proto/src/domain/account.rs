@@ -525,10 +525,13 @@ impl TryFrom<&AccountDetails> for Account {
     type Error = ConversionError;
 
     fn try_from(account_details: &AccountDetails) -> Result<Self, Self::Error> {
-        let asset_vault = AssetVault::new(&account_details.vault_details.assets).expect("todo");
-        let account_storage = AccountStorage::new(Vec::new()).expect("todo");
-        let account_code = account_details.account_code.as_ref().expect("todo");
-        let account_code = AccountCode::from_bytes(account_code).expect("todo");
+        let asset_vault = AssetVault::new(&account_details.vault_details.assets)?;
+        let account_storage = AccountStorage::new(Vec::new())?; // TODO(currentpr): how do we get account storage?
+        let account_code = account_details
+            .account_code
+            .as_ref()
+            .ok_or(ConversionError::AccountCodeMissing)?;
+        let account_code = AccountCode::from_bytes(account_code)?;
         let account = Account::new(
             account_details.account_header.id(),
             asset_vault,
@@ -536,8 +539,7 @@ impl TryFrom<&AccountDetails> for Account {
             account_code,
             account_details.account_header.nonce(),
             None, // TODO(currentpr): add seed?
-        )
-        .expect("todo");
+        )?;
         Ok(account)
     }
 }

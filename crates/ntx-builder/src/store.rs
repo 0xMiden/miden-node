@@ -234,7 +234,7 @@ impl StoreClient {
         };
 
         let response = self.inner.clone().get_account_proof(request).await?.into_inner();
-        Ok(response.try_into().expect("todo"))
+        response.try_into().map_err(StoreError::DeserializationError)
     }
 }
 

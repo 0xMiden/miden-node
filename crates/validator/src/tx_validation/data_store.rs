@@ -64,8 +64,13 @@ impl DataStore for TransactionInputsDataStore {
                 });
             }
 
-            let foreign_inputs =
-                self.tx_inputs.read_foreign_account_inputs(foreign_account_id).expect("todo");
+            let foreign_inputs = self
+                .tx_inputs
+                .read_foreign_account_inputs(foreign_account_id)
+                .map_err(|err| DataStoreError::Other {
+                    error_msg: format!("failed to read foreign account inputs: {err}").into(),
+                    source: Some(Box::new(err)),
+                })?;
             Ok(foreign_inputs)
         }
     }
@@ -88,8 +93,13 @@ impl DataStore for TransactionInputsDataStore {
             if self.tx_inputs.account().id() == account_id {
                 get_asset_witnesses_from_account(self.tx_inputs.account(), vault_keys)
             } else {
-                let foreign_inputs =
-                    self.tx_inputs.read_foreign_account_inputs(account_id).expect("todo");
+                let foreign_inputs = self
+                    .tx_inputs
+                    .read_foreign_account_inputs(account_id)
+                    .map_err(|err| DataStoreError::Other {
+                        error_msg: format!("failed to read foreign account inputs: {err}").into(),
+                        source: Some(Box::new(err)),
+                    })?;
                 get_asset_witnesses_from_account(foreign_inputs.account(), vault_keys)
             }
         }

@@ -354,6 +354,7 @@ impl DataStore for NtxDataStore {
                 });
             }
 
+            // Retrieve the account proof from the store.
             let account_proof = store
                 .get_account(foreign_account_id, Some(ref_block.as_u32()))
                 .await
@@ -362,10 +363,20 @@ impl DataStore for NtxDataStore {
                     source: Some(Box::new(err)),
                 })?;
 
-            let account_details = account_proof.details.expect("todo");
-            let account = Account::try_from(&account_details).expect("todo");
-            let partial_account = PartialAccount::from(&account);
+            // Construct account from account proof account details.
+            let account_details = account_proof.details.ok_or_else(|| DataStoreError::Other {
+                error_msg: "account proof does not contain account details".into(),
+                source: None,
+            })?;
+            let account =
+                Account::try_from(&account_details).map_err(|err| DataStoreError::Other {
+                    error_msg: format!("failed to convert account details to account: {err}")
+                        .into(),
+                    source: Some(Box::new(err)),
+                })?;
 
+            // Return partial account and witness.
+            let partial_account = PartialAccount::from(&account);
             Ok(AccountInputs::new(partial_account, account_proof.witness))
         }
     }
@@ -394,10 +405,21 @@ impl DataStore for NtxDataStore {
                         source: Some(Box::new(err)),
                     }
                 })?;
-                let account_details = account_proof.details.expect("todo");
 
+                // Construct vault from account details.
+                let account_details =
+                    account_proof.details.ok_or_else(|| DataStoreError::Other {
+                        error_msg: "account proof does not contain account details".into(),
+                        source: None,
+                    })?;
                 let asset_vault =
-                    AssetVault::new(&account_details.vault_details.assets).expect("todo");
+                    AssetVault::new(&account_details.vault_details.assets).map_err(|err| {
+                        DataStoreError::Other {
+                            error_msg: format!("failed to create asset vault: {err}").into(),
+                            source: Some(Box::new(err)),
+                        }
+                    })?;
+
                 get_asset_witnesses(vault_keys, &asset_vault)
             }
         }
@@ -432,13 +454,17 @@ impl DataStore for NtxDataStore {
                         source: Some(Box::new(err)),
                     }
                 })?;
-                let account_details = account_proof.details.expect("todo");
+                let account_details =
+                    account_proof.details.ok_or_else(|| DataStoreError::Other {
+                        error_msg: "account proof does not contain account details".into(),
+                        source: None,
+                    })?;
 
                 // Search through foreign account's storage maps.
                 account_details.storage_details.map_details.iter().find_map(|map_details| {
                     let storage_map =
                         StorageMap::with_entries(map_details.map_entries.iter().copied())
-                            .expect("todo");
+                            .expect("no duplicate entries");
                     if storage_map.root() == map_root {
                         Some(storage_map.open(&map_key))
                     } else {

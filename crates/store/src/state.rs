@@ -1120,47 +1120,6 @@ impl State {
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
         self.db.select_transactions_records(account_ids, block_range).await
     }
-
-    // /// Returns account for the specified account ID and reference block.
-    // pub async fn get_account(
-    //     &self,
-    //     account_id: AccountId,
-    //     ref_block: BlockNumber,
-    // ) -> Result<Account, DatabaseError> {
-    //     use miden_node_proto::domain::account::{AccountDetailRequest, AccountProofRequest};
-
-    //     // Create account proof request to get both witness and details
-    //     let account_request = AccountProofRequest {
-    //         account_id,
-    //         block_num: Some(ref_block),
-    //         // TODO(currentpr): formulate this properly?
-    //         details: Some(AccountDetailRequest {
-    //             code_commitment: None,
-    //             asset_vault_commitment: None,
-    //             storage_requests: Vec::new(),
-    //         }),
-    //     };
-
-    //     // Get account proof which includes witness and details
-    //     let account_proof = self.get_account_proof(account_request).await?;
-
-    //     // TODO(currentpr): replace this with From<AccountDetails> for Account?
-    //     let account_details = account_proof.details.expect("todo");
-    //     let asset_vault = AssetVault::new(&account_details.vault_details.assets).expect("todo");
-    //     let account_storage = AccountStorage::new(Vec::new()).expect("todo");
-    //     let account_code = account_details.account_code.expect("todo");
-    //     let account_code = AccountCode::from_bytes(&account_code).expect("todo");
-    //     let account = Account::new(
-    //         account_details.account_header.id(),
-    //         asset_vault,
-    //         account_storage,
-    //         account_code,
-    //         account_details.account_header.nonce(),
-    //         None, // TODO(currentpr): add seed?
-    //     )
-    //     .expect("todo");
-    //     Ok(account)
-    // }
 }
 
 // UTILITIES

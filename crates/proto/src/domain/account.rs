@@ -4,8 +4,10 @@ use miden_node_utils::formatting::format_opt;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountHeader,
     AccountId,
+    AccountStorage,
     AccountStorageHeader,
     StorageMap,
     StorageSlotHeader,
@@ -517,6 +519,27 @@ pub struct AccountDetails {
     pub account_code: Option<Vec<u8>>,
     pub vault_details: AccountVaultDetails,
     pub storage_details: AccountStorageDetails,
+}
+
+impl TryFrom<&AccountDetails> for Account {
+    type Error = ConversionError;
+
+    fn try_from(account_details: &AccountDetails) -> Result<Self, Self::Error> {
+        let asset_vault = AssetVault::new(&account_details.vault_details.assets).expect("todo");
+        let account_storage = AccountStorage::new(Vec::new()).expect("todo");
+        let account_code = account_details.account_code.as_ref().expect("todo");
+        let account_code = AccountCode::from_bytes(account_code).expect("todo");
+        let account = Account::new(
+            account_details.account_header.id(),
+            asset_vault,
+            account_storage,
+            account_code,
+            account_details.account_header.nonce(),
+            None, // TODO(currentpr): add seed?
+        )
+        .expect("todo");
+        Ok(account)
+    }
 }
 
 /// Represents the response to an account proof request.

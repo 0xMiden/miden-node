@@ -360,22 +360,8 @@ impl DataStore for NtxDataStore {
                     source: Some(Box::new(err)),
                 })?;
 
-            // TODO(currentpr): replace this with From<AccountDetails> for Account?
             let account_details = account_proof.details.expect("todo");
-            let asset_vault = AssetVault::new(&account_details.vault_details.assets).expect("todo");
-            let account_storage = AccountStorage::new(Vec::new()).expect("todo");
-            let account_code = account_details.account_code.expect("todo");
-            let account_code = AccountCode::from_bytes(&account_code).expect("todo");
-            let account = Account::new(
-                account_details.account_header.id(),
-                asset_vault,
-                account_storage,
-                account_code,
-                account_details.account_header.nonce(),
-                None, // TODO(currentpr): add seed?
-            )
-            .expect("todo");
-
+            let account = Account::try_from(&account_details).expect("todo");
             let partial_account = PartialAccount::from(&account);
 
             Ok(AccountInputs::new(partial_account, account_proof.witness))

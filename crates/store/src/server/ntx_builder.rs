@@ -173,7 +173,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::NetworkAccountIdList>, Status> {
         let request = request.into_inner();
 
-        let chain_tip = self.state.latest_block_num().await;
+        let mut chain_tip = self.state.latest_block_num().await;
         let block_range =
             read_block_range::<GetNetworkAccountIdsError>(Some(request), "GetNetworkAccountIds")?
                 .into_inclusive_range::<GetNetworkAccountIdsError>(&chain_tip)?;
@@ -187,6 +187,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         if last_block_included > chain_tip {
             last_block_included = chain_tip;
         }
+
+        chain_tip = self.state.latest_block_num().await;
 
         Ok(Response::new(proto::store::NetworkAccountIdList {
             account_ids,

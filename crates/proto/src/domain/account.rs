@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
     AccountCode,
@@ -9,17 +8,20 @@ use miden_protocol::account::{
     AccountId,
     AccountStorage,
     AccountStorageHeader,
+    PartialAccount,
+    PartialStorage,
     StorageMap,
     StorageSlotHeader,
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault};
+use miden_protocol::asset::{Asset, AssetVault, PartialVault};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{NoteExecutionMode, NoteTag};
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::{Word, ZERO};
 use thiserror::Error;
 
 use super::try_convert;
@@ -521,26 +523,32 @@ pub struct AccountDetails {
     pub storage_details: AccountStorageDetails,
 }
 
-impl TryFrom<&AccountDetails> for Account {
+impl TryFrom<&AccountDetails> for PartialAccount {
     type Error = ConversionError;
 
     fn try_from(account_details: &AccountDetails) -> Result<Self, Self::Error> {
-        let asset_vault = AssetVault::new(&account_details.vault_details.assets)?;
-        let account_storage = AccountStorage::new(Vec::new())?; // TODO(currentpr): how do we get account storage?
         let account_code = account_details
             .account_code
             .as_ref()
             .ok_or(ConversionError::AccountCodeMissing)?;
         let account_code = AccountCode::from_bytes(account_code)?;
-        let account = Account::new(
+        let account_storage = AccountStorage::new(Vec::new())?; // TODO(currentpr): how to get storage?
+        let partial_storage = if account_details.account_header.nonce() == ZERO {
+            PartialStorage::new_full(account_storage)
+        } else {
+            PartialStorage::new_minimal(&account_storage)
+        };
+        let asset_vault = AssetVault::new(&account_details.vault_details.assets)?;
+        let partial_vault = PartialVault::new_minimal(&asset_vault);
+        let partial_account = PartialAccount::new(
             account_details.account_header.id(),
-            asset_vault,
-            account_storage,
-            account_code,
             account_details.account_header.nonce(),
-            None, // TODO(currentpr): add seed?
+            account_code,
+            partial_storage,
+            partial_vault,
+            None, // TODO: Seed?
         )?;
-        Ok(account)
+        Ok(partial_account)
     }
 }
 

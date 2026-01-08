@@ -368,15 +368,17 @@ impl DataStore for NtxDataStore {
                 error_msg: "account proof does not contain account details".into(),
                 source: None,
             })?;
-            let account =
-                Account::try_from(&account_details).map_err(|err| DataStoreError::Other {
-                    error_msg: format!("failed to convert account details to account: {err}")
-                        .into(),
+            let partial_account = PartialAccount::try_from(&account_details).map_err(|err| {
+                DataStoreError::Other {
+                    error_msg: format!(
+                        "failed to construct partial account from account details: {err}"
+                    )
+                    .into(),
                     source: Some(Box::new(err)),
-                })?;
+                }
+            })?;
 
             // Return partial account and witness.
-            let partial_account = PartialAccount::from(&account);
             Ok(AccountInputs::new(partial_account, account_proof.witness))
         }
     }

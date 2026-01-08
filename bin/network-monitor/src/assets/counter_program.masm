@@ -1,7 +1,7 @@
 # Counter program for network monitoring with note authentication
 # Storage layout:
-# - Slot 0: counter value (u64)
-# - Slot 1: authorized wallet account id as [prefix, suffix, 0, 0]
+# - OWNER_SLOT: authorized wallet account id as [prefix, suffix, 0, 0]
+# - COUNTER_SLOT: counter value (u64)
 
 use miden::core::sys
 use miden::protocol::active_account
@@ -11,14 +11,14 @@ use miden::protocol::account_id
 use miden::protocol::tx
 
 
-# The slot in this component's storage layout where the counter is stored.
 const COUNTER_SLOT = word("miden::monitor::counter_contract::counter")
+const OWNER_SLOT = word("miden::monitor::counter_contract::owner")
 
 # Increment function with note authentication
 # => []
 pub proc increment
-    # Ensure the note sender matches the authorized wallet stored in slot 1.
-    push.1 exec.active_account::get_item
+    # Ensure the note sender matches the authorized wallet.
+    push.OWNER_SLOT[0..2] exec.active_account::get_item
     # => [owner_prefix, owner_suffix, 0, 0]
 
     exec.active_note::get_sender

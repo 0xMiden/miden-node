@@ -527,26 +527,33 @@ impl TryFrom<&AccountDetails> for PartialAccount {
     type Error = ConversionError;
 
     fn try_from(account_details: &AccountDetails) -> Result<Self, Self::Error> {
+        // Derive account code.
         let account_code = account_details
             .account_code
             .as_ref()
             .ok_or(ConversionError::AccountCodeMissing)?;
         let account_code = AccountCode::from_bytes(account_code)?;
+
+        // Derive partial storage.
         let account_storage = AccountStorage::new(Vec::new())?; // TODO(currentpr): how to get storage?
         let partial_storage = if account_details.account_header.nonce() == ZERO {
             PartialStorage::new_full(account_storage)
         } else {
             PartialStorage::new_minimal(&account_storage)
         };
+
+        // Derive partial vault.
         let asset_vault = AssetVault::new(&account_details.vault_details.assets)?;
         let partial_vault = PartialVault::new_minimal(&asset_vault);
+
+        // Construct partial account.
         let partial_account = PartialAccount::new(
             account_details.account_header.id(),
             account_details.account_header.nonce(),
             account_code,
             partial_storage,
             partial_vault,
-            None, // TODO: Seed?
+            None, // TODO(currentpr): Seed?
         )?;
         Ok(partial_account)
     }

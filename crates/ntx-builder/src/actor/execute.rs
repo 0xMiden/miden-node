@@ -342,6 +342,8 @@ impl DataStore for NtxDataStore {
         foreign_account_id: AccountId,
         ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
+        debug_assert_eq!(ref_block, self.reference_header.block_num());
+
         let store = self.store.clone();
         async move {
             if foreign_account_id == self.account.id() {

@@ -30,7 +30,7 @@ use crate::block_validation::validate_block;
 use crate::tx_validation::validate_transaction;
 
 /// Number of transactions to keep in the validated transactions cache.
-const NUM_VALIDATED_TRANSACTIONS: NonZeroUsize = NonZeroUsize::new(7000).unwrap();
+const NUM_VALIDATED_TRANSACTIONS: NonZeroUsize = NonZeroUsize::new(10000).unwrap();
 
 /// A type alias for a LRU cache that stores validated transactions.
 pub type ValidatedTransactions = LruCache<TransactionId, TransactionHeader>;

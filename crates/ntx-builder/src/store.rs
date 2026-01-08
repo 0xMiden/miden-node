@@ -179,13 +179,13 @@ impl StoreClient {
     /// reach the end.
     ///
     /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
-    /// accounts (~289,000). With 1000 iterations, this supports up to ~524 million network
-    /// accounts, which is assumed to be sufficient for the foreseeable future.
+    /// accounts (~289,000). With `100_000` iterations, which is assumed to be sufficient for the
+    /// foreseeable future.
     #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
     pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
-        const MAX_ITERATIONS: u32 = 1000;
+        const MAX_ITERATIONS: u32 = 100_000;
 
-        let block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
+        let mut block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
 
         let mut ids = Vec::new();
         let mut iterations_count = 0;
@@ -216,6 +216,8 @@ impl StoreClient {
 
             ids.extend(accounts?);
             iterations_count += 1;
+            block_range =
+                BlockNumber::from(pagination_info.block_num)..=BlockNumber::from(u32::MAX);
 
             if pagination_info.block_num >= pagination_info.chain_tip {
                 break;

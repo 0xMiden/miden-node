@@ -360,7 +360,61 @@ impl AccountStates {
     /// - the target nodes cannot be found
     /// - the target nodes aren't sequential
     /// - some nodes are left behind (e.g. pass through nodes are skipped)
-    pub(super) fn fold(&mut self, targets: Vec<(NodeId, Word, Word)>, _folded: NodeId) {
-        assert!(!targets.is_empty(), "cannot fold no nodes");
+    pub(super) fn fold(&mut self, targets: Vec<(NodeId, Word, Word)>, folded: NodeId) {
+        // Check that target sequence order is valid by reconstructing it.
+        let mut targets = targets.iter().cloned();
+        let first = targets.next().expect("cannot fold an empty list of nodes");
+        let mut check = Self::new(first.0, first.1, first.2);
+        for (id, from, to) in targets {
+            assert_ne!(id, folded);
+            check.append(id, from, to).expect("fold targets must form a valid sequence");
+        }
+
+        // Verify the input updates against the accoaunt state.
+        let check: &[Update] = check.updates.make_contiguous();
+
+        // First element may contain pass-through nodes where we must ensure they exist in self.
+        //
+        // SAFETY: first update is guaranteed by Self since it cannot be empty.
+        let (front, rest) = check.split_first().unwrap();
+        let istart = self
+            .updates
+            .iter()
+            .position(|update| update.commitment == front.commitment)
+            .expect("fold target node must exist");
+        assert!(self.updates[istart].pass_through.is_superset(&front.pass_through));
+
+        if let Some((back, rest)) = rest.split_last() {
+            // middle elements must match self exactly since we can't leave any node behind.
+            let expected = self.updates.iter().skip(istart + 1).take(rest.len());
+            itertools::assert_equal(expected, rest.iter());
+
+            // Last element is allowed to miss some of the pass through nodes.
+            let expected = &self.updates[istart + rest.len() + 2];
+            assert_eq!(expected.by, back.by);
+            assert_eq!(expected.commitment, back.commitment);
+            assert!(expected.pass_through.is_superset(&back.pass_through));
+        }
+
+        // Actually perform the folding.
+        for target in &front.pass_through {
+            self.updates[istart].pass_through.remove(target);
+        }
+
+        let Some((back, rest)) = rest.split_last() else {
+            // If there were only the pass through nodes then `folded` should replace them and we
+            // are done.
+            self.updates[istart].pass_through.insert(folded);
+            return;
+        };
+
+        // Remove all of the rest updates entirely.
+        self.updates.drain(istart + 1..istart + rest.len());
+
+        // Update the "back" element which should now be next to "front".
+        self.updates[istart + 1].by = folded;
+        for target in &back.pass_through {
+            self.updates[istart + 1].pass_through.remove(target);
+        }
     }
 }

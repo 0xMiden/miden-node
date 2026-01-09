@@ -173,21 +173,24 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    /// Get all network account IDs.
+    /// Streams network account IDs to the provided sender, page-by-page.
     ///
-    /// Since the `GetNetworkAccountIds` method is paginated, we loop through all pages until we
-    /// reach the end.
+    /// This method is designed to be run in a background task, sending accounts to the main event
+    /// loop as they are loaded. This allows the ntx-builder to start processing mempool events
+    /// without waiting for all accounts to be preloaded.
     ///
     /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
-    /// accounts (~289,000). With `100_000` iterations, which is assumed to be sufficient for the
-    /// foreseeable future.
-    #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
-    pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
-        const MAX_ITERATIONS: u32 = 100_000;
+    /// accounts (~289,000). With 1000 iterations, this supports up to ~524 million network
+    /// accounts, which is assumed to be sufficient for the foreseeable future.
+    #[instrument(target = COMPONENT, name = "store.client.stream_network_account_ids", skip_all, err)]
+    pub async fn stream_network_account_ids(
+        &self,
+        sender: tokio::sync::mpsc::Sender<Vec<AccountId>>,
+    ) -> Result<(), StoreError> {
+        const MAX_ITERATIONS: u32 = 1000;
 
         let mut block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
 
-        let mut ids = Vec::new();
         let mut iterations_count = 0;
 
         loop {
@@ -198,14 +201,14 @@ impl StoreClient {
                 .await?
                 .into_inner();
 
-            let accounts: Result<Vec<AccountId>, ConversionError> = response
+            let accounts = response
                 .account_ids
                 .into_iter()
                 .map(|account_id| {
                     AccountId::read_from_bytes(&account_id.id)
                         .map_err(|err| ConversionError::deserialization_error("account_id", err))
                 })
-                .collect();
+                .collect::<Result<Vec<AccountId>, ConversionError>>()?;
 
             let pagination_info = response.pagination_info.ok_or(
                 ConversionError::MissingFieldInProtobufRepresentation {
@@ -214,7 +217,13 @@ impl StoreClient {
                 },
             )?;
 
-            ids.extend(accounts?);
+            if !accounts.is_empty() {
+                // Send the entire batch at once. If the receiver is dropped, stop loading.
+                if sender.send(accounts).await.is_err() {
+                    return Ok(());
+                }
+            }
+
             iterations_count += 1;
             block_range =
                 BlockNumber::from(pagination_info.block_num)..=BlockNumber::from(u32::MAX);
@@ -228,7 +237,7 @@ impl StoreClient {
             }
         }
 
-        Ok(ids)
+        Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]

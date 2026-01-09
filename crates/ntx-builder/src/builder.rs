@@ -1,6 +1,5 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
@@ -8,13 +7,13 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::lru_cache::LruCache;
 use miden_protocol::Word;
+use miden_protocol::account::AccountId;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::PartialBlockchain;
-use tokio::sync::{Barrier, RwLock};
-use tokio::time;
+use tokio::sync::{RwLock, mpsc};
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
@@ -76,13 +75,6 @@ pub struct NetworkTransactionBuilder {
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the performance impact.
     tx_prover_url: Option<Url>,
-    /// Interval for checking pending notes and executing network transactions.
-    ticker_interval: Duration,
-    /// A checkpoint used to sync start-up process with the block-producer.
-    ///
-    /// This informs the block-producer when we have subscribed to mempool events and that it is
-    /// safe to begin block-production.
-    bp_checkpoint: Arc<Barrier>,
     /// Shared LRU cache for storing retrieved note scripts to avoid repeated store calls.
     /// This cache is shared across all account actors.
     script_cache: LruCache<Word, NoteScript>,
@@ -91,13 +83,16 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
+    /// Channel capacity for account loading. Each item in the channel is a batch of account IDs
+    /// loaded from a single page. A small capacity is sufficient since each page can contain
+    /// up to ~289,000 accounts.
+    const ACCOUNT_CHANNEL_CAPACITY: usize = 4;
+
     /// Creates a new instance of the network transaction builder.
     pub fn new(
         store_url: Url,
         block_producer_url: Url,
         tx_prover_url: Option<Url>,
-        ticker_interval: Duration,
-        bp_checkpoint: Arc<Barrier>,
         script_cache_size: NonZeroUsize,
     ) -> Self {
         let script_cache = LruCache::new(script_cache_size);
@@ -106,8 +101,6 @@ impl NetworkTransactionBuilder {
             store_url,
             block_producer_url,
             tx_prover_url,
-            ticker_interval,
-            bp_checkpoint,
             script_cache,
             coordinator,
         }
@@ -127,15 +120,6 @@ impl NetworkTransactionBuilder {
             .await
             .context("failed to subscribe to mempool events")?;
 
-        // Unlock the block-producer's block production. The block-producer is prevented from
-        // producing blocks until we have subscribed to mempool events.
-        //
-        // This is a temporary work-around until the ntx-builder can resync on the fly.
-        self.bp_checkpoint.wait().await;
-
-        let mut interval = tokio::time::interval(self.ticker_interval);
-        interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
-
         // Create chain state that will be updated by the coordinator and read by actors.
         let chain_state = Arc::new(RwLock::new(ChainState::new(chain_tip_header, chain_mmr)));
 
@@ -147,15 +131,16 @@ impl NetworkTransactionBuilder {
             script_cache: self.script_cache.clone(),
         };
 
-        // Create initial set of actors based on all known network accounts.
-        let account_ids = store.get_network_account_ids().await?;
-        for account_id in account_ids {
-            if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
-                self.coordinator
-                    .spawn_actor(AccountOrigin::store(account_prefix), &actor_context)
-                    .await?;
+        // Spawn a background task to load network accounts from the store.
+        // Accounts are sent through a channel in batches and processed in the main event loop.
+        let (account_tx, mut account_rx) =
+            mpsc::channel::<Vec<AccountId>>(Self::ACCOUNT_CHANNEL_CAPACITY);
+        let account_loader_store = store.clone();
+        tokio::spawn(async move {
+            if let Err(err) = account_loader_store.stream_network_account_ids(account_tx).await {
+                tracing::error!(%err, "failed to load network accounts from store");
             }
-        }
+        });
 
         // Main loop which manages actors and passes mempool events to them.
         loop {
@@ -176,8 +161,35 @@ impl NetworkTransactionBuilder {
                         chain_state.clone(),
                     ).await?;
                 },
+                // Handle account batches loaded from the store.
+                // Once all accounts are loaded, the channel closes and this branch
+                // becomes inactive (recv returns None and we stop matching).
+                Some(account_ids) = account_rx.recv() => {
+                    self.handle_loaded_accounts(account_ids, &actor_context).await?;
+                },
             }
         }
+    }
+
+    /// Handles a batch of account IDs loaded from the store by spawning actors for them.
+    #[tracing::instrument(
+        name = "ntx.builder.handle_loaded_accounts",
+        skip(self, account_ids, actor_context),
+        fields(count = account_ids.len())
+    )]
+    async fn handle_loaded_accounts(
+        &mut self,
+        account_ids: Vec<AccountId>,
+        actor_context: &AccountActorContext,
+    ) -> Result<(), anyhow::Error> {
+        for account_id in account_ids {
+            if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
+                self.coordinator
+                    .spawn_actor(AccountOrigin::store(account_prefix), actor_context)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     /// Handles mempool events by sending them to actors via the coordinator and/or spawning new

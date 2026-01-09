@@ -2436,6 +2436,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-agglayer"
+version = "0.13.0"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
+dependencies = [
+ "fs-err",
+ "miden-assembly",
+ "miden-core",
+ "miden-core-lib",
+ "miden-protocol",
+ "miden-standards",
+ "miden-utils-sync",
+ "regex",
+ "walkdir",
+]
+
+[[package]]
 name = "miden-air"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2490,7 +2506,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e7043f5a731a9d0280bb91aec42bfc41b1b59ccf"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
 dependencies = [
  "miden-protocol",
  "thiserror 2.0.17",
@@ -2980,7 +2996,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e7043f5a731a9d0280bb91aec42bfc41b1b59ccf"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
 dependencies = [
  "bech32",
  "fs-err",
@@ -3010,7 +3026,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol-macros"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e7043f5a731a9d0280bb91aec42bfc41b1b59ccf"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3100,7 +3116,7 @@ dependencies = [
 [[package]]
 name = "miden-standards"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e7043f5a731a9d0280bb91aec42bfc41b1b59ccf"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -3117,11 +3133,14 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e7043f5a731a9d0280bb91aec42bfc41b1b59ccf"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
+ "miden-agglayer",
+ "miden-assembly",
  "miden-block-prover",
+ "miden-core-lib",
  "miden-processor",
  "miden-protocol",
  "miden-standards",
@@ -3135,7 +3154,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e7043f5a731a9d0280bb91aec42bfc41b1b59ccf"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -3148,7 +3167,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#e7043f5a731a9d0280bb91aec42bfc41b1b59ccf"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=agglayer#ee0765cb7d034f46c12b1050cde3f37d109b5bcb"
 dependencies = [
  "miden-protocol",
  "miden-tx",

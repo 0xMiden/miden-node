@@ -49,12 +49,12 @@ miden-node-validator        = { path = "crates/validator", version = "0.13" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.13" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "agglayer", git = "https://github.com/0xMiden/miden-base.git" }
-miden-protocol        = { branch = "agglayer", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
-miden-standards       = { branch = "agglayer", git = "https://github.com/0xMiden/miden-base.git" }
-miden-testing         = { branch = "agglayer", git = "https://github.com/0xMiden/miden-base.git" }
-miden-tx              = { branch = "agglayer", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
-miden-tx-batch-prover = { branch = "agglayer", git = "https://github.com/0xMiden/miden-base.git" }
+miden-block-prover    = { tag = "agglayer-v0.1", git = "https://github.com/0xMiden/miden-base.git" }
+miden-protocol        = { tag = "agglayer-v0.1", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-standards       = { tag = "agglayer-v0.1", git = "https://github.com/0xMiden/miden-base.git" }
+miden-testing         = { tag = "agglayer-v0.1", git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx              = { tag = "agglayer-v0.1", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx-batch-prover = { tag = "agglayer-v0.1", git = "https://github.com/0xMiden/miden-base.git" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { features = ["std", "testing"], version = "0.20" }

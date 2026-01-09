@@ -121,7 +121,10 @@ impl DataStore for TransactionInputsDataStore {
                 let foreign_inputs = self
                     .tx_inputs
                     .read_foreign_account_inputs(account_id)
-                    .map_err(|_| DataStoreError::AccountNotFound(account_id))?;
+                    .map_err(|err| DataStoreError::Other {
+                        error_msg: format!("failed to read foreign account inputs: {err}").into(),
+                        source: Some(Box::new(err)),
+                    })?;
 
                 // Search through the foreign account's partial storage maps.
                 let storage_map_witness =

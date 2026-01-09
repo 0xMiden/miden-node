@@ -52,6 +52,12 @@ impl InnerForest {
     /// Used when applying incremental deltas where we always want the previous state.
     ///
     /// If no vault root is found for the account, returns an empty SMT root.
+    ///
+    /// # Arguments
+    ///
+    /// * `is_full_state` - If `true`, returns an empty SMT root (for new accounts or DB
+    ///   reconstruction where delta values are absolute). If `false`, looks up the previous state
+    ///   (for incremental updates where delta values are relative changes).
     fn get_latest_vault_root(&self, account_id: AccountId, is_full_state: bool) -> Word {
         if is_full_state {
             return Self::empty_smt_root();
@@ -69,6 +75,12 @@ impl InnerForest {
     /// Used when applying incremental deltas where we always want the previous state.
     ///
     /// If no storage root is found for the slot, returns an empty SMT root.
+    ///
+    /// # Arguments
+    ///
+    /// * `is_full_state` - If `true`, returns an empty SMT root (for new accounts or DB
+    ///   reconstruction where delta values are absolute). If `false`, looks up the previous state
+    ///   (for incremental updates where delta values are relative changes).
     fn get_latest_storage_map_root(
         &self,
         account_id: AccountId,
@@ -159,6 +171,11 @@ impl InnerForest {
     ///
     /// Processes both fungible and non-fungible asset changes, building entries for the vault SMT
     /// and tracking the new root.
+    ///
+    /// # Arguments
+    ///
+    /// * `is_full_state` - If `true`, delta values are absolute (new account or DB reconstruction).
+    ///   If `false`, delta values are relative changes applied to previous state.
     fn update_account_vault(
         &mut self,
         block_num: BlockNumber,
@@ -239,6 +256,11 @@ impl InnerForest {
     ///
     /// Processes storage map slot deltas, building SMTs for each modified slot
     /// and tracking the new roots.
+    ///
+    /// # Arguments
+    ///
+    /// * `is_full_state` - If `true`, delta values are absolute (new account or DB reconstruction).
+    ///   If `false`, delta values are relative changes applied to previous state.
     fn update_account_storage(
         &mut self,
         block_num: BlockNumber,

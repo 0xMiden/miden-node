@@ -50,10 +50,38 @@ impl InnerForest {
     ///
     /// Returns the latest vault root entry regardless of block number.
     /// Used when applying incremental deltas where we always want the previous state.
-    fn get_latest_vault_root(&self, account_id: AccountId) -> Word {
+    ///
+    /// If no vault root is found for the account, returns an empty SMT root.
+    fn get_latest_vault_root(&self, account_id: AccountId, is_full_state: bool) -> Word {
+        if is_full_state {
+            return Self::empty_smt_root();
+        }
         self.vault_roots
             .range((account_id, BlockNumber::GENESIS)..)
             .take_while(|((id, _), _)| *id == account_id)
+            .last()
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+    }
+
+    /// Retrieves the most recent storage map SMT root for an account slot.
+    ///
+    /// Returns the latest storage root entry regardless of block number.
+    /// Used when applying incremental deltas where we always want the previous state.
+    ///
+    /// If no storage root is found for the slot, returns an empty SMT root.
+    fn get_latest_storage_map_root(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+        is_full_state: bool,
+    ) -> Word {
+        if is_full_state {
+            return Self::empty_smt_root();
+        }
+
+        self.storage_map_roots
+            .range((account_id, slot_name.clone(), BlockNumber::GENESIS)..)
+            .take_while(|((id, name, _), _)| *id == account_id && name == slot_name)
             .last()
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
@@ -70,22 +98,6 @@ impl InnerForest {
         self.vault_roots
             .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
             .next_back()
-            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
-    }
-
-    /// Retrieves the most recent storage map SMT root for an account slot.
-    ///
-    /// Returns the latest storage root entry regardless of block number.
-    /// Used when applying incremental deltas where we always want the previous state.
-    fn get_latest_storage_map_root(
-        &self,
-        account_id: AccountId,
-        slot_name: &StorageSlotName,
-    ) -> Word {
-        self.storage_map_roots
-            .range((account_id, slot_name.clone(), BlockNumber::GENESIS)..)
-            .take_while(|((id, name, _), _)| *id == account_id && name == slot_name)
-            .last()
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
@@ -154,11 +166,7 @@ impl InnerForest {
         vault_delta: &AccountVaultDelta,
         is_full_state: bool,
     ) {
-        let prev_root = if is_full_state {
-            Self::empty_smt_root()
-        } else {
-            self.get_latest_vault_root(account_id)
-        };
+        let prev_root = self.get_latest_vault_root(account_id, is_full_state);
 
         let mut entries = Vec::new();
 
@@ -184,7 +192,7 @@ impl InnerForest {
                     .map_or(0, |asset| asset.amount());
 
                 let new_balance = i128::from(prev_amount) + i128::from(*amount_delta);
-                u64::try_from(new_balance.max(0)).expect("balance fits in u64")
+                u64::try_from(new_balance).expect("balance should be non-negative and fit in u64")
             };
 
             let value = if new_amount == 0 {
@@ -239,11 +247,7 @@ impl InnerForest {
         is_full_state: bool,
     ) {
         for (slot_name, map_delta) in storage_delta.maps() {
-            let prev_root = if is_full_state {
-                Self::empty_smt_root()
-            } else {
-                self.get_latest_storage_map_root(account_id, slot_name)
-            };
+            let prev_root = self.get_latest_storage_map_root(account_id, slot_name, is_full_state);
 
             let entries: Vec<_> =
                 map_delta.entries().iter().map(|(key, value)| ((*key).into(), *value)).collect();

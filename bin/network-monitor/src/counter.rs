@@ -100,7 +100,7 @@ async fn fetch_counter_value(
         let word = account
             .storage()
             .get_item(&COUNTER_SLOT_NAME)
-            .map_err(|e| anyhow::anyhow!("failed to get counter storage slot: {e}"))?;
+            .context("failed to get counter storage slot")?;
 
         let value = word.as_elements().first().expect("a word is always 4 elements").as_int();
 

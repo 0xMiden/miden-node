@@ -32,6 +32,7 @@ diesel::table! {
         vault_root -> Nullable<Binary>,
         block_num -> BigInt,
         is_latest -> Bool,
+        created_at_block -> BigInt,
     }
 }
 

@@ -37,6 +37,7 @@ struct AccountHeaderDataRaw {
     code_commitment: Option<Vec<u8>>,
     nonce: Option<i64>,
     storage_header: Option<Vec<u8>>,
+    vault_root: Option<Vec<u8>>,
 }
 
 /// Queries the account header for a specific account at a specific block number.
@@ -61,44 +62,45 @@ pub(crate) fn select_account_header_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-) -> Result<Option<AccountHeader>, DatabaseError> {
+) -> Result<Option<(AccountHeader, AccountStorageHeader)>, DatabaseError> {
     use schema::accounts;
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
-    let account_data: Option<(AccountHeaderDataRaw, Option<Vec<u8>>)> = SelectDsl::select(
+    let account_data: Option<AccountHeaderDataRaw> = SelectDsl::select(
         accounts::table
             .filter(accounts::account_id.eq(&account_id_bytes))
             .filter(accounts::block_num.le(block_num_sql))
             .order(accounts::block_num.desc())
             .limit(1),
         (
-            (accounts::code_commitment, accounts::nonce, accounts::storage_header),
+            accounts::code_commitment,
+            accounts::nonce,
+            accounts::storage_header,
             accounts::vault_root,
         ),
     )
     .first(conn)
     .optional()?;
 
-    let Some((
-        AccountHeaderDataRaw {
-            code_commitment: code_commitment_bytes,
-            nonce: nonce_raw,
-            storage_header: storage_header_blob,
-        },
-        vault_root_bytes,
-    )) = account_data
+    let Some(AccountHeaderDataRaw {
+        code_commitment: code_commitment_bytes,
+        nonce: nonce_raw,
+        storage_header: storage_header_blob,
+        vault_root: vault_root_bytes,
+    }) = account_data
     else {
         return Ok(None);
     };
 
-    let storage_commitment = match storage_header_blob {
+    let (storage_commitment, storage_header) = match storage_header_blob {
         Some(blob) => {
             let header = AccountStorageHeader::read_from_bytes(&blob)?;
-            header.to_commitment()
+            let commitment = header.to_commitment();
+            (commitment, header)
         },
-        None => Word::default(),
+        None => (Word::default(), AccountStorageHeader::new(Vec::new())?),
     };
 
     let code_commitment = code_commitment_bytes
@@ -113,12 +115,9 @@ pub(crate) fn select_account_header_at_block(
         .transpose()?
         .unwrap_or(Word::default());
 
-    Ok(Some(AccountHeader::new(
-        account_id,
-        nonce,
-        vault_root,
-        storage_commitment,
-        code_commitment,
+    Ok(Some((
+        AccountHeader::new(account_id, nonce, vault_root, storage_commitment, code_commitment),
+        storage_header,
     )))
 }
 
@@ -158,6 +157,8 @@ pub(crate) fn select_account_vault_at_block(
     // Step 2: Fetch the full rows matching (vault_key, block_num) pairs
     let mut assets = Vec::new();
     for (vault_key_bytes, max_block) in latest_blocks_per_vault_key {
+        // TODO we should not make a query per vault key, but query many at once or
+        // or find an alternative approach
         let result: Option<Option<Vec<u8>>> = QueryDsl::select(
             t::table.filter(
                 t::account_id

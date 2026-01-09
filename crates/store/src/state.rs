@@ -106,13 +106,7 @@ where
 // CHAIN STATE
 // ================================================================================================
 
-/// The chain state.
-///
-/// The chain state consists of three main components:
-/// - A persistent database that stores notes, nullifiers, recent account states, and related data.
-/// - In-memory data structures contain Merkle paths for various objects - e.g., all accounts,
-///   nullifiers, public account vaults and storage, MMR of all block headers.
-/// - Raw block data for all blocks that is stored on disk as flat files.
+/// The rollup state.
 pub struct State {
     /// The database which stores block headers, nullifiers, notes, and the latest states of
     /// accounts.
@@ -126,7 +120,7 @@ pub struct State {
     /// The lock is writer-preferring, meaning the writer won't be starved.
     inner: RwLock<InnerState>,
 
-    /// Forest-related state `(SmtForest, storage_roots, vault_roots)` with its own lock.
+    /// Forest-related state `(SmtForest, storage_map_roots, vault_roots)` with its own lock.
     forest: RwLock<InnerForest>,
 
     /// To allow readers to access the tree data while an update in being performed, and prevent
@@ -935,9 +929,19 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
-    /// Returns account IDs for all public (on-chain) network accounts.
-    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
-        self.db.select_all_network_account_ids().await
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// The response includes the last block number that was fully included in the result.
+    pub async fn get_all_network_accounts(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<AccountId>, BlockNumber), DatabaseError> {
+        self.db.select_all_network_account_ids(block_range).await
     }
 
     /// Returns the respective account proof with optional details, such as asset and storage
@@ -1051,14 +1055,14 @@ impl State {
             None => AccountVaultDetails::empty(),
         };
 
-        // TODO: don't load the entire store at once, load what is required
-        let store = self.db.select_account_storage_at_block(account_id, block_num).await?;
-        let storage_header = store.to_header();
+        // TODO: don't load the entire storage at once, load what is required
+        let storage = self.db.select_account_storage_at_block(account_id, block_num).await?;
+        let storage_header = storage.to_header();
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
         for StorageMapRequest { slot_name, slot_data } in storage_requests {
-            let Some(slot) = store.slots().iter().find(|s| s.name() == &slot_name) else {
+            let Some(slot) = storage.slots().iter().find(|s| s.name() == &slot_name) else {
                 continue;
             };
 

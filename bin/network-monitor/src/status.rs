@@ -137,6 +137,8 @@ pub enum ServiceDetails {
 /// service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcStatusDetails {
+    /// The URL of the RPC service (used by the frontend for gRPC-Web probing).
+    pub url: String,
     pub version: String,
     pub genesis_commitment: Option<String>,
     pub store_status: Option<StoreStatusDetails>,
@@ -278,9 +280,11 @@ impl RemoteProverStatusDetails {
     }
 }
 
-impl From<RpcStatus> for RpcStatusDetails {
-    fn from(status: RpcStatus) -> Self {
+impl RpcStatusDetails {
+    /// Creates `RpcStatusDetails` from a gRPC `RpcStatus` response and the configured URL.
+    pub fn from_rpc_status(status: RpcStatus, url: String) -> Self {
         Self {
+            url,
             version: status.version,
             genesis_commitment: status.genesis_commitment.as_ref().map(|gc| format!("{gc:?}")),
             store_status: status.store.map(StoreStatusDetails::from),
@@ -320,6 +324,7 @@ pub async fn run_rpc_status_task(
     status_check_interval: Duration,
     request_timeout: Duration,
 ) {
+    let url_str = rpc_url.to_string();
     let mut rpc = ClientBuilder::new(rpc_url)
         .with_tls()
         .expect("TLS is enabled")
@@ -337,7 +342,7 @@ pub async fn run_rpc_status_task(
 
         let current_time = current_unix_timestamp_secs();
 
-        let status = check_rpc_status(&mut rpc, current_time).await;
+        let status = check_rpc_status(&mut rpc, url_str.clone(), current_time).await;
 
         // Send the status update; exit if no receivers (shutdown signal)
         if status_sender.send(status).is_err() {
@@ -354,6 +359,7 @@ pub async fn run_rpc_status_task(
 /// # Arguments
 ///
 /// * `rpc` - The RPC client.
+/// * `url` - The URL of the RPC service.
 /// * `current_time` - The current time.
 ///
 /// # Returns
@@ -369,6 +375,7 @@ pub async fn run_rpc_status_task(
 )]
 pub(crate) async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
+    url: String,
     current_time: u64,
 ) -> ServiceStatus {
     match rpc.status(()).await {
@@ -380,7 +387,7 @@ pub(crate) async fn check_rpc_status(
                 status: Status::Healthy,
                 last_checked: current_time,
                 error: None,
-                details: ServiceDetails::RpcStatus(status.into()),
+                details: ServiceDetails::RpcStatus(RpcStatusDetails::from_rpc_status(status, url)),
             }
         },
         Err(e) => {

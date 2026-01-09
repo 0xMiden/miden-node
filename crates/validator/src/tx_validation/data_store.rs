@@ -78,17 +78,10 @@ impl DataStore for TransactionInputsDataStore {
     fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
-        vault_root: Word,
+        _vault_root: Word,
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
-            if self.tx_inputs.account().vault().root() != vault_root {
-                return Err(DataStoreError::Other {
-                    error_msg: "vault root mismatch".into(),
-                    source: None,
-                });
-            }
-
             // Get asset witnessess from local or foreign account.
             if self.tx_inputs.account().id() == account_id {
                 get_asset_witnesses_from_account(self.tx_inputs.account(), vault_keys)

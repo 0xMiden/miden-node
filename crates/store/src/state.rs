@@ -1182,6 +1182,15 @@ async fn load_account_tree(
                 // which we want to and do
                 StateInitializationError::AccountTreeIoError(err.as_report())
             },
+            LargeSmtError::RootMismatch { expected, actual } => {
+                StateInitializationError::DatabaseError(DatabaseError::MismatchedRoot {
+                    expected: expected.to_string(),
+                    actual: actual.to_string(),
+                })
+            },
+            LargeSmtError::StorageNotEmpty => StateInitializationError::DatabaseError(
+                DatabaseError::Other("Storage is not empty".to_string()),
+            ),
         })?;
 
     let account_tree =

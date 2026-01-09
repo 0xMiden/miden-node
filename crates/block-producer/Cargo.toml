@@ -43,6 +43,7 @@ url                        = { workspace = true }
 
 [dev-dependencies]
 assert_matches        = { workspace = true }
+miden-air             = { features = ["testing"], workspace = true }
 miden-node-store      = { workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["testing"], workspace = true }

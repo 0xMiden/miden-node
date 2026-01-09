@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
-use miden_air::ExecutionProof;
 use miden_block_prover::LocalBlockProver;
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::domain::batch::BatchInputs;
@@ -425,7 +424,17 @@ fn create_consume_note_tx(
         block_ref.commitment(),
         fee_from_block(block_ref).unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        {
+            use miden_protocol::vm::ExecutionProof;
+            // Create a dummy ExecutionProof by deserializing a minimal valid proof
+
+            #[allow(clippy::missing_transmute_annotations)]
+            ExecutionProof {
+                proof: vec![],
+                hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0
+                pc_requests: vec![],
+            }
+        },
     )
     .add_input_notes(vec![input_note])
     .account_update_details(details)
@@ -464,7 +473,17 @@ fn create_emit_note_tx(
         )
         .unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new_dummy(),
+        {
+            use miden_protocol::vm::ExecutionProof;
+            // Create a dummy ExecutionProof by deserializing a minimal valid proof
+
+            #[allow(clippy::missing_transmute_annotations)]
+            ExecutionProof {
+                proof: vec![],
+                hash_fn: unsafe { std::mem::transmute(0u8) }, // Blake3_192 = 0
+                pc_requests: vec![],
+            }
+        },
     )
     .add_output_notes(output_notes.into_iter().map(OutputNote::Full).collect::<Vec<OutputNote>>())
     .build()

@@ -196,7 +196,7 @@ pub(crate) fn execution_hint_to_raw_sql(hint: u64) -> i64 {
 
 #[inline(always)]
 pub(crate) fn raw_sql_to_aux(raw: i64) -> Felt {
-    Felt::try_from(raw as u64).unwrap()
+    Felt::from(raw as u64)
 }
 #[inline(always)]
 pub(crate) fn aux_to_raw_sql(hint: Felt) -> i64 {

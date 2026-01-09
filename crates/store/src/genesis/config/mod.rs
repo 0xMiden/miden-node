@@ -23,7 +23,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey as RpoSecretKey;
-use miden_protocol::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
+use miden_protocol::{Felt, ONE, TokenSymbolError, ZERO};
 use miden_standards::AuthScheme;
 use miden_standards::account::auth::AuthRpoFalcon512;
 use miden_standards::account::faucets::BasicFungibleFaucet;
@@ -349,8 +349,7 @@ impl FungibleFaucetConfig {
         let auth = AuthRpoFalcon512::new(secret_key.public_key().into());
         let init_seed: [u8; 32] = rng.random();
 
-        let max_supply = Felt::try_from(max_supply)
-            .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
+        let max_supply = Felt::from(max_supply);
 
         let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
 
@@ -362,7 +361,7 @@ impl FungibleFaucetConfig {
             .with_component(component)
             .build()?;
 
-        debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
+        debug_assert_eq!(faucet_account.nonce(), ZERO);
 
         Ok((faucet_account, secret_key))
     }

@@ -49,15 +49,21 @@ miden-node-validator        = { path = "crates/validator", version = "0.13" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.13" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
-miden-protocol        = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
-miden-standards       = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
-miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
-miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
-miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
+miden-block-prover    = { branch = "huitseeker/update-miden-deps-p3", git = "https://github.com/0xMiden/miden-base.git" }
+miden-protocol        = { branch = "huitseeker/update-miden-deps-p3", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-standards       = { branch = "huitseeker/update-miden-deps-p3", git = "https://github.com/0xMiden/miden-base.git" }
+miden-testing         = { branch = "huitseeker/update-miden-deps-p3", git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx              = { branch = "huitseeker/update-miden-deps-p3", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx-batch-prover = { branch = "huitseeker/update-miden-deps-p3", git = "https://github.com/0xMiden/miden-base.git" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { features = ["std", "testing"], version = "0.20" }
+miden-air = { branch = "al-migrate-p3-ver2", features = [
+  "std",
+  "testing",
+], git = "https://github.com/0xMiden/miden-vm.git" }
+miden-core = { branch = "al-migrate-p3-ver2", git = "https://github.com/0xMiden/miden-vm.git" }
+miden-crypto = { version = "0.20" }
+miden-vm = { branch = "al-migrate-p3-ver2", git = "https://github.com/0xMiden/miden-vm.git" }
 
 # External dependencies
 anyhow            = { version = "1.0" }

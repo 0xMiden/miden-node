@@ -403,12 +403,13 @@ impl DataStore for NtxDataStore {
                 get_asset_witnesses(vault_keys, self.account.vault())
             } else {
                 // Get foreign account.
-                let account_proof = store.get_account(account_id, None).await.map_err(|err| {
-                    DataStoreError::Other {
+                let account_proof = store
+                    .get_account(account_id, self.reference_header.block_num().as_u32().into())
+                    .await
+                    .map_err(|err| DataStoreError::Other {
                         error_msg: format!("Failed to get account inputs from store: {err}").into(),
                         source: Some(Box::new(err)),
-                    }
-                })?;
+                    })?;
 
                 // Construct vault from account details.
                 let account_details =
@@ -452,12 +453,13 @@ impl DataStore for NtxDataStore {
                 })
             } else {
                 // Get foreign account.
-                let account_proof = store.get_account(account_id, None).await.map_err(|err| {
-                    DataStoreError::Other {
+                let account_proof = store
+                    .get_account(account_id, self.reference_header.block_num().as_u32().into())
+                    .await
+                    .map_err(|err| DataStoreError::Other {
                         error_msg: format!("failed to get account proof from store: {err}").into(),
                         source: Some(Box::new(err)),
-                    }
-                })?;
+                    })?;
                 let account_details =
                     account_proof.details.ok_or_else(|| DataStoreError::Other {
                         error_msg: "account proof does not contain account details".into(),

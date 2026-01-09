@@ -73,6 +73,8 @@ indexmap          = { version = "2.12" }
 itertools         = { version = "0.14" }
 lru               = { default-features = false, version = "0.16" }
 pretty_assertions = { version = "1.4" }
+proptest          = { version = "1.0" }
+proptest-derive   = { version = "0.7.0" }
 # breaking change `DecodeError::new` is not exposed anymore
 # but is assumed public by some internal dependency
 prost              = { default-features = false, version = "=0.14.1" }
@@ -112,3 +114,9 @@ must_use_candidate           = "allow" # This marks many fn's which isn't helpfu
 needless_for_each            = "allow" # Context dependent if that's useful.
 should_panic_without_expect  = "allow" # We don't care about the specific panic message.
 # End of pedantic lints.
+
+[profile.test.package.proptest]
+opt-level = 3
+
+[profile.test.package.rand_chacha]
+opt-level = 3

@@ -3,7 +3,14 @@
 use std::collections::BTreeMap;
 
 use diesel::query_dsl::methods::SelectDsl;
-use diesel::{BoolExpressionMethods, Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
+use diesel::{
+    BoolExpressionMethods,
+    Connection,
+    ExpressionMethods,
+    OptionalExtension,
+    QueryDsl,
+    RunQueryDsl,
+};
 use diesel_migrations::MigrationHarness;
 use miden_node_utils::fee::test_fee_params;
 use miden_protocol::account::auth::PublicKeyCommitment;
@@ -195,8 +202,9 @@ fn test_select_account_header_at_block_returns_none_for_nonexistent() {
     );
 
     // Query for a non-existent account
-    let result = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num)
-        .expect("Query should succeed");
+    let result =
+        select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num)
+            .expect("Query should succeed");
 
     assert!(result.is_none(), "Should return None for non-existent account");
 }
@@ -221,9 +229,10 @@ fn test_select_account_header_at_block_returns_correct_header() {
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
 
     // Query the account header
-    let (header, _storage_header) = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num)
-        .expect("Query should succeed")
-        .expect("Header should exist");
+    let (header, _storage_header) =
+        select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num)
+            .expect("Query should succeed")
+            .expect("Header should exist");
 
     assert_eq!(header.id(), account_id, "Account ID should match");
     assert_eq!(header.nonce(), account.nonce(), "Nonce should match");
@@ -257,16 +266,18 @@ fn test_select_account_header_at_block_historical_query() {
     upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
 
     // Query at block 1 - should return the account
-    let (header_1, _) = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num_1)
-        .expect("Query should succeed")
-        .expect("Header should exist at block 1");
+    let (header_1, _) =
+        select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num_1)
+            .expect("Query should succeed")
+            .expect("Header should exist at block 1");
 
     assert_eq!(header_1.nonce(), nonce_1, "Nonce at block 1 should match");
 
     // Query at block 2 - should return the same account (most recent before block 2)
-    let (header_2, _) = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num_2)
-        .expect("Query should succeed")
-        .expect("Header should exist at block 2");
+    let (header_2, _) =
+        select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num_2)
+            .expect("Query should succeed")
+            .expect("Header should exist at block 2");
 
     assert_eq!(header_2.nonce(), nonce_1, "Nonce at block 2 should match block 1");
 }
@@ -479,8 +490,9 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     );
 
     // Verify historical query returns first update
-    let storage_at_block_1 = test_select_account_storage_at_block(&mut conn, account_id, block_num_1)
-        .expect("Failed to query storage at block 1");
+    let storage_at_block_1 =
+        test_select_account_storage_at_block(&mut conn, account_id, block_num_1)
+            .expect("Failed to query storage at block 1");
 
     assert_eq!(
         storage_at_block_1.to_commitment(),

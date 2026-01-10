@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 
-use miden_node_proto::domain::account::AccountStorageMapDetails;
+use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
 use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest, SmtProof};
-use miden_protocol::crypto::merkle::EmptySubtreeRoots;
+use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
 use miden_protocol::{EMPTY_WORD, Word};
 
 #[cfg(test)]
@@ -111,14 +110,23 @@ impl InnerForest {
     /// Returns all key-value entries for a specific account storage slot at a block.
     ///
     /// Returns `None` if no entries are tracked for this account/slot/block combination.
+    /// Returns an error if there are too many entries to return.
     pub(crate) fn storage_map_entries(
         &self,
         account_id: AccountId,
-        slot_name: &StorageSlotName,
+        slot_name: StorageSlotName,
         block_num: BlockNumber,
-    ) -> Option<Vec<(Word, Word)>> {
+    ) -> Option<AccountStorageMapDetails> {
         let entries = self.storage_entries.get(&(account_id, slot_name.clone(), block_num))?;
-        Some(entries.iter().map(|(k, v)| (*k, *v)).collect())
+        if entries.len() > AccountStorageMapDetails::MAX_RETURN_ENTRIES {
+            return Some(AccountStorageMapDetails {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            });
+        }
+        let entries = Vec::from_iter(entries.iter().map(|(k, v)| (*k, *v)));
+
+        Some(AccountStorageMapDetails::from_forest_entries(slot_name.clone(), entries))
     }
 
     // PUBLIC INTERFACE

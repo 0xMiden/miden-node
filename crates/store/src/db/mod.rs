@@ -626,18 +626,6 @@ impl Db {
         .await
     }
 
-    /// Runs database optimization.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-    pub async fn optimize(&self) -> Result<(), DatabaseError> {
-        self.transact("db optimization", |conn| {
-            diesel::sql_query("PRAGMA optimize")
-                .execute(conn)
-                .map_err(DatabaseError::Diesel)
-        })
-        .await?;
-        Ok(())
-    }
-
     /// Loads the network notes for an account that are unconsumed by a specified block number.
     /// Pagination is used to limit the number of notes returned.
     pub(crate) async fn select_unconsumed_network_notes(

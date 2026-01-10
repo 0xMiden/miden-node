@@ -1113,11 +1113,6 @@ impl State {
         Ok(())
     }
 
-    /// Runs database optimization.
-    pub async fn optimize_db(&self) -> Result<(), DatabaseError> {
-        self.db.optimize().await
-    }
-
     /// Returns account vault updates for specified account within a block range.
     pub async fn sync_account_vault(
         &self,

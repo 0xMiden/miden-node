@@ -2,14 +2,7 @@ use std::collections::BTreeMap;
 
 use diesel::prelude::Queryable;
 use diesel::query_dsl::methods::SelectDsl;
-use diesel::{
-    BoolExpressionMethods,
-    ExpressionMethods,
-    OptionalExtension,
-    QueryDsl,
-    RunQueryDsl,
-    SqliteConnection,
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection};
 use miden_protocol::account::{
     AccountHeader,
     AccountId,
@@ -125,6 +118,14 @@ pub(crate) fn select_account_header_at_block(
 // ================================================================================================
 
 /// Query vault assets at a specific block by finding the most recent update for each `vault_key`.
+///
+/// Fetches all vault entries for this account up to and including the target block, ordered by
+/// `vault_key` ascending and `block_num` descending. This allows efficient in-memory deduplication
+/// by taking only the first entry for each `vault_key`.
+///
+/// Note: Diesel's query DSL doesn't support joining with derived tables (subqueries with GROUP BY),
+/// so we use the ordering-based approach which is efficient due to the database index on
+/// `(account_id, vault_key, block_num)`.
 pub(crate) fn select_account_vault_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -138,39 +139,32 @@ pub(crate) fn select_account_vault_at_block(
     // Query all vault entries for this account up to and including this block.
     // Order by vault_key ascending, then block_num descending so the first entry
     // for each vault_key is the latest one.
-    let all_entries: Vec<(Vec<u8>, i64, Option<Vec<u8>>)> = SelectDsl::select(
+    let all_entries: Vec<(Vec<u8>, Option<Vec<u8>>)> = SelectDsl::select(
         t::table
             .filter(t::account_id.eq(&account_id_bytes))
             .filter(t::block_num.le(block_num_sql))
             .order((t::vault_key.asc(), t::block_num.desc())),
-        (t::vault_key, t::block_num, t::asset),
+        (t::vault_key, t::asset),
     )
     .load(conn)?;
 
-    if all_entries.is_empty() {
-        return Ok(Vec::new());
-    }
-
     // For each vault_key, keep only the latest entry (first one due to ordering)
     let mut assets = Vec::new();
-    let mut last_vault_key: Option<Vec<u8>> = None;
+    let mut last_vault_key: Option<&[u8]> = None;
 
-    for (vault_key_bytes, _block_num, asset_bytes) in all_entries {
+    for (vault_key_bytes, asset_bytes) in &all_entries {
         // Skip if we've already processed this vault_key
-        if last_vault_key.as_ref() == Some(&vault_key_bytes) {
+        if last_vault_key == Some(vault_key_bytes.as_slice()) {
             continue;
         }
-        last_vault_key = Some(vault_key_bytes);
+        last_vault_key = Some(vault_key_bytes.as_slice());
 
         // Only include if the asset exists (not deleted)
         if let Some(asset_bytes) = asset_bytes {
-            let asset = Asset::read_from_bytes(&asset_bytes)?;
+            let asset = Asset::read_from_bytes(asset_bytes)?;
             assets.push(asset);
         }
     }
-
-    // Sort by vault_key for consistent ordering (should already be sorted, but ensure it)
-    assets.sort_by_key(Asset::vault_key);
 
     Ok(assets)
 }
@@ -211,18 +205,19 @@ pub(crate) fn select_account_storage_at_block(
     let header = AccountStorageHeader::read_from_bytes(&blob)?;
 
     // Query all map values for this account up to and including this block.
-    // For each (slot_name, key), we need the latest value at or before block_num.
-    // First, get all entries up to block_num
-    let map_values: Vec<(i64, String, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
-            .filter(t::account_id.eq(&account_id_bytes).and(t::block_num.le(block_num_sql)))
+    // Order by (slot_name, key) ascending, then block_num descending so the first entry
+    // for each (slot_name, key) pair is the latest one.
+    let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
+        SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
+            .filter(t::account_id.eq(&account_id_bytes))
+            .filter(t::block_num.le(block_num_sql))
             .order((t::slot_name.asc(), t::key.asc(), t::block_num.desc()))
             .load(conn)?;
 
-    // For each (slot_name, key) pair, keep only the latest entry (highest block_num)
+    // For each (slot_name, key) pair, keep only the latest entry (first one due to ordering)
     let mut latest_map_entries: BTreeMap<(StorageSlotName, Word), Word> = BTreeMap::new();
 
-    for (_, slot_name_str, key_bytes, value_bytes) in map_values {
+    for (slot_name_str, key_bytes, value_bytes) in map_values {
         let slot_name: StorageSlotName = slot_name_str.parse().map_err(|_| {
             DatabaseError::DataCorrupted(format!("Invalid slot name: {slot_name_str}"))
         })?;

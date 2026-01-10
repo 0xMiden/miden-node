@@ -57,11 +57,27 @@ struct AccountHeaderDataRaw {
 /// * `Ok(Some(AccountHeader))` - The account header if found
 /// * `Ok(None)` - If account doesn't exist at that block
 /// * `Err(DatabaseError)` - If there's a database error
+#[allow(dead_code)]
 pub(crate) fn select_account_header_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
 ) -> Result<Option<AccountHeader>, DatabaseError> {
+    select_account_header_with_storage_header_at_block(conn, account_id, block_num)
+        .map(|opt| opt.map(|(header, _)| header))
+}
+
+/// Queries the account header and storage header for a specific account at a block.
+///
+/// This reconstructs both `AccountHeader` and `AccountStorageHeader` in a single query,
+/// avoiding the need to query the database twice when both are needed.
+///
+/// Returns `None` if the account doesn't exist at that block.
+pub(crate) fn select_account_header_with_storage_header_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<Option<(AccountHeader, AccountStorageHeader)>, DatabaseError> {
     use schema::accounts;
 
     let account_id_bytes = account_id.to_bytes();
@@ -93,13 +109,12 @@ pub(crate) fn select_account_header_at_block(
         return Ok(None);
     };
 
-    let storage_commitment = match storage_header_blob {
-        Some(blob) => {
-            let header = AccountStorageHeader::read_from_bytes(&blob)?;
-            header.to_commitment()
-        },
-        None => Word::default(),
+    let storage_header = match &storage_header_blob {
+        Some(blob) => AccountStorageHeader::read_from_bytes(blob)?,
+        None => AccountStorageHeader::new(Vec::new())?,
     };
+
+    let storage_commitment = storage_header.to_commitment();
 
     let code_commitment = code_commitment_bytes
         .map(|bytes| Word::read_from_bytes(&bytes))
@@ -113,13 +128,10 @@ pub(crate) fn select_account_header_at_block(
         .transpose()?
         .unwrap_or(Word::default());
 
-    Ok(Some(AccountHeader::new(
-        account_id,
-        nonce,
-        vault_root,
-        storage_commitment,
-        code_commitment,
-    )))
+    let account_header =
+        AccountHeader::new(account_id, nonce, vault_root, storage_commitment, code_commitment);
+
+    Ok(Some((account_header, storage_header)))
 }
 
 // ACCOUNT VAULT

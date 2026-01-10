@@ -435,19 +435,6 @@ impl Db {
             .await
     }
 
-    /// Queries just the storage header (slot types and roots) at a specific block.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_account_storage_header_at_block(
-        &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountStorageHeader> {
-        self.transact("Get account storage header at block", move |conn| {
-            queries::select_account_storage_header_at_block(conn, account_id, block_num)
-        })
-        .await
-    }
-
     /// Queries vault assets at a specific block
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account_vault_at_block(
@@ -484,6 +471,21 @@ impl Db {
     ) -> Result<Option<AccountHeader>> {
         self.transact("Get account header at block", move |conn| {
             queries::select_account_header_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Queries the account header and storage header for a specific account at a block.
+    ///
+    /// Returns both in a single query to avoid querying the database twice.
+    /// Returns `None` if the account doesn't exist at that block.
+    pub async fn select_account_header_with_storage_header_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
+        self.transact("Get account header with storage header at block", move |conn| {
+            queries::select_account_header_with_storage_header_at_block(conn, account_id, block_num)
         })
         .await
     }

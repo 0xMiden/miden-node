@@ -1027,11 +1027,12 @@ impl State {
         // Validate block exists in the blockchain before querying the database
         self.validate_block_exists(block_num).await?;
 
-        let account_header =
-            self.db
-                .select_account_header_at_block(account_id, block_num)
-                .await?
-                .ok_or(DatabaseError::AccountAtBlockHeightNotFoundInDb(account_id, block_num))?;
+        // Query account header and storage header together in a single DB call
+        let (account_header, storage_header) = self
+            .db
+            .select_account_header_with_storage_header_at_block(account_id, block_num)
+            .await?
+            .ok_or(DatabaseError::AccountAtBlockHeightNotFoundInDb(account_id, block_num))?;
 
         let account_code = match code_commitment {
             Some(commitment) if commitment == account_header.code_commitment() => None,
@@ -1055,9 +1056,6 @@ impl State {
             None => AccountVaultDetails::empty(),
         };
 
-        // Load storage header from DB (map entries come from forest)
-        let storage_header =
-            self.db.select_account_storage_header_at_block(account_id, block_num).await?;
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
@@ -1067,22 +1065,14 @@ impl State {
         for StorageMapRequest { slot_name, slot_data } in storage_requests {
             let details = match &slot_data {
                 SlotData::MapKeys(keys) => {
-                    // Use forest for specific key queries with proofs
-                    let (forest, smt_root) = forest_guard
-                        .storage_map_forest_with_root(account_id, &slot_name, block_num)
+                    forest_guard
+                        .open_storage_map(account_id, slot_name.clone(), block_num, keys)
                         .ok_or_else(|| DatabaseError::StorageRootNotFound {
                             account_id,
                             slot_name: slot_name.to_string(),
                             block_num,
-                        })?;
-
-                    AccountStorageMapDetails::from_specific_keys(
-                        slot_name.clone(),
-                        keys,
-                        forest,
-                        smt_root,
-                    )
-                    .map_err(DatabaseError::MerkleError)?
+                        })?
+                        .map_err(DatabaseError::MerkleError)?
                 },
                 SlotData::All => {
                     // Use forest for all entries

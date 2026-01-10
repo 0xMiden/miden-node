@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 
+use miden_node_proto::domain::account::AccountStorageMapDetails;
 use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::MerkleError;
+use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest, SmtProof};
 use miden_protocol::crypto::merkle::EmptySubtreeRoots;
-use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::{EMPTY_WORD, Word};
 
 #[cfg(test)]
@@ -87,18 +89,23 @@ impl InnerForest {
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
-    /// Returns the storage forest and the root for a specific account storage slot at a block.
+    /// Opens a storage map and returns storage map details with SMT proofs for the given keys.
     ///
-    /// This allows callers to query specific keys from the storage map using `SmtForest::open()`.
     /// Returns `None` if no storage root is tracked for this account/slot/block combination.
-    pub(crate) fn storage_map_forest_with_root(
+    /// Returns a `MerkleError` if the forest doesn't contain sufficient data for the proofs.
+    pub(crate) fn open_storage_map(
         &self,
         account_id: AccountId,
-        slot_name: &StorageSlotName,
+        slot_name: StorageSlotName,
         block_num: BlockNumber,
-    ) -> Option<(&SmtForest, Word)> {
-        let root = self.storage_roots.get(&(account_id, slot_name.clone(), block_num))?;
-        Some((&self.forest, *root))
+        keys: &[Word],
+    ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
+        let root = *self.storage_roots.get(&(account_id, slot_name.clone(), block_num))?;
+
+        let proofs: Result<Vec<SmtProof>, MerkleError> =
+            keys.iter().map(|key| self.forest.open(root, *key)).collect();
+
+        Some(proofs.map(|p| AccountStorageMapDetails::from_proofs(slot_name, p)))
     }
 
     /// Returns all key-value entries for a specific account storage slot at a block.

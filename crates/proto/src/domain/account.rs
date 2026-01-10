@@ -591,6 +591,24 @@ impl AccountStorageMapDetails {
             entries: StorageMapEntries::EntriesWithProofs(proofs),
         })
     }
+
+    /// Creates storage map details from pre-computed SMT proofs.
+    ///
+    /// Use this when the caller has already obtained the proofs from an `SmtForest`.
+    /// Returns `LimitExceeded` if too many proofs are provided.
+    pub fn from_proofs(slot_name: StorageSlotName, proofs: Vec<SmtProof>) -> Self {
+        if proofs.len() > Self::MAX_RETURN_ENTRIES {
+            Self {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }
+        } else {
+            Self {
+                slot_name,
+                entries: StorageMapEntries::EntriesWithProofs(proofs),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

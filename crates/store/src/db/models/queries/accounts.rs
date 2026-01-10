@@ -51,7 +51,7 @@ use crate::errors::DatabaseError;
 mod at_block;
 pub(crate) use at_block::{
     select_account_header_at_block,
-    select_account_storage_at_block,
+    select_account_header_with_storage_header_at_block,
     select_account_vault_at_block,
 };
 
@@ -649,19 +649,6 @@ pub(crate) fn select_account_storage_map_values(
     };
 
     Ok(StorageMapValuesPage { last_block_included, values })
-}
-
-/// Returns account storage header (without map entries) at a given block.
-///
-/// This reads the storage blob and extracts just the header information (slot types and roots),
-/// avoiding the need to deserialize all map entries.
-pub(crate) fn select_account_storage_header_at_block(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<AccountStorageHeader, DatabaseError> {
-    let storage = select_account_storage_at_block(conn, account_id, block_num)?;
-    Ok(storage.to_header())
 }
 
 /// Select latest account storage by querying `accounts.storage_header` where `is_latest=true`

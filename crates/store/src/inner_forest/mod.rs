@@ -7,9 +7,27 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::EmptySubtreeRoots;
 use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::{EMPTY_WORD, Word};
+use thiserror::Error;
 
 #[cfg(test)]
 mod tests;
+
+// ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum InnerForestError {
+    #[error(
+        "balance underflow: account {account_id}, faucet {faucet_id}, \
+         previous balance {prev_balance}, delta {delta}"
+    )]
+    BalanceUnderflow {
+        account_id: AccountId,
+        faucet_id: AccountId,
+        prev_balance: u64,
+        delta: i64,
+    },
+}
 
 // INNER FOREST
 // ================================================================================================
@@ -125,13 +143,17 @@ impl InnerForest {
     ///
     /// * `block_num` - Block number for which these updates apply
     /// * `account_updates` - Iterator of `AccountDelta` for public accounts
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying a vault delta results in a negative balance.
     pub(crate) fn apply_block_updates(
         &mut self,
         block_num: BlockNumber,
         account_updates: impl IntoIterator<Item = AccountDelta>,
-    ) {
+    ) -> Result<(), InnerForestError> {
         for delta in account_updates {
-            self.update_account(block_num, &delta);
+            self.update_account(block_num, &delta)?;
 
             tracing::debug!(
                 target: crate::COMPONENT,
@@ -141,6 +163,7 @@ impl InnerForest {
                 "Updated forest with account delta"
             );
         }
+        Ok(())
     }
 
     /// Updates the forest with account vault and storage changes from a delta.
@@ -151,17 +174,26 @@ impl InnerForest {
     ///
     /// Full-state deltas (`delta.is_full_state() == true`) populate the forest from scratch using
     /// an empty SMT root. Partial deltas apply changes on top of the previous block's state.
-    pub(crate) fn update_account(&mut self, block_num: BlockNumber, delta: &AccountDelta) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying a vault delta results in a negative balance.
+    pub(crate) fn update_account(
+        &mut self,
+        block_num: BlockNumber,
+        delta: &AccountDelta,
+    ) -> Result<(), InnerForestError> {
         let account_id = delta.id();
         let is_full_state = delta.is_full_state();
 
         if !delta.vault().is_empty() {
-            self.update_account_vault(block_num, account_id, delta.vault(), is_full_state);
+            self.update_account_vault(block_num, account_id, delta.vault(), is_full_state)?;
         }
 
         if !delta.storage().is_empty() {
             self.update_account_storage(block_num, account_id, delta.storage(), is_full_state);
         }
+        Ok(())
     }
 
     // PRIVATE METHODS
@@ -176,13 +208,17 @@ impl InnerForest {
     ///
     /// * `is_full_state` - If `true`, delta values are absolute (new account or DB reconstruction).
     ///   If `false`, delta values are relative changes applied to previous state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying a delta results in a negative balance.
     fn update_account_vault(
         &mut self,
         block_num: BlockNumber,
         account_id: AccountId,
         vault_delta: &AccountVaultDelta,
         is_full_state: bool,
-    ) {
+    ) -> Result<(), InnerForestError> {
         let prev_root = self.get_latest_vault_root(account_id, is_full_state);
 
         let mut entries = Vec::new();
@@ -209,7 +245,12 @@ impl InnerForest {
                     .map_or(0, |asset| asset.amount());
 
                 let new_balance = i128::from(prev_amount) + i128::from(*amount_delta);
-                u64::try_from(new_balance).expect("balance should be non-negative and fit in u64")
+                u64::try_from(new_balance).map_err(|_| InnerForestError::BalanceUnderflow {
+                    account_id,
+                    faucet_id: *faucet_id,
+                    prev_balance: prev_amount,
+                    delta: *amount_delta,
+                })?
             };
 
             let value = if new_amount == 0 {
@@ -233,7 +274,7 @@ impl InnerForest {
         }
 
         if entries.is_empty() {
-            return;
+            return Ok(());
         }
 
         let updated_root = self
@@ -250,6 +291,7 @@ impl InnerForest {
             vault_entries = entries.len(),
             "Updated vault in forest"
         );
+        Ok(())
     }
 
     /// Updates the forest with storage map changes from a delta.

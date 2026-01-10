@@ -431,7 +431,7 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
-        self.forest.write().await.apply_block_updates(block_num, account_deltas);
+        self.forest.write().await.apply_block_updates(block_num, account_deltas)?;
 
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
 
@@ -1264,7 +1264,7 @@ async fn load_smt_forest(
             AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
 
         // Use the unified update method (will recognize it's a full-state delta)
-        forest.update_account(block_num, &delta);
+        forest.update_account(block_num, &delta)?;
 
         tracing::debug!(
             target: COMPONENT,

@@ -31,6 +31,7 @@ use tonic::Status;
 
 use crate::db::manager::ConnectionManagerError;
 use crate::db::models::conv::DatabaseTypeConversionError;
+use crate::inner_forest::InnerForestError;
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -197,6 +198,8 @@ pub enum StateInitializationError {
     BlockStoreLoadError(#[source] std::io::Error),
     #[error("failed to load database")]
     DatabaseLoadError(#[from] DatabaseSetupError),
+    #[error("inner forest error")]
+    InnerForestError(#[from] InnerForestError),
 }
 
 #[derive(Debug, Error)]
@@ -274,6 +277,8 @@ pub enum ApplyBlockError {
     TokioJoinError(#[from] tokio::task::JoinError),
     #[error("invalid block error")]
     InvalidBlockError(#[from] InvalidBlockError),
+    #[error("inner forest error")]
+    InnerForestError(#[from] InnerForestError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------

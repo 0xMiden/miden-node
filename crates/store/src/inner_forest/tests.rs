@@ -124,12 +124,12 @@ fn test_compare_partial_vs_full_state_delta_vault() {
     vault_delta.add_asset(asset).unwrap();
     let partial_delta =
         dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
-    forest_partial.update_account(block_num, &partial_delta);
+    forest_partial.update_account(block_num, &partial_delta).unwrap();
 
     // Approach 2: Full-state delta (simulates DB reconstruction)
     let mut forest_full = InnerForest::new();
     let full_delta = dummy_full_state_delta(account_id, &[asset]);
-    forest_full.update_account(block_num, &full_delta);
+    forest_full.update_account(block_num, &full_delta).unwrap();
 
     // Both approaches must produce identical vault roots
     let root_partial = forest_partial.vault_roots.get(&(account_id, block_num)).unwrap();

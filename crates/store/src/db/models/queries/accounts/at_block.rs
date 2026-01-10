@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use diesel::prelude::Queryable;
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
@@ -10,16 +8,7 @@ use diesel::{
     RunQueryDsl,
     SqliteConnection,
 };
-use miden_protocol::account::{
-    AccountHeader,
-    AccountId,
-    AccountStorage,
-    AccountStorageHeader,
-    StorageMap,
-    StorageSlot,
-    StorageSlotName,
-    StorageSlotType,
-};
+use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader};
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::utils::{Deserializable, Serializable};
@@ -54,25 +43,9 @@ struct AccountHeaderDataRaw {
 ///
 /// # Returns
 ///
-/// * `Ok(Some(AccountHeader))` - The account header if found
+/// * `Ok(Some((AccountHeader, AccountStorageHeader)))` - The headers if found
 /// * `Ok(None)` - If account doesn't exist at that block
 /// * `Err(DatabaseError)` - If there's a database error
-#[allow(dead_code)]
-pub(crate) fn select_account_header_at_block(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<Option<AccountHeader>, DatabaseError> {
-    select_account_header_with_storage_header_at_block(conn, account_id, block_num)
-        .map(|opt| opt.map(|(header, _)| header))
-}
-
-/// Queries the account header and storage header for a specific account at a block.
-///
-/// This reconstructs both `AccountHeader` and `AccountStorageHeader` in a single query,
-/// avoiding the need to query the database twice when both are needed.
-///
-/// Returns `None` if the account doesn't exist at that block.
 pub(crate) fn select_account_header_with_storage_header_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -191,90 +164,4 @@ pub(crate) fn select_account_vault_at_block(
     assets.sort_by_key(Asset::vault_key);
 
     Ok(assets)
-}
-
-// ACCOUNT STORAGE
-// ================================================================================================
-
-/// Returns account storage at a given block by reading from `accounts.storage_header`
-/// (which contains the `AccountStorageHeader`) and reconstructing full storage from
-/// map values in `account_storage_map_values` table.
-pub(crate) fn select_account_storage_at_block(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<AccountStorage, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    let account_id_bytes = account_id.to_bytes();
-    let block_num_sql = block_num.to_raw_sql();
-
-    // Query storage header blob for this account at or before this block
-    let storage_blob: Option<Vec<u8>> =
-        SelectDsl::select(schema::accounts::table, schema::accounts::storage_header)
-            .filter(schema::accounts::account_id.eq(&account_id_bytes))
-            .filter(schema::accounts::block_num.le(block_num_sql))
-            .order(schema::accounts::block_num.desc())
-            .limit(1)
-            .first(conn)
-            .optional()?
-            .flatten();
-
-    let Some(blob) = storage_blob else {
-        // No storage means empty storage
-        return Ok(AccountStorage::new(Vec::new())?);
-    };
-
-    // Deserialize the AccountStorageHeader from the blob
-    let header = AccountStorageHeader::read_from_bytes(&blob)?;
-
-    // Query all map values for this account up to and including this block.
-    // For each (slot_name, key), we need the latest value at or before block_num.
-    // First, get all entries up to block_num
-    let map_values: Vec<(i64, String, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
-            .filter(t::account_id.eq(&account_id_bytes).and(t::block_num.le(block_num_sql)))
-            .order((t::slot_name.asc(), t::key.asc(), t::block_num.desc()))
-            .load(conn)?;
-
-    // For each (slot_name, key) pair, keep only the latest entry (highest block_num)
-    let mut latest_map_entries: BTreeMap<(StorageSlotName, Word), Word> = BTreeMap::new();
-
-    for (_, slot_name_str, key_bytes, value_bytes) in map_values {
-        let slot_name: StorageSlotName = slot_name_str.parse().map_err(|_| {
-            DatabaseError::DataCorrupted(format!("Invalid slot name: {slot_name_str}"))
-        })?;
-        let key = Word::read_from_bytes(&key_bytes)?;
-        let value = Word::read_from_bytes(&value_bytes)?;
-
-        // Only insert if we haven't seen this (slot_name, key) yet
-        // (since results are ordered by block_num desc, first one is latest)
-        latest_map_entries.entry((slot_name, key)).or_insert(value);
-    }
-
-    // Group entries by slot name
-    let mut map_entries_by_slot: BTreeMap<StorageSlotName, Vec<(Word, Word)>> = BTreeMap::new();
-    for ((slot_name, key), value) in latest_map_entries {
-        map_entries_by_slot.entry(slot_name).or_default().push((key, value));
-    }
-
-    // Reconstruct StorageSlots from header slots + map entries
-    let mut slots = Vec::new();
-    for slot_header in header.slots() {
-        let slot = match slot_header.slot_type() {
-            StorageSlotType::Value => {
-                // For value slots, the header value IS the slot value
-                StorageSlot::with_value(slot_header.name().clone(), slot_header.value())
-            },
-            StorageSlotType::Map => {
-                // For map slots, reconstruct from map entries
-                let entries = map_entries_by_slot.remove(slot_header.name()).unwrap_or_default();
-                let storage_map = StorageMap::with_entries(entries)?;
-                StorageSlot::with_map(slot_header.name().clone(), storage_map)
-            },
-        };
-        slots.push(slot);
-    }
-
-    Ok(AccountStorage::new(slots)?)
 }

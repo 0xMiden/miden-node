@@ -461,20 +461,6 @@ impl Db {
         .await
     }
 
-    /// Queries the account header for a specific account at a specific block number.
-    ///
-    /// Returns `None` if the account doesn't exist at that block.
-    pub async fn select_account_header_at_block(
-        &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<Option<AccountHeader>> {
-        self.transact("Get account header at block", move |conn| {
-            queries::select_account_header_at_block(conn, account_id, block_num)
-        })
-        .await
-    }
-
     /// Queries the account header and storage header for a specific account at a block.
     ///
     /// Returns both in a single query to avoid querying the database twice.

@@ -1,7 +1,9 @@
 //! Tests for the `accounts` module, specifically for account storage and historical queries.
 
+use std::collections::BTreeMap;
+
 use diesel::query_dsl::methods::SelectDsl;
-use diesel::{Connection, OptionalExtension, QueryDsl, RunQueryDsl};
+use diesel::{BoolExpressionMethods, Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use diesel_migrations::MigrationHarness;
 use miden_node_utils::fee::test_fee_params;
 use miden_protocol::account::auth::PublicKeyCommitment;
@@ -13,20 +15,27 @@ use miden_protocol::account::{
     AccountDelta,
     AccountId,
     AccountIdVersion,
+    AccountStorage,
+    AccountStorageHeader,
     AccountStorageMode,
     AccountType,
+    StorageMap,
     StorageSlot,
     StorageSlotName,
+    StorageSlotType,
 };
 use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_protocol::utils::Serializable;
+use miden_protocol::utils::{Deserializable, Serializable};
 use miden_protocol::{EMPTY_WORD, Felt, Word};
 use miden_standards::account::auth::AuthRpoFalcon512;
 use miden_standards::code_builder::CodeBuilder;
 
 use super::*;
 use crate::db::migrations::MIGRATIONS;
+use crate::db::models::conv::SqlTypeConvert;
+use crate::db::schema;
+use crate::errors::DatabaseError;
 
 fn setup_test_db() -> SqliteConnection {
     let mut conn =
@@ -35,6 +44,80 @@ fn setup_test_db() -> SqliteConnection {
     conn.run_pending_migrations(MIGRATIONS).expect("Failed to run migrations");
 
     conn
+}
+
+/// Test helper: reconstructs account storage at a given block from DB.
+///
+/// Reads `accounts.storage_header` and `account_storage_map_values` to reconstruct
+/// the full `AccountStorage` at the specified block.
+fn test_select_account_storage_at_block(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<AccountStorage, DatabaseError> {
+    use schema::account_storage_map_values as t;
+
+    let account_id_bytes = account_id.to_bytes();
+    let block_num_sql = block_num.to_raw_sql();
+
+    // Query storage header blob for this account at or before this block
+    let storage_blob: Option<Vec<u8>> =
+        SelectDsl::select(schema::accounts::table, schema::accounts::storage_header)
+            .filter(schema::accounts::account_id.eq(&account_id_bytes))
+            .filter(schema::accounts::block_num.le(block_num_sql))
+            .order(schema::accounts::block_num.desc())
+            .limit(1)
+            .first(conn)
+            .optional()?
+            .flatten();
+
+    let Some(blob) = storage_blob else {
+        return Ok(AccountStorage::new(Vec::new())?);
+    };
+
+    let header = AccountStorageHeader::read_from_bytes(&blob)?;
+
+    // Query all map values for this account up to and including this block.
+    let map_values: Vec<(i64, String, Vec<u8>, Vec<u8>)> =
+        SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
+            .filter(t::account_id.eq(&account_id_bytes).and(t::block_num.le(block_num_sql)))
+            .order((t::slot_name.asc(), t::key.asc(), t::block_num.desc()))
+            .load(conn)?;
+
+    // For each (slot_name, key) pair, keep only the latest entry
+    let mut latest_map_entries: BTreeMap<(StorageSlotName, Word), Word> = BTreeMap::new();
+    for (_, slot_name_str, key_bytes, value_bytes) in map_values {
+        let slot_name: StorageSlotName = slot_name_str.parse().map_err(|_| {
+            DatabaseError::DataCorrupted(format!("Invalid slot name: {slot_name_str}"))
+        })?;
+        let key = Word::read_from_bytes(&key_bytes)?;
+        let value = Word::read_from_bytes(&value_bytes)?;
+        latest_map_entries.entry((slot_name, key)).or_insert(value);
+    }
+
+    // Group entries by slot name
+    let mut map_entries_by_slot: BTreeMap<StorageSlotName, Vec<(Word, Word)>> = BTreeMap::new();
+    for ((slot_name, key), value) in latest_map_entries {
+        map_entries_by_slot.entry(slot_name).or_default().push((key, value));
+    }
+
+    // Reconstruct StorageSlots from header slots + map entries
+    let mut slots = Vec::new();
+    for slot_header in header.slots() {
+        let slot = match slot_header.slot_type() {
+            StorageSlotType::Value => {
+                StorageSlot::with_value(slot_header.name().clone(), slot_header.value())
+            },
+            StorageSlotType::Map => {
+                let entries = map_entries_by_slot.remove(slot_header.name()).unwrap_or_default();
+                let storage_map = StorageMap::with_entries(entries)?;
+                StorageSlot::with_map(slot_header.name().clone(), storage_map)
+            },
+        };
+        slots.push(slot);
+    }
+
+    Ok(AccountStorage::new(slots)?)
 }
 
 fn create_test_account_with_storage() -> (Account, AccountId) {
@@ -112,7 +195,7 @@ fn test_select_account_header_at_block_returns_none_for_nonexistent() {
     );
 
     // Query for a non-existent account
-    let result = select_account_header_at_block(&mut conn, account_id, block_num)
+    let result = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num)
         .expect("Query should succeed");
 
     assert!(result.is_none(), "Should return None for non-existent account");
@@ -138,7 +221,7 @@ fn test_select_account_header_at_block_returns_correct_header() {
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
 
     // Query the account header
-    let header = select_account_header_at_block(&mut conn, account_id, block_num)
+    let (header, _storage_header) = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num)
         .expect("Query should succeed")
         .expect("Header should exist");
 
@@ -174,14 +257,14 @@ fn test_select_account_header_at_block_historical_query() {
     upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
 
     // Query at block 1 - should return the account
-    let header_1 = select_account_header_at_block(&mut conn, account_id, block_num_1)
+    let (header_1, _) = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num_1)
         .expect("Query should succeed")
         .expect("Header should exist at block 1");
 
     assert_eq!(header_1.nonce(), nonce_1, "Nonce at block 1 should match");
 
     // Query at block 2 - should return the same account (most recent before block 2)
-    let header_2 = select_account_header_at_block(&mut conn, account_id, block_num_2)
+    let (header_2, _) = select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num_2)
         .expect("Query should succeed")
         .expect("Header should exist at block 2");
 
@@ -242,7 +325,7 @@ fn test_select_account_storage_at_block_returns_storage() {
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
 
     // Query storage
-    let storage = select_account_storage_at_block(&mut conn, account_id, block_num)
+    let storage = test_select_account_storage_at_block(&mut conn, account_id, block_num)
         .expect("Query should succeed");
 
     assert_eq!(
@@ -396,7 +479,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     );
 
     // Verify historical query returns first update
-    let storage_at_block_1 = select_account_storage_at_block(&mut conn, account_id, block_num_1)
+    let storage_at_block_1 = test_select_account_storage_at_block(&mut conn, account_id, block_num_1)
         .expect("Failed to query storage at block 1");
 
     assert_eq!(

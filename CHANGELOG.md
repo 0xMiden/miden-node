@@ -12,11 +12,15 @@
 - Added chain tip to the block producer status ([#1419](https://github.com/0xMiden/miden-node/pull/1419)).
 - The mempool's transaction capacity is now configurable ([#1433](https://github.com/0xMiden/miden-node/pull/1433)).
 - Renamed card's names in the `miden-network-monitor` binary ([#1441](https://github.com/0xMiden/miden-node/pull/1441)).
+- Added pagination to `GetNetworkAccountIds` endpoint ([#1452](https://github.com/0xMiden/miden-node/pull/1452)).
 - Improved tracing in `miden-network-monitor` binary ([#1366](https://github.com/0xMiden/miden-node/pull/1366)).
 - Integrated RPC stack with Validator component for transaction validation ([#1457](https://github.com/0xMiden/miden-node/pull/1457)).
 - Add partial storage map queries to RPC ([#1428](https://github.com/0xMiden/miden-node/pull/1428)).
+- Added validated transactions check to block validation logc in Validator ([#1460](https://github.com/0xMiden/miden-node/pull/1460)).
 - Added explorer status to the `miden-network-monitor` binary ([#1450](https://github.com/0xMiden/miden-node/pull/1450)).
 - Added `GetLimits` endpoint to the RPC server ([#1410](https://github.com/0xMiden/miden-node/pull/1410)).
+- Added gRPC-Web probe support to the `miden-network-monitor` binary ([#1484](https://github.com/0xMiden/miden-node/pull/1484)).
+- Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
 
 ### Changes
 
@@ -37,6 +41,7 @@
 - Increased the maximum query limit for the store ([#1443](https://github.com/0xMiden/miden-node/pull/1443)).
 - [BREAKING] Migrated to version `v0.20` of the VM ([#1476](https://github.com/0xMiden/miden-node/pull/1476)).
 - [BREAKING] Change account in database representation ([#1481](https://github.com/0xMiden/miden-node/pull/1481)).
+- Remove the cyclic database optimization ([#1497](https://github.com/0xMiden/miden-node/pull/1497)). 
 
 ### Fixes
 
@@ -45,6 +50,7 @@
 - Fixed no-std compatibility for remote prover clients ([#1407](https://github.com/0xMiden/miden-node/pull/1407)).
 - Fixed `AccountProofRequest` to retrieve the latest known state in case specified block number (or chain tip) does not contain account updates ([#1422](https://github.com/0xMiden/miden-node/issues/1422)).
 - Fixed missing asset setup for full account initialization ([#1461](https://github.com/0xMiden/miden-node/pull/1461)).
+- Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
 
 ## v0.12.6
 

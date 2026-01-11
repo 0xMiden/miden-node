@@ -70,7 +70,7 @@ fn test_empty_smt_root_is_recognized() {
 #[test]
 fn test_inner_forest_basic_initialization() {
     let forest = InnerForest::new();
-    assert!(forest.storage_roots.is_empty());
+    assert!(forest.storage_map_roots.is_empty());
     assert!(forest.vault_roots.is_empty());
 }
 
@@ -86,11 +86,11 @@ fn test_update_account_with_empty_deltas() {
         AccountStorageDelta::default(),
     );
 
-    forest.update_account(block_num, &delta);
+    forest.update_account(block_num, &delta).unwrap();
 
     // Empty deltas should not create entries
     assert!(!forest.vault_roots.contains_key(&(account_id, block_num)));
-    assert!(forest.storage_roots.is_empty());
+    assert!(forest.storage_map_roots.is_empty());
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn test_update_vault_with_fungible_asset() {
     vault_delta.add_asset(asset).unwrap();
 
     let delta = dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
-    forest.update_account(block_num, &delta);
+    forest.update_account(block_num, &delta).unwrap();
 
     let vault_root = forest.vault_roots[&(account_id, block_num)];
     assert_ne!(vault_root, EMPTY_WORD);
@@ -124,12 +124,12 @@ fn test_compare_partial_vs_full_state_delta_vault() {
     vault_delta.add_asset(asset).unwrap();
     let partial_delta =
         dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
-    forest_partial.update_account(block_num, &partial_delta);
+    forest_partial.update_account(block_num, &partial_delta).unwrap();
 
     // Approach 2: Full-state delta (simulates DB reconstruction)
     let mut forest_full = InnerForest::new();
     let full_delta = dummy_full_state_delta(account_id, &[asset]);
-    forest_full.update_account(block_num, &full_delta);
+    forest_full.update_account(block_num, &full_delta).unwrap();
 
     // Both approaches must produce identical vault roots
     let root_partial = forest_partial.vault_roots.get(&(account_id, block_num)).unwrap();
@@ -150,7 +150,7 @@ fn test_incremental_vault_updates() {
     let mut vault_delta_1 = AccountVaultDelta::default();
     vault_delta_1.add_asset(dummy_fungible_asset(faucet_id, 100)).unwrap();
     let delta_1 = dummy_partial_delta(account_id, vault_delta_1, AccountStorageDelta::default());
-    forest.update_account(block_1, &delta_1);
+    forest.update_account(block_1, &delta_1).unwrap();
     let root_1 = forest.vault_roots[&(account_id, block_1)];
 
     // Block 2: 150 tokens (update)
@@ -158,7 +158,7 @@ fn test_incremental_vault_updates() {
     let mut vault_delta_2 = AccountVaultDelta::default();
     vault_delta_2.add_asset(dummy_fungible_asset(faucet_id, 150)).unwrap();
     let delta_2 = dummy_partial_delta(account_id, vault_delta_2, AccountStorageDelta::default());
-    forest.update_account(block_2, &delta_2);
+    forest.update_account(block_2, &delta_2).unwrap();
     let root_2 = forest.vault_roots[&(account_id, block_2)];
 
     assert_ne!(root_1, root_2);
@@ -176,7 +176,7 @@ fn test_full_state_delta_starts_from_empty_root() {
     vault_delta_pre.add_asset(dummy_fungible_asset(faucet_id, 999)).unwrap();
     let delta_pre =
         dummy_partial_delta(account_id, vault_delta_pre, AccountStorageDelta::default());
-    forest.update_account(block_num, &delta_pre);
+    forest.update_account(block_num, &delta_pre).unwrap();
     assert!(forest.vault_roots.contains_key(&(account_id, block_num)));
 
     // Now create a full-state delta at the same block
@@ -186,11 +186,11 @@ fn test_full_state_delta_starts_from_empty_root() {
 
     // Create a fresh forest to compare
     let mut fresh_forest = InnerForest::new();
-    fresh_forest.update_account(block_num, &full_delta);
+    fresh_forest.update_account(block_num, &full_delta).unwrap();
     let fresh_root = fresh_forest.vault_roots[&(account_id, block_num)];
 
     // Update the original forest with the full-state delta
-    forest.update_account(block_num, &full_delta);
+    forest.update_account(block_num, &full_delta).unwrap();
     let updated_root = forest.vault_roots[&(account_id, block_num)];
 
     // The full-state delta should produce the same root regardless of prior state
@@ -210,7 +210,7 @@ fn test_vault_state_persists_across_blocks_without_changes() {
     let mut vault_delta_1 = AccountVaultDelta::default();
     vault_delta_1.add_asset(dummy_fungible_asset(faucet_id, 100)).unwrap();
     let delta_1 = dummy_partial_delta(account_id, vault_delta_1, AccountStorageDelta::default());
-    forest.update_account(block_1, &delta_1);
+    forest.update_account(block_1, &delta_1).unwrap();
     let root_after_block_1 = forest.vault_roots[&(account_id, block_1)];
 
     // Blocks 2-5: No changes to this account (simulated by not calling update_account)
@@ -222,7 +222,7 @@ fn test_vault_state_persists_across_blocks_without_changes() {
     let mut vault_delta_6 = AccountVaultDelta::default();
     vault_delta_6.add_asset(dummy_fungible_asset(faucet_id, 150)).unwrap(); // 100 + 50 = 150
     let delta_6 = dummy_partial_delta(account_id, vault_delta_6, AccountStorageDelta::default());
-    forest.update_account(block_6, &delta_6);
+    forest.update_account(block_6, &delta_6).unwrap();
 
     // The root at block 6 should be different from block 1 (we added more tokens)
     let root_after_block_6 = forest.vault_roots[&(account_id, block_6)];
@@ -255,7 +255,7 @@ fn test_partial_delta_applies_fungible_changes_correctly() {
     let mut vault_delta_1 = AccountVaultDelta::default();
     vault_delta_1.add_asset(dummy_fungible_asset(faucet_id, 100)).unwrap();
     let delta_1 = dummy_partial_delta(account_id, vault_delta_1, AccountStorageDelta::default());
-    forest.update_account(block_1, &delta_1);
+    forest.update_account(block_1, &delta_1).unwrap();
     let root_after_100 = forest.vault_roots[&(account_id, block_1)];
 
     // Block 2: Add 50 more tokens (partial delta with +50)
@@ -264,7 +264,7 @@ fn test_partial_delta_applies_fungible_changes_correctly() {
     let mut vault_delta_2 = AccountVaultDelta::default();
     vault_delta_2.add_asset(dummy_fungible_asset(faucet_id, 50)).unwrap();
     let delta_2 = dummy_partial_delta(account_id, vault_delta_2, AccountStorageDelta::default());
-    forest.update_account(block_2, &delta_2);
+    forest.update_account(block_2, &delta_2).unwrap();
     let root_after_150 = forest.vault_roots[&(account_id, block_2)];
 
     // Roots should be different (100 tokens vs 150 tokens)
@@ -276,7 +276,7 @@ fn test_partial_delta_applies_fungible_changes_correctly() {
     let mut vault_delta_3 = AccountVaultDelta::default();
     vault_delta_3.remove_asset(dummy_fungible_asset(faucet_id, 30)).unwrap();
     let delta_3 = dummy_partial_delta(account_id, vault_delta_3, AccountStorageDelta::default());
-    forest.update_account(block_3, &delta_3);
+    forest.update_account(block_3, &delta_3).unwrap();
     let root_after_120 = forest.vault_roots[&(account_id, block_3)];
 
     // Root should change again
@@ -286,7 +286,7 @@ fn test_partial_delta_applies_fungible_changes_correctly() {
     // The roots should match
     let mut fresh_forest = InnerForest::new();
     let full_delta = dummy_full_state_delta(account_id, &[dummy_fungible_asset(faucet_id, 120)]);
-    fresh_forest.update_account(block_3, &full_delta);
+    fresh_forest.update_account(block_3, &full_delta).unwrap();
     let root_full_state_120 = fresh_forest.vault_roots[&(account_id, block_3)];
 
     assert_eq!(root_after_120, root_full_state_120);
@@ -309,7 +309,7 @@ fn test_partial_delta_across_long_block_range() {
     let mut vault_delta_1 = AccountVaultDelta::default();
     vault_delta_1.add_asset(dummy_fungible_asset(faucet_id, 1000)).unwrap();
     let delta_1 = dummy_partial_delta(account_id, vault_delta_1, AccountStorageDelta::default());
-    forest.update_account(block_1, &delta_1);
+    forest.update_account(block_1, &delta_1).unwrap();
     let root_after_1000 = forest.vault_roots[&(account_id, block_1)];
 
     // Blocks 2-100: No changes to this account (simulating long gap)
@@ -321,7 +321,7 @@ fn test_partial_delta_across_long_block_range() {
     vault_delta_101.add_asset(dummy_fungible_asset(faucet_id, 500)).unwrap();
     let delta_101 =
         dummy_partial_delta(account_id, vault_delta_101, AccountStorageDelta::default());
-    forest.update_account(block_101, &delta_101);
+    forest.update_account(block_101, &delta_101).unwrap();
     let root_after_1500 = forest.vault_roots[&(account_id, block_101)];
 
     // Roots should be different (1000 tokens vs 1500 tokens)
@@ -330,7 +330,7 @@ fn test_partial_delta_across_long_block_range() {
     // Verify the final state matches a fresh forest with 1500 tokens
     let mut fresh_forest = InnerForest::new();
     let full_delta = dummy_full_state_delta(account_id, &[dummy_fungible_asset(faucet_id, 1500)]);
-    fresh_forest.update_account(block_101, &full_delta);
+    fresh_forest.update_account(block_101, &full_delta).unwrap();
     let root_full_state_1500 = fresh_forest.vault_roots[&(account_id, block_101)];
 
     assert_eq!(root_after_1500, root_full_state_1500);
@@ -356,11 +356,15 @@ fn test_update_storage_map() {
     let storage_delta = AccountStorageDelta::from_raw(raw);
 
     let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
-    forest.update_account(block_num, &delta);
+    forest.update_account(block_num, &delta).unwrap();
 
     // Verify storage root was created
-    assert!(forest.storage_roots.contains_key(&(account_id, slot_name.clone(), block_num)));
-    let storage_root = forest.storage_roots[&(account_id, slot_name, block_num)];
+    assert!(
+        forest
+            .storage_map_roots
+            .contains_key(&(account_id, slot_name.clone(), block_num))
+    );
+    let storage_root = forest.storage_map_roots[&(account_id, slot_name, block_num)];
     assert_ne!(storage_root, InnerForest::empty_smt_root());
 }
 
@@ -387,8 +391,8 @@ fn test_storage_map_incremental_updates() {
     let raw_1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta_1))]);
     let storage_delta_1 = AccountStorageDelta::from_raw(raw_1);
     let delta_1 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_1);
-    forest.update_account(block_1, &delta_1);
-    let root_1 = forest.storage_roots[&(account_id, slot_name.clone(), block_1)];
+    forest.update_account(block_1, &delta_1).unwrap();
+    let root_1 = forest.storage_map_roots[&(account_id, slot_name.clone(), block_1)];
 
     // Block 2: Insert key2 -> value2 (key1 should persist)
     let block_2 = block_1.child();
@@ -397,8 +401,8 @@ fn test_storage_map_incremental_updates() {
     let raw_2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta_2))]);
     let storage_delta_2 = AccountStorageDelta::from_raw(raw_2);
     let delta_2 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_2);
-    forest.update_account(block_2, &delta_2);
-    let root_2 = forest.storage_roots[&(account_id, slot_name.clone(), block_2)];
+    forest.update_account(block_2, &delta_2).unwrap();
+    let root_2 = forest.storage_map_roots[&(account_id, slot_name.clone(), block_2)];
 
     // Block 3: Update key1 -> value3
     let block_3 = block_2.child();
@@ -407,8 +411,8 @@ fn test_storage_map_incremental_updates() {
     let raw_3 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta_3))]);
     let storage_delta_3 = AccountStorageDelta::from_raw(raw_3);
     let delta_3 = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta_3);
-    forest.update_account(block_3, &delta_3);
-    let root_3 = forest.storage_roots[&(account_id, slot_name, block_3)];
+    forest.update_account(block_3, &delta_3).unwrap();
+    let root_3 = forest.storage_map_roots[&(account_id, slot_name, block_3)];
 
     // All roots should be different
     assert_ne!(root_1, root_2);

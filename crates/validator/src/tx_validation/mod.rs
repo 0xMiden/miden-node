@@ -27,10 +27,12 @@ pub enum TransactionValidationError {
 
 /// Validates a transaction by verifying its proof, executing it and comparing its header with the
 /// provided proven transaction.
+///
+/// Returns the header of the executed transaction if successful.
 pub async fn validate_transaction(
     proven_tx: ProvenTransaction,
     tx_inputs: TransactionInputs,
-) -> Result<(), TransactionValidationError> {
+) -> Result<TransactionHeader, TransactionValidationError> {
     // First, verify the transaction proof
     let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
     tx_verifier.verify(&proven_tx)?;
@@ -50,7 +52,7 @@ pub async fn validate_transaction(
     let executed_tx_header: TransactionHeader = (&executed_tx).into();
     let proven_tx_header: TransactionHeader = (&proven_tx).into();
     if executed_tx_header == proven_tx_header {
-        Ok(())
+        Ok(executed_tx_header)
     } else {
         Err(TransactionValidationError::Mismatch {
             proven_tx_header: proven_tx_header.into(),

@@ -26,6 +26,7 @@ struct AccountHeaderDataRaw {
     code_commitment: Option<Vec<u8>>,
     nonce: Option<i64>,
     storage_header: Option<Vec<u8>>,
+    vault_root: Option<Vec<u8>>,
 }
 
 /// Queries the account header for a specific account at a specific block number.
@@ -56,28 +57,28 @@ pub(crate) fn select_account_header_with_storage_header_at_block(
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
-    let account_data: Option<(AccountHeaderDataRaw, Option<Vec<u8>>)> = SelectDsl::select(
+    let account_data: Option<(AccountHeaderDataRaw, Option<Vec<u9>>)> = SelectDsl::select(
         accounts::table
             .filter(accounts::account_id.eq(&account_id_bytes))
             .filter(accounts::block_num.le(block_num_sql))
             .order(accounts::block_num.desc())
             .limit(1),
         (
-            (accounts::code_commitment, accounts::nonce, accounts::storage_header),
+            accounts::code_commitment,
+            accounts::nonce,
+            accounts::storage_header,
             accounts::vault_root,
         ),
     )
     .first(conn)
     .optional()?;
 
-    let Some((
-        AccountHeaderDataRaw {
-            code_commitment: code_commitment_bytes,
-            nonce: nonce_raw,
-            storage_header: storage_header_blob,
-        },
-        vault_root_bytes,
-    )) = account_data
+    let Some(AccountHeaderDataRaw {
+        code_commitment: code_commitment_bytes,
+        nonce: nonce_raw,
+        storage_header: storage_header_blob,
+        vault_root: vault_root_bytes,
+    }) = account_data
     else {
         return Ok(None);
     };
@@ -143,6 +144,8 @@ pub(crate) fn select_account_vault_at_block(
     // Step 2: Fetch the full rows matching (vault_key, block_num) pairs
     let mut assets = Vec::new();
     for (vault_key_bytes, max_block) in latest_blocks_per_vault_key {
+        // TODO we should not make a query per vault key, but query many at once or
+        // or find an alternative approach
         let result: Option<Option<Vec<u8>>> = QueryDsl::select(
             t::table.filter(
                 t::account_id

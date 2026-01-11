@@ -44,6 +44,7 @@ use miden_protocol::utils::Serializable;
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 
+use crate::accounts::{AccountTreeWithHistory, HistoricalError};
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::models::queries::StorageMapValuesPage;
@@ -68,7 +69,7 @@ use crate::errors::{
     StateSyncError,
 };
 use crate::inner_forest::InnerForest;
-use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
+use crate::{COMPONENT, DataDirectory};
 
 // STRUCTURES
 // ================================================================================================
@@ -106,13 +107,7 @@ where
 // CHAIN STATE
 // ================================================================================================
 
-/// The chain state.
-///
-/// The chain state consists of three main components:
-/// - A persistent database that stores notes, nullifiers, recent account states, and related data.
-/// - In-memory data structures contain Merkle paths for various objects - e.g., all accounts,
-///   nullifiers, public account vaults and storage, MMR of all block headers.
-/// - Raw block data for all blocks that is stored on disk as flat files.
+/// The rollup state.
 pub struct State {
     /// The database which stores block headers, nullifiers, notes, and the latest states of
     /// accounts.
@@ -126,7 +121,7 @@ pub struct State {
     /// The lock is writer-preferring, meaning the writer won't be starved.
     inner: RwLock<InnerState>,
 
-    /// Forest-related state `(SmtForest, storage_roots, vault_roots)` with its own lock.
+    /// Forest-related state `(SmtForest, storage_map_roots, vault_roots)` with its own lock.
     forest: RwLock<InnerForest>,
 
     /// To allow readers to access the tree data while an update in being performed, and prevent
@@ -305,10 +300,10 @@ impl State {
                         .map(|update| (update.account_id(), update.final_state_commitment())),
                 )
                 .map_err(|e| match e {
-                    crate::HistoricalError::AccountTreeError(err) => {
+                    HistoricalError::AccountTreeError(err) => {
                         InvalidBlockError::NewBlockDuplicateAccountIdPrefix(err)
                     },
-                    crate::HistoricalError::MerkleError(_) => {
+                    HistoricalError::MerkleError(_) => {
                         panic!("Unexpected MerkleError during account tree mutation computation")
                     },
                 })?;
@@ -437,7 +432,7 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
-        self.forest.write().await.apply_block_updates(block_num, account_deltas);
+        self.forest.write().await.apply_block_updates(block_num, account_deltas)?;
 
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
 
@@ -935,9 +930,19 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
-    /// Returns account IDs for all public (on-chain) network accounts.
-    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
-        self.db.select_all_network_account_ids().await
+    /// Returns network account IDs within the specified block range (based on account creation
+    /// block).
+    ///
+    /// The function may return fewer accounts than exist in the range if the result would exceed
+    /// `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE` rows. In this case, the result is
+    /// truncated at a block boundary to ensure all accounts from included blocks are returned.
+    ///
+    /// The response includes the last block number that was fully included in the result.
+    pub async fn get_all_network_accounts(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<AccountId>, BlockNumber), DatabaseError> {
+        self.db.select_all_network_account_ids(block_range).await
     }
 
     /// Returns the respective account proof with optional details, such as asset and storage
@@ -1140,11 +1145,6 @@ impl State {
         Ok(())
     }
 
-    /// Runs database optimization.
-    pub async fn optimize_db(&self) -> Result<(), DatabaseError> {
-        self.db.optimize().await
-    }
-
     /// Returns account vault updates for specified account within a block range.
     pub async fn sync_account_vault(
         &self,
@@ -1271,7 +1271,7 @@ async fn load_smt_forest(
             AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
 
         // Use the unified update method (will recognize it's a full-state delta)
-        forest.update_account(block_num, &delta);
+        forest.update_account(block_num, &delta)?;
 
         tracing::debug!(
             target: COMPONENT,

@@ -57,6 +57,7 @@ impl InnerForest {
         Self {
             forest: SmtForest::new(),
             storage_map_roots: BTreeMap::new(),
+            storage_entries: BTreeMap::new(),
             vault_roots: BTreeMap::new(),
         }
     }
@@ -146,7 +147,7 @@ impl InnerForest {
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
     ) -> Word {
-        self.storage_roots
+        self.storage_map_roots
             .range(
                 (account_id, slot_name.clone(), BlockNumber::GENESIS)
                     ..=(account_id, slot_name.clone(), block_num),
@@ -166,7 +167,7 @@ impl InnerForest {
         block_num: BlockNumber,
         keys: &[Word],
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
-        let root = *self.storage_roots.get(&(account_id, slot_name.clone(), block_num))?;
+        let root = *self.storage_map_roots.get(&(account_id, slot_name.clone(), block_num))?;
 
         let proofs: Result<Vec<SmtProof>, MerkleError> =
             keys.iter().map(|key| self.forest.open(root, *key)).collect();
@@ -393,13 +394,17 @@ impl InnerForest {
             self.storage_map_roots
                 .insert((account_id, slot_name.clone(), block_num), updated_root);
 
-            // Accumulate entries: start from parent block's entries or empty for full state
+            // Accumulate entries: start from previous block's entries or empty for full state
             let mut accumulated_entries = if is_full_state {
                 BTreeMap::new()
             } else {
                 self.storage_entries
-                    .get(&(account_id, slot_name.clone(), parent_block))
-                    .cloned()
+                    .range(
+                        (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                            ..(account_id, slot_name.clone(), block_num),
+                    )
+                    .next_back()
+                    .map(|(_, entries)| entries.clone())
                     .unwrap_or_default()
             };
 

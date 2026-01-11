@@ -57,7 +57,7 @@ pub(crate) fn select_account_header_with_storage_header_at_block(
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
-    let account_data: Option<(AccountHeaderDataRaw, Option<Vec<u9>>)> = SelectDsl::select(
+    let account_data: Option<AccountHeaderDataRaw> = SelectDsl::select(
         accounts::table
             .filter(accounts::account_id.eq(&account_id_bytes))
             .filter(accounts::block_num.le(block_num_sql))

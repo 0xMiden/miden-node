@@ -483,7 +483,7 @@ pub struct AccountStorageMapDetails {
 /// returning all entries in a single RPC response creates performance issues. In such cases,
 /// the `LimitExceeded` variant indicates to the client to use the `SyncStorageMaps` endpoint
 /// instead.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageMapEntries {
     /// The map has too many entries to return inline.
     /// Clients must use `SyncStorageMaps` endpoint instead.
@@ -496,12 +496,6 @@ pub enum StorageMapEntries {
     /// Specific entries with their SMT proofs for client-side verification.
     /// Used when specific keys are requested from the storage map.
     EntriesWithProofs(Vec<SmtProof>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AccountStorageMapDetails {
-    pub slot_name: StorageSlotName,
-    pub entries: StorageMapEntries,
 }
 
 impl AccountStorageMapDetails {

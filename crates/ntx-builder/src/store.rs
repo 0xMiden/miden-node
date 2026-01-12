@@ -183,11 +183,7 @@ impl StoreClient {
         &self,
         sender: tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
     ) -> Result<(), StoreError> {
-        const MAX_ITERATIONS: u32 = 1000;
-
         let mut block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
-
-        let mut iterations_count = 0;
 
         loop {
             let (accounts, pagination_info) = self.fetch_page(block_range.clone()).await?;
@@ -197,16 +193,11 @@ impl StoreClient {
 
             self.submit_page(accounts, &sender, chain_tip, current_height).await?;
 
-            iterations_count += 1;
             block_range =
                 BlockNumber::from(pagination_info.block_num)..=BlockNumber::from(u32::MAX);
 
             if pagination_info.block_num >= pagination_info.chain_tip {
                 break;
-            }
-
-            if iterations_count >= MAX_ITERATIONS {
-                return Err(StoreError::MaxIterationsReached("GetNetworkAccountIds".to_string()));
             }
         }
 
@@ -345,6 +336,4 @@ pub enum StoreError {
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
-    #[error("max iterations reached: {0}")]
-    MaxIterationsReached(String),
 }

@@ -178,7 +178,7 @@ impl StoreClient {
     /// This method is designed to be run in a background task, sending accounts to the main event
     /// loop as they are loaded. This allows the ntx-builder to start processing mempool events
     /// without waiting for all accounts to be preloaded.
-    #[instrument(target = COMPONENT, name = "store.client.stream_network_account_ids", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "store.client.load_committed_accounts", skip_all, err)]
     pub async fn stream_network_account_ids(
         &self,
         sender: tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
@@ -190,44 +190,12 @@ impl StoreClient {
         let mut iterations_count = 0;
 
         loop {
-            let response = self
-                .inner
-                .clone()
-                .get_network_account_ids(Into::<BlockRange>::into(block_range.clone()))
-                .await?
-                .into_inner();
+            let (accounts, pagination_info) = self.fetch_page(block_range.clone()).await?;
 
-            let accounts = response
-                .account_ids
-                .into_iter()
-                .map(|account_id| {
-                    let account_id = AccountId::read_from_bytes(&account_id.id).map_err(|err| {
-                        StoreError::DeserializationError(ConversionError::deserialization_error(
-                            "account_id",
-                            err,
-                        ))
-                    })?;
-                    NetworkAccountPrefix::try_from(account_id).map_err(|_| {
-                        StoreError::MalformedResponse(
-                            "account id is not a valid network account".into(),
-                        )
-                    })
-                })
-                .collect::<Result<Vec<NetworkAccountPrefix>, StoreError>>()?;
+            let chain_tip = pagination_info.chain_tip;
+            let current_height = pagination_info.block_num;
 
-            let pagination_info = response.pagination_info.ok_or(
-                ConversionError::MissingFieldInProtobufRepresentation {
-                    entity: "NetworkAccountIdList",
-                    field_name: "pagination_info",
-                },
-            )?;
-
-            for account in accounts {
-                // Send the entire batch at once. If the receiver is dropped, stop loading.
-                if sender.send(account).await.is_err() {
-                    return Ok(());
-                }
-            }
+            self.submit_page(accounts, &sender, chain_tip, current_height).await?;
 
             iterations_count += 1;
             block_range =
@@ -239,6 +207,79 @@ impl StoreClient {
 
             if iterations_count >= MAX_ITERATIONS {
                 return Err(StoreError::MaxIterationsReached("GetNetworkAccountIds".to_string()));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.client.fetch_page",
+        skip_all,
+        fields(chain_tip, current_height),
+        err
+    )]
+    async fn fetch_page(
+        &self,
+        block_range: std::ops::RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<NetworkAccountPrefix>, proto::rpc::PaginationInfo), StoreError> {
+        let response = self
+            .inner
+            .clone()
+            .get_network_account_ids(Into::<BlockRange>::into(block_range))
+            .await?
+            .into_inner();
+
+        let accounts = response
+            .account_ids
+            .into_iter()
+            .map(|account_id| {
+                let account_id = AccountId::read_from_bytes(&account_id.id).map_err(|err| {
+                    StoreError::DeserializationError(ConversionError::deserialization_error(
+                        "account_id",
+                        err,
+                    ))
+                })?;
+                NetworkAccountPrefix::try_from(account_id).map_err(|_| {
+                    StoreError::MalformedResponse(
+                        "account id is not a valid network account".into(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<NetworkAccountPrefix>, StoreError>>()?;
+
+        let pagination_info = response.pagination_info.ok_or(
+            ConversionError::MissingFieldInProtobufRepresentation {
+                entity: "NetworkAccountIdList",
+                field_name: "pagination_info",
+            },
+        )?;
+
+        tracing::Span::current()
+            .record("chain_tip", pagination_info.chain_tip)
+            .record("current_height", pagination_info.block_num);
+
+        Ok((accounts, pagination_info))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.client.submit_page",
+        skip(self, accounts, sender),
+        fields(chain_tip = chain_tip, current_height = current_height)
+    )]
+    async fn submit_page(
+        &self,
+        accounts: Vec<NetworkAccountPrefix>,
+        sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
+        chain_tip: u32,
+        current_height: u32,
+    ) -> Result<(), StoreError> {
+        for account in accounts {
+            // If the receiver is dropped, stop loading.
+            if sender.send(account).await.is_err() {
+                return Ok(());
             }
         }
 

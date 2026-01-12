@@ -52,7 +52,7 @@ use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
 use miden_objects::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
-use tracing::{info, info_span, instrument};
+use tracing::{Instrument, info, info_span, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
@@ -246,8 +246,9 @@ impl State {
         // finalized blocks. So we should check for the latest block when getting block from
         // the store.
         let store = Arc::clone(&self.block_store);
-        let block_save_task =
-            tokio::spawn(async move { store.save_block(block_num, &block_data).await });
+        let block_save_task = tokio::spawn(
+            async move { store.save_block(block_num, &block_data).await }.in_current_span(),
+        );
 
         // scope to read in-memory data, compute mutations required for updating account
         // and nullifier trees, and validate the request
@@ -369,10 +370,10 @@ impl State {
         // in-memory write lock. This requires the DB update to run concurrently, so a new task is
         // spawned.
         let db = Arc::clone(&self.db);
-        let db_update_task =
-            tokio::spawn(
-                async move { db.apply_block(allow_acquire, acquire_done, block, notes).await },
-            );
+        let db_update_task = tokio::spawn(
+            async move { db.apply_block(allow_acquire, acquire_done, block, notes).await }
+                .in_current_span(),
+        );
 
         // Wait for the message from the DB update task, that we ready to commit the DB transaction
         acquired_allowed.await.map_err(ApplyBlockError::ClosedChannel)?;
@@ -381,7 +382,7 @@ impl State {
         block_save_task.await??;
 
         // Scope to update the in-memory data
-        {
+        async move {
             // We need to hold the write lock here to prevent inconsistency between the in-memory
             // state and the DB state. Thus, we need to wait for the DB update task to complete
             // successfully.
@@ -408,6 +409,7 @@ impl State {
             // change in-memory state, so we return a block applying error and don't proceed with
             // in-memory updates.
             db_update_task
+                .in_current_span()
                 .await?
                 .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
@@ -421,11 +423,11 @@ impl State {
                 .apply_mutations(account_tree_update)
                 .expect("Unreachable: old account tree root must be checked before this step");
             inner.blockchain.push(block_commitment);
+
+            Ok(())
         }
-
-        info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
-
-        Ok(())
+        .instrument(info_span!("update trees"))
+        .await
     }
 
     /// Queries a [BlockHeader] from the database, and returns it alongside its inclusion proof.

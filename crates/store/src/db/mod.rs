@@ -22,7 +22,7 @@ use miden_objects::note::{
 };
 use miden_objects::transaction::TransactionId;
 use tokio::sync::oneshot;
-use tracing::{info, info_span, instrument};
+use tracing::{Instrument, info, info_span, instrument};
 
 use crate::COMPONENT;
 use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
@@ -273,10 +273,12 @@ impl Db {
         let conn = self
             .pool
             .get()
+            .in_current_span()
             .await
             .map_err(|e| DatabaseError::ConnectionPoolObtainError(Box::new(e)))?;
 
         conn.interact(|conn| <_ as diesel::Connection>::transaction::<R, E, Q>(conn, query))
+            .in_current_span()
             .await
             .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
     }

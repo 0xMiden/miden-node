@@ -9,7 +9,7 @@ use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::Nullifier;
 use tonic::{Request, Response, Status};
-use tracing::{info, instrument};
+use tracing::instrument;
 
 use crate::COMPONENT;
 use crate::state::State;
@@ -27,7 +27,6 @@ impl StoreApi {
         &self,
         request: Request<proto::shared::BlockHeaderByNumberRequest>,
     ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
-        info!(target: COMPONENT, ?request);
         let request = request.into_inner();
 
         let block_num = request.block_num.map(BlockNumber::from);

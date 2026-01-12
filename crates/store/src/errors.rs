@@ -269,16 +269,6 @@ pub enum ApplyBlockError {
     DbUpdateTaskFailed(String),
 }
 
-impl From<ApplyBlockError> for Status {
-    fn from(err: ApplyBlockError) -> Self {
-        match err {
-            ApplyBlockError::InvalidBlockError(_) => Status::invalid_argument(err.to_string()),
-
-            _ => Status::internal(err.to_string()),
-        }
-    }
-}
-
 #[derive(Error, Debug, GrpcError)]
 pub enum GetBlockHeaderError {
     #[error("database error")]

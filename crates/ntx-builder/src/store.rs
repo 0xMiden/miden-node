@@ -185,7 +185,7 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.stream_network_account_ids", skip_all, err)]
     pub async fn stream_network_account_ids(
         &self,
-        sender: tokio::sync::mpsc::Sender<Vec<AccountId>>,
+        sender: tokio::sync::mpsc::Sender<AccountId>,
     ) -> Result<(), StoreError> {
         const MAX_ITERATIONS: u32 = 1000;
 
@@ -217,9 +217,9 @@ impl StoreClient {
                 },
             )?;
 
-            if !accounts.is_empty() {
+            for account in accounts {
                 // Send the entire batch at once. If the receiver is dropped, stop loading.
-                if sender.send(accounts).await.is_err() {
+                if sender.send(account).await.is_err() {
                     return Ok(());
                 }
             }

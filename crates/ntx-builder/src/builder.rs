@@ -134,7 +134,7 @@ impl NetworkTransactionBuilder {
         // Spawn a background task to load network accounts from the store.
         // Accounts are sent through a channel in batches and processed in the main event loop.
         let (account_tx, mut account_rx) =
-            mpsc::channel::<Vec<AccountId>>(Self::ACCOUNT_CHANNEL_CAPACITY);
+            mpsc::channel::<AccountId>(Self::ACCOUNT_CHANNEL_CAPACITY);
         let account_loader_store = store.clone();
         tokio::spawn(async move {
             if let Err(err) = account_loader_store.stream_network_account_ids(account_tx).await {
@@ -164,8 +164,8 @@ impl NetworkTransactionBuilder {
                 // Handle account batches loaded from the store.
                 // Once all accounts are loaded, the channel closes and this branch
                 // becomes inactive (recv returns None and we stop matching).
-                Some(account_ids) = account_rx.recv() => {
-                    self.handle_loaded_accounts(account_ids, &actor_context).await?;
+                Some(account_id) = account_rx.recv() => {
+                    self.handle_loaded_account(account_id, &actor_context).await?;
                 },
             }
         }
@@ -174,20 +174,17 @@ impl NetworkTransactionBuilder {
     /// Handles a batch of account IDs loaded from the store by spawning actors for them.
     #[tracing::instrument(
         name = "ntx.builder.handle_loaded_accounts",
-        skip(self, account_ids, actor_context),
-        fields(count = account_ids.len())
+        skip(self, account_id, actor_context)
     )]
-    async fn handle_loaded_accounts(
+    async fn handle_loaded_account(
         &mut self,
-        account_ids: Vec<AccountId>,
+        account_id: AccountId,
         actor_context: &AccountActorContext,
     ) -> Result<(), anyhow::Error> {
-        for account_id in account_ids {
-            if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
-                self.coordinator
-                    .spawn_actor(AccountOrigin::store(account_prefix), actor_context)
-                    .await?;
-            }
+        if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
+            self.coordinator
+                .spawn_actor(AccountOrigin::store(account_prefix), actor_context)
+                .await?;
         }
         Ok(())
     }

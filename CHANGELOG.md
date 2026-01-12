@@ -50,7 +50,7 @@
 - Fixed `AccountProofRequest` to retrieve the latest known state in case specified block number (or chain tip) does not contain account updates ([#1422](https://github.com/0xMiden/miden-node/issues/1422)).
 - Fixed missing asset setup for full account initialization ([#1461](https://github.com/0xMiden/miden-node/pull/1461)).
 - Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
-- Fixed the network monitor counter account to use the storage slot name ([#1492](https://github.com/0xMiden/miden-node/pull/1492)).
+- Fixed the network monitor counter account to use the storage slot name ([#1501](https://github.com/0xMiden/miden-node/pull/1501)).
 
 ## v0.12.6
 

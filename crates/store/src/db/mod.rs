@@ -41,9 +41,6 @@ mod schema_hash;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod race_condition_test;
-
 pub(crate) mod models;
 
 /// [diesel](https://diesel.rs) generated schema

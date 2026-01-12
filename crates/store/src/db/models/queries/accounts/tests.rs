@@ -557,7 +557,7 @@ fn test_upsert_accounts_with_empty_storage() {
 /// Tests that querying vault at an older block returns the correct historical state,
 /// even when the same `vault_key` has been updated in later blocks.
 ///
-/// This tests the deduplication logic that relies on ordering by (`vault_key` ASC, `block_num` DESC).
+/// Focuses on deduplication logic that relies on ordering by (`vault_key` ASC and `block_num` DESC).
 #[test]
 fn test_select_account_vault_at_block_historical_with_updates() {
     use assert_matches::assert_matches;

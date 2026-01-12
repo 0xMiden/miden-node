@@ -6,6 +6,7 @@ use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
+use miden_node_tracing::instrument_with_err_report;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorage};
 use miden_protocol::asset::{Asset, AssetVaultKey};
@@ -22,7 +23,6 @@ use miden_protocol::note::{
 use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::{Deserializable, Serializable};
 use tokio::sync::oneshot;
-use miden_node_tracing::instrument_with_err_report;
 use tracing::{info, info_span, instrument};
 
 use crate::COMPONENT;

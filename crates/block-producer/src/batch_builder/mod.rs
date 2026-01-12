@@ -6,6 +6,7 @@ use std::time::Duration;
 use futures::never::Never;
 use futures::{FutureExt, TryFutureExt};
 use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_tracing::instrument_with_err_report;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{BatchId, ProposedBatch, ProvenBatch};
@@ -14,7 +15,6 @@ use miden_tx_batch_prover::LocalBatchProver;
 use rand::Rng;
 use tokio::task::JoinSet;
 use tokio::time;
-use miden_node_tracing::instrument_with_err_report;
 use tracing::{Instrument, Span};
 use url::Url;
 

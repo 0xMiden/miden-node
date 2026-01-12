@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
+use miden_node_tracing::instrument_with_err_report;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
@@ -22,7 +23,6 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
-use miden_node_tracing::instrument_with_err_report;
 use tracing::{Span, info};
 use url::Url;
 

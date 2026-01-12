@@ -21,6 +21,7 @@ use miden_node_proto::domain::account::{
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_tracing::instrument_with_err_report;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -41,7 +42,6 @@ use miden_protocol::transaction::{OutputNote, PartialBlockchain};
 use miden_protocol::utils::Serializable;
 use miden_protocol::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
-use miden_node_tracing::instrument_with_err_report;
 use tracing::{info, info_span};
 
 use crate::accounts::{AccountTreeWithHistory, HistoricalError};

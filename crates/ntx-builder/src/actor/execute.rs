@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use miden_node_tracing::instrument_with_err_report;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::account::{
@@ -42,7 +43,6 @@ use miden_tx::{
     TransactionProverError,
 };
 use tokio::task::JoinError;
-use miden_node_tracing::instrument_with_err_report;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;

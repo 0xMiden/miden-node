@@ -1,10 +1,10 @@
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated as proto;
+use miden_node_tracing::instrument_with_err_report;
 use miden_protocol::block::ProposedBlock;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
-use miden_node_tracing::instrument_with_err_report;
 use tracing::info;
 use url::Url;
 

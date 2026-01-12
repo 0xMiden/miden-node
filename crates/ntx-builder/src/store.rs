@@ -7,6 +7,7 @@ use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
+use miden_node_tracing::instrument_with_err_report;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -14,7 +15,6 @@ use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::NoteScript;
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
-use miden_node_tracing::instrument_with_err_report;
 use tracing::{info, instrument};
 use url::Url;
 

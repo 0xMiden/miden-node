@@ -427,6 +427,17 @@ mod tests {
     }
 
     impl UpdateSequence {
+        fn finalize(self) -> AccountStates {
+            let mut updates = self.updates.into_iter();
+            let first = updates.next().expect("sequence should contain at least one item");
+
+            let mut out = AccountStates::new(first);
+            for delta in updates {
+                out.append(delta).expect("sequence must be valid");
+            }
+            out
+        }
+
         /// Generates a valid sequence of `n_updates` updates, with each update having the given
         /// probability of being a pass-through node.
         fn strategy(n_updates: usize, passthrough_chance: f64) -> impl Strategy<Value = Self> {
@@ -493,11 +504,7 @@ mod tests {
                     (sequence, begin..end)
                 })
         ) {
-            let (init, tail) = sequence.updates.split_first().unwrap();
-            let mut uut = AccountStates::new(init.clone());
-            for delta in tail {
-                uut.append(delta.clone()).expect("appending to uut");
-            }
+            let mut uut = sequence.clone().finalize();
             let original = uut.clone();
 
             let fold_targets = sequence.updates[fold.clone()].to_vec();
@@ -512,12 +519,7 @@ mod tests {
             let mut reference = prelude.to_vec();
             reference.push(fold_into.clone());
             reference.extend(epilogue.into_iter().cloned());
-
-            let (init, tail) = reference.split_first().unwrap();
-            let mut reference = AccountStates::new(init.clone());
-            for delta in tail {
-                reference.append(delta.clone()).expect("appending to reference");
-            }
+            let reference = UpdateSequence { updates: reference }.finalize();
 
             uut.fold(fold_targets.clone(), fold_into.id);
             proptest::prop_assert_eq!(&uut, &reference);
@@ -526,27 +528,44 @@ mod tests {
             proptest::prop_assert_eq!(uut, original);
         }
 
-        /// Ensures that pruning in reverse chronological order always succeeds.
+        /// Ensures that evicting in reverse chronological order always succeeds.
         ///
-        /// We also check that post pruning is equivalent to never having inserted the node.
+        /// We also check that eviction is equivalent to never inserting the item.
         #[test]
-        fn pruning_in_reverse(
+        fn evicting_in_filo_order(
             sequence in (1..100usize)
                 .prop_flat_map(|n| UpdateSequence::strategy(n, 0.66))
         ) {
-            let (init, tail) = sequence.updates.split_first().unwrap();
-            let mut uut = AccountStates::new(init.clone());
-            for delta in tail {
-                uut.append(delta.clone()).expect("appending to uut");
-            }
-
+            let uut = sequence.clone().finalize();
             let mut uut = Some(uut);
             let mut deltas = sequence.updates.as_slice();
+            while !deltas.is_empty() {
+                let reference = UpdateSequence { updates: deltas.to_vec() }.finalize();
+
+                proptest::prop_assert_eq!(&uut, &Some(reference));
+
+                uut = uut.expect("should still be some").evict(deltas.last().unwrap().id);
+                deltas = deltas.split_last().unwrap().1;
+            }
+
+            // We should have pruned all deltas.
+            proptest::prop_assert_eq!(uut, None);
+        }
+
+        /// Ensures that pruning in chronological order always succeeds.
+        ///
+        /// We also check that post pruning is equivalent to never having inserted the node.
+        #[test]
+        fn pruning_in_fifo_order(
+            sequence in (1..100usize)
+                .prop_flat_map(|n| UpdateSequence::strategy(n, 0.66))
+        ) {
+            let uut = sequence.clone().finalize();
+            let mut uut = Some(uut);
+
+            let mut deltas = sequence.updates.as_slice();
             while let Some((first, tail)) = deltas.split_first() {
-                let mut reference = AccountStates::new(first.clone());
-                for delta in tail {
-                    reference.append(delta.clone()).expect("updating reference");
-                }
+                let reference = UpdateSequence { updates: deltas.to_vec() }.finalize();
 
                 proptest::prop_assert_eq!(&uut, &Some(reference));
 

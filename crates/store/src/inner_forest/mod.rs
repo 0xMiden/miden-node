@@ -123,16 +123,6 @@ impl InnerForest {
     }
 
     /// Retrieves the vault SMT root for an account at or before the given block.
-    ///
-    /// Finds the most recent vault root entry for the account, since vault state persists
-    /// across blocks where no changes occur.
-    pub(crate) fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
-        self.vault_roots
-            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
-            .next_back()
-            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
-    }
-
     /// Retrieves the storage map SMT root for an account slot at or before the given block.
     ///
     /// Finds the most recent storage root entry for the slot, since storage state persists

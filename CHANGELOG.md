@@ -5,6 +5,7 @@
 ### Enhancements
 
 - Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
+- Improve telemetry in the store ([#1504](https://github.com/0xMiden/miden-node/pull/1504)).
 
 ### Fixes
 

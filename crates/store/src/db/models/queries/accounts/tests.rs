@@ -555,9 +555,9 @@ fn test_upsert_accounts_with_empty_storage() {
 // ================================================================================================
 
 /// Tests that querying vault at an older block returns the correct historical state,
-/// even when the same vault_key has been updated in later blocks.
+/// even when the same `vault_key` has been updated in later blocks.
 ///
-/// This tests the deduplication logic that relies on ordering by (vault_key ASC, block_num DESC).
+/// This tests the deduplication logic that relies on ordering by (`vault_key` ASC, `block_num` DESC).
 #[test]
 fn test_select_account_vault_at_block_historical_with_updates() {
     use assert_matches::assert_matches;
@@ -637,9 +637,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     // Find the amounts (order may vary)
     let amounts: Vec<u64> = assets_at_block_2
         .iter()
-        .map(|a| {
-            assert_matches!(a, Asset::Fungible(f) => f.amount())
-        })
+        .map(|a| assert_matches!(a, Asset::Fungible(f) => f.amount()))
         .collect();
 
     assert!(amounts.contains(&2000), "Block 2 should have vault_key_1 with 2000 tokens");
@@ -653,9 +651,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
 
     let amounts: Vec<u64> = assets_at_block_3
         .iter()
-        .map(|a| {
-            assert_matches!(a, Asset::Fungible(f) => f.amount())
-        })
+        .map(|a| assert_matches!(a, Asset::Fungible(f) => f.amount()))
         .collect();
 
     assert!(amounts.contains(&3000), "Block 3 should have vault_key_1 with 3000 tokens");

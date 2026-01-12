@@ -126,11 +126,7 @@ impl InnerForest {
     ///
     /// Finds the most recent vault root entry for the account, since vault state persists
     /// across blocks where no changes occur.
-    //
-    // TODO: a fallback to DB lookup is required once pruning lands.
-    // Currently returns empty root which would be incorrect
-    #[cfg(test)]
-    fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
+    pub(crate) fn get_vault_root(&self, account_id: AccountId, block_num: BlockNumber) -> Word {
         self.vault_roots
             .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
             .next_back()
@@ -141,7 +137,7 @@ impl InnerForest {
     ///
     /// Finds the most recent storage root entry for the slot, since storage state persists
     /// across blocks where no changes occur.
-    fn get_storage_root(
+    pub(crate) fn get_storage_root(
         &self,
         account_id: AccountId,
         slot_name: &StorageSlotName,
@@ -167,7 +163,12 @@ impl InnerForest {
         block_num: BlockNumber,
         keys: &[Word],
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
-        let root = *self.storage_map_roots.get(&(account_id, slot_name.clone(), block_num))?;
+        let root = self.get_storage_root(account_id, &slot_name, block_num);
+
+        // Empty root means no storage map exists for this account/slot
+        if root == Self::empty_smt_root() {
+            return None;
+        }
 
         let proofs: Result<Vec<SmtProof>, MerkleError> =
             keys.iter().map(|key| self.forest.open(root, *key)).collect();
@@ -175,17 +176,27 @@ impl InnerForest {
         Some(proofs.map(|p| AccountStorageMapDetails::from_proofs(slot_name, p)))
     }
 
-    /// Returns all key-value entries for a specific account storage slot at a block.
+    /// Returns all key-value entries for a specific account storage slot at or before a block.
     ///
-    /// Returns `None` if no entries are tracked for this account/slot/block combination.
-    /// Returns an error if there are too many entries to return.
+    /// Uses range query semantics: finds the most recent entries at or before `block_num`.
+    /// Returns `None` if no entries exist for this account/slot up to the given block.
+    /// Returns `LimitExceeded` if there are too many entries to return.
     pub(crate) fn storage_map_entries(
         &self,
         account_id: AccountId,
         slot_name: StorageSlotName,
         block_num: BlockNumber,
     ) -> Option<AccountStorageMapDetails> {
-        let entries = self.storage_entries.get(&(account_id, slot_name.clone(), block_num))?;
+        // Find the most recent entries at or before block_num
+        let entries = self
+            .storage_entries
+            .range(
+                (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                    ..=(account_id, slot_name.clone(), block_num),
+            )
+            .next_back()
+            .map(|(_, entries)| entries)?;
+
         if entries.len() > AccountStorageMapDetails::MAX_RETURN_ENTRIES {
             return Some(AccountStorageMapDetails {
                 slot_name,
@@ -194,7 +205,7 @@ impl InnerForest {
         }
         let entries = Vec::from_iter(entries.iter().map(|(k, v)| (*k, *v)));
 
-        Some(AccountStorageMapDetails::from_forest_entries(slot_name.clone(), entries))
+        Some(AccountStorageMapDetails::from_forest_entries(slot_name, entries))
     }
 
     // PUBLIC INTERFACE

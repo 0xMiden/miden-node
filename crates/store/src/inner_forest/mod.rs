@@ -87,9 +87,8 @@ impl InnerForest {
             return Self::empty_smt_root();
         }
         self.vault_roots
-            .range((account_id, BlockNumber::GENESIS)..)
-            .take_while(|((id, _), _)| *id == account_id)
-            .last()
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, BlockNumber::from(u32::MAX)))
+            .next_back()
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
@@ -116,9 +115,11 @@ impl InnerForest {
         }
 
         self.storage_map_roots
-            .range((account_id, slot_name.clone(), BlockNumber::GENESIS)..)
-            .take_while(|((id, name, _), _)| *id == account_id && name == slot_name)
-            .last()
+            .range(
+                (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                    ..=(account_id, slot_name.clone(), BlockNumber::from(u32::MAX)),
+            )
+            .next_back()
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 

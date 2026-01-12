@@ -381,7 +381,7 @@ impl AccountStates {
 
         // Remove all of the rest updates entirely.
         if !rest.is_empty() {
-            self.updates.drain(istart + 1..istart + rest.len());
+            self.updates.drain(istart + 1..istart + rest.len() + 1);
         }
 
         // Update the "back" element which should now be next to "front".
@@ -394,24 +394,11 @@ impl AccountStates {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
-
     use proptest::prelude::Strategy;
     use proptest_derive::Arbitrary;
     use rand::Rng;
 
     use super::*;
-
-    /// A wrapper around [`NodeId`] which supports generating arbitrary values for property based
-    /// testing and ease of randomly sampling.
-    ///
-    /// Since this module doesn't care about the actual ID variant, we keep it simple by only
-    /// generating block numbers as IDs.
-    #[derive(Arbitrary, Debug, Clone)]
-    struct ArbitraryNodeId {
-        #[proptest(strategy = "(1u32..).prop_map(|x| NodeId::Block(x.into()))")]
-        inner: NodeId,
-    }
 
     #[derive(Arbitrary, Debug, Clone)]
     struct ArbitraryWord {
@@ -430,43 +417,8 @@ mod tests {
         })
     }
 
-    /// Generates a valid sequence of updates with a 1/3 chance of a node being pass through.
-    fn sequential_strategy() -> impl Strategy<Value = Vec<(NodeId, Word, Word)>> {
-        use proptest::prelude::*;
-
-        (
-            ArbitraryWord::arbitrary(),
-            proptest::collection::vec(<(ArbitraryNodeId, ArbitraryWord)>::arbitrary(), 1..1_000),
-        )
-            .prop_perturb(|(mut from, updates), mut rng| {
-                let mut sequence = Vec::with_capacity(updates.len());
-
-                for (id, mut to) in updates {
-                    // Chance to be a pass through node.
-                    if rng.random_bool(0.33) {
-                        to = from.clone();
-                    }
-
-                    sequence.push((id.inner, from.inner, to.inner));
-                    from = to;
-                }
-
-                sequence
-            })
-    }
-
-    fn sequential_with_range_strategy()
-    -> impl Strategy<Value = (Range<usize>, Vec<(NodeId, Word, Word)>)> {
-        sequential_strategy().prop_perturb(|sequence, mut rng| {
-            let begin = rng.random_range(1..sequence.len());
-            let end = rng.random_range(begin + 1..sequence.len() + 1);
-            (begin..end, sequence)
-        })
-    }
-
     #[derive(Debug, Clone)]
     struct UpdateSequence {
-        init: AccountDelta,
         updates: Vec<AccountDelta>,
     }
 
@@ -475,37 +427,32 @@ mod tests {
             use proptest::prelude::*;
 
             let offset = (1u32..10_000).prop_map(|offset| BlockNumber::from(offset));
-            let init = (offset, ArbitraryWord::arbitrary(), ArbitraryWord::arbitrary()).prop_map(
-                |(offset, from, to)| AccountDelta {
-                    id: NodeId::Block(offset),
-                    from: from.inner,
-                    to: to.inner,
-                },
-            );
+            let init = ArbitraryWord::arbitrary();
 
             let updates = proptest::collection::vec(ArbitraryWord::arbitrary(), updates);
 
-            (init, updates).prop_perturb(move |(init, deltas), mut rng| {
+            (offset, init, updates).prop_perturb(move |(offset, init, deltas), mut rng| {
                 let mut updates = Vec::with_capacity(deltas.len());
-                let mut current = init.clone();
+                let mut next_from = init.inner;
+                let mut next_id = offset;
 
                 for commitment in deltas {
-                    current.from = current.to;
-                    current.id = if let NodeId::Block(block) = current.id {
-                        NodeId::Block(block.child())
+                    let from = next_from;
+                    let id = NodeId::Block(next_id);
+
+                    let to = if rng.random_bool(passthrough_chance) {
+                        next_from
                     } else {
-                        panic!("We only use NodeId::Block in this test but got {current:?}");
+                        commitment.inner
                     };
 
-                    // Only update current.to if its _not_ a pass through node
-                    if !rng.random_bool(passthrough_chance) {
-                        current.to = commitment.inner
-                    }
+                    next_from = to;
+                    next_id = next_id.child();
 
-                    updates.push(current.clone());
+                    updates.push(AccountDelta { id, from, to });
                 }
 
-                UpdateSequence { init, updates }
+                UpdateSequence { updates }
             })
         }
     }
@@ -519,44 +466,44 @@ mod tests {
         /// - Folding [x] into y and then unfolding y into [x] is a noop.
         #[test]
         fn refolding_is_a_noop(
-            (sequence, fold) in (1..1_000usize)
+            (sequence, fold) in (1..100usize)
                 .prop_flat_map(|n| UpdateSequence::strategy(n, 0.33))
                 .prop_perturb(|sequence, mut rng| {
-                    let begin = rng.random_range(1..sequence.updates.len());
+                    let begin = rng.random_range(0..sequence.updates.len());
                     let end = rng.random_range(begin + 1..sequence.updates.len() + 1);
                     (sequence, begin..end)
                 }))
         {
+            let (init, tail) = sequence.updates.split_first().unwrap();
+            let mut uut = AccountStates::new(init.clone());
+            for delta in tail {
+                uut.append(delta.clone()).expect("appending to uut");
+            }
+            let original = uut.clone();
 
-            let latest = sequence.updates.last().unwrap_or(&sequence.init);
-            let fold_id = if let NodeId::Block(block) = latest.id {
-                NodeId::Block(block.child())
-            } else {
-                panic!("We only use NodeId::Block in the test but last node is {latest:?}");
+            let fold_targets = sequence.updates[fold.clone()].to_vec();
+            let fold_into = AccountDelta {
+                id: NodeId::Block(u32::MAX.into()),
+                from: fold_targets.first().unwrap().from,
+                to: fold_targets.last().unwrap().to,
             };
 
-            let mut uut = AccountStates::new(sequence.init);
-            for delta in &sequence.updates {
-                uut.append(delta.clone()).unwrap();
+            let (prelude, _) = sequence.updates.split_at(fold.start);
+            let (_, epilogue) = sequence.updates.split_at(fold.end);
+            let mut reference = prelude.to_vec();
+            reference.push(fold_into.clone());
+            reference.extend(epilogue.into_iter().cloned());
+
+            let (init, tail) = reference.split_first().unwrap();
+            let mut reference = AccountStates::new(init.clone());
+            for delta in tail {
+                reference.append(delta.clone()).expect("appending to reference");
             }
 
-            let fold_targets = sequence.updates[fold].to_vec();
+            uut.fold(fold_targets.clone(), fold_into.id);
+            proptest::prop_assert_eq!(&uut, &reference);
 
-            // Create a reference where y is inserted instead of [x].
-            // let mut reference = AccountStates::new(sequence[0].0, sequence[0].1, sequence[0].2);
-            // for (id, from, to) in &sequence[1..range.start] {
-            //     reference.append(*id, *from, *to).unwrap();
-            // }
-            // reference.append(y.0, y.1, y.2).unwrap();
-            // for (id, from, to) in &sequence[range.end + 1..] {
-            //     reference.append(*id, *from, *to).unwrap();
-            // }
-
-            uut.fold(fold_targets, fold_id);
-            // proptest::prop_assert_eq!(&uut, &reference);
-
-            // uut.unfold(y.0, fold);
-
+            // uut.unfold(fold_into.id, fold_targets);
             // proptest::prop_assert_eq!(uut, original);
         }
     }

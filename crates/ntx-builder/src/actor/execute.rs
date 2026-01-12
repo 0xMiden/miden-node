@@ -42,6 +42,7 @@ use miden_tx::{
     TransactionProverError,
 };
 use tokio::task::JoinError;
+use miden_node_tracing::instrument_with_err_report;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
@@ -188,7 +189,7 @@ impl NtxContext {
     /// Returns an [`NtxError`] if:
     /// - The consumability check fails unexpectedly.
     /// - All notes fail the check (i.e., no note is consumable).
-    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.filter_notes", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "ntx.execute_transaction.filter_notes", skip_all, err)]
     async fn filter_notes(
         &self,
         data_store: &NtxDataStore,
@@ -223,7 +224,7 @@ impl NtxContext {
     }
 
     /// Creates an executes a transaction with the network account and the given set of notes.
-    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.execute", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "ntx.execute_transaction.execute", skip_all, err)]
     async fn execute(
         &self,
         data_store: &NtxDataStore,
@@ -244,7 +245,7 @@ impl NtxContext {
 
     /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
     /// proof locally.
-    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
     async fn prove(&self, tx_inputs: TransactionInputs) -> NtxResult<ProvenTransaction> {
         if let Some(remote) = &self.prover {
             remote.prove(tx_inputs).await
@@ -257,7 +258,7 @@ impl NtxContext {
     }
 
     /// Submits the transaction to the block producer.
-    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
     async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
         self.block_producer
             .submit_proven_transaction(tx)

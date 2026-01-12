@@ -41,7 +41,8 @@ use miden_protocol::transaction::{OutputNote, PartialBlockchain};
 use miden_protocol::utils::Serializable;
 use miden_protocol::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
-use tracing::{info, info_span, instrument};
+use miden_node_tracing::instrument_with_err_report;
+use tracing::{info, info_span};
 
 use crate::accounts::{AccountTreeWithHistory, HistoricalError};
 use crate::blocks::BlockStore;
@@ -133,7 +134,7 @@ impl State {
     // --------------------------------------------------------------------------------------------
 
     /// Loads the state from the `db`.
-    #[instrument(target = COMPONENT, skip_all)]
+    #[instrument_with_err_report(target = COMPONENT, skip_all)]
     pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())
             .map_err(StateInitializationError::DataDirectoryLoadError)?;
@@ -191,7 +192,7 @@ impl State {
     ///   released.
     // TODO: This span is logged in a root span, we should connect it to the parent span.
     #[allow(clippy::too_many_lines)]
-    #[instrument(target = COMPONENT, skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, skip_all, err)]
     pub async fn apply_block(&self, block: ProvenBlock) -> Result<(), ApplyBlockError> {
         let _lock = self.writer.try_lock().map_err(|_| ApplyBlockError::ConcurrentWrite)?;
 
@@ -445,7 +446,7 @@ impl State {
     ///
     /// If [None] is given as the value of `block_num`, the data for the latest [BlockHeader] is
     /// returned.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_block_header(
         &self,
         block_num: Option<BlockNumber>,
@@ -481,7 +482,7 @@ impl State {
     /// tree.
     ///
     /// Note: these proofs are invalidated once the nullifier tree is modified, i.e. on a new block.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret)]
     pub async fn check_nullifiers(&self, nullifiers: &[Nullifier]) -> Vec<SmtProof> {
         let inner = self.inner.read().await;
         nullifiers
@@ -662,7 +663,7 @@ impl State {
     ///   block range.
     /// - `note_tags`: The tags the client is interested in, result is restricted to the first block
     ///   with any matches tags.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_state(
         &self,
         block_num: BlockNumber,
@@ -712,7 +713,7 @@ impl State {
     /// - `note_tags`: The tags the client is interested in, resulting notes are restricted to the
     ///   first block containing a matching note.
     /// - `block_range`: The range of blocks from which to synchronize notes.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_notes(
         &self,
         note_tags: Vec<u32>,
@@ -868,7 +869,7 @@ impl State {
     }
 
     /// Returns data needed by the block producer to verify transactions validity.
-    #[instrument(target = COMPONENT, skip_all, ret)]
+    #[instrument_with_err_report(target = COMPONENT, skip_all, ret)]
     pub async fn get_transaction_inputs(
         &self,
         account_id: AccountId,
@@ -1176,7 +1177,7 @@ impl State {
 // INNER STATE LOADING
 // ================================================================================================
 
-#[instrument(level = "info", target = COMPONENT, skip_all)]
+#[instrument_with_err_report(level = "info", target = COMPONENT, skip_all)]
 async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationError> {
     let block_commitments: Vec<Word> = db
         .select_all_block_headers()
@@ -1192,7 +1193,7 @@ async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationError> {
     Ok(chain_mmr)
 }
 
-#[instrument(level = "info", target = COMPONENT, skip_all)]
+#[instrument_with_err_report(level = "info", target = COMPONENT, skip_all)]
 async fn load_nullifier_tree(
     db: &mut Db,
 ) -> Result<NullifierTree<LargeSmt<MemoryStorage>>, StateInitializationError> {
@@ -1206,7 +1207,7 @@ async fn load_nullifier_tree(
         .map_err(StateInitializationError::FailedToCreateNullifierTree)
 }
 
-#[instrument(level = "info", target = COMPONENT, skip_all)]
+#[instrument_with_err_report(level = "info", target = COMPONENT, skip_all)]
 async fn load_account_tree(
     db: &mut Db,
     block_number: BlockNumber,
@@ -1236,7 +1237,7 @@ async fn load_account_tree(
 }
 
 /// Loads SMT forest with storage map and vault Merkle paths for all public accounts.
-#[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num))]
+#[instrument_with_err_report(target = COMPONENT, skip_all, fields(block_num = %block_num))]
 async fn load_smt_forest(
     db: &mut Db,
     block_num: BlockNumber,

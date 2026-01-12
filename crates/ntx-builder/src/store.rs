@@ -14,6 +14,7 @@ use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::NoteScript;
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
+use miden_node_tracing::instrument_with_err_report;
 use tracing::{info, instrument};
 use url::Url;
 
@@ -75,7 +76,7 @@ impl StoreClient {
         }
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.get_latest_blockchain_data", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "store.client.get_latest_blockchain_data", skip_all, err)]
     async fn get_latest_blockchain_data(
         &self,
     ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
@@ -106,7 +107,7 @@ impl StoreClient {
         }
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,
         prefix: NetworkAccountPrefix,
@@ -137,7 +138,7 @@ impl StoreClient {
 
     /// Returns the list of unconsumed network notes for a specific network account up to a
     /// specified block.
-    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(
         &self,
         network_account_prefix: NetworkAccountPrefix,
@@ -181,7 +182,7 @@ impl StoreClient {
     /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
     /// accounts (~289,000). With `100_000` iterations, which is assumed to be sufficient for the
     /// foreseeable future.
-    #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
     pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
         const MAX_ITERATIONS: u32 = 100_000;
 
@@ -231,7 +232,7 @@ impl StoreClient {
         Ok(ids)
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]
     pub async fn get_note_script_by_root(
         &self,
         root: Word,

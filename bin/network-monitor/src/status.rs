@@ -5,15 +5,17 @@
 
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::clients::{
+    Builder as ClientBuilder,
+    RemoteProverProxyStatusClient,
+    RpcClient,
+};
 use miden_node_proto::generated as proto;
-use miden_node_proto::generated::block_producer::BlockProducerStatus;
-use miden_node_proto::generated::rpc::RpcStatus;
-use miden_node_proto::generated::rpc_store::StoreStatus;
+use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus, StoreStatus};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 use url::Url;
 
 use crate::faucet::FaucetTestDetails;
@@ -76,6 +78,17 @@ pub struct IncrementDetails {
     pub failure_count: u64,
     /// Last transaction ID (if available).
     pub last_tx_id: Option<String>,
+    /// Last measured latency in blocks from submission to state update.
+    pub last_latency_blocks: Option<u32>,
+}
+
+/// Details about an in-flight latency measurement.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PendingLatencyDetails {
+    /// Block height returned when the transaction was submitted.
+    pub submit_height: u32,
+    /// Counter value we expect to see once the transaction is applied.
+    pub target_value: u64,
 }
 
 /// Details of the counter tracking service.
@@ -91,6 +104,20 @@ pub struct CounterTrackingDetails {
     pub pending_increments: Option<u64>,
 }
 
+/// Details of the explorer service.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ExplorerStatusDetails {
+    pub block_number: u64,
+    pub timestamp: u64,
+    pub number_of_transactions: u64,
+    pub number_of_nullifiers: u64,
+    pub number_of_notes: u64,
+    pub number_of_account_updates: u64,
+    pub block_commitment: String,
+    pub chain_commitment: String,
+    pub proof_commitment: String,
+}
+
 /// Details of a service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServiceDetails {
@@ -100,6 +127,7 @@ pub enum ServiceDetails {
     FaucetTest(FaucetTestDetails),
     NtxIncrement(IncrementDetails),
     NtxTracking(CounterTrackingDetails),
+    ExplorerStatus(ExplorerStatusDetails),
     Error,
 }
 
@@ -109,6 +137,8 @@ pub enum ServiceDetails {
 /// service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcStatusDetails {
+    /// The URL of the RPC service (used by the frontend for gRPC-Web probing).
+    pub url: String,
     pub version: String,
     pub genesis_commitment: Option<String>,
     pub store_status: Option<StoreStatusDetails>,
@@ -134,6 +164,21 @@ pub struct StoreStatusDetails {
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: Status,
+    /// The block producer's current view of the chain tip height.
+    pub chain_tip: u32,
+    /// Mempool statistics for this block producer.
+    pub mempool: MempoolStatusDetails,
+}
+
+/// Details about the block producer's mempool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MempoolStatusDetails {
+    /// Number of transactions currently in the mempool waiting to be batched.
+    pub unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    pub proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    pub proven_batches: u64,
 }
 
 /// Details of a remote prover service.
@@ -154,7 +199,7 @@ pub struct RemoteProverStatusDetails {
 /// worker service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatusDetails {
-    pub address: String,
+    pub name: String,
     pub version: String,
     pub status: Status,
 }
@@ -186,9 +231,20 @@ impl From<StoreStatus> for StoreStatusDetails {
 
 impl From<BlockProducerStatus> for BlockProducerStatusDetails {
     fn from(value: BlockProducerStatus) -> Self {
+        // We assume all supported nodes expose mempool statistics.
+        let mempool_stats = value
+            .mempool_stats
+            .expect("block producer status must include mempool statistics");
+
         Self {
             version: value.version,
             status: value.status.into(),
+            chain_tip: value.chain_tip,
+            mempool: MempoolStatusDetails {
+                unbatched_transactions: mempool_stats.unbatched_transactions,
+                proposed_batches: mempool_stats.proposed_batches,
+                proven_batches: mempool_stats.proven_batches,
+            },
         }
     }
 }
@@ -199,7 +255,7 @@ impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
             proto::remote_prover::WorkerHealthStatus::try_from(value.status).unwrap().into();
 
         Self {
-            address: value.address,
+            name: value.name,
             version: value.version,
             status,
         }
@@ -224,9 +280,11 @@ impl RemoteProverStatusDetails {
     }
 }
 
-impl From<RpcStatus> for RpcStatusDetails {
-    fn from(status: RpcStatus) -> Self {
+impl RpcStatusDetails {
+    /// Creates `RpcStatusDetails` from a gRPC `RpcStatus` response and the configured URL.
+    pub fn from_rpc_status(status: RpcStatus, url: String) -> Self {
         Self {
+            url,
             version: status.version,
             genesis_commitment: status.genesis_commitment.as_ref().map(|gc| format!("{gc:?}")),
             store_status: status.store.map(StoreStatusDetails::from),
@@ -252,20 +310,29 @@ impl From<RpcStatus> for RpcStatusDetails {
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(target = COMPONENT, name = "rpc-status-task", skip_all)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.run_rpc_status_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub async fn run_rpc_status_task(
     rpc_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
     status_check_interval: Duration,
     request_timeout: Duration,
 ) {
+    let url_str = rpc_url.to_string();
     let mut rpc = ClientBuilder::new(rpc_url)
         .with_tls()
         .expect("TLS is enabled")
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<Rpc>();
+        .without_otel_context_injection()
+        .connect_lazy::<RpcClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -275,7 +342,7 @@ pub async fn run_rpc_status_task(
 
         let current_time = current_unix_timestamp_secs();
 
-        let status = check_rpc_status(&mut rpc, current_time).await;
+        let status = check_rpc_status(&mut rpc, url_str.clone(), current_time).await;
 
         // Send the status update; exit if no receivers (shutdown signal)
         if status_sender.send(status).is_err() {
@@ -292,14 +359,23 @@ pub async fn run_rpc_status_task(
 /// # Arguments
 ///
 /// * `rpc` - The RPC client.
+/// * `url` - The URL of the RPC service.
 /// * `current_time` - The current time.
 ///
 /// # Returns
 ///
 /// A `ServiceStatus` containing the status of the RPC service.
-#[instrument(target = COMPONENT, name = "check-status.rpc", skip_all, ret(level = "info"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.check_rpc_status",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub(crate) async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
+    url: String,
     current_time: u64,
 ) -> ServiceStatus {
     match rpc.status(()).await {
@@ -311,15 +387,18 @@ pub(crate) async fn check_rpc_status(
                 status: Status::Healthy,
                 last_checked: current_time,
                 error: None,
-                details: ServiceDetails::RpcStatus(status.into()),
+                details: ServiceDetails::RpcStatus(RpcStatusDetails::from_rpc_status(status, url)),
             }
         },
-        Err(e) => ServiceStatus {
-            name: "RPC".to_string(),
-            status: Status::Unhealthy,
-            last_checked: current_time,
-            error: Some(e.to_string()),
-            details: ServiceDetails::Error,
+        Err(e) => {
+            debug!(target: COMPONENT, error = %e, "RPC status check failed");
+            ServiceStatus {
+                name: "RPC".to_string(),
+                status: Status::Unhealthy,
+                last_checked: current_time,
+                error: Some(e.to_string()),
+                details: ServiceDetails::Error,
+            }
         },
     }
 }
@@ -343,7 +422,14 @@ pub(crate) async fn check_rpc_status(
 ///
 /// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
 /// connection issues or failures while checking the remote prover status.
-#[instrument(target = COMPONENT, name = "remote-prover-status-task", skip_all)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.run_remote_prover_status_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub async fn run_remote_prover_status_task(
     prover_url: Url,
     name: String,
@@ -358,7 +444,8 @@ pub async fn run_remote_prover_status_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect_lazy::<RemoteProverProxy>();
+        .without_otel_context_injection()
+        .connect_lazy::<RemoteProverProxyStatusClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -398,10 +485,17 @@ pub async fn run_remote_prover_status_task(
 /// # Returns
 ///
 /// A `ServiceStatus` containing the status of the remote prover service.
-#[instrument(target = COMPONENT, name = "check-status.remote-prover", skip_all, ret(level = "info"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.status.check_remote_prover_status",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub(crate) async fn check_remote_prover_status(
     remote_prover: &mut miden_node_proto::clients::RemoteProverProxyStatusClient,
-    name: String,
+    display_name: String,
     url: String,
     current_time: u64,
 ) -> ServiceStatus {
@@ -422,19 +516,22 @@ pub(crate) async fn check_remote_prover_status(
             };
 
             ServiceStatus {
-                name: format!("Remote Prover ({name})"),
+                name: display_name.clone(),
                 status: overall_health,
                 last_checked: current_time,
                 error: None,
                 details: ServiceDetails::RemoteProverStatus(remote_prover_details),
             }
         },
-        Err(e) => ServiceStatus {
-            name: format!("Remote Prover ({name})"),
-            status: Status::Unhealthy,
-            last_checked: current_time,
-            error: Some(e.to_string()),
-            details: ServiceDetails::Error,
+        Err(e) => {
+            debug!(target: COMPONENT, prover_name = %display_name, error = %e, "Remote prover status check failed");
+            ServiceStatus {
+                name: display_name,
+                status: Status::Unhealthy,
+                last_checked: current_time,
+                error: Some(e.to_string()),
+                details: ServiceDetails::Error,
+            }
         },
     }
 }

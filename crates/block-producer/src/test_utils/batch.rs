@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use miden_objects::Word;
-use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
-use miden_objects::block::BlockNumber;
-use miden_objects::transaction::{
+use miden_protocol::Word;
+use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::transaction::{
     InputNotes,
     OrderedTransactionHeaders,
     ProvenTransaction,
@@ -19,7 +19,7 @@ pub trait TransactionBatchConstructor {
     /// This builds a mocked version of a proven batch for testing purposes which can be useful if
     /// the batch's details don't need to be correct (e.g. if something else is under test but
     /// requires a transaction batch). If you need an actual valid [`ProvenBatch`], build a
-    /// [`ProposedBatch`](miden_objects::batch::ProposedBatch) first and convert (without proving)
+    /// [`ProposedBatch`](miden_protocol::batch::ProposedBatch) first and convert (without proving)
     /// or prove it into a [`ProvenBatch`].
     fn mocked_from_transactions<'tx>(txs: impl IntoIterator<Item = &'tx ProvenTransaction>)
     -> Self;

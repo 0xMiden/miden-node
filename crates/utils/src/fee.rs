@@ -1,9 +1,9 @@
-use miden_objects::asset::FungibleAsset;
-use miden_objects::block::FeeParameters;
-use miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::FeeParameters;
+use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 
 /// Derive a default, zero valued fee, payable to
-/// [`miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET`].
+/// [`miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET`].
 pub fn test_fee() -> FungibleAsset {
     let faucet = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
     FungibleAsset::new(faucet, 0).unwrap()

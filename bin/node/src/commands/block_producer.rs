@@ -12,6 +12,7 @@ use crate::commands::{
     BlockProducerConfig,
     DEFAULT_TIMEOUT,
     ENV_ENABLE_OTEL,
+    ENV_VALIDATOR_BLOCK_PRODUCER_URL,
     duration_to_human_readable_string,
 };
 
@@ -26,6 +27,10 @@ pub enum BlockProducerCommand {
         /// The store's block-producer service gRPC url.
         #[arg(long = "store.url", env = ENV_STORE_BLOCK_PRODUCER_URL)]
         store_url: Url,
+
+        /// The validator's service gRPC url.
+        #[arg(long = "validator.url", env = ENV_VALIDATOR_BLOCK_PRODUCER_URL)]
+        validator_url: Url,
 
         #[command(flatten)]
         block_producer: BlockProducerConfig,
@@ -55,6 +60,7 @@ impl BlockProducerCommand {
         let Self::Start {
             url,
             store_url,
+            validator_url,
             block_producer,
             enable_otel: _,
             grpc_timeout,
@@ -64,22 +70,23 @@ impl BlockProducerCommand {
             url.to_socket().context("Failed to extract socket address from store URL")?;
 
         // Runtime validation for protocol constraints
-        if block_producer.max_batches_per_block > miden_objects::MAX_BATCHES_PER_BLOCK {
+        if block_producer.max_batches_per_block > miden_protocol::MAX_BATCHES_PER_BLOCK {
             anyhow::bail!(
                 "max-batches-per-block cannot exceed protocol limit of {}",
-                miden_objects::MAX_BATCHES_PER_BLOCK
+                miden_protocol::MAX_BATCHES_PER_BLOCK
             );
         }
-        if block_producer.max_txs_per_batch > miden_objects::MAX_ACCOUNTS_PER_BATCH {
+        if block_producer.max_txs_per_batch > miden_protocol::MAX_ACCOUNTS_PER_BATCH {
             anyhow::bail!(
                 "max-txs-per-batch cannot exceed protocol limit of {}",
-                miden_objects::MAX_ACCOUNTS_PER_BATCH
+                miden_protocol::MAX_ACCOUNTS_PER_BATCH
             );
         }
 
         BlockProducer {
             block_producer_address,
             store_url,
+            validator_url,
             batch_prover_url: block_producer.batch_prover_url,
             block_prover_url: block_producer.block_prover_url,
             batch_interval: block_producer.batch_interval,
@@ -88,6 +95,7 @@ impl BlockProducerCommand {
             max_batches_per_block: block_producer.max_batches_per_block,
             production_checkpoint: Arc::new(Barrier::new(1)),
             grpc_timeout,
+            mempool_tx_capacity: block_producer.mempool_tx_capacity,
         }
         .serve()
         .await
@@ -102,6 +110,8 @@ impl BlockProducerCommand {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use url::Url;
 
     use super::*;
@@ -115,13 +125,15 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
+            validator_url: dummy_url(),
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,
                 block_interval: std::time::Duration::from_secs(1),
                 batch_interval: std::time::Duration::from_secs(1),
                 max_txs_per_batch: 8,
-                max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
+                max_batches_per_block: miden_protocol::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
+                mempool_tx_capacity: NonZeroUsize::new(1000).unwrap(),
             },
             enable_otel: false,
             grpc_timeout: Duration::from_secs(10),
@@ -137,15 +149,17 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
+            validator_url: dummy_url(),
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,
                 block_interval: std::time::Duration::from_secs(1),
                 batch_interval: std::time::Duration::from_secs(1),
-                max_txs_per_batch: miden_objects::MAX_ACCOUNTS_PER_BATCH + 1, /* Use protocol
-                                                                               * limit
-                                                                               * (should fail) */
+                max_txs_per_batch: miden_protocol::MAX_ACCOUNTS_PER_BATCH + 1, /* Use protocol
+                                                                                * limit
+                                                                                * (should fail) */
                 max_batches_per_block: 8,
+                mempool_tx_capacity: NonZeroUsize::new(1000).unwrap(),
             },
             enable_otel: false,
             grpc_timeout: Duration::from_secs(10),

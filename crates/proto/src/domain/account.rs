@@ -1,20 +1,23 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_objects::Word;
-use miden_objects::account::{
+use miden_protocol::Word;
+use miden_protocol::account::{
     Account,
     AccountHeader,
     AccountId,
     AccountStorageHeader,
     StorageMap,
+    StorageSlotHeader,
+    StorageSlotName,
     StorageSlotType,
 };
-use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::{AccountWitness, BlockNumber};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{NoteExecutionMode, NoteTag};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::asset::{Asset, AssetVault};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
 
 use super::try_convert;
@@ -96,8 +99,32 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
-            details: details.as_ref().map(miden_objects::utils::Serializable::to_bytes),
+            details: details.as_ref().map(Serializable::to_bytes),
         }
+    }
+}
+
+// ACCOUNT STORAGE HEADER
+//================================================================================================
+
+impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
+        let proto::account::AccountStorageHeader { slots } = value;
+
+        let slot_headers = slots
+            .into_iter()
+            .map(|slot| {
+                let slot_name = StorageSlotName::new(slot.slot_name)?;
+                let slot_type = storage_slot_type_from_raw(slot.slot_type)?;
+                let commitment =
+                    slot.commitment.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
+                Ok(StorageSlotHeader::new(slot_name, slot_type, commitment))
+            })
+            .collect::<Result<Vec<_>, ConversionError>>()?;
+
+        Ok(AccountStorageHeader::new(slot_headers)?)
     }
 }
 
@@ -112,14 +139,14 @@ pub struct AccountProofRequest {
     pub details: Option<AccountDetailRequest>,
 }
 
-impl TryFrom<proto::rpc_store::AccountProofRequest> for AccountProofRequest {
+impl TryFrom<proto::rpc::AccountProofRequest> for AccountProofRequest {
     type Error = ConversionError;
 
-    fn try_from(value: proto::rpc_store::AccountProofRequest) -> Result<Self, Self::Error> {
-        let proto::rpc_store::AccountProofRequest { account_id, block_num, details } = value;
+    fn try_from(value: proto::rpc::AccountProofRequest) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountProofRequest { account_id, block_num, details } = value;
 
         let account_id = account_id
-            .ok_or(proto::rpc_store::AccountProofRequest::missing_field(stringify!(account_id)))?
+            .ok_or(proto::rpc::AccountProofRequest::missing_field(stringify!(account_id)))?
             .try_into()?;
         let block_num = block_num.map(Into::into);
 
@@ -136,15 +163,13 @@ pub struct AccountDetailRequest {
     pub storage_requests: Vec<StorageMapRequest>,
 }
 
-impl TryFrom<proto::rpc_store::account_proof_request::AccountDetailRequest>
-    for AccountDetailRequest
-{
+impl TryFrom<proto::rpc::account_proof_request::AccountDetailRequest> for AccountDetailRequest {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::rpc_store::account_proof_request::AccountDetailRequest,
+        value: proto::rpc::account_proof_request::AccountDetailRequest,
     ) -> Result<Self, Self::Error> {
-        let proto::rpc_store::account_proof_request::AccountDetailRequest {
+        let proto::rpc::account_proof_request::AccountDetailRequest {
             code_commitment,
             asset_vault_commitment,
             storage_maps,
@@ -162,100 +187,75 @@ impl TryFrom<proto::rpc_store::account_proof_request::AccountDetailRequest>
     }
 }
 
-impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
-        let proto::account::AccountStorageHeader { slots } = value;
-
-        let items = slots
-            .into_iter()
-            .map(|slot| {
-                let slot_type = storage_slot_type_from_raw(slot.slot_type)?;
-                let commitment =
-                    slot.commitment.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
-                Ok((slot_type, commitment))
-            })
-            .collect::<Result<Vec<_>, ConversionError>>()?;
-
-        Ok(AccountStorageHeader::new(items))
-    }
-}
-
-impl TryFrom<proto::rpc_store::account_storage_details::AccountStorageMapDetails>
+impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
     for AccountStorageMapDetails
 {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::rpc_store::account_storage_details::AccountStorageMapDetails,
+        value: proto::rpc::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
-        let proto::rpc_store::account_storage_details::AccountStorageMapDetails {
-            slot_index,
+        use proto::rpc::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry;
+        let proto::rpc::account_storage_details::AccountStorageMapDetails {
+            slot_name,
             too_many_entries,
             entries,
         } = value;
 
-        let slot_index = slot_index.try_into().map_err(ConversionError::TryFromIntError)?;
+        let slot_name = StorageSlotName::new(slot_name)?;
 
-        // Extract map_entries from the MapEntries message
-        let map_entries = if let Some(entries) = entries {
-            entries
-                .entries
-                .into_iter()
-                .map(|entry| {
-                    let key = entry
-                        .key
-                        .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-                            stringify!(key),
-                        ))?
-                        .try_into()?;
-                    let value = entry
-                        .value
-                        .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-                            stringify!(value),
-                        ))?
-                        .try_into()?;
-                    Ok((key, value))
-                })
-                .collect::<Result<Vec<_>, ConversionError>>()?
+        let entries = if too_many_entries {
+            StorageMapEntries::LimitExceeded
         } else {
-            Vec::new()
+            let map_entries = if let Some(entries) = entries {
+                entries
+                    .entries
+                    .into_iter()
+                    .map(|entry| {
+                        let key = entry
+                            .key
+                            .ok_or(StorageMapEntry::missing_field(stringify!(key)))?
+                            .try_into()?;
+                        let value = entry
+                            .value
+                            .ok_or(StorageMapEntry::missing_field(stringify!(value)))?
+                            .try_into()?;
+                        Ok((key, value))
+                    })
+                    .collect::<Result<Vec<_>, ConversionError>>()?
+            } else {
+                Vec::new()
+            };
+            StorageMapEntries::Entries(map_entries)
         };
 
-        Ok(Self {
-            slot_index,
-            too_many_entries,
-            map_entries,
-        })
+        Ok(Self { slot_name, entries })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMapRequest {
-    pub slot_index: u8,
+    pub slot_name: StorageSlotName,
     pub slot_data: SlotData,
 }
 
-impl
-    TryFrom<
-        proto::rpc_store::account_proof_request::account_detail_request::StorageMapDetailRequest,
-    > for StorageMapRequest
+impl TryFrom<proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest>
+    for StorageMapRequest
 {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::rpc_store::account_proof_request::account_detail_request::StorageMapDetailRequest,
+        value: proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest,
     ) -> Result<Self, Self::Error> {
-        let proto::rpc_store::account_proof_request::account_detail_request::StorageMapDetailRequest {
-            slot_index,
+        let proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest {
+            slot_name,
             slot_data,
         } = value;
 
-        let slot_index = slot_index.try_into()?;
-        let slot_data = slot_data.ok_or(proto::rpc_store::account_proof_request::account_detail_request::StorageMapDetailRequest::missing_field(stringify!(slot_data)))?.try_into()?;
+        let slot_name = StorageSlotName::new(slot_name)?;
+        let slot_data = slot_data.ok_or(proto::rpc::account_proof_request::account_detail_request::StorageMapDetailRequest::missing_field(stringify!(slot_data)))?.try_into()?;
 
-        Ok(StorageMapRequest { slot_index, slot_data })
+        Ok(StorageMapRequest { slot_name, slot_data })
     }
 }
 
@@ -265,13 +265,13 @@ pub enum SlotData {
     MapKeys(Vec<Word>),
 }
 
-impl TryFrom<proto::rpc_store::account_proof_request::account_detail_request::storage_map_detail_request::SlotData>
+impl TryFrom<proto::rpc::account_proof_request::account_detail_request::storage_map_detail_request::SlotData>
     for SlotData
 {
     type Error = ConversionError;
 
-    fn try_from(value: proto::rpc_store::account_proof_request::account_detail_request::storage_map_detail_request::SlotData) -> Result<Self, Self::Error> {
-        use proto::rpc_store::account_proof_request::account_detail_request::storage_map_detail_request::SlotData as ProtoSlotData;
+    fn try_from(value: proto::rpc::account_proof_request::account_detail_request::storage_map_detail_request::SlotData) -> Result<Self, Self::Error> {
+        use proto::rpc::account_proof_request::account_detail_request::storage_map_detail_request::SlotData as ProtoSlotData;
 
         Ok(match value {
             ProtoSlotData::AllEntries(true) => SlotData::All,
@@ -339,9 +339,10 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     fn from(value: AccountStorageHeader) -> Self {
         let slots = value
             .slots()
-            .map(|(slot_type, slot_value)| proto::account::account_storage_header::StorageSlot {
-                slot_type: storage_slot_type_to_raw(*slot_type),
-                commitment: Some(proto::primitives::Digest::from(*slot_value)),
+            .map(|slot_header| proto::account::account_storage_header::StorageSlot {
+                slot_name: slot_header.name().to_string(),
+                slot_type: storage_slot_type_to_raw(slot_header.slot_type()),
+                commitment: Some(proto::primitives::Digest::from(slot_header.value())),
             })
             .collect();
 
@@ -349,118 +350,197 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
+// ACCOUNT VAULT DETAILS
+//================================================================================================
+
+/// Account vault details
+///
+/// When an account contains a large number of assets (>
+/// [`AccountVaultDetails::MAX_RETURN_ENTRIES`]), including all assets in a single RPC response
+/// creates performance issues. In such cases, the `LimitExceeded` variant indicates to the client
+/// to use the `SyncAccountVault` endpoint instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccountVaultDetails {
-    pub too_many_assets: bool,
-    pub assets: Vec<Asset>,
+pub enum AccountVaultDetails {
+    /// The vault has too many assets to return inline.
+    /// Clients must use `SyncAccountVault` endpoint instead.
+    LimitExceeded,
+
+    /// The assets in the vault (up to `MAX_RETURN_ENTRIES`).
+    Assets(Vec<Asset>),
 }
+
 impl AccountVaultDetails {
-    const MAX_RETURN_ENTRIES: usize = 1000;
+    /// Maximum number of vault entries that can be returned in a single response.
+    /// Accounts with more assets will have `LimitExceeded` variant.
+    pub const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(vault: &AssetVault) -> Self {
         if vault.assets().nth(Self::MAX_RETURN_ENTRIES).is_some() {
-            Self::too_many()
+            Self::LimitExceeded
         } else {
-            Self {
-                too_many_assets: false,
-                assets: Vec::from_iter(vault.assets()),
-            }
+            Self::Assets(Vec::from_iter(vault.assets()))
         }
     }
 
     pub fn empty() -> Self {
-        Self {
-            too_many_assets: false,
-            assets: Vec::new(),
-        }
+        Self::Assets(Vec::new())
     }
 
-    fn too_many() -> Self {
-        Self {
-            too_many_assets: true,
-            assets: Vec::new(),
+    /// Creates `AccountVaultDetails` from a list of assets.
+    pub fn from_assets(assets: Vec<Asset>) -> Self {
+        if assets.len() > Self::MAX_RETURN_ENTRIES {
+            Self::LimitExceeded
+        } else {
+            Self::Assets(assets)
         }
     }
 }
 
-impl TryFrom<proto::rpc_store::AccountVaultDetails> for AccountVaultDetails {
+impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
     type Error = ConversionError;
 
-    fn try_from(value: proto::rpc_store::AccountVaultDetails) -> Result<Self, Self::Error> {
-        let proto::rpc_store::AccountVaultDetails { too_many_assets, assets } = value;
+    fn try_from(value: proto::rpc::AccountVaultDetails) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountVaultDetails { too_many_assets, assets } = value;
 
-        let assets =
-            Result::<Vec<_>, ConversionError>::from_iter(assets.into_iter().map(|asset| {
-                let asset = asset
-                    .asset
-                    .ok_or(proto::primitives::Asset::missing_field(stringify!(asset)))?;
-                let asset = Word::try_from(asset)?;
-                Asset::try_from(asset).map_err(ConversionError::AssetError)
-            }))?;
-        Ok(Self { too_many_assets, assets })
-    }
-}
-
-impl From<AccountVaultDetails> for proto::rpc_store::AccountVaultDetails {
-    fn from(value: AccountVaultDetails) -> Self {
-        let AccountVaultDetails { too_many_assets, assets } = value;
-
-        Self {
-            too_many_assets,
-            assets: Vec::from_iter(assets.into_iter().map(|asset| proto::primitives::Asset {
-                asset: Some(proto::primitives::Digest::from(Word::from(asset))),
-            })),
+        if too_many_assets {
+            Ok(Self::LimitExceeded)
+        } else {
+            let parsed_assets =
+                Result::<Vec<_>, ConversionError>::from_iter(assets.into_iter().map(|asset| {
+                    let asset = asset
+                        .asset
+                        .ok_or(proto::primitives::Asset::missing_field(stringify!(asset)))?;
+                    let asset = Word::try_from(asset)?;
+                    Asset::try_from(asset).map_err(ConversionError::AssetError)
+                }))?;
+            Ok(Self::Assets(parsed_assets))
         }
     }
 }
 
+impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
+    fn from(value: AccountVaultDetails) -> Self {
+        match value {
+            AccountVaultDetails::LimitExceeded => Self {
+                too_many_assets: true,
+                assets: Vec::new(),
+            },
+            AccountVaultDetails::Assets(assets) => Self {
+                too_many_assets: false,
+                assets: Vec::from_iter(assets.into_iter().map(|asset| proto::primitives::Asset {
+                    asset: Some(proto::primitives::Digest::from(Word::from(asset))),
+                })),
+            },
+        }
+    }
+}
+
+// ACCOUNT STORAGE MAP DETAILS
+//================================================================================================
+
+/// Details about an account storage map slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageMapDetails {
-    pub slot_index: u8,
-    pub too_many_entries: bool,
-    pub map_entries: Vec<(Word, Word)>,
+    pub slot_name: StorageSlotName,
+    pub entries: StorageMapEntries,
+}
+
+/// Storage map entries for an account storage slot.
+///
+/// When a storage map contains many entries (> [`AccountStorageMapDetails::MAX_RETURN_ENTRIES`]),
+/// returning all entries in a single RPC response creates performance issues. In such cases,
+/// the `LimitExceeded` variant indicates to the client to use the `SyncStorageMaps` endpoint
+/// instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageMapEntries {
+    /// The map has too many entries to return inline.
+    /// Clients must use `SyncStorageMaps` endpoint instead.
+    LimitExceeded,
+
+    /// The storage map entries (key-value pairs), up to `MAX_RETURN_ENTRIES`.
+    /// TODO: For partial responses, also include Merkle proofs and inner SMT nodes.
+    Entries(Vec<(Word, Word)>),
 }
 
 impl AccountStorageMapDetails {
-    const MAX_RETURN_ENTRIES: usize = 1000;
+    /// Maximum number of storage map entries that can be returned in a single response.
+    pub const MAX_RETURN_ENTRIES: usize = 1000;
 
-    pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
+    pub fn new(slot_name: StorageSlotName, slot_data: SlotData, storage_map: &StorageMap) -> Self {
         match slot_data {
-            SlotData::All => Self::from_all_entries(slot_index, storage_map),
-            SlotData::MapKeys(keys) => Self::from_specific_keys(slot_index, &keys[..], storage_map),
+            SlotData::All => Self::from_all_entries(slot_name, storage_map),
+            SlotData::MapKeys(keys) => Self::from_specific_keys(slot_name, &keys[..], storage_map),
         }
     }
 
-    fn from_all_entries(slot_index: u8, storage_map: &StorageMap) -> Self {
+    fn from_all_entries(slot_name: StorageSlotName, storage_map: &StorageMap) -> Self {
         if storage_map.num_entries() > Self::MAX_RETURN_ENTRIES {
-            Self::too_many_entries(slot_index)
+            Self {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }
         } else {
             let map_entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
             Self {
-                slot_index,
-                too_many_entries: false,
-                map_entries,
+                slot_name,
+                entries: StorageMapEntries::Entries(map_entries),
             }
         }
     }
 
-    fn from_specific_keys(slot_index: u8, keys: &[Word], storage_map: &StorageMap) -> Self {
+    fn from_specific_keys(
+        slot_name: StorageSlotName,
+        keys: &[Word],
+        storage_map: &StorageMap,
+    ) -> Self {
         if keys.len() > Self::MAX_RETURN_ENTRIES {
-            Self::too_many_entries(slot_index)
+            Self {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }
         } else {
             // TODO For now, we return all entries instead of specific keys with proofs
-            Self::from_all_entries(slot_index, storage_map)
-        }
-    }
-
-    pub fn too_many_entries(slot_index: u8) -> Self {
-        Self {
-            slot_index,
-            too_many_entries: true,
-            map_entries: Vec::new(),
+            Self::from_all_entries(slot_name, storage_map)
         }
     }
 }
+
+impl From<AccountStorageMapDetails>
+    for proto::rpc::account_storage_details::AccountStorageMapDetails
+{
+    fn from(value: AccountStorageMapDetails) -> Self {
+        use proto::rpc::account_storage_details::account_storage_map_details;
+
+        let AccountStorageMapDetails { slot_name, entries } = value;
+
+        match entries {
+            StorageMapEntries::LimitExceeded => Self {
+                slot_name: slot_name.to_string(),
+                too_many_entries: true,
+                entries: Some(account_storage_map_details::MapEntries { entries: Vec::new() }),
+            },
+            StorageMapEntries::Entries(map_entries) => {
+                let entries = Some(account_storage_map_details::MapEntries {
+                    entries: Vec::from_iter(map_entries.into_iter().map(|(key, value)| {
+                        account_storage_map_details::map_entries::StorageMapEntry {
+                            key: Some(key.into()),
+                            value: Some(value.into()),
+                        }
+                    })),
+                });
+
+                Self {
+                    slot_name: slot_name.to_string(),
+                    too_many_entries: false,
+                    entries,
+                }
+            },
+        }
+    }
+}
+
+// ACCOUNT STORAGE DETAILS DETAILS
+//================================================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageDetails {
@@ -468,14 +548,14 @@ pub struct AccountStorageDetails {
     pub map_details: Vec<AccountStorageMapDetails>,
 }
 
-impl TryFrom<proto::rpc_store::AccountStorageDetails> for AccountStorageDetails {
+impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
     type Error = ConversionError;
 
-    fn try_from(value: proto::rpc_store::AccountStorageDetails) -> Result<Self, Self::Error> {
-        let proto::rpc_store::AccountStorageDetails { header, map_details } = value;
+    fn try_from(value: proto::rpc::AccountStorageDetails) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountStorageDetails { header, map_details } = value;
 
         let header = header
-            .ok_or(proto::rpc_store::AccountStorageDetails::missing_field(stringify!(header)))?
+            .ok_or(proto::rpc::AccountStorageDetails::missing_field(stringify!(header)))?
             .try_into()?;
 
         let map_details = try_convert(map_details).collect::<Result<Vec<_>, _>>()?;
@@ -484,7 +564,7 @@ impl TryFrom<proto::rpc_store::AccountStorageDetails> for AccountStorageDetails 
     }
 }
 
-impl From<AccountStorageDetails> for proto::rpc_store::AccountStorageDetails {
+impl From<AccountStorageDetails> for proto::rpc::AccountStorageDetails {
     fn from(value: AccountStorageDetails) -> Self {
         let AccountStorageDetails { header, map_details } = value;
 
@@ -497,26 +577,21 @@ impl From<AccountStorageDetails> for proto::rpc_store::AccountStorageDetails {
 
 const fn storage_slot_type_from_raw(slot_type: u32) -> Result<StorageSlotType, ConversionError> {
     Ok(match slot_type {
-        0 => StorageSlotType::Map,
-        1 => StorageSlotType::Value,
+        0 => StorageSlotType::Value,
+        1 => StorageSlotType::Map,
         _ => return Err(ConversionError::EnumDiscriminantOutOfRange),
     })
 }
 
 const fn storage_slot_type_to_raw(slot_type: StorageSlotType) -> u32 {
     match slot_type {
-        StorageSlotType::Map => 0,
-        StorageSlotType::Value => 1,
+        StorageSlotType::Value => 0,
+        StorageSlotType::Map => 1,
     }
 }
 
-/// Represents account details returned in response to an account proof request.
-pub struct AccountDetails {
-    pub account_header: AccountHeader,
-    pub account_code: Option<Vec<u8>>,
-    pub vault_details: AccountVaultDetails,
-    pub storage_details: AccountStorageDetails,
-}
+// ACCOUNT PROOF RESPONSE
+//================================================================================================
 
 /// Represents the response to an account proof request.
 pub struct AccountProofResponse {
@@ -525,18 +600,18 @@ pub struct AccountProofResponse {
     pub details: Option<AccountDetails>,
 }
 
-impl TryFrom<proto::rpc_store::AccountProofResponse> for AccountProofResponse {
+impl TryFrom<proto::rpc::AccountProofResponse> for AccountProofResponse {
     type Error = ConversionError;
 
-    fn try_from(value: proto::rpc_store::AccountProofResponse) -> Result<Self, Self::Error> {
-        let proto::rpc_store::AccountProofResponse { block_num, witness, details } = value;
+    fn try_from(value: proto::rpc::AccountProofResponse) -> Result<Self, Self::Error> {
+        let proto::rpc::AccountProofResponse { block_num, witness, details } = value;
 
         let block_num = block_num
-            .ok_or(proto::rpc_store::AccountProofResponse::missing_field(stringify!(block_num)))?
+            .ok_or(proto::rpc::AccountProofResponse::missing_field(stringify!(block_num)))?
             .into();
 
         let witness = witness
-            .ok_or(proto::rpc_store::AccountProofResponse::missing_field(stringify!(witness)))?
+            .ok_or(proto::rpc::AccountProofResponse::missing_field(stringify!(witness)))?
             .try_into()?;
 
         let details = details.map(TryFrom::try_from).transpose()?;
@@ -545,7 +620,7 @@ impl TryFrom<proto::rpc_store::AccountProofResponse> for AccountProofResponse {
     }
 }
 
-impl From<AccountProofResponse> for proto::rpc_store::AccountProofResponse {
+impl From<AccountProofResponse> for proto::rpc::AccountProofResponse {
     fn from(value: AccountProofResponse) -> Self {
         let AccountProofResponse { block_num, witness, details } = value;
 
@@ -557,13 +632,24 @@ impl From<AccountProofResponse> for proto::rpc_store::AccountProofResponse {
     }
 }
 
-impl TryFrom<proto::rpc_store::account_proof_response::AccountDetails> for AccountDetails {
+// ACCOUNT DETAILS
+//================================================================================================
+
+/// Represents account details returned in response to an account proof request.
+pub struct AccountDetails {
+    pub account_header: AccountHeader,
+    pub account_code: Option<Vec<u8>>,
+    pub vault_details: AccountVaultDetails,
+    pub storage_details: AccountStorageDetails,
+}
+
+impl TryFrom<proto::rpc::account_proof_response::AccountDetails> for AccountDetails {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::rpc_store::account_proof_response::AccountDetails,
+        value: proto::rpc::account_proof_response::AccountDetails,
     ) -> Result<Self, Self::Error> {
-        let proto::rpc_store::account_proof_response::AccountDetails {
+        let proto::rpc::account_proof_response::AccountDetails {
             header,
             code,
             vault_details,
@@ -571,21 +657,21 @@ impl TryFrom<proto::rpc_store::account_proof_response::AccountDetails> for Accou
         } = value;
 
         let account_header = header
-            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
-                stringify!(header),
-            ))?
+            .ok_or(proto::rpc::account_proof_response::AccountDetails::missing_field(stringify!(
+                header
+            )))?
             .try_into()?;
 
         let storage_details = storage_details
-            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
-                stringify!(storage_details),
-            ))?
+            .ok_or(proto::rpc::account_proof_response::AccountDetails::missing_field(stringify!(
+                storage_details
+            )))?
             .try_into()?;
 
         let vault_details = vault_details
-            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
-                stringify!(vault_details),
-            ))?
+            .ok_or(proto::rpc::account_proof_response::AccountDetails::missing_field(stringify!(
+                vault_details
+            )))?
             .try_into()?;
         let account_code = code;
 
@@ -598,7 +684,7 @@ impl TryFrom<proto::rpc_store::account_proof_response::AccountDetails> for Accou
     }
 }
 
-impl From<AccountDetails> for proto::rpc_store::account_proof_response::AccountDetails {
+impl From<AccountDetails> for proto::rpc::account_proof_response::AccountDetails {
     fn from(value: AccountDetails) -> Self {
         let AccountDetails {
             account_header,
@@ -617,35 +703,6 @@ impl From<AccountDetails> for proto::rpc_store::account_proof_response::AccountD
             storage_details,
             code,
             vault_details,
-        }
-    }
-}
-
-impl From<AccountStorageMapDetails>
-    for proto::rpc_store::account_storage_details::AccountStorageMapDetails
-{
-    fn from(value: AccountStorageMapDetails) -> Self {
-        use proto::rpc_store::account_storage_details::account_storage_map_details;
-
-        let AccountStorageMapDetails {
-            slot_index,
-            too_many_entries,
-            map_entries,
-        } = value;
-
-        let entries = Some(account_storage_map_details::MapEntries {
-            entries: Vec::from_iter(map_entries.into_iter().map(|(key, value)| {
-                account_storage_map_details::map_entries::StorageMapEntry {
-                    key: Some(key.into()),
-                    value: Some(value.into()),
-                }
-            })),
-        });
-
-        Self {
-            slot_index: u32::from(slot_index),
-            too_many_entries,
-            entries,
         }
     }
 }
@@ -770,24 +827,22 @@ impl Display for AccountState {
     }
 }
 
-impl TryFrom<proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord>
-    for AccountState
-{
+impl TryFrom<proto::store::transaction_inputs::AccountTransactionInputRecord> for AccountState {
     type Error = ConversionError;
 
     fn try_from(
-        from: proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord,
+        from: proto::store::transaction_inputs::AccountTransactionInputRecord,
     ) -> Result<Self, Self::Error> {
         let account_id = from
             .account_id
-            .ok_or(proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+            .ok_or(proto::store::transaction_inputs::AccountTransactionInputRecord::missing_field(
                 stringify!(account_id),
             ))?
             .try_into()?;
 
         let account_commitment = from
             .account_commitment
-            .ok_or(proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+            .ok_or(proto::store::transaction_inputs::AccountTransactionInputRecord::missing_field(
                 stringify!(account_commitment),
             ))?
             .try_into()?;
@@ -804,9 +859,7 @@ impl TryFrom<proto::block_producer_store::transaction_inputs::AccountTransaction
     }
 }
 
-impl From<AccountState>
-    for proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord
-{
+impl From<AccountState> for proto::store::transaction_inputs::AccountTransactionInputRecord {
     fn from(from: AccountState) -> Self {
         Self {
             account_id: Some(from.account_id.into()),

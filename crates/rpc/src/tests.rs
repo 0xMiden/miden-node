@@ -3,16 +3,22 @@ use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
-use miden_lib::account::wallets::BasicWallet;
-use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient};
+use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_utils::fee::test_fee;
-use miden_objects::Word;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_node_utils::limiter::{
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+    QueryParamNullifierLimit,
+};
+use miden_protocol::Word;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
@@ -20,10 +26,12 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_objects::testing::noop_auth_component::NoopAuthComponent;
-use miden_objects::transaction::ProvenTransactionBuilder;
-use miden_objects::utils::Serializable;
-use miden_objects::vm::ExecutionProof;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_protocol::transaction::ProvenTransactionBuilder;
+use miden_protocol::utils::Serializable;
+use miden_protocol::vm::ExecutionProof;
+use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::runtime::{self, Runtime};
@@ -36,7 +44,7 @@ use crate::Rpc;
 async fn rpc_server_accepts_requests_without_accept_header() {
     // Start the RPC.
     let (_, rpc_addr, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
     // Override the client so that the ACCEPT header is not set.
     let mut rpc_client = {
@@ -46,7 +54,7 @@ async fn rpc_server_accepts_requests_without_accept_header() {
     };
 
     // Send any request to the RPC.
-    let request = proto::shared::BlockHeaderByNumberRequest {
+    let request = proto::rpc::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };
@@ -63,7 +71,7 @@ async fn rpc_server_accepts_requests_without_accept_header() {
 async fn rpc_server_accepts_requests_with_accept_header() {
     // Start the RPC.
     let (mut rpc_client, _, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
     // Send any request to the RPC.
     let response = send_request(&mut rpc_client).await;
@@ -80,7 +88,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
     for version in ["1.9.0", "0.8.1", "0.8.0", "0.999.0", "99.0.0"] {
         // Start the RPC.
         let (_, rpc_addr, store_addr) = start_rpc().await;
-        let (store_runtime, _data_directory) = start_store(store_addr).await;
+        let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
         // Recreate the RPC client with an invalid version.
         let url = rpc_addr.to_string();
@@ -91,7 +99,8 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
             .with_timeout(Duration::from_secs(10))
             .with_metadata_version(version.to_string())
             .without_metadata_genesis()
-            .connect::<RpcClientMarker>()
+            .without_otel_context_injection()
+            .connect::<RpcClient>()
             .await
             .unwrap();
 
@@ -121,7 +130,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
     assert!(response.is_err());
 
     // Start the store.
-    let (store_runtime, data_directory) = start_store(store_addr).await;
+    let (store_runtime, data_directory, _genesis) = start_store(store_addr).await;
 
     // Test: send request against RPC api and should succeed
     let response = send_request(&mut rpc_client).await;
@@ -159,7 +168,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
 async fn rpc_server_has_web_support() {
     // Start server
     let (_, rpc_addr, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
     // Send a status request
     let client = reqwest::Client::new();
@@ -202,14 +211,17 @@ async fn rpc_server_has_web_support() {
 async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Start the RPC.
     let (_, rpc_addr, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, genesis) = start_store(store_addr).await;
 
     // Override the client so that the ACCEPT header is not set.
-    let mut rpc_client = {
-        let endpoint = tonic::transport::Endpoint::try_from(format!("http://{rpc_addr}")).unwrap();
-
-        ProtoClient::connect(endpoint).await.unwrap()
-    };
+    let mut rpc_client =
+        miden_node_proto::clients::Builder::new(Url::parse(&format!("http://{rpc_addr}")).unwrap())
+            .without_tls()
+            .with_timeout(Duration::from_secs(5))
+            .without_metadata_version()
+            .with_metadata_genesis(genesis.to_hex())
+            .without_otel_context_injection()
+            .connect_lazy::<miden_node_proto::clients::RpcClient>();
 
     let account_id = AccountId::dummy(
         [0; 15],
@@ -271,13 +283,83 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     assert!(response.is_err());
 
     // Assert that the error is due to the invalid account delta commitment.
+    let err = response.as_ref().unwrap_err().message();
     assert!(
-        response
-            .as_ref()
-            .err()
-            .unwrap()
-            .message()
-            .contains("failed to validate account delta in transaction account update"),
+        err.contains("failed to validate account delta in transaction account update"),
+        "expected error message to contain delta commitment error but got: {err}"
+    );
+
+    // Shutdown to avoid runtime drop error.
+    store_runtime.shutdown_background();
+}
+
+#[tokio::test]
+async fn rpc_server_rejects_tx_submissions_without_genesis() {
+    // Start the RPC.
+    let (_, rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
+
+    // Override the client so that the ACCEPT header is not set.
+    let mut rpc_client =
+        miden_node_proto::clients::Builder::new(Url::parse(&format!("http://{rpc_addr}")).unwrap())
+            .without_tls()
+            .with_timeout(Duration::from_secs(5))
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .without_otel_context_injection()
+            .connect_lazy::<miden_node_proto::clients::RpcClient>();
+
+    let account_id = AccountId::dummy(
+        [0; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+    );
+
+    let account = AccountBuilder::new([0; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_assets(vec![])
+        .with_component(BasicWallet)
+        .with_auth_component(NoopAuthComponent)
+        .build_existing()
+        .unwrap();
+
+    let account_delta: AccountDelta = account.clone().try_into().unwrap();
+
+    // Send any request to the RPC.
+    let tx = ProvenTransactionBuilder::new(
+        account_id,
+        [8; 32].try_into().unwrap(),
+        account.commitment(),
+        account_delta.clone().to_commitment(), // delta commitment
+        0.into(),
+        Word::default(),
+        test_fee(),
+        u32::MAX.into(),
+        ExecutionProof::new_dummy(),
+    )
+    .account_update_details(AccountUpdateDetails::Delta(account_delta))
+    .build()
+    .unwrap();
+
+    let request = proto::transaction::ProvenTransaction {
+        transaction: tx.to_bytes(),
+        transaction_inputs: None,
+    };
+
+    let response = rpc_client.submit_proven_transaction(request).await;
+
+    // Assert that the server rejected our request.
+    assert!(response.is_err());
+
+    // Assert that the error is due to the invalid account delta commitment.
+    let err = response.as_ref().unwrap_err().message();
+    assert!(
+        err.contains(
+            "server does not support any of the specified application/vnd.miden content types"
+        ),
+        "expected error message to reference incompatible content media types but got: {err:?}"
     );
 
     // Shutdown to avoid runtime drop error.
@@ -287,9 +369,8 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 /// Sends an arbitrary / irrelevant request to the RPC.
 async fn send_request(
     rpc_client: &mut RpcClient,
-) -> std::result::Result<tonic::Response<proto::shared::BlockHeaderByNumberResponse>, tonic::Status>
-{
-    let request = proto::shared::BlockHeaderByNumberRequest {
+) -> std::result::Result<tonic::Response<proto::rpc::BlockHeaderByNumberResponse>, tonic::Status> {
+    let request = proto::rpc::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };
@@ -320,10 +401,13 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         let store_url = Url::parse(&format!("http://{store_addr}")).unwrap();
         // SAFETY: The block_producer_addr is always valid as it is created from a `SocketAddr`.
         let block_producer_url = Url::parse(&format!("http://{block_producer_addr}")).unwrap();
+        // SAFETY: Using dummy validator URL for test - not actually contacted in this test
+        let validator_url = Url::parse("http://127.0.0.1:0").unwrap();
         Rpc {
             listener: rpc_listener,
             store_url,
             block_producer_url: Some(block_producer_url),
+            validator_url,
             grpc_timeout: Duration::from_secs(30),
         }
         .serve()
@@ -338,18 +422,21 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         .with_timeout(Duration::from_secs(10))
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect::<RpcClientMarker>()
+        .without_otel_context_injection()
+        .connect::<RpcClient>()
         .await
         .expect("Failed to build client");
 
     (rpc_client, rpc_addr, store_addr)
 }
 
-async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
+async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     // Start the store.
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
 
-    let (genesis_state, _) = GenesisConfig::default().into_state().unwrap();
+    let config = GenesisConfig::default();
+    let signer = SecretKey::new();
+    let (genesis_state, _) = config.into_state(signer).unwrap();
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();
     let rpc_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
@@ -375,5 +462,64 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
         .await
         .expect("store should start serving");
     });
-    (store_runtime, data_directory)
+    (
+        store_runtime,
+        data_directory,
+        genesis_state.into_block().unwrap().inner().header().commitment(),
+    )
+}
+
+#[tokio::test]
+async fn get_limits_endpoint() {
+    // Start the RPC and store
+    let (mut rpc_client, _rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
+
+    // Call the get_limits endpoint
+    let response = rpc_client.get_limits(()).await.expect("get_limits should succeed");
+    let limits = response.into_inner();
+
+    // Verify the response contains expected endpoints and limits
+    assert!(!limits.endpoints.is_empty(), "endpoints should not be empty");
+
+    // Verify CheckNullifiers endpoint
+    let check_nullifiers =
+        limits.endpoints.get("CheckNullifiers").expect("CheckNullifiers should exist");
+
+    assert_eq!(
+        check_nullifiers.parameters.get("nullifier"),
+        Some(&(QueryParamNullifierLimit::LIMIT as u32)),
+        "CheckNullifiers nullifier limit should be {}",
+        QueryParamNullifierLimit::LIMIT
+    );
+
+    // Verify SyncState endpoint has multiple parameters
+    let sync_state = limits.endpoints.get("SyncState").expect("SyncState should exist");
+    assert_eq!(
+        sync_state.parameters.get(QueryParamAccountIdLimit::PARAM_NAME),
+        Some(&(QueryParamAccountIdLimit::LIMIT as u32)),
+        "SyncState {} limit should be {}",
+        QueryParamAccountIdLimit::PARAM_NAME,
+        QueryParamAccountIdLimit::LIMIT
+    );
+    assert_eq!(
+        sync_state.parameters.get(QueryParamNoteTagLimit::PARAM_NAME),
+        Some(&(QueryParamNoteTagLimit::LIMIT as u32)),
+        "SyncState {} limit should be {}",
+        QueryParamNoteTagLimit::PARAM_NAME,
+        QueryParamNoteTagLimit::LIMIT
+    );
+
+    // Verify GetNotesById endpoint
+    let get_notes_by_id = limits.endpoints.get("GetNotesById").expect("GetNotesById should exist");
+    assert_eq!(
+        get_notes_by_id.parameters.get(QueryParamNoteIdLimit::PARAM_NAME),
+        Some(&(QueryParamNoteIdLimit::LIMIT as u32)),
+        "GetNotesById {} limit should be {}",
+        QueryParamNoteIdLimit::PARAM_NAME,
+        QueryParamNoteIdLimit::LIMIT
+    );
+
+    // Shutdown to avoid runtime drop error.
+    store_runtime.shutdown_background();
 }

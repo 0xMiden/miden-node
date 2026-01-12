@@ -1,9 +1,9 @@
 // CONVERSIONS
 // ================================================================================================
 
-use miden_objects::batch::ProposedBatch;
-use miden_objects::block::ProposedBlock;
-use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
+use miden_node_proto::BlockProofRequest;
+use miden_protocol::batch::ProposedBatch;
+use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
 use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
 use crate::api::ProofType;
@@ -39,11 +39,11 @@ impl TryFrom<proto::ProofRequest> for ProposedBatch {
     }
 }
 
-impl TryFrom<proto::ProofRequest> for ProposedBlock {
+impl TryFrom<proto::ProofRequest> for BlockProofRequest {
     type Error = DeserializationError;
 
     fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
-        ProposedBlock::read_from_bytes(&request.payload)
+        BlockProofRequest::read_from_bytes(&request.payload)
     }
 }
 

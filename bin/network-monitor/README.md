@@ -30,6 +30,7 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--rpc-url`: RPC service URL (default: `http://localhost:50051`)
 - `--remote-prover-urls`: Comma-separated list of remote prover URLs. If omitted or empty, prover tasks are disabled.
 - `--faucet-url`: Faucet service URL for testing. If omitted, faucet testing is disabled.
+- `--explorer-url`: Explorer service GraphQL endpoint. If omitted, explorer checks are disabled.
 - `--disable-ntx-service`: Disable the network transaction service checks (enabled by default). The network transaction service consists of two components: counter increment (sending increment transactions) and counter tracking (monitoring counter value changes).
 - `--remote-prover-test-interval`: Interval at which to test the remote provers services (default: `2m`)
 - `--faucet-test-interval`: Interval at which to test the faucet services (default: `2m`)
@@ -40,6 +41,7 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--wallet-filepath`: Path where the wallet account is located (default: `wallet_account.mac`)
 - `--counter-filepath`: Path where the network account is located (default: `counter_program.mac`)
 - `--counter-increment-interval`: Interval at which to send the increment counter transaction (default: `30s`)
+- `--counter-latency-timeout`: Maximum time to wait for a counter update after submitting a transaction (default: `2m`)
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -50,6 +52,7 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_RPC_URL`: RPC service URL
 - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs. If unset or empty, prover tasks are disabled.
 - `MIDEN_MONITOR_FAUCET_URL`: Faucet service URL for testing. If unset, faucet testing is disabled.
+- `MIDEN_MONITOR_EXPLORER_URL`: Explorer service GraphQL endpoint. If unset, explorer checks are disabled.
 - `MIDEN_MONITOR_DISABLE_NTX_SERVICE`: Set to `true` to disable the network transaction service checks (enabled by default). This affects both counter increment and tracking components.
 - `MIDEN_MONITOR_REMOTE_PROVER_TEST_INTERVAL`: Interval at which to test the remote provers services
 - `MIDEN_MONITOR_FAUCET_TEST_INTERVAL`: Interval at which to test the faucet services
@@ -60,6 +63,7 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_WALLET_FILEPATH`: Path where the wallet account is located
 - `MIDEN_MONITOR_COUNTER_FILEPATH`: Path where the network account is located
 - `MIDEN_MONITOR_COUNTER_INCREMENT_INTERVAL`: Interval at which to send the increment counter transaction
+- `MIDEN_MONITOR_COUNTER_LATENCY_TIMEOUT`: Maximum time to wait for a counter update after submitting a transaction
 
 ## Commands
 
@@ -151,6 +155,14 @@ The monitor application provides real-time status monitoring for the following M
 - **Block Producer Status**:
   - Block producer version and health
 
+### Explorer
+- **Service Health**: Explorer availability and freshness of the latest block
+- **Latest Block Metadata**:
+  - Block height and timestamp
+  - Transactions, nullifiers, notes, and account updates counts
+  - Block, chain, and proof commitments (shortened display with copy-to-clipboard)
+- **Block Delta**: The difference between the explorer's block height and the RPC's chain tip. If the difference is greater than a tolerance, a warning is displayed. This check is performed in the frontend.
+
 ### Remote Provers
 - **Service Health**: Individual remote prover availability and status  
 - **Version Information**: Remote prover service version
@@ -175,18 +187,19 @@ The monitor application provides real-time status monitoring for the following M
   - Transaction and note ID tracking from successful mints
   - Automated testing on a configurable interval to verify faucet functionality
 
-### Counter Increment Service
-- **Service Health**: End-to-end transaction submission for counter increment
+### Local Transactions (Counter Increment)
+- **Service Health**: End-to-end local transaction submission for counter increment
 - **Metrics**:
   - Success/Failure counts for increment transactions
   - Last TX ID with copy-to-clipboard
+  - Latency in blocks from submission to observed counter update (with pending measurement tracking)
 
-### Counter Tracking Service
-- **Service Health**: Real-time monitoring of counter value changes
+### Network Transactions (Counter Tracking)
+- **Service Health**: Real-time monitoring of on-chain counter value changes
 - **Metrics**:
   - Current network account counter value (queried from RPC periodically)
   - Expected counter value based on successful increments sent
-  - Pending increments: How many transactions are queued/unprocessed
+  - Pending notes: How many transactions are queued/unprocessed
   - Last updated timestamp
 
 ## User Interface
@@ -200,6 +213,31 @@ The web dashboard provides a clean, responsive interface with the following feat
 - **Visual Health Indicators**: Color-coded status indicators and clear success/failure metrics
 - **Interactive Elements**: Copy-to-clipboard functionality for genesis commitments, transaction IDs, and note IDs
 - **Responsive Design**: Optimized for both desktop and mobile viewing
+
+### gRPC-Web Browser Probe
+
+The dashboard automatically probes RPC and Remote Prover services every 30 seconds using gRPC-Web protocol. This tests whether the browser can successfully communicate with these services.
+
+**What it checks:**
+- Browser connectivity to the service endpoint
+- CORS configuration (the probe is a real cross-origin request from the browser)
+- gRPC-Web protocol handling (proper framing and trailers)
+- Basic service availability (calls the `Status` endpoint)
+
+**Results displayed:**
+- **gRPC-Web: OK** / **gRPC-Web: FAILED** status
+- Response latency in milliseconds
+- Error details (if failed)
+- Time since last probe
+
+**Common failure scenarios:**
+- **CORS / Network error**: The service is not configured to accept cross-origin requests from the browser, or the service is unreachable
+- **HTTP 4xx/5xx**: The service returned an HTTP error (check server logs)
+- **grpc-status non-zero**: The gRPC call failed at the application level
+
+**Note:** The probe uses the same URLs configured for `--rpc-url` and `--remote-prover-urls`. For the probe to work from a browser, these services must:
+1. Have gRPC-Web support enabled (e.g., via Envoy, grpc-web proxy, or native tonic-web)
+2. Allow CORS requests from the monitor's origin (or use `Access-Control-Allow-Origin: *`)
 
 ## Account Management
 

@@ -19,6 +19,14 @@ If there is a mismatch in version, clients will encounter an error while executi
 
 The server will reject any version that does not have the same major and minor version to it. This behaviour will change after v1.0.0., at which point only the major version will be taken into account.
 
+## Query limits (`GetLimits`)
+
+The RPC service exposes a `GetLimits` endpoint which returns the query parameter limits enforced by the server for
+multi-value parameters (e.g. number of nullifiers, note tags, note IDs, account IDs).
+
+These limits are defined centrally in `miden_node_utils::limiter` and are enforced at the RPC boundary (and also inside
+the store) to keep database queries bounded and to keep response payloads within the ~4 MB budget.
+
 ## Error Handling
 
 The RPC component uses domain-specific error enums for structured error reporting instead of proto-generated error types. This provides better control over error codes and makes error handling more maintainable.

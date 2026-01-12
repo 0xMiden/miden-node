@@ -1,5 +1,5 @@
-use miden_objects::Word;
-use miden_objects::transaction::TransactionId;
+use miden_protocol::Word;
+use miden_protocol::transaction::TransactionId;
 
 use crate::errors::ConversionError;
 use crate::generated as proto;
@@ -39,7 +39,7 @@ impl TryFrom<proto::primitives::Digest> for TransactionId {
 
     fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
         let digest: Word = value.try_into()?;
-        Ok(digest.into())
+        Ok(TransactionId::from_raw(digest))
     }
 }
 

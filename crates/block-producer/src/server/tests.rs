@@ -5,7 +5,7 @@ use miden_node_proto::generated::{
     self as proto, block_producer::api_client as block_producer_client,
 };
 use miden_node_store::{GenesisState, Store};
-use miden_objects::{
+use miden_protocol::{
     Digest,
     account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType},
     transaction::ProvenTransactionBuilder,
@@ -148,7 +148,7 @@ async fn block_producer_startup_is_robust_to_network_failures() {
 async fn send_request(
     mut client: block_producer_client::ApiClient<Channel>,
     i: u8,
-) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, tonic::Status>
+) -> Result<tonic::Response<proto::blockchain::BlockNumber>, tonic::Status>
 {
     let tx = ProvenTransactionBuilder::new(
         AccountId::dummy(

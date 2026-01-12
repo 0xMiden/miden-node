@@ -3,9 +3,9 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
-use miden_objects::vm::FutureMaybeSend;
+use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::vm::FutureMaybeSend;
 use miden_tx::TransactionProverError;
 use tokio::sync::Mutex;
 
@@ -72,7 +72,12 @@ impl RemoteTransactionProver {
 
         #[cfg(target_arch = "wasm32")]
         let new_client = {
-            let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
+            let fetch_options =
+                tonic_web_wasm_client::options::FetchOptions::new().timeout(self.timeout);
+            let web_client = tonic_web_wasm_client::Client::new_with_options(
+                self.endpoint.clone(),
+                fetch_options,
+            );
             ApiClient::new(web_client)
         };
 
@@ -102,7 +107,7 @@ impl RemoteTransactionProver {
         tx_inputs: TransactionInputs,
     ) -> impl FutureMaybeSend<Result<ProvenTransaction, TransactionProverError>> {
         async move {
-            use miden_objects::utils::Serializable;
+            use miden_protocol::utils::Serializable;
             self.connect().await.map_err(|err| {
                 TransactionProverError::other_with_source(
                     "failed to connect to the remote prover",

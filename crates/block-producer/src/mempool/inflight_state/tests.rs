@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use miden_node_utils::ErrorReport;
-use miden_objects::Word;
+use miden_protocol::Word;
 
 use super::*;
 use crate::test_utils::note::{mock_note, mock_output_note};

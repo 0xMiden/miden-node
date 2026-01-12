@@ -3,17 +3,20 @@
 # - Slot 0: counter value (u64)
 # - Slot 1: authorized wallet account id as [prefix, suffix, 0, 0]
 
-use.miden::active_account
-use.miden::native_account
-use.miden::active_note
-use.miden::account_id
-use.miden::tx
+use miden::core::sys
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::active_note
+use miden::protocol::account_id
+use miden::protocol::tx
 
-use.std::sys
+
+# The slot in this component's storage layout where the counter is stored.
+const COUNTER_SLOT = word("miden::monitor::counter_contract::counter")
 
 # Increment function with note authentication
 # => []
-export.increment
+pub proc increment
     # Ensure the note sender matches the authorized wallet stored in slot 1.
     push.1 exec.active_account::get_item
     # => [owner_prefix, owner_suffix, 0, 0]
@@ -27,13 +30,13 @@ export.increment
     assert.err="Note sender not authorized" drop drop
     # => []
 
-    push.0 exec.active_account::get_item
+    push.COUNTER_SLOT[0..2] exec.active_account::get_item
     # => [count, 0, 0, 0]
-    
+
     push.1 add
     # => [count+1]
 
-    push.0 exec.native_account::set_item
+    push.COUNTER_SLOT[0..2] exec.native_account::set_item
     # => [count, 0, 0, 0]
 
     dropw
@@ -42,8 +45,8 @@ end
 
 # Get the counter (no auth required)
 # => [count]
-export.get_count
-    push.0 exec.active_account::get_item
+pub proc get_count
+    push.COUNTER_SLOT[0..2] exec.active_account::get_item
     # => [count, 0, 0, 0]
 
     exec.sys::truncate_stack

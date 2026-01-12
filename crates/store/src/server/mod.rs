@@ -4,15 +4,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::generated::{block_producer_store, ntx_builder_store, rpc_store};
+use miden_node_proto::generated::store;
 use miden_node_proto_build::{
     store_block_producer_api_descriptor,
     store_ntx_builder_api_descriptor,
     store_rpc_api_descriptor,
-    store_shared_api_descriptor,
 };
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use miden_protocol::block::BlockSigner;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -21,13 +21,11 @@ use tracing::{info, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::Db;
-use crate::server::db_maintenance::DbMaintenance;
 use crate::state::State;
-use crate::{COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GenesisState};
+use crate::{COMPONENT, GenesisState};
 
 mod api;
 mod block_producer;
-mod db_maintenance;
 mod ntx_builder;
 mod rpc_api;
 
@@ -51,7 +49,10 @@ impl Store {
         skip_all,
         err,
     )]
-    pub fn bootstrap(genesis: GenesisState, data_directory: &Path) -> anyhow::Result<()> {
+    pub fn bootstrap<S: BlockSigner>(
+        genesis: GenesisState<S>,
+        data_directory: &Path,
+    ) -> anyhow::Result<()> {
         let genesis = genesis
             .into_block()
             .context("failed to convert genesis configuration into the genesis block")?;
@@ -92,24 +93,19 @@ impl Store {
         let state =
             Arc::new(State::load(&self.data_directory).await.context("failed to load state")?);
 
-        let db_maintenance_service =
-            DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
-
         let rpc_service =
-            rpc_store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
-        let ntx_builder_service =
-            ntx_builder_store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
-                state: Arc::clone(&state),
-            });
+            store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
+        let ntx_builder_service = store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
+            state: Arc::clone(&state),
+        });
         let block_producer_service =
-            block_producer_store::block_producer_server::BlockProducerServer::new(api::StoreApi {
+            store::block_producer_server::BlockProducerServer::new(api::StoreApi {
                 state: Arc::clone(&state),
             });
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(store_rpc_api_descriptor())
             .register_file_descriptor_set(store_ntx_builder_api_descriptor())
             .register_file_descriptor_set(store_block_producer_api_descriptor())
-            .register_file_descriptor_set(store_shared_api_descriptor())
             .build_v1()
             .context("failed to build reflection service")?;
 
@@ -121,18 +117,12 @@ impl Store {
             .register_file_descriptor_set(store_rpc_api_descriptor())
             .register_file_descriptor_set(store_ntx_builder_api_descriptor())
             .register_file_descriptor_set(store_block_producer_api_descriptor())
-            .register_file_descriptor_set(store_shared_api_descriptor())
             .build_v1alpha()
             .context("failed to build reflection service")?;
 
         info!(target: COMPONENT, "Database loaded");
 
         let mut join_set = JoinSet::new();
-
-        join_set.spawn(async move {
-            db_maintenance_service.run().await;
-            Ok(())
-        });
 
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(
@@ -183,7 +173,7 @@ impl DataDirectory {
     /// Creates a new [`DataDirectory`], ensuring that the directory exists and is accessible
     /// insofar as is possible.
     pub fn load(path: PathBuf) -> std::io::Result<Self> {
-        let meta = std::fs::metadata(&path)?;
+        let meta = fs_err::metadata(&path)?;
         if meta.is_dir().not() {
             return Err(std::io::ErrorKind::NotConnected.into());
         }

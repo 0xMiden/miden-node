@@ -13,8 +13,6 @@ COPY ./crates ./crates
 COPY ./proto ./proto
 
 RUN cargo install --path bin/node --locked
-RUN rm -rf data accounts && mkdir data accounts
-RUN miden-node bundled bootstrap --data-directory ./data --accounts-directory ./accounts
 
 FROM debian:bullseye-slim
 
@@ -26,8 +24,6 @@ RUN apt-get update && \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/accounts accounts
-COPY --from=builder /app/data data
 COPY --from=builder /usr/local/cargo/bin/miden-node /usr/local/bin/miden-node
 
 LABEL org.opencontainers.image.authors=devops@miden.team \
@@ -47,6 +43,5 @@ LABEL org.opencontainers.image.created=$CREATED \
 # Expose RPC port
 EXPOSE 57291
 
-# Start the Miden node
 # Miden node does not spawn sub-processes, so it can be used as the PID1
-CMD miden-node bundled start --rpc.url http://0.0.0.0:57291 --data-directory ./data
+CMD miden-node

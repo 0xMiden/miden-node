@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,12 +13,12 @@ use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::BlockNumber;
-use miden_objects::transaction::ProvenTransaction;
-use miden_objects::utils::serde::Deserializable;
+use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::transaction::ProvenTransaction;
+use miden_protocol::utils::serde::Deserializable;
 use tokio::net::TcpListener;
-use tokio::sync::{Barrier, Mutex};
+use tokio::sync::{Barrier, Mutex, RwLock};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
@@ -36,7 +37,8 @@ use crate::errors::{
 };
 use crate::mempool::{BatchBudget, BlockBudget, Mempool, MempoolConfig, SharedMempool};
 use crate::store::StoreClient;
-use crate::{COMPONENT, SERVER_NUM_BATCH_BUILDERS};
+use crate::validator::BlockProducerValidatorClient;
+use crate::{CACHED_MEMPOOL_STATS_UPDATE_INTERVAL, COMPONENT, SERVER_NUM_BATCH_BUILDERS};
 
 /// The block producer server.
 ///
@@ -49,6 +51,8 @@ pub struct BlockProducer {
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_url: Url,
+    /// The address of the validator component.
+    pub validator_url: Url,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -70,7 +74,13 @@ pub struct BlockProducer {
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
+
+    /// The maximum number of inflight transactions allowed in the mempool at once.
+    pub mempool_tx_capacity: NonZeroUsize,
 }
+
+// BLOCK PRODUCER
+// ================================================================================================
 
 impl BlockProducer {
     /// Serves the block-producer RPC API, the batch-builder and the block-builder.
@@ -81,6 +91,7 @@ impl BlockProducer {
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
         let store = StoreClient::new(self.store_url.clone());
+        let validator = BlockProducerValidatorClient::new(self.validator_url.clone());
 
         // Retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
@@ -118,7 +129,7 @@ impl BlockProducer {
         info!(target: COMPONENT, "Server initialized");
 
         let block_builder =
-            BlockBuilder::new(store.clone(), self.block_prover_url, self.block_interval);
+            BlockBuilder::new(store.clone(), validator, self.block_prover_url, self.block_interval);
         let batch_builder = BatchBuilder::new(
             store.clone(),
             SERVER_NUM_BATCH_BUILDERS,
@@ -131,6 +142,7 @@ impl BlockProducer {
                 ..BatchBudget::default()
             },
             block_budget: BlockBudget { batches: self.max_batches_per_block },
+            tx_capacity: self.mempool_tx_capacity,
             ..Default::default()
         };
         let mempool = Mempool::shared(chain_tip, mempool);
@@ -145,10 +157,10 @@ impl BlockProducer {
 
         // Launch the gRPC server and wait at the checkpoint for any other components to be in sync.
         //
-        // This is used to ensure the ntb can subscribe to the mempool events without playing catch
-        // up caused by block-production.
+        // This is used to ensure the ntx-builder can subscribe to the mempool events without
+        // playing catch up caused by block-production.
         //
-        // This is a temporary work-around until the ntb can resync on the fly.
+        // This is a temporary work-around until the ntx-builder can resync on the fly.
         let rpc_id = tasks
             .spawn({
                 let mempool = mempool.clone();
@@ -209,6 +221,9 @@ impl BlockProducer {
     }
 }
 
+// BLOCK PRODUCER RPC SERVER
+// ================================================================================================
+
 /// Serves the block producer's RPC [api](api_server::Api).
 struct BlockProducerRpcServer {
     /// The mutex effectively rate limits incoming transactions into the mempool by forcing them
@@ -220,98 +235,28 @@ struct BlockProducerRpcServer {
     mempool: Mutex<SharedMempool>,
 
     store: StoreClient,
-}
 
-#[tonic::async_trait]
-impl api_server::Api for BlockProducerRpcServer {
-    async fn submit_proven_transaction(
-        &self,
-        request: tonic::Request<proto::transaction::ProvenTransaction>,
-    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, Status>
-    {
-        self.submit_proven_transaction(request.into_inner())
-             .await
-             .map(tonic::Response::new)
-             // This Status::from mapping takes care of hiding internal errors.
-             .map_err(Into::into)
-    }
-
-    async fn submit_proven_batch(
-        &self,
-        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
-    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
-        self.submit_proven_batch(request.into_inner())
-             .await
-             .map(tonic::Response::new)
-             // This Status::from mapping takes care of hiding internal errors.
-             .map_err(Into::into)
-    }
-
-    #[instrument(
-         target = COMPONENT,
-         name = "block_producer.server.status",
-         skip_all,
-         err
-     )]
-    async fn status(
-        &self,
-        _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<proto::block_producer::BlockProducerStatus>, Status> {
-        Ok(tonic::Response::new(proto::block_producer::BlockProducerStatus {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            status: "connected".to_string(),
-        }))
-    }
-
-    type MempoolSubscriptionStream = MempoolEventSubscription;
-
-    async fn mempool_subscription(
-        &self,
-        request: tonic::Request<proto::block_producer::MempoolSubscriptionRequest>,
-    ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
-        let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
-
-        let subscription =
-            self.mempool
-                .lock()
-                .await
-                .lock()
-                .await
-                .subscribe(chain_tip)
-                .map_err(|mempool_tip| {
-                    tonic::Status::invalid_argument(format!(
-                        "Mempool's chain tip {mempool_tip} does not match request's {chain_tip}"
-                    ))
-                })?;
-        let subscription = ReceiverStream::new(subscription);
-
-        Ok(tonic::Response::new(MempoolEventSubscription { inner: subscription }))
-    }
-}
-
-struct MempoolEventSubscription {
-    inner: ReceiverStream<MempoolEvent>,
-}
-
-impl tokio_stream::Stream for MempoolEventSubscription {
-    type Item = Result<proto::block_producer::MempoolEvent, tonic::Status>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.inner
-            .poll_next_unpin(cx)
-            .map(|x| x.map(proto::block_producer::MempoolEvent::from).map(Result::Ok))
-    }
+    /// Cached mempool statistics that are updated periodically to avoid locking the mempool
+    /// for each status request.
+    cached_mempool_stats: Arc<RwLock<MempoolStats>>,
 }
 
 impl BlockProducerRpcServer {
     pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
-        Self { mempool: Mutex::new(mempool), store }
+        Self {
+            mempool: Mutex::new(mempool),
+            store,
+            cached_mempool_stats: Arc::new(RwLock::new(MempoolStats::default())),
+        }
     }
 
+    // SERVER STARTUP
+    // --------------------------------------------------------------------------------------------
+
     async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
+        // Start background task to periodically update cached mempool stats
+        self.spawn_mempool_stats_updater().await;
+
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())
             .build_v1()
@@ -339,6 +284,43 @@ impl BlockProducerRpcServer {
             .context("failed to serve block producer API")
     }
 
+    /// Starts a background task that periodically updates the cached mempool statistics.
+    ///
+    /// This prevents the need to lock the mempool for each status request.
+    async fn spawn_mempool_stats_updater(&self) {
+        let cached_mempool_stats = Arc::clone(&self.cached_mempool_stats);
+        let mempool = self.mempool.lock().await.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(CACHED_MEMPOOL_STATS_UPDATE_INTERVAL);
+
+            loop {
+                interval.tick().await;
+
+                let (chain_tip, unbatched_transactions, proposed_batches, proven_batches) = {
+                    let mempool = mempool.lock().await;
+                    (
+                        mempool.chain_tip(),
+                        mempool.unbatched_transactions_count() as u64,
+                        mempool.proposed_batches_count() as u64,
+                        mempool.proven_batches_count() as u64,
+                    )
+                };
+
+                let mut cache = cached_mempool_stats.write().await;
+                *cache = MempoolStats {
+                    chain_tip,
+                    unbatched_transactions,
+                    proposed_batches,
+                    proven_batches,
+                };
+            }
+        });
+    }
+
+    // RPC ENDPOINTS
+    // --------------------------------------------------------------------------------------------
+
     #[instrument(
          target = COMPONENT,
          name = "block_producer.server.submit_proven_transaction",
@@ -348,7 +330,7 @@ impl BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
         request: proto::transaction::ProvenTransaction,
-    ) -> Result<proto::block_producer::SubmitProvenTransactionResponse, AddTransactionError> {
+    ) -> Result<proto::blockchain::BlockNumber, AddTransactionError> {
         debug!(target: COMPONENT, ?request);
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
@@ -374,11 +356,13 @@ impl BlockProducerRpcServer {
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
         let tx = AuthenticatedTransaction::new_unchecked(tx, inputs).map(Arc::new)?;
 
-        self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-            proto::block_producer::SubmitProvenTransactionResponse {
-                block_height: block_height.as_u32(),
-            }
-        })
+        self.mempool
+            .lock()
+            .await
+            .lock()
+            .await
+            .add_transaction(tx)
+            .map(|block_height| proto::blockchain::BlockNumber { block_num: block_height.as_u32() })
     }
 
     #[instrument(
@@ -390,10 +374,126 @@ impl BlockProducerRpcServer {
     async fn submit_proven_batch(
         &self,
         request: proto::transaction::ProvenTransactionBatch,
-    ) -> Result<proto::block_producer::SubmitProvenBatchResponse, SubmitProvenBatchError> {
+    ) -> Result<proto::blockchain::BlockNumber, SubmitProvenBatchError> {
         let _batch = ProvenBatch::read_from_bytes(&request.encoded)
             .map_err(SubmitProvenBatchError::Deserialization)?;
 
         todo!();
+    }
+}
+
+#[tonic::async_trait]
+impl api_server::Api for BlockProducerRpcServer {
+    type MempoolSubscriptionStream = MempoolEventSubscription;
+
+    async fn submit_proven_transaction(
+        &self,
+        request: tonic::Request<proto::transaction::ProvenTransaction>,
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
+        self.submit_proven_transaction(request.into_inner())
+             .await
+             .map(tonic::Response::new)
+             // This Status::from mapping takes care of hiding internal errors.
+             .map_err(Into::into)
+    }
+
+    async fn submit_proven_batch(
+        &self,
+        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
+        self.submit_proven_batch(request.into_inner())
+             .await
+             .map(tonic::Response::new)
+             // This Status::from mapping takes care of hiding internal errors.
+             .map_err(Into::into)
+    }
+
+    #[instrument(
+         target = COMPONENT,
+         name = "block_producer.server.status",
+         skip_all,
+         err
+     )]
+    async fn status(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<proto::rpc::BlockProducerStatus>, Status> {
+        let mempool_stats = *self.cached_mempool_stats.read().await;
+
+        Ok(tonic::Response::new(proto::rpc::BlockProducerStatus {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: mempool_stats.chain_tip.as_u32(),
+            mempool_stats: Some(mempool_stats.into()),
+        }))
+    }
+
+    async fn mempool_subscription(
+        &self,
+        request: tonic::Request<proto::block_producer::MempoolSubscriptionRequest>,
+    ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
+        let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
+
+        let subscription =
+            self.mempool
+                .lock()
+                .await
+                .lock()
+                .await
+                .subscribe(chain_tip)
+                .map_err(|mempool_tip| {
+                    tonic::Status::invalid_argument(format!(
+                        "Mempool's chain tip {mempool_tip} does not match request's {chain_tip}"
+                    ))
+                })?;
+        let subscription = ReceiverStream::new(subscription);
+
+        Ok(tonic::Response::new(MempoolEventSubscription { inner: subscription }))
+    }
+}
+
+// MEMPOOL SUBSCRIPTION
+// ================================================================================================
+
+struct MempoolEventSubscription {
+    inner: ReceiverStream<MempoolEvent>,
+}
+
+impl tokio_stream::Stream for MempoolEventSubscription {
+    type Item = Result<proto::block_producer::MempoolEvent, tonic::Status>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.inner
+            .poll_next_unpin(cx)
+            .map(|x| x.map(proto::block_producer::MempoolEvent::from).map(Result::Ok))
+    }
+}
+
+// MEMPOOL STATISTICS
+// ================================================================================================
+
+/// Mempool statistics that are updated periodically to avoid locking the mempool.
+#[derive(Clone, Copy, Default)]
+struct MempoolStats {
+    /// The mempool's current view of the chain tip height.
+    chain_tip: BlockNumber,
+    /// Number of transactions currently in the mempool waiting to be batched.
+    unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    proven_batches: u64,
+}
+
+impl From<MempoolStats> for proto::rpc::MempoolStats {
+    fn from(stats: MempoolStats) -> Self {
+        proto::rpc::MempoolStats {
+            unbatched_transactions: stats.unbatched_transactions,
+            proposed_batches: stats.proposed_batches,
+            proven_batches: stats.proven_batches,
+        }
     }
 }

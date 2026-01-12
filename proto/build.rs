@@ -6,19 +6,19 @@ use miette::{Context, IntoDiagnostic};
 use protox::prost::Message;
 
 const RPC_PROTO: &str = "rpc.proto";
-const STORE_RPC_PROTO: &str = "store/rpc.proto";
-const STORE_NTX_BUILDER_PROTO: &str = "store/ntx_builder.proto";
-const STORE_BLOCK_PRODUCER_PROTO: &str = "store/block_producer.proto";
-const STORE_SHARED_PROTO: &str = "store/shared.proto";
-const BLOCK_PRODUCER_PROTO: &str = "block_producer.proto";
+// Unified internal store API (store.Rpc, store.BlockProducer, store.NtxBuilder).
+// We compile the same file three times to preserve existing descriptor names.
+const STORE_RPC_PROTO: &str = "internal/store.proto";
+const STORE_NTX_BUILDER_PROTO: &str = "internal/store.proto";
+const STORE_BLOCK_PRODUCER_PROTO: &str = "internal/store.proto";
+const BLOCK_PRODUCER_PROTO: &str = "internal/block_producer.proto";
 const REMOTE_PROVER_PROTO: &str = "remote_prover.proto";
-const VALIDATOR_PROTO: &str = "validator.proto";
+const VALIDATOR_PROTO: &str = "internal/validator.proto";
 
 const RPC_DESCRIPTOR: &str = "rpc_file_descriptor.bin";
 const STORE_RPC_DESCRIPTOR: &str = "store_rpc_file_descriptor.bin";
 const STORE_NTX_BUILDER_DESCRIPTOR: &str = "store_ntx_builder_file_descriptor.bin";
 const STORE_BLOCK_PRODUCER_DESCRIPTOR: &str = "store_block_producer_file_descriptor.bin";
-const STORE_SHARED_DESCRIPTOR: &str = "store_shared_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
 const VALIDATOR_DESCRIPTOR: &str = "validator_file_descriptor.bin";
@@ -68,12 +68,6 @@ fn main() -> miette::Result<()> {
     fs::write(&store_block_producer_path, store_block_producer_file_descriptor.encode_to_vec())
         .into_diagnostic()
         .wrap_err("writing store block producer file descriptor")?;
-
-    let store_shared_file_descriptor = protox::compile([STORE_SHARED_PROTO], includes)?;
-    let store_shared_path = PathBuf::from(&out).join(STORE_SHARED_DESCRIPTOR);
-    fs::write(&store_shared_path, store_shared_file_descriptor.encode_to_vec())
-        .into_diagnostic()
-        .wrap_err("writing store shared file descriptor")?;
 
     let block_producer_file_descriptor = protox::compile([BLOCK_PRODUCER_PROTO], includes)?;
     let block_producer_path = PathBuf::from(&out).join(BLOCK_PRODUCER_DESCRIPTOR);

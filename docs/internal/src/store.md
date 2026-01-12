@@ -18,5 +18,3 @@ startup its likely that you created the database _before_ making schema changes 
 
 The store consists mainly of a gRPC server which answers requests from the RPC and block-producer components, as well as
 new block submissions from the block-producer.
-
-A lightweight background process performs database query optimisation by analysing database queries and statistics.

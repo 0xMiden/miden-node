@@ -1,16 +1,17 @@
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
+use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
-use miden_objects::Word;
-use miden_objects::account::Account;
-use miden_objects::block::BlockHeader;
-use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
-use miden_objects::note::NoteScript;
+use miden_protocol::Word;
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
+use miden_protocol::note::NoteScript;
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tracing::{info, instrument};
@@ -39,7 +40,8 @@ impl StoreClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<StoreNtxBuilder>();
+            .with_otel_context_injection()
+            .connect_lazy::<StoreNtxBuilderClient>();
 
         Self { inner: store }
     }
@@ -104,43 +106,12 @@ impl StoreClient {
         }
     }
 
-    /// Returns the list of unconsumed network notes.
-    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
-    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
-        let mut all_notes = Vec::new();
-        let mut page_token: Option<u64> = None;
-
-        loop {
-            let req = proto::ntx_builder_store::UnconsumedNetworkNotesRequest {
-                page_token,
-                page_size: 128,
-            };
-            let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
-
-            let page: Vec<NetworkNote> = resp
-                .notes
-                .into_iter()
-                .map(NetworkNote::try_from)
-                .collect::<Result<Vec<_>, _>>()?;
-
-            all_notes.extend(page);
-
-            match resp.next_token {
-                Some(tok) => page_token = Some(tok),
-                None => break,
-            }
-        }
-
-        Ok(all_notes)
-    }
-
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,
         prefix: NetworkAccountPrefix,
     ) -> Result<Option<Account>, StoreError> {
-        let request =
-            proto::ntx_builder_store::AccountIdPrefix { account_id_prefix: prefix.inner() };
+        let request = proto::store::AccountIdPrefix { account_id_prefix: prefix.inner() };
 
         let store_response = self
             .inner
@@ -162,6 +133,102 @@ impl StoreClient {
         };
 
         Ok(account)
+    }
+
+    /// Returns the list of unconsumed network notes for a specific network account up to a
+    /// specified block.
+    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
+    pub async fn get_unconsumed_network_notes(
+        &self,
+        network_account_prefix: NetworkAccountPrefix,
+        block_num: u32,
+    ) -> Result<Vec<NetworkNote>, StoreError> {
+        // Upper bound of each note is ~10KB. Limit page size to ~10MB.
+        const PAGE_SIZE: u64 = 1024;
+
+        let mut all_notes = Vec::new();
+        let mut page_token: Option<u64> = None;
+
+        let mut store_client = self.inner.clone();
+        loop {
+            let req = proto::store::UnconsumedNetworkNotesRequest {
+                page_token,
+                page_size: PAGE_SIZE,
+                network_account_id_prefix: network_account_prefix.inner(),
+                block_num,
+            };
+            let resp = store_client.get_unconsumed_network_notes(req).await?.into_inner();
+
+            all_notes.reserve(resp.notes.len());
+            for note in resp.notes {
+                all_notes.push(NetworkNote::try_from(note)?);
+            }
+
+            match resp.next_token {
+                Some(token) => page_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_notes)
+    }
+
+    /// Get all network account IDs.
+    ///
+    /// Since the `GetNetworkAccountIds` method is paginated, we loop through all pages until we
+    /// reach the end.
+    ///
+    /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
+    /// accounts (~289,000). With `100_000` iterations, which is assumed to be sufficient for the
+    /// foreseeable future.
+    #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
+    pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
+        const MAX_ITERATIONS: u32 = 100_000;
+
+        let mut block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
+
+        let mut ids = Vec::new();
+        let mut iterations_count = 0;
+
+        loop {
+            let response = self
+                .inner
+                .clone()
+                .get_network_account_ids(Into::<BlockRange>::into(block_range.clone()))
+                .await?
+                .into_inner();
+
+            let accounts: Result<Vec<AccountId>, ConversionError> = response
+                .account_ids
+                .into_iter()
+                .map(|account_id| {
+                    AccountId::read_from_bytes(&account_id.id)
+                        .map_err(|err| ConversionError::deserialization_error("account_id", err))
+                })
+                .collect();
+
+            let pagination_info = response.pagination_info.ok_or(
+                ConversionError::MissingFieldInProtobufRepresentation {
+                    entity: "NetworkAccountIdList",
+                    field_name: "pagination_info",
+                },
+            )?;
+
+            ids.extend(accounts?);
+            iterations_count += 1;
+            block_range =
+                BlockNumber::from(pagination_info.block_num)..=BlockNumber::from(u32::MAX);
+
+            if pagination_info.block_num >= pagination_info.chain_tip {
+                break;
+            }
+
+            if iterations_count >= MAX_ITERATIONS {
+                return Err(StoreError::MaxIterationsReached("GetNetworkAccountIds".to_string()));
+            }
+        }
+
+        Ok(ids)
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]
@@ -201,4 +268,6 @@ pub enum StoreError {
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
+    #[error("max iterations reached: {0}")]
+    MaxIterationsReached(String),
 }

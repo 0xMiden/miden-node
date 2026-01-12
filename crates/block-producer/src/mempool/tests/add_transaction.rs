@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use assert_matches::assert_matches;
-use miden_objects::Word;
-use miden_objects::block::BlockHeader;
+use miden_protocol::Word;
+use miden_protocol::block::BlockHeader;
 
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::AddTransactionError;

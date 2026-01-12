@@ -11,16 +11,16 @@ import "types/primitives.proto";
 // Submits proven transaction to the Miden network.
 message ProvenTransaction {
     // Transaction encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::transaction::proven_tx::ProvenTransaction].
+    // [miden_protocol::transaction::proven_tx::ProvenTransaction].
     bytes transaction = 1;
     // Transaction inputs encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::transaction::TransactionInputs].
+    // [miden_protocol::transaction::TransactionInputs].
     optional bytes transaction_inputs = 2;
 }
 
 message ProvenTransactionBatch {
     // Encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::transaction::proven_tx::ProvenTransaction].
+    // [miden_protocol::transaction::proven_tx::ProvenTransaction].
     bytes encoded = 1;
 }
 
@@ -54,7 +54,7 @@ message TransactionHeader {
     primitives.Digest final_state_commitment = 3;
 
     // Nullifiers of the input notes of the transaction.
-    repeated primitives.Digest input_notes = 4;
+    repeated primitives.Digest nullifiers = 4;
 
     // Output notes of the transaction.
     repeated note.NoteSyncRecord output_notes = 5;

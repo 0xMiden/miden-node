@@ -1,5 +1,5 @@
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{
     Note,
     NoteDetails,
     NoteExecutionHint,
@@ -11,8 +11,8 @@ use miden_objects::note::{
     NoteType,
     Nullifier,
 };
-use miden_objects::utils::{Deserializable, Serializable};
-use miden_objects::{Felt, Word};
+use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
 use super::account::NetworkAccountPrefix;
@@ -135,19 +135,18 @@ impl TryFrom<&proto::note::NoteInclusionInBlockProof> for (NoteId, NoteInclusion
                 .clone(),
         )?;
 
+        let note_id = Word::try_from(
+            proof
+                .note_id
+                .as_ref()
+                .ok_or(proto::note::NoteInclusionInBlockProof::missing_field(stringify!(note_id)))?
+                .id
+                .as_ref()
+                .ok_or(proto::note::NoteId::missing_field(stringify!(id)))?,
+        )?;
+
         Ok((
-            Word::try_from(
-                proof
-                    .note_id
-                    .as_ref()
-                    .ok_or(proto::note::NoteInclusionInBlockProof::missing_field(stringify!(
-                        note_id
-                    )))?
-                    .id
-                    .as_ref()
-                    .ok_or(proto::note::NoteId::missing_field(stringify!(id)))?,
-            )?
-            .into(),
+            NoteId::from_raw(note_id),
             NoteInclusionProof::new(
                 proof.block_num.into(),
                 proof.note_index_in_block.try_into()?,

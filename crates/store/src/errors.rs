@@ -6,13 +6,14 @@ use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::MmrError;
-use miden_objects::crypto::utils::DeserializationError;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::OutputNote;
-use miden_objects::{
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::MerkleError;
+use miden_protocol::crypto::merkle::mmr::MmrError;
+use miden_protocol::crypto::utils::DeserializationError;
+use miden_protocol::note::{NoteId, Nullifier};
+use miden_protocol::transaction::OutputNote;
+use miden_protocol::{
     AccountDeltaError,
     AccountError,
     AccountTreeError,
@@ -21,6 +22,7 @@ use miden_objects::{
     FeeError,
     NoteError,
     NullifierTreeError,
+    StorageMapError,
     Word,
 };
 use thiserror::Error;
@@ -29,6 +31,7 @@ use tonic::Status;
 
 use crate::db::manager::ConnectionManagerError;
 use crate::db::models::conv::DatabaseTypeConversionError;
+use crate::inner_forest::InnerForestError;
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -56,11 +59,13 @@ pub enum DatabaseError {
     #[error("I/O error")]
     IoError(#[from] io::Error),
     #[error("merkle error")]
-    MerkleError(#[from] miden_objects::crypto::merkle::MerkleError),
+    MerkleError(#[from] MerkleError),
     #[error("network account error")]
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
+    #[error("storage map error")]
+    StorageMapError(#[from] StorageMapError),
     #[error("setup deadpool connection pool failed")]
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error("setup deadpool connection pool failed")]
@@ -98,12 +103,18 @@ pub enum DatabaseError {
     AccountNotFoundInDb(AccountId),
     #[error("account {0} state at block height {1} not found")]
     AccountAtBlockHeightNotFoundInDb(AccountId, BlockNumber),
+    #[error("block {0} not found in database")]
+    BlockNotFound(BlockNumber),
+    #[error("historical block {block_num} not available: {reason}")]
+    HistoricalBlockNotAvailable { block_num: BlockNumber, reason: String },
     #[error("accounts {0:?} not found")]
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
     AccountNotPublic(AccountId),
     #[error("invalid block parameters: block_from ({from}) > block_to ({to})")]
     InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("invalid storage slot type: {0}")]
+    InvalidStorageSlotType(i32),
     #[error("data corrupted: {0}")]
     DataCorrupted(String),
     #[error("SQLite pool interaction failed: {0}")]
@@ -115,6 +126,8 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
+    #[error("schema verification failed")]
+    SchemaVerification(#[from] SchemaVerificationError),
     #[error(transparent)]
     ConnectionManager(#[from] ConnectionManagerError),
     #[error(transparent)]
@@ -169,6 +182,10 @@ impl From<DatabaseError> for Status {
 
 #[derive(Error, Debug)]
 pub enum StateInitializationError {
+    #[error("account tree IO error: {0}")]
+    AccountTreeIoError(String),
+    #[error("nullifier tree IO error: {0}")]
+    NullifierTreeIoError(String),
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("failed to create nullifier tree")]
@@ -181,6 +198,8 @@ pub enum StateInitializationError {
     BlockStoreLoadError(#[source] std::io::Error),
     #[error("failed to load database")]
     DatabaseLoadError(#[from] DatabaseSetupError),
+    #[error("inner forest error")]
+    InnerForestError(#[from] InnerForestError),
 }
 
 #[derive(Debug, Error)]
@@ -242,6 +261,8 @@ pub enum InvalidBlockError {
     NewBlockNullifierAlreadySpent(#[source] NullifierTreeError),
     #[error("duplicate account ID prefix in new block")]
     NewBlockDuplicateAccountIdPrefix(#[source] AccountTreeError),
+    #[error("failed to build note tree: {0}")]
+    FailedToBuildNoteTree(String),
 }
 
 #[derive(Error, Debug)]
@@ -256,6 +277,8 @@ pub enum ApplyBlockError {
     TokioJoinError(#[from] tokio::task::JoinError),
     #[error("invalid block error")]
     InvalidBlockError(#[from] InvalidBlockError),
+    #[error("inner forest error")]
+    InnerForestError(#[from] InnerForestError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -333,8 +356,6 @@ pub enum NoteSyncError {
     MmrError(#[from] MmrError),
     #[error("invalid block range")]
     InvalidBlockRange(#[from] InvalidBlockRange),
-    #[error("too many note tags: received {0}, max {1}")]
-    TooManyNoteTags(usize, usize),
     #[error("malformed note tags")]
     DeserializationFailed(#[from] ConversionError),
 }
@@ -420,6 +441,20 @@ pub enum SyncStorageMapsError {
     AccountNotPublic(AccountId),
 }
 
+// GET NETWORK ACCOUNT IDS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetNetworkAccountIdsError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("malformed nullifier prefix")]
+    DeserializationFailed(#[from] ConversionError),
+}
+
 // GET BLOCK BY NUMBER ERRORS
 // ================================================================================================
 
@@ -443,11 +478,9 @@ pub enum GetNotesByIdError {
     #[error("malformed note ID")]
     DeserializationFailed(#[from] ConversionError),
     #[error("note {0} not found")]
-    NoteNotFound(miden_objects::note::NoteId),
-    #[error("too many note IDs: received {0}, max {1}")]
-    TooManyNoteIds(usize, usize),
+    NoteNotFound(NoteId),
     #[error("note {0} is not public")]
-    NoteNotPublic(miden_objects::note::NoteId),
+    NoteNotPublic(NoteId),
 }
 
 // GET NOTE SCRIPT BY ROOT ERRORS
@@ -474,8 +507,6 @@ pub enum CheckNullifiersError {
     DatabaseError(#[from] DatabaseError),
     #[error("malformed nullifier")]
     DeserializationFailed(#[from] ConversionError),
-    #[error("too many nullifiers: received {0}, maximum {1}")]
-    TooManyNullifiers(usize, usize),
 }
 
 // SYNC TRANSACTIONS ERRORS
@@ -492,8 +523,30 @@ pub enum SyncTransactionsError {
     DeserializationFailed(#[from] ConversionError),
     #[error("account {0} not found")]
     AccountNotFound(AccountId),
-    #[error("too many account IDs: received {0}, max {1}")]
-    TooManyAccountIds(usize, usize),
+}
+
+// SCHEMA VERIFICATION ERRORS
+// =================================================================================================
+
+/// Errors that can occur during schema verification.
+#[derive(Debug, Error)]
+pub enum SchemaVerificationError {
+    #[error("failed to create in-memory reference database")]
+    InMemoryDbCreation(#[source] diesel::ConnectionError),
+    #[error("failed to apply migrations to reference database")]
+    MigrationApplication(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("failed to extract schema from database")]
+    SchemaExtraction(#[source] diesel::result::Error),
+    #[error(
+        "schema mismatch: expected {expected_count} objects, found {actual_count} \
+         ({missing_count} missing, {extra_count} unexpected)"
+    )]
+    Mismatch {
+        expected_count: usize,
+        actual_count: usize,
+        missing_count: usize,
+        extra_count: usize,
+    },
 }
 
 // Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear

@@ -12,12 +12,16 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::Deserializable;
-use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteId, Nullifier};
-use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
+use miden_node_utils::limiter::{
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+};
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{NoteId, Nullifier};
+use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionId};
+use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::DatabaseError;
 use crate::db::models::conv::SqlTypeConvert;
@@ -93,7 +97,7 @@ pub struct TransactionRecordRaw {
     transaction_id: Vec<u8>,
     initial_state_commitment: Vec<u8>,
     final_state_commitment: Vec<u8>,
-    input_notes: Vec<u8>,
+    nullifiers: Vec<u8>,
     output_notes: Vec<u8>,
     size_in_bytes: i64,
 }
@@ -112,16 +116,15 @@ impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
 impl TryInto<crate::db::TransactionRecord> for TransactionRecordRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<crate::db::TransactionRecord, Self::Error> {
-        use miden_lib::utils::Deserializable;
-        use miden_objects::Word;
+        use miden_protocol::Word;
 
         let initial_state_commitment = self.initial_state_commitment;
         let final_state_commitment = self.final_state_commitment;
-        let input_notes_binary = self.input_notes;
+        let nullifiers_binary = self.nullifiers;
         let output_notes_binary = self.output_notes;
 
         // Deserialize input notes as nullifiers and output notes as note IDs
-        let input_notes: Vec<Nullifier> = Deserializable::read_from_bytes(&input_notes_binary)?;
+        let nullifiers: Vec<Nullifier> = Deserializable::read_from_bytes(&nullifiers_binary)?;
         let output_notes: Vec<NoteId> = Deserializable::read_from_bytes(&output_notes_binary)?;
 
         Ok(crate::db::TransactionRecord {
@@ -130,7 +133,7 @@ impl TryInto<crate::db::TransactionRecord> for TransactionRecordRaw {
             transaction_id: TransactionId::read_from_bytes(&self.transaction_id[..])?,
             initial_state_commitment: Word::read_from_bytes(&initial_state_commitment)?,
             final_state_commitment: Word::read_from_bytes(&final_state_commitment)?,
-            input_notes,
+            nullifiers,
             output_notes,
         })
     }
@@ -171,7 +174,7 @@ pub struct TransactionSummaryRowInsert {
     block_num: i64,
     initial_state_commitment: Vec<u8>,
     final_state_commitment: Vec<u8>,
-    input_notes: Vec<u8>,
+    nullifiers: Vec<u8>,
     output_notes: Vec<u8>,
     size_in_bytes: i64,
 }
@@ -182,15 +185,13 @@ impl TransactionSummaryRowInsert {
         reason = "We will not approach the item count where i64 and usize cause issues"
     )]
     fn new(
-        transaction_header: &miden_objects::transaction::TransactionHeader,
+        transaction_header: &miden_protocol::transaction::TransactionHeader,
         block_num: BlockNumber,
     ) -> Self {
-        use miden_lib::utils::Serializable;
-
         const HEADER_BASE_SIZE: usize = 4 + 32 + 16 + 64; // block_num + tx_id + account_id + commitments
 
         // Serialize input notes using binary format (store nullifiers)
-        let input_notes_binary = transaction_header.input_notes().to_bytes();
+        let nullifiers_binary = transaction_header.input_notes().to_bytes();
 
         // Serialize output notes using binary format (store note IDs)
         let output_notes_binary = transaction_header.output_notes().to_bytes();
@@ -206,9 +207,9 @@ impl TransactionSummaryRowInsert {
         //
         // Note: 500 bytes per output note is an over-estimate but ensures we don't
         // exceed memory limits when these transactions are later converted to proto records.
-        let input_notes_size = (transaction_header.input_notes().num_notes() * 32) as usize;
+        let nullifiers_size = (transaction_header.input_notes().num_notes() * 32) as usize;
         let output_notes_size = transaction_header.output_notes().len() * 500;
-        let size_in_bytes = (HEADER_BASE_SIZE + input_notes_size + output_notes_size) as i64;
+        let size_in_bytes = (HEADER_BASE_SIZE + nullifiers_size + output_notes_size) as i64;
 
         Self {
             transaction_id: transaction_header.id().to_bytes(),
@@ -216,7 +217,7 @@ impl TransactionSummaryRowInsert {
             block_num: block_num.to_raw_sql(),
             initial_state_commitment: transaction_header.initial_state_commitment().to_bytes(),
             final_state_commitment: transaction_header.final_state_commitment().to_bytes(),
-            input_notes: input_notes_binary,
+            nullifiers: nullifiers_binary,
             output_notes: output_notes_binary,
             size_in_bytes,
         }
@@ -280,10 +281,12 @@ pub fn select_transactions_records(
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
-    const MAX_PAYLOAD_BYTES: i64 = 4 * 1024 * 1024; // 4 MB
     const NUM_TXS_PER_CHUNK: i64 = 1000; // Read 1000 transactions at a time
 
     QueryParamAccountIdLimit::check(account_ids.len())?;
+
+    let max_payload_bytes =
+        i64::try_from(MAX_RESPONSE_PAYLOAD_BYTES).expect("payload limit fits within i64");
 
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
@@ -334,7 +337,7 @@ pub fn select_transactions_records(
         let mut last_added_tx: Option<TransactionRecordRaw> = None;
 
         for tx in chunk {
-            if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES {
+            if total_size + tx.size_in_bytes <= max_payload_bytes {
                 total_size += tx.size_in_bytes;
                 last_added_tx = Some(tx);
                 added_from_chunk += 1;
@@ -359,7 +362,7 @@ pub fn select_transactions_records(
 
     // Ensure block consistency: remove the last block if it's incomplete
     // (we may have stopped loading mid-block due to size constraints)
-    if total_size >= MAX_PAYLOAD_BYTES {
+    if total_size >= max_payload_bytes {
         // SAFETY: We're guaranteed to have at least one transaction since total_size > 0
         let last_block_num = last_block_num.expect(
             "guaranteed to have processed at least one transaction when size limit is reached",

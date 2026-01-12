@@ -4,6 +4,7 @@ package validator;
 
 import "types/transaction.proto";
 import "types/blockchain.proto";
+import "types/primitives.proto";
 import "google/protobuf/empty.proto";
 
 // VALIDATOR API
@@ -16,9 +17,12 @@ service Api {
 
    // Submits a transaction to the validator.
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
+
+   // Validates a proposed block and returns the block header and body.
+   rpc SignBlock(blockchain.ProposedBlock) returns (blockchain.BlockSignature) {}
 }
 
-// STATUS
+// VALIDATOR STATUS
 // ================================================================================================
 
 // Represents the status of the validator.

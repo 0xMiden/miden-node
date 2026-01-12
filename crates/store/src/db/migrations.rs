@@ -3,6 +3,7 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use tracing::instrument;
 
 use crate::COMPONENT;
+use crate::db::schema_hash::verify_schema;
 
 // The rebuild is automatically triggered by `build.rs` as described in
 // <https://docs.rs/diesel_migrations/latest/diesel_migrations/macro.embed_migrations.html#automatic-rebuilds>.
@@ -17,6 +18,8 @@ pub fn apply_migrations(
     tracing::info!(target = COMPONENT, "Applying {} migration(s)", migrations.len());
 
     let Err(e) = conn.run_pending_migrations(MIGRATIONS) else {
+        // Migrations applied successfully, verify schema hash
+        verify_schema(conn)?;
         return Ok(());
     };
     tracing::warn!(target = COMPONENT, "Failed to apply migration: {e:?}");

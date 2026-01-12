@@ -3,9 +3,14 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use miden_objects::batch::{ProposedBatch, ProvenBatch};
-use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionHeader, TransactionId};
-use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::batch::{ProposedBatch, ProvenBatch};
+use miden_protocol::transaction::{
+    OutputNote,
+    ProvenTransaction,
+    TransactionHeader,
+    TransactionId,
+};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
@@ -71,7 +76,12 @@ impl RemoteBatchProver {
 
         #[cfg(target_arch = "wasm32")]
         let new_client = {
-            let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
+            let fetch_options =
+                tonic_web_wasm_client::options::FetchOptions::new().timeout(self.timeout);
+            let web_client = tonic_web_wasm_client::Client::new_with_options(
+                self.endpoint.clone(),
+                fetch_options,
+            );
             ApiClient::new(web_client)
         };
 
@@ -100,7 +110,7 @@ impl RemoteBatchProver {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, RemoteProverClientError> {
-        use miden_objects::utils::Serializable;
+        use miden_protocol::utils::Serializable;
         self.connect().await?;
 
         let mut client = self

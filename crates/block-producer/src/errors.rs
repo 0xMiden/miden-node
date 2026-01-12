@@ -1,13 +1,17 @@
-use miden_block_prover::ProvenBlockError;
+use core::error::Error as CoreError;
+
+use miden_block_prover::BlockProverError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::TransactionId;
-use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::TransactionId;
+use miden_protocol::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
+
+use crate::validator::ValidatorError;
 
 // Block-producer errors
 // =================================================================================================
@@ -115,7 +119,7 @@ pub enum AddTransactionError {
     },
 
     #[error("transaction deserialization failed")]
-    TransactionDeserializationFailed(#[source] miden_objects::utils::DeserializationError),
+    TransactionDeserializationFailed(#[source] miden_protocol::utils::DeserializationError),
 
     #[error(
         "transaction expired at block height {expired_at} but the block height limit was {limit}"
@@ -124,6 +128,9 @@ pub enum AddTransactionError {
         expired_at: BlockNumber,
         limit: BlockNumber,
     },
+
+    #[error("the mempool is at capacity")]
+    CapacityExceeded,
 }
 
 impl From<VerifyTxError> for AddTransactionError {
@@ -160,7 +167,7 @@ impl From<VerifyTxError> for AddTransactionError {
 #[grpc(internal)]
 pub enum SubmitProvenBatchError {
     #[error("batch deserialization failed")]
-    Deserialization(#[source] miden_objects::utils::DeserializationError),
+    Deserialization(#[source] miden_protocol::utils::DeserializationError),
 }
 
 // Batch building errors
@@ -204,8 +211,12 @@ pub enum BuildBlockError {
     GetBlockInputsFailed(#[source] StoreError),
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
+    #[error("failed to validate block")]
+    ValidateBlockFailed(#[source] Box<ValidatorError>),
+    #[error("block signature is invalid")]
+    InvalidSignature,
     #[error("failed to prove block")]
-    ProveBlockFailed(#[source] ProvenBlockError),
+    ProveBlockFailed(#[source] BlockProverError),
     /// We sometimes randomly inject errors into the batch building process to test our failure
     /// responses.
     #[error("nothing actually went wrong, failure was injected on purpose")]
@@ -214,6 +225,21 @@ pub enum BuildBlockError {
     RemoteProverClientError(#[source] RemoteProverClientError),
     #[error("block proof security level is too low: {0} < {1}")]
     SecurityLevelTooLow(u32, u32),
+    /// Custom error variant for errors not covered by the other variants.
+    #[error("{error_msg}")]
+    Other {
+        error_msg: Box<str>,
+        source: Option<Box<dyn CoreError + Send + Sync + 'static>>,
+    },
+}
+
+impl BuildBlockError {
+    /// Creates a custom error using the [`BuildBlockError::Other`] variant from an
+    /// error message.
+    pub fn other(message: impl Into<String>) -> Self {
+        let message: String = message.into();
+        Self::Other { error_msg: message.into(), source: None }
+    }
 }
 
 // Store errors

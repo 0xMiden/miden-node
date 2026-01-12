@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::batch::BatchId;
-use miden_objects::transaction::TransactionId;
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::batch::BatchId;
+use miden_protocol::transaction::TransactionId;
 
 use crate::domain::transaction::AuthenticatedTransaction;
 
@@ -16,8 +16,8 @@ use crate::domain::transaction::AuthenticatedTransaction;
 ///
 /// [Mempool]: crate::mempool::Mempool
 /// [BatchBuilder]: crate::batch_builder::BatchBuilder
-/// [ProposedBatch]: miden_objects::batch::ProposedBatch
-/// [ProvenBatch]: miden_objects::batch::ProvenBatch
+/// [ProposedBatch]: miden_protocol::batch::ProposedBatch
+/// [ProvenBatch]: miden_protocol::batch::ProvenBatch
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SelectedBatch {
     txs: Vec<Arc<AuthenticatedTransaction>>,

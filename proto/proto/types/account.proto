@@ -12,7 +12,7 @@ import "types/primitives.proto";
 // and a random user-provided seed.
 message AccountId {
     // 15 bytes (120 bits) encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::account::account_id::AccountId].
+    // [miden_protocol::account::account_id::AccountId].
     bytes id = 1;
 }
 
@@ -32,11 +32,14 @@ message AccountSummary {
 message AccountStorageHeader {
     // A single storage slot in the account storage header.
     message StorageSlot {
+        // The name of the storage slot.
+        string slot_name = 1;
+
         // The type of the storage slot.
-        uint32 slot_type = 1;
+        uint32 slot_type = 2;
 
         // The commitment (Word) for this storage slot.
-        primitives.Digest commitment = 2;
+        primitives.Digest commitment = 3;
     }
 
     // Storage slots with their types and commitments.
@@ -49,7 +52,7 @@ message AccountDetails {
     AccountSummary summary = 1;
 
     // Account details encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::account::Account].
+    // [miden_protocol::account::Account].
     optional bytes details = 2;
 }
 

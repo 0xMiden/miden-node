@@ -3,8 +3,8 @@ use std::ops::Mul;
 
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::transaction::{OutputNote, TransactionId};
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::transaction::{OutputNote, TransactionId};
 use tokio::sync::mpsc;
 
 use crate::domain::transaction::AuthenticatedTransaction;
@@ -106,7 +106,10 @@ impl SubscriptionProvider {
             self.inflight_txs.remove(tx);
         }
 
-        Self::send_event(&mut self.subscription, MempoolEvent::BlockCommitted { header, txs });
+        Self::send_event(
+            &mut self.subscription,
+            MempoolEvent::BlockCommitted { header: Box::new(header), txs },
+        );
     }
 
     pub(super) fn txs_reverted(&mut self, txs: HashSet<TransactionId>) {

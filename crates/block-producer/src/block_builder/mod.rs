@@ -5,11 +5,20 @@ use futures::FutureExt;
 use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::MIN_PROOF_SECURITY_LEVEL;
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
-use miden_objects::note::NoteHeader;
-use miden_objects::transaction::TransactionHeader;
+use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
+use miden_protocol::batch::{OrderedBatches, ProvenBatch};
+use miden_protocol::block::{
+    BlockBody,
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    BlockProof,
+    ProposedBlock,
+    ProvenBlock,
+};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_protocol::note::NoteHeader;
+use miden_protocol::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
@@ -19,6 +28,7 @@ use url::Url;
 use crate::errors::BuildBlockError;
 use crate::mempool::SharedMempool;
 use crate::store::StoreClient;
+use crate::validator::BlockProducerValidatorClient;
 use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
@@ -36,6 +46,8 @@ pub struct BlockBuilder {
 
     pub store: StoreClient,
 
+    pub validator: BlockProducerValidatorClient,
+
     /// The prover used to prove a proposed block into a proven block.
     pub block_prover: BlockProver,
 }
@@ -46,6 +58,7 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
+        validator: BlockProducerValidatorClient,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -61,6 +74,7 @@ impl BlockBuilder {
             failure_rate: 0.0,
             block_prover,
             store,
+            validator,
         }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
@@ -112,8 +126,11 @@ impl BlockBuilder {
         self.get_block_inputs(selected)
             .inspect_ok(BlockBatchesAndInputs::inject_telemetry)
             .and_then(|inputs| self.propose_block(inputs))
-            .inspect_ok(ProposedBlock::inject_telemetry)
-            .and_then(|inputs| self.prove_block(inputs))
+            .inspect_ok(|(proposed_block, _)| {
+                ProposedBlock::inject_telemetry(proposed_block);
+            })
+            .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
+            .and_then(|(proposed_block, inputs, header, signature, body)| self.prove_block(proposed_block, inputs, header, signature, body))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
@@ -163,9 +180,9 @@ impl BlockBuilder {
             // Note: .cloned() shouldn't be necessary but not having it produces an odd lifetime
             // error in BlockProducer::serve. Not sure if there's a better fix. Error:
             // implementation of `FnOnce` is not general enough
-            // closure with signature `fn(&InputNoteCommitment) -> miden_objects::note::NoteId` must
-            // implement `FnOnce<(&InputNoteCommitment,)>` ...but it actually implements
-            // `FnOnce<(&InputNoteCommitment,)>`
+            // closure with signature `fn(&InputNoteCommitment) -> miden_protocol::note::NoteId`
+            // must implement `FnOnce<(&InputNoteCommitment,)>` ...but it actually
+            // implements `FnOnce<(&InputNoteCommitment,)>`
             batch
                 .input_notes()
                 .iter()
@@ -197,31 +214,76 @@ impl BlockBuilder {
     async fn propose_block(
         &self,
         batches_inputs: BlockBatchesAndInputs,
-    ) -> Result<ProposedBlock, BuildBlockError> {
+    ) -> Result<(ProposedBlock, BlockInputs), BuildBlockError> {
         let BlockBatchesAndInputs { batches, inputs } = batches_inputs;
         let batches = batches.into_iter().map(Arc::unwrap_or_clone).collect();
 
-        let proposed_block =
-            ProposedBlock::new(inputs, batches).map_err(BuildBlockError::ProposeBlockFailed)?;
+        let proposed_block = ProposedBlock::new(inputs.clone(), batches)
+            .map_err(BuildBlockError::ProposeBlockFailed)?;
 
-        Ok(proposed_block)
+        Ok((proposed_block, inputs))
+    }
+
+    #[instrument(target = COMPONENT, name = "block_builder.validate_block", skip_all, err)]
+    async fn validate_block(
+        &self,
+        proposed_block: ProposedBlock,
+        block_inputs: BlockInputs,
+    ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, Signature, BlockBody), BuildBlockError>
+    {
+        // Concurrently build the block and validate it via the validator.
+        let build_result = tokio::task::spawn_blocking({
+            let proposed_block = proposed_block.clone();
+            move || proposed_block.into_header_and_body()
+        });
+        let signature = self
+            .validator
+            .sign_block(proposed_block.clone())
+            .await
+            .map_err(|err| BuildBlockError::ValidateBlockFailed(err.into()))?;
+        let (header, body) = build_result
+            .await
+            .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
+            .map_err(BuildBlockError::ProposeBlockFailed)?;
+
+        // Verify the signature against the built block to ensure that
+        // the validator has provided a valid signature for the relevant block.
+        if !signature.verify(header.commitment(), header.validator_key()) {
+            return Err(BuildBlockError::InvalidSignature);
+        }
+
+        let (ordered_batches, ..) = proposed_block.into_parts();
+        Ok((ordered_batches, block_inputs, header, signature, body))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
     async fn prove_block(
         &self,
-        proposed_block: ProposedBlock,
+        ordered_batches: OrderedBatches,
+        block_inputs: BlockInputs,
+        header: BlockHeader,
+        signature: Signature,
+        body: BlockBody,
     ) -> Result<ProvenBlock, BuildBlockError> {
-        let proven_block = self.block_prover.prove(proposed_block).await?;
+        // Prove block using header and body from validator.
+        let block_proof = self
+            .block_prover
+            .prove(ordered_batches.clone(), header.clone(), block_inputs)
+            .await?;
+        self.simulate_proving().await;
 
+        // SAFETY: The header and body are assumed valid and consistent with the proof.
+        let proven_block = ProvenBlock::new_unchecked(header, body, signature, block_proof);
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
                 proven_block.proof_security_level(),
                 MIN_PROOF_SECURITY_LEVEL,
             ));
         }
-
-        self.simulate_proving().await;
+        // TODO(sergerad): Consider removing this validation. Once block proving is implemented,
+        // this would be replaced with verifying the proof returned from the prover against
+        // the block header.
+        validate_tx_headers(&proven_block, &ordered_batches.to_transactions())?;
 
         Ok(proven_block)
     }
@@ -388,15 +450,55 @@ impl BlockProver {
     }
 
     #[instrument(target = COMPONENT, skip_all, err)]
-    async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
+    async fn prove(
+        &self,
+        tx_batches: OrderedBatches,
+        block_header: BlockHeader,
+        block_inputs: BlockInputs,
+    ) -> Result<BlockProof, BuildBlockError> {
         match self {
-            Self::Local(prover) => {
-                prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
-            },
+            Self::Local(prover) => prover
+                .prove(tx_batches, block_header, block_inputs)
+                .map_err(BuildBlockError::ProveBlockFailed),
             Self::Remote(prover) => prover
-                .prove(proposed_block)
+                .prove(tx_batches, block_header, block_inputs)
                 .await
                 .map_err(BuildBlockError::RemoteProverClientError),
         }
     }
+}
+
+/// Validates that the proven block's transaction headers are consistent with the transactions
+/// passed in the proposed block.
+///
+/// This expects that transactions from the proposed block and proven block are in the same
+/// order, as defined by [`OrderedTransactionHeaders`].
+fn validate_tx_headers(
+    proven_block: &ProvenBlock,
+    proposed_txs: &OrderedTransactionHeaders,
+) -> Result<(), BuildBlockError> {
+    if proposed_txs.as_slice().len() != proven_block.body().transactions().as_slice().len() {
+        return Err(BuildBlockError::other(format!(
+            "remote prover returned {} transaction headers but {} transactions were passed as part of the proposed block",
+            proven_block.body().transactions().as_slice().len(),
+            proposed_txs.as_slice().len()
+        )));
+    }
+
+    // Because we checked the length matches we can zip the iterators up.
+    // We expect the transaction headers to be in the same order.
+    for (proposed_header, proven_header) in proposed_txs
+        .as_slice()
+        .iter()
+        .zip(proven_block.body().transactions().as_slice())
+    {
+        if proposed_header != proven_header {
+            return Err(BuildBlockError::other(format!(
+                "transaction header with id {} does not match header of the transaction in the proposed block",
+                proposed_header.id()
+            )));
+        }
+    }
+
+    Ok(())
 }

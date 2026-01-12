@@ -1,14 +1,14 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use miden_node_store::{AccountTreeWithHistory, InMemoryAccountTree};
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
-use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
-use miden_objects::crypto::hash::rpo::Rpo256;
-use miden_objects::crypto::merkle::{LargeSmt, MemoryStorage};
-use miden_objects::testing::account_id::AccountIdBuilder;
+use miden_node_store::AccountTreeWithHistory;
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::block::account_tree::{AccountTree, account_id_to_smt_key};
+use miden_protocol::crypto::hash::rpo::Rpo256;
+use miden_protocol::crypto::merkle::smt::{LargeSmt, MemoryStorage};
+use miden_protocol::testing::account_id::AccountIdBuilder;
 
 // HELPER FUNCTIONS
 // ================================================================================================
@@ -70,7 +70,7 @@ fn setup_vanilla_account_tree(
 fn setup_account_tree_with_history(
     num_accounts: usize,
     num_blocks: usize,
-) -> (AccountTreeWithHistory<InMemoryAccountTree>, Vec<AccountId>) {
+) -> (AccountTreeWithHistory<MemoryStorage>, Vec<AccountId>) {
     let mut seed = [0u8; 32];
     let storage = setup_storage();
     let smt = LargeSmt::with_entries(storage, std::iter::empty())
@@ -164,7 +164,7 @@ fn bench_historical_access(c: &mut Criterion) {
 
     for &num_accounts in &account_counts {
         for &block_depth in &block_depths {
-            if block_depth > AccountTreeWithHistory::<InMemoryAccountTree>::MAX_HISTORY {
+            if block_depth > AccountTreeWithHistory::<MemoryStorage>::MAX_HISTORY {
                 continue;
             }
 

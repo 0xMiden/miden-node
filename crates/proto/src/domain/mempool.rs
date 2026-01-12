@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::block::BlockHeader;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::TransactionId;
-use miden_objects::utils::{Deserializable, Serializable};
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::block::BlockHeader;
+use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::TransactionId;
+use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::note::NetworkNote;
 use crate::errors::{ConversionError, MissingFieldHelper};
@@ -19,7 +19,8 @@ pub enum MempoolEvent {
         account_delta: Option<AccountUpdateDetails>,
     },
     BlockCommitted {
-        header: BlockHeader,
+        // Box'd as this struct is quite large and triggers clippy.
+        header: Box<BlockHeader>,
         txs: Vec<TransactionId>,
     },
     TransactionsReverted(HashSet<TransactionId>),
@@ -58,7 +59,7 @@ impl From<MempoolEvent> for proto::block_producer::MempoolEvent {
             MempoolEvent::BlockCommitted { header, txs } => {
                 proto::block_producer::mempool_event::Event::BlockCommitted(
                     proto::block_producer::mempool_event::BlockCommitted {
-                        block_header: Some(header.into()),
+                        block_header: Some(header.as_ref().into()),
                         transactions: txs.into_iter().map(Into::into).collect(),
                     },
                 )
@@ -120,6 +121,7 @@ impl TryFrom<proto::block_producer::MempoolEvent> for MempoolEvent {
                         "block_header",
                     ))?
                     .try_into()?;
+                let header = Box::new(header);
                 let txs = block_committed
                     .transactions
                     .into_iter()

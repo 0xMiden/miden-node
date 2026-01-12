@@ -173,15 +173,11 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    /// Streams network account IDs to the provided sender, page-by-page.
+    /// Streams network account IDs to the provided sender.
     ///
     /// This method is designed to be run in a background task, sending accounts to the main event
     /// loop as they are loaded. This allows the ntx-builder to start processing mempool events
     /// without waiting for all accounts to be preloaded.
-    ///
-    /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
-    /// accounts (~289,000). With 1000 iterations, this supports up to ~524 million network
-    /// accounts, which is assumed to be sufficient for the foreseeable future.
     #[instrument(target = COMPONENT, name = "store.client.stream_network_account_ids", skip_all, err)]
     pub async fn stream_network_account_ids(
         &self,

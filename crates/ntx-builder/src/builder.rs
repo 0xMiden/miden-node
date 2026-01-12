@@ -83,10 +83,8 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
-    /// Channel capacity for account loading. Each item in the channel is a batch of account IDs
-    /// loaded from a single page. A small capacity is sufficient since each page can contain
-    /// up to ~289,000 accounts.
-    const ACCOUNT_CHANNEL_CAPACITY: usize = 4;
+    /// Channel capacity for account loading.
+    const ACCOUNT_CHANNEL_CAPACITY: usize = 100_000;
 
     /// Creates a new instance of the network transaction builder.
     pub fn new(

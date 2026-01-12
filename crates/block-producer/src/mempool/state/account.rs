@@ -77,7 +77,7 @@ impl Update {
 }
 
 impl AccountStates {
-    pub(super) fn new(delta: AccountDelta) -> Self {
+    pub(super) fn new(delta: &AccountDelta) -> Self {
         assert_ne!(delta.id, Update::INVALID);
 
         let mut output = Self {
@@ -100,7 +100,7 @@ impl AccountStates {
     /// # Errors
     ///
     /// Returns the current account commitment if the above precondition does not hold.
-    pub(super) fn append(&mut self, delta: AccountDelta) -> Result<(), Word> {
+    pub(super) fn append(&mut self, delta: &AccountDelta) -> Result<(), Word> {
         // SAFETY: We are guaranteed to always have at least one element.
         let latest = self.updates.back().unwrap().commitment;
         if latest != delta.from {
@@ -273,10 +273,12 @@ impl AccountStates {
     pub(super) fn unfold(&mut self, target: NodeId, unfolded: Vec<AccountDelta>) {
         let mut unfolded = unfolded.into_iter();
         let first = unfolded.next().expect("cannot unfold an empty list of nodes");
-        let mut unfolded_account = Self::new(first);
+        let mut unfolded_account = Self::new(&first);
         for delta in unfolded {
             assert_ne!(delta.id, target);
-            unfolded_account.append(delta).expect("unfold nodes must form a valid sequence");
+            unfolded_account
+                .append(&delta)
+                .expect("unfold nodes must form a valid sequence");
         }
 
         let unfolded_updates = unfolded_account.updates.make_contiguous();
@@ -335,10 +337,10 @@ impl AccountStates {
         // Check that target sequence order is valid by reconstructing it.
         let mut targets = targets.into_iter();
         let first = targets.next().expect("cannot fold an empty list of nodes");
-        let mut check = Self::new(first);
+        let mut check = Self::new(&first);
         for delta in targets {
             assert_ne!(delta.id, folded);
-            check.append(delta).expect("fold targets must form a valid sequence");
+            check.append(&delta).expect("fold targets must form a valid sequence");
         }
 
         // Verify the input updates against the accoaunt state.
@@ -381,7 +383,7 @@ impl AccountStates {
 
         // Remove all of the rest updates entirely.
         if !rest.is_empty() {
-            self.updates.drain(istart + 1..istart + rest.len() + 1);
+            self.updates.drain((istart + 1)..=(istart + rest.len()));
         }
 
         // Update the "back" element which should now be next to "front".
@@ -431,9 +433,9 @@ mod tests {
             let mut updates = self.updates.into_iter();
             let first = updates.next().expect("sequence should contain at least one item");
 
-            let mut out = AccountStates::new(first);
+            let mut out = AccountStates::new(&first);
             for delta in updates {
-                out.append(delta).expect("sequence must be valid");
+                out.append(&delta).expect("sequence must be valid");
             }
             out
         }
@@ -446,7 +448,7 @@ mod tests {
             // We use sequential `NodeId::Block` as an easy way to ensure that the sequence has
             // no duplicates. However, this means we might not test weird hashing or comparisons so
             // we add a random offset to the start ID to add some variation.
-            let offset = (1u32..10_000).prop_map(|offset| BlockNumber::from(offset));
+            let offset = (1u32..10_000).prop_map(BlockNumber::from);
 
             let init_commitment = ArbitraryWord::arbitrary();
 
@@ -518,7 +520,7 @@ mod tests {
             let (_, epilogue) = sequence.updates.split_at(fold.end);
             let mut reference = prelude.to_vec();
             reference.push(fold_into.clone());
-            reference.extend(epilogue.into_iter().cloned());
+            reference.extend(epilogue.iter().cloned());
             let reference = UpdateSequence { updates: reference }.finalize();
 
             uut.fold(fold_targets.clone(), fold_into.id);

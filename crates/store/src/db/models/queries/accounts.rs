@@ -35,6 +35,7 @@ use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
+use crate::COMPONENT;
 use crate::db::models::conv::{
     SqlTypeConvert,
     nonce_to_raw_sql,
@@ -682,6 +683,11 @@ pub(crate) fn insert_account_storage_map_value(
 
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
 #[allow(clippy::too_many_lines)]
+#[tracing::instrument(
+    target = COMPONENT,
+    skip_all,
+    err,
+)]
 pub(crate) fn upsert_accounts(
     conn: &mut SqliteConnection,
     accounts: &[BlockAccountUpdate],

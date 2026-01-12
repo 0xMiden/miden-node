@@ -20,6 +20,7 @@ use miden_objects::note::{NoteId, Nullifier};
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
 
 use super::DatabaseError;
+use crate::COMPONENT;
 use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{TransactionSummary, schema};
@@ -146,6 +147,12 @@ impl TryInto<crate::db::TransactionRecord> for TransactionRecordRaw {
 ///
 /// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
+#[allow(clippy::too_many_lines)]
+#[tracing::instrument(
+    target = COMPONENT,
+    skip_all,
+    err,
+)]
 pub(crate) fn insert_transactions(
     conn: &mut SqliteConnection,
     block_num: BlockNumber,

@@ -37,6 +37,7 @@ use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 
 use super::DatabaseError;
+use crate::COMPONENT;
 use crate::db::{NoteRecord, StateSyncUpdate};
 use crate::errors::StateSyncError;
 
@@ -56,6 +57,12 @@ pub(crate) use notes::*;
 /// # Returns
 ///
 /// Number of records inserted and/or updated.
+#[tracing::instrument(
+    target = COMPONENT,
+    name = "store.database.apply_block",
+    skip_all,
+    err,
+)]
 pub(crate) fn apply_block(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,

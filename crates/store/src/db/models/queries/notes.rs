@@ -52,6 +52,7 @@ use miden_objects::note::{
 };
 use miden_objects::{Felt, Word};
 
+use crate::COMPONENT;
 use crate::db::models::conv::{
     SqlTypeConvert,
     aux_to_raw_sql,
@@ -898,6 +899,12 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRawRow {
 ///
 /// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
+#[allow(clippy::too_many_lines)]
+#[tracing::instrument(
+    target = COMPONENT,
+    skip_all,
+    err,
+)]
 pub(crate) fn insert_notes(
     conn: &mut SqliteConnection,
     notes: &[(NoteRecord, Option<Nullifier>)],
@@ -923,6 +930,12 @@ pub(crate) fn insert_notes(
 ///
 /// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
+#[allow(clippy::too_many_lines)]
+#[tracing::instrument(
+    target = COMPONENT,
+    skip_all,
+    err,
+)]
 pub(crate) fn insert_scripts<'a>(
     conn: &mut SqliteConnection,
     notes: impl IntoIterator<Item = &'a NoteRecord>,

@@ -400,6 +400,9 @@ mod tests {
 
     use super::*;
 
+    /// A wrapper to implement [`Arbitrary`] for [`Word`].
+    ///
+    /// Can be removed once upstream implements it.
     #[derive(Arbitrary, Debug, Clone)]
     struct ArbitraryWord {
         #[proptest(strategy = "word_strategy()")]
@@ -417,53 +420,69 @@ mod tests {
         })
     }
 
+    /// A sequence of deltas which are known to be valid.
     #[derive(Debug, Clone)]
     struct UpdateSequence {
         updates: Vec<AccountDelta>,
     }
 
     impl UpdateSequence {
-        fn strategy(updates: usize, passthrough_chance: f64) -> impl Strategy<Value = Self> {
+        /// Generates a valid sequence of `n_updates` updates, with each update having the given
+        /// probability of being a pass-through node.
+        fn strategy(n_updates: usize, passthrough_chance: f64) -> impl Strategy<Value = Self> {
             use proptest::prelude::*;
 
+            // We use sequential `NodeId::Block` as an easy way to ensure that the sequence has
+            // no duplicates. However, this means we might not test weird hashing or comparisons so
+            // we add a random offset to the start ID to add some variation.
             let offset = (1u32..10_000).prop_map(|offset| BlockNumber::from(offset));
-            let init = ArbitraryWord::arbitrary();
 
-            let updates = proptest::collection::vec(ArbitraryWord::arbitrary(), updates);
+            let init_commitment = ArbitraryWord::arbitrary();
 
-            (offset, init, updates).prop_perturb(move |(offset, init, deltas), mut rng| {
-                let mut updates = Vec::with_capacity(deltas.len());
-                let mut next_from = init.inner;
-                let mut next_id = offset;
+            // Generate a commitment for each update. This will be the update's final commitment
+            // if it isn't a pass through update.
+            let updates = proptest::collection::vec(ArbitraryWord::arbitrary(), n_updates);
 
-                for commitment in deltas {
-                    let from = next_from;
-                    let id = NodeId::Block(next_id);
+            // Map to a sequence of updates.
+            (offset, init_commitment, updates).prop_perturb(
+                move |(offset, init, deltas), mut rng| {
+                    let mut updates = Vec::with_capacity(deltas.len());
+                    let mut next_from = init.inner;
+                    let mut next_id = offset;
 
-                    let to = if rng.random_bool(passthrough_chance) {
-                        next_from
-                    } else {
-                        commitment.inner
-                    };
+                    for commitment in deltas {
+                        let from = next_from;
+                        let id = NodeId::Block(next_id);
 
-                    next_from = to;
-                    next_id = next_id.child();
+                        let to = if rng.random_bool(passthrough_chance) {
+                            next_from
+                        } else {
+                            commitment.inner
+                        };
 
-                    updates.push(AccountDelta { id, from, to });
-                }
+                        next_from = to;
+                        next_id = next_id.child();
 
-                UpdateSequence { updates }
-            })
+                        updates.push(AccountDelta { id, from, to });
+                    }
+
+                    UpdateSequence { updates }
+                },
+            )
         }
     }
 
     proptest::proptest! {
         /// Folds and unfolds a range within an arbitrary, but valid sequence of updates.
         ///
+        /// This also includes an arbitrary chance for each update to be a pass through update.
+        ///
         /// We ensure the following properties hold:
         ///
-        /// - Folding [x] into y is equivalent inserting y and not [x].
-        /// - Folding [x] into y and then unfolding y into [x] is a noop.
+        /// - Folding [x] into `y` is equivalent inserting `y` and skipping [x].
+        /// - Folding [x] into `y` and then unfolding `y` into [x] is a noop.
+        ///
+        /// Along the way this of course also tests appending valid updates and pass through nodes.
         #[test]
         fn refolding_is_a_noop(
             (sequence, fold) in (1..100usize)
@@ -472,8 +491,8 @@ mod tests {
                     let begin = rng.random_range(0..sequence.updates.len());
                     let end = rng.random_range(begin + 1..sequence.updates.len() + 1);
                     (sequence, begin..end)
-                }))
-        {
+                })
+        ) {
             let (init, tail) = sequence.updates.split_first().unwrap();
             let mut uut = AccountStates::new(init.clone());
             for delta in tail {
@@ -505,6 +524,38 @@ mod tests {
 
             uut.unfold(fold_into.id, fold_targets);
             proptest::prop_assert_eq!(uut, original);
+        }
+
+        /// Ensures that pruning in reverse chronological order always succeeds.
+        ///
+        /// We also check that post pruning is equivalent to never having inserted the node.
+        #[test]
+        fn pruning_in_reverse(
+            sequence in (1..100usize)
+                .prop_flat_map(|n| UpdateSequence::strategy(n, 0.66))
+        ) {
+            let (init, tail) = sequence.updates.split_first().unwrap();
+            let mut uut = AccountStates::new(init.clone());
+            for delta in tail {
+                uut.append(delta.clone()).expect("appending to uut");
+            }
+
+            let mut uut = Some(uut);
+            let mut deltas = sequence.updates.as_slice();
+            while let Some((first, tail)) = deltas.split_first() {
+                let mut reference = AccountStates::new(first.clone());
+                for delta in tail {
+                    reference.append(delta.clone()).expect("updating reference");
+                }
+
+                proptest::prop_assert_eq!(&uut, &Some(reference));
+
+                uut = uut.expect("should still be some").prune(first.id);
+                deltas = tail;
+            }
+
+            // We should have pruned all deltas.
+            proptest::prop_assert_eq!(uut, None);
         }
     }
 }

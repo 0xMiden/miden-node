@@ -649,6 +649,8 @@ async fn create_and_submit_network_note(
 
     let final_account = executed_tx.final_account().clone();
 
+    let transaction_inputs = executed_tx.tx_inputs().to_bytes();
+
     // Prove the transaction
     let prover = LocalTransactionProver::default();
     let proven_tx = prover.prove(executed_tx).context("Failed to prove transaction")?;
@@ -656,7 +658,7 @@ async fn create_and_submit_network_note(
     // Submit the proven transaction
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
-        transaction_inputs: None,
+        transaction_inputs: Some(transaction_inputs),
     };
 
     let block_height: BlockNumber = rpc_client

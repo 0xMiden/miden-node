@@ -18,18 +18,18 @@ CREATE TABLE accounts (
     block_num                               INTEGER NOT NULL,
     account_commitment                      BLOB NOT NULL,
     code_commitment                         BLOB,
-    storage                                 BLOB,
-    vault                                   BLOB,
     nonce                                   INTEGER,
+    storage_header                          BLOB, -- Serialized AccountStorageHeader from miden-objects
+    vault_root                              BLOB, -- Vault root commitment
     is_latest                               BOOLEAN NOT NULL DEFAULT 0, -- Indicates if this is the latest state for this account_id
     created_at_block                        INTEGER NOT NULL,
 
     PRIMARY KEY (account_id, block_num),
     CONSTRAINT all_null_or_none_null CHECK
         (
-            (code_commitment IS NOT NULL AND storage IS NOT NULL AND vault IS NOT NULL AND nonce IS NOT NULL)
+            (code_commitment IS NOT NULL AND nonce IS NOT NULL AND storage_header IS NOT NULL AND vault_root IS NOT NULL)
             OR
-            (code_commitment IS NULL AND storage IS NULL AND vault IS NULL AND nonce IS NULL)
+            (code_commitment IS NULL AND nonce IS NULL AND storage_header IS NULL AND vault_root IS NULL)
         )
 ) WITHOUT ROWID;
 

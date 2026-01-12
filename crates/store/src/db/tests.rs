@@ -12,6 +12,7 @@ use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountCode,
     AccountComponent,
     AccountDelta,
     AccountId,
@@ -21,6 +22,7 @@ use miden_protocol::account::{
     AccountType,
     AccountVaultDelta,
     StorageSlot,
+    StorageSlotContent,
     StorageSlotDelta,
     StorageSlotName,
 };
@@ -61,6 +63,7 @@ use miden_protocol::transaction::{
     TransactionHeader,
     TransactionId,
 };
+use miden_protocol::utils::{Deserializable, Serializable};
 use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
 use miden_standards::account::auth::AuthRpoFalcon512;
 use miden_standards::code_builder::CodeBuilder;
@@ -464,27 +467,25 @@ fn sql_unconsumed_network_notes() {
     create_block(&mut conn, 1.into());
 
     // Create an unconsumed note in each block.
-    let notes = (0..2)
-        .map(|i: u32| {
-            let note = NoteRecord {
-                block_num: 0.into(), // Created on same block.
-                note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
-                note_id: num_to_word(i.into()),
-                note_commitment: num_to_word(i.into()),
-                metadata: NoteMetadata::new(
-                    account_note.0,
-                    NoteType::Public,
-                    NoteTag::from_account_id(account_note.0),
-                    NoteExecutionHint::none(),
-                    Felt::default(),
-                )
-                .unwrap(),
-                details: None,
-                inclusion_path: SparseMerklePath::default(),
-            };
-            (note, Some(num_to_nullifier(i.into())))
-        })
-        .collect::<Vec<_>>();
+    let notes = Vec::from_iter((0..2).map(|i: u32| {
+        let note = NoteRecord {
+            block_num: 0.into(), // Created on same block.
+            note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
+            note_id: num_to_word(i.into()),
+            note_commitment: num_to_word(i.into()),
+            metadata: NoteMetadata::new(
+                account_note.0,
+                NoteType::Public,
+                NoteTag::from_account_id(account_note.0),
+                NoteExecutionHint::none(),
+                Felt::default(),
+            )
+            .unwrap(),
+            details: None,
+            inclusion_path: SparseMerklePath::default(),
+        };
+        (note, Some(num_to_nullifier(i.into())))
+    }));
     queries::insert_scripts(&mut conn, notes.iter().map(|(note, _)| note)).unwrap();
     queries::insert_notes(&mut conn, &notes).unwrap();
 
@@ -1165,8 +1166,7 @@ fn sql_account_storage_map_values_insertion() {
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
-    let delta1: BTreeMap<_, _> =
-        [(slot_name.clone(), StorageSlotDelta::Map(map1))].into_iter().collect();
+    let delta1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map1))]);
     let storage1 = AccountStorageDelta::from_raw(delta1);
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
@@ -1326,6 +1326,30 @@ fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpd
     BlockAccountUpdate::new(account_id, num_to_word(num), AccountUpdateDetails::Private)
 }
 
+// Helper function to create account with specific code for tests
+fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
+    let component_storage = vec![
+        StorageSlot::with_value(StorageSlotName::mock(0), Word::empty()),
+        StorageSlot::with_value(StorageSlotName::mock(1), num_to_word(1)),
+    ];
+
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", code_str)
+        .unwrap();
+
+    let component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supported_type(AccountType::RegularAccountUpdatableCode);
+
+    AccountBuilder::new(seed)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(component)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap()
+}
+
 fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader {
     let initial_state_commitment = Word::try_from([num, 0, 0, 0]).unwrap();
     let final_account_commitment = Word::try_from([0, num, 0, 0]).unwrap();
@@ -1426,6 +1450,137 @@ fn mock_account_code_and_storage(
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
+}
+
+// ACCOUNT CODE TESTS
+// ================================================================================================
+
+#[test]
+fn test_select_account_code_by_commitment() {
+    let mut conn = create_db();
+
+    let block_num_1 = BlockNumber::from(1);
+
+    // Create block 1
+    create_block(&mut conn, block_num_1);
+
+    // Create an account with code at block 1 using the existing mock function
+    let account = mock_account_code_and_storage(
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+        [],
+        None,
+    );
+
+    // Get the code commitment and bytes before inserting
+    let code_commitment = account.code().commitment();
+    let expected_code = account.code().to_bytes();
+
+    // Insert the account at block 1
+    queries::upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            account.commitment(),
+            AccountUpdateDetails::Delta(AccountDelta::try_from(account).unwrap()),
+        )],
+        block_num_1,
+    )
+    .unwrap();
+
+    // Query code by commitment - should return the code
+    let code = queries::select_account_code_by_commitment(&mut conn, code_commitment)
+        .unwrap()
+        .expect("Code should exist");
+    assert_eq!(code, expected_code);
+
+    // Query code for non-existent commitment - should return None
+    let non_existent_commitment = [0u8; 32];
+    let non_existent_commitment = Word::read_from_bytes(&non_existent_commitment).unwrap();
+    let code_other =
+        queries::select_account_code_by_commitment(&mut conn, non_existent_commitment).unwrap();
+    assert!(code_other.is_none(), "Code should not exist for non-existent commitment");
+}
+
+#[test]
+fn test_select_account_code_by_commitment_multiple_codes() {
+    let mut conn = create_db();
+
+    let block_num_1 = BlockNumber::from(1);
+    let block_num_2 = BlockNumber::from(2);
+
+    // Create blocks
+    create_block(&mut conn, block_num_1);
+    create_block(&mut conn, block_num_2);
+
+    // Create account with code v1 at block 1
+    let code_v1_str = "\
+        pub proc account_procedure_1
+            push.1.2
+            add
+        end
+    ";
+    let account_v1 = create_account_with_code(code_v1_str, [1u8; 32]);
+    let code_v1_commitment = account_v1.code().commitment();
+    let code_v1 = account_v1.code().to_bytes();
+
+    // Insert the account at block 1
+    queries::upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account_v1.id(),
+            account_v1.commitment(),
+            AccountUpdateDetails::Delta(AccountDelta::try_from(account_v1).unwrap()),
+        )],
+        block_num_1,
+    )
+    .unwrap();
+
+    // Create account with different code v2 at block 2
+    let code_v2_str = "\
+        pub proc account_procedure_1
+            push.3.4
+            mul
+        end
+    ";
+    let account_v2 = create_account_with_code(code_v2_str, [1u8; 32]); // Same seed to keep same account_id
+    let code_v2_commitment = account_v2.code().commitment();
+    let code_v2 = account_v2.code().to_bytes();
+
+    // Verify that the codes are actually different
+    assert_ne!(
+        code_v1, code_v2,
+        "Test setup error: codes should be different for different code strings"
+    );
+    assert_ne!(
+        code_v1_commitment, code_v2_commitment,
+        "Test setup error: code commitments should be different"
+    );
+
+    // Insert the updated account at block 2
+    queries::upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account_v2.id(),
+            account_v2.commitment(),
+            AccountUpdateDetails::Delta(AccountDelta::try_from(account_v2).unwrap()),
+        )],
+        block_num_2,
+    )
+    .unwrap();
+
+    // Both codes should be retrievable by their respective commitments
+    let code_from_v1_commitment =
+        queries::select_account_code_by_commitment(&mut conn, code_v1_commitment)
+            .unwrap()
+            .expect("v1 code should exist");
+    assert_eq!(code_from_v1_commitment, code_v1, "v1 commitment should return v1 code");
+
+    let code_from_v2_commitment =
+        queries::select_account_code_by_commitment(&mut conn, code_v2_commitment)
+            .unwrap()
+            .expect("v2 code should exist");
+    assert_eq!(code_from_v2_commitment, code_v2, "v2 commitment should return v2 code");
 }
 
 // GENESIS REGRESSION TESTS
@@ -1681,4 +1836,515 @@ fn regression_1461_full_state_delta_inserts_vault_assets() {
     assert_eq!(vault_asset.block_num, block_num);
     assert_eq!(vault_asset.asset, Some(expected_asset));
     assert_eq!(vault_asset.vault_key, expected_asset.vault_key());
+}
+
+// SERIALIZATION SYMMETRY TESTS
+// ================================================================================================
+//
+// These tests ensure that `to_bytes` and `from_bytes`/`read_from_bytes` are symmetric for all
+// types used in database operations. This guarantees that data inserted into the database can
+// always be correctly retrieved.
+
+#[test]
+fn serialization_symmetry_core_types() {
+    // AccountId
+    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    let bytes = account_id.to_bytes();
+    let restored = AccountId::read_from_bytes(&bytes).unwrap();
+    assert_eq!(account_id, restored, "AccountId serialization must be symmetric");
+
+    // Word
+    let word = num_to_word(0x1234_5678_9ABC_DEF0);
+    let bytes = word.to_bytes();
+    let restored = Word::read_from_bytes(&bytes).unwrap();
+    assert_eq!(word, restored, "Word serialization must be symmetric");
+
+    // Nullifier
+    let nullifier = num_to_nullifier(0xDEAD_BEEF);
+    let bytes = nullifier.to_bytes();
+    let restored = Nullifier::read_from_bytes(&bytes).unwrap();
+    assert_eq!(nullifier, restored, "Nullifier serialization must be symmetric");
+
+    // TransactionId
+    let tx_id = TransactionId::new(num_to_word(1), num_to_word(2), num_to_word(3), num_to_word(4));
+    let bytes = tx_id.to_bytes();
+    let restored = TransactionId::read_from_bytes(&bytes).unwrap();
+    assert_eq!(tx_id, restored, "TransactionId serialization must be symmetric");
+
+    // NoteId
+    let note_id = NoteId::new(num_to_word(1), num_to_word(2));
+    let bytes = note_id.to_bytes();
+    let restored = NoteId::read_from_bytes(&bytes).unwrap();
+    assert_eq!(note_id, restored, "NoteId serialization must be symmetric");
+}
+
+#[test]
+fn serialization_symmetry_block_header() {
+    let block_header = BlockHeader::new(
+        1_u8.into(),
+        num_to_word(2),
+        3.into(),
+        num_to_word(4),
+        num_to_word(5),
+        num_to_word(6),
+        num_to_word(7),
+        num_to_word(8),
+        num_to_word(9),
+        SecretKey::new().public_key(),
+        test_fee_params(),
+        11_u8.into(),
+    );
+
+    let bytes = block_header.to_bytes();
+    let restored = BlockHeader::read_from_bytes(&bytes).unwrap();
+    assert_eq!(block_header, restored, "BlockHeader serialization must be symmetric");
+}
+
+#[test]
+fn serialization_symmetry_assets() {
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+
+    // FungibleAsset
+    let fungible = FungibleAsset::new(faucet_id, 1000).unwrap();
+    let asset: Asset = fungible.into();
+    let bytes = asset.to_bytes();
+    let restored = Asset::read_from_bytes(&bytes).unwrap();
+    assert_eq!(asset, restored, "Asset (fungible) serialization must be symmetric");
+}
+
+#[test]
+fn serialization_symmetry_account_code() {
+    let account = mock_account_code_and_storage(
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+        [],
+        None,
+    );
+
+    let code = account.code();
+    let bytes = code.to_bytes();
+    let restored = AccountCode::read_from_bytes(&bytes).unwrap();
+    assert_eq!(*code, restored, "AccountCode serialization must be symmetric");
+}
+
+#[test]
+fn serialization_symmetry_sparse_merkle_path() {
+    let path = SparseMerklePath::default();
+    let bytes = path.to_bytes();
+    let restored = SparseMerklePath::read_from_bytes(&bytes).unwrap();
+    assert_eq!(path, restored, "SparseMerklePath serialization must be symmetric");
+}
+
+#[test]
+fn serialization_symmetry_note_metadata() {
+    let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    // Use a tag that roundtrips properly - NoteTag::LocalAny stores the full u32 including type
+    // bits
+    let tag = NoteTag::from_account_id(sender);
+    let metadata = NoteMetadata::new(
+        sender,
+        NoteType::Public,
+        tag,
+        NoteExecutionHint::always(),
+        Felt::new(42),
+    )
+    .unwrap();
+
+    let bytes = metadata.to_bytes();
+    let restored = NoteMetadata::read_from_bytes(&bytes).unwrap();
+    assert_eq!(metadata, restored, "NoteMetadata serialization must be symmetric");
+}
+
+#[test]
+fn serialization_symmetry_nullifier_vec() {
+    let nullifiers: Vec<Nullifier> = (0..5).map(num_to_nullifier).collect();
+    let bytes = nullifiers.to_bytes();
+    let restored: Vec<Nullifier> = Deserializable::read_from_bytes(&bytes).unwrap();
+    assert_eq!(nullifiers, restored, "Vec<Nullifier> serialization must be symmetric");
+}
+
+#[test]
+fn serialization_symmetry_note_id_vec() {
+    let note_ids: Vec<NoteId> =
+        (0..5).map(|i| NoteId::new(num_to_word(i), num_to_word(i + 100))).collect();
+    let bytes = note_ids.to_bytes();
+    let restored: Vec<NoteId> = Deserializable::read_from_bytes(&bytes).unwrap();
+    assert_eq!(note_ids, restored, "Vec<NoteId> serialization must be symmetric");
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_block_header() {
+    let mut conn = create_db();
+
+    let block_header = BlockHeader::new(
+        1_u8.into(),
+        num_to_word(2),
+        BlockNumber::from(42),
+        num_to_word(4),
+        num_to_word(5),
+        num_to_word(6),
+        num_to_word(7),
+        num_to_word(8),
+        num_to_word(9),
+        SecretKey::new().public_key(),
+        test_fee_params(),
+        11_u8.into(),
+    );
+
+    // Insert
+    queries::insert_block_header(&mut conn, &block_header).unwrap();
+
+    // Retrieve
+    let retrieved =
+        queries::select_block_header_by_block_num(&mut conn, Some(block_header.block_num()))
+            .unwrap()
+            .expect("Block header should exist");
+
+    assert_eq!(block_header, retrieved, "BlockHeader DB roundtrip must be symmetric");
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_nullifiers() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let nullifiers: Vec<Nullifier> = (0..5).map(|i| num_to_nullifier(i << 48)).collect();
+
+    // Insert
+    queries::insert_nullifiers_for_block(&mut conn, &nullifiers, block_num).unwrap();
+
+    // Retrieve
+    let retrieved = queries::select_all_nullifiers(&mut conn).unwrap();
+
+    assert_eq!(nullifiers.len(), retrieved.len(), "Should retrieve same number of nullifiers");
+    for (orig, info) in nullifiers.iter().zip(retrieved.iter()) {
+        assert_eq!(*orig, info.nullifier, "Nullifier DB roundtrip must be symmetric");
+        assert_eq!(block_num, info.block_num, "Block number must match");
+    }
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_account() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let account = mock_account_code_and_storage(
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+        [],
+        Some([99u8; 32]),
+    );
+    let account_id = account.id();
+    let account_commitment = account.commitment();
+
+    // Insert with full delta (like genesis)
+    let account_delta = AccountDelta::try_from(account.clone()).unwrap();
+    let block_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Delta(account_delta),
+    );
+    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+
+    // Retrieve
+    let retrieved = queries::select_all_accounts(&mut conn).unwrap();
+    assert_eq!(retrieved.len(), 1, "Should have one account");
+
+    let retrieved_info = &retrieved[0];
+    assert_eq!(
+        retrieved_info.summary.account_id, account_id,
+        "AccountId DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        retrieved_info.summary.account_commitment, account_commitment,
+        "Account commitment DB roundtrip must be symmetric"
+    );
+    assert_eq!(retrieved_info.summary.block_num, block_num, "Block number must match");
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_notes() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(sender, 0)], block_num)
+        .unwrap();
+
+    let new_note = create_note(sender);
+    let note_index = BlockNoteIndex::new(0, 0).unwrap();
+
+    let note = NoteRecord {
+        block_num,
+        note_index,
+        note_id: new_note.id().as_word(),
+        note_commitment: new_note.commitment(),
+        metadata: *new_note.metadata(),
+        details: Some(NoteDetails::from(&new_note)),
+        inclusion_path: SparseMerklePath::default(),
+    };
+
+    // Insert
+    queries::insert_scripts(&mut conn, [&note]).unwrap();
+    queries::insert_notes(&mut conn, &[(note.clone(), None)]).unwrap();
+
+    // Retrieve
+    let note_ids = vec![NoteId::from_raw(note.note_id)];
+    let retrieved = queries::select_notes_by_id(&mut conn, &note_ids).unwrap();
+
+    assert_eq!(retrieved.len(), 1, "Should have one note");
+    let retrieved_note = &retrieved[0];
+
+    assert_eq!(note.note_id, retrieved_note.note_id, "NoteId DB roundtrip must be symmetric");
+    assert_eq!(
+        note.note_commitment, retrieved_note.note_commitment,
+        "Note commitment DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        note.metadata, retrieved_note.metadata,
+        "Metadata DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        note.inclusion_path, retrieved_note.inclusion_path,
+        "Inclusion path DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        note.details, retrieved_note.details,
+        "Note details DB roundtrip must be symmetric"
+    );
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_transactions() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 1)], block_num)
+        .unwrap();
+
+    let tx = mock_block_transaction(account_id, 1);
+    let ordered_tx = OrderedTransactionHeaders::new_unchecked(vec![tx.clone()]);
+
+    // Insert
+    queries::insert_transactions(&mut conn, block_num, &ordered_tx).unwrap();
+
+    // Retrieve
+    let retrieved = queries::select_transactions_by_accounts_and_block_range(
+        &mut conn,
+        &[account_id],
+        BlockNumber::from(0)..=BlockNumber::from(2),
+    )
+    .unwrap();
+
+    assert_eq!(retrieved.len(), 1, "Should have one transaction");
+    let retrieved_tx = &retrieved[0];
+
+    assert_eq!(
+        tx.account_id(),
+        retrieved_tx.account_id,
+        "AccountId DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        tx.id(),
+        retrieved_tx.transaction_id,
+        "TransactionId DB roundtrip must be symmetric"
+    );
+    assert_eq!(block_num, retrieved_tx.block_num, "Block number must match");
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_vault_assets() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    // Create account first
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block_num)
+        .unwrap();
+
+    let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
+    let asset: Asset = fungible_asset.into();
+    let vault_key = asset.vault_key();
+
+    // Insert vault asset
+    queries::insert_account_vault_asset(&mut conn, account_id, block_num, vault_key, Some(asset))
+        .unwrap();
+
+    // Retrieve
+    let (_, vault_assets) = queries::select_account_vault_assets(
+        &mut conn,
+        account_id,
+        BlockNumber::GENESIS..=block_num,
+    )
+    .unwrap();
+
+    assert_eq!(vault_assets.len(), 1, "Should have one vault asset");
+    let retrieved = &vault_assets[0];
+
+    assert_eq!(retrieved.asset, Some(asset), "Asset DB roundtrip must be symmetric");
+    assert_eq!(retrieved.vault_key, vault_key, "VaultKey DB roundtrip must be symmetric");
+    assert_eq!(retrieved.block_num, block_num, "Block number must match");
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_storage_map_values() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+    let slot_name = StorageSlotName::mock(5);
+    let key = num_to_word(12345);
+    let value = num_to_word(67890);
+
+    // Insert
+    queries::insert_account_storage_map_value(
+        &mut conn,
+        account_id,
+        block_num,
+        slot_name.clone(),
+        key,
+        value,
+    )
+    .unwrap();
+
+    // Retrieve
+    let page = queries::select_account_storage_map_values(
+        &mut conn,
+        account_id,
+        BlockNumber::GENESIS..=block_num,
+    )
+    .unwrap();
+
+    assert_eq!(page.values.len(), 1, "Should have one storage map value");
+    let retrieved = &page.values[0];
+
+    assert_eq!(retrieved.slot_name, slot_name, "StorageSlotName DB roundtrip must be symmetric");
+    assert_eq!(retrieved.key, key, "Key (Word) DB roundtrip must be symmetric");
+    assert_eq!(retrieved.value, value, "Value (Word) DB roundtrip must be symmetric");
+    assert_eq!(retrieved.block_num, block_num, "Block number must match");
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn db_roundtrip_account_storage_with_maps() {
+    use miden_protocol::account::StorageMap;
+
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    // Create storage with both value slots and map slots
+    let storage_map = StorageMap::with_entries(vec![
+        (
+            Word::from([Felt::new(1), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]),
+        ),
+        (
+            Word::from([Felt::new(2), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::new(50), Felt::new(60), Felt::new(70), Felt::new(80)]),
+        ),
+    ])
+    .unwrap();
+
+    let component_storage = vec![
+        StorageSlot::with_value(StorageSlotName::mock(0), num_to_word(42)),
+        StorageSlot::with_map(StorageSlotName::mock(1), storage_map),
+        StorageSlot::with_empty_value(StorageSlotName::mock(2)),
+    ];
+
+    let component_code = "pub proc foo push.1 end";
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", component_code)
+        .unwrap();
+    let account_component = AccountComponent::new(account_component_code, component_storage)
+        .unwrap()
+        .with_supports_all_types();
+
+    let account = AccountBuilder::new([50u8; 32])
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(account_component)
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .build_existing()
+        .unwrap();
+
+    let account_id = account.id();
+    let original_storage = account.storage().clone();
+    let original_commitment = original_storage.to_commitment();
+
+    // Insert the account (this should store header + map values separately)
+    let account_delta = AccountDelta::try_from(account.clone()).unwrap();
+    let block_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(account_delta),
+    );
+    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+
+    // Retrieve the storage using select_latest_account_storage (reconstructs from header + map
+    // values)
+    let retrieved_storage = queries::select_latest_account_storage(&mut conn, account_id).unwrap();
+    let retrieved_commitment = retrieved_storage.to_commitment();
+
+    // Verify the commitment matches (this proves the reconstruction is correct)
+    assert_eq!(
+        original_commitment, retrieved_commitment,
+        "Storage commitment must match after DB roundtrip"
+    );
+
+    // Verify slot count matches
+    assert_eq!(
+        original_storage.slots().len(),
+        retrieved_storage.slots().len(),
+        "Number of slots must match"
+    );
+
+    // Verify each slot
+    for (original_slot, retrieved_slot) in
+        original_storage.slots().iter().zip(retrieved_storage.slots().iter())
+    {
+        assert_eq!(original_slot.name(), retrieved_slot.name(), "Slot names must match");
+        assert_eq!(original_slot.slot_type(), retrieved_slot.slot_type(), "Slot types must match");
+
+        match (original_slot.content(), retrieved_slot.content()) {
+            (StorageSlotContent::Value(orig), StorageSlotContent::Value(retr)) => {
+                assert_eq!(orig, retr, "Value slot contents must match");
+            },
+            (StorageSlotContent::Map(orig_map), StorageSlotContent::Map(retr_map)) => {
+                assert_eq!(orig_map.root(), retr_map.root(), "Map slot roots must match");
+                for (key, value) in orig_map.entries() {
+                    let retrieved_value = retr_map.get(key);
+                    assert_eq!(*value, retrieved_value, "Map entry for key {:?} must match", key);
+                }
+            },
+            // The slot_type assertion above guarantees matching variants, so this is unreachable
+            _ => unreachable!(),
+        }
+    }
+
+    // Also verify full account reconstruction via select_account (which calls select_full_account)
+    let account_info = queries::select_account(&mut conn, account_id).unwrap();
+    assert!(account_info.details.is_some(), "Public account should have details");
+    let retrieved_account = account_info.details.unwrap();
+    assert_eq!(
+        account.commitment(),
+        retrieved_account.commitment(),
+        "Full account commitment must match after DB roundtrip"
+    );
 }

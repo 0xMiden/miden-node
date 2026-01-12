@@ -10,6 +10,7 @@
 //!
 //! Add new limits here so callers share the same values and rationale.
 
+/// Basic request limit.
 pub const GENERAL_REQUEST_LIMIT: usize = 1000;
 
 #[allow(missing_docs)]

@@ -34,7 +34,7 @@
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_protocol::Felt;
-use miden_protocol::account::StorageSlotName;
+use miden_protocol::account::{StorageSlotName, StorageSlotType};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteExecutionMode, NoteTag};
 
@@ -131,6 +131,33 @@ impl SqlTypeConvert for NoteTag {
     }
 }
 
+impl SqlTypeConvert for StorageSlotType {
+    type Raw = i32;
+
+    #[inline(always)]
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        #[derive(Debug, thiserror::Error)]
+        #[error("invalid storage slot type value {0}")]
+        struct ValueError(i32);
+
+        Ok(match raw {
+            0 => StorageSlotType::Value,
+            1 => StorageSlotType::Map,
+            invalid => {
+                return Err(Self::map_err(ValueError(invalid)));
+            },
+        })
+    }
+
+    #[inline(always)]
+    fn to_raw_sql(self) -> Self::Raw {
+        match self {
+            StorageSlotType::Value => 0,
+            StorageSlotType::Map => 1,
+        }
+    }
+}
+
 impl SqlTypeConvert for StorageSlotName {
     type Raw = String;
 
@@ -157,9 +184,9 @@ pub(crate) fn nullifier_prefix_to_raw_sql(prefix: u16) -> i32 {
 }
 
 #[inline(always)]
-pub(crate) fn raw_sql_to_nonce(raw: i64) -> u64 {
+pub(crate) fn raw_sql_to_nonce(raw: i64) -> Felt {
     debug_assert!(raw >= 0);
-    raw as u64
+    Felt::new(raw as u64)
 }
 #[inline(always)]
 pub(crate) fn nonce_to_raw_sql(nonce: Felt) -> i64 {

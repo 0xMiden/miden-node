@@ -7,7 +7,7 @@ use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
+use miden_protocol::account::{AccountHeader, AccountId, AccountStorage};
 use miden_protocol::asset::{Asset, AssetVaultKey};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
@@ -36,6 +36,7 @@ use crate::genesis::GenesisBlock;
 pub(crate) mod manager;
 
 mod migrations;
+mod schema_hash;
 
 #[cfg(test)]
 mod tests;
@@ -112,8 +113,7 @@ impl TransactionRecord {
         self,
         note_records: Vec<NoteRecord>,
     ) -> proto::rpc::TransactionRecord {
-        let output_notes: Vec<proto::note::NoteSyncRecord> =
-            note_records.into_iter().map(Into::into).collect();
+        let output_notes = Vec::from_iter(note_records.into_iter().map(Into::into));
 
         proto::rpc::TransactionRecord {
             header: Some(proto::transaction::TransactionHeader {
@@ -323,7 +323,7 @@ impl Db {
 
     /// Loads all the nullifiers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
+    pub(crate) async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
         self.transact("all nullifiers", move |conn| {
             let nullifiers = queries::select_all_nullifiers(conn)?;
             Ok(nullifiers)
@@ -392,11 +392,20 @@ impl Db {
         .await
     }
 
-    /// Loads all the account commitments from the DB.
+    /// TODO marked for removal, replace with paged version
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {
             queries::select_all_account_commitments(conn)
+        })
+        .await
+    }
+
+    /// Returns all account IDs that have public state.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_all_public_account_ids(&self) -> Result<Vec<AccountId>> {
+        self.transact("read all public account IDs", move |conn| {
+            queries::select_all_public_account_ids(conn)
         })
         .await
     }
@@ -406,19 +415,6 @@ impl Db {
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
         self.transact("Get account details", move |conn| queries::select_account(conn, id))
             .await
-    }
-
-    /// Loads account details at a specific block number from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_historical_account_at(
-        &self,
-        id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountInfo> {
-        self.transact("Get historical account details", move |conn| {
-            queries::select_historical_account_at(conn, id, block_num)
-        })
-        .await
     }
 
     /// Loads public account details from the DB based on the account ID's prefix.
@@ -453,6 +449,64 @@ impl Db {
     ) -> Result<(Vec<AccountId>, BlockNumber)> {
         self.transact("Get all network account IDs", move |conn| {
             queries::select_all_network_account_ids(conn, block_range)
+        })
+        .await
+    }
+
+    /// Reconstructs account storage at a specific block from the database
+    ///
+    /// This method queries the decomposed storage tables and reconstructs the full
+    /// `AccountStorage` with SMT backing for Map slots.
+    // TODO split querying the header from the content
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_account_storage_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<AccountStorage> {
+        self.transact("Get account storage at block", move |conn| {
+            queries::select_account_storage_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Queries vault assets at a specific block
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_account_vault_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Vec<Asset>> {
+        self.transact("Get account vault at block", move |conn| {
+            queries::select_account_vault_at_block(conn, account_id, block_num)
+        })
+        .await
+    }
+
+    /// Queries the account code by its commitment hash.
+    ///
+    /// Returns `None` if no code exists with that commitment.
+    pub async fn select_account_code_by_commitment(
+        &self,
+        code_commitment: Word,
+    ) -> Result<Option<Vec<u8>>> {
+        self.transact("Get account code by commitment", move |conn| {
+            queries::select_account_code_by_commitment(conn, code_commitment)
+        })
+        .await
+    }
+
+    /// Queries the account header for a specific account at a specific block number.
+    ///
+    /// Returns `None` if the account doesn't exist at that block.
+    pub async fn select_account_header_at_block(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<Option<AccountHeader>> {
+        self.transact("Get account header at block", move |conn| {
+            queries::select_account_header_at_block(conn, account_id, block_num)
+                .map(|opt| opt.map(|(header, _storage_header)| header))
         })
         .await
     }
@@ -568,18 +622,6 @@ impl Db {
             models::queries::select_account_storage_map_values(conn, account_id, block_range)
         })
         .await
-    }
-
-    /// Runs database optimization.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-    pub async fn optimize(&self) -> Result<(), DatabaseError> {
-        self.transact("db optimization", |conn| {
-            diesel::sql_query("PRAGMA optimize")
-                .execute(conn)
-                .map_err(DatabaseError::Diesel)
-        })
-        .await?;
-        Ok(())
     }
 
     /// Loads the network notes for an account that are unconsumed by a specified block number.

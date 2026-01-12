@@ -75,7 +75,8 @@ impl Tasks {
             .connect_lazy::<RpcClient>();
 
         let current_time = current_unix_timestamp_secs();
-        let initial_rpc_status = check_rpc_status(&mut rpc, current_time).await;
+        let initial_rpc_status =
+            check_rpc_status(&mut rpc, config.rpc_url.to_string(), current_time).await;
 
         // Spawn the RPC checker
         let (rpc_tx, rpc_rx) = watch::channel(initial_rpc_status);

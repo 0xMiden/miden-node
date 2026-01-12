@@ -24,7 +24,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument};
 use url::Url;
 
 use crate::COMPONENT;
@@ -391,23 +391,7 @@ impl api_server::Api for RpcService {
         // If transaction inputs are provided, re-execute the transaction to validate it.
         if request.transaction_inputs.is_some() {
             // Re-execute the transaction via the Validator.
-            match self.validator.clone().submit_proven_transaction(request.clone()).await {
-                Ok(_) => {
-                    debug!(
-                        target = COMPONENT,
-                        tx_id = %tx.id().to_hex(),
-                        "Transaction validation successful"
-                    );
-                },
-                Err(e) => {
-                    warn!(
-                        target = COMPONENT,
-                        tx_id = %tx.id().to_hex(),
-                        error = %e,
-                        "Transaction validation failed, but continuing with submission"
-                    );
-                },
-            }
+            self.validator.clone().submit_proven_transaction(request.clone()).await?;
         }
 
         block_producer.clone().submit_proven_transaction(request).await

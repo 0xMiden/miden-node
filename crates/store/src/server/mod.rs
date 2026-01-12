@@ -21,13 +21,11 @@ use tracing::{info, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::Db;
-use crate::server::db_maintenance::DbMaintenance;
 use crate::state::State;
-use crate::{COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GenesisState};
+use crate::{COMPONENT, GenesisState};
 
 mod api;
 mod block_producer;
-mod db_maintenance;
 mod ntx_builder;
 mod rpc_api;
 
@@ -95,9 +93,6 @@ impl Store {
         let state =
             Arc::new(State::load(&self.data_directory).await.context("failed to load state")?);
 
-        let db_maintenance_service =
-            DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
-
         let rpc_service =
             store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
         let ntx_builder_service = store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
@@ -128,11 +123,6 @@ impl Store {
         info!(target: COMPONENT, "Database loaded");
 
         let mut join_set = JoinSet::new();
-
-        join_set.spawn(async move {
-            db_maintenance_service.run().await;
-            Ok(())
-        });
 
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(

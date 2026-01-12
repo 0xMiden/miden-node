@@ -412,25 +412,23 @@ impl DataStore for NtxDataStore {
         &self,
         script_root: Word,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
-        let store = self.store.clone();
-        let mut cache = self.script_cache.clone();
-
         async move {
             // Attempt to retrieve the script from the cache.
-            if let Some(cached_script) = cache.get(&script_root).await {
+            if let Some(cached_script) = self.script_cache.get(&script_root).await {
                 return Ok(Some(cached_script));
             }
 
             // Retrieve the script from the store.
-            let maybe_script = store.get_note_script_by_root(script_root).await.map_err(|err| {
-                DataStoreError::Other {
-                    error_msg: "failed to retrieve note script from store".to_string().into(),
-                    source: Some(err.into()),
-                }
-            })?;
+            let maybe_script =
+                self.store.get_note_script_by_root(script_root).await.map_err(|err| {
+                    DataStoreError::Other {
+                        error_msg: "failed to retrieve note script from store".to_string().into(),
+                        source: Some(err.into()),
+                    }
+                })?;
             // Handle response.
             if let Some(script) = maybe_script {
-                cache.put(script_root, script.clone()).await;
+                self.script_cache.put(script_root, script.clone()).await;
                 Ok(Some(script))
             } else {
                 Ok(None)

@@ -19,9 +19,10 @@ CREATE TABLE accounts (
     account_commitment                      BLOB NOT NULL,
     code_commitment                         BLOB,
     nonce                                   INTEGER,
-    storage_header                          BLOB, -- Serialized AccountStorage from miden-objects
+    storage_header                          BLOB, -- Serialized AccountStorageHeader from miden-objects
     vault_root                              BLOB, -- Vault root commitment
     is_latest                               BOOLEAN NOT NULL DEFAULT 0, -- Indicates if this is the latest state for this account_id
+    created_at_block                        INTEGER NOT NULL,
 
     PRIMARY KEY (account_id, block_num),
     CONSTRAINT all_null_or_none_null CHECK
@@ -35,6 +36,7 @@ CREATE TABLE accounts (
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
 CREATE INDEX idx_accounts_id_block ON accounts(account_id, block_num DESC);
 CREATE INDEX idx_accounts_latest ON accounts(account_id, is_latest) WHERE is_latest = 1;
+CREATE INDEX idx_accounts_created_at_block ON accounts(created_at_block);
 -- Index for joining with block_headers
 CREATE INDEX idx_accounts_block_num ON accounts(block_num);
 -- Index for joining with account_codes

@@ -105,6 +105,30 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
     }
 }
 
+// ACCOUNT STORAGE HEADER
+//================================================================================================
+
+impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
+        let proto::account::AccountStorageHeader { slots } = value;
+
+        let slot_headers = slots
+            .into_iter()
+            .map(|slot| {
+                let slot_name = StorageSlotName::new(slot.slot_name)?;
+                let slot_type = storage_slot_type_from_raw(slot.slot_type)?;
+                let commitment =
+                    slot.commitment.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
+                Ok(StorageSlotHeader::new(slot_name, slot_type, commitment))
+            })
+            .collect::<Result<Vec<_>, ConversionError>>()?;
+
+        Ok(AccountStorageHeader::new(slot_headers)?)
+    }
+}
+
 // ACCOUNT PROOF REQUEST
 // ================================================================================================
 
@@ -161,27 +185,6 @@ impl TryFrom<proto::rpc::account_request::AccountDetailRequest> for AccountDetai
             asset_vault_commitment,
             storage_requests,
         })
-    }
-}
-
-impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
-        let proto::account::AccountStorageHeader { slots } = value;
-
-        let slot_headers = slots
-            .into_iter()
-            .map(|slot| {
-                let slot_name = StorageSlotName::new(slot.slot_name)?;
-                let slot_type = storage_slot_type_from_raw(slot.slot_type)?;
-                let commitment =
-                    slot.commitment.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
-                Ok(StorageSlotHeader::new(slot_name, slot_type, commitment))
-            })
-            .collect::<Result<Vec<_>, ConversionError>>()?;
-
-        Ok(AccountStorageHeader::new(slot_headers)?)
     }
 }
 
@@ -386,6 +389,9 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     }
 }
 
+// ACCOUNT VAULT DETAILS
+//================================================================================================
+
 /// Account vault details
 ///
 /// When an account contains a large number of assets (>
@@ -468,13 +474,23 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
     }
 }
 
+// ACCOUNT STORAGE MAP DETAILS
+//================================================================================================
+
+/// Details about an account storage map slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountStorageMapDetails {
+    pub slot_name: StorageSlotName,
+    pub entries: StorageMapEntries,
+}
+
 /// Storage map entries for an account storage slot.
 ///
 /// When a storage map contains many entries (> [`AccountStorageMapDetails::MAX_RETURN_ENTRIES`]),
 /// returning all entries in a single RPC response creates performance issues. In such cases,
 /// the `LimitExceeded` variant indicates to the client to use the `SyncStorageMaps` endpoint
 /// instead.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageMapEntries {
     /// The map has too many entries to return inline.
     /// Clients must use `SyncStorageMaps` endpoint instead.
@@ -487,12 +503,6 @@ pub enum StorageMapEntries {
     /// Specific entries with their SMT proofs for client-side verification.
     /// Used when specific keys are requested from the storage map.
     EntriesWithProofs(Vec<SmtProof>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AccountStorageMapDetails {
-    pub slot_name: StorageSlotName,
-    pub entries: StorageMapEntries,
 }
 
 impl AccountStorageMapDetails {
@@ -598,6 +608,24 @@ impl AccountStorageMapDetails {
             entries: StorageMapEntries::EntriesWithProofs(proofs),
         })
     }
+
+    /// Creates storage map details from pre-computed SMT proofs.
+    ///
+    /// Use this when the caller has already obtained the proofs from an `SmtForest`.
+    /// Returns `LimitExceeded` if too many proofs are provided.
+    pub fn from_proofs(slot_name: StorageSlotName, proofs: Vec<SmtProof>) -> Self {
+        if proofs.len() > Self::MAX_RETURN_ENTRIES {
+            Self {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }
+        } else {
+            Self {
+                slot_name,
+                entries: StorageMapEntries::EntriesWithProofs(proofs),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -648,13 +676,8 @@ const fn storage_slot_type_to_raw(slot_type: StorageSlotType) -> u32 {
     }
 }
 
-/// Represents account details returned in response to an account proof request.
-pub struct AccountDetails {
-    pub account_header: AccountHeader,
-    pub account_code: Option<Vec<u8>>,
-    pub vault_details: AccountVaultDetails,
-    pub storage_details: AccountStorageDetails,
-}
+// ACCOUNT PROOF RESPONSE
+//================================================================================================
 
 /// Represents the response to an account proof request.
 pub struct AccountResponse {
@@ -693,6 +716,17 @@ impl From<AccountResponse> for proto::rpc::AccountResponse {
             block_num: Some(block_num.into()),
         }
     }
+}
+
+// ACCOUNT DETAILS
+//================================================================================================
+
+/// Represents account details returned in response to an account proof request.
+pub struct AccountDetails {
+    pub account_header: AccountHeader,
+    pub account_code: Option<Vec<u8>>,
+    pub vault_details: AccountVaultDetails,
+    pub storage_details: AccountStorageDetails,
 }
 
 impl TryFrom<proto::rpc::account_response::AccountDetails> for AccountDetails {
@@ -1116,7 +1150,7 @@ mod tests {
     fn account_storage_map_details_from_forest_entries_limit_exceeded() {
         let slot_name = test_slot_name();
         // Create more entries than MAX_RETURN_ENTRIES
-        let entries: Vec<_> = (0..AccountStorageMapDetails::MAX_RETURN_ENTRIES + 1)
+        let entries: Vec<_> = (0..=AccountStorageMapDetails::MAX_RETURN_ENTRIES)
             .map(|i| {
                 let key = word_from_u32([i as u32, 0, 0, 0]);
                 let value = word_from_u32([0, 0, 0, i as u32]);
@@ -1170,21 +1204,22 @@ mod tests {
                         SmtLeaf::Multiple(entries) => entries
                             .iter()
                             .find(|(k, _)| *k == expected_key)
-                            .map(|(_, v)| *v)
-                            .unwrap_or(miden_protocol::EMPTY_WORD),
+                            .map_or(miden_protocol::EMPTY_WORD, |(_, v)| *v),
                         _ => miden_protocol::EMPTY_WORD,
                     }
                 };
 
-                let key1 = word_from_u32([1, 0, 0, 0]);
-                let key2 = word_from_u32([3, 0, 0, 0]);
-                let value1 = get_value(&proofs[0], key1);
-                let value2 = get_value(&proofs[1], key2);
+                let first_key = word_from_u32([1, 0, 0, 0]);
+                let second_key = word_from_u32([3, 0, 0, 0]);
+                let first_value = get_value(&proofs[0], first_key);
+                let second_value = get_value(&proofs[1], second_key);
 
-                assert_eq!(value1, word_from_u32([10, 0, 0, 0]));
-                assert_eq!(value2, word_from_u32([30, 0, 0, 0]));
+                assert_eq!(first_value, word_from_u32([10, 0, 0, 0]));
+                assert_eq!(second_value, word_from_u32([30, 0, 0, 0]));
             },
-            _ => panic!("Expected EntriesWithProofs"),
+            StorageMapEntries::LimitExceeded | StorageMapEntries::AllEntries(_) => {
+                panic!("Expected EntriesWithProofs")
+            },
         }
     }
 
@@ -1195,7 +1230,7 @@ mod tests {
         // Create an SmtForest with one entry so the root is tracked
         let mut forest = SmtForest::new();
         let entries = [(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
-        let smt_root = forest.batch_insert(empty_smt_root(), entries).unwrap();
+        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
 
         // Query a key that doesn't exist in the tree - should return a proof
         // (the proof will show non-membership or point to an adjacent leaf)
@@ -1215,7 +1250,9 @@ mod tests {
                 assert_eq!(proofs.len(), 1);
                 // The proof exists and can be used to verify non-membership
             },
-            _ => panic!("Expected EntriesWithProofs"),
+            StorageMapEntries::LimitExceeded | StorageMapEntries::AllEntries(_) => {
+                panic!("Expected EntriesWithProofs")
+            },
         }
     }
 
@@ -1226,10 +1263,10 @@ mod tests {
 
         // Create a forest with some data to get a valid root
         let entries = [(word_from_u32([1, 0, 0, 0]), word_from_u32([10, 0, 0, 0]))];
-        let smt_root = forest.batch_insert(empty_smt_root(), entries).unwrap();
+        let smt_root = forest.batch_insert(empty_smt_root(), entries.iter().copied()).unwrap();
 
         // Create more keys than MAX_RETURN_ENTRIES
-        let keys: Vec<_> = (0..AccountStorageMapDetails::MAX_RETURN_ENTRIES + 1)
+        let keys: Vec<_> = (0..=AccountStorageMapDetails::MAX_RETURN_ENTRIES)
             .map(|i| word_from_u32([i as u32, 0, 0, 0]))
             .collect();
 

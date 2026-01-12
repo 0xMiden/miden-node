@@ -1,4 +1,6 @@
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -6,11 +8,17 @@ use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_protocol::block::{BlockSigner, ProposedBlock};
-use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
-use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::transaction::{
+    ProvenTransaction,
+    TransactionHeader,
+    TransactionId,
+    TransactionInputs,
+};
+use miden_tx::utils::{Deserializable, Serializable};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
@@ -18,7 +26,14 @@ use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::COMPONENT;
+use crate::block_validation::validate_block;
 use crate::tx_validation::validate_transaction;
+
+/// Number of transactions to keep in the validated transactions cache.
+const NUM_VALIDATED_TRANSACTIONS: NonZeroUsize = NonZeroUsize::new(10000).unwrap();
+
+/// A type alias for a LRU cache that stores validated transactions.
+pub type ValidatedTransactions = LruCache<TransactionId, TransactionHeader>;
 
 // VALIDATOR
 // ================================================================================
@@ -69,7 +84,7 @@ impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .timeout(self.grpc_timeout)
-            .add_service(api_server::ApiServer::new(ValidatorServer { signer: self.signer }))
+            .add_service(api_server::ApiServer::new(ValidatorServer::new(self.signer)))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener))
@@ -86,6 +101,15 @@ impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
 /// Implements the gRPC API for the validator.
 struct ValidatorServer<S> {
     signer: S,
+    validated_transactions: Arc<ValidatedTransactions>,
+}
+
+impl<S> ValidatorServer<S> {
+    fn new(signer: S) -> Self {
+        let validated_transactions =
+            Arc::new(ValidatedTransactions::new(NUM_VALIDATED_TRANSACTIONS));
+        Self { signer, validated_transactions }
+    }
 }
 
 #[tonic::async_trait]
@@ -122,9 +146,14 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
         })?;
 
         // Validate the transaction.
-        validate_transaction(proven_tx, tx_inputs).await.map_err(|err| {
-            Status::invalid_argument(err.as_report_context("Invalid transaction"))
-        })?;
+        let validated_tx_header =
+            validate_transaction(proven_tx, tx_inputs).await.map_err(|err| {
+                Status::invalid_argument(err.as_report_context("Invalid transaction"))
+            })?;
+
+        // Register the validated transaction.
+        let tx_id = validated_tx_header.id();
+        self.validated_transactions.put(tx_id, validated_tx_header).await;
 
         Ok(tonic::Response::new(()))
     }
@@ -144,11 +173,13 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
                 ))
             })?;
 
-        // Build and sign header.
-        let (header, _body) = proposed_block
-            .into_header_and_body()
-            .map_err(|err| tonic::Status::internal(format!("Failed to build block: {err}")))?;
-        let signature = self.signer.sign(&header);
+        // Validate the block.
+        let signature =
+            validate_block(proposed_block, &self.signer, self.validated_transactions.clone())
+                .await
+                .map_err(|err| {
+                    tonic::Status::invalid_argument(format!("Failed to validate block: {err}",))
+                })?;
 
         // Send the signature.
         let response = proto::blockchain::BlockSignature { signature: signature.to_bytes() };

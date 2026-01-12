@@ -62,9 +62,7 @@ enum HistoricalSelector {
 /// Captures reversion state for historical queries at a specific block.
 #[derive(Debug, Clone)]
 struct HistoricalOverlay {
-    #[allow(dead_code)]
     block_number: BlockNumber,
-    #[allow(dead_code)]
     root: Word,
     node_mutations: HashMap<NodeIndex, Word>,
     account_updates: HashMap<LeafIndex<SMT_DEPTH>, (Word, Word)>,
@@ -159,7 +157,6 @@ impl<S: SmtStorage> AccountTreeWithHistory<S> {
     /// Returns the root hash at a specific historical block.
     ///
     /// Returns `None` if the block is in the future or too old (pruned).
-    #[cfg(test)]
     pub fn root_at(&self, block_number: BlockNumber) -> Option<Word> {
         match self.historical_selector(block_number) {
             HistoricalSelector::Latest => Some(self.latest.root()),

@@ -79,6 +79,9 @@ pub struct BlockProducer {
     pub mempool_tx_capacity: NonZeroUsize,
 }
 
+// BLOCK PRODUCER
+// ================================================================================================
+
 impl BlockProducer {
     /// Serves the block-producer RPC API, the batch-builder and the block-builder.
     ///
@@ -218,28 +221,8 @@ impl BlockProducer {
     }
 }
 
-/// Mempool statistics that are updated periodically to avoid locking the mempool.
-#[derive(Clone, Copy, Default)]
-struct MempoolStats {
-    /// The mempool's current view of the chain tip height.
-    chain_tip: BlockNumber,
-    /// Number of transactions currently in the mempool waiting to be batched.
-    unbatched_transactions: u64,
-    /// Number of batches currently being proven.
-    proposed_batches: u64,
-    /// Number of proven batches waiting for block inclusion.
-    proven_batches: u64,
-}
-
-impl From<MempoolStats> for proto::rpc::MempoolStats {
-    fn from(stats: MempoolStats) -> Self {
-        proto::rpc::MempoolStats {
-            unbatched_transactions: stats.unbatched_transactions,
-            proposed_batches: stats.proposed_batches,
-            proven_batches: stats.proven_batches,
-        }
-    }
-}
+// BLOCK PRODUCER RPC SERVER
+// ================================================================================================
 
 /// Serves the block producer's RPC [api](api_server::Api).
 struct BlockProducerRpcServer {
@@ -258,93 +241,6 @@ struct BlockProducerRpcServer {
     cached_mempool_stats: Arc<RwLock<MempoolStats>>,
 }
 
-#[tonic::async_trait]
-impl api_server::Api for BlockProducerRpcServer {
-    async fn submit_proven_transaction(
-        &self,
-        request: tonic::Request<proto::transaction::ProvenTransaction>,
-    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
-        self.submit_proven_transaction(request.into_inner())
-             .await
-             .map(tonic::Response::new)
-             // This Status::from mapping takes care of hiding internal errors.
-             .map_err(Into::into)
-    }
-
-    async fn submit_proven_batch(
-        &self,
-        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
-    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
-        self.submit_proven_batch(request.into_inner())
-             .await
-             .map(tonic::Response::new)
-             // This Status::from mapping takes care of hiding internal errors.
-             .map_err(Into::into)
-    }
-
-    #[instrument(
-         target = COMPONENT,
-         name = "block_producer.server.status",
-         skip_all,
-         err
-     )]
-    async fn status(
-        &self,
-        _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<proto::rpc::BlockProducerStatus>, Status> {
-        let mempool_stats = *self.cached_mempool_stats.read().await;
-
-        Ok(tonic::Response::new(proto::rpc::BlockProducerStatus {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            status: "connected".to_string(),
-            chain_tip: mempool_stats.chain_tip.as_u32(),
-            mempool_stats: Some(mempool_stats.into()),
-        }))
-    }
-
-    type MempoolSubscriptionStream = MempoolEventSubscription;
-
-    async fn mempool_subscription(
-        &self,
-        request: tonic::Request<proto::block_producer::MempoolSubscriptionRequest>,
-    ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
-        let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
-
-        let subscription =
-            self.mempool
-                .lock()
-                .await
-                .lock()
-                .await
-                .subscribe(chain_tip)
-                .map_err(|mempool_tip| {
-                    tonic::Status::invalid_argument(format!(
-                        "Mempool's chain tip {mempool_tip} does not match request's {chain_tip}"
-                    ))
-                })?;
-        let subscription = ReceiverStream::new(subscription);
-
-        Ok(tonic::Response::new(MempoolEventSubscription { inner: subscription }))
-    }
-}
-
-struct MempoolEventSubscription {
-    inner: ReceiverStream<MempoolEvent>,
-}
-
-impl tokio_stream::Stream for MempoolEventSubscription {
-    type Item = Result<proto::block_producer::MempoolEvent, tonic::Status>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.inner
-            .poll_next_unpin(cx)
-            .map(|x| x.map(proto::block_producer::MempoolEvent::from).map(Result::Ok))
-    }
-}
-
 impl BlockProducerRpcServer {
     pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
         Self {
@@ -352,6 +248,40 @@ impl BlockProducerRpcServer {
             store,
             cached_mempool_stats: Arc::new(RwLock::new(MempoolStats::default())),
         }
+    }
+
+    // SERVER STARTUP
+    // --------------------------------------------------------------------------------------------
+
+    async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
+        // Start background task to periodically update cached mempool stats
+        self.spawn_mempool_stats_updater().await;
+
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(block_producer_api_descriptor())
+            .build_v1()
+            .context("failed to build reflection service")?;
+
+        // This is currently required for postman to work properly because
+        // it doesn't support the new version yet.
+        //
+        // See: <https://github.com/postmanlabs/postman-app-support/issues/13120>.
+        let reflection_service_alpha = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(block_producer_api_descriptor())
+            .build_v1alpha()
+            .context("failed to build reflection service")?;
+
+        // Build the gRPC server with the API service and trace layer.
+        tonic::transport::Server::builder()
+            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
+            .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
+            .timeout(timeout)
+            .add_service(api_server::ApiServer::new(self))
+            .add_service(reflection_service)
+            .add_service(reflection_service_alpha)
+            .serve_with_incoming(TcpListenerStream::new(listener))
+            .await
+            .context("failed to serve block producer API")
     }
 
     /// Starts a background task that periodically updates the cached mempool statistics.
@@ -388,36 +318,8 @@ impl BlockProducerRpcServer {
         });
     }
 
-    async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
-        // Start background task to periodically update cached mempool stats
-        self.spawn_mempool_stats_updater().await;
-
-        let reflection_service = tonic_reflection::server::Builder::configure()
-            .register_file_descriptor_set(block_producer_api_descriptor())
-            .build_v1()
-            .context("failed to build reflection service")?;
-
-        // This is currently required for postman to work properly because
-        // it doesn't support the new version yet.
-        //
-        // See: <https://github.com/postmanlabs/postman-app-support/issues/13120>.
-        let reflection_service_alpha = tonic_reflection::server::Builder::configure()
-            .register_file_descriptor_set(block_producer_api_descriptor())
-            .build_v1alpha()
-            .context("failed to build reflection service")?;
-
-        // Build the gRPC server with the API service and trace layer.
-        tonic::transport::Server::builder()
-            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
-            .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
-            .timeout(timeout)
-            .add_service(api_server::ApiServer::new(self))
-            .add_service(reflection_service)
-            .add_service(reflection_service_alpha)
-            .serve_with_incoming(TcpListenerStream::new(listener))
-            .await
-            .context("failed to serve block producer API")
-    }
+    // RPC ENDPOINTS
+    // --------------------------------------------------------------------------------------------
 
     #[instrument(
          target = COMPONENT,
@@ -477,5 +379,121 @@ impl BlockProducerRpcServer {
             .map_err(SubmitProvenBatchError::Deserialization)?;
 
         todo!();
+    }
+}
+
+#[tonic::async_trait]
+impl api_server::Api for BlockProducerRpcServer {
+    type MempoolSubscriptionStream = MempoolEventSubscription;
+
+    async fn submit_proven_transaction(
+        &self,
+        request: tonic::Request<proto::transaction::ProvenTransaction>,
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
+        self.submit_proven_transaction(request.into_inner())
+             .await
+             .map(tonic::Response::new)
+             // This Status::from mapping takes care of hiding internal errors.
+             .map_err(Into::into)
+    }
+
+    async fn submit_proven_batch(
+        &self,
+        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
+    ) -> Result<tonic::Response<proto::blockchain::BlockNumber>, Status> {
+        self.submit_proven_batch(request.into_inner())
+             .await
+             .map(tonic::Response::new)
+             // This Status::from mapping takes care of hiding internal errors.
+             .map_err(Into::into)
+    }
+
+    #[instrument(
+         target = COMPONENT,
+         name = "block_producer.server.status",
+         skip_all,
+         err
+     )]
+    async fn status(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<proto::rpc::BlockProducerStatus>, Status> {
+        let mempool_stats = *self.cached_mempool_stats.read().await;
+
+        Ok(tonic::Response::new(proto::rpc::BlockProducerStatus {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: mempool_stats.chain_tip.as_u32(),
+            mempool_stats: Some(mempool_stats.into()),
+        }))
+    }
+
+    async fn mempool_subscription(
+        &self,
+        request: tonic::Request<proto::block_producer::MempoolSubscriptionRequest>,
+    ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
+        let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
+
+        let subscription =
+            self.mempool
+                .lock()
+                .await
+                .lock()
+                .await
+                .subscribe(chain_tip)
+                .map_err(|mempool_tip| {
+                    tonic::Status::invalid_argument(format!(
+                        "Mempool's chain tip {mempool_tip} does not match request's {chain_tip}"
+                    ))
+                })?;
+        let subscription = ReceiverStream::new(subscription);
+
+        Ok(tonic::Response::new(MempoolEventSubscription { inner: subscription }))
+    }
+}
+
+// MEMPOOL SUBSCRIPTION
+// ================================================================================================
+
+struct MempoolEventSubscription {
+    inner: ReceiverStream<MempoolEvent>,
+}
+
+impl tokio_stream::Stream for MempoolEventSubscription {
+    type Item = Result<proto::block_producer::MempoolEvent, tonic::Status>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.inner
+            .poll_next_unpin(cx)
+            .map(|x| x.map(proto::block_producer::MempoolEvent::from).map(Result::Ok))
+    }
+}
+
+// MEMPOOL STATISTICS
+// ================================================================================================
+
+/// Mempool statistics that are updated periodically to avoid locking the mempool.
+#[derive(Clone, Copy, Default)]
+struct MempoolStats {
+    /// The mempool's current view of the chain tip height.
+    chain_tip: BlockNumber,
+    /// Number of transactions currently in the mempool waiting to be batched.
+    unbatched_transactions: u64,
+    /// Number of batches currently being proven.
+    proposed_batches: u64,
+    /// Number of proven batches waiting for block inclusion.
+    proven_batches: u64,
+}
+
+impl From<MempoolStats> for proto::rpc::MempoolStats {
+    fn from(stats: MempoolStats) -> Self {
+        proto::rpc::MempoolStats {
+            unbatched_transactions: stats.unbatched_transactions,
+            proposed_batches: stats.proposed_batches,
+            proven_batches: stats.proven_batches,
+        }
     }
 }

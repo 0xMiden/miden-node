@@ -31,6 +31,7 @@ use tonic::Status;
 
 use crate::db::manager::ConnectionManagerError;
 use crate::db::models::conv::DatabaseTypeConversionError;
+use crate::inner_forest::InnerForestError;
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -125,6 +126,8 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
+    #[error("schema verification failed")]
+    SchemaVerification(#[from] SchemaVerificationError),
     #[error(transparent)]
     ConnectionManager(#[from] ConnectionManagerError),
     #[error(transparent)]
@@ -201,6 +204,8 @@ pub enum StateInitializationError {
     BlockStoreLoadError(#[source] std::io::Error),
     #[error("failed to load database")]
     DatabaseLoadError(#[from] DatabaseSetupError),
+    #[error("inner forest error")]
+    InnerForestError(#[from] InnerForestError),
 }
 
 #[derive(Debug, Error)]
@@ -278,6 +283,8 @@ pub enum ApplyBlockError {
     TokioJoinError(#[from] tokio::task::JoinError),
     #[error("invalid block error")]
     InvalidBlockError(#[from] InvalidBlockError),
+    #[error("inner forest error")]
+    InnerForestError(#[from] InnerForestError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -440,6 +447,20 @@ pub enum SyncStorageMapsError {
     AccountNotPublic(AccountId),
 }
 
+// GET NETWORK ACCOUNT IDS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetNetworkAccountIdsError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("malformed nullifier prefix")]
+    DeserializationFailed(#[from] ConversionError),
+}
+
 // GET BLOCK BY NUMBER ERRORS
 // ================================================================================================
 
@@ -508,6 +529,30 @@ pub enum SyncTransactionsError {
     DeserializationFailed(#[from] ConversionError),
     #[error("account {0} not found")]
     AccountNotFound(AccountId),
+}
+
+// SCHEMA VERIFICATION ERRORS
+// =================================================================================================
+
+/// Errors that can occur during schema verification.
+#[derive(Debug, Error)]
+pub enum SchemaVerificationError {
+    #[error("failed to create in-memory reference database")]
+    InMemoryDbCreation(#[source] diesel::ConnectionError),
+    #[error("failed to apply migrations to reference database")]
+    MigrationApplication(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("failed to extract schema from database")]
+    SchemaExtraction(#[source] diesel::result::Error),
+    #[error(
+        "schema mismatch: expected {expected_count} objects, found {actual_count} \
+         ({missing_count} missing, {extra_count} unexpected)"
+    )]
+    Mismatch {
+        expected_count: usize,
+        actual_count: usize,
+        missing_count: usize,
+        extra_count: usize,
+    },
 }
 
 // Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear

@@ -1,3 +1,4 @@
+mod block_validation;
 mod server;
 mod tx_validation;
 

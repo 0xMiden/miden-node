@@ -149,6 +149,7 @@ impl NetworkTransactionBuilder {
         let chain_state = Arc::new(RwLock::new(ChainState::new(chain_tip_header, chain_mmr)));
 
         let actor_context = AccountActorContext {
+            block_producer_url: self.block_producer_url.clone(),
             validator_url: self.validator_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
             chain_state: chain_state.clone(),

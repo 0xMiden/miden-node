@@ -49,6 +49,7 @@ use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
 use crate::actor::account_state::TransactionCandidate;
+use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
 
 #[derive(Debug, thiserror::Error)]
@@ -77,8 +78,11 @@ type NtxResult<T> = Result<T, NtxError>;
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
 #[derive(Clone)]
 pub struct NtxContext {
+    /// TODO(sergerad): Remove block producer client when block proving moved to store.
+    block_producer: BlockProducerClient,
+
     /// Client for validating transactions via the Validator.
-    validator_client: ValidatorClient,
+    validator: ValidatorClient,
 
     /// The prover to delegate proofs to.
     ///
@@ -96,13 +100,15 @@ pub struct NtxContext {
 impl NtxContext {
     /// Creates a new [`NtxContext`] instance.
     pub fn new(
-        validator_client: ValidatorClient,
+        block_producer: BlockProducerClient,
+        validator: ValidatorClient,
         prover: Option<RemoteTransactionProver>,
         store: StoreClient,
         script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
         Self {
-            validator_client,
+            block_producer,
+            validator,
             prover,
             store,
             script_cache,
@@ -171,9 +177,10 @@ impl NtxContext {
                 let tx_inputs: TransactionInputs = executed_tx.into();
                 let proven_tx = Box::pin(self.prove(tx_inputs.clone())).await?;
                 let tx_id = proven_tx.id();
+                self.submit(&proven_tx).await?;
 
                 // Validate proven transaction.
-                self.validate(proven_tx, tx_inputs).await?;
+                self.validate(&proven_tx, tx_inputs).await?;
 
                 Ok((tx_id, failed_notes))
             })
@@ -269,14 +276,27 @@ impl NtxContext {
         .map_err(NtxError::Proving)
     }
 
+    /// Submits the transaction to the block producer.
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
+    async fn submit(&self, proven_tx: &ProvenTransaction) -> NtxResult<()> {
+        self.block_producer
+            .submit_proven_transaction(proven_tx)
+            .await
+            .map_err(NtxError::Submission)
+    }
+
     /// Validates the transaction against the Validator.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.validate", skip_all, err)]
-    async fn validate(&self, tx: ProvenTransaction, tx_inputs: TransactionInputs) -> NtxResult<()> {
+    async fn validate(
+        &self,
+        proven_tx: &ProvenTransaction,
+        tx_inputs: TransactionInputs,
+    ) -> NtxResult<()> {
         let request = proto::transaction::ProvenTransaction {
-            transaction: tx.to_bytes(),
+            transaction: proven_tx.to_bytes(),
             transaction_inputs: Some(tx_inputs.to_bytes()),
         };
-        self.validator_client
+        self.validator
             .clone()
             .submit_proven_transaction(request)
             .await

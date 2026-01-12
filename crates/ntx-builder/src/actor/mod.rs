@@ -23,6 +23,7 @@ use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use crate::block_producer::BlockProducerClient;
 use crate::builder::ChainState;
 use crate::store::StoreClient;
 
@@ -52,6 +53,8 @@ pub enum ActorShutdownReason {
 pub struct AccountActorContext {
     /// Client for interacting with the store in order to load account state.
     pub store: StoreClient,
+    /// Address of the block producer gRPC server.
+    pub block_producer_url: Url,
     /// Address of the Validator server.
     pub validator_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
@@ -153,7 +156,9 @@ pub struct AccountActor {
     mode: ActorMode,
     event_rx: mpsc::Receiver<Arc<MempoolEvent>>,
     cancel_token: CancellationToken,
-    validator_client: ValidatorClient,
+    // TODO(sergerad): Remove block producer when block proving moved to store.
+    block_producer: BlockProducerClient,
+    validator: ValidatorClient,
     prover: Option<RemoteTransactionProver>,
     chain_state: Arc<RwLock<ChainState>>,
     script_cache: LruCache<Word, NoteScript>,
@@ -168,7 +173,8 @@ impl AccountActor {
         event_rx: mpsc::Receiver<Arc<MempoolEvent>>,
         cancel_token: CancellationToken,
     ) -> Self {
-        let validator_client = Builder::new(actor_context.validator_url.clone())
+        let block_producer = BlockProducerClient::new(actor_context.block_producer_url.clone());
+        let validator = Builder::new(actor_context.validator_url.clone())
             .without_tls()
             .without_timeout()
             .without_metadata_version()
@@ -182,7 +188,8 @@ impl AccountActor {
             mode: ActorMode::NoViableNotes,
             event_rx,
             cancel_token,
-            validator_client,
+            block_producer,
+            validator,
             prover,
             chain_state: actor_context.chain_state.clone(),
             script_cache: actor_context.script_cache.clone(),
@@ -281,7 +288,8 @@ impl AccountActor {
 
         // Execute the selected transaction.
         let context = execute::NtxContext::new(
-            self.validator_client.clone(),
+            self.block_producer.clone(),
+            self.validator.clone(),
             self.prover.clone(),
             self.store.clone(),
             self.script_cache.clone(),

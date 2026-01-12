@@ -503,8 +503,8 @@ mod tests {
             uut.fold(fold_targets.clone(), fold_into.id);
             proptest::prop_assert_eq!(&uut, &reference);
 
-            // uut.unfold(fold_into.id, fold_targets);
-            // proptest::prop_assert_eq!(uut, original);
+            uut.unfold(fold_into.id, fold_targets);
+            proptest::prop_assert_eq!(uut, original);
         }
     }
 }

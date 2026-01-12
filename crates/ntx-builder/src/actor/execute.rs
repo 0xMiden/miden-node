@@ -175,13 +175,13 @@ impl NtxContext {
 
                 // Prove transaction.
                 let tx_inputs: TransactionInputs = executed_tx.into();
-                let proven_tx = Box::pin(self.prove(tx_inputs.clone())).await?;
+                let proven_tx = Box::pin(self.prove(&tx_inputs)).await?;
 
                 // Submit transaction to block producer.
                 self.submit(&proven_tx).await?;
 
                 // Validate proven transaction.
-                self.validate(&proven_tx, tx_inputs).await?;
+                self.validate(&proven_tx, &tx_inputs).await?;
 
                 Ok((proven_tx.id(), failed_notes))
             })
@@ -266,10 +266,12 @@ impl NtxContext {
     /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
     /// proof locally.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
-    async fn prove(&self, tx_inputs: TransactionInputs) -> NtxResult<ProvenTransaction> {
+    async fn prove(&self, tx_inputs: &TransactionInputs) -> NtxResult<ProvenTransaction> {
         if let Some(remote) = &self.prover {
             remote.prove(tx_inputs).await
         } else {
+            // Only perform tx inptus clone for local proving.
+            let tx_inputs = tx_inputs.clone();
             tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx_inputs))
                 .await
                 .map_err(NtxError::Panic)?
@@ -291,7 +293,7 @@ impl NtxContext {
     async fn validate(
         &self,
         proven_tx: &ProvenTransaction,
-        tx_inputs: TransactionInputs,
+        tx_inputs: &TransactionInputs,
     ) -> NtxResult<()> {
         let request = proto::transaction::ProvenTransaction {
             transaction: proven_tx.to_bytes(),

@@ -104,7 +104,7 @@ impl RemoteTransactionProver {
 impl RemoteTransactionProver {
     pub fn prove(
         &self,
-        tx_inputs: TransactionInputs,
+        tx_inputs: &TransactionInputs,
     ) -> impl FutureMaybeSend<Result<ProvenTransaction, TransactionProverError>> {
         async move {
             use miden_protocol::utils::Serializable;
@@ -153,8 +153,8 @@ impl TryFrom<proto::Proof> for ProvenTransaction {
     }
 }
 
-impl From<TransactionInputs> for proto::ProofRequest {
-    fn from(tx_inputs: TransactionInputs) -> Self {
+impl From<&TransactionInputs> for proto::ProofRequest {
+    fn from(tx_inputs: &TransactionInputs) -> Self {
         proto::ProofRequest {
             proof_type: proto::ProofType::Transaction.into(),
             payload: tx_inputs.to_bytes(),

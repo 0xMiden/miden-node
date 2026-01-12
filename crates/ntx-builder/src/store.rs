@@ -224,12 +224,34 @@ impl StoreClient {
         &self,
         block_range: std::ops::RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NetworkAccountPrefix>, proto::rpc::PaginationInfo), StoreError> {
-        let response = self
-            .inner
-            .clone()
-            .get_network_account_ids(Into::<BlockRange>::into(block_range))
-            .await?
-            .into_inner();
+        let mut retry_counter = 0u32;
+
+        let response = loop {
+            match self
+                .inner
+                .clone()
+                .get_network_account_ids(Into::<BlockRange>::into(block_range.clone()))
+                .await
+            {
+                Ok(response) => break response.into_inner(),
+                Err(err) => {
+                    // Exponential backoff with base 500ms and max 30s.
+                    let backoff = Duration::from_millis(500)
+                        .saturating_mul(1 << retry_counter)
+                        .min(Duration::from_secs(30));
+
+                    tracing::warn!(
+                        ?backoff,
+                        %retry_counter,
+                        %err,
+                        "store connection failed while fetching committed accounts page, retrying"
+                    );
+
+                    retry_counter += 1;
+                    tokio::time::sleep(backoff).await;
+                },
+            }
+        };
 
         let accounts = response
             .account_ids

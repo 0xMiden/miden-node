@@ -181,7 +181,7 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.stream_network_account_ids", skip_all, err)]
     pub async fn stream_network_account_ids(
         &self,
-        sender: tokio::sync::mpsc::Sender<AccountId>,
+        sender: tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
     ) -> Result<(), StoreError> {
         const MAX_ITERATIONS: u32 = 1000;
 
@@ -201,10 +201,19 @@ impl StoreClient {
                 .account_ids
                 .into_iter()
                 .map(|account_id| {
-                    AccountId::read_from_bytes(&account_id.id)
-                        .map_err(|err| ConversionError::deserialization_error("account_id", err))
+                    let account_id = AccountId::read_from_bytes(&account_id.id).map_err(|err| {
+                        StoreError::DeserializationError(ConversionError::deserialization_error(
+                            "account_id",
+                            err,
+                        ))
+                    })?;
+                    NetworkAccountPrefix::try_from(account_id).map_err(|_| {
+                        StoreError::MalformedResponse(
+                            "account id is not a valid network account".into(),
+                        )
+                    })
                 })
-                .collect::<Result<Vec<AccountId>, ConversionError>>()?;
+                .collect::<Result<Vec<NetworkAccountPrefix>, StoreError>>()?;
 
             let pagination_info = response.pagination_info.ok_or(
                 ConversionError::MissingFieldInProtobufRepresentation {

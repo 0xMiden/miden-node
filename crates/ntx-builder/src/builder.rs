@@ -7,7 +7,6 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::lru_cache::LruCache;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
@@ -132,7 +131,7 @@ impl NetworkTransactionBuilder {
         // Spawn a background task to load network accounts from the store.
         // Accounts are sent through a channel in batches and processed in the main event loop.
         let (account_tx, mut account_rx) =
-            mpsc::channel::<AccountId>(Self::ACCOUNT_CHANNEL_CAPACITY);
+            mpsc::channel::<NetworkAccountPrefix>(Self::ACCOUNT_CHANNEL_CAPACITY);
         let account_loader_store = store.clone();
         tokio::spawn(async move {
             if let Err(err) = account_loader_store.stream_network_account_ids(account_tx).await {
@@ -172,18 +171,16 @@ impl NetworkTransactionBuilder {
     /// Handles a batch of account IDs loaded from the store by spawning actors for them.
     #[tracing::instrument(
         name = "ntx.builder.handle_loaded_accounts",
-        skip(self, account_id, actor_context)
+        skip(self, account_prefix, actor_context)
     )]
     async fn handle_loaded_account(
         &mut self,
-        account_id: AccountId,
+        account_prefix: NetworkAccountPrefix,
         actor_context: &AccountActorContext,
     ) -> Result<(), anyhow::Error> {
-        if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
-            self.coordinator
-                .spawn_actor(AccountOrigin::store(account_prefix), actor_context)
-                .await?;
-        }
+        self.coordinator
+            .spawn_actor(AccountOrigin::store(account_prefix), actor_context)
+            .await?;
         Ok(())
     }
 

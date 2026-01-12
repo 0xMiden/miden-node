@@ -102,7 +102,7 @@ async fn fetch_counter_value(
             .get_item(&COUNTER_SLOT_NAME)
             .context("failed to get counter storage slot")?;
 
-        let value = word.as_elements().first().expect("a word is always 4 elements").as_int();
+        let value = word[0].as_int();
 
         Ok(Some(value))
     } else {

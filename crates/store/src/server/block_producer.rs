@@ -9,7 +9,7 @@ use miden_objects::Word;
 use miden_objects::block::{BlockNumber, ProvenBlock};
 use miden_objects::utils::Deserializable;
 use tonic::{Request, Response, Status};
-use tracing::instrument;
+use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
 use crate::errors::ApplyBlockError;
@@ -70,22 +70,39 @@ impl block_producer_server::BlockProducer for StoreApi {
         span.set_attribute("block.output_notes.count", block.output_notes().count());
         span.set_attribute("block.nullifiers.count", block.created_nullifiers().len());
 
-        self.state
-            .apply_block(block)
-            .await
-            .map(Response::new)
-            .inspect_err(|err| {
-                span.set_error(err);
-            })
-            .map_err(|err| {
-                let code = match err {
-                    ApplyBlockError::InvalidBlockError(_) => tonic::Code::InvalidArgument,
-                    _ => tonic::Code::Internal,
-                };
+        // We perform the apply_block work in a separate task. This prevents the caller cancelling
+        // the request and thereby cancelling the task at an aribtrary point of execution.
+        //
+        // Normally this shouldn't be a problem, however our apply_block isn't quite ACID compliant
+        // so things get a bit messy. This is more a temporary hack-around to minimize this risk.
+        let this = self.clone();
+        tokio::spawn(
+            async move {
+                this.state
+                    .apply_block(block)
+                    .await
+                    .map(Response::new)
+                    .inspect_err(|err| {
+                        span.set_error(err);
+                    })
+                    .map_err(|err| {
+                        let code = match err {
+                            ApplyBlockError::InvalidBlockError(_) => tonic::Code::InvalidArgument,
+                            _ => tonic::Code::Internal,
+                        };
 
-                // This is an internal endpoint, so its safe to expose the full error report.
-                Status::new(code, err.as_report())
-            })
+                        // This is an internal endpoint, so its safe to expose the full error
+                        // report.
+                        Status::new(code, err.as_report())
+                    })
+            }
+            .in_current_span(),
+        )
+        .await
+        .map_err(|err| {
+            tonic::Status::internal(err.as_report_context("joining apply_block task failed"))
+        })
+        .flatten()
     }
 
     /// Returns data needed by the block producer to construct and prove the next block.

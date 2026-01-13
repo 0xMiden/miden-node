@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.12.7 (TBD)
+
+### Enhancements
+
+- Emit database table size metrics ([#1511](https://github.com/0xMiden/miden-node/pull/1511)).
+
 ## v0.12.6 (2026-01-12)
 
 ### Enhancements

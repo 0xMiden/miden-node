@@ -134,6 +134,15 @@ impl Store {
             Ok(())
         });
 
+        join_set.spawn(async move {
+            let database = Arc::clone(&state);
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let _ = database.analyze_table_sizes().await;
+            }
+        });
+
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(
             tonic::transport::Server::builder()

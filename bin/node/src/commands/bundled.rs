@@ -322,6 +322,7 @@ impl BundledCommand {
                         ntx_builder.tx_prover_url,
                         ntx_builder.ticker_interval,
                         checkpoint,
+                        ntx_builder.script_cache_size,
                     )
                     .run()
                     .await

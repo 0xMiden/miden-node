@@ -21,6 +21,7 @@
 - Added gRPC-Web probe support to the `miden-network-monitor` binary ([#1484](https://github.com/0xMiden/miden-node/pull/1484)).
 - Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
 - Add foreign account support to validator ([#1493](https://github.com/0xMiden/miden-node/pull/1493)).
+- Improve DB query performance for account queries ([#1496](https://github.com/0xMiden/miden-node/pull/1496).
 
 ### Changes
 
@@ -31,14 +32,18 @@
 - Remove `trait AccountTreeStorage` ([#1352](https://github.com/0xMiden/miden-node/issues/1352)).
 - [BREAKING] `SubmitProvenTransaction` now **requires** that the network's genesis commitment is set in the request's `ACCEPT` header ([#1298](https://github.com/0xMiden/miden-node/pull/1298), [#1436](https://github.com/0xMiden/miden-node/pull/1436)).
 - Add `S` generic to `NullifierTree` to allow usage with `LargeSmt`s ([#1353](https://github.com/0xMiden/miden-node/issues/1353)).
-- Removed internal errors from the `miden-network-monitor` ([#1424](https://github.com/0xMiden/miden-node/pull/1424)).
-- Track network transactions latency in `miden-network-monitor` ([#1430](https://github.com/0xMiden/miden-node/pull/1430)).
+- Refactor account table and introduce tracking forest ([#1394](https://github.com/0xMiden/miden-node/pull/1394)).
 - [BREAKING] Re-organized RPC protobuf schema to be independent of internal schema ([#1401](https://github.com/0xMiden/miden-node/pull/1401)).
-- Increased the maximum query limit for the store ([#1443](https://github.com/0xMiden/miden-node/pull/1443)).
+- Removed internal errors from the `miden-network-monitor` ([#1424](https://github.com/0xMiden/miden-node/pull/1424)).
 - [BREAKING] Added block signing capabilities to Validator component and updated gensis bootstrap to sign blocks with configured signer ([#1426](https://github.com/0xMiden/miden-node/pull/1426)).
+- Track network transactions latency in `miden-network-monitor` ([#1430](https://github.com/0xMiden/miden-node/pull/1430)).
 - Reduced default block interval from `5s` to `2s` ([#1438](https://github.com/0xMiden/miden-node/pull/1438)).
 - Increased retained account tree history from 33 to 100 blocks to account for the reduced block interval ([#1438](https://github.com/0xMiden/miden-node/pull/1438)).
+- Increased the maximum query limit for the store ([#1443](https://github.com/0xMiden/miden-node/pull/1443)).
 - [BREAKING] Migrated to version `v0.20` of the VM ([#1476](https://github.com/0xMiden/miden-node/pull/1476)).
+- [BREAKING] Change account in database representation ([#1481](https://github.com/0xMiden/miden-node/pull/1481)).
+- Remove the cyclic database optimization ([#1497](https://github.com/0xMiden/miden-node/pull/1497)). 
+- Fix race condition at DB shutdown in tests ([#1503](https://github.com/0xMiden/miden-node/pull/1503)).
 
 ### Fixes
 
@@ -48,6 +53,7 @@
 - Fixed `AccountProofRequest` to retrieve the latest known state in case specified block number (or chain tip) does not contain account updates ([#1422](https://github.com/0xMiden/miden-node/issues/1422)).
 - Fixed missing asset setup for full account initialization ([#1461](https://github.com/0xMiden/miden-node/pull/1461)).
 - Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
+- Fixed the network monitor counter account to use the storage slot name ([#1501](https://github.com/0xMiden/miden-node/pull/1501)).
 
 ## v0.12.6
 

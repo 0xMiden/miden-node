@@ -56,10 +56,9 @@ impl DataStore for TransactionInputsDataStore {
         async move {
             if foreign_account_id == self.tx_inputs.account().id() {
                 return Err(DataStoreError::Other {
-                    error_msg: format!(
+                    error_msg:
                         "requested account with id {foreign_account_id} is local, not foreign"
-                    )
-                    .into(),
+                            .into(),
                     source: None,
                 });
             }
@@ -68,7 +67,7 @@ impl DataStore for TransactionInputsDataStore {
                 .tx_inputs
                 .read_foreign_account_inputs(foreign_account_id)
                 .map_err(|err| DataStoreError::Other {
-                    error_msg: format!("failed to read foreign account inputs: {err}").into(),
+                    error_msg: "failed to read foreign account inputs".into(),
                     source: Some(Box::new(err)),
                 })?;
             Ok(foreign_inputs)

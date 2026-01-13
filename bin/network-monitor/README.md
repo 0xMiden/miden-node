@@ -36,6 +36,7 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--faucet-test-interval`: Interval at which to test the faucet services (default: `2m`)
 - `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--request-timeout`: Timeout for outgoing requests (default: `10s`)
+- `--stale-chain-tip-threshold`: Maximum time without a chain tip update before marking RPC as unhealthy (default: `1m`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
 - `--wallet-filepath`: Path where the wallet account is located (default: `wallet_account.mac`)
@@ -58,6 +59,7 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_FAUCET_TEST_INTERVAL`: Interval at which to test the faucet services
 - `MIDEN_MONITOR_STATUS_CHECK_INTERVAL`: Interval at which to check the status of the services
 - `MIDEN_MONITOR_REQUEST_TIMEOUT`: Timeout for outgoing requests
+- `MIDEN_MONITOR_STALE_CHAIN_TIP_THRESHOLD`: Maximum time without a chain tip update before marking RPC as unhealthy
 - `MIDEN_MONITOR_PORT`: Web server port
 - `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing
 - `MIDEN_MONITOR_WALLET_FILEPATH`: Path where the wallet account is located
@@ -147,6 +149,7 @@ The monitor application provides real-time status monitoring for the following M
 
 ### RPC Service
 - **Service Health**: Overall RPC service availability and status
+- **Stale Chain Tip Detection**: Monitors chain tip progress and marks RPC as unhealthy if the chain tip hasn't changed within the configured threshold (default: 1 minute)
 - **Version Information**: RPC service version
 - **Genesis Commitment**: Network genesis commitment (with copy-to-clipboard functionality)
 - **Store Status**:

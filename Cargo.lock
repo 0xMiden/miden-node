@@ -1335,7 +1335,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2112,7 +2112,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2490,7 +2490,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#58f9cb332ad865e5c4553a1f9d16ff90048ab2c7"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#99a9af7f48e9cf88bbffb520da04caea42fcbefc"
 dependencies = [
  "miden-protocol",
  "thiserror 2.0.17",
@@ -2980,7 +2980,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#58f9cb332ad865e5c4553a1f9d16ff90048ab2c7"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#99a9af7f48e9cf88bbffb520da04caea42fcbefc"
 dependencies = [
  "bech32",
  "fs-err",
@@ -3010,7 +3010,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol-macros"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#58f9cb332ad865e5c4553a1f9d16ff90048ab2c7"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#99a9af7f48e9cf88bbffb520da04caea42fcbefc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3100,7 +3100,7 @@ dependencies = [
 [[package]]
 name = "miden-standards"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#58f9cb332ad865e5c4553a1f9d16ff90048ab2c7"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#99a9af7f48e9cf88bbffb520da04caea42fcbefc"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -3117,7 +3117,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#58f9cb332ad865e5c4553a1f9d16ff90048ab2c7"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#99a9af7f48e9cf88bbffb520da04caea42fcbefc"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3135,7 +3135,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#58f9cb332ad865e5c4553a1f9d16ff90048ab2c7"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#99a9af7f48e9cf88bbffb520da04caea42fcbefc"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -3148,7 +3148,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#58f9cb332ad865e5c4553a1f9d16ff90048ab2c7"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=sergerad-tx-inputs-foreign-acc-inputs#99a9af7f48e9cf88bbffb520da04caea42fcbefc"
 dependencies = [
  "miden-protocol",
  "miden-tx",
@@ -3385,7 +3385,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4727,7 +4727,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4740,7 +4740,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5373,7 +5373,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5382,7 +5382,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6391,7 +6391,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

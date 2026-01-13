@@ -22,7 +22,7 @@ use miden_objects::note::{
 };
 use miden_objects::transaction::TransactionId;
 use tokio::sync::oneshot;
-use tracing::{Instrument, info, info_span, instrument};
+use tracing::{Instrument, info, instrument};
 
 use crate::COMPONENT;
 use crate::db::manager::{ConnectionManager, configure_connection_on_creation};

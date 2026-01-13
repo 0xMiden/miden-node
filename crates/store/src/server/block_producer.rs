@@ -71,7 +71,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         span.set_attribute("block.nullifiers.count", block.created_nullifiers().len());
 
         // We perform the apply_block work in a separate task. This prevents the caller cancelling
-        // the request and thereby cancelling the task at an aribtrary point of execution.
+        // the request and thereby cancelling the task at an arbitrary point of execution.
         //
         // Normally this shouldn't be a problem, however our apply_block isn't quite ACID compliant
         // so things get a bit messy. This is more a temporary hack-around to minimize this risk.

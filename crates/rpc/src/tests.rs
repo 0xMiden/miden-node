@@ -138,7 +138,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
 
     // Test: shutdown the store and should fail
     // Use spawn_blocking because shutdown_timeout blocks and can't run in async context
-    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_secs(5)))
+    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_millis(500)))
         .await
         .expect("shutdown should complete");
     let response = send_request(&mut rpc_client).await;

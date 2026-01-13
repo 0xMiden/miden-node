@@ -102,7 +102,7 @@ impl DataStore for TransactionInputsDataStore {
                     .tx_inputs
                     .read_vault_asset_witnesses(account_id, vault_keys)
                     .map_err(|err| DataStoreError::Other {
-                        error_msg: format!("failed to read vault asset witnesses: {err}").into(),
+                        error_msg: "failed to read vault asset witnesses".into(),
                         source: Some(Box::new(err)),
                     })?;
                 Ok(foreign_inputs)
@@ -136,7 +136,7 @@ impl DataStore for TransactionInputsDataStore {
                     .tx_inputs
                     .read_storage_map_witness(map_root, map_key)
                     .map_err(|err| DataStoreError::Other {
-                        error_msg: format!("failed to read storage map witness: {err}").into(),
+                        error_msg: "failed to read storage map witness".into(),
                         source: Some(Box::new(err)),
                     })?;
 

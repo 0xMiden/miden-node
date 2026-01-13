@@ -550,7 +550,7 @@ impl Db {
         Ok(())
     }
 
-    /// Runs database optimization.
+    /// Emits size metrics for each table in the database, and the entire database.
     #[instrument(target = COMPONENT, skip_all, err)]
     pub async fn analyze_table_sizes(&self) -> Result<(), DatabaseError> {
         self.transact("db analysis", |conn| {

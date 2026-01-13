@@ -496,9 +496,6 @@ impl Db {
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
     ) -> Result<()> {
         self.transact("apply block", move |conn| -> Result<()> {
-            // TODO: This span is logged in a root span, we should connect it to the parent one.
-            let _span = info_span!(target: COMPONENT, "write_block_to_db").entered();
-
             models::queries::apply_block(
                 conn,
                 block.header(),

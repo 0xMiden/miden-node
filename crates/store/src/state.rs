@@ -409,7 +409,6 @@ impl State {
             // change in-memory state, so we return a block applying error and don't proceed with
             // in-memory updates.
             db_update_task
-                .in_current_span()
                 .await?
                 .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 

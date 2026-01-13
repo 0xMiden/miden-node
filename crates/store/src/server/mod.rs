@@ -135,8 +135,11 @@ impl Store {
         });
 
         join_set.spawn(async move {
-            let database = Arc::clone(&state);
+            // Manual tests on testnet indicate each iteration takes ~2s once things are OS cached.
+            //
+            // 60s seems like a reasonable interval, though it could also be longer.
             let mut interval = tokio::time::interval(Duration::from_secs(60));
+            let database = Arc::clone(&state);
             loop {
                 interval.tick().await;
                 let _ = database.analyze_table_sizes().await;

@@ -1,15 +1,8 @@
 use std::collections::BTreeMap;
 
-use diesel::prelude::Queryable;
+use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
-use diesel::{
-    BoolExpressionMethods,
-    ExpressionMethods,
-    OptionalExtension,
-    QueryDsl,
-    RunQueryDsl,
-    SqliteConnection,
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection};
 use miden_protocol::account::{
     AccountHeader,
     AccountId,
@@ -125,61 +118,62 @@ pub(crate) fn select_account_header_at_block(
 // ================================================================================================
 
 /// Query vault assets at a specific block by finding the most recent update for each `vault_key`.
+///
+/// Uses a single raw SQL query with a subquery join:
+/// ```sql
+/// SELECT a.asset FROM account_vault_assets a
+/// INNER JOIN (
+///     SELECT vault_key, MAX(block_num) as max_block
+///     FROM account_vault_assets
+///     WHERE account_id = ? AND block_num <= ?
+///     GROUP BY vault_key
+/// ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
+/// WHERE a.account_id = ?
+/// ```
 pub(crate) fn select_account_vault_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
 ) -> Result<Vec<Asset>, DatabaseError> {
-    use schema::account_vault_assets as t;
+    use diesel::sql_types::{BigInt, Binary};
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
 
-    // Since Diesel doesn't support composite keys in subqueries easily, we use a two-step approach:
-    // Step 1: Get max block_num for each vault_key
-    let latest_blocks_per_vault_key = Vec::from_iter(
-        QueryDsl::select(
-            t::table
-                .filter(t::account_id.eq(&account_id_bytes))
-                .filter(t::block_num.le(block_num_sql))
-                .group_by(t::vault_key),
-            (t::vault_key, diesel::dsl::max(t::block_num)),
-        )
-        .load::<(Vec<u8>, Option<i64>)>(conn)?
-        .into_iter()
-        .filter_map(|(key, maybe_block)| maybe_block.map(|block| (key, block))),
-    );
+    let entries: Vec<Option<Vec<u8>>> = diesel::sql_query(
+        r"
+        SELECT a.asset FROM account_vault_assets a
+        INNER JOIN (
+            SELECT vault_key, MAX(block_num) as max_block
+            FROM account_vault_assets
+            WHERE account_id = ? AND block_num <= ?
+            GROUP BY vault_key
+        ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
+        WHERE a.account_id = ?
+        ",
+    )
+    .bind::<Binary, _>(&account_id_bytes)
+    .bind::<BigInt, _>(block_num_sql)
+    .bind::<Binary, _>(&account_id_bytes)
+    .load::<AssetRow>(conn)?
+    .into_iter()
+    .map(|row| row.asset)
+    .collect();
 
-    if latest_blocks_per_vault_key.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Step 2: Fetch the full rows matching (vault_key, block_num) pairs
+    // Convert to assets, filtering out deletions (None values)
     let mut assets = Vec::new();
-    for (vault_key_bytes, max_block) in latest_blocks_per_vault_key {
-        // TODO we should not make a query per vault key, but query many at once or
-        // or find an alternative approach
-        let result: Option<Option<Vec<u8>>> = QueryDsl::select(
-            t::table.filter(
-                t::account_id
-                    .eq(&account_id_bytes)
-                    .and(t::vault_key.eq(&vault_key_bytes))
-                    .and(t::block_num.eq(max_block)),
-            ),
-            t::asset,
-        )
-        .first(conn)
-        .optional()?;
-        if let Some(Some(asset_bytes)) = result {
-            let asset = Asset::read_from_bytes(&asset_bytes)?;
-            assets.push(asset);
-        }
+    for asset_bytes in entries.into_iter().flatten() {
+        let asset = Asset::read_from_bytes(&asset_bytes)?;
+        assets.push(asset);
     }
-
-    // Sort by vault_key for consistent ordering
-    assets.sort_by_key(Asset::vault_key);
 
     Ok(assets)
+}
+
+#[derive(QueryableByName)]
+struct AssetRow {
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
+    asset: Option<Vec<u8>>,
 }
 
 // ACCOUNT STORAGE
@@ -218,18 +212,19 @@ pub(crate) fn select_account_storage_at_block(
     let header = AccountStorageHeader::read_from_bytes(&blob)?;
 
     // Query all map values for this account up to and including this block.
-    // For each (slot_name, key), we need the latest value at or before block_num.
-    // First, get all entries up to block_num
-    let map_values: Vec<(i64, String, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
-            .filter(t::account_id.eq(&account_id_bytes).and(t::block_num.le(block_num_sql)))
+    // Order by (slot_name, key) ascending, then block_num descending so the first entry
+    // for each (slot_name, key) pair is the latest one.
+    let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
+        SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
+            .filter(t::account_id.eq(&account_id_bytes))
+            .filter(t::block_num.le(block_num_sql))
             .order((t::slot_name.asc(), t::key.asc(), t::block_num.desc()))
             .load(conn)?;
 
-    // For each (slot_name, key) pair, keep only the latest entry (highest block_num)
+    // For each (slot_name, key) pair, keep only the latest entry (first one due to ordering)
     let mut latest_map_entries: BTreeMap<(StorageSlotName, Word), Word> = BTreeMap::new();
 
-    for (_, slot_name_str, key_bytes, value_bytes) in map_values {
+    for (slot_name_str, key_bytes, value_bytes) in map_values {
         let slot_name: StorageSlotName = slot_name_str.parse().map_err(|_| {
             DatabaseError::DataCorrupted(format!("Invalid slot name: {slot_name_str}"))
         })?;

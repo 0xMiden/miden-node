@@ -141,7 +141,7 @@ pub(crate) fn select_account_vault_at_block(
     let block_num_sql = block_num.to_raw_sql();
 
     let entries: Vec<Option<Vec<u8>>> = diesel::sql_query(
-        r#"
+        r"
         SELECT a.asset FROM account_vault_assets a
         INNER JOIN (
             SELECT vault_key, MAX(block_num) as max_block
@@ -150,7 +150,7 @@ pub(crate) fn select_account_vault_at_block(
             GROUP BY vault_key
         ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
         WHERE a.account_id = ?
-        "#,
+        ",
     )
     .bind::<Binary, _>(&account_id_bytes)
     .bind::<BigInt, _>(block_num_sql)

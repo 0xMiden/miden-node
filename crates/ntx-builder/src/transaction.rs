@@ -116,15 +116,18 @@ impl NtxContext {
             chain_tip_header,
             chain_mmr,
         } = tx;
-        tracing::Span::current().set_attribute("account.id", account.id());
-        tracing::Span::current()
-            .set_attribute("account.id.network_prefix", account.id().prefix().to_string().as_str());
-        tracing::Span::current().set_attribute("notes.count", notes.len());
-        tracing::Span::current()
-            .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         async move {
             async move {
+                tracing::Span::current().set_attribute("account.id", account.id());
+                tracing::Span::current().set_attribute(
+                    "account.id.network_prefix",
+                    account.id().prefix().to_string().as_str(),
+                );
+                tracing::Span::current().set_attribute("notes.count", notes.len());
+                tracing::Span::current()
+                    .set_attribute("reference_block.number", chain_tip_header.block_num());
+
                 let data_store =
                     NtxDataStore::new(account, chain_tip_header, chain_mmr, self.store.clone());
 

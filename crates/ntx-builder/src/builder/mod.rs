@@ -14,7 +14,6 @@ use url::Url;
 use crate::MAX_IN_PROGRESS_TXS;
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
-use crate::transaction::NtxError;
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -143,20 +142,11 @@ impl NetworkTransactionBuilder {
                             state.notes_failed(candidate, notes.as_slice(), block_num);
                         },
                         // Transaction execution failed.
-                        Ok((_, Err(err))) => {
+                        Ok((_, Err((notes, err)))) => {
                             tracing::warn!(err=err.as_report(), "network transaction failed");
-                            match err {
-                                NtxError::AllNotesFailed(failed) => {
-                                    let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                                    state.notes_failed(candidate, notes.as_slice(), block_num);
-                                },
-                                NtxError::InputNotes(_)
-                                | NtxError::NoteFilter(_)
-                                | NtxError::Execution(_)
-                                | NtxError::Proving(_)
-                                | NtxError::Submission(_)
-                                | NtxError::Panic(_) => {},
-                            }
+                            // Always mark notes as failed. They can get retried eventually.
+                            state.notes_failed(candidate, notes.as_slice(), block_num);
+
                             state.candidate_failed(candidate);
                         },
                         // Unexpected error occurred.

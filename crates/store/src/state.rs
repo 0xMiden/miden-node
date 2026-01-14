@@ -952,7 +952,8 @@ impl State {
     /// vault assets, and storage data. Account details are only available for public accounts.
     ///
     /// If `block_num` is provided, returns the state at that historical block; otherwise, returns
-    /// the latest state.
+    /// the latest state. Note that historical states are only available for recent blocks close
+    /// to the chain tip.
     pub async fn get_account(
         &self,
         account_request: AccountRequest,

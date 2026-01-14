@@ -77,7 +77,7 @@ impl DataStore for TransactionInputsDataStore {
     fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
-        _vault_root: Word,
+        vault_root: Word,
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
@@ -100,7 +100,7 @@ impl DataStore for TransactionInputsDataStore {
             } else {
                 let foreign_inputs = self
                     .tx_inputs
-                    .read_vault_asset_witnesses(account_id, vault_keys)
+                    .read_vault_asset_witnesses(vault_root, vault_keys)
                     .map_err(|err| DataStoreError::Other {
                         error_msg: "failed to read vault asset witnesses".into(),
                         source: Some(Box::new(err)),

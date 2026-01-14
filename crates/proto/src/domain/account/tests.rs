@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn word_from_u32(arr: [u32; 4]) -> Word {

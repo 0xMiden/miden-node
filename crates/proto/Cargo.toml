@@ -28,8 +28,8 @@ tonic-prost                 = { workspace = true }
 url                         = { workspace = true }
 
 [dev-dependencies]
-proptest = { version = "1.7" }
 assert_matches = { workspace = true }
+proptest       = { version = "1.7" }
 
 [build-dependencies]
 fs-err                 = { workspace = true }

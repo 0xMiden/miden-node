@@ -57,7 +57,7 @@ impl StoreClient {
                 Err(StoreError::GrpcClientError(err)) => {
                     // Exponential backoff with base 500ms and max 30s.
                     let backoff = Duration::from_millis(500)
-                        .saturating_mul(1 << retry_counter)
+                        .saturating_mul(1 << retry_counter.min(6))
                         .min(Duration::from_secs(30));
 
                     tracing::warn!(
@@ -228,7 +228,7 @@ impl StoreClient {
                 Err(err) => {
                     // Exponential backoff with base 500ms and max 30s.
                     let backoff = Duration::from_millis(500)
-                        .saturating_mul(1 << retry_counter)
+                        .saturating_mul(1 << retry_counter.min(6))
                         .min(Duration::from_secs(30));
 
                     tracing::warn!(

@@ -310,14 +310,6 @@ impl RpcStatusDetails {
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.status.run_rpc_status_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug")
-)]
 pub async fn run_rpc_status_task(
     rpc_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
@@ -422,14 +414,6 @@ pub(crate) async fn check_rpc_status(
 ///
 /// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
 /// connection issues or failures while checking the remote prover status.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.status.run_remote_prover_status_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug")
-)]
 pub async fn run_remote_prover_status_task(
     prover_url: Url,
     name: String,

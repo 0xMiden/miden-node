@@ -208,15 +208,6 @@ async fn setup_increment_task(
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.counter.run_increment_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug"),
-    err
-)]
 pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -376,15 +367,6 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.counter.run_counter_tracking_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug"),
-    err
-)]
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,

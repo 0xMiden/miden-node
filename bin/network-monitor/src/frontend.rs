@@ -36,7 +36,6 @@ pub struct ServerState {
 ///
 /// * `server_state` - The server state containing watch receivers for all services.
 /// * `config` - The configuration of the network.
-#[instrument(target = COMPONENT, name = "frontend.serve", skip_all, fields(port = %config.port))]
 pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     // build our application with routes
     let app = Router::new()

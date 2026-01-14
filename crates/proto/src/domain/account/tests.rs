@@ -1,5 +1,3 @@
-use miden_protocol::crypto::merkle::smt::SMT_DEPTH;
-use miden_protocol::crypto::merkle::EmptySubtreeRoots;
 
 use super::*;
 

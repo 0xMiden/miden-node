@@ -169,8 +169,7 @@ impl InnerForest {
         }
 
         // Collect SMT proofs for each key
-        let proofs =
-            Result::from_iter(keys.iter().map(|key| self.forest.open(root, *key)));
+        let proofs = Result::from_iter(keys.iter().map(|key| self.forest.open(root, *key)));
 
         Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
     }

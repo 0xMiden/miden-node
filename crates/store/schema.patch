@@ -1,0 +1,122 @@
+--- /tmp/schema_base.rs	2026-01-12 15:09:35.714958597 +0100
++++ crates/store/src/db/schema.rs	2026-01-12 15:14:12.430988158 +0100
+@@ -7,48 +7,48 @@
+     }
+ }
+ 
+ diesel::table! {
+     account_storage_map_values (account_id, block_num, slot_name, key) {
+         account_id -> Binary,
+-        block_num -> Integer,
++        block_num -> BigInt,
+         slot_name -> Text,
+         key -> Binary,
+         value -> Binary,
+         is_latest -> Bool,
+     }
+ }
+ 
+ diesel::table! {
+     account_vault_assets (account_id, block_num, vault_key) {
+         account_id -> Binary,
+-        block_num -> Integer,
++        block_num -> BigInt,
+         vault_key -> Binary,
+         asset -> Nullable<Binary>,
+         is_latest -> Bool,
+     }
+ }
+ 
+ diesel::table! {
+     accounts (account_id, block_num) {
+         account_id -> Binary,
+-        network_account_id_prefix -> Nullable<Integer>,
+-        block_num -> Integer,
++        network_account_id_prefix -> Nullable<BigInt>,
++        block_num -> BigInt,
+         account_commitment -> Binary,
+         code_commitment -> Nullable<Binary>,
+-        nonce -> Nullable<Integer>,
++        nonce -> Nullable<BigInt>,
+         storage_header -> Nullable<Binary>,
+         vault_root -> Nullable<Binary>,
+         is_latest -> Bool,
+-        created_at_block -> Integer,
++        created_at_block -> BigInt,
+     }
+ }
+ 
+ diesel::table! {
+     block_headers (block_num) {
+-        block_num -> Integer,
++        block_num -> BigInt,
+         block_header -> Binary,
+     }
+ }
+ 
+ diesel::table! {
+     note_scripts (script_root) {
+@@ -56,54 +56,56 @@
+         script -> Binary,
+     }
+ }
+ 
+ diesel::table! {
+     notes (committed_at, batch_index, note_index) {
+-        committed_at -> Integer,
++        committed_at -> BigInt,
+         batch_index -> Integer,
+         note_index -> Integer,
+         note_id -> Binary,
+         note_commitment -> Binary,
+         note_type -> Integer,
+         sender -> Binary,
+         tag -> Integer,
+         execution_mode -> Integer,
+-        aux -> Integer,
+-        execution_hint -> Integer,
++        aux -> BigInt,
++        execution_hint -> BigInt,
+         inclusion_path -> Binary,
+-        consumed_at -> Nullable<Integer>,
++        consumed_at -> Nullable<BigInt>,
+         nullifier -> Nullable<Binary>,
+         assets -> Nullable<Binary>,
+         inputs -> Nullable<Binary>,
+         script_root -> Nullable<Binary>,
+         serial_num -> Nullable<Binary>,
+     }
+ }
+ 
+ diesel::table! {
+     nullifiers (nullifier) {
+         nullifier -> Binary,
+         nullifier_prefix -> Integer,
+-        block_num -> Integer,
++        block_num -> BigInt,
+     }
+ }
+ 
+ diesel::table! {
+     transactions (transaction_id) {
+         transaction_id -> Binary,
+         account_id -> Binary,
+-        block_num -> Integer,
++        block_num -> BigInt,
+         initial_state_commitment -> Binary,
+         final_state_commitment -> Binary,
+         nullifiers -> Binary,
+         output_notes -> Binary,
+-        size_in_bytes -> Integer,
++        size_in_bytes -> BigInt,
+     }
+ }
+ 
++diesel::joinable!(accounts -> account_codes (code_commitment));
++
+ diesel::allow_tables_to_appear_in_same_query!(
+     account_codes,
+     account_storage_map_values,
+     account_vault_assets,
+     accounts,
+     block_headers,

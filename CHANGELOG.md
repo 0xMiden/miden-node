@@ -21,6 +21,7 @@
 - Added `GetLimits` endpoint to the RPC server ([#1410](https://github.com/0xMiden/miden-node/pull/1410)).
 - Added gRPC-Web probe support to the `miden-network-monitor` binary ([#1484](https://github.com/0xMiden/miden-node/pull/1484)).
 - Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
+- Improve DB query performance for account queries ([#1496](https://github.com/0xMiden/miden-node/pull/1496).
 
 ### Changes
 
@@ -42,6 +43,7 @@
 - [BREAKING] Migrated to version `v0.20` of the VM ([#1476](https://github.com/0xMiden/miden-node/pull/1476)).
 - [BREAKING] Change account in database representation ([#1481](https://github.com/0xMiden/miden-node/pull/1481)).
 - Remove the cyclic database optimization ([#1497](https://github.com/0xMiden/miden-node/pull/1497)). 
+- Fix race condition at DB shutdown in tests ([#1503](https://github.com/0xMiden/miden-node/pull/1503)).
 
 ### Fixes
 
@@ -51,6 +53,7 @@
 - Fixed `AccountProofRequest` to retrieve the latest known state in case specified block number (or chain tip) does not contain account updates ([#1422](https://github.com/0xMiden/miden-node/issues/1422)).
 - Fixed missing asset setup for full account initialization ([#1461](https://github.com/0xMiden/miden-node/pull/1461)).
 - Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
+- Fixed the network monitor counter account to use the storage slot name ([#1501](https://github.com/0xMiden/miden-node/pull/1501)).
 
 ## v0.12.6
 

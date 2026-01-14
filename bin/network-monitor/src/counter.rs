@@ -43,6 +43,7 @@ use tracing::{error, info, instrument, warn};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
+use crate::deploy::counter::COUNTER_SLOT_NAME;
 use crate::deploy::{MonitorDataStore, create_genesis_aware_rpc_client, get_counter_library};
 use crate::status::{
     CounterTrackingDetails,
@@ -83,7 +84,7 @@ async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHea
     Ok(block_header)
 }
 
-/// Fetch the latest nonce of the given account from RPC.
+/// Fetch the latest counter value of the given account from RPC.
 async fn fetch_counter_value(
     rpc_client: &mut RpcClient,
     account_id: AccountId,
@@ -95,9 +96,13 @@ async fn fetch_counter_value(
         let account = Account::read_from_bytes(&raw)
             .map_err(|e| anyhow::anyhow!("failed to deserialize account details: {e}"))?;
 
-        let storage_slot = account.storage().slots().first().expect("storage slot is always value");
-        let word = storage_slot.value();
-        let value = word.as_elements().last().expect("a word is always 4 elements").as_int();
+        // Access the counter slot by name to avoid index-ordering issues
+        let word = account
+            .storage()
+            .get_item(&COUNTER_SLOT_NAME)
+            .context("failed to get counter storage slot")?;
+
+        let value = word[0].as_int();
 
         Ok(Some(value))
     } else {
@@ -644,6 +649,8 @@ async fn create_and_submit_network_note(
 
     let final_account = executed_tx.final_account().clone();
 
+    let transaction_inputs = executed_tx.tx_inputs().to_bytes();
+
     // Prove the transaction
     let prover = LocalTransactionProver::default();
     let proven_tx = prover.prove(executed_tx).context("Failed to prove transaction")?;
@@ -651,7 +658,7 @@ async fn create_and_submit_network_note(
     // Submit the proven transaction
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
-        transaction_inputs: None,
+        transaction_inputs: Some(transaction_inputs),
     };
 
     let block_height: BlockNumber = rpc_client

@@ -612,3 +612,181 @@ fn test_upsert_accounts_with_empty_storage() {
         "Storage header blob should exist even for empty storage"
     );
 }
+
+// VAULT AT BLOCK HISTORICAL QUERY TESTS
+// ================================================================================================
+
+/// Tests that querying vault at an older block returns the correct historical state,
+/// even when the same `vault_key` has been updated in later blocks.
+///
+/// Focuses on deduplication logic that relies on ordering by (`vault_key` ASC and `block_num`
+/// DESC).
+#[test]
+fn test_select_account_vault_at_block_historical_with_updates() {
+    use assert_matches::assert_matches;
+    use miden_protocol::asset::{AssetVaultKey, FungibleAsset};
+    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    // Faucet ID is needed for creating FungibleAssets
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+
+    let block_1 = BlockNumber::from_epoch(0);
+    let block_2 = BlockNumber::from_epoch(1);
+    let block_3 = BlockNumber::from_epoch(2);
+
+    insert_block_header(&mut conn, block_1);
+    insert_block_header(&mut conn, block_2);
+    insert_block_header(&mut conn, block_3);
+
+    // Insert account at block 1
+    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(delta),
+    );
+    upsert_accounts(&mut conn, &[account_update], block_1).expect("upsert_accounts failed");
+
+    // Insert vault asset at block 1: vault_key_1 = 1000 tokens
+    let vault_key_1 = AssetVaultKey::new_unchecked(Word::from([
+        Felt::new(1),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(0),
+    ]));
+    let asset_v1 = Asset::Fungible(FungibleAsset::new(faucet_id, 1000).unwrap());
+
+    insert_account_vault_asset(&mut conn, account_id, block_1, vault_key_1, Some(asset_v1))
+        .expect("insert vault asset failed");
+
+    // Update vault asset at block 2: vault_key_1 = 2000 tokens (updated value)
+    let asset_v2 = Asset::Fungible(FungibleAsset::new(faucet_id, 2000).unwrap());
+    insert_account_vault_asset(&mut conn, account_id, block_2, vault_key_1, Some(asset_v2))
+        .expect("insert vault asset update failed");
+
+    // Add a second vault_key at block 2
+    let vault_key_2 = AssetVaultKey::new_unchecked(Word::from([
+        Felt::new(2),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(0),
+    ]));
+    let asset_key2 = Asset::Fungible(FungibleAsset::new(faucet_id, 500).unwrap());
+    insert_account_vault_asset(&mut conn, account_id, block_2, vault_key_2, Some(asset_key2))
+        .expect("insert second vault asset failed");
+
+    // Update vault_key_1 again at block 3: vault_key_1 = 3000 tokens
+    let asset_v3 = Asset::Fungible(FungibleAsset::new(faucet_id, 3000).unwrap());
+    insert_account_vault_asset(&mut conn, account_id, block_3, vault_key_1, Some(asset_v3))
+        .expect("insert vault asset update 2 failed");
+
+    // Query at block 1: should only see vault_key_1 with 1000 tokens
+    let assets_at_block_1 = select_account_vault_at_block(&mut conn, account_id, block_1)
+        .expect("Query at block 1 should succeed");
+
+    assert_eq!(assets_at_block_1.len(), 1, "Should have 1 asset at block 1");
+    assert_matches!(&assets_at_block_1[0], Asset::Fungible(f) if f.amount() == 1000);
+
+    // Query at block 2: should see vault_key_1 with 2000 tokens AND vault_key_2 with 500 tokens
+    let assets_at_block_2 = select_account_vault_at_block(&mut conn, account_id, block_2)
+        .expect("Query at block 2 should succeed");
+
+    assert_eq!(assets_at_block_2.len(), 2, "Should have 2 assets at block 2");
+
+    // Find the amounts (order may vary)
+    let amounts: Vec<u64> = assets_at_block_2
+        .iter()
+        .map(|a| assert_matches!(a, Asset::Fungible(f) => f.amount()))
+        .collect();
+
+    assert!(amounts.contains(&2000), "Block 2 should have vault_key_1 with 2000 tokens");
+    assert!(amounts.contains(&500), "Block 2 should have vault_key_2 with 500 tokens");
+
+    // Query at block 3: should see vault_key_1 with 3000 tokens AND vault_key_2 with 500 tokens
+    let assets_at_block_3 = select_account_vault_at_block(&mut conn, account_id, block_3)
+        .expect("Query at block 3 should succeed");
+
+    assert_eq!(assets_at_block_3.len(), 2, "Should have 2 assets at block 3");
+
+    let amounts: Vec<u64> = assets_at_block_3
+        .iter()
+        .map(|a| assert_matches!(a, Asset::Fungible(f) => f.amount()))
+        .collect();
+
+    assert!(amounts.contains(&3000), "Block 3 should have vault_key_1 with 3000 tokens");
+    assert!(amounts.contains(&500), "Block 3 should have vault_key_2 with 500 tokens");
+}
+
+/// Tests that deleted vault assets (asset = None) are correctly excluded from results,
+/// and that the deduplication handles deletion entries properly.
+#[test]
+fn test_select_account_vault_at_block_with_deletion() {
+    use assert_matches::assert_matches;
+    use miden_protocol::asset::{AssetVaultKey, FungibleAsset};
+    use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    // Faucet ID is needed for creating FungibleAssets
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+
+    let block_1 = BlockNumber::from_epoch(0);
+    let block_2 = BlockNumber::from_epoch(1);
+    let block_3 = BlockNumber::from_epoch(2);
+
+    insert_block_header(&mut conn, block_1);
+    insert_block_header(&mut conn, block_2);
+    insert_block_header(&mut conn, block_3);
+
+    // Insert account at block 1
+    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account.commitment(),
+        AccountUpdateDetails::Delta(delta),
+    );
+    upsert_accounts(&mut conn, &[account_update], block_1).expect("upsert_accounts failed");
+
+    // Insert vault asset at block 1
+    let vault_key = AssetVaultKey::new_unchecked(Word::from([
+        Felt::new(1),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(0),
+    ]));
+    let asset = Asset::Fungible(FungibleAsset::new(faucet_id, 1000).unwrap());
+
+    insert_account_vault_asset(&mut conn, account_id, block_1, vault_key, Some(asset))
+        .expect("insert vault asset failed");
+
+    // Delete the vault asset at block 2 (insert with asset = None)
+    insert_account_vault_asset(&mut conn, account_id, block_2, vault_key, None)
+        .expect("delete vault asset failed");
+
+    // Re-add the vault asset at block 3 with different amount
+    let asset_v3 = Asset::Fungible(FungibleAsset::new(faucet_id, 2000).unwrap());
+    insert_account_vault_asset(&mut conn, account_id, block_3, vault_key, Some(asset_v3))
+        .expect("re-add vault asset failed");
+
+    // Query at block 1: should see the asset
+    let assets_at_block_1 = select_account_vault_at_block(&mut conn, account_id, block_1)
+        .expect("Query at block 1 should succeed");
+    assert_eq!(assets_at_block_1.len(), 1, "Should have 1 asset at block 1");
+
+    // Query at block 2: should NOT see the asset (it was deleted)
+    let assets_at_block_2 = select_account_vault_at_block(&mut conn, account_id, block_2)
+        .expect("Query at block 2 should succeed");
+    assert!(assets_at_block_2.is_empty(), "Should have no assets at block 2 (deleted)");
+
+    // Query at block 3: should see the re-added asset with new amount
+    let assets_at_block_3 = select_account_vault_at_block(&mut conn, account_id, block_3)
+        .expect("Query at block 3 should succeed");
+    assert_eq!(assets_at_block_3.len(), 1, "Should have 1 asset at block 3");
+    assert_matches!(&assets_at_block_3[0], Asset::Fungible(f) if f.amount() == 2000);
+}

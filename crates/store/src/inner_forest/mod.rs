@@ -5,7 +5,7 @@ use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountV
 use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest, SmtProof};
+use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
 use miden_protocol::{EMPTY_WORD, Word};
 use thiserror::Error;
@@ -161,10 +161,18 @@ impl InnerForest {
             return None;
         }
 
-        let proofs: Result<Vec<SmtProof>, MerkleError> =
-            keys.iter().map(|key| self.forest.open(root, *key)).collect();
+        if keys.len() > AccountStorageMapDetails::MAX_RETURN_ENTRIES {
+            return Some(Ok(AccountStorageMapDetails {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }));
+        }
 
-        Some(proofs.map(|p| AccountStorageMapDetails::from_proofs(slot_name, p)))
+        // Collect SMT proofs for each key
+        let proofs =
+            Result::from_iter(keys.iter().map(|key| self.forest.open(root, *key)));
+
+        Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
     }
 
     /// Returns all key-value entries for a specific account storage slot at or before a block.

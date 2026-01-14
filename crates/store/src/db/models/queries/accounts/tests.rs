@@ -57,7 +57,7 @@ fn setup_test_db() -> SqliteConnection {
 ///
 /// Reads `accounts.storage_header` and `account_storage_map_values` to reconstruct
 /// the full `AccountStorage` at the specified block.
-fn test_select_account_storage_at_block(
+fn reconstruct_account_storage_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
@@ -315,38 +315,6 @@ fn test_select_account_vault_at_block_empty() {
 // ================================================================================================
 
 #[test]
-fn test_select_account_storage_at_block_returns_storage() {
-    let mut conn = setup_test_db();
-    let (account, _) = create_test_account_with_storage();
-    let account_id = account.id();
-
-    let block_num = BlockNumber::from_epoch(0);
-    insert_block_header(&mut conn, block_num);
-
-    let original_storage_commitment = account.storage().to_commitment();
-
-    // Insert the account
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
-    let account_update = BlockAccountUpdate::new(
-        account_id,
-        account.commitment(),
-        AccountUpdateDetails::Delta(delta),
-    );
-
-    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
-
-    // Query storage
-    let storage = test_select_account_storage_at_block(&mut conn, account_id, block_num)
-        .expect("Query should succeed");
-
-    assert_eq!(
-        storage.to_commitment(),
-        original_storage_commitment,
-        "Storage commitment should match"
-    );
-}
-
-#[test]
 fn test_upsert_accounts_inserts_storage_header() {
     let mut conn = setup_test_db();
     let (account, account_id) = create_test_account_with_storage();
@@ -491,7 +459,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
 
     // Verify historical query returns first update
     let storage_at_block_1 =
-        test_select_account_storage_at_block(&mut conn, account_id, block_num_1)
+        reconstruct_account_storage_at_block(&mut conn, account_id, block_num_1)
             .expect("Failed to query storage at block 1");
 
     assert_eq!(

@@ -83,7 +83,7 @@ pub struct NetworkTransactionBuilder {
 
 impl NetworkTransactionBuilder {
     /// Channel capacity for account loading.
-    const ACCOUNT_CHANNEL_CAPACITY: usize = 100_000;
+    const ACCOUNT_CHANNEL_CAPACITY: usize = 1_000;
 
     /// Creates a new instance of the network transaction builder.
     pub fn new(

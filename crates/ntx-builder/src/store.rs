@@ -1,3 +1,4 @@
+use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
@@ -178,30 +179,40 @@ impl StoreClient {
     /// This method is designed to be run in a background task, sending accounts to the main event
     /// loop as they are loaded. This allows the ntx-builder to start processing mempool events
     /// without waiting for all accounts to be preloaded.
-    #[instrument(target = COMPONENT, name = "store.client.load_committed_accounts", skip_all, err)]
     pub async fn stream_network_account_ids(
         &self,
         sender: tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
     ) -> Result<(), StoreError> {
         let mut block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
 
-        loop {
-            let (accounts, pagination_info) = self.fetch_page(block_range.clone()).await?;
-
-            let chain_tip = pagination_info.chain_tip;
-            let current_height = pagination_info.block_num;
-
-            self.submit_page(accounts, &sender, chain_tip, current_height).await?;
-
-            block_range =
-                BlockNumber::from(pagination_info.block_num)..=BlockNumber::from(u32::MAX);
-
-            if pagination_info.block_num >= pagination_info.chain_tip {
-                break;
-            }
+        while let Some(next_start) = self.load_page(block_range, &sender).await? {
+            block_range = next_start..=BlockNumber::from(u32::MAX);
         }
 
         Ok(())
+    }
+
+    /// Loads a single page of network accounts and submits them to the sender.
+    ///
+    /// Returns the next block number to fetch from, or `None` if the chain tip has been reached.
+    #[instrument(target = COMPONENT, name = "store.client.load_accounts_page", skip_all, err)]
+    async fn load_page(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+        sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
+    ) -> Result<Option<BlockNumber>, StoreError> {
+        let (accounts, pagination_info) = self.fetch_page(block_range).await?;
+
+        let chain_tip = pagination_info.chain_tip;
+        let current_height = pagination_info.block_num;
+
+        self.submit_page(accounts, sender, chain_tip, current_height).await?;
+
+        if current_height >= chain_tip {
+            Ok(None)
+        } else {
+            Ok(Some(BlockNumber::from(current_height)))
+        }
     }
 
     #[instrument(

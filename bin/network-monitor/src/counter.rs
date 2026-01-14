@@ -43,6 +43,7 @@ use tracing::{error, info, instrument, warn};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
+use crate::deploy::counter::COUNTER_SLOT_NAME;
 use crate::deploy::{MonitorDataStore, create_genesis_aware_rpc_client, get_counter_library};
 use crate::status::{
     CounterTrackingDetails,
@@ -112,10 +113,14 @@ async fn fetch_counter_value(
         return Ok(None);
     };
 
-    let first_slot = storage_header.slots.first().context("no storage slots found")?;
+    let counter_slot = storage_header
+        .slots
+        .iter()
+        .find(|slot| slot.slot_name == COUNTER_SLOT_NAME.as_str())
+        .context(format!("counter slot '{}' not found", COUNTER_SLOT_NAME.as_str()))?;
 
     // The counter value is stored as a Word, with the actual u64 value in the last element
-    let slot_value: Word = first_slot
+    let slot_value: Word = counter_slot
         .commitment
         .as_ref()
         .context("missing storage slot value")?

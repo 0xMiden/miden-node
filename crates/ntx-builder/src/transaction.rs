@@ -122,19 +122,19 @@ impl NtxContext {
 
         async move {
             async move {
-                tracing::Span::current().set_attribute("account.id", account.id());
-                tracing::Span::current().set_attribute(
+                let span = tracing::Span::current();
+                span.set_attribute("account.id", account.id());
+                span.set_attribute(
                     "account.id.network_prefix",
                     account.id().prefix().to_string().as_str(),
                 );
-                tracing::Span::current().set_attribute("notes.count", notes.len());
-                tracing::Span::current()
-                    .set_attribute("reference_block.number", chain_tip_header.block_num());
+                span.set_attribute("notes.count", notes.len());
+                span.set_attribute("reference_block.number", chain_tip_header.block_num());
 
                 let data_store =
                     NtxDataStore::new(account, chain_tip_header, chain_mmr, self.store.clone());
 
-                let (successful, failed) = self.filter_notes(&data_store, notes.clone()).await?;
+                let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed.into())).await?;
                 self.submit(proven).await?;

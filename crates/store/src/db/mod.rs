@@ -6,6 +6,7 @@ use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
+use miden_node_tracing::instrument_with_err_report;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorage};
 use miden_protocol::asset::{Asset, AssetVaultKey};
@@ -223,7 +224,7 @@ impl Db {
         target = COMPONENT,
         name = "store.database.bootstrap",
         skip_all,
-        fields(path=%database_filepath.display())
+        fields(path=%database_filepath.display()),
         err,
     )]
     pub fn bootstrap(database_filepath: PathBuf, genesis: &GenesisBlock) -> anyhow::Result<()> {
@@ -305,7 +306,7 @@ impl Db {
     }
 
     /// Open a connection to the DB and apply any pending migrations.
-    #[instrument(target = COMPONENT, skip_all)]
+    #[instrument_with_err_report(target = COMPONENT, skip_all)]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
         let manager = ConnectionManager::new(database_filepath.to_str().unwrap());
         let pool = deadpool_diesel::Pool::builder(manager).max_size(16).build()?;
@@ -322,7 +323,7 @@ impl Db {
     }
 
     /// Loads all the nullifiers from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub(crate) async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
         self.transact("all nullifiers", move |conn| {
             let nullifiers = queries::select_all_nullifiers(conn)?;
@@ -332,7 +333,7 @@ impl Db {
     }
 
     /// Loads the nullifiers that match the prefixes from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_nullifiers_by_prefix(
         &self,
         prefix_len: u32,
@@ -357,7 +358,7 @@ impl Db {
     /// Search for a [`BlockHeader`] from the database by its `block_num`.
     ///
     /// When `block_number` is [None], the latest block header is returned.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_block_header_by_block_num(
         &self,
         maybe_block_number: Option<BlockNumber>,
@@ -370,7 +371,7 @@ impl Db {
     }
 
     /// Loads multiple block headers from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_block_headers(
         &self,
         blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
@@ -383,7 +384,7 @@ impl Db {
     }
 
     /// Loads all the block headers from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_block_headers(&self) -> Result<Vec<BlockHeader>> {
         self.transact("all block headers", |conn| {
             let raw = queries::select_all_block_headers(conn)?;
@@ -393,7 +394,7 @@ impl Db {
     }
 
     /// TODO marked for removal, replace with paged version
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {
             queries::select_all_account_commitments(conn)
@@ -402,7 +403,7 @@ impl Db {
     }
 
     /// Returns all account IDs that have public state.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_public_account_ids(&self) -> Result<Vec<AccountId>> {
         self.transact("read all public account IDs", move |conn| {
             queries::select_all_public_account_ids(conn)
@@ -411,14 +412,14 @@ impl Db {
     }
 
     /// Loads public account details from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
         self.transact("Get account details", move |conn| queries::select_account(conn, id))
             .await
     }
 
     /// Loads public account details from the DB based on the account ID's prefix.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_network_account_by_prefix(
         &self,
         id_prefix: u32,
@@ -442,7 +443,7 @@ impl Db {
     /// - A vector of network account IDs.
     /// - The last block number that was fully included in the result. When truncated, this will be
     ///   less than the requested range end.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_network_account_ids(
         &self,
         block_range: RangeInclusive<BlockNumber>,
@@ -458,7 +459,7 @@ impl Db {
     /// This method queries the decomposed storage tables and reconstructs the full
     /// `AccountStorage` with SMT backing for Map slots.
     // TODO split querying the header from the content
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account_storage_at_block(
         &self,
         account_id: AccountId,
@@ -471,7 +472,7 @@ impl Db {
     }
 
     /// Queries vault assets at a specific block
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account_vault_at_block(
         &self,
         account_id: AccountId,
@@ -511,7 +512,7 @@ impl Db {
         .await
     }
 
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,
         block_number: BlockNumber,
@@ -524,7 +525,7 @@ impl Db {
         .await
     }
 
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_note_sync(
         &self,
         block_range: RangeInclusive<BlockNumber>,
@@ -538,7 +539,7 @@ impl Db {
 
     /// Loads all the [`miden_protocol::note::Note`]s matching a certain [`NoteId`] from the
     /// database.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
         self.transact("note by id", move |conn| {
             queries::select_notes_by_id(conn, note_ids.as_slice())
@@ -547,7 +548,7 @@ impl Db {
     }
 
     /// Returns all note commitments from the DB that match the provided ones.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_existing_note_commitments(
         &self,
         note_commitments: Vec<Word>,
@@ -559,7 +560,7 @@ impl Db {
     }
 
     /// Loads inclusion proofs for notes matching the given note commitments.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument_with_err_report(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_note_inclusion_proofs(
         &self,
         note_commitments: BTreeSet<Word>,
@@ -575,7 +576,7 @@ impl Db {
     /// `allow_acquire` and `acquire_done` are used to synchronize writes to the DB with writes to
     /// the in-memory trees. Further details available on [`super::state::State::apply_block`].
     // TODO: This span is logged in a root span, we should connect it to the parent one.
-    #[instrument(target = COMPONENT, skip_all, err)]
+    #[instrument_with_err_report(target = COMPONENT, skip_all, err)]
     pub async fn apply_block(
         &self,
         allow_acquire: oneshot::Sender<()>,

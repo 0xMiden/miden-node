@@ -25,7 +25,9 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
-use tracing::{debug, info, instrument};
+// Using standard tracing::instrument because tonic::Status doesn't impl std::error::Error
+use tracing::instrument;
+use tracing::{debug, info};
 use url::Url;
 
 use crate::COMPONENT;

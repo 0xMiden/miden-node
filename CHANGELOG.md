@@ -1,7 +1,10 @@
 # Changelog
 
+## v0.12.7 (TBD)
+
 ### Enhancements
 
+- Emit database table size metrics ([#1511](https://github.com/0xMiden/miden-node/pull/1511)).
 - Improved telemetry in the network transaction builder ([#1508](https://github.com/0xMiden/miden-node/pull/1508)).
 - Improved telemetry in the store's `apply_block` ([#1508](https://github.com/0xMiden/miden-node/pull/1508)).
 

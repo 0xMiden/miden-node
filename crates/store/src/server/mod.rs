@@ -134,6 +134,19 @@ impl Store {
             Ok(())
         });
 
+        join_set.spawn(async move {
+            // Manual tests on testnet indicate each iteration takes ~2s once things are OS cached.
+            //
+            // 5 minutes seems like a reasonable interval, where this should have minimal database
+            // IO impact while providing a decent view into table growth over time.
+            let mut interval = tokio::time::interval(Duration::from_secs(5 * 60));
+            let database = Arc::clone(&state);
+            loop {
+                interval.tick().await;
+                let _ = database.analyze_table_sizes().await;
+            }
+        });
+
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(
             tonic::transport::Server::builder()

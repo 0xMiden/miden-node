@@ -1055,6 +1055,11 @@ impl State {
         self.db.optimize().await
     }
 
+    /// Emits metrics for each database table's size.
+    pub async fn analyze_table_sizes(&self) -> Result<(), DatabaseError> {
+        self.db.analyze_table_sizes().await
+    }
+
     /// Returns account vault updates for specified account within a block range.
     pub async fn sync_account_vault(
         &self,

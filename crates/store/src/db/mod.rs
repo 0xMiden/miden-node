@@ -3,10 +3,12 @@ use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 use anyhow::Context;
+use diesel::prelude::QueryableByName;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::asset::{Asset, AssetVaultKey};
@@ -542,6 +544,47 @@ impl Db {
                 .map_err(DatabaseError::Diesel)
         })
         .await?;
+        Ok(())
+    }
+
+    /// Emits size metrics for each table in the database, and the entire database.
+    #[instrument(target = COMPONENT, skip_all, err)]
+    pub async fn analyze_table_sizes(&self) -> Result<(), DatabaseError> {
+        self.transact("db analysis", |conn| {
+            #[derive(QueryableByName)]
+            struct TotalSize {
+                #[diesel(sql_type = diesel::sql_types::BigInt)]
+                size: i64,
+            }
+
+            #[derive(QueryableByName)]
+            struct Table {
+                #[diesel(sql_type = diesel::sql_types::Text)]
+                name: String,
+                #[diesel(sql_type = diesel::sql_types::BigInt)]
+                size: i64,
+            }
+
+            let tables =
+                diesel::sql_query("SELECT name, sum(payload) AS size FROM dbstat GROUP BY name")
+                    .load::<Table>(conn)?;
+
+            let span = tracing::Span::current();
+            for Table { name, size } in tables {
+                span.set_attribute(format!("database.table.{name}.size"), size);
+            }
+
+            let total = diesel::sql_query(
+                "SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()",
+            )
+            .get_result::<TotalSize>(conn)?;
+            span.set_attribute("database.total.size", total.size);
+
+            Result::<_, DatabaseError>::Ok(())
+        })
+        .await
+        .inspect_err(|err| tracing::Span::current().set_error(err))?;
+
         Ok(())
     }
 

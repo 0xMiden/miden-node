@@ -448,36 +448,6 @@ impl AccountStorageMapDetails {
         }
     }
 
-    /// Creates storage map details based on the requested slot data.
-    ///
-    /// Handles both "all entries" and "specific keys" requests.
-    /// Returns `LimitExceeded` if too many entries.
-    pub fn new(slot_name: StorageSlotName, slot_data: SlotData, storage_map: &StorageMap) -> Self {
-        match slot_data {
-            SlotData::All => Self::from_all_entries(slot_name, storage_map),
-            SlotData::MapKeys(keys) => {
-                if keys.len() > Self::MAX_RETURN_ENTRIES {
-                    Self {
-                        slot_name,
-                        entries: StorageMapEntries::LimitExceeded,
-                    }
-                } else {
-                    // Query specific keys from the storage map - returns all entries without proofs
-                    // For proofs, use from_specific_keys with SmtForest
-                    let mut entries = Vec::with_capacity(keys.len());
-                    for key in keys {
-                        let value = storage_map.get(&key);
-                        entries.push((key, value));
-                    }
-                    Self {
-                        slot_name,
-                        entries: StorageMapEntries::AllEntries(entries),
-                    }
-                }
-            },
-        }
-    }
-
     /// Creates storage map details from forest-queried entries.
     ///
     /// Returns `LimitExceeded` if too many entries.

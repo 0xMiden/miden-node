@@ -435,6 +435,12 @@ impl AccountStorageMapDetails {
     /// Maximum number of storage map entries that can be returned in a single response.
     pub const MAX_RETURN_ENTRIES: usize = 1000;
 
+    /// Maximum number of SMT proofs that can be returned in a single response.
+    ///
+    /// This limit is more restrictive than [`Self::MAX_RETURN_ENTRIES`] because SMT proofs
+    /// are larger (up to 64 inner nodes each) and more CPU-intensive to generate.
+    pub const MAX_SMT_PROOF_ENTRIES: usize = 16;
+
     /// Creates storage map details with all entries from the storage map.
     ///
     /// If the storage map has too many entries (> `MAX_RETURN_ENTRIES`),
@@ -476,7 +482,7 @@ impl AccountStorageMapDetails {
     /// Use this when the caller has already obtained the proofs from an `SmtForest`.
     /// Returns `LimitExceeded` if too many proofs are provided.
     pub fn from_proofs(slot_name: StorageSlotName, proofs: Vec<SmtProof>) -> Self {
-        if proofs.len() > Self::MAX_RETURN_ENTRIES {
+        if proofs.len() > Self::MAX_SMT_PROOF_ENTRIES {
             Self {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,

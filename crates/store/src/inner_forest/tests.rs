@@ -428,3 +428,36 @@ fn test_storage_map_incremental_updates() {
     assert_ne!(root_2, root_3);
     assert_ne!(root_1, root_3);
 }
+
+#[test]
+fn test_open_storage_map_returns_limit_exceeded_for_too_many_keys() {
+    use std::collections::BTreeMap;
+
+    use assert_matches::assert_matches;
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let slot_name = StorageSlotName::mock(3);
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a storage map with a few entries
+    let mut map_delta = StorageMapDelta::default();
+    for i in 0..20u32 {
+        let key = Word::from([i, 0, 0, 0]);
+        let value = Word::from([0, 0, 0, i]);
+        map_delta.insert(key, value);
+    }
+    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta))]);
+    let storage_delta = AccountStorageDelta::from_raw(raw);
+    let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
+    forest.update_account(block_num, &delta).unwrap();
+
+    // Request proofs for more than MAX_SMT_PROOF_ENTRIES (16) keys.
+    // Should return LimitExceeded.
+    let keys: Vec<Word> = (0..20u32).map(|i| Word::from([i, 0, 0, 0])).collect();
+    let result = forest.open_storage_map(account_id, slot_name.clone(), block_num, &keys);
+
+    let details = result.expect("Should return Some").expect("Should not error");
+    assert_matches!(details.entries, StorageMapEntries::LimitExceeded);
+}

@@ -14,7 +14,6 @@ runs:
         sudo apt-get install -y librocksdb-dev clang llvm-dev libclang-dev
 
         # Point librocksdb-sys to use system library instead of compiling.
-        # This saves ~5-10 minutes of compile time and reduces cache size.
         echo "ROCKSDB_LIB_DIR=/usr/lib" >> "$GITHUB_ENV"
         echo "ROCKSDB_INCLUDE_DIR=/usr/include" >> "$GITHUB_ENV"
         # Use static linking to avoid runtime library issues

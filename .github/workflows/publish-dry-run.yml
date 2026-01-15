@@ -23,6 +23,8 @@ jobs:
           fetch-depth: 0
       - name: Cleanup large tools for build space
         uses: ./.github/actions/cleanup-runner
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Update Rust toolchain

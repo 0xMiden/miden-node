@@ -2,8 +2,11 @@ FROM rust:1.90-slim-bullseye AS builder
 
 RUN apt-get update && \
     apt-get -y upgrade && \
-    apt-get install -y llvm clang bindgen pkg-config libssl-dev libsqlite3-dev ca-certificates && \
+    apt-get install -y llvm clang bindgen pkg-config libssl-dev libsqlite3-dev librocksdb-dev ca-certificates && \
     rm -rf /var/lib/apt/lists/*
+
+ENV ROCKSDB_LIB_DIR=/usr/lib
+ENV ROCKSDB_INCLUDE_DIR=/usr/include
 
 WORKDIR /app
 COPY ./Cargo.toml .

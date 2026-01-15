@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@main
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       - name: Rustup
         run: rustup update --no-self-update
       - uses: Swatinem/rust-cache@v2

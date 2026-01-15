@@ -60,6 +60,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
+
       - name: Build and Publish Packages
         uses: ./.github/actions/debian
         with:

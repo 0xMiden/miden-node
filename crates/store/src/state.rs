@@ -98,7 +98,9 @@ struct StorageBuilder<S>(std::marker::PhantomData<S>);
 /// Trait for loading account trees from storage.
 ///
 /// For `MemoryStorage`, the tree is rebuilt from database entries on each startup.
-/// For `RocksDbStorage`, the tree is loaded directly from disk (much faster for large trees).
+/// For `RocksDbStorage`, the tree is _not_ loaded into memory, but we assume the existing file
+/// on disk is coherent.
+// TODO handle on disk rocksdb storage file being missing and/or corrupted.
 trait AccountTreeLoader: SmtStorage + Sized {
     /// Loads an account tree, either from persistent storage or by rebuilding from DB.
     fn load_account_tree(
@@ -107,6 +109,8 @@ trait AccountTreeLoader: SmtStorage + Sized {
     ) -> impl std::future::Future<Output = Result<LargeSmt<Self>, StateInitializationError>> + Send;
 }
 
+// Should only every be used in `cfg(test)` scope!
+#[cfg(not(feature = "rocksdb"))]
 impl AccountTreeLoader for MemoryStorage {
     async fn load_account_tree(
         self,
@@ -147,8 +151,9 @@ impl AccountTreeLoader for RocksDbStorage {
     }
 }
 
+#[cfg(test)]
 impl StorageBuilder<MemoryStorage> {
-    #[allow(dead_code, clippy::unnecessary_wraps, reason = "Result is required by its `RocksDb` counterpart")]
+    #[allow(clippy::unnecessary_wraps)]
     fn create(_data_dir: &Path) -> Result<MemoryStorage, StateInitializationError> {
         Ok(MemoryStorage::default())
     }
@@ -213,7 +218,7 @@ impl State {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Loads the state from the `db`.
+    /// Loads the state from `sqlite` into `MemoryBackend`.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())

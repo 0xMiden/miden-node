@@ -29,15 +29,18 @@ use miden_node_utils::formatting::format_array;
 use miden_protocol::Word;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{AccountId, StorageSlotContent};
-use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
+#[cfg(not(feature = "rocksdb"))]
+use miden_protocol::block::account_tree::account_id_to_smt_key;
+use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
+>>>>>>> 45437288 (simplify)
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
+#[cfg(not(feature = "rocksdb"))]
+use miden_protocol::crypto::merkle::smt::MemoryStorage;
 #[cfg(feature = "rocksdb")]
 use miden_protocol::crypto::merkle::smt::RocksDbConfig;
 use miden_protocol::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtProof, SmtStorage};
-#[cfg(not(feature = "rocksdb"))]
-use miden_protocol::crypto::merkle::smt::MemoryStorage;
 use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::{OutputNote, PartialBlockchain};
 use miden_protocol::utils::Serializable;
@@ -125,8 +128,9 @@ trait StorageLoader: SmtStorage + Sized {
     fn load_nullifier_tree(
         self,
         db: &mut Db,
-    ) -> impl std::future::Future<Output = Result<NullifierTree<LargeSmt<Self>>, StateInitializationError>>
-           + Send;
+    ) -> impl std::future::Future<
+        Output = Result<NullifierTree<LargeSmt<Self>>, StateInitializationError>,
+    > + Send;
 }
 
 #[cfg(not(feature = "rocksdb"))]
@@ -256,8 +260,8 @@ impl State {
 
         let account_storage = TreeStorage::create(data_path, "accounttree")?;
         let smt = account_storage.load_account_tree(&mut db).await?;
-        let account_tree = AccountTree::new(smt)
-            .map_err(StateInitializationError::FailedToCreateAccountsTree)?;
+        let account_tree =
+            AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
         let account_tree = AccountTreeWithHistory::new(account_tree, latest_block_num);
 
         let nullifier_storage = TreeStorage::create(data_path, "nullifiertree")?;

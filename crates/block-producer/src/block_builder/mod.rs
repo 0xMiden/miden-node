@@ -172,7 +172,7 @@ impl BlockBuilder {
         &self,
         selected_block: SelectedBlock,
     ) -> Result<BlockBatchesAndInputs, BuildBlockError> {
-        let SelectedBlock { block_number: _, batches } = selected_block;
+        let SelectedBlock { block_number, batches } = selected_block;
 
         let batch_iter = batches.iter();
 
@@ -206,6 +206,20 @@ impl BlockBuilder {
             )
             .await
             .map_err(BuildBlockError::GetBlockInputsFailed)?;
+
+        // Check that the latest committed block in the store matches our expectations.
+        //
+        // Desync can occur since the mempool and store are separate components. One example is if
+        // the block-producer's apply_block gRPC request times out, rolling back the block locally,
+        // but the store still committed the block on its end.
+        //
+        // This is not recoverable since the mempool cannot reconstruct the block it rolled back.
+        assert_eq!(
+            block_number,
+            inputs.prev_block_header().block_num().child(),
+            "Desync between mempool and store detected. Block number {block_number} selected from mempool should be the child of the latest committed block in the store {}",
+            inputs.prev_block_header().block_num()
+        );
 
         Ok(BlockBatchesAndInputs { batches, inputs })
     }

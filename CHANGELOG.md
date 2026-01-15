@@ -22,6 +22,7 @@
 - Added gRPC-Web probe support to the `miden-network-monitor` binary ([#1484](https://github.com/0xMiden/miden-node/pull/1484)).
 - Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
 - Improve DB query performance for account queries ([#1496](https://github.com/0xMiden/miden-node/pull/1496).
+- Limit number of storage map keys in `GetAccount` requests ([#1517](https://github.com/0xMiden/miden-node/pull/1517)).
 
 ### Changes
 

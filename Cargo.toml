@@ -42,7 +42,7 @@ miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.13" }
 miden-node-proto            = { path = "crates/proto", version = "0.13" }
 miden-node-proto-build      = { path = "proto", version = "0.13" }
 miden-node-rpc              = { path = "crates/rpc", version = "0.13" }
-miden-node-store            = { path = "crates/store", version = "0.13" }
+miden-node-store            = { default-features = false, path = "crates/store", version = "0.13" }
 miden-node-test-macro       = { path = "crates/test-macro" }
 miden-node-utils            = { path = "crates/utils", version = "0.13" }
 miden-node-validator        = { path = "crates/validator", version = "0.13" }
@@ -58,6 +58,7 @@ miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/mid
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air    = { features = ["std", "testing"], version = "0.20" }
+miden-crypto = { default-features = false, version = "0.19" }
 
 # External dependencies
 anyhow            = { version = "1.0" }

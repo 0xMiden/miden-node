@@ -95,6 +95,58 @@ pub type AccountTreeStorage = MemoryStorage;
 /// Helper for constructing storage backends.
 struct StorageBuilder<S>(std::marker::PhantomData<S>);
 
+/// Trait for loading account trees from storage.
+///
+/// For `MemoryStorage`, the tree is rebuilt from database entries on each startup.
+/// For `RocksDbStorage`, the tree is loaded directly from disk (much faster for large trees).
+trait AccountTreeLoader: SmtStorage + Sized {
+    /// Loads an account tree, either from persistent storage or by rebuilding from DB.
+    fn load_account_tree(
+        self,
+        db: &mut Db,
+    ) -> impl std::future::Future<Output = Result<LargeSmt<Self>, StateInitializationError>> + Send;
+}
+
+impl AccountTreeLoader for MemoryStorage {
+    async fn load_account_tree(
+        self,
+        db: &mut Db,
+    ) -> Result<LargeSmt<Self>, StateInitializationError> {
+        let account_data = db.select_all_account_commitments().await?;
+        let smt_entries = account_data
+            .into_iter()
+            .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
+        LargeSmt::with_entries(self, smt_entries).map_err(|e| match e {
+            LargeSmtError::Merkle(merkle_error) => {
+                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
+            },
+            LargeSmtError::Storage(err) => {
+                StateInitializationError::AccountTreeIoError(err.as_report())
+            },
+        })
+    }
+}
+
+#[cfg(feature = "rocksdb")]
+impl AccountTreeLoader for RocksDbStorage {
+    async fn load_account_tree(
+        self,
+        _db: &mut Db,
+    ) -> Result<LargeSmt<Self>, StateInitializationError> {
+        // Load directly from RocksDB storage - no need to query DB.
+        // LargeSmt::new() checks if storage has data and reconstructs from it.
+        // The tree state is persisted to disk and survives restarts.
+        LargeSmt::new(self).map_err(|e| match e {
+            LargeSmtError::Merkle(merkle_error) => {
+                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
+            },
+            LargeSmtError::Storage(err) => {
+                StateInitializationError::AccountTreeIoError(err.as_report())
+            },
+        })
+    }
+}
+
 impl StorageBuilder<MemoryStorage> {
     #[allow(dead_code, clippy::unnecessary_wraps, reason = "Result is required by its `RocksDb` counterpart")]
     fn create(_data_dir: &Path) -> Result<MemoryStorage, StateInitializationError> {
@@ -1254,28 +1306,12 @@ async fn load_nullifier_tree(
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_account_tree<S: SmtStorage>(
+async fn load_account_tree<S: AccountTreeLoader>(
     db: &mut Db,
     block_number: BlockNumber,
     storage: S,
 ) -> Result<AccountTreeWithHistory<S>, StateInitializationError> {
-    let account_data = Vec::from_iter(db.select_all_account_commitments().await?);
-
-    let smt_entries = account_data
-        .into_iter()
-        .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
-
-    let smt =
-        LargeSmt::with_entries(MemoryStorage::default(), smt_entries).map_err(|e| match e {
-            LargeSmtError::Merkle(merkle_error) => {
-                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
-            },
-            LargeSmtError::Storage(err) => {
-                // large_smt::StorageError is not `Sync` and hence `context` cannot be called
-                // which we want to and do
-                StateInitializationError::AccountTreeIoError(err.as_report())
-            },
-        })?;
+    let smt = storage.load_account_tree(db).await?;
 
     let account_tree =
         AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;

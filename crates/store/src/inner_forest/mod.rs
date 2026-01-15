@@ -1,10 +1,6 @@
 use std::collections::BTreeMap;
 
-use miden_node_proto::domain::account::{
-    AccountStorageMapDetails,
-    StorageMapEntries,
-    StorageMapResponseVariant,
-};
+use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
 use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -153,8 +149,7 @@ impl InnerForest {
     /// Returns a `MerkleError` if the forest doesn't contain sufficient data for the proofs.
     ///
     /// If the number of requested keys exceeds [`AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES`],
-    /// or if the total nodes in the proofs would exceed the number of all entries in the storage
-    /// map, this returns all entries instead of proofs (to reduce response size and CPU cost).
+    /// returns `LimitExceeded`.
     pub(crate) fn open_storage_map(
         &self,
         account_id: AccountId,
@@ -169,51 +164,17 @@ impl InnerForest {
             return None;
         }
 
-        // Get total entries for this storage map
-        let all_entries = self.get_storage_entries(account_id, &slot_name, block_num);
-
-        match AccountStorageMapDetails::storage_map_response(
-            keys.len(),
-            all_entries.as_ref().map_or(0, |e| e.len()),
-        ) {
-            StorageMapResponseVariant::AllEntries => {
-                let entries = all_entries
-                    .map(|e| Vec::from_iter(e.iter().map(|(k, v)| (*k, *v))))
-                    .unwrap_or_default();
-                return Some(Ok(AccountStorageMapDetails {
-                    slot_name,
-                    entries: StorageMapEntries::AllEntries(entries),
-                }));
-            },
-            StorageMapResponseVariant::LimitsExceeded => {
-                return Some(Ok(AccountStorageMapDetails {
-                    slot_name,
-                    entries: StorageMapEntries::LimitExceeded,
-                }));
-            },
-            StorageMapResponseVariant::Proofs => {},
+        if keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
+            return Some(Ok(AccountStorageMapDetails {
+                slot_name,
+                entries: StorageMapEntries::LimitExceeded,
+            }));
         }
 
         // Collect SMT proofs for each key
         let proofs = Result::from_iter(keys.iter().map(|key| self.forest.open(root, *key)));
 
         Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
-    }
-
-    /// Returns the storage entries for an account slot at or before a block.
-    fn get_storage_entries(
-        &self,
-        account_id: AccountId,
-        slot_name: &StorageSlotName,
-        block_num: BlockNumber,
-    ) -> Option<&BTreeMap<Word, Word>> {
-        self.storage_entries
-            .range(
-                (account_id, slot_name.clone(), BlockNumber::GENESIS)
-                    ..=(account_id, slot_name.clone(), block_num),
-            )
-            .next_back()
-            .map(|(_, entries)| entries)
     }
 
     /// Returns all key-value entries for a specific account storage slot at or before a block.

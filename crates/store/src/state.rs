@@ -27,21 +27,17 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
 use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{AccountId, StorageSlotContent};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 #[cfg(feature = "rocksdb")]
 use miden_protocol::crypto::merkle::smt::RocksDbConfig;
-use miden_protocol::crypto::merkle::smt::{
-    LargeSmt,
-    LargeSmtError,
-    MemoryStorage,
-    SmtProof,
-    SmtStorage,
-};
+use miden_protocol::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtProof, SmtStorage};
+#[cfg(not(feature = "rocksdb"))]
+use miden_protocol::crypto::merkle::smt::MemoryStorage;
 use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::{OutputNote, PartialBlockchain};
 use miden_protocol::utils::Serializable;
@@ -86,22 +82,39 @@ pub struct TransactionInputs {
     pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
-/// The storage backend for account trees.
+/// The storage backend for trees.
 #[cfg(feature = "rocksdb")]
-pub type AccountTreeStorage = RocksDbStorage;
+pub type TreeStorage = RocksDbStorage;
 #[cfg(not(feature = "rocksdb"))]
-pub type AccountTreeStorage = MemoryStorage;
+pub type TreeStorage = MemoryStorage;
 
-/// Helper for constructing storage backends.
-struct StorageBuilder<S>(std::marker::PhantomData<S>);
+/// Converts a `LargeSmtError` into a `StateInitializationError`.
+fn large_smt_error_to_init_error(e: LargeSmtError) -> StateInitializationError {
+    match e {
+        LargeSmtError::Merkle(merkle_error) => {
+            StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
+        },
+        LargeSmtError::Storage(err) => {
+            StateInitializationError::AccountTreeIoError(err.as_report())
+        },
+    }
+}
 
-/// Trait for loading account trees from storage.
+/// Loads an SMT from persistent storage.
+#[cfg(feature = "rocksdb")]
+fn load_smt<S: SmtStorage>(storage: S) -> Result<LargeSmt<S>, StateInitializationError> {
+    LargeSmt::new(storage).map_err(large_smt_error_to_init_error)
+}
+
+/// Trait for loading trees from storage.
 ///
 /// For `MemoryStorage`, the tree is rebuilt from database entries on each startup.
-/// For `RocksDbStorage`, the tree is _not_ loaded into memory, but we assume the existing file
-/// on disk is coherent.
+/// For `RocksDbStorage`, the tree is loaded directly from disk (much faster for large trees).
 // TODO handle on disk rocksdb storage file being missing and/or corrupted.
-trait AccountTreeLoader: SmtStorage + Sized {
+trait StorageLoader: SmtStorage + Sized {
+    /// Creates a storage backend for the given domain.
+    fn create(data_dir: &Path, domain: &'static str) -> Result<Self, StateInitializationError>;
+
     /// Loads an account tree, either from persistent storage or by rebuilding from DB.
     fn load_account_tree(
         self,
@@ -116,8 +129,12 @@ trait AccountTreeLoader: SmtStorage + Sized {
            + Send;
 }
 
-// Should only every be used in `cfg(test)` scope!
-impl AccountTreeLoader for MemoryStorage {
+#[cfg(not(feature = "rocksdb"))]
+impl StorageLoader for MemoryStorage {
+    fn create(_data_dir: &Path, _domain: &'static str) -> Result<Self, StateInitializationError> {
+        Ok(MemoryStorage::default())
+    }
+
     async fn load_account_tree(
         self,
         db: &mut Db,
@@ -126,14 +143,7 @@ impl AccountTreeLoader for MemoryStorage {
         let smt_entries = account_data
             .into_iter()
             .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
-        LargeSmt::with_entries(self, smt_entries).map_err(|e| match e {
-            LargeSmtError::Merkle(merkle_error) => {
-                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
-            },
-            LargeSmtError::Storage(err) => {
-                StateInitializationError::AccountTreeIoError(err.as_report())
-            },
-        })
+        LargeSmt::with_entries(self, smt_entries).map_err(large_smt_error_to_init_error)
     }
 
     async fn load_nullifier_tree(
@@ -148,7 +158,15 @@ impl AccountTreeLoader for MemoryStorage {
 }
 
 #[cfg(feature = "rocksdb")]
-impl AccountTreeLoader for RocksDbStorage {
+impl StorageLoader for RocksDbStorage {
+    fn create(data_dir: &Path, domain: &'static str) -> Result<Self, StateInitializationError> {
+        let storage_path = data_dir.join(domain);
+        fs_err::create_dir_all(&storage_path)
+            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
+        RocksDbStorage::open(RocksDbConfig::new(storage_path))
+            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))
+    }
+
     async fn load_account_tree(
         self,
         _db: &mut Db,
@@ -156,14 +174,7 @@ impl AccountTreeLoader for RocksDbStorage {
         // Load directly from RocksDB storage - no need to query DB.
         // LargeSmt::new() checks if storage has data and reconstructs from it.
         // The tree state is persisted to disk and survives restarts.
-        LargeSmt::new(self).map_err(|e| match e {
-            LargeSmtError::Merkle(merkle_error) => {
-                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
-            },
-            LargeSmtError::Storage(err) => {
-                StateInitializationError::AccountTreeIoError(err.as_report())
-            },
-        })
+        load_smt(self)
     }
 
     async fn load_nullifier_tree(
@@ -171,34 +182,8 @@ impl AccountTreeLoader for RocksDbStorage {
         _db: &mut Db,
     ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
         // Load directly from RocksDB storage - no need to query DB.
-        let smt = LargeSmt::new(self).map_err(|e| match e {
-            LargeSmtError::Merkle(merkle_error) => {
-                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
-            },
-            LargeSmtError::Storage(err) => {
-                StateInitializationError::AccountTreeIoError(err.as_report())
-            },
-        })?;
+        let smt = load_smt(self)?;
         Ok(NullifierTree::new_unchecked(smt))
-    }
-}
-
-#[cfg(test)]
-impl StorageBuilder<MemoryStorage> {
-    #[allow(clippy::unnecessary_wraps)]
-    fn create(_data_dir: &Path) -> Result<MemoryStorage, StateInitializationError> {
-        Ok(MemoryStorage::default())
-    }
-}
-
-#[cfg(feature = "rocksdb")]
-impl StorageBuilder<RocksDbStorage> {
-    fn create(data_dir: &Path) -> Result<RocksDbStorage, StateInitializationError> {
-        let storage_path = data_dir.join("account_tree");
-        fs_err::create_dir_all(&storage_path)
-            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
-        RocksDbStorage::open(RocksDbConfig::new(storage_path))
-            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))
     }
 }
 
@@ -236,7 +221,7 @@ pub struct State {
     /// Read-write lock used to prevent writing to a structure while it is being used.
     ///
     /// The lock is writer-preferring, meaning the writer won't be starved.
-    inner: RwLock<InnerState<AccountTreeStorage>>,
+    inner: RwLock<InnerState<TreeStorage>>,
 
     /// Forest-related state `(SmtForest, storage_map_roots, vault_roots)` with its own lock.
     forest: RwLock<InnerForest>,
@@ -269,10 +254,15 @@ impl State {
         let blockchain = load_mmr(&mut db).await?;
         let latest_block_num = blockchain.chain_tip().unwrap_or(BlockNumber::GENESIS);
 
-        let storage = StorageBuilder::<AccountTreeStorage>::create(data_path)?;
-        let account_tree = load_account_tree(&mut db, latest_block_num, storage).await?;
+        let account_storage = TreeStorage::create(data_path, "accounttree")?;
+        let smt = account_storage.load_account_tree(&mut db).await?;
+        let account_tree = AccountTree::new(smt)
+            .map_err(StateInitializationError::FailedToCreateAccountsTree)?;
+        let account_tree = AccountTreeWithHistory::new(account_tree, latest_block_num);
 
-        let nullifier_tree = load_nullifier_tree(&mut db).await?;
+        let nullifier_storage = TreeStorage::create(data_path, "nullifiertree")?;
+        let nullifier_tree = nullifier_storage.load_nullifier_tree(&mut db).await?;
+
         let forest = load_smt_forest(&mut db, latest_block_num).await?;
 
         let inner = RwLock::new(InnerState { nullifier_tree, blockchain, account_tree });
@@ -1326,20 +1316,6 @@ async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationError> {
     let chain_mmr = Blockchain::from_mmr_unchecked(block_commitments.into());
 
     Ok(chain_mmr)
-}
-
-#[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_account_tree<S: AccountTreeLoader>(
-    db: &mut Db,
-    block_number: BlockNumber,
-    storage: S,
-) -> Result<AccountTreeWithHistory<S>, StateInitializationError> {
-    let smt = storage.load_account_tree(db).await?;
-
-    let account_tree =
-        AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
-
-    Ok(AccountTreeWithHistory::new(account_tree, block_number))
 }
 
 /// Loads SMT forest with storage map and vault Merkle paths for all public accounts.

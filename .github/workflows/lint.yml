@@ -51,6 +51,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       - name: Rustup
         run: |
           rustup update --no-self-update
@@ -87,6 +91,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       - name: Rustup
         run: rustup update --no-self-update
       - uses: Swatinem/rust-cache@v2

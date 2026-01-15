@@ -8,6 +8,8 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(feature = "rocksdb")]
+use miden_crypto::merkle::smt::RocksDbStorage;
 use miden_node_proto::domain::account::{
     AccountDetailRequest,
     AccountDetails,
@@ -31,6 +33,8 @@ use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_i
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
+#[cfg(feature = "rocksdb")]
+use miden_protocol::crypto::merkle::smt::RocksDbConfig;
 use miden_protocol::crypto::merkle::smt::{
     LargeSmt,
     LargeSmtError,
@@ -82,6 +86,33 @@ pub struct TransactionInputs {
     pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
+/// The storage backend for account trees.
+#[cfg(feature = "rocksdb")]
+pub type AccountTreeStorage = RocksDbStorage;
+#[cfg(not(feature = "rocksdb"))]
+pub type AccountTreeStorage = MemoryStorage;
+
+/// Helper for constructing storage backends.
+struct StorageBuilder<S>(std::marker::PhantomData<S>);
+
+impl StorageBuilder<MemoryStorage> {
+    #[allow(dead_code, clippy::unnecessary_wraps)]
+    fn create(_data_dir: &Path) -> Result<MemoryStorage, StateInitializationError> {
+        Ok(MemoryStorage::default())
+    }
+}
+
+#[cfg(feature = "rocksdb")]
+impl StorageBuilder<RocksDbStorage> {
+    fn create(data_dir: &Path) -> Result<RocksDbStorage, StateInitializationError> {
+        let storage_path = data_dir.join("account_tree");
+        fs_err::create_dir_all(&storage_path)
+            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
+        RocksDbStorage::open(RocksDbConfig::new(storage_path))
+            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))
+    }
+}
+
 /// Container for state that needs to be updated atomically.
 struct InnerState<S = MemoryStorage>
 where
@@ -92,10 +123,7 @@ where
     account_tree: AccountTreeWithHistory<S>,
 }
 
-impl<S> InnerState<S>
-where
-    S: SmtStorage,
-{
+impl<S: SmtStorage> InnerState<S> {
     /// Returns the latest block number.
     fn latest_block_num(&self) -> BlockNumber {
         self.blockchain
@@ -119,7 +147,7 @@ pub struct State {
     /// Read-write lock used to prevent writing to a structure while it is being used.
     ///
     /// The lock is writer-preferring, meaning the writer won't be starved.
-    inner: RwLock<InnerState>,
+    inner: RwLock<InnerState<AccountTreeStorage>>,
 
     /// Forest-related state `(SmtForest, storage_map_roots, vault_roots)` with its own lock.
     forest: RwLock<InnerForest>,
@@ -151,7 +179,10 @@ impl State {
 
         let blockchain = load_mmr(&mut db).await?;
         let latest_block_num = blockchain.chain_tip().unwrap_or(BlockNumber::GENESIS);
-        let account_tree = load_account_tree(&mut db, latest_block_num).await?;
+
+        let storage = StorageBuilder::<AccountTreeStorage>::create(data_path)?;
+        let account_tree = load_account_tree(&mut db, latest_block_num, storage).await?;
+
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
         let forest = load_smt_forest(&mut db, latest_block_num).await?;
 
@@ -1223,10 +1254,11 @@ async fn load_nullifier_tree(
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_account_tree(
+async fn load_account_tree<S: SmtStorage>(
     db: &mut Db,
     block_number: BlockNumber,
-) -> Result<AccountTreeWithHistory<MemoryStorage>, StateInitializationError> {
+    storage: S,
+) -> Result<AccountTreeWithHistory<S>, StateInitializationError> {
     let account_data = Vec::from_iter(db.select_all_account_commitments().await?);
 
     let smt_entries = account_data

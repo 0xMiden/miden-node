@@ -112,6 +112,7 @@
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
 - Added `validator` crate with initial protobuf, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
 - [BREAKING] Added `AccountTreeWithHistory` and integrate historical queries into `GetAccountProof` ([#1292](https://github.com/0xMiden/miden-node/pull/1292)).
+- [BREAKING] Added `rocksdb` feature to enable rocksdb backends of `LargeSmt` ([#1326](https://github.com/0xMiden/miden-node/pull/1326)).
 - [BREAKING] Handle past/historical `AccountProof` requests ([#1333](https://github.com/0xMiden/miden-node/pull/1333)).
 - Implement `DataStore::get_note_script()` for `NtxDataStore` (#[1332](https://github.com/0xMiden/miden-node/pull/1332)).
 - Started validating notes by their commitment instead of ID before entering the mempool ([#1338](https://github.com/0xMiden/miden-node/pull/1338)).

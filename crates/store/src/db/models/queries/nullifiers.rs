@@ -127,6 +127,7 @@ pub(crate) fn select_nullifiers_by_prefix(
 /// ORDER BY
 ///     block_num ASC
 /// ```
+#[cfg(any(not(feature = "rocksdb"), test))]
 pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {

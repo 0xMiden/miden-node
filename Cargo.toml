@@ -42,7 +42,7 @@ miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.13" }
 miden-node-proto            = { path = "crates/proto", version = "0.13" }
 miden-node-proto-build      = { path = "proto", version = "0.13" }
 miden-node-rpc              = { path = "crates/rpc", version = "0.13" }
-miden-node-store            = { default-features = false, path = "crates/store", version = "0.13" }
+miden-node-store            = { path = "crates/store", version = "0.13" }
 miden-node-test-macro       = { path = "crates/test-macro" }
 miden-node-utils            = { path = "crates/utils", version = "0.13" }
 miden-node-validator        = { path = "crates/validator", version = "0.13" }

@@ -175,9 +175,6 @@ impl StorageLoader for RocksDbStorage {
         self,
         _db: &mut Db,
     ) -> Result<LargeSmt<Self>, StateInitializationError> {
-        // Load directly from RocksDB storage - no need to query DB.
-        // LargeSmt::new() checks if storage has data and reconstructs from it.
-        // The tree state is persisted to disk and survives restarts.
         load_smt(self)
     }
 
@@ -185,7 +182,6 @@ impl StorageLoader for RocksDbStorage {
         self,
         _db: &mut Db,
     ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
-        // Load directly from RocksDB storage - no need to query DB.
         let smt = load_smt(self)?;
         Ok(NullifierTree::new_unchecked(smt))
     }
@@ -239,7 +235,7 @@ impl State {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Loads the state from `sqlite` into `MemoryBackend`.
+    /// Loads the state from the data directory.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())

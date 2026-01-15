@@ -4,6 +4,7 @@ mod inflight_note;
 mod note_state;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use account_state::{NetworkAccountState, TransactionCandidate};
 use execute::NtxError;
@@ -176,7 +177,7 @@ impl AccountActor {
         let block_producer = BlockProducerClient::new(actor_context.block_producer_url.clone());
         let validator = Builder::new(actor_context.validator_url.clone())
             .without_tls()
-            .without_timeout()
+            .with_timeout(Duration::from_secs(10))
             .without_metadata_version()
             .without_metadata_genesis()
             .with_otel_context_injection()

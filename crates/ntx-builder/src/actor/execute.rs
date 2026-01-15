@@ -177,11 +177,11 @@ impl NtxContext {
                 let tx_inputs: TransactionInputs = executed_tx.into();
                 let proven_tx = Box::pin(self.prove(&tx_inputs)).await?;
 
-                // Submit transaction to block producer.
-                self.submit(&proven_tx).await?;
-
                 // Validate proven transaction.
                 self.validate(&proven_tx, &tx_inputs).await?;
+
+                // Submit transaction to block producer.
+                self.submit(&proven_tx).await?;
 
                 Ok((proven_tx.id(), failed_notes))
             })

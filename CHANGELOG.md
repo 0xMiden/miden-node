@@ -1,6 +1,12 @@
 # Changelog
 
-## v0.12.7 (2026-01-14)
+## v0.12.8 (2026-01-15)
+
+### Enhancements
+
+- Enable traces within database closures ([#1511](https://github.com/0xMiden/miden-node/pull/1511)).
+
+## v0.12.7 (2026-01-15)
 
 ### Enhancements
 

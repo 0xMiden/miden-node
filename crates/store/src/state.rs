@@ -96,7 +96,7 @@ pub type AccountTreeStorage = MemoryStorage;
 struct StorageBuilder<S>(std::marker::PhantomData<S>);
 
 impl StorageBuilder<MemoryStorage> {
-    #[allow(dead_code, clippy::unnecessary_wraps)]
+    #[allow(dead_code, clippy::unnecessary_wraps, reason = "Result is required by its `RocksDb` counterpart")]
     fn create(_data_dir: &Path) -> Result<MemoryStorage, StateInitializationError> {
         Ok(MemoryStorage::default())
     }

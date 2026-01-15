@@ -107,10 +107,16 @@ trait AccountTreeLoader: SmtStorage + Sized {
         self,
         db: &mut Db,
     ) -> impl std::future::Future<Output = Result<LargeSmt<Self>, StateInitializationError>> + Send;
+
+    /// Loads a nullifier tree, either from persistent storage or by rebuilding from DB.
+    fn load_nullifier_tree(
+        self,
+        db: &mut Db,
+    ) -> impl std::future::Future<Output = Result<NullifierTree<LargeSmt<Self>>, StateInitializationError>>
+           + Send;
 }
 
 // Should only every be used in `cfg(test)` scope!
-#[cfg(not(feature = "rocksdb"))]
 impl AccountTreeLoader for MemoryStorage {
     async fn load_account_tree(
         self,
@@ -128,6 +134,16 @@ impl AccountTreeLoader for MemoryStorage {
                 StateInitializationError::AccountTreeIoError(err.as_report())
             },
         })
+    }
+
+    async fn load_nullifier_tree(
+        self,
+        db: &mut Db,
+    ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
+        let nullifiers = db.select_all_nullifiers().await?;
+        let entries = nullifiers.into_iter().map(|info| (info.nullifier, info.block_num));
+        NullifierTree::with_storage_from_entries(self, entries)
+            .map_err(StateInitializationError::FailedToCreateNullifierTree)
     }
 }
 
@@ -148,6 +164,22 @@ impl AccountTreeLoader for RocksDbStorage {
                 StateInitializationError::AccountTreeIoError(err.as_report())
             },
         })
+    }
+
+    async fn load_nullifier_tree(
+        self,
+        _db: &mut Db,
+    ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
+        // Load directly from RocksDB storage - no need to query DB.
+        let smt = LargeSmt::new(self).map_err(|e| match e {
+            LargeSmtError::Merkle(merkle_error) => {
+                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
+            },
+            LargeSmtError::Storage(err) => {
+                StateInitializationError::AccountTreeIoError(err.as_report())
+            },
+        })?;
+        Ok(NullifierTree::new_unchecked(smt))
     }
 }
 
@@ -171,7 +203,7 @@ impl StorageBuilder<RocksDbStorage> {
 }
 
 /// Container for state that needs to be updated atomically.
-struct InnerState<S = MemoryStorage>
+struct InnerState<S>
 where
     S: SmtStorage,
 {
@@ -1294,20 +1326,6 @@ async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationError> {
     let chain_mmr = Blockchain::from_mmr_unchecked(block_commitments.into());
 
     Ok(chain_mmr)
-}
-
-#[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_nullifier_tree(
-    db: &mut Db,
-) -> Result<NullifierTree<LargeSmt<MemoryStorage>>, StateInitializationError> {
-    let nullifiers = db.select_all_nullifiers().await?;
-
-    // Convert nullifier data to entries for NullifierTree
-    // The nullifier value format is: block_num
-    let entries = nullifiers.into_iter().map(|info| (info.nullifier, info.block_num));
-
-    NullifierTree::with_storage_from_entries(MemoryStorage::default(), entries)
-        .map_err(StateInitializationError::FailedToCreateNullifierTree)
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]

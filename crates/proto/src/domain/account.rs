@@ -1,24 +1,28 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountHeader,
     AccountId,
+    AccountStorage,
     AccountStorageHeader,
+    PartialAccount,
+    PartialStorage,
     StorageMap,
     StorageSlotHeader,
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault};
+use miden_protocol::asset::{Asset, AssetVault, PartialVault};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{NoteExecutionMode, NoteTag};
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::{Word, ZERO};
 use thiserror::Error;
 
 use super::try_convert;
@@ -780,6 +784,46 @@ impl From<AccountDetails> for proto::rpc::account_response::AccountDetails {
             code,
             vault_details,
         }
+    }
+}
+
+impl TryFrom<&AccountDetails> for PartialAccount {
+    type Error = ConversionError;
+
+    fn try_from(account_details: &AccountDetails) -> Result<Self, Self::Error> {
+        // Derive account code.
+        let account_code = account_details
+            .account_code
+            .as_ref()
+            .ok_or(ConversionError::AccountCodeMissing)?;
+        let account_code = AccountCode::from_bytes(account_code)?;
+
+        // Derive partial storage.
+        let account_storage = AccountStorage::new(Vec::new())?; // TODO(currentpr): how to get storage?
+        let partial_storage = if account_details.account_header.nonce() == ZERO {
+            PartialStorage::new_full(account_storage)
+        } else {
+            PartialStorage::new_minimal(&account_storage)
+        };
+
+        // Derive partial vault.
+        let assets = match &account_details.vault_details {
+            AccountVaultDetails::LimitExceeded => Err(ConversionError::AssetVaultLimitExceeded),
+            AccountVaultDetails::Assets(assets) => Ok(assets),
+        }?;
+        let asset_vault = AssetVault::new(assets)?;
+        let partial_vault = PartialVault::new_minimal(&asset_vault);
+
+        // Construct partial account.
+        let partial_account = PartialAccount::new(
+            account_details.account_header.id(),
+            account_details.account_header.nonce(),
+            account_code,
+            partial_storage,
+            partial_vault,
+            None, // TODO(currentpr): Seed?
+        )?;
+        Ok(partial_account)
     }
 }
 

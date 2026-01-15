@@ -199,6 +199,28 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     }
 
     #[instrument(
+         parent = None,
+         target = COMPONENT,
+         name = "store.ntx_builder_server.get_account",
+         skip_all,
+         level = "debug",
+         ret(level = "debug"),
+         err
+     )]
+    async fn get_account(
+        &self,
+        request: Request<proto::rpc::AccountRequest>,
+    ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
+        debug!(target: COMPONENT, ?request);
+        let request = request.into_inner();
+        let account_proof_request = request.try_into()?;
+
+        let proof = self.state.get_account(account_proof_request).await?;
+
+        Ok(Response::new(proof.into()))
+    }
+
+    #[instrument(
     parent = None,
     target = COMPONENT,
     name = "store.ntx_builder_server.get_note_script_by_root",

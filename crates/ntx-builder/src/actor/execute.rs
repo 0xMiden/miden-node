@@ -1,15 +1,17 @@
 use std::collections::BTreeSet;
 
+use miden_node_proto::domain::account::{AccountRequest, AccountVaultDetails};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
+    StorageMap,
     StorageMapWitness,
     StorageSlotContent,
 };
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript};
 use miden_protocol::transaction::{
@@ -339,9 +341,52 @@ impl DataStore for NtxDataStore {
     fn get_foreign_account_inputs(
         &self,
         foreign_account_id: AccountId,
-        _ref_block: BlockNumber,
+        ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
-        async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
+        debug_assert_eq!(ref_block, self.reference_header.block_num());
+
+        let store = self.store.clone();
+        async move {
+            if foreign_account_id == self.account.id() {
+                return Err(DataStoreError::Other {
+                    error_msg: format!(
+                        "requested account with id {foreign_account_id} is local, not foreign"
+                    )
+                    .into(),
+                    source: None,
+                });
+            }
+
+            // Retrieve the account proof from the store.
+            let account_request = AccountRequest {
+                account_id: foreign_account_id,
+                block_num: Some(ref_block),
+                details: None,
+            };
+            let account =
+                store.get_account(account_request).await.map_err(|err| DataStoreError::Other {
+                    error_msg: format!("failed to get account proof from store: {err}").into(),
+                    source: Some(Box::new(err)),
+                })?;
+
+            // Construct account from account proof account details.
+            let account_details = account.details.ok_or_else(|| DataStoreError::Other {
+                error_msg: "account proof does not contain account details".into(),
+                source: None,
+            })?;
+            let partial_account = PartialAccount::try_from(&account_details).map_err(|err| {
+                DataStoreError::Other {
+                    error_msg: format!(
+                        "failed to construct partial account from account details: {err}"
+                    )
+                    .into(),
+                    source: Some(Box::new(err)),
+                }
+            })?;
+
+            // Return partial account and witness.
+            Ok(AccountInputs::new(partial_account, account.witness))
+        }
     }
 
     fn get_vault_asset_witnesses(
@@ -350,26 +395,50 @@ impl DataStore for NtxDataStore {
         vault_root: Word,
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
+        let store = self.store.clone();
         async move {
-            if self.account.id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
-            }
-
-            if self.account.vault().root() != vault_root {
-                return Err(DataStoreError::Other {
-                    error_msg: "vault root mismatch".into(),
-                    source: None,
-                });
-            }
-
-            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-                AssetWitness::new(self.account.vault().open(vault_key).into()).map_err(|err| {
+            if self.account.id() == account_id {
+                if self.account.vault().root() != vault_root {
+                    return Err(DataStoreError::Other {
+                        error_msg: "vault root mismatch".into(),
+                        source: None,
+                    });
+                }
+                get_asset_witnesses(vault_keys, self.account.vault())
+            } else {
+                // Get foreign account.
+                let account_request = AccountRequest {
+                    account_id,
+                    block_num: Some(self.reference_header.block_num()),
+                    details: None,
+                };
+                let account_proof = store.get_account(account_request).await.map_err(|err| {
                     DataStoreError::Other {
-                        error_msg: "failed to open vault asset tree".into(),
+                        error_msg: format!("Failed to get account inputs from store: {err}").into(),
                         source: Some(Box::new(err)),
                     }
-                })
-            }))
+                })?;
+
+                // Construct vault from account details.
+                let account_details =
+                    account_proof.details.ok_or_else(|| DataStoreError::Other {
+                        error_msg: "account proof does not contain account details".into(),
+                        source: None,
+                    })?;
+                let assets = match &account_details.vault_details {
+                    AccountVaultDetails::LimitExceeded => Err(DataStoreError::Other {
+                        error_msg: "asset vault limit exceeded".into(),
+                        source: None,
+                    }),
+                    AccountVaultDetails::Assets(assets) => Ok(assets),
+                }?;
+                let asset_vault = AssetVault::new(assets).map_err(|err| DataStoreError::Other {
+                    error_msg: format!("failed to create asset vault: {err}").into(),
+                    source: Some(Box::new(err)),
+                })?;
+
+                get_asset_witnesses(vault_keys, &asset_vault)
+            }
         }
     }
 
@@ -379,28 +448,56 @@ impl DataStore for NtxDataStore {
         map_root: Word,
         map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
+        let store = self.store.clone();
         async move {
-            if self.account.id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
-            }
-
-            let mut map_witness = None;
-            for slot in self.account.storage().slots() {
-                if let StorageSlotContent::Map(map) = slot.content() {
-                    if map.root() == map_root {
-                        map_witness = Some(map.open(&map_key));
+            let map_witness = if self.account.id() == account_id {
+                // Search through local account's storage slots.
+                self.account.storage().slots().iter().find_map(|slot| {
+                    if let StorageSlotContent::Map(map) = slot.content() {
+                        if map.root() == map_root {
+                            Some(map.open(&map_key))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
                     }
-                }
-            }
-
-            if let Some(map_witness) = map_witness {
-                Ok(map_witness)
-            } else {
-                Err(DataStoreError::Other {
-                    error_msg: "account storage does not contain the expected root".into(),
-                    source: None,
                 })
-            }
+            } else {
+                // Get foreign account.
+                let account_request = AccountRequest {
+                    account_id,
+                    block_num: Some(self.reference_header.block_num()),
+                    details: None,
+                };
+                let account_proof = store.get_account(account_request).await.map_err(|err| {
+                    DataStoreError::Other {
+                        error_msg: format!("failed to get account proof from store: {err}").into(),
+                        source: Some(Box::new(err)),
+                    }
+                })?;
+                let account_details =
+                    account_proof.details.ok_or_else(|| DataStoreError::Other {
+                        error_msg: "account proof does not contain account details".into(),
+                        source: None,
+                    })?;
+
+                // Search through foreign account's storage maps.
+                account_details.storage_details.map_details.iter().find_map(|map_details| {
+                    let storage_map = StorageMap::with_entries(map_details.entries.iter().copied())
+                        .expect("no duplicate entries");
+                    if storage_map.root() == map_root {
+                        Some(storage_map.open(&map_key))
+                    } else {
+                        None
+                    }
+                })
+            };
+
+            map_witness.ok_or_else(|| DataStoreError::Other {
+                error_msg: "account storage does not contain the expected root".into(),
+                source: None,
+            })
         }
     }
 
@@ -444,4 +541,19 @@ impl MastForestStore for NtxDataStore {
     ) -> Option<std::sync::Arc<miden_protocol::MastForest>> {
         self.mast_store.get(procedure_hash)
     }
+}
+
+// HELPERS
+// ================================================================================================
+
+fn get_asset_witnesses(
+    vault_keys: BTreeSet<AssetVaultKey>,
+    vault: &AssetVault,
+) -> Result<Vec<AssetWitness>, DataStoreError> {
+    Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+        AssetWitness::new(vault.open(vault_key).into()).map_err(|err| DataStoreError::Other {
+            error_msg: "failed to open vault asset tree".into(),
+            source: Some(Box::new(err)),
+        })
+    }))
 }

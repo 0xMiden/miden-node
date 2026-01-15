@@ -322,7 +322,6 @@ impl Db {
     }
 
     /// Loads all the nullifiers from the DB.
-    #[cfg(not(feature = "rocksdb"))]
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub(crate) async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
         self.transact("all nullifiers", move |conn| {
@@ -394,7 +393,6 @@ impl Db {
     }
 
     /// TODO marked for removal, replace with paged version
-    #[cfg(not(feature = "rocksdb"))]
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {

@@ -1,23 +1,14 @@
 name: "Install RocksDB"
-description: "Install RocksDB dependencies - prefers system library over compiling from source"
+description: "Install dependencies for RocksDB compilation"
 
 runs:
   using: "composite"
   steps:
-    - name: Install RocksDB system library and LLVM/Clang
+    - name: Install LLVM/Clang for RocksDB
       shell: bash
       run: |
         set -eux
         sudo apt-get update
-        # Install system rocksdb library to avoid compiling from source.
-        # Also install clang/llvm for bindgen (still needed for FFI bindings).
-        sudo apt-get install -y librocksdb-dev clang llvm-dev libclang-dev
-
-        # Point librocksdb-sys to use system library instead of compiling.
-        echo "ROCKSDB_LIB_DIR=/usr/lib" >> "$GITHUB_ENV"
-        echo "ROCKSDB_INCLUDE_DIR=/usr/include" >> "$GITHUB_ENV"
-        # Use static linking to avoid runtime library issues
-        echo "ROCKSDB_STATIC=1" >> "$GITHUB_ENV"
-
-        # Required for bindgen
-        echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> "$GITHUB_ENV"
+        # Install clang/llvm for bindgen (needed for FFI bindings).
+        # RocksDB is compiled from source by librocksdb-sys.
+        sudo apt-get install -y clang llvm-dev libclang-dev

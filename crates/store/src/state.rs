@@ -32,12 +32,13 @@ use miden_protocol::account::{AccountId, StorageSlotContent};
 #[cfg(not(feature = "rocksdb"))]
 use miden_protocol::block::account_tree::account_id_to_smt_key;
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
->>>>>>> 45437288 (simplify)
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 #[cfg(not(feature = "rocksdb"))]
 use miden_protocol::crypto::merkle::smt::MemoryStorage;
+#[cfg(feature = "rocksdb")]
+use tracing::warn;
 #[cfg(feature = "rocksdb")]
 use miden_protocol::crypto::merkle::smt::RocksDbConfig;
 use miden_protocol::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtProof, SmtStorage};
@@ -173,17 +174,42 @@ impl StorageLoader for RocksDbStorage {
 
     async fn load_account_tree(
         self,
-        _db: &mut Db,
+        db: &mut Db,
     ) -> Result<LargeSmt<Self>, StateInitializationError> {
-        load_smt(self)
+        // If RocksDB storage is empty, populate it from SQLite
+        let is_empty = self
+            .has_leaves()
+            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
+        if !is_empty {
+            return load_smt(self);
+        }
+
+        warn!(target: COMPONENT, "RocksDB account tree storage is empty, populating from SQLite");
+        let account_data = db.select_all_account_commitments().await?;
+        let smt_entries = account_data
+            .into_iter()
+            .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
+        LargeSmt::with_entries(self, smt_entries).map_err(large_smt_error_to_init_error)
     }
 
     async fn load_nullifier_tree(
         self,
-        _db: &mut Db,
+        db: &mut Db,
     ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
-        let smt = load_smt(self)?;
-        Ok(NullifierTree::new_unchecked(smt))
+        // If RocksDB storage is empty, populate it from SQLite
+        let is_empty = self
+            .has_leaves()
+            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
+        if !is_empty {
+            let smt = load_smt(self)?;
+            return Ok(NullifierTree::new_unchecked(smt));
+        }
+
+        warn!(target: COMPONENT, "RocksDB nullifier tree storage is empty, populating from SQLite");
+        let nullifiers = db.select_all_nullifiers().await?;
+        let entries = nullifiers.into_iter().map(|info| (info.nullifier, info.block_num));
+        NullifierTree::with_storage_from_entries(self, entries)
+            .map_err(StateInitializationError::FailedToCreateNullifierTree)
     }
 }
 

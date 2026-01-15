@@ -263,7 +263,6 @@ pub(crate) fn select_account_by_id_prefix(
 /// ORDER BY
 ///     block_num ASC
 /// ```
-#[cfg(not(feature = "rocksdb"))]
 pub(crate) fn select_all_account_commitments(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<(AccountId, Word)>, DatabaseError> {

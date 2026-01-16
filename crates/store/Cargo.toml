@@ -61,8 +61,8 @@ default = ["rocksdb"]
 rocksdb = ["miden-crypto/rocksdb"]
 
 [[bench]]
-harness = false
-name    = "account_tree"
+harness           = false
+name              = "account_tree"
 required-features = ["rocksdb"]
 
 [package.metadata.cargo-machete]

@@ -311,6 +311,8 @@ impl BundledCommand {
             .context("Failed to parse URL")?;
 
         if should_start_ntx_builder {
+            let validator_url = Url::parse(&format!("http://{validator_address}"))
+                .context("Failed to parse URL")?;
             let id = join_set
                 .spawn(async move {
                     let block_producer_url =
@@ -319,6 +321,7 @@ impl BundledCommand {
                     NetworkTransactionBuilder::new(
                         store_ntx_builder_url,
                         block_producer_url,
+                        validator_url,
                         ntx_builder.tx_prover_url,
                         ntx_builder.ticker_interval,
                         checkpoint,

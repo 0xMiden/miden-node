@@ -793,6 +793,8 @@ async fn create_and_submit_network_note(
     .await
     .context("Failed to execute transaction")?;
 
+    let tx_inputs = executed_tx.tx_inputs().to_bytes();
+
     let final_account = executed_tx.final_account().clone();
 
     // Prove the transaction
@@ -802,7 +804,7 @@ async fn create_and_submit_network_note(
     // Submit the proven transaction
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
-        transaction_inputs: None,
+        transaction_inputs: Some(tx_inputs),
     };
 
     let block_height: BlockNumber = rpc_client

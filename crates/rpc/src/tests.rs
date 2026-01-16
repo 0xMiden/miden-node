@@ -64,7 +64,7 @@ async fn rpc_server_accepts_requests_without_accept_header() {
     assert!(response.is_ok());
 
     // Shutdown to avoid runtime drop error.
-    store_runtime.shutdown_background();
+    shutdown_store(store_runtime).await;
 }
 
 #[tokio::test]
@@ -80,7 +80,7 @@ async fn rpc_server_accepts_requests_with_accept_header() {
     assert!(response.is_ok());
 
     // Shutdown to avoid runtime drop error.
-    store_runtime.shutdown_background();
+    shutdown_store(store_runtime).await;
 }
 
 #[tokio::test]
@@ -113,7 +113,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         assert!(response.as_ref().err().unwrap().message().contains("server does not support"),);
 
         // Shutdown to avoid runtime drop error.
-        store_runtime.shutdown_background();
+        shutdown_store(store_runtime).await;
     }
 }
 
@@ -137,34 +137,17 @@ async fn rpc_startup_is_robust_to_network_failures() {
     assert!(response.unwrap().into_inner().block_header.is_some());
 
     // Test: shutdown the store and should fail
-    // Use spawn_blocking because shutdown_timeout blocks and can't run in async context
-    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_millis(500)))
-        .await
-        .expect("shutdown should complete");
+    shutdown_store(store_runtime).await;
     let response = send_request(&mut rpc_client).await;
     assert!(response.is_err());
 
     // Test: restart the store and request should succeed
-    let rpc_listener = TcpListener::bind(store_addr).await.expect("Failed to bind store");
-    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind store ntx-builder gRPC endpoint");
-    let block_producer_listener =
-        TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
-    task::spawn(async move {
-        Store {
-            rpc_listener,
-            ntx_builder_listener,
-            block_producer_listener,
-            data_directory: data_directory.path().to_path_buf(),
-            grpc_timeout: Duration::from_secs(10),
-        }
-        .serve()
-        .await
-        .expect("store should start serving");
-    });
+    let store_runtime = restart_store(store_addr, data_directory.path()).await;
     let response = send_request(&mut rpc_client).await;
     assert_eq!(response.unwrap().into_inner().block_header.unwrap().block_num, 0);
+
+    // Shutdown the store before data_directory is dropped to allow RocksDB to flush properly
+    shutdown_store(store_runtime).await;
 }
 
 #[tokio::test]
@@ -207,7 +190,7 @@ async fn rpc_server_has_web_support() {
     assert!(headers.get("access-control-allow-credentials").is_some());
     assert!(headers.get("access-control-expose-headers").is_some());
     assert!(headers.get("vary").is_some());
-    store_runtime.shutdown_background();
+    shutdown_store(store_runtime).await;
 }
 
 #[tokio::test]
@@ -293,7 +276,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     );
 
     // Shutdown to avoid runtime drop error.
-    store_runtime.shutdown_background();
+    shutdown_store(store_runtime).await;
 }
 
 #[tokio::test]
@@ -366,7 +349,7 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
     );
 
     // Shutdown to avoid runtime drop error.
-    store_runtime.shutdown_background();
+    shutdown_store(store_runtime).await;
 }
 
 /// Sends an arbitrary / irrelevant request to the RPC.
@@ -472,6 +455,40 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     )
 }
 
+/// Shuts down the store runtime properly to allow `RocksDB` to flush before the temp directory is
+/// deleted.
+async fn shutdown_store(store_runtime: Runtime) {
+    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_millis(500)))
+        .await
+        .expect("shutdown should complete");
+}
+
+/// Restarts a store using an existing data directory. Returns the runtime handle for shutdown.
+async fn restart_store(store_addr: SocketAddr, data_directory: &std::path::Path) -> Runtime {
+    let rpc_listener = TcpListener::bind(store_addr).await.expect("Failed to bind store");
+    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store ntx-builder gRPC endpoint");
+    let block_producer_listener =
+        TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
+    let dir = data_directory.to_path_buf();
+    let store_runtime =
+        runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
+    store_runtime.spawn(async move {
+        Store {
+            rpc_listener,
+            ntx_builder_listener,
+            block_producer_listener,
+            data_directory: dir,
+            grpc_timeout: Duration::from_secs(10),
+        }
+        .serve()
+        .await
+        .expect("store should start serving");
+    });
+    store_runtime
+}
+
 #[tokio::test]
 async fn get_limits_endpoint() {
     // Start the RPC and store
@@ -524,5 +541,5 @@ async fn get_limits_endpoint() {
     );
 
     // Shutdown to avoid runtime drop error.
-    store_runtime.shutdown_background();
+    shutdown_store(store_runtime).await;
 }

@@ -114,10 +114,7 @@ async fn block_producer_startup_is_robust_to_network_failures() {
     assert!(response.is_ok());
 
     // kill the store
-    // Use spawn_blocking because shutdown_timeout blocks and can't run in async context
-    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_millis(500)))
-        .await
-        .expect("shutdown should complete");
+    shutdown_store(store_runtime).await;
 
     // test: request against block-producer api should fail immediately
     let response = send_request(block_producer_client.clone(), 1).await;

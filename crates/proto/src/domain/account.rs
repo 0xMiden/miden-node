@@ -16,7 +16,7 @@ use miden_protocol::asset::{Asset, AssetVault};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::crypto::merkle::SparseMerklePath;
-use miden_protocol::crypto::merkle::smt::SmtProof;
+use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtProof};
 use miden_protocol::note::{NoteExecutionMode, NoteTag};
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
@@ -403,6 +403,17 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
 // ACCOUNT STORAGE MAP DETAILS
 //================================================================================================
 
+/// Result of determining how to return storage map data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageMapResponseVariant {
+    /// Return individual SMT proofs for the requested keys.
+    Proofs,
+    /// Return all entries (more efficient than proofs in this case).
+    AllEntries,
+    /// Both proofs and all entries exceed limits.
+    LimitsExceeded,
+}
+
 /// Details about an account storage map slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountStorageMapDetails {
@@ -440,6 +451,33 @@ impl AccountStorageMapDetails {
     /// This limit is more restrictive than [`Self::MAX_RETURN_ENTRIES`] because SMT proofs
     /// are larger (up to 64 inner nodes each) and more CPU-intensive to generate.
     pub const MAX_SMT_PROOF_ENTRIES: usize = 16;
+
+    /// Determines the most efficient way to return storage map data.
+    ///
+    /// Returns:
+    /// - [`StorageMapResponse::Proofs`] if returning proofs is efficient
+    /// - [`StorageMapResponse::AllEntries`] if returning all entries is more efficient
+    /// - [`StorageMapResponse::LimitExceeded`] if both exceed limits
+    ///
+    /// Each SMT proof contains up to [`SMT_DEPTH`] + 1 nodes (path + leaf).
+    pub const fn storage_map_response(
+        num_keys: usize,
+        total_entries: usize,
+    ) -> StorageMapResponseVariant {
+        let proof_nodes = num_keys.saturating_mul(SMT_DEPTH as usize + 1);
+        let proofs_inefficient =
+            num_keys > Self::MAX_SMT_PROOF_ENTRIES || proof_nodes > total_entries;
+
+        if proofs_inefficient {
+            if total_entries <= Self::MAX_RETURN_ENTRIES {
+                StorageMapResponseVariant::AllEntries
+            } else {
+                StorageMapResponseVariant::LimitsExceeded
+            }
+        } else {
+            StorageMapResponseVariant::Proofs
+        }
+    }
 
     /// Creates storage map details with all entries from the storage map.
     ///

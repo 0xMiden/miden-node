@@ -119,7 +119,7 @@ impl AuthenticatedTransaction {
     pub fn unauthenticated_note_commitments(&self) -> impl Iterator<Item = Word> + '_ {
         self.inner
             .unauthenticated_notes()
-            .copied()
+            .cloned()
             .map(|header| header.commitment())
             .filter(|commitment| !self.notes_authenticated_by_store.contains(commitment))
     }

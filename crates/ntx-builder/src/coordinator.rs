@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use indexmap::IndexMap;
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::NetworkAccountId;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_protocol::transaction::TransactionId;
@@ -68,7 +68,7 @@ pub struct Coordinator {
     /// When actors are spawned, they register their communication channel here. When events need
     /// to be broadcast, this registry is used to locate the appropriate actors. The registry is
     /// automatically cleaned up when actors complete their execution.
-    actor_registry: HashMap<NetworkAccountPrefix, ActorHandle>,
+    actor_registry: HashMap<NetworkAccountId, ActorHandle>,
 
     /// Join set for managing actor tasks and monitoring their completion status.
     ///
@@ -88,7 +88,7 @@ pub struct Coordinator {
 
     /// Cache of events received from the mempool that predate corresponding network accounts.
     /// Grouped by account prefix to allow targeted event delivery to actors upon creation.
-    predating_events: HashMap<NetworkAccountPrefix, IndexMap<TransactionId, Arc<MempoolEvent>>>,
+    predating_events: HashMap<NetworkAccountId, IndexMap<TransactionId, Arc<MempoolEvent>>>,
 }
 
 impl Coordinator {
@@ -117,7 +117,7 @@ impl Coordinator {
         origin: AccountOrigin,
         actor_context: &AccountActorContext,
     ) -> Result<(), SendError<Arc<MempoolEvent>>> {
-        let account_prefix = origin.prefix();
+        let account_prefix = origin.id();
 
         // If an actor already exists for this account prefix, something has gone wrong.
         if let Some(handle) = self.actor_registry.remove(&account_prefix) {
@@ -233,7 +233,7 @@ impl Coordinator {
             // Determine target actors for each note.
             for note in network_notes {
                 if let NetworkNote::SingleTarget(note) = note {
-                    let prefix = note.account_prefix();
+                    let prefix = note.account_id();
                     if let Some(actor) = self.actor_registry.get(&prefix) {
                         // Register actor as target.
                         target_actors.insert(prefix, actor);

@@ -185,10 +185,7 @@ impl BlockProducer {
         let block_builder_id = tasks
             .spawn({
                 let mempool = mempool.clone();
-                async {
-                    block_builder.run(mempool).await;
-                    Ok(())
-                }
+                async { block_builder.run(mempool).await }
             })
             .id();
 
@@ -214,8 +211,8 @@ impl BlockProducer {
         task_result
             .map_err(|source| BlockProducerError::JoinError { task, source })
             .map(|(_, result)| match result {
-                Ok(_) => Err(BlockProducerError::TaskFailedSuccessfully { task }),
-                Err(source) => Err(BlockProducerError::TonicTransportError { task, source }),
+                Ok(_) => Err(BlockProducerError::UnexpectedTaskCompletion { task }),
+                Err(source) => Err(BlockProducerError::TaskError { task, source }),
             })
             .and_then(|x| x)?
     }

@@ -24,7 +24,7 @@ permissions:
 jobs:
   publish:
     runs-on:
-      labels: "ubuntu-latest"
+      labels: "ubuntu-24.04"
     strategy:
       matrix:
         component: [node]

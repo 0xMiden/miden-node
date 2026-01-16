@@ -12,6 +12,7 @@
 - Added chain tip to the block producer status ([#1419](https://github.com/0xMiden/miden-node/pull/1419)).
 - The mempool's transaction capacity is now configurable ([#1433](https://github.com/0xMiden/miden-node/pull/1433)).
 - Renamed card's names in the `miden-network-monitor` binary ([#1441](https://github.com/0xMiden/miden-node/pull/1441)).
+- Integrated NTX Builder with validator via `SubmitProvenTransaction` RPC ([#1453](https://github.com/0xMiden/miden-node/pull/1453)).
 - Added pagination to `GetNetworkAccountIds` endpoint ([#1452](https://github.com/0xMiden/miden-node/pull/1452)).
 - Improved tracing in `miden-network-monitor` binary ([#1366](https://github.com/0xMiden/miden-node/pull/1366)).
 - Integrated RPC stack with Validator component for transaction validation ([#1457](https://github.com/0xMiden/miden-node/pull/1457)).
@@ -23,6 +24,8 @@
 - Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
 - Improve DB query performance for account queries ([#1496](https://github.com/0xMiden/miden-node/pull/1496).
 - The network monitor now marks the chain as unhealthy if it fails to create new blocks ([#1512](https://github.com/0xMiden/miden-node/pull/1512)).
+- Block producer now detects if it is desync'd from the store's chain tip and aborts ([#1520](https://github.com/0xMiden/miden-node/pull/1520)).
+- Pin tool versions in CI ([#1523](https://github.com/0xMiden/miden-node/pull/1523)).
 
 ### Changes
 

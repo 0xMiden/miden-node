@@ -23,7 +23,7 @@ env:
 jobs:
   stress-test-check:
     name: stress-test-check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@main
@@ -36,7 +36,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - uses: taiki-e/install-action@nextest 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.122
       - name: Install stress test
         run: make install-stress-test
       - name: Create directory for stress test store

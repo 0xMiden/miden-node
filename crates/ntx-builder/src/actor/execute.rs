@@ -541,8 +541,8 @@ impl DataStore for NtxDataStore {
                             }
                         },
                         StorageMapEntries::EntriesWithProofs(proofs) => {
-                            // For proofs, we need to extract the key-value pairs from the leaf
-                            let entries: Vec<(Word, Word)> = proofs
+                            // For proofs, we need to extract the key-value pairs from the leaf.
+                            let entries = proofs
                                 .into_iter()
                                 .flat_map(|proof| {
                                     let (_, leaf) = proof.into_parts();
@@ -552,7 +552,7 @@ impl DataStore for NtxDataStore {
                                         SmtLeaf::Multiple(entries) => entries,
                                     }
                                 })
-                                .collect();
+                                .collect::<Vec<_>>();
                             let storage_map = StorageMap::with_entries(entries.iter().copied())
                                 .map_err(|err| DataStoreError::Other {
                                     error_msg: "failed to create storage map from proof entries"

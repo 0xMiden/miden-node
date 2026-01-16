@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
         with:
-          tool: typos
+          tool: typos@1.42.0
       - run: make typos-check
 
   rustfmt:
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-workspace-lints
+          tool: cargo-workspace-lints@0.1.4
       - run: |
           make workspace-check
 

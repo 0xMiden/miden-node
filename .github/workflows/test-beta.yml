@@ -18,6 +18,8 @@ jobs:
           ref: 'next'
       - name: Rustup
         run: rustup install beta && rustup default beta
-      - uses: taiki-e/install-action@nextest
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.122
       - name: Run tests
         run: make test

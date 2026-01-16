@@ -52,8 +52,6 @@ CREATE TABLE notes (
     sender                   BLOB    NOT NULL,
     tag                      INTEGER NOT NULL,
     execution_mode           INTEGER NOT NULL, -- 0-Network, 1-Local
-    aux                      INTEGER NOT NULL,
-    execution_hint           INTEGER NOT NULL,
     inclusion_path           BLOB NOT NULL,    -- Serialized sparse Merkle path of the note in the block's note tree
     consumed_at              INTEGER,          -- Block number when the note was consumed
     nullifier                BLOB,             -- Only known for public notes, null for private notes

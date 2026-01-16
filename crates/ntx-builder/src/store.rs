@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::NetworkAccountId;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::BlockRange;
@@ -109,9 +109,9 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,
-        prefix: NetworkAccountPrefix,
+        account_id: NetworkAccountId,
     ) -> Result<Option<Account>, StoreError> {
-        let request = proto::store::AccountIdPrefix { account_id_prefix: prefix.inner() };
+        let request = proto::store::AccountIdPrefix { account_id_prefix: account_id.prefix() };
 
         let store_response = self
             .inner
@@ -140,7 +140,7 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(
         &self,
-        network_account_prefix: NetworkAccountPrefix,
+        network_account_id: NetworkAccountId,
         block_num: u32,
     ) -> Result<Vec<NetworkNote>, StoreError> {
         // Upper bound of each note is ~10KB. Limit page size to ~10MB.
@@ -154,7 +154,7 @@ impl StoreClient {
             let req = proto::store::UnconsumedNetworkNotesRequest {
                 page_token,
                 page_size: PAGE_SIZE,
-                network_account_id_prefix: network_account_prefix.inner(),
+                network_account_id_prefix: network_account_id.prefix(),
                 block_num,
             };
             let resp = store_client.get_unconsumed_network_notes(req).await?.into_inner();

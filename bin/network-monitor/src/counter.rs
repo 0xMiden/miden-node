@@ -20,7 +20,6 @@ use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteExecutionHint,
     NoteInputs,
     NoteMetadata,
     NoteRecipient,
@@ -30,7 +29,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::{InputNotes, PartialBlockchain, TransactionArgs};
 use miden_protocol::utils::Deserializable;
-use miden_protocol::{Felt, Word, ZERO};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::auth::BasicAuthenticator;
@@ -794,6 +793,8 @@ async fn create_and_submit_network_note(
     .await
     .context("Failed to execute transaction")?;
 
+    let tx_inputs = executed_tx.tx_inputs().to_bytes();
+
     let final_account = executed_tx.final_account().clone();
 
     // Prove the transaction
@@ -803,7 +804,7 @@ async fn create_and_submit_network_note(
     // Submit the proven transaction
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
-        transaction_inputs: None,
+        transaction_inputs: Some(tx_inputs),
     };
 
     let block_height: BlockNumber = rpc_client
@@ -851,10 +852,8 @@ fn create_network_note(
     let metadata = NoteMetadata::new(
         wallet_account.id(),
         NoteType::Public,
-        NoteTag::from_account_id(counter_account.id()),
-        NoteExecutionHint::Always,
-        ZERO,
-    )?;
+        NoteTag::with_account_target(counter_account.id()),
+    );
 
     let serial_num = Word::new([
         Felt::new(rng.random()),

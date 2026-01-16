@@ -314,7 +314,7 @@ fn create_note(faucet_id: AccountId, target_id: AccountId, rng: &mut RpoRandomCo
         target_id,
         vec![asset],
         miden_protocol::note::NoteType::Public,
-        Felt::default(),
+        miden_protocol::note::NoteAttachment::default(),
         rng,
     )
     .expect("note creation failed")

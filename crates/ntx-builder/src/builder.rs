@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::NetworkAccountId;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::lru_cache::LruCache;
 use miden_protocol::Word;
@@ -155,9 +155,9 @@ impl NetworkTransactionBuilder {
         // Create initial set of actors based on all known network accounts.
         let account_ids = store.get_network_account_ids().await?;
         for account_id in account_ids {
-            if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
+            if let Ok(account_id) = NetworkAccountId::try_from(account_id) {
                 self.coordinator
-                    .spawn_actor(AccountOrigin::store(account_prefix), &actor_context)
+                    .spawn_actor(AccountOrigin::store(account_id), &actor_context)
                     .await?;
             }
         }

@@ -1,0 +1,65 @@
+//! Large-scale Sparse Merkle Tree backed by pluggable storage.
+//!
+//! `LargeSmt` stores the top of the tree (depths 0–23) in memory and persists the lower
+//! depths (24–64) in storage as fixed-size subtrees. This hybrid layout scales beyond RAM
+//! while keeping common operations fast.
+//!
+//! # Usage
+//!
+//! ```ignore
+//! use miden_large_smt::{LargeSmt, MemoryStorage};
+//!
+//! // Create an empty tree with in-memory storage
+//! let storage = MemoryStorage::new();
+//! let smt = LargeSmt::new(storage).unwrap();
+//! ```
+//!
+//! With RocksDB (requires `rocksdb` feature):
+//!
+//! ```ignore
+//! use miden_large_smt::{LargeSmt, RocksDbConfig, RocksDbStorage};
+//!
+//! let storage = RocksDbStorage::open(RocksDbConfig::new("/path/to/db")).unwrap();
+//! let smt = LargeSmt::new(storage).unwrap();
+//! ```
+
+#![cfg_attr(not(feature = "concurrent"), allow(unused_imports))]
+
+extern crate alloc;
+
+#[cfg(feature = "rocksdb")]
+mod rocksdb;
+#[cfg(feature = "rocksdb")]
+pub use rocksdb::{RocksDbConfig, RocksDbStorage};
+
+// Re-export from miden-protocol.
+pub use miden_protocol::crypto::merkle::smt::{
+    InnerNode,
+    LargeSmt,
+    LargeSmtError,
+    LeafIndex,
+    MemoryStorage,
+    SMT_DEPTH,
+    Smt,
+    SmtLeaf,
+    SmtLeafError,
+    SmtProof,
+    SmtStorage,
+    StorageError,
+    StorageUpdateParts,
+    StorageUpdates,
+    SubtreeUpdate,
+    Subtree,
+    SubtreeError,
+};
+
+// Also re-export commonly used types for convenience
+pub use miden_protocol::{
+    EMPTY_WORD,
+    Felt,
+    Word,
+    crypto::{
+        hash::rpo::Rpo256,
+        merkle::{EmptySubtreeRoots, InnerNodeInfo, MerkleError, NodeIndex, SparseMerklePath},
+    },
+};

@@ -33,7 +33,7 @@ jobs:
 
   rustfmt:
     name: rustfmt
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@main
       - name: Rustup
@@ -48,7 +48,7 @@ jobs:
 
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@main
       - name: Rustup
@@ -62,17 +62,17 @@ jobs:
         run: make clippy
 
   toml:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
         with:
-          tool: taplo-cli
+          tool: taplo-cli@0.10.0
       - run: make toml-check
 
   workspace-lints:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
 
   doc:
     name: doc
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@main
       - name: Rustup
@@ -97,7 +97,7 @@ jobs:
 
   unused_deps:
     name: check for unused dependencies
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@main
       - name: machete
@@ -105,7 +105,7 @@ jobs:
 
   proto:
     name: proto check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@main
       - name: Rustup

@@ -46,8 +46,9 @@
 - Increased the maximum query limit for the store ([#1443](https://github.com/0xMiden/miden-node/pull/1443)).
 - [BREAKING] Migrated to version `v0.20` of the VM ([#1476](https://github.com/0xMiden/miden-node/pull/1476)).
 - [BREAKING] Change account in database representation ([#1481](https://github.com/0xMiden/miden-node/pull/1481)).
-- Remove the cyclic database optimization ([#1497](https://github.com/0xMiden/miden-node/pull/1497)). 
+- Remove the cyclic database optimization ([#1497](https://github.com/0xMiden/miden-node/pull/1497)).
 - Fix race condition at DB shutdown in tests ([#1503](https://github.com/0xMiden/miden-node/pull/1503)).
+- [BREAKING] Updated to new miden-base protocol: removed `aux` and `execution_hint` from `NoteMetadata`, removed `NoteExecutionMode`, and `NoteMetadata::new()` is now infallible ([#1526](https://github.com/0xMiden/miden-node/pull/1526)).
 
 ### Fixes
 

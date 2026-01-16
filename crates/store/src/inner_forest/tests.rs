@@ -457,8 +457,8 @@ fn test_open_storage_map_returns_all_entries_when_proofs_exceed_entries() {
 
     // Request proofs for both keys. With only 2 entries, proof nodes (2 * 65 = 130)
     // exceeds total entries (2), so we should get AllEntries instead of proofs.
-    let keys = vec![key1, key2];
-    let result = forest.open_storage_map(account_id, slot_name.clone(), block_num, &keys);
+    let requested_keys = vec![key1, key2];
+    let result = forest.open_storage_map(account_id, slot_name.clone(), block_num, &requested_keys);
 
     let details = result.expect("Should return Some").expect("Should not error");
     assert_matches!(details.entries, StorageMapEntries::AllEntries(entries) => {

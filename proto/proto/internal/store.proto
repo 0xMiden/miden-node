@@ -267,6 +267,9 @@ service NtxBuilder {
     // Returns a list of all network account ids.
     rpc GetNetworkAccountIds(rpc.BlockRange) returns (NetworkAccountIdList) {}
 
+    // Returns the latest state proof of the specified account.
+    rpc GetAccount(rpc.AccountRequest) returns (rpc.AccountResponse) {}
+
     // Returns the script for a note by its root.
     rpc GetNoteScriptByRoot(note.NoteRoot) returns (rpc.MaybeNoteScript) {}
 }

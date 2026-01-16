@@ -2375,6 +2375,31 @@ pub mod ntx_builder_client {
                 .insert(GrpcMethod::new("store.NtxBuilder", "GetNetworkAccountIds"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the latest state proof of the specified account.
+        pub async fn get_account(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::rpc::AccountRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::rpc::AccountResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/store.NtxBuilder/GetAccount",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("store.NtxBuilder", "GetAccount"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Returns the script for a note by its root.
         pub async fn get_note_script_by_root(
             &mut self,
@@ -2456,6 +2481,14 @@ pub mod ntx_builder_server {
             request: tonic::Request<super::super::rpc::BlockRange>,
         ) -> std::result::Result<
             tonic::Response<super::NetworkAccountIdList>,
+            tonic::Status,
+        >;
+        /// Returns the latest state proof of the specified account.
+        async fn get_account(
+            &self,
+            request: tonic::Request<super::super::rpc::AccountRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::rpc::AccountResponse>,
             tonic::Status,
         >;
         /// Returns the script for a note by its root.
@@ -2779,6 +2812,51 @@ pub mod ntx_builder_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNetworkAccountIdsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/store.NtxBuilder/GetAccount" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetAccountSvc<T: NtxBuilder>(pub Arc<T>);
+                    impl<
+                        T: NtxBuilder,
+                    > tonic::server::UnaryService<super::super::rpc::AccountRequest>
+                    for GetAccountSvc<T> {
+                        type Response = super::super::rpc::AccountResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::super::rpc::AccountRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as NtxBuilder>::get_account(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetAccountSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

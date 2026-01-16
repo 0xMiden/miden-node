@@ -5,7 +5,14 @@ use std::num::TryFromIntError;
 pub use miden_node_grpc_error_macro::GrpcError;
 use miden_protocol::crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_protocol::utils::DeserializationError;
-use miden_protocol::{AccountError, AssetError, FeeError, StorageSlotNameError};
+use miden_protocol::{
+    AccountError,
+    AssetError,
+    AssetVaultError,
+    FeeError,
+    StorageMapError,
+    StorageSlotNameError,
+};
 use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;
@@ -17,8 +24,14 @@ mod test_macro;
 pub enum ConversionError {
     #[error("asset error")]
     AssetError(#[from] AssetError),
+    #[error("account code missing")]
+    AccountCodeMissing,
     #[error("account error")]
     AccountError(#[from] AccountError),
+    #[error("asset vault error")]
+    AssetVaultError(#[from] AssetVaultError),
+    #[error("vault has too many assets to return inline")]
+    AssetVaultLimitExceeded,
     #[error("fee parameters error")]
     FeeError(#[from] FeeError),
     #[error("hex error")]
@@ -33,6 +46,8 @@ pub enum ConversionError {
     SmtProofError(#[from] SmtProofError),
     #[error("storage slot name error")]
     StorageSlotNameError(#[from] StorageSlotNameError),
+    #[error("storage map error")]
+    StorageMapError(#[from] StorageMapError),
     #[error("integer conversion error: {0}")]
     TryFromIntError(#[from] TryFromIntError),
     #[error("too much data, expected {expected}, got {got}")]

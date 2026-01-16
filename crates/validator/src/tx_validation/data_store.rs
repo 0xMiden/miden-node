@@ -53,7 +53,25 @@ impl DataStore for TransactionInputsDataStore {
         foreign_account_id: AccountId,
         _ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
-        async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
+        async move {
+            if foreign_account_id == self.tx_inputs.account().id() {
+                return Err(DataStoreError::Other {
+                    error_msg:
+                        "requested account with id {foreign_account_id} is local, not foreign"
+                            .into(),
+                    source: None,
+                });
+            }
+
+            let foreign_inputs = self
+                .tx_inputs
+                .read_foreign_account_inputs(foreign_account_id)
+                .map_err(|err| DataStoreError::Other {
+                    error_msg: "failed to read foreign account inputs".into(),
+                    source: Some(Box::new(err)),
+                })?;
+            Ok(foreign_inputs)
+        }
     }
 
     fn get_vault_asset_witnesses(
@@ -63,50 +81,67 @@ impl DataStore for TransactionInputsDataStore {
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
-            if self.tx_inputs.account().id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
-            }
-
-            if self.tx_inputs.account().vault().root() != vault_root {
-                return Err(DataStoreError::Other {
-                    error_msg: "vault root mismatch".into(),
-                    source: None,
-                });
-            }
-
-            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-                match self.tx_inputs.account().vault().open(vault_key) {
-                    Ok(vault_proof) => {
-                        AssetWitness::new(vault_proof.into()).map_err(|err| DataStoreError::Other {
-                            error_msg: "failed to open vault asset tree".into(),
+            // Get asset witnessess from local or foreign account.
+            if self.tx_inputs.account().id() == account_id {
+                Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+                    match self.tx_inputs.account().vault().open(vault_key) {
+                        Ok(vault_proof) => AssetWitness::new(vault_proof.into()).map_err(|err| {
+                            DataStoreError::Other {
+                                error_msg: "failed to open vault asset tree".into(),
+                                source: Some(err.into()),
+                            }
+                        }),
+                        Err(err) => Err(DataStoreError::Other {
+                            error_msg: "failed to open vault".into(),
                             source: Some(err.into()),
-                        })
-                    },
-                    Err(err) => Err(DataStoreError::Other {
-                        error_msg: "failed to open vault".into(),
-                        source: Some(err.into()),
-                    }),
-                }
-            }))
+                        }),
+                    }
+                }))
+            } else {
+                let foreign_inputs = self
+                    .tx_inputs
+                    .read_vault_asset_witnesses(vault_root, vault_keys)
+                    .map_err(|err| DataStoreError::Other {
+                        error_msg: "failed to read vault asset witnesses".into(),
+                        source: Some(Box::new(err)),
+                    })?;
+                Ok(foreign_inputs)
+            }
         }
     }
 
     fn get_storage_map_witness(
         &self,
         account_id: AccountId,
-        _map_root: Word,
-        _map_key: Word,
+        map_root: Word,
+        map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
-            if self.tx_inputs.account().id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
-            }
+            if self.tx_inputs.account().id() == account_id {
+                let storage_map_witness =
+                    self.tx_inputs.account().storage().maps().find_map(|partial_map| {
+                        if partial_map.root() == map_root {
+                            partial_map.open(&map_key).ok()
+                        } else {
+                            None
+                        }
+                    });
+                storage_map_witness.ok_or_else(|| DataStoreError::Other {
+                    error_msg: "could not find storage map witness for native account".into(),
+                    source: None,
+                })
+            } else {
+                // Get storage map witness from transaction inputs.
+                let storage_map_witness = self
+                    .tx_inputs
+                    .read_storage_map_witness(map_root, map_key)
+                    .map_err(|err| DataStoreError::Other {
+                        error_msg: "failed to read storage map witness".into(),
+                        source: Some(Box::new(err)),
+                    })?;
 
-            // For partial accounts, storage map witness is not available.
-            Err(DataStoreError::Other {
-                error_msg: "storage map witness not available with partial account state".into(),
-                source: None,
-            })
+                Ok(storage_map_witness)
+            }
         }
     }
 

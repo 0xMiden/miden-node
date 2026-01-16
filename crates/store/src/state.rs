@@ -90,7 +90,7 @@ pub type TreeStorage = RocksDbStorage;
 pub type TreeStorage = MemoryStorage;
 
 /// Converts a `LargeSmtError` into a `StateInitializationError`.
-fn large_smt_error_to_init_error(e: LargeSmtError) -> StateInitializationError {
+fn account_tree_large_smt_error_to_init_error(e: LargeSmtError) -> StateInitializationError {
     match e {
         LargeSmtError::Merkle(merkle_error) => {
             StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
@@ -104,7 +104,7 @@ fn large_smt_error_to_init_error(e: LargeSmtError) -> StateInitializationError {
 /// Loads an SMT from persistent storage.
 #[cfg(feature = "rocksdb")]
 fn load_smt<S: SmtStorage>(storage: S) -> Result<LargeSmt<S>, StateInitializationError> {
-    LargeSmt::new(storage).map_err(large_smt_error_to_init_error)
+    LargeSmt::new(storage).map_err(account_tree_large_smt_error_to_init_error)
 }
 
 /// Trait for loading trees from storage.
@@ -145,7 +145,8 @@ impl StorageLoader for MemoryStorage {
         let smt_entries = account_data
             .into_iter()
             .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
-        LargeSmt::with_entries(self, smt_entries).map_err(large_smt_error_to_init_error)
+        LargeSmt::with_entries(self, smt_entries)
+            .map_err(account_tree_large_smt_error_to_init_error)
     }
 
     async fn load_nullifier_tree(
@@ -186,7 +187,8 @@ impl StorageLoader for RocksDbStorage {
         let smt_entries = account_data
             .into_iter()
             .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
-        LargeSmt::with_entries(self, smt_entries).map_err(large_smt_error_to_init_error)
+        LargeSmt::with_entries(self, smt_entries)
+            .map_err(account_tree_large_smt_error_to_init_error)
     }
 
     async fn load_nullifier_tree(
@@ -196,7 +198,7 @@ impl StorageLoader for RocksDbStorage {
         // If RocksDB storage is empty, populate it from SQLite
         let is_empty = self
             .has_leaves()
-            .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
+            .map_err(|e| StateInitializationError::NullifierTreeIoError(e.to_string()))?;
         if !is_empty {
             let smt = load_smt(self)?;
             return Ok(NullifierTree::new_unchecked(smt));

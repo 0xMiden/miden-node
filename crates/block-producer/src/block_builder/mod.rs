@@ -1,8 +1,8 @@
 use std::ops::{Deref, Range};
 use std::sync::Arc;
 
+use anyhow::Context;
 use futures::FutureExt;
-use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
@@ -79,13 +79,15 @@ impl BlockBuilder {
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
     ///
+    /// Returns only if there was a fatal, unrecoverable error.
+    ///
     /// Block production is sequential and consists of
     ///
     ///   1. Pulling the next set of batches from the mempool
     ///   2. Compiling these batches into the next block
     ///   3. Proving the block (this is simulated using random sleeps)
     ///   4. Committing the block to the store
-    pub async fn run(self, mempool: SharedMempool) {
+    pub async fn run(self, mempool: SharedMempool) -> anyhow::Result<()> {
         assert!(
             self.failure_rate < 1.0 && self.failure_rate.is_sign_positive(),
             "Failure rate must be a percentage"
@@ -100,8 +102,16 @@ impl BlockBuilder {
         loop {
             interval.tick().await;
 
-            // Errors are handled internally by the block building process.
-            self.build_block(&mempool).await;
+            // Exit if a fatal error occurred.
+            //
+            // No need for error logging since this is handled inside the function.
+            if let err @ Err(BuildBlockError::Desync { local_chain_tip, .. }) =
+                self.build_block(&mempool).await
+            {
+                return err.with_context(|| {
+                    format!("fatal error while building block {}", local_chain_tip.child())
+                });
+            }
         }
     }
 
@@ -117,7 +127,7 @@ impl BlockBuilder {
     /// - A failed stage will emit an error event, and both its own span and the root span will be
     ///   marked as errors.
     #[instrument(parent = None, target = COMPONENT, name = "block_builder.build_block", skip_all)]
-    async fn build_block(&self, mempool: &SharedMempool) {
+    async fn build_block(&self, mempool: &SharedMempool) -> Result<(), BuildBlockError> {
         use futures::TryFutureExt;
 
         let selected = Self::select_block(mempool).inspect(SelectedBlock::inject_telemetry).await;
@@ -138,10 +148,10 @@ impl BlockBuilder {
             .and_then(|proven_block| self.commit_block(mempool, proven_block))
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
-            .or_else(|_err| self.rollback_block(mempool, block_num).never_error())
-            // All errors were handled and discarded above, so this is just type juggling
-            // to drop the result.
-            .unwrap_or_else(|_: Never| ())
+            .or_else(|err| async {
+                self.rollback_block(mempool, block_num).await;
+                Err(err)
+            })
             .await
     }
 
@@ -212,14 +222,15 @@ impl BlockBuilder {
         // Desync can occur since the mempool and store are separate components. One example is if
         // the block-producer's apply_block gRPC request times out, rolling back the block locally,
         // but the store still committed the block on its end.
-        //
-        // This is not recoverable since the mempool cannot reconstruct the block it rolled back.
-        assert_eq!(
-            block_number,
-            inputs.prev_block_header().block_num().child(),
-            "Desync between mempool and store detected. Block number {block_number} selected from mempool should be the child of the latest committed block in the store {}",
-            inputs.prev_block_header().block_num()
-        );
+        let store_chain_tip = inputs.prev_block_header().block_num();
+        if store_chain_tip.child() != block_number {
+            return Err(BuildBlockError::Desync {
+                local_chain_tip: block_number
+                    .parent()
+                    .expect("block being built always has a parent"),
+                store_chain_tip,
+            });
+        }
 
         Ok(BlockBatchesAndInputs { batches, inputs })
     }

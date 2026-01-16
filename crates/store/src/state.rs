@@ -29,16 +29,12 @@ use miden_node_utils::formatting::format_array;
 use miden_protocol::Word;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{AccountId, StorageSlotContent};
-#[cfg(not(feature = "rocksdb"))]
-use miden_protocol::block::account_tree::account_id_to_smt_key;
-use miden_protocol::block::account_tree::{AccountTree, AccountWitness};
+use miden_protocol::block::account_tree::{account_id_to_smt_key, AccountTree, AccountWitness};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 #[cfg(not(feature = "rocksdb"))]
 use miden_protocol::crypto::merkle::smt::MemoryStorage;
-#[cfg(feature = "rocksdb")]
-use tracing::warn;
 #[cfg(feature = "rocksdb")]
 use miden_protocol::crypto::merkle::smt::RocksDbConfig;
 use miden_protocol::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtProof, SmtStorage};
@@ -46,6 +42,8 @@ use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::{OutputNote, PartialBlockchain};
 use miden_protocol::utils::Serializable;
 use tokio::sync::{Mutex, RwLock, oneshot};
+#[cfg(feature = "rocksdb")]
+use tracing::warn;
 use tracing::{info, info_span, instrument};
 
 use crate::accounts::{AccountTreeWithHistory, HistoricalError};

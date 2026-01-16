@@ -50,6 +50,8 @@ miden-protocol        = { default-features = true, features = ["testing"], works
 miden-standards       = { features = ["testing"], workspace = true }
 miden-tx              = { features = ["testing"], workspace = true }
 pretty_assertions     = "1.4"
+proptest              = { workspace = true }
+proptest-derive       = { workspace = true }
 rand_chacha           = { default-features = false, version = "0.9" }
 rstest                = { workspace = true }
 serial_test           = "3.2"

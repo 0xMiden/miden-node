@@ -7,6 +7,8 @@ use miden_protocol::note::Nullifier;
 
 use crate::mempool::nodes::{Node, NodeId};
 
+mod account;
+
 /// Tracks the inflight state of the mempool and the [`NodeId`]s associated with each piece of it.
 ///
 /// This allows it to track the dependency relationships between nodes in the mempool's state DAG by

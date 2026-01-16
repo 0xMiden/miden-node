@@ -1,4 +1,4 @@
-name: "Install RocksDB"
+name: "Install RocksDB dependencies"
 description: "Install dependencies for RocksDB compilation"
 
 runs:

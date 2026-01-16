@@ -8,8 +8,6 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 
-#[cfg(feature = "rocksdb")]
-use miden_crypto::merkle::smt::RocksDbStorage;
 use miden_node_proto::domain::account::{
     AccountDetailRequest,
     AccountDetails,
@@ -27,24 +25,25 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_protocol::Word;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::AccountId;
+use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 #[cfg(not(feature = "rocksdb"))]
 use miden_protocol::crypto::merkle::smt::MemoryStorage;
-#[cfg(feature = "rocksdb")]
-use miden_protocol::crypto::merkle::smt::RocksDbConfig;
 use miden_protocol::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtProof, SmtStorage};
 use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::{OutputNote, PartialBlockchain};
 use miden_protocol::utils::Serializable;
 use tokio::sync::{Mutex, RwLock, oneshot};
-#[cfg(feature = "rocksdb")]
-use tracing::warn;
 use tracing::{info, info_span, instrument};
+#[cfg(feature = "rocksdb")]
+use {
+    miden_crypto::merkle::smt::RocksDbStorage,
+    miden_protocol::crypto::merkle::smt::RocksDbConfig,
+};
 
 use crate::accounts::{AccountTreeWithHistory, HistoricalError};
 use crate::blocks::BlockStore;
@@ -182,7 +181,7 @@ impl StorageLoader for RocksDbStorage {
             return load_smt(self);
         }
 
-        warn!(target: COMPONENT, "RocksDB account tree storage is empty, populating from SQLite");
+        info!(target: COMPONENT, "RocksDB account tree storage is empty, populating from SQLite");
         let account_data = db.select_all_account_commitments().await?;
         let smt_entries = account_data
             .into_iter()
@@ -203,7 +202,7 @@ impl StorageLoader for RocksDbStorage {
             return Ok(NullifierTree::new_unchecked(smt));
         }
 
-        warn!(target: COMPONENT, "RocksDB nullifier tree storage is empty, populating from SQLite");
+        info!(target: COMPONENT, "RocksDB nullifier tree storage is empty, populating from SQLite");
         let nullifiers = db.select_all_nullifiers().await?;
         let entries = nullifiers.into_iter().map(|info| (info.nullifier, info.block_num));
         NullifierTree::with_storage_from_entries(self, entries)

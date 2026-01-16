@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
       - name: Install RocksDB
         uses: ./.github/actions/install-rocksdb
       - name: Install dependencies

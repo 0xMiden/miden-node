@@ -66,4 +66,7 @@ name    = "account_tree"
 required-features = ["rocksdb"]
 
 [package.metadata.cargo-machete]
+# This is an indirect dependency for which we need to enable optimisations
+# via feature flags. Because we don't use it directly in code, machete
+# identifies it as unused.
 ignored = ["miden-crypto"]

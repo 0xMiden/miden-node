@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: 'next'
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
       - name: Install RocksDB
         uses: ./.github/actions/install-rocksdb
       - name: Rustup

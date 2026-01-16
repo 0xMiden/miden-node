@@ -174,11 +174,11 @@ impl StorageLoader for RocksDbStorage {
         self,
         db: &mut Db,
     ) -> Result<LargeSmt<Self>, StateInitializationError> {
-        // If RocksDB storage is empty, populate it from SQLite
-        let is_empty = self
+        // If RocksDB storage has data, load from it directly
+        let has_data = self
             .has_leaves()
             .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
-        if !is_empty {
+        if has_data {
             return load_smt(self);
         }
 
@@ -195,11 +195,11 @@ impl StorageLoader for RocksDbStorage {
         self,
         db: &mut Db,
     ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
-        // If RocksDB storage is empty, populate it from SQLite
-        let is_empty = self
+        // If RocksDB storage has data, load from it directly
+        let has_data = self
             .has_leaves()
             .map_err(|e| StateInitializationError::NullifierTreeIoError(e.to_string()))?;
-        if !is_empty {
+        if has_data {
             let smt = load_smt(self)?;
             return Ok(NullifierTree::new_unchecked(smt));
         }

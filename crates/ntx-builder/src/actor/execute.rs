@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use miden_node_proto::domain::account::{AccountRequest, AccountVaultDetails};
+use miden_node_proto::domain::account::{AccountRequest, AccountVaultDetails, StorageMapEntries};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::account::{
@@ -13,6 +13,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::merkle::smt::SmtLeaf;
 use miden_protocol::note::{Note, NoteScript};
 use miden_protocol::transaction::{
     AccountInputs,
@@ -483,15 +484,48 @@ impl DataStore for NtxDataStore {
                     })?;
 
                 // Search through foreign account's storage maps.
-                account_details.storage_details.map_details.iter().find_map(|map_details| {
-                    let storage_map = StorageMap::with_entries(map_details.entries.iter().copied())
-                        .expect("no duplicate entries");
-                    if storage_map.root() == map_root {
-                        Some(storage_map.open(&map_key))
-                    } else {
-                        None
+                let mut map_witness = None;
+                for map_details in account_details.storage_details.map_details {
+                    match map_details.entries {
+                        StorageMapEntries::AllEntries(entries) => {
+                            let storage_map = StorageMap::with_entries(entries.iter().copied())
+                                .map_err(|err| DataStoreError::Other {
+                                    error_msg: "failed to create storage map from entries".into(),
+                                    source: Some(Box::new(err)),
+                                })?;
+                            if storage_map.root() == map_root {
+                                map_witness = Some(storage_map.open(&map_key));
+                                break;
+                            }
+                        },
+                        StorageMapEntries::EntriesWithProofs(proofs) => {
+                            // For proofs, we need to extract the key-value pairs from the leaf
+                            let entries: Vec<(Word, Word)> = proofs
+                                .into_iter()
+                                .flat_map(|proof| {
+                                    let (_, leaf) = proof.into_parts();
+                                    match leaf {
+                                        SmtLeaf::Empty(_) => Vec::new(),
+                                        SmtLeaf::Single((key, value)) => vec![(key, value)],
+                                        SmtLeaf::Multiple(entries) => entries,
+                                    }
+                                })
+                                .collect();
+                            let storage_map = StorageMap::with_entries(entries.iter().copied())
+                                .map_err(|err| DataStoreError::Other {
+                                    error_msg: "failed to create storage map from proof entries"
+                                        .into(),
+                                    source: Some(Box::new(err)),
+                                })?;
+                            if storage_map.root() == map_root {
+                                map_witness = Some(storage_map.open(&map_key));
+                                break;
+                            }
+                        },
+                        StorageMapEntries::LimitExceeded => {},
                     }
-                })
+                }
+                map_witness
             };
 
             map_witness.ok_or_else(|| DataStoreError::Other {

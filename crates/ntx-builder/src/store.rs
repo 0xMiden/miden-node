@@ -145,9 +145,7 @@ impl StoreClient {
     ) -> Result<AccountResponse, StoreError> {
         // Convert domain to proto type.
         let proto_request = proto::rpc::AccountRequest {
-            account_id: Some(proto::account::AccountId {
-                id: request.account_id.to_bytes().to_vec(),
-            }),
+            account_id: Some(proto::account::AccountId { id: request.account_id.to_bytes() }),
             block_num: request
                 .block_num
                 .map(|block_num| proto::blockchain::BlockNumber { block_num: block_num.as_u32() }),

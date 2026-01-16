@@ -23,7 +23,7 @@ env:
 jobs:
   stress-test-check:
     name: stress-test-check
-    runs-on: ubuntu-24.04
+    runs-on: Linux-ARM64-Runner
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@main

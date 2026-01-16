@@ -21,7 +21,7 @@ env:
 jobs:
   # Check MSRV (aka `rust-version`) in `Cargo.toml` is valid for workspace members
   msrv:
-    runs-on: ubuntu-latest
+    runs-on: Linux-ARM64-Runner
     steps:
       - uses: actions/checkout@v4
       - name: Cleanup large tools for build space

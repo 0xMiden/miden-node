@@ -67,8 +67,8 @@ impl DataStore for TransactionInputsDataStore {
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
-            // Get asset witnessess from local or foreign account.
             if self.tx_inputs.account().id() == account_id {
+                // Get asset witnessess from native account.
                 Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
                     match self.tx_inputs.account().vault().open(vault_key) {
                         Ok(vault_proof) => AssetWitness::new(vault_proof.into()).map_err(|err| {
@@ -83,16 +83,15 @@ impl DataStore for TransactionInputsDataStore {
                     }
                 }))
             } else {
-                let foreign_inputs = self
-                    .tx_inputs
+                // Get asset witnessess from foreign account.
+                self.tx_inputs
                     .read_vault_asset_witnesses(vault_root, vault_keys)
                     .map_err(|err| {
                         DataStoreError::other_with_source(
                             "failed to read vault asset witnesses",
                             err,
                         )
-                    })?;
-                Ok(foreign_inputs)
+                    })
             }
         }
     }

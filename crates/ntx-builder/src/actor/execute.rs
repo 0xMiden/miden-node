@@ -390,16 +390,6 @@ impl DataStore for NtxDataStore {
 
         let store = self.store.clone();
         async move {
-            if foreign_account_id == self.account.id() {
-                return Err(DataStoreError::Other {
-                    error_msg: format!(
-                        "requested account with id {foreign_account_id} is local, not foreign"
-                    )
-                    .into(),
-                    source: None,
-                });
-            }
-
             // Retrieve the account proof from the store.
             let account_request = AccountRequest {
                 account_id: foreign_account_id,

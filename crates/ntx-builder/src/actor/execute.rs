@@ -436,7 +436,7 @@ impl DataStore for NtxDataStore {
                     block_num: Some(self.reference_header.block_num()),
                     details: None,
                 };
-                let account_proof = store.get_account(account_request).await.map_err(|err| {
+                let account_response = store.get_account(account_request).await.map_err(|err| {
                     DataStoreError::other_with_source(
                         "Failed to get account inputs from store",
                         err,
@@ -444,7 +444,7 @@ impl DataStore for NtxDataStore {
                 })?;
 
                 // Construct vault from account details.
-                let account_details = account_proof.details.ok_or_else(|| {
+                let account_details = account_response.details.ok_or_else(|| {
                     DataStoreError::other("account proof does not contain account details")
                 })?;
                 let assets = match &account_details.vault_details {
@@ -490,10 +490,10 @@ impl DataStore for NtxDataStore {
                     block_num: Some(self.reference_header.block_num()),
                     details: None,
                 };
-                let account_proof = store.get_account(account_request).await.map_err(|err| {
+                let account_response = store.get_account(account_request).await.map_err(|err| {
                     DataStoreError::other_with_source("failed to get account proof from store", err)
                 })?;
-                let account_details = account_proof.details.ok_or_else(|| {
+                let account_details = account_response.details.ok_or_else(|| {
                     DataStoreError::other("account proof does not contain account details")
                 })?;
 

@@ -84,53 +84,218 @@ async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHea
     Ok(block_header)
 }
 
-/// Fetch the latest counter value of the given account from RPC.
+/// Fetch the storage header of the given account from RPC.
+///
+/// Returns `None` if the account does not exist or has no details available.
+async fn fetch_account_storage_header(
+    rpc_client: &mut RpcClient,
+    account_id: AccountId,
+) -> Result<Option<miden_node_proto::generated::account::AccountStorageHeader>> {
+    let request = build_account_request(account_id, false);
+    let resp = rpc_client.get_account(request).await?.into_inner();
+
+    let Some(details) = resp.details else {
+        return Ok(None);
+    };
+
+    let storage_details = details.storage_details.context("missing storage details")?;
+    let storage_header = storage_details.header.context("missing storage header")?;
+
+    Ok(Some(storage_header))
+}
+
+/// Fetch the latest nonce of the given account from RPC.
 async fn fetch_counter_value(
     rpc_client: &mut RpcClient,
     account_id: AccountId,
 ) -> Result<Option<u64>> {
+    let Some(storage_header) = fetch_account_storage_header(rpc_client, account_id).await? else {
+        return Ok(None);
+    };
+
+    let counter_slot = storage_header
+        .slots
+        .iter()
+        .find(|slot| slot.slot_name == COUNTER_SLOT_NAME.as_str())
+        .context(format!("counter slot '{}' not found", COUNTER_SLOT_NAME.as_str()))?;
+
+    // The counter value is stored as a Word, with the actual u64 value in the last element
+    let slot_value: Word = counter_slot
+        .commitment
+        .as_ref()
+        .context("missing storage slot value")?
+        .try_into()
+        .context("failed to convert slot value to word")?;
+
+    let value = slot_value.as_elements().last().expect("Word has 4 elements").as_int();
+
+    Ok(Some(value))
+}
+
+/// Build an account request for the given account ID.
+///
+/// If `include_code_and_vault` is true, uses dummy commitments to force the server
+/// to return code and vault data (server only returns data when our commitment differs).
+fn build_account_request(
+    account_id: AccountId,
+    include_code_and_vault: bool,
+) -> miden_node_proto::generated::rpc::AccountRequest {
     let id_bytes: [u8; 15] = account_id.into();
-    let req = miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-    let resp = rpc_client.get_account_details(req).await?.into_inner();
-    if let Some(raw) = resp.details {
-        let account = Account::read_from_bytes(&raw)
-            .map_err(|e| anyhow::anyhow!("failed to deserialize account details: {e}"))?;
+    let account_id_proto =
+        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
 
-        // Access the counter slot by name to avoid index-ordering issues
-        let word = account
-            .storage()
-            .get_item(&COUNTER_SLOT_NAME)
-            .context("failed to get counter storage slot")?;
-
-        let value = word[0].as_int();
-
-        Ok(Some(value))
+    let (code_commitment, asset_vault_commitment) = if include_code_and_vault {
+        let dummy: miden_node_proto::generated::primitives::Digest = Word::default().into();
+        (Some(dummy), Some(dummy))
     } else {
-        Ok(None)
+        (None, None)
+    };
+
+    miden_node_proto::generated::rpc::AccountRequest {
+        account_id: Some(account_id_proto),
+        block_num: None,
+        details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
+            code_commitment,
+            asset_vault_commitment,
+            storage_maps: vec![],
+        }),
     }
 }
 
+/// Fetch an account from RPC and reconstruct the full Account.
+///
+/// Uses dummy commitments to force the server to return all data (code, vault, storage header).
+/// Only supports accounts with value slots; returns an error if storage maps are present.
 async fn fetch_wallet_account(
     rpc_client: &mut RpcClient,
     account_id: AccountId,
 ) -> Result<Option<Account>> {
-    let id_bytes: [u8; 15] = account_id.into();
-    let req = miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-    let resp = rpc_client.get_account_details(req).await;
+    use miden_protocol::account::AccountCode;
+    use miden_protocol::asset::AssetVault;
 
-    // If the RPC call fails, return None
-    if resp.is_err() {
-        return Ok(None);
-    }
+    let request = build_account_request(account_id, true);
 
-    let Some(account_details) = resp.expect("Previously checked for error").into_inner().details
-    else {
+    let response = match rpc_client.get_account(request).await {
+        Ok(response) => response.into_inner(),
+        Err(e) => {
+            warn!(account.id = %account_id, err = %e, "failed to fetch wallet account via RPC");
+            return Ok(None);
+        },
+    };
+
+    let Some(details) = response.details else {
+        if response.witness.is_some() {
+            info!(
+                account.id = %account_id,
+                "account found on-chain but cannot reconstruct full account from RPC response"
+            );
+        }
         return Ok(None);
     };
-    let account = Account::read_from_bytes(&account_details)
-        .map_err(|e| anyhow::anyhow!("failed to deserialize account details: {e}"))?;
 
+    let header = details.header.context("missing account header")?;
+    let nonce: u64 = header.nonce;
+
+    let code = details
+        .code
+        .map(|code_bytes| AccountCode::read_from_bytes(&code_bytes))
+        .transpose()
+        .context("failed to deserialize account code")?
+        .context("server did not return account code")?;
+
+    let vault = match details.vault_details {
+        Some(vault_details) if vault_details.too_many_assets => {
+            anyhow::bail!("account {account_id} has too many assets, cannot fetch full account");
+        },
+        Some(vault_details) => {
+            let assets: Vec<miden_protocol::asset::Asset> = vault_details
+                .assets
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()
+                .context("failed to convert assets")?;
+            AssetVault::new(&assets).context("failed to create vault")?
+        },
+        None => anyhow::bail!("server did not return asset vault for account {account_id}"),
+    };
+
+    let storage_details = details.storage_details.context("missing storage details")?;
+    let storage = build_account_storage(storage_details)?;
+
+    let account = Account::new(account_id, vault, storage, code, Felt::new(nonce), None)
+        .context("failed to create account")?;
+
+    // Sanity check: verify reconstructed account matches header commitments
+    let expected_code_commitment: Word = header
+        .code_commitment
+        .context("missing code commitment in header")?
+        .try_into()
+        .context("invalid code commitment")?;
+    let expected_vault_root: Word = header
+        .vault_root
+        .context("missing vault root in header")?
+        .try_into()
+        .context("invalid vault root")?;
+    let expected_storage_commitment: Word = header
+        .storage_commitment
+        .context("missing storage commitment in header")?
+        .try_into()
+        .context("invalid storage commitment")?;
+
+    anyhow::ensure!(
+        account.code().commitment() == expected_code_commitment,
+        "code commitment mismatch: rebuilt={:?}, expected={:?}",
+        account.code().commitment(),
+        expected_code_commitment
+    );
+    anyhow::ensure!(
+        account.vault().root() == expected_vault_root,
+        "vault root mismatch: rebuilt={:?}, expected={:?}",
+        account.vault().root(),
+        expected_vault_root
+    );
+    anyhow::ensure!(
+        account.storage().to_commitment() == expected_storage_commitment,
+        "storage commitment mismatch: rebuilt={:?}, expected={:?}",
+        account.storage().to_commitment(),
+        expected_storage_commitment
+    );
+
+    info!(account.id = %account_id, "fetched wallet account from RPC");
     Ok(Some(account))
+}
+
+/// Build account storage from the storage details returned by the server.
+///
+/// This function only supports accounts with value slots. If any storage map slots
+/// are encountered, an error is returned since the monitor only uses simple accounts.
+fn build_account_storage(
+    storage_details: miden_node_proto::generated::rpc::AccountStorageDetails,
+) -> Result<miden_protocol::account::AccountStorage> {
+    use miden_protocol::account::{AccountStorage, StorageSlot};
+
+    let storage_header = storage_details.header.context("missing storage header")?;
+
+    let mut slots = Vec::new();
+    for slot in storage_header.slots {
+        let slot_name = miden_protocol::account::StorageSlotName::new(slot.slot_name.clone())
+            .context("invalid slot name")?;
+        let value: Word = slot
+            .commitment
+            .context("missing slot value")?
+            .try_into()
+            .context("invalid slot value")?;
+
+        // slot_type: 0 = Value, 1 = Map
+        anyhow::ensure!(
+            slot.slot_type == 0,
+            "storage map slots are not supported for this account"
+        );
+
+        slots.push(StorageSlot::with_value(slot_name, value));
+    }
+
+    AccountStorage::new(slots).context("failed to create account storage")
 }
 
 async fn setup_increment_task(
@@ -208,15 +373,6 @@ async fn setup_increment_task(
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.counter.run_increment_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug"),
-    err
-)]
 pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -376,15 +532,6 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.counter.run_counter_tracking_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug"),
-    err
-)]
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -649,8 +796,6 @@ async fn create_and_submit_network_note(
 
     let final_account = executed_tx.final_account().clone();
 
-    let transaction_inputs = executed_tx.tx_inputs().to_bytes();
-
     // Prove the transaction
     let prover = LocalTransactionProver::default();
     let proven_tx = prover.prove(executed_tx).context("Failed to prove transaction")?;
@@ -658,7 +803,7 @@ async fn create_and_submit_network_note(
     // Submit the proven transaction
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
-        transaction_inputs: Some(transaction_inputs),
+        transaction_inputs: None,
     };
 
     let block_height: BlockNumber = rpc_client

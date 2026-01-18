@@ -22,6 +22,58 @@ use crate::faucet::FaucetTestDetails;
 use crate::remote_prover::{ProofType, ProverTestDetails};
 use crate::{COMPONENT, current_unix_timestamp_secs};
 
+// STALE CHAIN TIP TRACKER
+// ================================================================================================
+
+/// Tracks the chain tip and detects when it becomes stale.
+///
+/// This struct monitors the chain tip from RPC status responses and determines if the chain
+/// has stopped making progress by comparing the time since the last chain tip change against
+/// a configurable threshold.
+#[derive(Debug)]
+pub struct StaleChainTracker {
+    /// The last observed chain tip from the store.
+    last_chain_tip: Option<u32>,
+    /// Unix timestamp when the chain tip was last observed to change.
+    last_chain_tip_update: Option<u64>,
+    /// Maximum time without a chain tip update before marking as stale.
+    stale_threshold_secs: u64,
+}
+
+impl StaleChainTracker {
+    /// Creates a new stale chain tracker with the given threshold.
+    pub fn new(stale_threshold: Duration) -> Self {
+        Self {
+            last_chain_tip: None,
+            last_chain_tip_update: None,
+            stale_threshold_secs: stale_threshold.as_secs(),
+        }
+    }
+
+    /// Updates the tracker with a new chain tip observation and returns whether the chain is
+    /// stale.
+    ///
+    /// The chain is considered stale if the tip hasn't changed for longer than the configured
+    /// threshold
+    pub fn update(&mut self, chain_tip: u32, current_time: u64) -> Option<u64> {
+        match self.last_chain_tip {
+            Some(last_tip) if last_tip == chain_tip => {
+                if let Some(last_update) = self.last_chain_tip_update {
+                    let elapsed = current_time.saturating_sub(last_update);
+                    if elapsed > self.stale_threshold_secs {
+                        return Some(elapsed);
+                    }
+                }
+            },
+            _ => {
+                self.last_chain_tip = Some(chain_tip);
+                self.last_chain_tip_update = Some(current_time);
+            },
+        }
+        None
+    }
+}
+
 // STATUS
 // ================================================================================================
 
@@ -299,30 +351,28 @@ impl RpcStatusDetails {
 /// Runs a task that continuously checks RPC status and updates a watch channel.
 ///
 /// This function spawns a task that periodically checks the RPC service status
-/// and sends updates through a watch channel.
+/// and sends updates through a watch channel. It also detects stale chain tips
+/// and marks the RPC as unhealthy if the chain tip hasn't changed for longer
+/// than the configured threshold.
 ///
 /// # Arguments
 ///
 /// * `rpc_url` - The URL of the RPC service.
 /// * `status_sender` - The sender for the watch channel.
 /// * `status_check_interval` - The interval at which to check the status of the services.
+/// * `request_timeout` - The timeout for outgoing requests.
+/// * `stale_chain_tip_threshold` - Maximum time without a chain tip update before marking as
+///   unhealthy.
 ///
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.status.run_rpc_status_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug")
-)]
 pub async fn run_rpc_status_task(
     rpc_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
     status_check_interval: Duration,
     request_timeout: Duration,
+    stale_chain_tip_threshold: Duration,
 ) {
     let url_str = rpc_url.to_string();
     let mut rpc = ClientBuilder::new(rpc_url)
@@ -337,12 +387,15 @@ pub async fn run_rpc_status_task(
     let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+    let mut stale_tracker = StaleChainTracker::new(stale_chain_tip_threshold);
+
     loop {
         interval.tick().await;
 
         let current_time = current_unix_timestamp_secs();
 
-        let status = check_rpc_status(&mut rpc, url_str.clone(), current_time).await;
+        let status =
+            check_rpc_status(&mut rpc, url_str.clone(), current_time, &mut stale_tracker).await;
 
         // Send the status update; exit if no receivers (shutdown signal)
         if status_sender.send(status).is_err() {
@@ -354,13 +407,16 @@ pub async fn run_rpc_status_task(
 
 /// Checks the status of the RPC service.
 ///
-/// This function checks the status of the RPC service.
+/// This function checks the status of the RPC service and detects stale chain tips.
+/// If the chain tip hasn't changed for longer than the configured threshold, the RPC
+/// is marked as unhealthy.
 ///
 /// # Arguments
 ///
 /// * `rpc` - The RPC client.
 /// * `url` - The URL of the RPC service.
 /// * `current_time` - The current time.
+/// * `stale_tracker` - Tracker for detecting stale chain tips.
 ///
 /// # Returns
 ///
@@ -377,17 +433,43 @@ pub(crate) async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
     url: String,
     current_time: u64,
+    stale_tracker: &mut StaleChainTracker,
 ) -> ServiceStatus {
     match rpc.status(()).await {
         Ok(response) => {
             let status = response.into_inner();
+            let rpc_details = RpcStatusDetails::from_rpc_status(status, url);
+
+            // Check for stale chain tip using the store's chain tip
+            if let Some(store_status) = &rpc_details.store_status {
+                if let Some(stale_duration) =
+                    stale_tracker.update(store_status.chain_tip, current_time)
+                {
+                    debug!(
+                        target: COMPONENT,
+                        chain_tip = store_status.chain_tip,
+                        stale_duration_secs = stale_duration,
+                        "Chain tip is stale"
+                    );
+                    return ServiceStatus {
+                        name: "RPC".to_string(),
+                        status: Status::Unhealthy,
+                        last_checked: current_time,
+                        error: Some(format!(
+                            "Chain tip {} has not changed for {} seconds",
+                            store_status.chain_tip, stale_duration
+                        )),
+                        details: ServiceDetails::RpcStatus(rpc_details),
+                    };
+                }
+            }
 
             ServiceStatus {
                 name: "RPC".to_string(),
                 status: Status::Healthy,
                 last_checked: current_time,
                 error: None,
-                details: ServiceDetails::RpcStatus(RpcStatusDetails::from_rpc_status(status, url)),
+                details: ServiceDetails::RpcStatus(rpc_details),
             }
         },
         Err(e) => {
@@ -422,14 +504,6 @@ pub(crate) async fn check_rpc_status(
 ///
 /// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
 /// connection issues or failures while checking the remote prover status.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.status.run_remote_prover_status_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug")
-)]
 pub async fn run_remote_prover_status_task(
     prover_url: Url,
     name: String,

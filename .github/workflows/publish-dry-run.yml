@@ -23,6 +23,8 @@ jobs:
           fetch-depth: 0
       - name: Cleanup large tools for build space
         uses: ./.github/actions/cleanup-runner
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Update Rust toolchain
@@ -30,7 +32,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-binstall
+          tool: cargo-binstall@1.16.6
       - name: Install cargo-msrv
         run: cargo binstall --no-confirm --force cargo-msrv
       - name: Check MSRV for each workspace member

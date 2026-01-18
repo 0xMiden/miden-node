@@ -7,7 +7,7 @@ use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_protocol::Word;
-use miden_protocol::account::{AccountHeader, AccountId, AccountStorage};
+use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader};
 use miden_protocol::asset::{Asset, AssetVaultKey};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
@@ -453,23 +453,6 @@ impl Db {
         .await
     }
 
-    /// Reconstructs account storage at a specific block from the database
-    ///
-    /// This method queries the decomposed storage tables and reconstructs the full
-    /// `AccountStorage` with SMT backing for Map slots.
-    // TODO split querying the header from the content
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_account_storage_at_block(
-        &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountStorage> {
-        self.transact("Get account storage at block", move |conn| {
-            queries::select_account_storage_at_block(conn, account_id, block_num)
-        })
-        .await
-    }
-
     /// Queries vault assets at a specific block
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account_vault_at_block(
@@ -496,17 +479,17 @@ impl Db {
         .await
     }
 
-    /// Queries the account header for a specific account at a specific block number.
+    /// Queries the account header and storage header for a specific account at a block.
     ///
+    /// Returns both in a single query to avoid querying the database twice.
     /// Returns `None` if the account doesn't exist at that block.
-    pub async fn select_account_header_at_block(
+    pub async fn select_account_header_with_storage_header_at_block(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-    ) -> Result<Option<AccountHeader>> {
-        self.transact("Get account header at block", move |conn| {
-            queries::select_account_header_at_block(conn, account_id, block_num)
-                .map(|opt| opt.map(|(header, _storage_header)| header))
+    ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
+        self.transact("Get account header with storage header at block", move |conn| {
+            queries::select_account_header_with_storage_header_at_block(conn, account_id, block_num)
         })
         .await
     }

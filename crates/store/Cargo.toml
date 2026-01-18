@@ -24,6 +24,7 @@ diesel_migrations      = { features = ["sqlite"], version = "2.3" }
 fs-err                 = { workspace = true }
 hex                    = { version = "0.4" }
 indexmap               = { workspace = true }
+miden-crypto           = { features = ["concurrent", "hashmaps"], workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }
@@ -55,6 +56,17 @@ rand                  = { workspace = true }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }
 
+[features]
+default = ["rocksdb"]
+rocksdb = ["miden-crypto/rocksdb"]
+
 [[bench]]
-harness = false
-name    = "account_tree_historical"
+harness           = false
+name              = "account_tree"
+required-features = ["rocksdb"]
+
+[package.metadata.cargo-machete]
+# This is an indirect dependency for which we need to enable optimisations
+# via feature flags. Because we don't use it directly in code, machete
+# identifies it as unused.
+ignored = ["miden-crypto"]

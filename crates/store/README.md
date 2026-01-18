@@ -7,6 +7,35 @@ operator must take care that the store's API endpoint is **only** exposed to the
 
 For more information on the installation and operation of this component, please see the [node's readme](/README.md).
 
+## RocksDB Feature
+
+The `rocksdb` feature (enabled by default) provides disk-backed storage via RocksDB for `LargeSmt`. Building _requires_ LLVM/Clang for `bindgen`.
+
+### Using System Libraries
+
+To avoid compiling RocksDB from source and safe yourself some time, use system libraries:
+
+```bash
+# Install system RocksDB
+# (Ubuntu/Debian)
+#sudo apt-get install librocksdb-dev clang llvm-dev libclang-dev
+# (Fedora)
+#sudo dnf install rocksdb rocksdb-devel llvm19 clang19
+
+# Set environment variables to use system library
+export ROCKSDB_LIB_DIR=/usr/lib
+export ROCKSDB_INCLUDE_DIR=/usr/include
+# export ROCKSDB_STATIC=1 (optional)
+# (Ubuntu/Debian)
+#export LIBCLANG_PATH=/usr/lib/llvm-14/lib
+# (Fedora)
+#export LIBCLANG_PATH=/usr/lib64/llvm19/lib
+```
+
+### Building from Source
+
+Without the environment variables above, `librocksdb-sys` compiles RocksDB from source, which requires a C/C++ toolchain.
+
 ## API overview
 
 The full gRPC API can be found [here](../../proto/proto/store.proto).
@@ -14,8 +43,7 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 <!--toc:start-->
 - [ApplyBlock](#applyblock)
 - [CheckNullifiers](#checknullifiers)
-- [GetAccountDetails](#getaccountdetails)
-- [GetAccountProofs](#getaccountproofs)
+- [GetAccount](#getaccount)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetBlockInputs](#getblockinputs)
@@ -55,15 +83,13 @@ When nullifier checking fails, detailed error information is provided through gR
 
 ---
 
-### GetAccountDetails
+### GetAccount
 
-Returns the latest state of an account with the specified ID.
+Returns an account witness (Merkle proof of inclusion in the account tree) and optionally account details.
 
----
+The witness proves the account's state commitment in the account tree. If details are requested, the response also includes the account's header, code, vault assets, and storage data. Account details are only available for public accounts.
 
-### GetAccountProofs
-
-Returns the latest state proofs of the specified accounts.
+If `block_num` is provided, returns the state at that historical block; otherwise, returns the latest state.
 
 ---
 

@@ -213,9 +213,9 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
         debug!(target: COMPONENT, ?request);
         let request = request.into_inner();
-        let account_proof_request = request.try_into()?;
+        let account_request = request.try_into()?;
 
-        let proof = self.state.get_account(account_proof_request).await?;
+        let proof = self.state.get_account(account_request).await?;
 
         Ok(Response::new(proof.into()))
     }

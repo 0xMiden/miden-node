@@ -1,7 +1,12 @@
 use std::collections::BTreeSet;
 
 use miden_node_proto::clients::ValidatorClient;
-use miden_node_proto::domain::account::{AccountRequest, AccountVaultDetails, StorageMapEntries};
+use miden_node_proto::domain::account::{
+    AccountDetailRequest,
+    AccountRequest,
+    AccountVaultDetails,
+    StorageMapEntries,
+};
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
@@ -394,7 +399,16 @@ impl DataStore for NtxDataStore {
             let account_request = AccountRequest {
                 account_id: foreign_account_id,
                 block_num: Some(ref_block),
-                details: None,
+                details: Some(AccountDetailRequest {
+                    code_commitment: Some(self.account.code().commitment()),
+                    asset_vault_commitment: Some(self.account.vault().root()), /* TODO(currentpr):
+                                                                                * what is the
+                                                                                * commitment that
+                                                                                * should be provided
+                                                                                * here? */
+                    storage_requests: Vec::new(), /* TODO(currentpr): Do these need to be
+                                                   * provided? */
+                }),
             };
             let account = store.get_account(account_request).await.map_err(|err| {
                 DataStoreError::other_with_source("failed to get account proof from store", err)
@@ -434,7 +448,12 @@ impl DataStore for NtxDataStore {
                 let account_request = AccountRequest {
                     account_id,
                     block_num: Some(self.reference_header.block_num()),
-                    details: None,
+                    details: Some(AccountDetailRequest {
+                        code_commitment: None,
+                        asset_vault_commitment: Some(self.account.vault().root()), /* TODO(currentpr): what is the commitment that should be provided here? */
+                        storage_requests: Vec::new(), /* TODO(currentpr): Do these need to be
+                                                       * provided? */
+                    }),
                 };
                 let account_response = store.get_account(account_request).await.map_err(|err| {
                     DataStoreError::other_with_source(
@@ -488,7 +507,12 @@ impl DataStore for NtxDataStore {
                 let account_request = AccountRequest {
                     account_id,
                     block_num: Some(self.reference_header.block_num()),
-                    details: None,
+                    details: Some(AccountDetailRequest {
+                        code_commitment: Some(self.account.code().commitment()),
+                        asset_vault_commitment: Some(self.account.vault().root()), /* TODO(currentpr): what is the commitment that should be provided here? */
+                        storage_requests: Vec::new(), /* TODO(currentpr): Do these need to be
+                                                       * provided? */
+                    }),
                 };
                 let account_response = store.get_account(account_request).await.map_err(|err| {
                     DataStoreError::other_with_source("failed to get account proof from store", err)

@@ -54,17 +54,9 @@ impl DataStore for TransactionInputsDataStore {
         _ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
         async move {
-            if foreign_account_id == self.tx_inputs.account().id() {
-                return Err(DataStoreError::other(
-                    "requested account with id {foreign_account_id} is local, not foreign",
-                ));
-            }
-
-            let foreign_inputs =
-                self.tx_inputs.read_foreign_account_inputs(foreign_account_id).map_err(|err| {
-                    DataStoreError::other_with_source("failed to read foreign account inputs", err)
-                })?;
-            Ok(foreign_inputs)
+            self.tx_inputs.read_foreign_account_inputs(foreign_account_id).map_err(|err| {
+                DataStoreError::other_with_source("failed to read foreign account inputs", err)
+            })
         }
     }
 

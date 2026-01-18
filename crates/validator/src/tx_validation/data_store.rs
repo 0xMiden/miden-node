@@ -62,45 +62,51 @@ impl DataStore for TransactionInputsDataStore {
 
     fn get_vault_asset_witnesses(
         &self,
-        _account_id: AccountId,
-        _vault_root: Word,
-        _vault_keys: BTreeSet<AssetVaultKey>,
+        account_id: AccountId,
+        vault_root: Word,
+        vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
-            unimplemented!(
-                "get_vault_asset_witnesses is not used during re-execution of transactions"
-            )
+            // Get asset witnessess from local or foreign account.
+            if self.tx_inputs.account().id() == account_id {
+                Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+                    match self.tx_inputs.account().vault().open(vault_key) {
+                        Ok(vault_proof) => AssetWitness::new(vault_proof.into()).map_err(|err| {
+                            DataStoreError::other_with_source(
+                                "failed to open vault asset tree",
+                                err,
+                            )
+                        }),
+                        Err(err) => {
+                            Err(DataStoreError::other_with_source("failed to open vault", err))
+                        },
+                    }
+                }))
+            } else {
+                let foreign_inputs = self
+                    .tx_inputs
+                    .read_vault_asset_witnesses(vault_root, vault_keys)
+                    .map_err(|err| {
+                        DataStoreError::other_with_source(
+                            "failed to read vault asset witnesses",
+                            err,
+                        )
+                    })?;
+                Ok(foreign_inputs)
+            }
         }
     }
 
     fn get_storage_map_witness(
         &self,
-        account_id: AccountId,
-        map_root: Word,
-        map_key: Word,
+        _account_id: AccountId,
+        _map_root: Word,
+        _map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
-            if self.tx_inputs.account().id() == account_id {
-                let storage_map_witness =
-                    self.tx_inputs.account().storage().maps().find_map(|partial_map| {
-                        if partial_map.root() == map_root {
-                            partial_map.open(&map_key).ok()
-                        } else {
-                            None
-                        }
-                    });
-                storage_map_witness.ok_or_else(|| {
-                    DataStoreError::other("could not find storage map witness for native account")
-                })
-            } else {
-                // Get storage map witness from transaction inputs.
-                let storage_map_witness =
-                    self.tx_inputs.read_storage_map_witness(map_root, map_key).map_err(|err| {
-                        DataStoreError::other_with_source("failed to read storage map witness", err)
-                    })?;
-
-                Ok(storage_map_witness)
-            }
+            unimplemented!(
+                "get_storage_map_witness is not used during re-execution of transactions"
+            )
         }
     }
 
@@ -108,7 +114,7 @@ impl DataStore for TransactionInputsDataStore {
         &self,
         _script_root: Word,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
-        async move { Ok(None) }
+        async move { unimplemented!("get_note_script is not used during re-execution of transactions") }
     }
 }
 

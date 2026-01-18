@@ -55,20 +55,14 @@ impl DataStore for TransactionInputsDataStore {
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
         async move {
             if foreign_account_id == self.tx_inputs.account().id() {
-                return Err(DataStoreError::Other {
-                    error_msg:
-                        "requested account with id {foreign_account_id} is local, not foreign"
-                            .into(),
-                    source: None,
-                });
+                return Err(DataStoreError::other(
+                    "requested account with id {foreign_account_id} is local, not foreign",
+                ));
             }
 
-            let foreign_inputs = self
-                .tx_inputs
-                .read_foreign_account_inputs(foreign_account_id)
-                .map_err(|err| DataStoreError::Other {
-                    error_msg: "failed to read foreign account inputs".into(),
-                    source: Some(Box::new(err)),
+            let foreign_inputs =
+                self.tx_inputs.read_foreign_account_inputs(foreign_account_id).map_err(|err| {
+                    DataStoreError::other_with_source("failed to read foreign account inputs", err)
                 })?;
             Ok(foreign_inputs)
         }
@@ -76,37 +70,14 @@ impl DataStore for TransactionInputsDataStore {
 
     fn get_vault_asset_witnesses(
         &self,
-        account_id: AccountId,
-        vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        _account_id: AccountId,
+        _vault_root: Word,
+        _vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
-            // Get asset witnessess from local or foreign account.
-            if self.tx_inputs.account().id() == account_id {
-                Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-                    match self.tx_inputs.account().vault().open(vault_key) {
-                        Ok(vault_proof) => AssetWitness::new(vault_proof.into()).map_err(|err| {
-                            DataStoreError::Other {
-                                error_msg: "failed to open vault asset tree".into(),
-                                source: Some(err.into()),
-                            }
-                        }),
-                        Err(err) => Err(DataStoreError::Other {
-                            error_msg: "failed to open vault".into(),
-                            source: Some(err.into()),
-                        }),
-                    }
-                }))
-            } else {
-                let foreign_inputs = self
-                    .tx_inputs
-                    .read_vault_asset_witnesses(vault_root, vault_keys)
-                    .map_err(|err| DataStoreError::Other {
-                        error_msg: "failed to read vault asset witnesses".into(),
-                        source: Some(Box::new(err)),
-                    })?;
-                Ok(foreign_inputs)
-            }
+            unimplemented!(
+                "get_vault_asset_witnesses is not used during re-execution of transactions"
+            )
         }
     }
 
@@ -126,18 +97,14 @@ impl DataStore for TransactionInputsDataStore {
                             None
                         }
                     });
-                storage_map_witness.ok_or_else(|| DataStoreError::Other {
-                    error_msg: "could not find storage map witness for native account".into(),
-                    source: None,
+                storage_map_witness.ok_or_else(|| {
+                    DataStoreError::other("could not find storage map witness for native account")
                 })
             } else {
                 // Get storage map witness from transaction inputs.
-                let storage_map_witness = self
-                    .tx_inputs
-                    .read_storage_map_witness(map_root, map_key)
-                    .map_err(|err| DataStoreError::Other {
-                        error_msg: "failed to read storage map witness".into(),
-                        source: Some(Box::new(err)),
+                let storage_map_witness =
+                    self.tx_inputs.read_storage_map_witness(map_root, map_key).map_err(|err| {
+                        DataStoreError::other_with_source("failed to read storage map witness", err)
                     })?;
 
                 Ok(storage_map_witness)

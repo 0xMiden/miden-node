@@ -396,25 +396,19 @@ impl DataStore for NtxDataStore {
                 block_num: Some(ref_block),
                 details: None,
             };
-            let account =
-                store.get_account(account_request).await.map_err(|err| DataStoreError::Other {
-                    error_msg: format!("failed to get account proof from store: {err}").into(),
-                    source: Some(Box::new(err)),
-                })?;
+            let account = store.get_account(account_request).await.map_err(|err| {
+                DataStoreError::other_with_source("failed to get account proof from store", err)
+            })?;
 
             // Construct account from account proof account details.
-            let account_details = account.details.ok_or_else(|| DataStoreError::Other {
-                error_msg: "account proof does not contain account details".into(),
-                source: None,
+            let account_details = account.details.ok_or_else(|| {
+                DataStoreError::other("account proof does not contain account details")
             })?;
             let partial_account = PartialAccount::try_from(&account_details).map_err(|err| {
-                DataStoreError::Other {
-                    error_msg: format!(
-                        "failed to construct partial account from account details: {err}"
-                    )
-                    .into(),
-                    source: Some(Box::new(err)),
-                }
+                DataStoreError::other_with_source(
+                    "failed to construct partial account from account details",
+                    err,
+                )
             })?;
 
             // Return partial account and witness.
@@ -432,10 +426,7 @@ impl DataStore for NtxDataStore {
         async move {
             if self.account.id() == account_id {
                 if self.account.vault().root() != vault_root {
-                    return Err(DataStoreError::Other {
-                        error_msg: "vault root mismatch".into(),
-                        source: None,
-                    });
+                    return Err(DataStoreError::other("vault root mismatch"));
                 }
                 get_asset_witnesses(vault_keys, self.account.vault())
             } else {
@@ -446,28 +437,24 @@ impl DataStore for NtxDataStore {
                     details: None,
                 };
                 let account_proof = store.get_account(account_request).await.map_err(|err| {
-                    DataStoreError::Other {
-                        error_msg: format!("Failed to get account inputs from store: {err}").into(),
-                        source: Some(Box::new(err)),
-                    }
+                    DataStoreError::other_with_source(
+                        "Failed to get account inputs from store",
+                        err,
+                    )
                 })?;
 
                 // Construct vault from account details.
-                let account_details =
-                    account_proof.details.ok_or_else(|| DataStoreError::Other {
-                        error_msg: "account proof does not contain account details".into(),
-                        source: None,
-                    })?;
+                let account_details = account_proof.details.ok_or_else(|| {
+                    DataStoreError::other("account proof does not contain account details")
+                })?;
                 let assets = match &account_details.vault_details {
-                    AccountVaultDetails::LimitExceeded => Err(DataStoreError::Other {
-                        error_msg: "asset vault limit exceeded".into(),
-                        source: None,
-                    }),
+                    AccountVaultDetails::LimitExceeded => {
+                        Err(DataStoreError::other("asset vault limit exceeded"))
+                    },
                     AccountVaultDetails::Assets(assets) => Ok(assets),
                 }?;
-                let asset_vault = AssetVault::new(assets).map_err(|err| DataStoreError::Other {
-                    error_msg: format!("failed to create asset vault: {err}").into(),
-                    source: Some(Box::new(err)),
+                let asset_vault = AssetVault::new(assets).map_err(|err| {
+                    DataStoreError::other_with_source("failed to create asset vault", err)
                 })?;
 
                 get_asset_witnesses(vault_keys, &asset_vault)
@@ -504,16 +491,11 @@ impl DataStore for NtxDataStore {
                     details: None,
                 };
                 let account_proof = store.get_account(account_request).await.map_err(|err| {
-                    DataStoreError::Other {
-                        error_msg: format!("failed to get account proof from store: {err}").into(),
-                        source: Some(Box::new(err)),
-                    }
+                    DataStoreError::other_with_source("failed to get account proof from store", err)
                 })?;
-                let account_details =
-                    account_proof.details.ok_or_else(|| DataStoreError::Other {
-                        error_msg: "account proof does not contain account details".into(),
-                        source: None,
-                    })?;
+                let account_details = account_proof.details.ok_or_else(|| {
+                    DataStoreError::other("account proof does not contain account details")
+                })?;
 
                 // Search through foreign account's storage maps.
                 let mut map_witness = None;
@@ -521,9 +503,11 @@ impl DataStore for NtxDataStore {
                     match map_details.entries {
                         StorageMapEntries::AllEntries(entries) => {
                             let storage_map = StorageMap::with_entries(entries.iter().copied())
-                                .map_err(|err| DataStoreError::Other {
-                                    error_msg: "failed to create storage map from entries".into(),
-                                    source: Some(Box::new(err)),
+                                .map_err(|err| {
+                                    DataStoreError::other_with_source(
+                                        "failed to create storage map from entries",
+                                        err,
+                                    )
                                 })?;
                             if storage_map.root() == map_root {
                                 map_witness = Some(storage_map.open(&map_key));
@@ -544,10 +528,11 @@ impl DataStore for NtxDataStore {
                                 })
                                 .collect::<Vec<_>>();
                             let storage_map = StorageMap::with_entries(entries.iter().copied())
-                                .map_err(|err| DataStoreError::Other {
-                                    error_msg: "failed to create storage map from proof entries"
-                                        .into(),
-                                    source: Some(Box::new(err)),
+                                .map_err(|err| {
+                                    DataStoreError::other_with_source(
+                                        "failed to create storage map from proof entries",
+                                        err,
+                                    )
                                 })?;
                             if storage_map.root() == map_root {
                                 map_witness = Some(storage_map.open(&map_key));
@@ -560,9 +545,8 @@ impl DataStore for NtxDataStore {
                 map_witness
             };
 
-            map_witness.ok_or_else(|| DataStoreError::Other {
-                error_msg: "account storage does not contain the expected root".into(),
-                source: None,
+            map_witness.ok_or_else(|| {
+                DataStoreError::other("account storage does not contain the expected root")
             })
         }
     }

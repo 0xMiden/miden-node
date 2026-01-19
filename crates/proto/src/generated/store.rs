@@ -237,15 +237,29 @@ pub struct VaultAssetWitnessesRequest {
     pub vault_keys: ::prost::alloc::vec::Vec<super::primitives::Digest>,
 }
 /// Response containing vault asset witnesses.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VaultAssetWitnessesResponse {
-    /// Binary encoded Vec<AssetWitness>.
-    ///
-    /// The witnesses are serialized as a vector of AssetWitness using Miden's Serializable trait.
-    /// Clients can deserialize this using Vec::<AssetWitness>::read_from_bytes() to reconstruct
-    /// the cryptographic proofs for the vault assets.
-    #[prost(bytes = "vec", tag = "1")]
-    pub asset_witnesses: ::prost::alloc::vec::Vec<u8>,
+    /// List of asset witnesses.
+    #[prost(message, repeated, tag = "1")]
+    pub asset_witnesses: ::prost::alloc::vec::Vec<
+        vault_asset_witnesses_response::VaultAssetWitness,
+    >,
+}
+/// Nested message and enum types in `VaultAssetWitnessesResponse`.
+pub mod vault_asset_witnesses_response {
+    /// A vault asset witness containing the asset and its proof.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct VaultAssetWitness {
+        /// The asset vault key.
+        #[prost(message, optional, tag = "1")]
+        pub vault_key: ::core::option::Option<super::super::primitives::Digest>,
+        /// The asset data.
+        #[prost(message, optional, tag = "2")]
+        pub asset: ::core::option::Option<super::super::primitives::Asset>,
+        /// The Merkle proof for the asset's inclusion in the vault.
+        #[prost(message, optional, tag = "3")]
+        pub proof: ::core::option::Option<super::super::primitives::SparseMerklePath>,
+    }
 }
 /// Request for a storage map witness for a specific account and storage entry.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -264,18 +278,30 @@ pub struct StorageMapWitnessRequest {
     pub block_num: ::core::option::Option<u32>,
 }
 /// Response containing a storage map witness.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StorageMapWitnessResponse {
-    /// Binary encoded StorageMapWitness.
-    ///
-    /// The witness is serialized as an SmtProof using Miden's Serializable trait.
-    /// Clients can deserialize this using SmtProof::read_from_bytes() to reconstruct
-    /// the cryptographic proof for the storage map entry.
-    #[prost(bytes = "vec", tag = "1")]
-    pub witness: ::prost::alloc::vec::Vec<u8>,
+    /// The storage map witness.
+    #[prost(message, optional, tag = "1")]
+    pub witness: ::core::option::Option<storage_map_witness_response::StorageWitness>,
     /// Block number at which the witness was generated.
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
+}
+/// Nested message and enum types in `StorageMapWitnessResponse`.
+pub mod storage_map_witness_response {
+    /// Storage map witness data.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct StorageWitness {
+        /// The storage map key.
+        #[prost(message, optional, tag = "1")]
+        pub key: ::core::option::Option<super::super::primitives::Digest>,
+        /// The value associated with the key.
+        #[prost(message, optional, tag = "2")]
+        pub value: ::core::option::Option<super::super::primitives::Digest>,
+        /// The SMT opening proof for the key-value pair.
+        #[prost(message, optional, tag = "3")]
+        pub proof: ::core::option::Option<super::super::primitives::SmtOpening>,
+    }
 }
 /// Generated client implementations.
 pub mod rpc_client {

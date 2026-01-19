@@ -371,11 +371,20 @@ message VaultAssetWitnessesRequest {
 
 // Response containing vault asset witnesses.
 message VaultAssetWitnessesResponse {
-    // Binary encoded Vec<AssetWitness>.
-    //
-    // The witnesses are encoded using [winter_utils::Serializable] implementation
-    // for [miden_protocol::asset::AssetWitness].
-    bytes asset_witnesses = 1;
+    // A vault asset witness containing the asset and its proof.
+    message VaultAssetWitness {
+        // The asset vault key.
+        primitives.Digest vault_key = 1;
+
+        // The asset data.
+        primitives.Asset asset = 2;
+
+        // The Merkle proof for the asset's inclusion in the vault.
+        primitives.SparseMerklePath proof = 3;
+    }
+
+    // List of asset witnesses.
+    repeated VaultAssetWitness asset_witnesses = 1;
 }
 
 // GET STORAGE MAP WITNESS
@@ -398,11 +407,20 @@ message StorageMapWitnessRequest {
 
 // Response containing a storage map witness.
 message StorageMapWitnessResponse {
-    // Binary encoded StorageMapWitness.
-    //
-    // The witnesses are encoded using [winter_utils::Serializable] implementation
-    // for [miden_protocol::account::StorageMapWitness].
-    bytes witness = 1;
+    // Storage map witness data.
+    message StorageWitness {
+        // The storage map key.
+        primitives.Digest key = 1;
+
+        // The value associated with the key.
+        primitives.Digest value = 2;
+
+        // The SMT opening proof for the key-value pair.
+        primitives.SmtOpening proof = 3;
+    }
+
+    // The storage map witness.
+    StorageWitness witness = 1;
 
     // Block number at which the witness was generated.
     fixed32 block_num = 2;

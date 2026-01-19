@@ -2352,21 +2352,24 @@ fn db_roundtrip_account_storage_with_maps() {
 // CLEANUP TESTS
 // ================================================================================================
 
+/// Chain length used in cleanup tests - must be > HISTORICAL_BLOCK_RETENTION for meaningful tests.
+const TEST_CHAIN_LENGTH: u32 = 100;
+
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn test_cleanup_old_account_vault_assets() {
     use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
     use crate::db::models::queries::{
-        MAX_HISTORICAL_ENTRIES_PER_KEY,
+        HISTORICAL_BLOCK_RETENTION,
         cleanup_old_account_vault_assets,
     };
 
     let mut conn = create_db();
     let account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
 
-    // Create blocks
-    for i in 1..=60 {
+    // Create blocks 1-TEST_CHAIN_LENGTH
+    for i in 1..=TEST_CHAIN_LENGTH {
         create_block(&mut conn, BlockNumber::from(i));
     }
 
@@ -2381,8 +2384,8 @@ fn test_cleanup_old_account_vault_assets() {
     let vault_key = AssetVaultKey::new_unchecked(num_to_word(100));
     let asset = Asset::Fungible(FungibleAsset::new(account_id, 1000).unwrap());
 
-    // Insert 60 vault asset entries for the same vault_key
-    for block_num in 1..=60 {
+    // Insert vault asset entries for blocks 1-TEST_CHAIN_LENGTH
+    for block_num in 1..=TEST_CHAIN_LENGTH {
         queries::insert_account_vault_asset(
             &mut conn,
             account_id,
@@ -2393,43 +2396,45 @@ fn test_cleanup_old_account_vault_assets() {
         .unwrap();
     }
 
-    // Verify we have 60 entries using Diesel API
+    // Verify we have TEST_CHAIN_LENGTH entries
     use schema::account_vault_assets::dsl;
     let count = dsl::account_vault_assets
         .filter(dsl::account_id.eq(account_id.to_bytes()))
         .count()
         .get_result::<i64>(&mut conn)
         .unwrap();
-    assert_eq!(count, 60, "Should have 60 entries before cleanup");
+    assert_eq!(count, TEST_CHAIN_LENGTH as i64, "Should have TEST_CHAIN_LENGTH entries before cleanup");
 
-    // Run cleanup
-    let deleted = cleanup_old_account_vault_assets(&mut conn, account_id).unwrap();
+    // Run cleanup with chain_tip at block TEST_CHAIN_LENGTH
+    // cutoff = TEST_CHAIN_LENGTH - 50, so blocks < cutoff should be deleted
+    let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
+    let deleted = cleanup_old_account_vault_assets(&mut conn, account_id, chain_tip).unwrap();
 
-    // We should have deleted entries beyond MAX_HISTORICAL_ENTRIES_PER_KEY
-    // The latest entry (is_latest=true) is always kept
-    // Plus up to MAX_HISTORICAL_ENTRIES_PER_KEY non-latest entries
-    let expected_remaining = MAX_HISTORICAL_ENTRIES_PER_KEY + 1; // +1 for the latest
-    let expected_deleted = 60 - expected_remaining;
-
+    // Blocks 1 to cutoff-1 are older than cutoff, but block TEST_CHAIN_LENGTH is is_latest=true
+    // So we should delete (cutoff-1) entries (blocks 1 to cutoff-1, excluding is_latest)
+    let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    let expected_deleted = cutoff - 1; // blocks 1 to cutoff-1
     assert_eq!(
-        deleted, expected_deleted,
-        "Should have deleted {} old entries",
-        expected_deleted
+        deleted, expected_deleted as usize,
+        "Should have deleted entries older than block {}",
+        cutoff
     );
 
-    // Verify remaining count using Diesel API
+    // Verify remaining count
     let remaining = dsl::account_vault_assets
         .filter(dsl::account_id.eq(account_id.to_bytes()))
         .count()
         .get_result::<i64>(&mut conn)
         .unwrap();
+    // Remaining: blocks cutoff to TEST_CHAIN_LENGTH
+    let expected_remaining = TEST_CHAIN_LENGTH - expected_deleted;
     assert_eq!(
-        remaining as usize, expected_remaining,
+        remaining as u32, expected_remaining,
         "Should have {} entries remaining",
         expected_remaining
     );
 
-    // Verify the latest entry is still marked as latest using Diesel API
+    // Verify the latest entry is still marked as latest
     let latest_count = dsl::account_vault_assets
         .filter(dsl::account_id.eq(account_id.to_bytes()))
         .filter(dsl::is_latest.eq(true))
@@ -2438,14 +2443,14 @@ fn test_cleanup_old_account_vault_assets() {
         .unwrap();
     assert_eq!(latest_count, 1, "Should have exactly one latest entry");
 
-    // Verify the latest entry is from block 60 using Diesel API
+    // Verify the latest entry is from block TEST_CHAIN_LENGTH
     let latest_block = dsl::account_vault_assets
         .filter(dsl::account_id.eq(account_id.to_bytes()))
         .filter(dsl::is_latest.eq(true))
         .select(dsl::block_num)
         .first::<i64>(&mut conn)
         .unwrap();
-    assert_eq!(latest_block, 60, "Latest entry should be from block 60");
+    assert_eq!(latest_block, TEST_CHAIN_LENGTH as i64, "Latest entry should be from block TEST_CHAIN_LENGTH");
 }
 
 #[test]
@@ -2454,15 +2459,15 @@ fn test_cleanup_old_account_storage_map_values() {
     use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
     use crate::db::models::queries::{
-        MAX_HISTORICAL_ENTRIES_PER_KEY,
+        HISTORICAL_BLOCK_RETENTION,
         cleanup_old_account_storage_map_values,
     };
 
     let mut conn = create_db();
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
-    // Create blocks
-    for i in 1..=70 {
+    // Create blocks 1-TEST_CHAIN_LENGTH
+    for i in 1..=TEST_CHAIN_LENGTH {
         create_block(&mut conn, BlockNumber::from(i));
     }
 
@@ -2470,8 +2475,8 @@ fn test_cleanup_old_account_storage_map_values() {
     let key = num_to_word(123);
     let value_base = num_to_word(456);
 
-    // Insert 70 storage map value entries for the same (slot_name, key) combination
-    for block_num in 1..=70 {
+    // Insert storage map value entries for blocks 1-TEST_CHAIN_LENGTH
+    for block_num in 1..=TEST_CHAIN_LENGTH {
         queries::insert_account_storage_map_value(
             &mut conn,
             account_id,
@@ -2483,41 +2488,42 @@ fn test_cleanup_old_account_storage_map_values() {
         .unwrap();
     }
 
-    // Verify we have 70 entries using Diesel API
+    // Verify we have TEST_CHAIN_LENGTH entries
     use schema::account_storage_map_values::dsl;
     let count = dsl::account_storage_map_values
         .filter(dsl::account_id.eq(account_id.to_bytes()))
         .count()
         .get_result::<i64>(&mut conn)
         .unwrap();
-    assert_eq!(count, 70, "Should have 70 entries before cleanup");
+    assert_eq!(count, TEST_CHAIN_LENGTH as i64, "Should have TEST_CHAIN_LENGTH entries before cleanup");
 
-    // Run cleanup
-    let deleted = cleanup_old_account_storage_map_values(&mut conn, account_id).unwrap();
+    // Run cleanup with chain_tip at block TEST_CHAIN_LENGTH
+    let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
+    let deleted = cleanup_old_account_storage_map_values(&mut conn, account_id, chain_tip).unwrap();
 
-    // We should have deleted entries beyond MAX_HISTORICAL_ENTRIES_PER_KEY
-    let expected_remaining = MAX_HISTORICAL_ENTRIES_PER_KEY + 1; // +1 for the latest
-    let expected_deleted = 70 - expected_remaining;
-
+    // cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION, blocks 1 to cutoff-1 should be deleted
+    let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    let expected_deleted = cutoff - 1;
     assert_eq!(
-        deleted, expected_deleted,
-        "Should have deleted {} old entries",
-        expected_deleted
+        deleted, expected_deleted as usize,
+        "Should have deleted entries older than block {}",
+        cutoff
     );
 
-    // Verify remaining count using Diesel API
+    // Verify remaining count
     let remaining = dsl::account_storage_map_values
         .filter(dsl::account_id.eq(account_id.to_bytes()))
         .count()
         .get_result::<i64>(&mut conn)
         .unwrap();
+    let expected_remaining = TEST_CHAIN_LENGTH - expected_deleted;
     assert_eq!(
-        remaining as usize, expected_remaining,
+        remaining as u32, expected_remaining,
         "Should have {} entries remaining",
         expected_remaining
     );
 
-    // Verify the latest entry is still marked as latest using Diesel API
+    // Verify the latest entry is still marked as latest
     let latest_count = dsl::account_storage_map_values
         .filter(dsl::account_id.eq(account_id.to_bytes()))
         .filter(dsl::is_latest.eq(true))
@@ -2550,7 +2556,7 @@ fn test_cleanup_preserves_latest_state() {
     )
     .unwrap();
 
-    // Test with multiple vault keys to ensure per-key cleanup
+    // Test with multiple vault keys to ensure all latest entries are preserved
     let vault_key_1 = AssetVaultKey::new_unchecked(num_to_word(100));
     let vault_key_2 = AssetVaultKey::new_unchecked(num_to_word(200));
     let asset = Asset::Fungible(FungibleAsset::new(account_id, 1000).unwrap());
@@ -2576,11 +2582,12 @@ fn test_cleanup_preserves_latest_state() {
         .unwrap();
     }
 
-    // Run cleanup (should not delete anything since we're under the limit)
-    let deleted = cleanup_old_account_vault_assets(&mut conn, account_id).unwrap();
-    assert_eq!(deleted, 0, "Should not delete anything when under limit");
+    // Run cleanup with chain_tip at 10 (cutoff = 10 - 50 = 0, so nothing should be deleted)
+    let chain_tip = BlockNumber::from(10);
+    let deleted = cleanup_old_account_vault_assets(&mut conn, account_id, chain_tip).unwrap();
+    assert_eq!(deleted, 0, "Should not delete anything when chain is young");
 
-    // Verify both latest entries exist using Diesel API
+    // Verify both latest entries exist
     use schema::account_vault_assets::dsl;
     let latest_entries: Vec<(Vec<u8>, i64)> = dsl::account_vault_assets
         .filter(dsl::account_id.eq(account_id.to_bytes()))
@@ -2600,7 +2607,7 @@ fn test_cleanup_preserves_latest_state() {
 fn test_cleanup_all_accounts() {
     use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
-    use crate::db::models::queries::cleanup_all_accounts;
+    use crate::db::models::queries::{HISTORICAL_BLOCK_RETENTION, cleanup_all_accounts};
 
     let mut conn = create_db();
 
@@ -2609,8 +2616,8 @@ fn test_cleanup_all_accounts() {
     let account2 = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
 
-    // Create blocks
-    for i in 1..=60 {
+    // Create blocks 1-TEST_CHAIN_LENGTH
+    for i in 1..=TEST_CHAIN_LENGTH {
         create_block(&mut conn, BlockNumber::from(i));
     }
 
@@ -2632,7 +2639,7 @@ fn test_cleanup_all_accounts() {
     let vault_key = AssetVaultKey::new_unchecked(num_to_word(100));
     let asset = Asset::Fungible(FungibleAsset::new(faucet_id, 1000).unwrap());
 
-    for block_num in 1..=60 {
+    for block_num in 1..=TEST_CHAIN_LENGTH {
         queries::insert_account_vault_asset(
             &mut conn,
             account1,
@@ -2653,14 +2660,20 @@ fn test_cleanup_all_accounts() {
         .unwrap();
     }
 
-    // Run cleanup for all accounts
-    let (vault_deleted, _) = cleanup_all_accounts(&mut conn).unwrap();
+    // Run cleanup for all accounts with chain_tip at TEST_CHAIN_LENGTH
+    let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
+    let (vault_deleted, _) = cleanup_all_accounts(&mut conn, chain_tip).unwrap();
 
-    // We should have deleted entries from both accounts
-    assert!(vault_deleted > 0, "Should have deleted some entries");
+    // Each account should have deleted entries for blocks 1 to cutoff-1
+    let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    let expected_deleted_per_account = cutoff - 1;
+    assert_eq!(
+        vault_deleted,
+        (expected_deleted_per_account * 2) as usize,
+        "Should have deleted entries from both accounts"
+    );
 
-    // Each account should have MAX_HISTORICAL_ENTRIES_PER_KEY + 1 entries remaining using
-    // Diesel API
+    // Each account should have entries for blocks cutoff to TEST_CHAIN_LENGTH
     use schema::account_vault_assets::dsl;
     let count1 = dsl::account_vault_assets
         .filter(dsl::account_id.eq(account1.to_bytes()))
@@ -2674,12 +2687,7 @@ fn test_cleanup_all_accounts() {
         .get_result::<i64>(&mut conn)
         .unwrap();
 
-    assert_eq!(
-        count1 as usize,
-        crate::db::models::queries::MAX_HISTORICAL_ENTRIES_PER_KEY + 1
-    );
-    assert_eq!(
-        count2 as usize,
-        crate::db::models::queries::MAX_HISTORICAL_ENTRIES_PER_KEY + 1
-    );
+    let expected_remaining = TEST_CHAIN_LENGTH - expected_deleted_per_account;
+    assert_eq!(count1 as u32, expected_remaining);
+    assert_eq!(count2 as u32, expected_remaining);
 }

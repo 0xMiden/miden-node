@@ -703,7 +703,9 @@ impl Db {
         let cleanup_timeout = Duration::from_secs(30);
         let start = std::time::Instant::now();
 
-        let cleanup_task = self.transact("periodic cleanup", models::queries::cleanup_all_accounts);
+        let cleanup_task = self.transact("periodic cleanup", move |conn| {
+            models::queries::cleanup_all_accounts(conn, block_num)
+        });
 
         // Run cleanup with timeout
         let result = tokio::time::timeout(cleanup_timeout, cleanup_task).await;

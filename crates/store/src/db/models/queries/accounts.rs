@@ -1174,186 +1174,91 @@ pub(crate) struct AccountStorageMapRowInsert {
 // CLEANUP FUNCTIONS
 // ================================================================================================
 
-/// Maximum number of historical entries to retain per key for vault assets and storage map
-/// values. This ensures we don't accumulate unbounded historical data in the database.
-/// The latest entry (marked with is_latest=true) is always retained regardless of this limit.
-pub const MAX_HISTORICAL_ENTRIES_PER_KEY: usize = 50;
+/// Number of historical blocks to retain for vault assets and storage map values.
+/// Entries older than `chain_tip - HISTORICAL_BLOCK_RETENTION` will be deleted,
+/// except for entries marked with `is_latest=true` which are always retained.
+pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 
-/// Clean up old vault asset entries for a specific account, keeping only the latest entry
-/// (is_latest=true) and up to MAX_HISTORICAL_ENTRIES_PER_KEY older entries per
-/// (account_id, vault_key) combination.
+/// Clean up old vault asset entries for a specific account, deleting entries older than
+/// the retention window.
 ///
-/// # Parameters
-/// * `conn`: Database connection
-/// * `account_id`: The account to clean up
-///
-/// # Returns
-/// The number of rows deleted
-///
-/// # Notes
-/// This function ensures we don't accumulate unbounded historical data while preserving:
-/// - The latest state for each vault key (is_latest=true)
-/// - Up to MAX_HISTORICAL_ENTRIES_PER_KEY historical entries per vault key
+/// Keeps entries where `block_num >= cutoff_block` OR `is_latest = true`.
 #[cfg(test)]
 pub(crate) fn cleanup_old_account_vault_assets(
     conn: &mut SqliteConnection,
     account_id: AccountId,
+    chain_tip: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     let account_id_bytes = account_id.to_bytes();
-    let limit = i64::try_from(MAX_HISTORICAL_ENTRIES_PER_KEY)
-        .expect("MAX_HISTORICAL_ENTRIES_PER_KEY should fit in i64");
-
-    // This query:
-    // 1. For each vault_key, ranks only non-latest entries by block_num descending (newest first)
-    // 2. Keeps entries where rank <= MAX_HISTORICAL_ENTRIES_PER_KEY
-    // 3. Deletes everything else using the primary key (account_id, block_num, vault_key)
-    // Note: The latest entry (is_latest=true) is never ranked and never deleted
+    let cutoff_block = chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION) as i64;
 
     diesel::sql_query(
         r#"
         DELETE FROM account_vault_assets
-        WHERE (account_id, block_num, vault_key) IN (
-            SELECT account_id, block_num, vault_key FROM (
-                SELECT
-                    account_id,
-                    block_num,
-                    vault_key,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY vault_key
-                        ORDER BY block_num DESC
-                    ) as row_num
-                FROM account_vault_assets
-                WHERE account_id = ?1 AND is_latest = 0
-            )
-            WHERE row_num > ?2
-        )
+        WHERE account_id = ?1 AND block_num < ?2 AND is_latest = 0
         "#,
     )
     .bind::<diesel::sql_types::Binary, _>(&account_id_bytes)
-    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .bind::<diesel::sql_types::BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)
 }
 
-/// Clean up old storage map value entries for a specific account, keeping only the latest entry
-/// (is_latest=true) and up to MAX_HISTORICAL_ENTRIES_PER_KEY older entries per
-/// (account_id, slot_name, key) combination.
+/// Clean up old storage map value entries for a specific account, deleting entries older than
+/// the retention window.
 ///
-/// # Parameters
-/// * `conn`: Database connection
-/// * `account_id`: The account to clean up
-///
-/// # Returns
-/// The number of rows deleted
-///
-/// # Notes
-/// This function ensures we don't accumulate unbounded historical data while preserving:
-/// - The latest state for each (slot_name, key) combination (is_latest=true)
-/// - Up to MAX_HISTORICAL_ENTRIES_PER_KEY historical entries per (slot_name, key)
+/// Keeps entries where `block_num >= cutoff_block` OR `is_latest = true`.
 #[cfg(test)]
 pub(crate) fn cleanup_old_account_storage_map_values(
     conn: &mut SqliteConnection,
     account_id: AccountId,
+    chain_tip: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     let account_id_bytes = account_id.to_bytes();
-    let limit = i64::try_from(MAX_HISTORICAL_ENTRIES_PER_KEY)
-        .expect("MAX_HISTORICAL_ENTRIES_PER_KEY should fit in i64");
-
-    // This query:
-    // 1. For each (slot_name, key) combination, ranks only non-latest entries by block_num
-    //    descending (newest first)
-    // 2. Keeps entries where rank <= MAX_HISTORICAL_ENTRIES_PER_KEY
-    // 3. Deletes everything else using the primary key (account_id, block_num, slot_name, key)
-    // Note: The latest entry (is_latest=true) is never ranked and never deleted
+    let cutoff_block = chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION) as i64;
 
     diesel::sql_query(
         r#"
         DELETE FROM account_storage_map_values
-        WHERE (account_id, block_num, slot_name, key) IN (
-            SELECT account_id, block_num, slot_name, key FROM (
-                SELECT
-                    account_id,
-                    block_num,
-                    slot_name,
-                    key,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY slot_name, key
-                        ORDER BY block_num DESC
-                    ) as row_num
-                FROM account_storage_map_values
-                WHERE account_id = ?1 AND is_latest = 0
-            )
-            WHERE row_num > ?2
-        )
+        WHERE account_id = ?1 AND block_num < ?2 AND is_latest = 0
         "#,
     )
     .bind::<diesel::sql_types::Binary, _>(&account_id_bytes)
-    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .bind::<diesel::sql_types::BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)
 }
 
-/// Clean up old entries for all accounts in the database using efficient batched SQL.
+/// Clean up old entries for all accounts, deleting entries older than the retention window.
 ///
-/// Uses window functions to delete old historical entries across ALL accounts in a single
-/// SQL statement per table, avoiding the need to iterate through accounts.
+/// Deletes rows where `block_num < chain_tip - HISTORICAL_BLOCK_RETENTION` and `is_latest = false`.
+/// This is a simple and efficient approach that doesn't require window functions.
 ///
 /// # Returns
 /// A tuple of (vault_assets_deleted, storage_map_values_deleted)
-pub fn cleanup_all_accounts(conn: &mut SqliteConnection) -> Result<(usize, usize), DatabaseError> {
-    let limit = i64::try_from(MAX_HISTORICAL_ENTRIES_PER_KEY)
-        .expect("MAX_HISTORICAL_ENTRIES_PER_KEY should fit in i64");
+pub fn cleanup_all_accounts(
+    conn: &mut SqliteConnection,
+    chain_tip: BlockNumber,
+) -> Result<(usize, usize), DatabaseError> {
+    let cutoff_block = chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION) as i64;
 
-    // Delete old vault assets across ALL accounts in a single query.
-    // Window function partitions by (account_id, vault_key) and ranks by block_num DESC.
     let vault_deleted = diesel::sql_query(
         r#"
         DELETE FROM account_vault_assets
-        WHERE (account_id, block_num, vault_key) IN (
-            SELECT account_id, block_num, vault_key FROM (
-                SELECT
-                    account_id,
-                    block_num,
-                    vault_key,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY account_id, vault_key
-                        ORDER BY block_num DESC
-                    ) as row_num
-                FROM account_vault_assets
-                WHERE is_latest = 0
-            )
-            WHERE row_num > ?1
-        )
+        WHERE block_num < ?1 AND is_latest = 0
         "#,
     )
-    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .bind::<diesel::sql_types::BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)?;
 
-    // Delete old storage map values across ALL accounts in a single query.
-    // Window function partitions by (account_id, slot_name, key) and ranks by block_num DESC.
     let storage_deleted = diesel::sql_query(
         r#"
         DELETE FROM account_storage_map_values
-        WHERE (account_id, block_num, slot_name, key) IN (
-            SELECT account_id, block_num, slot_name, key FROM (
-                SELECT
-                    account_id,
-                    block_num,
-                    slot_name,
-                    key,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY account_id, slot_name, key
-                        ORDER BY block_num DESC
-                    ) as row_num
-                FROM account_storage_map_values
-                WHERE is_latest = 0
-            )
-            WHERE row_num > ?1
-        )
+        WHERE block_num < ?1 AND is_latest = 0
         "#,
     )
-    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .bind::<diesel::sql_types::BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)?;
 

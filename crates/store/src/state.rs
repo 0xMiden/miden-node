@@ -573,7 +573,8 @@ impl State {
             forest.apply_block_updates(block_num, account_deltas)?;
 
             // Prune old entries from the in-memory forest while holding both locks
-            let (vault_pruned, storage_roots_pruned, storage_entries_pruned) = forest.prune();
+            let (vault_pruned, storage_roots_pruned, storage_entries_pruned) =
+                forest.prune(block_num);
             if vault_pruned > 0 || storage_roots_pruned > 0 || storage_entries_pruned > 0 {
                 tracing::debug!(
                     target: COMPONENT,

@@ -465,16 +465,20 @@ fn test_open_storage_map_returns_limit_exceeded_for_too_many_keys() {
 // PRUNING TESTS
 // ================================================================================================
 
+/// Chain length used in pruning tests - must be > HISTORICAL_BLOCK_RETENTION for meaningful tests.
+const TEST_CHAIN_LENGTH: u32 = 100;
+
 #[test]
 fn test_prune_vault_roots_removes_old_entries() {
+    use super::HISTORICAL_BLOCK_RETENTION;
+
     let mut forest = InnerForest::new();
     let account_id = dummy_account();
     let faucet_id = dummy_faucet();
 
-    // Add entries for MAX_HISTORICAL_BLOCKS_PER_KEY + 10 blocks
-    let num_blocks = MAX_HISTORICAL_BLOCKS_PER_KEY + 10;
-    for i in 1..=num_blocks {
-        let block_num = BlockNumber::from(i as u32);
+    // Add entries for blocks 1-TEST_CHAIN_LENGTH
+    for i in 1..=TEST_CHAIN_LENGTH {
+        let block_num = BlockNumber::from(i);
         let amount = (i * 100) as u64;
         let mut vault_delta = AccountVaultDelta::default();
         vault_delta.add_asset(dummy_fungible_asset(faucet_id, amount)).unwrap();
@@ -483,22 +487,25 @@ fn test_prune_vault_roots_removes_old_entries() {
     }
 
     // Verify we have all entries before pruning
-    assert_eq!(forest.vault_roots.len(), num_blocks);
+    assert_eq!(forest.vault_roots.len(), TEST_CHAIN_LENGTH as usize);
 
-    // Prune
-    let (vault_removed, ..) = forest.prune();
+    // Prune with chain_tip at TEST_CHAIN_LENGTH (cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION)
+    let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
+    let (vault_removed, ..) = forest.prune(chain_tip);
 
-    // Should have removed 10 entries
-    assert_eq!(vault_removed, 10);
+    // Should have removed blocks 1 to cutoff-1
+    let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    let expected_removed = cutoff - 1; // blocks 1 to cutoff-1
+    assert_eq!(vault_removed, expected_removed as usize);
 
-    // Should have exactly MAX_HISTORICAL_BLOCKS_PER_KEY entries remaining
-    assert_eq!(forest.vault_roots.len(), MAX_HISTORICAL_BLOCKS_PER_KEY);
+    // Should have blocks cutoff to TEST_CHAIN_LENGTH remaining
+    let expected_remaining = TEST_CHAIN_LENGTH - expected_removed;
+    assert_eq!(forest.vault_roots.len(), expected_remaining as usize);
 
-    // The remaining entries should be the most recent ones
-    let remaining_blocks: Vec<_> = forest.vault_roots.keys().map(|(_, b)| b.as_u32()).collect();
+    // The remaining entries should be the most recent ones (>= cutoff)
+    let remaining_blocks = Vec::from_iter(forest.vault_roots.keys().map(|(_, b)| b.as_u32()));
     let oldest_remaining = *remaining_blocks.iter().min().unwrap();
-    // Oldest remaining should be block 11 (since we kept the most recent 50 out of 60)
-    assert_eq!(oldest_remaining, 11);
+    assert_eq!(oldest_remaining, cutoff);
 }
 
 #[test]
@@ -507,16 +514,17 @@ fn test_prune_storage_map_roots_removes_old_entries() {
 
     use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
 
+    use super::HISTORICAL_BLOCK_RETENTION;
+
     let mut forest = InnerForest::new();
     let account_id = dummy_account();
     let slot_name = StorageSlotName::mock(3);
 
-    // Add entries for MAX_HISTORICAL_BLOCKS_PER_KEY + 5 blocks
-    let num_blocks = MAX_HISTORICAL_BLOCKS_PER_KEY + 5;
-    for i in 1..=num_blocks {
-        let block_num = BlockNumber::from(i as u32);
-        let key = Word::from([i as u32, 0, 0, 0]);
-        let value = Word::from([0, 0, 0, i as u32]);
+    // Add entries for blocks 1-TEST_CHAIN_LENGTH
+    for i in 1..=TEST_CHAIN_LENGTH {
+        let block_num = BlockNumber::from(i);
+        let key = Word::from([i, 0, 0, 0]);
+        let value = Word::from([0, 0, 0, i]);
 
         let mut map_delta = StorageMapDelta::default();
         map_delta.insert(key, value);
@@ -527,28 +535,32 @@ fn test_prune_storage_map_roots_removes_old_entries() {
     }
 
     // Verify we have all entries before pruning
-    assert_eq!(forest.storage_map_roots.len(), num_blocks);
+    assert_eq!(forest.storage_map_roots.len(), TEST_CHAIN_LENGTH as usize);
 
-    // Prune
-    let (_, storage_roots_removed, storage_entries_removed) = forest.prune();
+    // Prune with chain_tip at TEST_CHAIN_LENGTH
+    let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
+    let (_, storage_roots_removed, storage_entries_removed) = forest.prune(chain_tip);
 
-    // Should have removed 5 entries from each structure
-    assert_eq!(storage_roots_removed, 5);
-    assert_eq!(storage_entries_removed, 5);
+    // Should have removed blocks 1 to cutoff-1
+    let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    let expected_removed = cutoff - 1;
+    assert_eq!(storage_roots_removed, expected_removed as usize);
+    assert_eq!(storage_entries_removed, expected_removed as usize);
 
-    // Should have exactly MAX_HISTORICAL_BLOCKS_PER_KEY entries remaining
-    assert_eq!(forest.storage_map_roots.len(), MAX_HISTORICAL_BLOCKS_PER_KEY);
-    assert_eq!(forest.storage_entries.len(), MAX_HISTORICAL_BLOCKS_PER_KEY);
+    // Should have blocks cutoff to TEST_CHAIN_LENGTH remaining
+    let expected_remaining = TEST_CHAIN_LENGTH - expected_removed;
+    assert_eq!(forest.storage_map_roots.len(), expected_remaining as usize);
+    assert_eq!(forest.storage_entries.len(), expected_remaining as usize);
 }
 
 #[test]
-fn test_prune_does_nothing_when_under_limit() {
+fn test_prune_does_nothing_when_chain_is_young() {
     let mut forest = InnerForest::new();
     let account_id = dummy_account();
     let faucet_id = dummy_faucet();
 
-    // Add fewer entries than the limit
-    let num_blocks = 10;
+    // Add entries for blocks 1-10
+    let num_blocks = 10usize;
     for i in 1..=num_blocks {
         let block_num = BlockNumber::from(i as u32);
         let mut vault_delta = AccountVaultDelta::default();
@@ -559,8 +571,9 @@ fn test_prune_does_nothing_when_under_limit() {
         forest.update_account(block_num, &delta).unwrap();
     }
 
-    // Prune
-    let (vault_removed, storage_roots_removed, storage_entries_removed) = forest.prune();
+    // Prune with chain_tip at 10 (cutoff = 10 - 50 = 0, nothing to remove)
+    let chain_tip = BlockNumber::from(10);
+    let (vault_removed, storage_roots_removed, storage_entries_removed) = forest.prune(chain_tip);
 
     // Nothing should be removed
     assert_eq!(vault_removed, 0);
@@ -573,16 +586,16 @@ fn test_prune_does_nothing_when_under_limit() {
 
 #[test]
 fn test_prune_handles_multiple_accounts() {
+    use super::HISTORICAL_BLOCK_RETENTION;
+
     let mut forest = InnerForest::new();
     let account1 = dummy_account();
     let account2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let faucet_id = dummy_faucet();
 
-    // Add entries for multiple accounts, each exceeding the limit
-    let num_blocks = MAX_HISTORICAL_BLOCKS_PER_KEY + 5;
-
-    for i in 1..=num_blocks {
-        let block_num = BlockNumber::from(i as u32);
+    // Add entries for blocks 1-TEST_CHAIN_LENGTH for both accounts
+    for i in 1..=TEST_CHAIN_LENGTH {
+        let block_num = BlockNumber::from(i);
         let amount = (i * 100) as u64;
 
         // Account 1
@@ -599,17 +612,21 @@ fn test_prune_handles_multiple_accounts() {
     }
 
     // Verify we have entries for both accounts before pruning
-    assert_eq!(forest.vault_roots.len(), num_blocks * 2);
+    assert_eq!(forest.vault_roots.len(), (TEST_CHAIN_LENGTH * 2) as usize);
 
-    // Prune
-    let (vault_removed, ..) = forest.prune();
+    // Prune with chain_tip at TEST_CHAIN_LENGTH
+    let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
+    let (vault_removed, ..) = forest.prune(chain_tip);
 
-    // Should have removed 5 entries from each account = 10 total
-    assert_eq!(vault_removed, 10);
+    // Should have removed blocks 1 to cutoff-1 from both accounts
+    let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    let expected_removed_per_account = cutoff - 1;
+    assert_eq!(vault_removed, (expected_removed_per_account * 2) as usize);
 
-    // Each account should have exactly MAX_HISTORICAL_BLOCKS_PER_KEY entries
+    // Each account should have blocks cutoff to TEST_CHAIN_LENGTH remaining
+    let expected_remaining_per_account = TEST_CHAIN_LENGTH - expected_removed_per_account;
     let account1_entries = forest.vault_roots.keys().filter(|(id, _)| *id == account1).count();
     let account2_entries = forest.vault_roots.keys().filter(|(id, _)| *id == account2).count();
-    assert_eq!(account1_entries, MAX_HISTORICAL_BLOCKS_PER_KEY);
-    assert_eq!(account2_entries, MAX_HISTORICAL_BLOCKS_PER_KEY);
+    assert_eq!(account1_entries, expected_remaining_per_account as usize);
+    assert_eq!(account2_entries, expected_remaining_per_account as usize);
 }

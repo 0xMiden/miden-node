@@ -16,9 +16,10 @@ mod tests;
 // CONSTANTS
 // ================================================================================================
 
-/// Maximum number of historical block entries to retain per account key in the in-memory forest.
+/// Number of historical blocks to retain in the in-memory forest.
+/// Entries older than `chain_tip - HISTORICAL_BLOCK_RETENTION` will be pruned.
 /// This matches the database retention policy in [`crate::db::models::queries::accounts`].
-pub const MAX_HISTORICAL_BLOCKS_PER_KEY: usize = 50;
+pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 
 // ERRORS
 // ================================================================================================
@@ -455,13 +456,7 @@ impl InnerForest {
 
     /// Prunes old entries from the in-memory forest data structures.
     ///
-    /// Removes historical entries exceeding the retention limit while preserving the most recent
-    /// entries for each key:
-    /// - For vault_roots: keeps at most MAX_HISTORICAL_BLOCKS_PER_KEY entries per account_id
-    /// - For storage_map_roots: keeps at most MAX_HISTORICAL_BLOCKS_PER_KEY entries per
-    ///   (account_id, slot_name)
-    /// - For storage_entries: keeps at most MAX_HISTORICAL_BLOCKS_PER_KEY entries per (account_id,
-    ///   slot_name)
+    /// Removes entries where `block_num < chain_tip - HISTORICAL_BLOCK_RETENTION`.
     ///
     /// The SmtForest itself is not pruned directly as it uses structural sharing and old roots
     /// are naturally garbage-collected when they become unreachable.
@@ -470,10 +465,16 @@ impl InnerForest {
     ///
     /// A tuple containing the number of entries removed from:
     /// (vault_roots_removed, storage_map_roots_removed, storage_entries_removed)
-    pub(crate) fn prune(&mut self) -> (usize, usize, usize) {
-        let vault_removed = Self::prune_map_by_account(&mut self.vault_roots);
-        let storage_roots_removed = Self::prune_map_by_account_slot(&mut self.storage_map_roots);
-        let storage_entries_removed = Self::prune_map_by_account_slot(&mut self.storage_entries);
+    pub(crate) fn prune(&mut self, chain_tip: BlockNumber) -> (usize, usize, usize) {
+        let cutoff_block = BlockNumber::from(
+            chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION),
+        );
+
+        let vault_removed = Self::prune_map_by_block(&mut self.vault_roots, cutoff_block);
+        let storage_roots_removed =
+            Self::prune_map_by_block_slot(&mut self.storage_map_roots, cutoff_block);
+        let storage_entries_removed =
+            Self::prune_map_by_block_slot(&mut self.storage_entries, cutoff_block);
 
         if vault_removed > 0 || storage_roots_removed > 0 || storage_entries_removed > 0 {
             tracing::info!(
@@ -481,6 +482,7 @@ impl InnerForest {
                 vault_roots_removed = vault_removed,
                 storage_map_roots_removed = storage_roots_removed,
                 storage_entries_removed = storage_entries_removed,
+                cutoff_block = cutoff_block.as_u32(),
                 "Forest pruning completed"
             );
         }
@@ -498,87 +500,42 @@ impl InnerForest {
         (vault_removed, storage_roots_removed, storage_entries_removed)
     }
 
-    /// Prunes a map keyed by (AccountId, BlockNumber), keeping at most
-    /// MAX_HISTORICAL_BLOCKS_PER_KEY entries per account.
-    fn prune_map_by_account<V>(map: &mut BTreeMap<(AccountId, BlockNumber), V>) -> usize {
-        // Group block numbers by account_id
-        let mut entries_by_account: BTreeMap<AccountId, Vec<BlockNumber>> = BTreeMap::new();
-        for (account_id, block_num) in map.keys() {
-            entries_by_account.entry(*account_id).or_default().push(*block_num);
-        }
+    /// Prunes entries from a map keyed by (AccountId, BlockNumber) where block_num < cutoff.
+    fn prune_map_by_block<V>(
+        map: &mut BTreeMap<(AccountId, BlockNumber), V>,
+        cutoff_block: BlockNumber,
+    ) -> usize {
+        // BTreeMap iteration is sorted by key, so we can efficiently find all entries to remove.
+        // Keys are (AccountId, BlockNumber), but we need to remove across all accounts.
+        let keys_to_remove: Vec<_> = map
+            .keys()
+            .filter(|(_, block_num)| *block_num < cutoff_block)
+            .copied()
+            .collect();
 
-        let mut removed = 0;
-        for (account_id, mut block_nums) in entries_by_account {
-            let len = block_nums.len();
-            if len <= MAX_HISTORICAL_BLOCKS_PER_KEY {
-                continue;
-            }
-
-            // Find the cutoff block number using O(n) selection algorithm.
-            // We want to keep the MAX_HISTORICAL_BLOCKS_PER_KEY largest block numbers.
-            // select_nth_unstable_by partitions so that element at index is in sorted position.
-            // After this, elements at indices >= cutoff_idx are the largest.
-            let cutoff_idx = len - MAX_HISTORICAL_BLOCKS_PER_KEY;
-            block_nums.select_nth_unstable(cutoff_idx);
-            let cutoff_block = block_nums[cutoff_idx];
-
-            // Remove entries with block_num < cutoff_block
-            // Since BTreeMap is sorted, we can use range to find entries to remove.
-            let keys_to_remove: Vec<_> = map
-                .range((account_id, BlockNumber::GENESIS)..(account_id, cutoff_block))
-                .map(|(k, _)| *k)
-                .collect();
-
-            for key in keys_to_remove {
-                map.remove(&key);
-                removed += 1;
-            }
+        let removed = keys_to_remove.len();
+        for key in keys_to_remove {
+            map.remove(&key);
         }
 
         removed
     }
 
-    /// Prunes a map keyed by (AccountId, StorageSlotName, BlockNumber), keeping at most
-    /// MAX_HISTORICAL_BLOCKS_PER_KEY entries per (account_id, slot_name).
-    fn prune_map_by_account_slot<V>(
+    /// Prunes entries from a map keyed by (AccountId, StorageSlotName, BlockNumber)
+    /// where block_num < cutoff.
+    fn prune_map_by_block_slot<V>(
         map: &mut BTreeMap<(AccountId, StorageSlotName, BlockNumber), V>,
+        cutoff_block: BlockNumber,
     ) -> usize {
-        // Group block numbers by (account_id, slot_name)
-        // Clone slot_name to avoid holding references to map during mutation
-        let mut entries_by_key: BTreeMap<(AccountId, StorageSlotName), Vec<BlockNumber>> =
-            BTreeMap::new();
-        for (account_id, slot_name, block_num) in map.keys() {
-            entries_by_key
-                .entry((*account_id, slot_name.clone()))
-                .or_default()
-                .push(*block_num);
-        }
+        let keys_to_remove: Vec<_> = map
+            .keys()
+            .filter(|(_, _, block_num)| *block_num < cutoff_block)
+            .cloned()
+            .collect();
 
-        let mut removed = 0;
-        for ((account_id, slot_name), mut block_nums) in entries_by_key {
-            let len = block_nums.len();
-            if len <= MAX_HISTORICAL_BLOCKS_PER_KEY {
-                continue;
-            }
-
-            // Find the cutoff block number using O(n) selection algorithm
-            let cutoff_idx = len - MAX_HISTORICAL_BLOCKS_PER_KEY;
-            block_nums.select_nth_unstable(cutoff_idx);
-            let cutoff_block = block_nums[cutoff_idx];
-
-            // Remove entries with block_num < cutoff_block
-            let keys_to_remove: Vec<_> = map
-                .range(
-                    (account_id, slot_name.clone(), BlockNumber::GENESIS)
-                        ..(account_id, slot_name.clone(), cutoff_block),
-                )
-                .map(|(k, _)| k.clone())
-                .collect();
-
-            for key in keys_to_remove {
-                map.remove(&key);
-                removed += 1;
-            }
+        let removed = keys_to_remove.len();
+        for key in keys_to_remove {
+            map.remove(&key);
         }
 
         removed

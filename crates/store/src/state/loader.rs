@@ -11,13 +11,13 @@
 use std::num::NonZeroUsize;
 use std::path::Path;
 
-use miden_protocol::{Felt, FieldElement, Word};
 use miden_protocol::block::account_tree::account_id_to_smt_key;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockHeader, BlockNumber, Blockchain};
 #[cfg(not(feature = "rocksdb"))]
 use miden_protocol::crypto::merkle::smt::MemoryStorage;
 use miden_protocol::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
+use miden_protocol::{Felt, FieldElement, Word};
 #[cfg(feature = "rocksdb")]
 use tracing::info;
 use tracing::instrument;
@@ -126,7 +126,7 @@ impl StorageLoader for MemoryStorage {
     }
 
     async fn load_account_tree(
-        mut self,
+        self,
         db: &mut Db,
     ) -> Result<LargeSmt<Self>, StateInitializationError> {
         let mut smt = LargeSmt::with_entries(self, std::iter::empty())
@@ -353,9 +353,7 @@ pub async fn load_smt_forest(
     let mut cursor = None;
 
     loop {
-        let page = db
-            .select_public_account_ids_paged(PUBLIC_ACCOUNT_IDS_PAGE_SIZE, cursor)
-            .await?;
+        let page = db.select_public_account_ids_paged(PUBLIC_ACCOUNT_IDS_PAGE_SIZE, cursor).await?;
 
         if page.account_ids.is_empty() {
             break;

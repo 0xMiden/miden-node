@@ -30,9 +30,11 @@ use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
 use crate::db::migrations::apply_migrations;
 use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::queries::StorageMapValuesPage;
-pub use crate::db::models::queries::AccountCommitmentsPage;
-pub use crate::db::models::queries::NullifiersPage;
-pub use crate::db::models::queries::PublicAccountIdsPage;
+pub use crate::db::models::queries::{
+    AccountCommitmentsPage,
+    NullifiersPage,
+    PublicAccountIdsPage,
+};
 use crate::db::models::{Page, queries};
 use crate::errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError};
 use crate::genesis::GenesisBlock;

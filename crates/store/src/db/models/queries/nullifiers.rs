@@ -176,13 +176,11 @@ pub(crate) fn select_nullifiers_paged(
     #[allow(clippy::cast_possible_wrap)]
     let limit = (page_size.get() + 1) as i64;
 
-    let mut query = SelectDsl::select(
-        schema::nullifiers::table,
-        NullifierWithoutPrefixRawRow::as_select(),
-    )
-    .order_by(schema::nullifiers::nullifier.asc())
-    .limit(limit)
-    .into_boxed();
+    let mut query =
+        SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
+            .order_by(schema::nullifiers::nullifier.asc())
+            .limit(limit)
+            .into_boxed();
 
     if let Some(cursor) = after_nullifier {
         query = query.filter(schema::nullifiers::nullifier.gt(cursor.to_bytes()));

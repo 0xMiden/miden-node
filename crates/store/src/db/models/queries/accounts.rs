@@ -246,44 +246,6 @@ pub(crate) fn select_account_by_id_prefix(
     }
 }
 
-/// Select all account commitments from the DB using the given [`SqliteConnection`].
-///
-/// # Returns
-///
-/// The vector with the account id and corresponding commitment, or an error.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT
-///     account_id,
-///     account_commitment
-/// FROM
-///     accounts
-/// WHERE
-///     is_latest = 1
-/// ORDER BY
-///     block_num ASC
-/// ```
-#[cfg(test)]
-pub(crate) fn select_all_account_commitments(
-    conn: &mut SqliteConnection,
-) -> Result<Vec<(AccountId, Word)>, DatabaseError> {
-    let raw = SelectDsl::select(
-        schema::accounts::table,
-        (schema::accounts::account_id, schema::accounts::account_commitment),
-    )
-    .filter(schema::accounts::is_latest.eq(true))
-    .order_by(schema::accounts::block_num.asc())
-    .load::<(Vec<u8>, Vec<u8>)>(conn)?;
-
-    Result::<Vec<_>, DatabaseError>::from_iter(raw.into_iter().map(
-        |(ref account, ref commitment)| {
-            Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
-        },
-    ))
-}
-
 /// Page of account commitments returned by [`select_account_commitments_paged`].
 #[derive(Debug)]
 pub struct AccountCommitmentsPage {

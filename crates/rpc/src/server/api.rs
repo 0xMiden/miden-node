@@ -487,6 +487,8 @@ impl api_server::Api for RpcService {
         &self,
         request: Request<proto::rpc::AccountRequest>,
     ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
+        use proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData::MapKeys as ProtoMapKeys;
+
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -494,7 +496,7 @@ impl api_server::Api for RpcService {
         // Validate storage map key limits before forwarding to store
         if let Some(details) = &request.details {
             for storage_map in &details.storage_maps {
-                if let Some(proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData::MapKeys(keys)) = &storage_map.slot_data {
+                if let Some(ProtoMapKeys(keys)) = &storage_map.slot_data {
                     check::<QueryParamStorageMapKeyLimit>(keys.map_keys.len())?;
                 }
             }

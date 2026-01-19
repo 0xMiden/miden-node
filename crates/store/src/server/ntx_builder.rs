@@ -1,11 +1,13 @@
 use std::num::{NonZero, TryFromIntError};
 
+use miden_crypto::merkle::smt::SmtProof;
 use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::store::ntx_builder_server;
 use miden_node_utils::ErrorReport;
 use miden_protocol::Word;
+use miden_protocol::asset::AssetVaultKey;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
 use tonic::{Request, Response, Status};
@@ -13,7 +15,12 @@ use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::db::models::Page;
-use crate::errors::{GetNetworkAccountIdsError, GetNoteScriptByRootError};
+use crate::errors::{
+    GetNetworkAccountIdsError,
+    GetNoteScriptByRootError,
+    GetStorageMapWitnessError,
+    GetVaultAssetWitnessesError,
+};
 use crate::server::api::{
     StoreApi,
     internal_error,
@@ -247,27 +254,20 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::VaultAssetWitnessesResponse>, Status> {
         let request = request.into_inner();
 
-        let account_id =
-            read_account_id::<crate::errors::GetVaultAssetWitnessesError>(request.account_id)
-                .map_err(internal_error)?;
+        let account_id = read_account_id::<GetVaultAssetWitnessesError>(request.account_id)
+            .map_err(internal_error)?;
 
-        let vault_root = read_root::<crate::errors::GetVaultAssetWitnessesError>(
-            request.vault_root,
-            "VaultRoot",
-        )
-        .map_err(internal_error)?;
+        let vault_root = read_root::<GetVaultAssetWitnessesError>(request.vault_root, "VaultRoot")
+            .map_err(internal_error)?;
 
         // Convert vault keys from protobuf to AssetVaultKey.
         let vault_keys = request
             .vault_keys
             .into_iter()
             .map(|key_digest| {
-                let word = read_root::<crate::errors::GetVaultAssetWitnessesError>(
-                    Some(key_digest),
-                    "VaultKey",
-                )
-                .map_err(internal_error)?;
-                Ok(miden_protocol::asset::AssetVaultKey::new_unchecked(word))
+                let word = read_root::<GetVaultAssetWitnessesError>(Some(key_digest), "VaultKey")
+                    .map_err(internal_error)?;
+                Ok(AssetVaultKey::new_unchecked(word))
             })
             .collect::<Result<std::collections::BTreeSet<_>, Status>>()?;
 
@@ -316,17 +316,14 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::StorageMapWitnessResponse>, Status> {
         let request = request.into_inner();
 
-        let account_id =
-            read_account_id::<crate::errors::GetStorageMapWitnessError>(request.account_id)
-                .map_err(internal_error)?;
+        let account_id = read_account_id::<GetStorageMapWitnessError>(request.account_id)
+            .map_err(internal_error)?;
 
-        let map_root =
-            read_root::<crate::errors::GetStorageMapWitnessError>(request.map_root, "MapRoot")
-                .map_err(internal_error)?;
+        let map_root = read_root::<GetStorageMapWitnessError>(request.map_root, "MapRoot")
+            .map_err(internal_error)?;
 
-        let map_key =
-            read_root::<crate::errors::GetStorageMapWitnessError>(request.map_key, "MapKey")
-                .map_err(internal_error)?;
+        let map_key = read_root::<GetStorageMapWitnessError>(request.map_key, "MapKey")
+            .map_err(internal_error)?;
 
         let storage_witness = self
             .state
@@ -336,7 +333,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         // Convert StorageMapWitness to protobuf format by extracting witness data.
         // StorageMapWitness can be converted to SmtProof to access its components.
-        let smt_proof: miden_protocol::crypto::merkle::smt::SmtProof = storage_witness.into();
+        let smt_proof: SmtProof = storage_witness.into();
         let (path, leaf) = smt_proof.into_parts();
 
         Ok(Response::new(proto::store::StorageMapWitnessResponse {

@@ -41,6 +41,7 @@ use miden_protocol::note::{
     Note,
     NoteAttachment,
     NoteDetails,
+    NoteExecutionHint,
     NoteHeader,
     NoteId,
     NoteMetadata,
@@ -67,7 +68,7 @@ use miden_protocol::utils::{Deserializable, Serializable};
 use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word};
 use miden_standards::account::auth::AuthRpoFalcon512;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::{NetworkAccountTarget, create_p2id_note};
 use pretty_assertions::assert_eq;
 use rand::Rng;
 
@@ -2218,5 +2219,59 @@ fn db_roundtrip_account_storage_with_maps() {
         account.commitment(),
         retrieved_account.commitment(),
         "Full account commitment must match after DB roundtrip"
+    );
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_note_metadata_with_attachment_roundtrip() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let (account_id, _) =
+        make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network);
+
+    let target = NetworkAccountTarget::new(account_id, NoteExecutionHint::Always)
+        .expect("NetworkAccountTarget creation should succeed for network account");
+    let attachment: NoteAttachment = target.into();
+
+    // Create NoteMetadata with the attachment
+    let metadata =
+        NoteMetadata::new(account_id, NoteType::Public, NoteTag::with_account_target(account_id))
+            .with_attachment(attachment.clone());
+
+    let note = NoteRecord {
+        block_num,
+        note_index: BlockNoteIndex::new(0, 0).unwrap(),
+        note_id: num_to_word(1),
+        note_commitment: num_to_word(1),
+        metadata: metadata.clone(),
+        details: None,
+        inclusion_path: SparseMerklePath::default(),
+    };
+
+    queries::insert_scripts(&mut conn, [&note]).unwrap();
+    queries::insert_notes(&mut conn, &[(note.clone(), None)]).unwrap();
+
+    // Fetch the note back and verify the attachment is preserved
+    let retrieved = queries::select_notes_by_id(&mut conn, &[NoteId::from_raw(note.note_id)])
+        .expect("select_notes_by_id should succeed");
+
+    assert_eq!(retrieved.len(), 1, "Should retrieve exactly one note");
+
+    let retrieved_metadata = &retrieved[0].metadata;
+    assert_eq!(
+        retrieved_metadata.attachment(),
+        metadata.attachment(),
+        "Attachment should be preserved after DB roundtrip"
+    );
+
+    let retrieved_target = NetworkAccountTarget::try_from(retrieved_metadata.attachment().clone())
+        .expect("Should be able to parse NetworkAccountTarget from retrieved attachment");
+    assert_eq!(
+        retrieved_target.target_id(),
+        account_id,
+        "NetworkAccountTarget should have the correct target account ID"
     );
 }

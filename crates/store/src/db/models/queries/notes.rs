@@ -36,7 +36,18 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNoteIndex, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
-    NoteAssets, NoteAttachment, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag, NoteType, Nullifier
+    NoteAssets,
+    NoteAttachment,
+    NoteDetails,
+    NoteId,
+    NoteInclusionProof,
+    NoteInputs,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteTag,
+    NoteType,
+    Nullifier,
 };
 use miden_protocol::utils::{Deserializable, Serializable};
 
@@ -564,6 +575,7 @@ pub struct NoteRecordWithScriptRawJoined {
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
+    pub attachment: Vec<u8>,
     // #[diesel(embed)]
     // pub metadata: NoteMetadataRaw,
     pub assets: Option<Vec<u8>>,
@@ -587,6 +599,7 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             note_type,
             sender,
             tag,
+            attachment,
             assets,
             inputs,
             serial_num,
@@ -601,6 +614,7 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             note_type,
             sender,
             tag,
+            attachment,
             assets,
             inputs,
             serial_num,
@@ -627,6 +641,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             note_type,
             sender,
             tag,
+            attachment,
             // metadata ^^^,
             assets,
             inputs,
@@ -637,7 +652,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             ..
         } = raw;
         let index = BlockNoteIndexRawRow { batch_index, note_index };
-        let metadata = NoteMetadataRawRow { note_type, sender, tag };
+        let metadata = NoteMetadataRawRow { note_type, sender, tag, attachment };
         let details = NoteDetailsRawRow { assets, inputs, serial_num };
 
         let metadata = metadata.try_into()?;
@@ -690,6 +705,7 @@ pub struct NoteRecordRawRow {
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
+    pub attachment: Vec<u8>,
 
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,

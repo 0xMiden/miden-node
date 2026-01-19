@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Queryable, QueryableByName};
@@ -280,6 +281,78 @@ pub(crate) fn select_all_account_commitments(
             Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
         },
     ))
+}
+
+/// Page of account commitments returned by [`select_account_commitments_paged`].
+#[derive(Debug)]
+pub struct AccountCommitmentsPage {
+    /// The account commitments in this page.
+    pub commitments: Vec<(AccountId, Word)>,
+    /// If `Some`, there are more results. Use this as the `after_account_id` for the next page.
+    pub next_cursor: Option<AccountId>,
+}
+
+/// Selects account commitments with pagination.
+///
+/// Returns up to `page_size` account commitments, starting after `after_account_id` if provided.
+/// Results are ordered by `account_id` for stable pagination.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment
+/// FROM
+///     accounts
+/// WHERE
+///     is_latest = 1
+///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
+/// ORDER BY
+///     account_id ASC
+/// LIMIT :page_size + 1
+/// ```
+pub(crate) fn select_account_commitments_paged(
+    conn: &mut SqliteConnection,
+    page_size: NonZeroUsize,
+    after_account_id: Option<AccountId>,
+) -> Result<AccountCommitmentsPage, DatabaseError> {
+    use miden_protocol::utils::Serializable;
+
+    // Fetch one extra to determine if there are more results
+    #[allow(clippy::cast_possible_wrap)]
+    let limit = (page_size.get() + 1) as i64;
+
+    let mut query = SelectDsl::select(
+        schema::accounts::table,
+        (schema::accounts::account_id, schema::accounts::account_commitment),
+    )
+    .filter(schema::accounts::is_latest.eq(true))
+    .order_by(schema::accounts::account_id.asc())
+    .limit(limit)
+    .into_boxed();
+
+    if let Some(cursor) = after_account_id {
+        query = query.filter(schema::accounts::account_id.gt(cursor.to_bytes()));
+    }
+
+    let raw = query.load::<(Vec<u8>, Vec<u8>)>(conn)?;
+
+    let mut commitments = Result::<Vec<_>, DatabaseError>::from_iter(raw.into_iter().map(
+        |(ref account, ref commitment)| {
+            Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
+        },
+    ))?;
+
+    // If we got more than page_size, there are more results
+    let next_cursor = if commitments.len() > page_size.get() {
+        commitments.pop(); // Remove the extra element
+        commitments.last().map(|(id, _)| *id)
+    } else {
+        None
+    };
+
+    Ok(AccountCommitmentsPage { commitments, next_cursor })
 }
 
 /// Select all account IDs that have public state.

@@ -30,6 +30,8 @@ use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
 use crate::db::migrations::apply_migrations;
 use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::queries::StorageMapValuesPage;
+pub use crate::db::models::queries::AccountCommitmentsPage;
+pub use crate::db::models::queries::NullifiersPage;
 use crate::db::models::{Page, queries};
 use crate::errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError};
 use crate::genesis::GenesisBlock;
@@ -334,6 +336,21 @@ impl Db {
         .await
     }
 
+    /// Returns a page of nullifiers for tree rebuilding.
+    ///
+    /// Use `after_nullifier` to paginate through all nullifiers.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_nullifiers_paged(
+        &self,
+        page_size: std::num::NonZeroUsize,
+        after_nullifier: Option<Nullifier>,
+    ) -> Result<NullifiersPage> {
+        self.transact("read nullifiers paged", move |conn| {
+            queries::select_nullifiers_paged(conn, page_size, after_nullifier)
+        })
+        .await
+    }
+
     /// Loads the nullifiers that match the prefixes from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_nullifiers_by_prefix(
@@ -400,6 +417,21 @@ impl Db {
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {
             queries::select_all_account_commitments(conn)
+        })
+        .await
+    }
+
+    /// Returns a page of account commitments for tree rebuilding.
+    ///
+    /// Use `after_account_id` to paginate through all accounts.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_account_commitments_paged(
+        &self,
+        page_size: std::num::NonZeroUsize,
+        after_account_id: Option<AccountId>,
+    ) -> Result<AccountCommitmentsPage> {
+        self.transact("read account commitments paged", move |conn| {
+            queries::select_account_commitments_paged(conn, page_size, after_account_id)
         })
         .await
     }

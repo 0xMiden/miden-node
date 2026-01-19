@@ -50,6 +50,7 @@ use miden_protocol::note::{
     Nullifier,
 };
 use miden_protocol::utils::{Deserializable, Serializable};
+use miden_standards::note::NetworkAccountTarget;
 
 use crate::db::models::conv::{
     SqlTypeConvert,
@@ -430,9 +431,6 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
     block_num: BlockNumber,
     mut page: Page,
 ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-    // Network notes have execution_mode = 0 in the database
-    const NETWORK_NOTE_EXECUTION_MODE: i32 = 0;
-
     let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
     let rowid_sel_ge =
         diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
@@ -471,7 +469,7 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
             rowid_sel.clone(),
         ),
     )
-    .filter(schema::notes::execution_mode.eq(NETWORK_NOTE_EXECUTION_MODE))
+    .filter(schema::notes::is_single_target_network_note.eq(true))
     .filter(schema::notes::tag.eq(tag as i32))
     .filter(schema::notes::committed_at.le(block_num.to_raw_sql()))
     .filter(
@@ -834,17 +832,18 @@ pub struct NoteInsertRowInsert {
     pub serial_num: Option<Vec<u8>>,
     pub nullifier: Option<Vec<u8>>,
     pub script_root: Option<Vec<u8>>,
-    pub execution_mode: i32,
+    pub is_single_target_network_note: bool,
     pub inclusion_path: Vec<u8>,
 }
 
 impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
-        // Determine execution_mode from tag: 0 if first 2 bits are 00 (account-targeting)
-        let tag_value = note.metadata.tag().as_u32();
-        let execution_mode = i32::from(tag_value >> 30 != 0);
+        let attachment = note.metadata.attachment();
 
-        let attachment = note.metadata.attachment().to_bytes();
+        let is_single_target_network_note =
+            NetworkAccountTarget::try_from(attachment.clone()).is_ok();
+
+        let attachment_bytes = attachment.to_bytes();
 
         Self {
             committed_at: note.block_num.to_raw_sql(),
@@ -855,8 +854,8 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
             note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),
-            execution_mode,
-            attachment,
+            is_single_target_network_note,
+            attachment: attachment_bytes,
             inclusion_path: note.inclusion_path.to_bytes(),
             consumed_at: None::<i64>, // New notes are always unconsumed.
             nullifier: nullifier.as_ref().map(Nullifier::to_bytes),

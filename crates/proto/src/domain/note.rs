@@ -183,14 +183,12 @@ impl TryFrom<proto::note::Note> for Note {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NetworkNote {
     SingleTarget(SingleTargetNetworkNote),
-    MultiTarget(MultiTargetNetworkNote),
 }
 
 impl NetworkNote {
     pub fn inner(&self) -> &Note {
         match self {
             NetworkNote::SingleTarget(note) => note.inner(),
-            NetworkNote::MultiTarget(note) => &note.0,
         }
     }
 
@@ -211,7 +209,6 @@ impl From<NetworkNote> for Note {
     fn from(value: NetworkNote) -> Self {
         match value {
             NetworkNote::SingleTarget(note) => note.into(),
-            NetworkNote::MultiTarget(note) => note.0,
         }
     }
 }
@@ -220,47 +217,11 @@ impl TryFrom<Note> for NetworkNote {
     type Error = NetworkNoteError;
 
     fn try_from(note: Note) -> Result<Self, Self::Error> {
-        // Try to parse as single-target network note (has NetworkAccountTarget attachment)
-        match SingleTargetNetworkNote::try_from(note.clone()) {
-            Ok(single_target) => Ok(NetworkNote::SingleTarget(single_target)),
-            Err(_) => {
-                // Not a single-target note, treat as multi-target
-                Ok(NetworkNote::MultiTarget(MultiTargetNetworkNote(note)))
-            },
-        }
+        SingleTargetNetworkNote::try_from(note.clone()).map(NetworkNote::SingleTarget)
     }
 }
 
 impl TryFrom<proto::note::NetworkNote> for NetworkNote {
-    type Error = ConversionError;
-
-    fn try_from(proto_note: proto::note::NetworkNote) -> Result<Self, Self::Error> {
-        from_proto(proto_note)
-    }
-}
-
-// MULTI TARGET NETWORK NOTE
-// ================================================================================================
-
-/// A newtype that wraps around notes having multiple targets to be used in a network mode.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MultiTargetNetworkNote(Note);
-
-impl TryFrom<Note> for MultiTargetNetworkNote {
-    type Error = NetworkNoteError;
-
-    fn try_from(note: Note) -> Result<Self, Self::Error> {
-        // Multi-target notes are those that do NOT have a NetworkAccountTarget attachment
-        if NetworkAccountTarget::try_from(note.metadata().attachment().clone()).is_ok() {
-            // This is a single-target note, not multi-target
-            Err(NetworkNoteError::NotMultiTarget)
-        } else {
-            Ok(Self(note))
-        }
-    }
-}
-
-impl TryFrom<proto::note::NetworkNote> for MultiTargetNetworkNote {
     type Error = ConversionError;
 
     fn try_from(proto_note: proto::note::NetworkNote) -> Result<Self, Self::Error> {
@@ -355,8 +316,6 @@ where
 pub enum NetworkNoteError {
     #[error("note does not have a valid NetworkAccountTarget attachment: {0}")]
     InvalidAttachment(String),
-    #[error("note has a NetworkAccountTarget attachment and is not a multi-target note")]
-    NotMultiTarget,
 }
 
 // NOTE SCRIPT

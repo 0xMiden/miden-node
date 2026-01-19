@@ -232,15 +232,14 @@ impl Coordinator {
         if let MempoolEvent::TransactionAdded { id, network_notes, .. } = event.as_ref() {
             // Determine target actors for each note.
             for note in network_notes {
-                if let NetworkNote::SingleTarget(note) = note {
-                    let prefix = note.account_id();
-                    if let Some(actor) = self.actor_registry.get(&prefix) {
-                        // Register actor as target.
-                        target_actors.insert(prefix, actor);
-                    } else {
-                        // Cache event for every note that doesn't have a corresponding actor.
-                        self.predating_events.entry(prefix).or_default().insert(*id, event.clone());
-                    }
+                let NetworkNote::SingleTarget(note) = note;
+                let prefix = note.account_id();
+                if let Some(actor) = self.actor_registry.get(&prefix) {
+                    // Register actor as target.
+                    target_actors.insert(prefix, actor);
+                } else {
+                    // Cache event for every note that doesn't have a corresponding actor.
+                    self.predating_events.entry(prefix).or_default().insert(*id, event.clone());
                 }
             }
         }

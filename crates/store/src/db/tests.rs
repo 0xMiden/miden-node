@@ -365,6 +365,11 @@ fn sql_unconsumed_network_notes() {
     create_block(&mut conn, 0.into());
     create_block(&mut conn, 1.into());
 
+    // Create a NetworkAccountTarget attachment for the network account
+    let target = NetworkAccountTarget::new(account_note.0, NoteExecutionHint::Always)
+        .expect("NetworkAccountTarget creation should succeed for network account");
+    let attachment: NoteAttachment = target.into();
+
     // Create an unconsumed note in each block.
     let notes = Vec::from_iter((0..2).map(|i: u32| {
         let note = NoteRecord {
@@ -376,7 +381,8 @@ fn sql_unconsumed_network_notes() {
                 account_note.0,
                 NoteType::Public,
                 NoteTag::with_account_target(account_note.0),
-            ),
+            )
+            .with_attachment(attachment.clone()),
             details: None,
             inclusion_path: SparseMerklePath::default(),
         };

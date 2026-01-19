@@ -81,12 +81,9 @@ impl NetworkAccountState {
         let notes = store.get_unconsumed_network_notes(account_id, block_num.as_u32()).await?;
         let notes = notes
             .into_iter()
-            .filter_map(|note| {
-                if let NetworkNote::SingleTarget(note) = note {
-                    Some(note)
-                } else {
-                    None
-                }
+            .map(|note| {
+                let NetworkNote::SingleTarget(note) = note;
+                note
             })
             .collect::<Vec<_>>();
         let account = NetworkAccountNoteState::new(account, notes);
@@ -342,7 +339,7 @@ fn filter_by_prefix_and_map_to_single_target(
         .into_iter()
         .filter_map(|note| match note {
             NetworkNote::SingleTarget(note) if note.account_id() == account_id => Some(note),
-            _ => None,
+            NetworkNote::SingleTarget(_) => None,
         })
         .collect::<Vec<_>>()
 }

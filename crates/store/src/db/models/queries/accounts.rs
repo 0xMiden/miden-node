@@ -265,6 +265,7 @@ pub(crate) fn select_account_by_id_prefix(
 /// ORDER BY
 ///     block_num ASC
 /// ```
+#[cfg(test)]
 pub(crate) fn select_all_account_commitments(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<(AccountId, Word)>, DatabaseError> {
@@ -355,10 +356,22 @@ pub(crate) fn select_account_commitments_paged(
     Ok(AccountCommitmentsPage { commitments, next_cursor })
 }
 
-/// Select all account IDs that have public state.
+/// Page of public account IDs returned by [`select_public_account_ids_paged`].
+#[derive(Debug)]
+pub struct PublicAccountIdsPage {
+    /// The public account IDs in this page.
+    pub account_ids: Vec<AccountId>,
+    /// If `Some`, there are more results. Use this as the `after_account_id` for the next page.
+    pub next_cursor: Option<AccountId>,
+}
+
+/// Selects public account IDs with pagination.
 ///
-/// This filters accounts in-memory after loading only the account IDs (not commitments),
-/// which is more efficient than loading full commitments when only IDs are needed.
+/// Returns up to `page_size` public account IDs, starting after `after_account_id` if provided.
+/// Results are ordered by `account_id` for stable pagination.
+///
+/// Note: This function filters for public accounts in-memory after fetching, so the actual
+/// number of returned IDs may be less than `page_size` even if more results exist.
 ///
 /// # Raw SQL
 ///
@@ -369,31 +382,53 @@ pub(crate) fn select_account_commitments_paged(
 ///     accounts
 /// WHERE
 ///     is_latest = 1
+///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
 /// ORDER BY
-///     block_num ASC
+///     account_id ASC
+/// LIMIT :page_size + 1
 /// ```
-pub(crate) fn select_all_public_account_ids(
+pub(crate) fn select_public_account_ids_paged(
     conn: &mut SqliteConnection,
-) -> Result<Vec<AccountId>, DatabaseError> {
-    // We could technically use a `LIKE` constraint for both postgres and sqlite backends,
-    // but diesel doesn't expose that.
-    let raw: Vec<Vec<u8>> =
-        SelectDsl::select(schema::accounts::table, schema::accounts::account_id)
-            .filter(schema::accounts::is_latest.eq(true))
-            .order_by(schema::accounts::block_num.asc())
-            .load::<Vec<u8>>(conn)?;
+    page_size: NonZeroUsize,
+    after_account_id: Option<AccountId>,
+) -> Result<PublicAccountIdsPage, DatabaseError> {
+    use miden_protocol::utils::Serializable;
 
-    Result::from_iter(
-        raw.into_iter()
-            .map(|bytes| {
-                AccountId::read_from_bytes(&bytes).map_err(DatabaseError::DeserializationError)
-            })
-            .filter_map(|result| match result {
-                Ok(id) if id.has_public_state() => Some(Ok(id)),
-                Ok(_) => None,
-                Err(e) => Some(Err(e)),
-            }),
-    )
+    // We fetch more than page_size to account for filtering out private accounts
+    // and to determine if there are more results. We fetch 2x to have a reasonable
+    // chance of getting enough public accounts.
+    #[allow(clippy::cast_possible_wrap)]
+    let limit = ((page_size.get() + 1) * 2) as i64;
+
+    let mut query = SelectDsl::select(schema::accounts::table, schema::accounts::account_id)
+        .filter(schema::accounts::is_latest.eq(true))
+        .order_by(schema::accounts::account_id.asc())
+        .limit(limit)
+        .into_boxed();
+
+    if let Some(cursor) = after_account_id {
+        query = query.filter(schema::accounts::account_id.gt(cursor.to_bytes()));
+    }
+
+    let raw = query.load::<Vec<u8>>(conn)?;
+
+    let all_ids: Vec<AccountId> = Result::from_iter(raw.into_iter().map(|bytes| {
+        AccountId::read_from_bytes(&bytes).map_err(DatabaseError::DeserializationError)
+    }))?;
+
+    // Filter to only public accounts
+    let mut public_ids: Vec<AccountId> =
+        all_ids.into_iter().filter(AccountId::has_public_state).collect();
+
+    // If we got more than page_size, there might be more results
+    let next_cursor = if public_ids.len() > page_size.get() {
+        public_ids.truncate(page_size.get());
+        public_ids.last().copied()
+    } else {
+        None
+    };
+
+    Ok(PublicAccountIdsPage { account_ids: public_ids, next_cursor })
 }
 
 /// Select account vault assets within a block range (inclusive).

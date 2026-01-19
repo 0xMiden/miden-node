@@ -218,6 +218,10 @@ pub enum StateInitializationError {
         persistent_root: Word,
         database_root: Word,
     },
+    #[error("public account {0} is missing details in database")]
+    PublicAccountMissingDetails(AccountId),
+    #[error("failed to convert account to delta: {0}")]
+    AccountToDeltaConversionFailed(String),
 }
 
 #[derive(Debug, Error)]

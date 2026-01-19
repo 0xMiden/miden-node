@@ -49,6 +49,10 @@ const ACCOUNT_COMMITMENTS_PAGE_SIZE: NonZeroUsize = NonZeroUsize::new(10_000).un
 /// This limits memory usage when rebuilding trees with millions of nullifiers.
 const NULLIFIERS_PAGE_SIZE: NonZeroUsize = NonZeroUsize::new(10_000).unwrap();
 
+/// Page size for loading public account IDs from the database during forest rebuilding.
+/// This limits memory usage when rebuilding with millions of public accounts.
+const PUBLIC_ACCOUNT_IDS_PAGE_SIZE: NonZeroUsize = NonZeroUsize::new(1_000).unwrap();
+
 // STORAGE TYPE ALIAS
 // ================================================================================================
 
@@ -130,7 +134,6 @@ impl StorageLoader for MemoryStorage {
 
         // Load account commitments in pages to avoid loading millions of entries at once
         let mut cursor = None;
-        let mut total_loaded = 0usize;
         loop {
             let page = db
                 .select_account_commitments_paged(ACCOUNT_COMMITMENTS_PAGE_SIZE, cursor)
@@ -140,7 +143,6 @@ impl StorageLoader for MemoryStorage {
                 break;
             }
 
-            total_loaded += page.commitments.len();
 
             let entries = page
                 .commitments
@@ -159,12 +161,6 @@ impl StorageLoader for MemoryStorage {
             }
         }
 
-        tracing::info!(
-            target: COMPONENT,
-            total_accounts = total_loaded,
-            "Rebuilt account tree from database"
-        );
-
         Ok(smt)
     }
 
@@ -177,7 +173,6 @@ impl StorageLoader for MemoryStorage {
 
         // Load nullifiers in pages to avoid loading millions of entries at once
         let mut cursor = None;
-        let mut total_loaded = 0usize;
         loop {
             let page = db.select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor).await?;
 
@@ -185,7 +180,6 @@ impl StorageLoader for MemoryStorage {
                 break;
             }
 
-            total_loaded += page.nullifiers.len();
 
             let entries = page.nullifiers.into_iter().map(|info| {
                 (info.nullifier.as_word(), block_num_to_nullifier_leaf(info.block_num))
@@ -202,12 +196,6 @@ impl StorageLoader for MemoryStorage {
                 break;
             }
         }
-
-        tracing::info!(
-            target: COMPONENT,
-            total_nullifiers = total_loaded,
-            "Rebuilt nullifier tree from database"
-        );
 
         Ok(NullifierTree::new_unchecked(smt))
     }
@@ -246,7 +234,6 @@ impl StorageLoader for RocksDbStorage {
 
         // Load account commitments in pages to avoid loading millions of entries at once
         let mut cursor = None;
-        let mut total_loaded = 0usize;
         loop {
             let page = db
                 .select_account_commitments_paged(ACCOUNT_COMMITMENTS_PAGE_SIZE, cursor)
@@ -256,7 +243,6 @@ impl StorageLoader for RocksDbStorage {
                 break;
             }
 
-            total_loaded += page.commitments.len();
 
             let entries = page
                 .commitments
@@ -274,12 +260,6 @@ impl StorageLoader for RocksDbStorage {
                 break;
             }
         }
-
-        info!(
-            target: COMPONENT,
-            total_accounts = total_loaded,
-            "Rebuilt account tree from database"
-        );
 
         Ok(smt)
     }
@@ -304,7 +284,6 @@ impl StorageLoader for RocksDbStorage {
 
         // Load nullifiers in pages to avoid loading millions of entries at once
         let mut cursor = None;
-        let mut total_loaded = 0usize;
         loop {
             let page = db.select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor).await?;
 
@@ -312,7 +291,6 @@ impl StorageLoader for RocksDbStorage {
                 break;
             }
 
-            total_loaded += page.nullifiers.len();
 
             let entries = page.nullifiers.into_iter().map(|info| {
                 (info.nullifier.as_word(), block_num_to_nullifier_leaf(info.block_num))
@@ -329,12 +307,6 @@ impl StorageLoader for RocksDbStorage {
                 break;
             }
         }
-
-        info!(
-            target: COMPONENT,
-            total_nullifiers = total_loaded,
-            "Rebuilt nullifier tree from database"
-        );
 
         Ok(NullifierTree::new_unchecked(smt))
     }
@@ -377,23 +349,40 @@ pub async fn load_smt_forest(
 ) -> Result<InnerForest, StateInitializationError> {
     use miden_protocol::account::delta::AccountDelta;
 
-    let public_account_ids = db.select_all_public_account_ids().await?;
-
-    // Acquire write lock once for the entire initialization
     let mut forest = InnerForest::new();
+    let mut cursor = None;
 
-    // Process each account
-    for account_id in public_account_ids {
-        // Get the full account from the database
-        let account_info = db.select_account(account_id).await?;
-        let account = account_info.details.expect("public accounts always have details in DB");
+    loop {
+        let page = db
+            .select_public_account_ids_paged(PUBLIC_ACCOUNT_IDS_PAGE_SIZE, cursor)
+            .await?;
 
-        // Convert the full account to a full-state delta
-        let delta =
-            AccountDelta::try_from(account).expect("accounts from DB should not have seeds");
+        if page.account_ids.is_empty() {
+            break;
+        }
 
-        // Use the unified update method (will recognize it's a full-state delta)
-        forest.update_account(block_num, &delta)?;
+        // Process each account in this page
+        for account_id in page.account_ids {
+            // TODO: Loading the full account from the database is inefficient and will need to
+            // go away. <https://github.com/0xMiden/miden-node/issues/1556>
+            let account_info = db.select_account(account_id).await?;
+            let account = account_info
+                .details
+                .ok_or(StateInitializationError::PublicAccountMissingDetails(account_id))?;
+
+            // Convert the full account to a full-state delta
+            let delta = AccountDelta::try_from(account).map_err(|e| {
+                StateInitializationError::AccountToDeltaConversionFailed(e.to_string())
+            })?;
+
+            // Use the unified update method (will recognize it's a full-state delta)
+            forest.update_account(block_num, &delta)?;
+        }
+
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
     }
 
     Ok(forest)
@@ -433,8 +422,8 @@ pub async fn verify_tree_consistency(
         return Err(StateInitializationError::TreeStorageDiverged {
             tree_name: "Account",
             block_num,
-            tree_root: account_tree_root,
-            block_root: expected_account_root,
+            persistent_root: account_tree_root,
+            database_root: expected_account_root,
         });
     }
 
@@ -443,8 +432,8 @@ pub async fn verify_tree_consistency(
         return Err(StateInitializationError::TreeStorageDiverged {
             tree_name: "Nullifier",
             block_num,
-            tree_root: nullifier_tree_root,
-            block_root: expected_nullifier_root,
+            persistent_root: nullifier_tree_root,
+            database_root: expected_nullifier_root,
         });
     }
 

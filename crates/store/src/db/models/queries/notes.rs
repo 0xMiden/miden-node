@@ -36,17 +36,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNoteIndex, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
-    NoteAssets,
-    NoteDetails,
-    NoteId,
-    NoteInclusionProof,
-    NoteInputs,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteTag,
-    NoteType,
-    Nullifier,
+    NoteAssets, NoteAttachment, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag, NoteType, Nullifier
 };
 use miden_protocol::utils::{Deserializable, Serializable};
 
@@ -715,6 +705,7 @@ pub struct NoteMetadataRawRow {
     note_type: i32,
     sender: Vec<u8>, // AccountId
     tag: i32,
+    attachment: Vec<u8>,
 }
 
 #[allow(clippy::cast_sign_loss)]
@@ -725,7 +716,8 @@ impl TryInto<NoteMetadata> for NoteMetadataRawRow {
         let note_type = NoteType::try_from(self.note_type as u32)
             .map_err(DatabaseError::conversiont_from_sql::<NoteType, _, _>)?;
         let tag = NoteTag::new(self.tag as u32);
-        Ok(NoteMetadata::new(sender, note_type, tag))
+        let attachment = NoteAttachment::read_from_bytes(&self.attachment)?;
+        Ok(NoteMetadata::new(sender, note_type, tag).with_attachment(attachment))
     }
 }
 
@@ -819,6 +811,7 @@ pub struct NoteInsertRowInsert {
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
 
+    pub attachment: Vec<u8>,
     pub consumed_at: Option<i64>,
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
@@ -835,6 +828,8 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
         let tag_value = note.metadata.tag().as_u32();
         let execution_mode = i32::from(tag_value >> 30 != 0);
 
+        let attachment = note.metadata.attachment().to_bytes();
+
         Self {
             committed_at: note.block_num.to_raw_sql(),
             batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
@@ -845,6 +840,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),
             execution_mode,
+            attachment,
             inclusion_path: note.inclusion_path.to_bytes(),
             consumed_at: None::<i64>, // New notes are always unconsumed.
             nullifier: nullifier.as_ref().map(Nullifier::to_bytes),

@@ -1,4 +1,5 @@
 use miden_protocol::Word;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     Note,
@@ -277,7 +278,7 @@ impl TryFrom<proto::note::NetworkNote> for MultiTargetNetworkNote {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SingleTargetNetworkNote {
     note: Note,
-    target_id: NetworkAccountId,
+    account_target: NetworkAccountTarget,
 }
 
 impl SingleTargetNetworkNote {
@@ -299,7 +300,11 @@ impl SingleTargetNetworkNote {
 
     /// The network account ID that this note targets.
     pub fn account_id(&self) -> NetworkAccountId {
-        self.target_id
+        self.account_target.target_id().try_into().expect("always a network account ID")
+    }
+
+    pub fn can_be_consumed(&self, block_num: BlockNumber) -> Option<bool> {
+        self.account_target.execution_hint().can_be_consumed(block_num)
     }
 }
 
@@ -315,11 +320,9 @@ impl TryFrom<Note> for SingleTargetNetworkNote {
     fn try_from(note: Note) -> Result<Self, Self::Error> {
         // Single-target network notes are identified by having a NetworkAccountTarget attachment
         let attachment = note.metadata().attachment();
-        let target = NetworkAccountTarget::try_from(attachment.clone())
+        let account_target = NetworkAccountTarget::try_from(attachment.clone())
             .map_err(|e| NetworkNoteError::InvalidAttachment(e.to_string()))?;
-        let target_id = NetworkAccountId::try_from(target.target_id())
-            .map_err(|e| NetworkNoteError::InvalidAttachment(e.to_string()))?;
-        Ok(Self { note, target_id })
+        Ok(Self { note, account_target })
     }
 }
 

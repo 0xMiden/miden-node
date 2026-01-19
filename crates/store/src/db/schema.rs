@@ -68,6 +68,7 @@ diesel::table! {
         sender -> Binary,
         tag -> Integer,
         execution_mode -> Integer,
+        attachment -> Binary,
         inclusion_path -> Binary,
         consumed_at -> Nullable<BigInt>,
         nullifier -> Nullable<Binary>,

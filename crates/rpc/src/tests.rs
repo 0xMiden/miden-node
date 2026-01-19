@@ -443,6 +443,7 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
             block_producer_listener,
             data_directory: dir,
             grpc_timeout: Duration::from_secs(30),
+            rebuild_tree_storage: false,
         }
         .serve()
         .await
@@ -483,6 +484,7 @@ async fn restart_store(store_addr: SocketAddr, data_directory: &std::path::Path)
             block_producer_listener,
             data_directory: dir,
             grpc_timeout: Duration::from_secs(10),
+            rebuild_tree_storage: false,
         }
         .serve()
         .await

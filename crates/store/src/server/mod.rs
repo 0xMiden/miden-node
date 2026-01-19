@@ -39,6 +39,11 @@ pub struct Store {
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
+    /// If true, rebuild persistent tree storage (e.g., RocksDB) from the database on startup.
+    ///
+    /// This is useful for recovering from corrupted tree storage or when the persistent storage
+    /// has diverged from the database.
+    pub rebuild_tree_storage: bool,
 }
 
 impl Store {
@@ -89,10 +94,13 @@ impl Store {
         let block_producer_address = self.block_producer_listener.local_addr()?;
         info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address,
             block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.grpc_timeout,
-            "Loading database");
+            rebuild_tree_storage=self.rebuild_tree_storage, "Loading database");
 
-        let state =
-            Arc::new(State::load(&self.data_directory).await.context("failed to load state")?);
+        let state = Arc::new(
+            State::load(&self.data_directory, self.rebuild_tree_storage)
+                .await
+                .context("failed to load state")?,
+        );
 
         let rpc_service =
             store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
@@ -124,19 +132,6 @@ impl Store {
         info!(target: COMPONENT, "Database loaded");
 
         let mut join_set = JoinSet::new();
-
-        join_set.spawn(async move {
-            // Manual tests on testnet indicate each iteration takes ~2s once things are OS cached.
-            //
-            // 5 minutes seems like a reasonable interval, where this should have minimal database
-            // IO impact while providing a decent view into table growth over time.
-            let mut interval = tokio::time::interval(Duration::from_secs(5 * 60));
-            let database = Arc::clone(&state);
-            loop {
-                interval.tick().await;
-                let _ = database.analyze_table_sizes().await;
-            }
-        });
 
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(

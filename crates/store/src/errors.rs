@@ -207,20 +207,17 @@ pub enum StateInitializationError {
     #[error("inner forest error")]
     InnerForestError(#[from] InnerForestError),
     #[error(
-        "{tree_name} SMT root ({tree_root:?}) does not match expected root from block {block_num} \
-         ({block_root:?}). Delete the tree storage directories and restart the node to rebuild \
-         from the database."
+        "{tree_name} root from persistent storage ({persistent_root:?}) does not match expected \
+         root from block {block_num} in database ({database_root:?}). This indicates data \
+         corruption or an incomplete previous shutdown. Consider rebuilding the persistent \
+         tree storage from the database."
     )]
     TreeStorageDiverged {
         tree_name: &'static str,
         block_num: BlockNumber,
-        tree_root: Word,
-        block_root: Word,
+        persistent_root: Word,
+        database_root: Word,
     },
-    #[error("public account {0} is missing details in database")]
-    PublicAccountMissingDetails(AccountId),
-    #[error("failed to convert account to delta: {0}")]
-    AccountToDeltaConversionFailed(String),
 }
 
 #[derive(Debug, Error)]
@@ -311,6 +308,16 @@ pub enum ApplyBlockError {
     DbBlockHeaderEmpty,
     #[error("database update failed: {0}")]
     DbUpdateTaskFailed(String),
+}
+
+impl From<ApplyBlockError> for Status {
+    fn from(err: ApplyBlockError) -> Self {
+        match err {
+            ApplyBlockError::InvalidBlockError(_) => Status::invalid_argument(err.to_string()),
+
+            _ => Status::internal(err.to_string()),
+        }
+    }
 }
 
 #[derive(Error, Debug, GrpcError)]

@@ -95,6 +95,7 @@ async fn block_producer_startup_is_robust_to_network_failures() {
                 block_producer_listener,
                 data_directory: dir,
                 grpc_timeout: std::time::Duration::from_secs(30),
+                rebuild_tree_storage: false,
             }
             .serve()
             .await
@@ -161,6 +162,7 @@ async fn restart_store(
             block_producer_listener,
             data_directory: dir,
             grpc_timeout: std::time::Duration::from_secs(30),
+            rebuild_tree_storage: false,
         }
         .serve()
         .await

@@ -134,6 +134,8 @@ pub enum DatabaseError {
     SqlValueConversion(#[from] DatabaseTypeConversionError),
     #[error("Not implemented: {0}")]
     NotImplemented(String),
+    #[error("query timeout: {0}")]
+    QueryTimeout(String),
     #[error("storage root not found for account {account_id}, slot {slot_name}, block {block_num}")]
     StorageRootNotFound {
         account_id: AccountId,

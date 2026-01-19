@@ -531,6 +531,42 @@ pub enum SyncTransactionsError {
     AccountNotFound(AccountId),
 }
 
+#[derive(Debug, Error, GrpcError)]
+pub enum GetVaultAssetWitnessesError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("account {0} not found")]
+    AccountNotFound(AccountId),
+    #[error("account {0} is not public")]
+    AccountNotPublic(AccountId),
+    #[error("vault root mismatch for account {0}")]
+    VaultRootMismatch(AccountId),
+}
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetStorageMapWitnessError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("account {0} not found")]
+    AccountNotFound(AccountId),
+    #[error("account {0} is not public")]
+    AccountNotPublic(AccountId),
+    #[error(
+        "storage map not found for account {account_id}, slot {slot_name} at block {block_num}"
+    )]
+    StorageMapNotFound {
+        account_id: AccountId,
+        slot_name: String,
+        block_num: BlockNumber,
+    },
+}
+
 // SCHEMA VERIFICATION ERRORS
 // =================================================================================================
 

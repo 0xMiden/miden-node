@@ -269,6 +269,12 @@ service NtxBuilder {
 
     // Returns the script for a note by its root.
     rpc GetNoteScriptByRoot(note.NoteRoot) returns (rpc.MaybeNoteScript) {}
+
+    // Returns vault asset witnesses for the specified account.
+    rpc GetVaultAssetWitnesses(VaultAssetWitnessesRequest) returns (VaultAssetWitnessesResponse) {}
+
+    // Returns a storage map witness for the specified account and storage map entry.
+    rpc GetStorageMapWitness(StorageMapWitnessRequest) returns (StorageMapWitnessResponse) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX
@@ -346,4 +352,60 @@ message CurrentBlockchainData {
     repeated primitives.Digest current_peaks = 1;
     // Current block header.
     optional blockchain.BlockHeader current_block_header = 2;
+}
+
+// GET VAULT ASSET WITNESSES
+// ================================================================================================
+
+// Request for vault asset witnesses for a specific account.
+message VaultAssetWitnessesRequest {
+    // The account ID for which to retrieve vault asset witnesses.
+    account.AccountId account_id = 1;
+
+    // The vault root hash to verify against.
+    primitives.Digest vault_root = 2;
+
+    // Set of asset vault keys to retrieve witnesses for.
+    repeated primitives.Digest vault_keys = 3;
+}
+
+// Response containing vault asset witnesses.
+message VaultAssetWitnessesResponse {
+    // Binary encoded Vec<AssetWitness>.
+    // 
+    // The witnesses are serialized as a vector of AssetWitness using Miden's Serializable trait.
+    // Clients can deserialize this using Vec::<AssetWitness>::read_from_bytes() to reconstruct
+    // the cryptographic proofs for the vault assets.
+    bytes asset_witnesses = 1;
+}
+
+// GET STORAGE MAP WITNESS
+// ================================================================================================
+
+// Request for a storage map witness for a specific account and storage entry.
+message StorageMapWitnessRequest {
+    // The account ID for which to retrieve the storage map witness.
+    account.AccountId account_id = 1;
+
+    // The storage map root hash.
+    primitives.Digest map_root = 2;
+
+    // The storage map key for which to retrieve the witness.
+    primitives.Digest map_key = 3;
+
+    // Optional block number. If not provided, uses the latest state.
+    optional fixed32 block_num = 4;
+}
+
+// Response containing a storage map witness.
+message StorageMapWitnessResponse {
+    // Binary encoded StorageMapWitness.
+    // 
+    // The witness is serialized as an SmtProof using Miden's Serializable trait.
+    // Clients can deserialize this using SmtProof::read_from_bytes() to reconstruct
+    // the cryptographic proof for the storage map entry.
+    bytes witness = 1;
+
+    // Block number at which the witness was generated.
+    fixed32 block_num = 2;
 }

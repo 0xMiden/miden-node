@@ -1322,6 +1322,110 @@ impl State {
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
         self.db.select_transactions_records(account_ids, block_range).await
     }
+
+    /// Returns vault asset witnesses for the specified account.
+    pub async fn get_vault_asset_witnesses(
+        &self,
+        account_id: AccountId,
+        vault_root: Word,
+        vault_keys: std::collections::BTreeSet<miden_protocol::asset::AssetVaultKey>,
+    ) -> Result<Vec<miden_protocol::asset::AssetWitness>, crate::errors::GetVaultAssetWitnessesError>
+    {
+        use miden_protocol::asset::{AssetVault, AssetWitness};
+
+        use crate::errors::GetVaultAssetWitnessesError;
+
+        // Validate that the account is public.
+        if !account_id.has_public_state() {
+            return Err(GetVaultAssetWitnessesError::AccountNotPublic(account_id));
+        }
+
+        // Get the account header to verify the vault root and ensure account exists.
+        let (account_header, _storage_header) = self
+            .db
+            .select_account_header_with_storage_header_at_block(
+                account_id,
+                self.latest_block_num().await,
+            )
+            .await
+            .map_err(GetVaultAssetWitnessesError::DatabaseError)?
+            .ok_or(GetVaultAssetWitnessesError::AccountNotFound(account_id))?;
+
+        // Verify that the provided vault root matches the account's vault root.
+        if account_header.vault_root() != vault_root {
+            return Err(GetVaultAssetWitnessesError::VaultRootMismatch(account_id));
+        }
+
+        // Get all vault assets for this account at the latest block.
+        let vault_assets = self
+            .db
+            .select_account_vault_at_block(account_id, self.latest_block_num().await)
+            .await
+            .map_err(GetVaultAssetWitnessesError::DatabaseError)?;
+
+        // Create the vault from the assets.
+        let asset_vault = AssetVault::new(&vault_assets).map_err(|err| {
+            GetVaultAssetWitnessesError::DatabaseError(DatabaseError::DataCorrupted(format!(
+                "failed to create asset vault from stored assets: {err}"
+            )))
+        })?;
+
+        // Generate witnesses for each requested vault key.
+        let mut witnesses = Vec::new();
+        for vault_key in vault_keys {
+            let vault_proof = asset_vault.open(vault_key);
+            let witness = AssetWitness::new(vault_proof.into()).map_err(|err| {
+                GetVaultAssetWitnessesError::DatabaseError(DatabaseError::DataCorrupted(format!(
+                    "failed to create asset witness: {err}"
+                )))
+            })?;
+            witnesses.push(witness);
+        }
+
+        Ok(witnesses)
+    }
+
+    /// Returns a storage map witness for the specified account and storage entry.
+    pub async fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        map_root: Word,
+        map_key: Word,
+    ) -> Result<miden_protocol::account::StorageMapWitness, crate::errors::GetStorageMapWitnessError>
+    {
+        use miden_protocol::account::StorageSlotContent;
+
+        use crate::errors::GetStorageMapWitnessError;
+
+        // Validate that the account is public.
+        if !account_id.has_public_state() {
+            return Err(GetStorageMapWitnessError::AccountNotPublic(account_id));
+        }
+
+        // Get the account's latest storage from the database
+        let account_storage = self
+            .db
+            .select_latest_account_storage(account_id)
+            .await
+            .map_err(GetStorageMapWitnessError::DatabaseError)?;
+
+        // Search through storage slots to find the map with matching root.
+        for slot in account_storage.slots() {
+            if let StorageSlotContent::Map(storage_map) = slot.content() {
+                if storage_map.root() == map_root {
+                    // Found the matching storage map, open it with the key.
+                    return Ok(storage_map.open(&map_key));
+                }
+            }
+        }
+
+        // Storage map with the given root was not found.
+        Err(GetStorageMapWitnessError::StorageMapNotFound {
+            account_id,
+            slot_name: String::new(),
+            block_num: self.latest_block_num().await,
+        })
+    }
 }
 
 // INNER STATE LOADING

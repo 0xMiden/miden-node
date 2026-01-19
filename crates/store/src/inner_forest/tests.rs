@@ -461,3 +461,155 @@ fn test_open_storage_map_returns_limit_exceeded_for_too_many_keys() {
     let details = result.expect("Should return Some").expect("Should not error");
     assert_matches!(details.entries, StorageMapEntries::LimitExceeded);
 }
+
+// PRUNING TESTS
+// ================================================================================================
+
+#[test]
+fn test_prune_vault_roots_removes_old_entries() {
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    // Add entries for MAX_HISTORICAL_BLOCKS_PER_KEY + 10 blocks
+    let num_blocks = MAX_HISTORICAL_BLOCKS_PER_KEY + 10;
+    for i in 1..=num_blocks {
+        let block_num = BlockNumber::from(i as u32);
+        let amount = (i * 100) as u64;
+        let mut vault_delta = AccountVaultDelta::default();
+        vault_delta.add_asset(dummy_fungible_asset(faucet_id, amount)).unwrap();
+        let delta = dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    // Verify we have all entries before pruning
+    assert_eq!(forest.vault_roots.len(), num_blocks);
+
+    // Prune
+    let (vault_removed, ..) = forest.prune();
+
+    // Should have removed 10 entries
+    assert_eq!(vault_removed, 10);
+
+    // Should have exactly MAX_HISTORICAL_BLOCKS_PER_KEY entries remaining
+    assert_eq!(forest.vault_roots.len(), MAX_HISTORICAL_BLOCKS_PER_KEY);
+
+    // The remaining entries should be the most recent ones
+    let remaining_blocks: Vec<_> = forest.vault_roots.keys().map(|(_, b)| b.as_u32()).collect();
+    let oldest_remaining = *remaining_blocks.iter().min().unwrap();
+    // Oldest remaining should be block 11 (since we kept the most recent 50 out of 60)
+    assert_eq!(oldest_remaining, 11);
+}
+
+#[test]
+fn test_prune_storage_map_roots_removes_old_entries() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let slot_name = StorageSlotName::mock(3);
+
+    // Add entries for MAX_HISTORICAL_BLOCKS_PER_KEY + 5 blocks
+    let num_blocks = MAX_HISTORICAL_BLOCKS_PER_KEY + 5;
+    for i in 1..=num_blocks {
+        let block_num = BlockNumber::from(i as u32);
+        let key = Word::from([i as u32, 0, 0, 0]);
+        let value = Word::from([0, 0, 0, i as u32]);
+
+        let mut map_delta = StorageMapDelta::default();
+        map_delta.insert(key, value);
+        let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta))]);
+        let storage_delta = AccountStorageDelta::from_raw(raw);
+        let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    // Verify we have all entries before pruning
+    assert_eq!(forest.storage_map_roots.len(), num_blocks);
+
+    // Prune
+    let (_, storage_roots_removed, storage_entries_removed) = forest.prune();
+
+    // Should have removed 5 entries from each structure
+    assert_eq!(storage_roots_removed, 5);
+    assert_eq!(storage_entries_removed, 5);
+
+    // Should have exactly MAX_HISTORICAL_BLOCKS_PER_KEY entries remaining
+    assert_eq!(forest.storage_map_roots.len(), MAX_HISTORICAL_BLOCKS_PER_KEY);
+    assert_eq!(forest.storage_entries.len(), MAX_HISTORICAL_BLOCKS_PER_KEY);
+}
+
+#[test]
+fn test_prune_does_nothing_when_under_limit() {
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    // Add fewer entries than the limit
+    let num_blocks = 10;
+    for i in 1..=num_blocks {
+        let block_num = BlockNumber::from(i as u32);
+        let mut vault_delta = AccountVaultDelta::default();
+        vault_delta
+            .add_asset(dummy_fungible_asset(faucet_id, (i * 100) as u64))
+            .unwrap();
+        let delta = dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    // Prune
+    let (vault_removed, storage_roots_removed, storage_entries_removed) = forest.prune();
+
+    // Nothing should be removed
+    assert_eq!(vault_removed, 0);
+    assert_eq!(storage_roots_removed, 0);
+    assert_eq!(storage_entries_removed, 0);
+
+    // All entries should remain
+    assert_eq!(forest.vault_roots.len(), num_blocks);
+}
+
+#[test]
+fn test_prune_handles_multiple_accounts() {
+    let mut forest = InnerForest::new();
+    let account1 = dummy_account();
+    let account2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let faucet_id = dummy_faucet();
+
+    // Add entries for multiple accounts, each exceeding the limit
+    let num_blocks = MAX_HISTORICAL_BLOCKS_PER_KEY + 5;
+
+    for i in 1..=num_blocks {
+        let block_num = BlockNumber::from(i as u32);
+        let amount = (i * 100) as u64;
+
+        // Account 1
+        let mut vault_delta1 = AccountVaultDelta::default();
+        vault_delta1.add_asset(dummy_fungible_asset(faucet_id, amount)).unwrap();
+        let delta1 = dummy_partial_delta(account1, vault_delta1, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta1).unwrap();
+
+        // Account 2 (using a different faucet for variety)
+        let mut vault_delta2 = AccountVaultDelta::default();
+        vault_delta2.add_asset(dummy_fungible_asset(account2, amount * 2)).unwrap();
+        let delta2 = dummy_partial_delta(account2, vault_delta2, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta2).unwrap();
+    }
+
+    // Verify we have entries for both accounts before pruning
+    assert_eq!(forest.vault_roots.len(), num_blocks * 2);
+
+    // Prune
+    let (vault_removed, ..) = forest.prune();
+
+    // Should have removed 5 entries from each account = 10 total
+    assert_eq!(vault_removed, 10);
+
+    // Each account should have exactly MAX_HISTORICAL_BLOCKS_PER_KEY entries
+    let account1_entries = forest.vault_roots.keys().filter(|(id, _)| *id == account1).count();
+    let account2_entries = forest.vault_roots.keys().filter(|(id, _)| *id == account2).count();
+    assert_eq!(account1_entries, MAX_HISTORICAL_BLOCKS_PER_KEY);
+    assert_eq!(account2_entries, MAX_HISTORICAL_BLOCKS_PER_KEY);
+}

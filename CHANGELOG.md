@@ -27,6 +27,7 @@
 - The network monitor now marks the chain as unhealthy if it fails to create new blocks ([#1512](https://github.com/0xMiden/miden-node/pull/1512)).
 - Block producer now detects if it is desync'd from the store's chain tip and aborts ([#1520](https://github.com/0xMiden/miden-node/pull/1520)).
 - Pin tool versions in CI ([#1523](https://github.com/0xMiden/miden-node/pull/1523)).
+- Add `GetVaultAssetWitnesses` and `GetStorageMapWitness` RPC endpoints to store ([#1529](https://github.com/0xMiden/miden-node/pull/1529)).
 
 ### Changes
 
@@ -48,7 +49,7 @@
 - Increased the maximum query limit for the store ([#1443](https://github.com/0xMiden/miden-node/pull/1443)).
 - [BREAKING] Migrated to version `v0.20` of the VM ([#1476](https://github.com/0xMiden/miden-node/pull/1476)).
 - [BREAKING] Change account in database representation ([#1481](https://github.com/0xMiden/miden-node/pull/1481)).
-- Remove the cyclic database optimization ([#1497](https://github.com/0xMiden/miden-node/pull/1497)). 
+- Remove the cyclic database optimization ([#1497](https://github.com/0xMiden/miden-node/pull/1497)).
 - Fix race condition at DB shutdown in tests ([#1503](https://github.com/0xMiden/miden-node/pull/1503)).
 
 ### Fixes

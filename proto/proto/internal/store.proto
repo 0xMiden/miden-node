@@ -372,10 +372,9 @@ message VaultAssetWitnessesRequest {
 // Response containing vault asset witnesses.
 message VaultAssetWitnessesResponse {
     // Binary encoded Vec<AssetWitness>.
-    // 
-    // The witnesses are serialized as a vector of AssetWitness using Miden's Serializable trait.
-    // Clients can deserialize this using Vec::<AssetWitness>::read_from_bytes() to reconstruct
-    // the cryptographic proofs for the vault assets.
+    //
+    // The witnesses are encoded using [winter_utils::Serializable] implementation
+    // for [miden_protocol::asset::AssetWitness].
     bytes asset_witnesses = 1;
 }
 
@@ -400,10 +399,9 @@ message StorageMapWitnessRequest {
 // Response containing a storage map witness.
 message StorageMapWitnessResponse {
     // Binary encoded StorageMapWitness.
-    // 
-    // The witness is serialized as an SmtProof using Miden's Serializable trait.
-    // Clients can deserialize this using SmtProof::read_from_bytes() to reconstruct
-    // the cryptographic proof for the storage map entry.
+    //
+    // The witnesses are encoded using [winter_utils::Serializable] implementation
+    // for [miden_protocol::account::StorageMapWitness].
     bytes witness = 1;
 
     // Block number at which the witness was generated.

@@ -15,6 +15,7 @@ use miden_node_utils::limiter::{
     QueryParamNoteIdLimit,
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
+    QueryParamStorageMapKeyLimit,
 };
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -490,6 +491,15 @@ impl api_server::Api for RpcService {
 
         debug!(target: COMPONENT, ?request);
 
+        // Validate storage map key limits before forwarding to store
+        if let Some(details) = &request.details {
+            for storage_map in &details.storage_maps {
+                if let Some(proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData::MapKeys(keys)) = &storage_map.slot_data {
+                    check::<QueryParamStorageMapKeyLimit>(keys.map_keys.len())?;
+                }
+            }
+        }
+
         self.store.clone().get_account(request).await
     }
 
@@ -617,6 +627,7 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
         QueryParamNoteIdLimit as NoteId,
         QueryParamNoteTagLimit as NoteTag,
         QueryParamNullifierLimit as Nullifier,
+        QueryParamStorageMapKeyLimit as StorageMapKey,
     };
 
     proto::rpc::RpcLimits {
@@ -638,6 +649,10 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
             ),
             ("SyncNotes".into(), endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)])),
             ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
+            (
+                "GetAccount".into(),
+                endpoint_limits(&[(StorageMapKey::PARAM_NAME, StorageMapKey::LIMIT)]),
+            ),
         ]),
     }
 });

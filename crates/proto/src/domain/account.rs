@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
+use miden_node_utils::limiter::{QueryParamLimiter, QueryParamStorageMapKeyLimit};
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -439,7 +440,10 @@ impl AccountStorageMapDetails {
     ///
     /// This limit is more restrictive than [`Self::MAX_RETURN_ENTRIES`] because SMT proofs
     /// are larger (up to 64 inner nodes each) and more CPU-intensive to generate.
-    pub const MAX_SMT_PROOF_ENTRIES: usize = 16;
+    ///
+    /// This is defined by [`QueryParamStorageMapKeyLimit::LIMIT`] and used both in RPC validation
+    /// and store-level enforcement to ensure consistent limits.
+    pub const MAX_SMT_PROOF_ENTRIES: usize = QueryParamStorageMapKeyLimit::LIMIT;
 
     /// Creates storage map details with all entries from the storage map.
     ///

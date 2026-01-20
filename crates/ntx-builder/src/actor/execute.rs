@@ -1,5 +1,5 @@
-use std::collections::BTreeSet;
-use std::num::NonZeroUsize;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use miden_node_proto::clients::ValidatorClient;
 use miden_node_proto::domain::account::{
@@ -55,6 +55,7 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
+use tokio::sync::Mutex;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
@@ -340,7 +341,7 @@ struct NtxDataStore {
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
     script_cache: LruCache<Word, NoteScript>,
     /// Mapping of storage map roots to storage slot names observed during various calls.
-    storage_slots: LruCache<(AccountId, Word), StorageSlotName>,
+    storage_slots: Arc<Mutex<BTreeMap<(AccountId, Word), StorageSlotName>>>,
 }
 
 impl NtxDataStore {
@@ -362,7 +363,7 @@ impl NtxDataStore {
             mast_store,
             store,
             script_cache,
-            storage_slots: LruCache::new(NonZeroUsize::new(100).unwrap()), // todo
+            storage_slots: Arc::new(Mutex::new(BTreeMap::default())),
         }
     }
 }
@@ -389,7 +390,10 @@ impl DataStore for NtxDataStore {
             // Register storage slots for the account.
             for slot in self.account.storage().slots() {
                 if let StorageSlotContent::Map(map) = slot.content() {
-                    self.storage_slots.put((account_id, map.root()), slot.name().clone()).await;
+                    self.storage_slots
+                        .lock()
+                        .await
+                        .insert((account_id, map.root()), slot.name().clone());
                 }
             }
 
@@ -436,8 +440,9 @@ impl DataStore for NtxDataStore {
             for slot in account_details.storage_details.header.slots() {
                 if let StorageSlotType::Map = slot.slot_type() {
                     self.storage_slots
-                        .put((foreign_account_id, slot.value()), slot.name().clone())
-                        .await;
+                        .lock()
+                        .await
+                        .insert((foreign_account_id, slot.value()), slot.name().clone());
                 }
             }
 

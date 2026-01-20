@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::NetworkAccountId;
 use miden_node_proto::domain::note::SingleTargetNetworkNote;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{Account, AccountDelta, AccountId};
@@ -33,7 +33,7 @@ pub struct NetworkAccountNoteState {
 impl NetworkAccountNoteState {
     /// Creates a new account state from the supplied account and notes.
     pub fn new(account: Account, notes: Vec<SingleTargetNetworkNote>) -> Self {
-        let account_prefix = NetworkAccountPrefix::try_from(account.id())
+        let account_id = NetworkAccountId::try_from(account.id())
             .expect("only network accounts are used for account state");
 
         let mut state = Self {
@@ -46,8 +46,8 @@ impl NetworkAccountNoteState {
         for note in notes {
             // Currently only support single target network notes in NTB.
             assert!(
-                note.account_prefix() == account_prefix,
-                "Notes supplied into account state must match expected account prefix"
+                note.account_id() == account_id,
+                "Notes supplied into account state must match expected account ID"
             );
             state.add_note(note);
         }
@@ -210,15 +210,15 @@ impl NetworkAccountEffect {
             AccountUpdateDetails::Delta(update) => NetworkAccountEffect::Updated(update.clone()),
         };
 
-        update.account_id().is_network().then_some(update)
+        update.protocol_account_id().is_network().then_some(update)
     }
 
-    pub fn prefix(&self) -> NetworkAccountPrefix {
+    pub fn network_account_id(&self) -> NetworkAccountId {
         // SAFETY: This is a network account by construction.
-        self.account_id().try_into().unwrap()
+        self.protocol_account_id().try_into().unwrap()
     }
 
-    fn account_id(&self) -> AccountId {
+    fn protocol_account_id(&self) -> AccountId {
         match self {
             NetworkAccountEffect::Created(acc) => acc.id(),
             NetworkAccountEffect::Updated(delta) => delta.id(),

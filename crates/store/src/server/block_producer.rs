@@ -4,17 +4,18 @@ use miden_node_proto::generated::store::block_producer_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProvenBlock};
 use miden_protocol::utils::Deserializable;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, instrument};
+use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
+use crate::errors::ApplyBlockError;
 use crate::server::api::{
     StoreApi,
     conversion_error_to_status,
-    internal_error,
     read_account_id,
     read_account_ids,
     read_block_numbers,
@@ -35,7 +36,6 @@ impl block_producer_server::BlockProducer for StoreApi {
         target = COMPONENT,
         name = "store.block_producer_server.get_block_header_by_number",
         skip_all,
-        ret(level = "debug"),
         err
     )]
     async fn get_block_header_by_number(
@@ -51,7 +51,6 @@ impl block_producer_server::BlockProducer for StoreApi {
         target = COMPONENT,
         name = "store.block_producer_server.apply_block",
         skip_all,
-        ret(level = "debug"),
         err
     )]
     async fn apply_block(
@@ -60,26 +59,50 @@ impl block_producer_server::BlockProducer for StoreApi {
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
-        debug!(target: COMPONENT, ?request);
-
         let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
             Status::invalid_argument(err.as_report_context("block deserialization error"))
         })?;
 
-        let block_num = block.header().block_num().as_u32();
+        let span = tracing::Span::current();
+        span.set_attribute("block.number", block.header().block_num());
+        span.set_attribute("block.commitment", block.header().commitment());
+        span.set_attribute("block.accounts.count", block.body().updated_accounts().len());
+        span.set_attribute("block.output_notes.count", block.body().output_notes().count());
+        span.set_attribute("block.nullifiers.count", block.body().created_nullifiers().len());
 
-        info!(
-            target: COMPONENT,
-            block_num,
-            block_commitment = %block.header().commitment(),
-            account_count = block.body().updated_accounts().len(),
-            note_count = block.body().output_notes().count(),
-            nullifier_count = block.body().created_nullifiers().len(),
-        );
+        // We perform the apply_block work in a separate task. This prevents the caller cancelling
+        // the request and thereby cancelling the task at an arbitrary point of execution.
+        //
+        // Normally this shouldn't be a problem, however our apply_block isn't quite ACID compliant
+        // so things get a bit messy. This is more a temporary hack-around to minimize this risk.
+        let this = self.clone();
+        tokio::spawn(
+            async move {
+                this.state
+                    .apply_block(block)
+                    .await
+                    .map(Response::new)
+                    .inspect_err(|err| {
+                        span.set_error(err);
+                    })
+                    .map_err(|err| {
+                        let code = match err {
+                            ApplyBlockError::InvalidBlockError(_) => tonic::Code::InvalidArgument,
+                            _ => tonic::Code::Internal,
+                        };
 
-        self.state.apply_block(block).await?;
-
-        Ok(Response::new(()))
+                        // This is an internal endpoint, so its safe to expose the full error
+                        // report.
+                        Status::new(code, err.as_report())
+                    })
+            }
+            .in_current_span(),
+        )
+        .await
+        .map_err(|err| {
+            tonic::Status::internal(err.as_report_context("joining apply_block task failed"))
+        })
+        .flatten()
     }
 
     /// Returns data needed by the block producer to construct and prove the next block.
@@ -88,7 +111,6 @@ impl block_producer_server::BlockProducer for StoreApi {
             target = COMPONENT,
             name = "store.block_producer_server.get_block_inputs",
             skip_all,
-            ret(level = "debug"),
             err
         )]
     async fn get_block_inputs(
@@ -116,7 +138,8 @@ impl block_producer_server::BlockProducer for StoreApi {
             .await
             .map(proto::store::BlockInputs::from)
             .map(Response::new)
-            .map_err(internal_error)
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+            .map_err(|err| tonic::Status::internal(err.as_report()))
     }
 
     /// Fetches the inputs for a transaction batch from the database.
@@ -127,7 +150,6 @@ impl block_producer_server::BlockProducer for StoreApi {
           target = COMPONENT,
           name = "store.block_producer_server.get_batch_inputs",
           skip_all,
-          ret(level = "debug"),
           err
         )]
     async fn get_batch_inputs(
@@ -151,7 +173,8 @@ impl block_producer_server::BlockProducer for StoreApi {
             .await
             .map(Into::into)
             .map(Response::new)
-            .map_err(internal_error)
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+            .map_err(|err| tonic::Status::internal(err.as_report()))
     }
 
     #[instrument(
@@ -159,7 +182,6 @@ impl block_producer_server::BlockProducer for StoreApi {
             target = COMPONENT,
             name = "store.block_producer_server.get_transaction_inputs",
             skip_all,
-            ret(level = "debug"),
             err
         )]
     async fn get_transaction_inputs(
@@ -167,8 +189,6 @@ impl block_producer_server::BlockProducer for StoreApi {
         request: Request<proto::store::TransactionInputsRequest>,
     ) -> Result<Response<proto::store::TransactionInputs>, Status> {
         let request = request.into_inner();
-
-        debug!(target: COMPONENT, ?request);
 
         let account_id = read_account_id::<Status>(request.account_id)?;
         let nullifiers = validate_nullifiers(&request.nullifiers)
@@ -179,7 +199,9 @@ impl block_producer_server::BlockProducer for StoreApi {
         let tx_inputs = self
             .state
             .get_transaction_inputs(account_id, &nullifiers, unauthenticated_note_commitments)
-            .await?;
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+            .map_err(|err| tonic::Status::internal(err.as_report()))?;
 
         let block_height = self.state.latest_block_num().await.as_u32();
 

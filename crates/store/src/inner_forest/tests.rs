@@ -441,9 +441,10 @@ fn test_open_storage_map_returns_limit_exceeded_for_too_many_keys() {
     let slot_name = StorageSlotName::mock(3);
     let block_num = BlockNumber::GENESIS.child();
 
-    // Create a storage map with a few entries
+    // Create a storage map with entries
+    let num_entries = AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES + 5;
     let mut map_delta = StorageMapDelta::default();
-    for i in 0..20u32 {
+    for i in 0..num_entries as u32 {
         let key = Word::from([i, 0, 0, 0]);
         let value = Word::from([0, 0, 0, i]);
         map_delta.insert(key, value);
@@ -453,9 +454,9 @@ fn test_open_storage_map_returns_limit_exceeded_for_too_many_keys() {
     let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
     forest.update_account(block_num, &delta).unwrap();
 
-    // Request proofs for more than MAX_SMT_PROOF_ENTRIES (16) keys.
+    // Request proofs for more than MAX_SMT_PROOF_ENTRIES keys.
     // Should return LimitExceeded.
-    let keys: Vec<Word> = (0..20u32).map(|i| Word::from([i, 0, 0, 0])).collect();
+    let keys: Vec<Word> = (0..num_entries as u32).map(|i| Word::from([i, 0, 0, 0])).collect();
     let result = forest.open_storage_map(account_id, slot_name.clone(), block_num, &keys);
 
     let details = result.expect("Should return Some").expect("Should not error");

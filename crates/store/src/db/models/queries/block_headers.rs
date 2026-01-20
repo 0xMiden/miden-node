@@ -16,6 +16,7 @@ use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::DatabaseError;
+use crate::COMPONENT;
 use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::vec_raw_try_into;
 use crate::db::schema;
@@ -165,6 +166,11 @@ impl From<&BlockHeader> for BlockHeaderInsert {
 ///
 /// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction
+#[tracing::instrument(
+    target = COMPONENT,
+    skip_all,
+    err,
+)]
 pub(crate) fn insert_block_header(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,

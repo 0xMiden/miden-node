@@ -95,6 +95,7 @@ use crate::errors::NoteSyncError;
 ///     note_type,
 ///     sender,
 ///     tag,
+///     attachment,
 ///     inclusion_path
 /// FROM
 ///     notes
@@ -181,6 +182,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 ///     notes.note_type,
 ///     notes.sender,
 ///     notes.tag,
+///     notes.attachment,
 ///     notes.assets,
 ///     notes.inputs,
 ///     notes.serial_num,
@@ -260,6 +262,7 @@ pub(crate) fn select_existing_note_commitments(
 ///     notes.note_type,
 ///     notes.sender,
 ///     notes.tag,
+///     notes.attachment,
 ///     notes.assets,
 ///     notes.inputs,
 ///     notes.serial_num,
@@ -403,6 +406,7 @@ pub(crate) fn select_note_script_by_root(
 ///     notes.note_type,
 ///     notes.sender,
 ///     notes.tag,
+///     notes.attachment,
 ///     notes.assets,
 ///     notes.inputs,
 ///     notes.serial_num,
@@ -412,7 +416,7 @@ pub(crate) fn select_note_script_by_root(
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
 /// WHERE
-///     execution_mode = 0 AND tag = ?1 AND
+///     is_single_target_network_note = TRUE AND tag = ?1 AND
 ///     committed_at <= ?2 AND
 ///     (consumed_at IS NULL OR consumed_at > ?2) AND notes.rowid >= ?3
 /// ORDER BY notes.rowid ASC

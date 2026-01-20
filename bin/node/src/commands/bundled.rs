@@ -215,7 +215,6 @@ impl BundledCommand {
                     ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
                     grpc_timeout,
-                    rebuild_tree_storage: false,
                 }
                 .serve()
                 .await

@@ -93,14 +93,6 @@ pub enum StoreCommand {
             value_name = "DURATION"
         )]
         grpc_timeout: Duration,
-
-        /// Rebuild persistent tree storage from the database on startup.
-        ///
-        /// Use this flag to recover from corrupted tree storage or when the persistent storage
-        /// has diverged from the database. This will delete existing tree storage and rebuild
-        /// it from scratch, which may take some time for large databases.
-        #[arg(long = "rebuild-tree-storage", default_value_t = false)]
-        rebuild_tree_storage: bool,
     },
 }
 
@@ -126,7 +118,6 @@ impl StoreCommand {
                 data_directory,
                 enable_otel: _,
                 grpc_timeout,
-                rebuild_tree_storage,
             } => {
                 Self::start(
                     rpc_url,
@@ -134,7 +125,6 @@ impl StoreCommand {
                     block_producer_url,
                     data_directory,
                     grpc_timeout,
-                    rebuild_tree_storage,
                 )
                 .await
             },
@@ -155,7 +145,6 @@ impl StoreCommand {
         block_producer_url: Url,
         data_directory: PathBuf,
         grpc_timeout: Duration,
-        rebuild_tree_storage: bool,
     ) -> anyhow::Result<()> {
         let rpc_listener = rpc_url
             .to_socket()
@@ -184,7 +173,6 @@ impl StoreCommand {
             block_producer_listener,
             data_directory,
             grpc_timeout,
-            rebuild_tree_storage,
         }
         .serve()
         .await

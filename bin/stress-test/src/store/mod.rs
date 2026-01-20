@@ -486,7 +486,7 @@ async fn sync_transactions_paginated(
 
 pub async fn load_state(data_directory: &Path) {
     let start = Instant::now();
-    let _state = State::load(data_directory, false).await.unwrap();
+    let _state = State::load(data_directory).await.unwrap();
     let elapsed = start.elapsed();
 
     // Get database path and run SQL commands to count records

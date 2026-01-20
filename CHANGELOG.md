@@ -28,7 +28,7 @@
 - Block producer now detects if it is desync'd from the store's chain tip and aborts ([#1520](https://github.com/0xMiden/miden-node/pull/1520)).
 - Pin tool versions in CI ([#1523](https://github.com/0xMiden/miden-node/pull/1523)).
 - Add check to ensure tree store state is in sync with database storage ([#1532](https://github.com/0xMiden/miden-node/issues/1534)).
-- Add force-rebuild CLI flag to re-build tree storage from the database ([#1532](https://github.com/0xMiden/miden-node/issues/1534)).
+- Use paged queries for tree rebuilding to reduce memory usage during startup ([#1536](https://github.com/0xMiden/miden-node/pull/1536)).
 
 ### Changes
 

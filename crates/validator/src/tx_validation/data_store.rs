@@ -62,37 +62,14 @@ impl DataStore for TransactionInputsDataStore {
 
     fn get_vault_asset_witnesses(
         &self,
-        account_id: AccountId,
-        vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        _account_id: AccountId,
+        _vault_root: Word,
+        _vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
-            if self.tx_inputs.account().id() == account_id {
-                // Get asset witnessess from native account.
-                Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-                    match self.tx_inputs.account().vault().open(vault_key) {
-                        Ok(vault_proof) => AssetWitness::new(vault_proof.into()).map_err(|err| {
-                            DataStoreError::other_with_source(
-                                "failed to open vault asset tree",
-                                err,
-                            )
-                        }),
-                        Err(err) => {
-                            Err(DataStoreError::other_with_source("failed to open vault", err))
-                        },
-                    }
-                }))
-            } else {
-                // Get asset witnessess from foreign account.
-                self.tx_inputs
-                    .read_vault_asset_witnesses(vault_root, vault_keys)
-                    .map_err(|err| {
-                        DataStoreError::other_with_source(
-                            "failed to read vault asset witnesses",
-                            err,
-                        )
-                    })
-            }
+            unimplemented!(
+                "get_vault_asset_witnesses is not used during re-execution of transactions"
+            )
         }
     }
 

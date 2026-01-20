@@ -1251,6 +1251,9 @@ impl State {
 
     /// Returns a storage map witness for the specified account and storage entry at the block
     /// number.
+    ///
+    /// Note that the `raw_key` is the raw, user-provided key that needs to be hashed in order to
+    /// get the actual key into the storage map.
     pub async fn get_storage_map_witness(
         &self,
         account_id: AccountId,

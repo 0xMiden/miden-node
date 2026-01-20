@@ -233,6 +233,9 @@ impl Coordinator {
         if let MempoolEvent::TransactionAdded { id, network_notes, account_delta, .. } =
             event.as_ref()
         {
+            // We need to inform the account if it was updated. This lets it know that its own
+            // transaction has been applied, and in the future also resolves race conditions with
+            // external network transactions (once these are allowed).
             if let Some(AccountUpdateDetails::Delta(delta)) = account_delta {
                 let account_id = delta.id();
                 if account_id.is_network() {

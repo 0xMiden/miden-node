@@ -161,19 +161,22 @@ impl InnerForest {
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
+    /// Retrieves a storage map witness for the specified account and storage entry.
     pub(crate) fn get_storage_map_witness(
         &self,
         account_id: AccountId,
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
-        key: Word,
+        raw_key: Word,
     ) -> Result<StorageMapWitness, WitnessError> {
         let root = self.get_storage_root(account_id, slot_name, block_num);
-        let proof = self.forest.open(root, key)?;
+        let proof = self.forest.open(root, raw_key)?;
 
-        Ok(StorageMapWitness::new(proof, vec![key])?)
+        Ok(StorageMapWitness::new(proof, vec![raw_key])?)
     }
 
+    /// Retrieves a vault asset witness for the specified account and asset keys at the specified
+    /// block number.
     pub fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,

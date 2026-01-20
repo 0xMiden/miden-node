@@ -1234,7 +1234,7 @@ impl State {
         self.db.select_transactions_records(account_ids, block_range).await
     }
 
-    /// Returns vault asset witnesses for the specified account.
+    /// Returns vault asset witnesses for the specified account and block number.
     pub async fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
@@ -1249,19 +1249,20 @@ impl State {
         Ok(witnesses)
     }
 
-    /// Returns a storage map witness for the specified account and storage entry.
+    /// Returns a storage map witness for the specified account and storage entry at the block
+    /// number.
     pub async fn get_storage_map_witness(
         &self,
         account_id: AccountId,
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
-        key: Word,
+        raw_key: Word,
     ) -> Result<StorageMapWitness, WitnessError> {
         let witness = self
             .forest
             .read()
             .await
-            .get_storage_map_witness(account_id, slot_name, block_num, key)?;
+            .get_storage_map_witness(account_id, slot_name, block_num, raw_key)?;
         Ok(witness)
     }
 }

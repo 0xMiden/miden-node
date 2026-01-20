@@ -373,14 +373,8 @@ message VaultAssetWitnessesRequest {
 message VaultAssetWitnessesResponse {
     // A vault asset witness containing the asset and its proof.
     message VaultAssetWitness {
-        // The asset vault key.
-        primitives.Digest vault_key = 1;
-
-        // The asset data.
-        primitives.Asset asset = 2;
-
         // The Merkle proof for the asset's inclusion in the vault.
-        primitives.SparseMerklePath proof = 3;
+        primitives.SmtOpening proof = 1;
     }
 
     // List of asset witnesses.

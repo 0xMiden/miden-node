@@ -7,7 +7,6 @@ use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::store::ntx_builder_server;
 use miden_node_utils::ErrorReport;
-use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::asset::AssetVaultKey;
 use miden_protocol::block::BlockNumber;
@@ -282,18 +281,11 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         // Convert AssetWitness to protobuf format by extracting witness data.
         let proto_witnesses = asset_witnesses
-            .iter()
+            .into_iter()
             .map(|witness| {
-                let smt_proof: SmtProof = witness.clone().into();
-                let (path, leaf) = smt_proof.into_parts();
-
+                let proof: SmtProof = witness.into();
                 proto::store::vault_asset_witnesses_response::VaultAssetWitness {
-                    // Derive vault key from leaf index.
-                    vault_key: Some(Word::from([leaf.index().value() as u32, 0, 0, 0]).into()),
-                    // Use leaf hash as asset representation.
-                    asset: Some(proto::primitives::Asset { asset: Some(leaf.hash().into()) }),
-                    // Include the Merkle path as proof.
-                    proof: Some(path.into()),
+                    proof: Some(proof.into()),
                 }
             })
             .collect();

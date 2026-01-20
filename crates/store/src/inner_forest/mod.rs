@@ -5,6 +5,7 @@ use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountV
 use miden_protocol::account::{
     AccountId,
     NonFungibleDeltaAction,
+    StorageMap,
     StorageMapWitness,
     StorageSlotName,
 };
@@ -187,10 +188,11 @@ impl InnerForest {
         block_num: BlockNumber,
         raw_key: Word,
     ) -> Result<StorageMapWitness, WitnessError> {
+        let key = StorageMap::hash_key(raw_key);
         let root = self
             .get_storage_root(account_id, slot_name, block_num)
             .ok_or(WitnessError::RootNotFound)?;
-        let proof = self.forest.open(root, raw_key)?;
+        let proof = self.forest.open(root, key)?;
 
         Ok(StorageMapWitness::new(proof, vec![raw_key])?)
     }

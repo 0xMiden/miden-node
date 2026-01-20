@@ -65,14 +65,12 @@ use crate::errors::{
     GetBlockHeaderError,
     GetBlockInputsError,
     GetCurrentBlockchainDataError,
-    GetStorageMapWitnessError,
-    GetVaultAssetWitnessesError,
     InvalidBlockError,
     NoteSyncError,
     StateInitializationError,
     StateSyncError,
 };
-use crate::inner_forest::InnerForest;
+use crate::inner_forest::{InnerForest, WitnessError};
 use crate::{COMPONENT, DataDirectory};
 
 // STRUCTURES
@@ -1332,13 +1330,12 @@ impl State {
         account_id: AccountId,
         block_num: BlockNumber,
         vault_keys: BTreeSet<AssetVaultKey>,
-    ) -> Result<Vec<AssetWitness>, GetVaultAssetWitnessesError> {
+    ) -> Result<Vec<AssetWitness>, WitnessError> {
         let witnesses = self
             .forest
             .read()
             .await
-            .get_vault_asset_witnesses(account_id, block_num, vault_keys)
-            .unwrap(); // todo
+            .get_vault_asset_witnesses(account_id, block_num, vault_keys)?;
         Ok(witnesses)
     }
 
@@ -1349,13 +1346,12 @@ impl State {
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
         key: Word,
-    ) -> Result<StorageMapWitness, GetStorageMapWitnessError> {
+    ) -> Result<StorageMapWitness, WitnessError> {
         let witness = self
             .forest
             .read()
             .await
-            .get_storage_map_witness(account_id, slot_name, block_num, key)
-            .unwrap(); // todo
+            .get_storage_map_witness(account_id, slot_name, block_num, key)?;
         Ok(witness)
     }
 }

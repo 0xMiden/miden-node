@@ -31,7 +31,7 @@ use tonic::Status;
 
 use crate::db::manager::ConnectionManagerError;
 use crate::db::models::conv::DatabaseTypeConversionError;
-use crate::inner_forest::InnerForestError;
+use crate::inner_forest::{InnerForestError, WitnessError};
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -529,44 +529,16 @@ pub enum SyncTransactionsError {
     DeserializationFailed(#[from] ConversionError),
     #[error("account {0} not found")]
     AccountNotFound(AccountId),
+    #[error("failed to retrieve witness")]
+    WitnessError(#[from] WitnessError),
 }
 
 #[derive(Debug, Error, GrpcError)]
-pub enum GetVaultAssetWitnessesError {
-    #[error("database error")]
-    #[grpc(internal)]
-    DatabaseError(#[from] DatabaseError),
-    #[error("malformed account ID")]
+pub enum GetWitnessesError {
+    #[error("malformed request")]
     DeserializationFailed(#[from] ConversionError),
-    #[error("account {0} not found")]
-    AccountNotFound(AccountId),
-    #[error("account {0} is not public")]
-    AccountNotPublic(AccountId),
-    #[error("vault root mismatch for account {0}")]
-    VaultRootMismatch(AccountId),
-}
-
-#[derive(Debug, Error, GrpcError)]
-pub enum GetStorageMapWitnessError {
-    #[error("database error")]
-    #[grpc(internal)]
-    DatabaseError(#[from] DatabaseError),
-    #[error("malformed account ID")]
-    DeserializationFailed(#[from] ConversionError),
-    #[error("account {0} not found")]
-    AccountNotFound(AccountId),
-    #[error("account {0} is not public")]
-    AccountNotPublic(AccountId),
-    #[error("merkle error")]
-    MerkleError(#[from] MerkleError),
-    #[error(
-        "storage map not found for account {account_id}, slot {slot_name} at block {block_num}"
-    )]
-    StorageMapNotFound {
-        account_id: AccountId,
-        slot_name: String,
-        block_num: BlockNumber,
-    },
+    #[error("failed to retrieve witness")]
+    WitnessError(#[from] WitnessError),
 }
 
 // SCHEMA VERIFICATION ERRORS

@@ -12,7 +12,7 @@ use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
-use miden_protocol::{EMPTY_WORD, Word};
+use miden_protocol::{EMPTY_WORD, StorageMapError, Word};
 use thiserror::Error;
 
 #[cfg(test)]
@@ -33,6 +33,16 @@ pub enum InnerForestError {
         prev_balance: u64,
         delta: i64,
     },
+}
+
+#[derive(Debug, Error)]
+pub enum WitnessError {
+    #[error("root not found")]
+    RootNotFound,
+    #[error("merkle error")]
+    MerkleError(#[from] MerkleError),
+    #[error("storage map error")]
+    StorageMapError(#[from] StorageMapError),
 }
 
 // INNER FOREST
@@ -154,11 +164,11 @@ impl InnerForest {
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
         key: Word,
-    ) -> Result<StorageMapWitness, MerkleError> {
+    ) -> Result<StorageMapWitness, WitnessError> {
         let root = self.get_storage_root(account_id, slot_name, block_num);
         let proof = self.forest.open(root, key)?;
 
-        Ok(StorageMapWitness::new(proof, vec![key]).unwrap()) // todo
+        Ok(StorageMapWitness::new(proof, vec![key])?)
     }
 
     pub fn get_vault_asset_witnesses(
@@ -166,15 +176,18 @@ impl InnerForest {
         account_id: AccountId,
         block_num: BlockNumber,
         asset_keys: BTreeSet<AssetVaultKey>,
-    ) -> Result<Vec<AssetWitness>, MerkleError> {
-        let root = self.vault_roots.get(&(account_id, block_num)).unwrap(); // todo
+    ) -> Result<Vec<AssetWitness>, WitnessError> {
+        let root = self
+            .vault_roots
+            .get(&(account_id, block_num))
+            .ok_or(WitnessError::RootNotFound)?;
         let witnessees = asset_keys
             .into_iter()
             .map(|key| {
-                let proof = self.forest.open(*root, key.into()).unwrap(); // todo
-                AssetWitness::new_unchecked(proof)
+                let proof = self.forest.open(*root, key.into())?;
+                Ok(AssetWitness::new_unchecked(proof))
             })
-            .collect();
+            .collect::<Result<Vec<_>, WitnessError>>()?;
         Ok(witnessees)
     }
 

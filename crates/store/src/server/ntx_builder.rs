@@ -15,12 +15,7 @@ use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::db::models::Page;
-use crate::errors::{
-    GetNetworkAccountIdsError,
-    GetNoteScriptByRootError,
-    GetStorageMapWitnessError,
-    GetVaultAssetWitnessesError,
-};
+use crate::errors::{GetNetworkAccountIdsError, GetNoteScriptByRootError, GetWitnessesError};
 use crate::server::api::{
     StoreApi,
     internal_error,
@@ -254,15 +249,15 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::VaultAssetWitnessesResponse>, Status> {
         let request = request.into_inner();
 
-        let account_id = read_account_id::<GetVaultAssetWitnessesError>(request.account_id)
-            .map_err(internal_error)?;
+        let account_id =
+            read_account_id::<GetWitnessesError>(request.account_id).map_err(internal_error)?;
 
         // Convert vault keys from protobuf to AssetVaultKey.
         let vault_keys = request
             .vault_keys
             .into_iter()
             .map(|key_digest| {
-                let word = read_root::<GetVaultAssetWitnessesError>(Some(key_digest), "VaultKey")
+                let word = read_root::<GetWitnessesError>(Some(key_digest), "VaultKey")
                     .map_err(internal_error)?;
                 Ok(AssetVaultKey::new_unchecked(word))
             })
@@ -320,11 +315,11 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::StorageMapWitnessResponse>, Status> {
         let request = request.into_inner();
 
-        let account_id = read_account_id::<GetStorageMapWitnessError>(request.account_id)
-            .map_err(internal_error)?;
+        let account_id =
+            read_account_id::<GetWitnessesError>(request.account_id).map_err(internal_error)?;
 
-        let map_key = read_root::<GetStorageMapWitnessError>(request.map_key, "MapKey")
-            .map_err(internal_error)?;
+        let map_key =
+            read_root::<GetWitnessesError>(request.map_key, "MapKey").map_err(internal_error)?;
 
         // Extract slot name from request
         let slot_name = miden_protocol::account::StorageSlotName::new(request.slot_name)

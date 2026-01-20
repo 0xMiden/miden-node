@@ -367,6 +367,9 @@ message VaultAssetWitnessesRequest {
 
     // Set of asset vault keys to retrieve witnesses for.
     repeated primitives.Digest vault_keys = 3;
+
+    // Optional block number. If not provided, uses the latest state.
+    optional fixed32 block_num = 4;
 }
 
 // Response containing vault asset witnesses.
@@ -395,14 +398,14 @@ message StorageMapWitnessRequest {
     // The account ID for which to retrieve the storage map witness.
     account.AccountId account_id = 1;
 
-    // The storage map root hash.
-    primitives.Digest map_root = 2;
-
     // The storage map key for which to retrieve the witness.
-    primitives.Digest map_key = 3;
+    primitives.Digest map_key = 2;
 
     // Optional block number. If not provided, uses the latest state.
-    optional fixed32 block_num = 4;
+    optional fixed32 block_num = 3;
+
+    // The storage slot name for the map.
+    string slot_name = 4;
 }
 
 // Response containing a storage map witness.

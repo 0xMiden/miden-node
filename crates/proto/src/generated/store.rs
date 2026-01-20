@@ -235,6 +235,9 @@ pub struct VaultAssetWitnessesRequest {
     /// Set of asset vault keys to retrieve witnesses for.
     #[prost(message, repeated, tag = "3")]
     pub vault_keys: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    /// Optional block number. If not provided, uses the latest state.
+    #[prost(fixed32, optional, tag = "4")]
+    pub block_num: ::core::option::Option<u32>,
 }
 /// Response containing vault asset witnesses.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -267,15 +270,15 @@ pub struct StorageMapWitnessRequest {
     /// The account ID for which to retrieve the storage map witness.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// The storage map root hash.
-    #[prost(message, optional, tag = "2")]
-    pub map_root: ::core::option::Option<super::primitives::Digest>,
     /// The storage map key for which to retrieve the witness.
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "2")]
     pub map_key: ::core::option::Option<super::primitives::Digest>,
     /// Optional block number. If not provided, uses the latest state.
-    #[prost(fixed32, optional, tag = "4")]
+    #[prost(fixed32, optional, tag = "3")]
     pub block_num: ::core::option::Option<u32>,
+    /// The storage slot name for the map.
+    #[prost(string, tag = "4")]
+    pub slot_name: ::prost::alloc::string::String,
 }
 /// Response containing a storage map witness.
 #[derive(Clone, PartialEq, ::prost::Message)]

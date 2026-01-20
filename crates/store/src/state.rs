@@ -19,7 +19,6 @@ use miden_node_proto::domain::account::{
     AccountVaultDetails,
     NetworkAccountPrefix,
     SlotData,
-    StorageMapEntries,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
@@ -27,7 +26,8 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_protocol::Word;
 use miden_protocol::account::delta::AccountUpdateDetails;
-use miden_protocol::account::{AccountId, StorageSlotName};
+use miden_protocol::account::{AccountId, StorageMapWitness, StorageSlotName};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
@@ -65,6 +65,8 @@ use crate::errors::{
     GetBlockHeaderError,
     GetBlockInputsError,
     GetCurrentBlockchainDataError,
+    GetStorageMapWitnessError,
+    GetVaultAssetWitnessesError,
     InvalidBlockError,
     NoteSyncError,
     StateInitializationError,
@@ -1328,61 +1330,16 @@ impl State {
     pub async fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
-        vault_root: Word,
-        vault_keys: std::collections::BTreeSet<miden_protocol::asset::AssetVaultKey>,
-    ) -> Result<Vec<miden_protocol::asset::AssetWitness>, crate::errors::GetVaultAssetWitnessesError>
-    {
-        use miden_protocol::asset::{AssetVault, AssetWitness};
-
-        use crate::errors::GetVaultAssetWitnessesError;
-
-        // Validate that the account is public.
-        if !account_id.has_public_state() {
-            return Err(GetVaultAssetWitnessesError::AccountNotPublic(account_id));
-        }
-
-        // Get the account header to verify the vault root and ensure account exists.
-        let (account_header, _storage_header) = self
-            .db
-            .select_account_header_with_storage_header_at_block(
-                account_id,
-                self.latest_block_num().await,
-            )
+        block_num: BlockNumber,
+        _vault_root: Word,
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> Result<Vec<AssetWitness>, GetVaultAssetWitnessesError> {
+        let witnesses = self
+            .forest
+            .read()
             .await
-            .map_err(GetVaultAssetWitnessesError::DatabaseError)?
-            .ok_or(GetVaultAssetWitnessesError::AccountNotFound(account_id))?;
-
-        // Verify that the provided vault root matches the account's vault root.
-        if account_header.vault_root() != vault_root {
-            return Err(GetVaultAssetWitnessesError::VaultRootMismatch(account_id));
-        }
-
-        // Get all vault assets for this account at the latest block.
-        let vault_assets = self
-            .db
-            .select_account_vault_at_block(account_id, self.latest_block_num().await)
-            .await
-            .map_err(GetVaultAssetWitnessesError::DatabaseError)?;
-
-        // Create the vault from the assets.
-        let asset_vault = AssetVault::new(&vault_assets).map_err(|err| {
-            GetVaultAssetWitnessesError::DatabaseError(DatabaseError::DataCorrupted(format!(
-                "failed to create asset vault from stored assets: {err}"
-            )))
-        })?;
-
-        // Generate witnesses for each requested vault key.
-        let mut witnesses = Vec::new();
-        for vault_key in vault_keys {
-            let vault_proof = asset_vault.open(vault_key);
-            let witness = AssetWitness::new(vault_proof.into()).map_err(|err| {
-                GetVaultAssetWitnessesError::DatabaseError(DatabaseError::DataCorrupted(format!(
-                    "failed to create asset witness: {err}"
-                )))
-            })?;
-            witnesses.push(witness);
-        }
-
+            .get_vault_asset_witnesses(account_id, block_num, vault_keys)
+            .unwrap(); // todo
         Ok(witnesses)
     }
 
@@ -1390,56 +1347,17 @@ impl State {
     pub async fn get_storage_map_witness(
         &self,
         account_id: AccountId,
-        slot_name: StorageSlotName,
+        slot_name: &StorageSlotName,
         block_num: BlockNumber,
         key: Word,
-    ) -> Result<miden_protocol::account::StorageMapWitness, crate::errors::GetStorageMapWitnessError>
-    {
-        use crate::errors::GetStorageMapWitnessError;
-
-        // Validate that the account is public.
-        if !account_id.has_public_state() {
-            return Err(GetStorageMapWitnessError::AccountNotPublic(account_id));
-        }
-
-        let map_details = match self.forest.read().await.open_storage_map(
-            account_id,
-            slot_name.clone(),
-            block_num,
-            &[key],
-        ) {
-            Some(Ok(map)) => Ok(map),
-            Some(Err(err)) => Err(GetStorageMapWitnessError::MerkleError(err)),
-            None => Err(GetStorageMapWitnessError::StorageMapNotFound {
-                account_id,
-                slot_name: slot_name.clone().into(),
-                block_num,
-            }),
-        }?;
-
-        // Search through storage slots to find the map with matching root.
-        match map_details.entries {
-            StorageMapEntries::LimitExceeded => {
-                Err(GetStorageMapWitnessError::StorageMapNotFound {
-                    account_id,
-                    slot_name: slot_name.clone().into(),
-                    block_num,
-                })
-            },
-            StorageMapEntries::AllEntries(_items) => {
-                // For AllEntries, we don't have proofs needed for witness
-                Err(GetStorageMapWitnessError::StorageMapNotFound {
-                    account_id,
-                    slot_name: slot_name.clone().into(),
-                    block_num,
-                })
-            },
-            StorageMapEntries::EntriesWithProofs(smt_proofs) => {
-                for proof in smt_proofs {
-                    // TODO ...
-                }
-            },
-        }
+    ) -> Result<StorageMapWitness, GetStorageMapWitnessError> {
+        let witness = self
+            .forest
+            .read()
+            .await
+            .get_storage_map_witness(account_id, slot_name, block_num, key)
+            .unwrap(); // todo
+        Ok(witness)
     }
 }
 

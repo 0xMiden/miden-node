@@ -607,17 +607,6 @@ impl Db {
         .await
     }
 
-    /// Returns the latest account storage for the specified account.
-    pub async fn select_latest_account_storage(
-        &self,
-        account_id: AccountId,
-    ) -> Result<miden_protocol::account::AccountStorage> {
-        self.transact("Get latest account storage", move |conn| {
-            queries::select_latest_account_storage(conn, account_id)
-        })
-        .await
-    }
-
     /// Loads the network notes for an account that are unconsumed by a specified block number.
     /// Pagination is used to limit the number of notes returned.
     pub(crate) async fn select_unconsumed_network_notes(

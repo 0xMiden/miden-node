@@ -271,9 +271,16 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             })
             .collect::<Result<std::collections::BTreeSet<_>, Status>>()?;
 
+        // Extract block number from request, use latest if not provided
+        let block_num = if let Some(num) = request.block_num {
+            num.into()
+        } else {
+            self.state.latest_block_num().await
+        };
+
         let asset_witnesses = self
             .state
-            .get_vault_asset_witnesses(account_id, vault_root, vault_keys)
+            .get_vault_asset_witnesses(account_id, block_num, vault_root, vault_keys)
             .await
             .map_err(internal_error)?;
 
@@ -319,15 +326,23 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let account_id = read_account_id::<GetStorageMapWitnessError>(request.account_id)
             .map_err(internal_error)?;
 
-        let map_root = read_root::<GetStorageMapWitnessError>(request.map_root, "MapRoot")
-            .map_err(internal_error)?;
-
         let map_key = read_root::<GetStorageMapWitnessError>(request.map_key, "MapKey")
             .map_err(internal_error)?;
 
+        // Extract slot name from request
+        let slot_name = miden_protocol::account::StorageSlotName::new(request.slot_name)
+            .map_err(|_| tonic::Status::invalid_argument("Invalid storage slot name"))?;
+
+        // Extract block number from request, use latest if not provided
+        let block_num = if let Some(num) = request.block_num {
+            num.into()
+        } else {
+            self.state.latest_block_num().await
+        };
+
         let storage_witness = self
             .state
-            .get_storage_map_witness_by_root(account_id, map_root, map_key)
+            .get_storage_map_witness(account_id, &slot_name, block_num, map_key)
             .await
             .map_err(internal_error)?;
 

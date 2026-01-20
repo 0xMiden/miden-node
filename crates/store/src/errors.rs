@@ -207,9 +207,9 @@ pub enum StateInitializationError {
     #[error("inner forest error")]
     InnerForestError(#[from] InnerForestError),
     #[error(
-        "{tree_name} root ({tree_root:?}) does not match expected root from block {block_num} \
-         ({block_root:?}). This indicates data corruption or an incomplete previous shutdown. \
-         Delete the tree storage directories and restart the node to rebuild from the database."
+        "{tree_name} SMT root ({tree_root:?}) does not match expected root from block {block_num} \
+         ({block_root:?}). Delete the tree storage directories and restart the node to rebuild \
+         from the database."
     )]
     TreeStorageDiverged {
         tree_name: &'static str,

@@ -377,7 +377,7 @@ message VaultAssetWitnessesResponse {
         primitives.SmtOpening proof = 1;
     }
 
-    // Block number at which the witness was generated.
+    // Block number at which the witnesses were generated.
     //
     // The witnesses returned corresponds to the account state at the specified block number.
     fixed32 block_num = 1;

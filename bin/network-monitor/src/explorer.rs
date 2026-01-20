@@ -64,7 +64,6 @@ const LATEST_BLOCK_REQUEST: GraphqlRequest<EmptyVariables> = GraphqlRequest {
 ///
 /// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
 /// connection issues or failures while checking the explorer status.
-#[instrument(target = COMPONENT, name = "explorer-status-task", skip_all)]
 pub async fn run_explorer_status_task(
     explorer_url: Url,
     name: String,

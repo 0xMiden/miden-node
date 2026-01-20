@@ -26,6 +26,7 @@ use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload, run_remote_prover_test_task};
 use crate::status::{
     ServiceStatus,
+    StaleChainTracker,
     check_remote_prover_status,
     check_rpc_status,
     run_remote_prover_status_task,
@@ -75,18 +76,32 @@ impl Tasks {
             .connect_lazy::<RpcClient>();
 
         let current_time = current_unix_timestamp_secs();
-        let initial_rpc_status =
-            check_rpc_status(&mut rpc, config.rpc_url.to_string(), current_time).await;
+        let mut stale_tracker = StaleChainTracker::new(config.stale_chain_tip_threshold);
+        let initial_rpc_status = check_rpc_status(
+            &mut rpc,
+            config.rpc_url.to_string(),
+            current_time,
+            &mut stale_tracker,
+        )
+        .await;
 
         // Spawn the RPC checker
         let (rpc_tx, rpc_rx) = watch::channel(initial_rpc_status);
         let rpc_url = config.rpc_url.clone();
         let status_check_interval = config.status_check_interval;
         let request_timeout = config.request_timeout;
+        let stale_chain_tip_threshold = config.stale_chain_tip_threshold;
         let id = self
             .handles
             .spawn(async move {
-                run_rpc_status_task(rpc_url, rpc_tx, status_check_interval, request_timeout).await;
+                run_rpc_status_task(
+                    rpc_url,
+                    rpc_tx,
+                    status_check_interval,
+                    request_timeout,
+                    stale_chain_tip_threshold,
+                )
+                .await;
             })
             .id();
         self.names.insert(id, "rpc-checker".to_string());

@@ -87,14 +87,6 @@ pub struct ProverTestDetails {
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.remote_prover.run_remote_prover_test_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug")
-)]
 pub async fn run_remote_prover_test_task(
     prover_url: Url,
     name: &str,

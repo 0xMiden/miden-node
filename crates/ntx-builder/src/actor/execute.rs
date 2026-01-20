@@ -1,7 +1,10 @@
 use std::collections::BTreeSet;
 
+use miden_node_proto::clients::ValidatorClient;
+use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -11,6 +14,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript};
 use miden_protocol::transaction::{
     AccountInputs,
@@ -24,9 +28,9 @@ use miden_protocol::transaction::{
     TransactionInputs,
 };
 use miden_protocol::vm::FutureMaybeSend;
-use miden_protocol::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
+use miden_tx::utils::Serializable;
 use miden_tx::{
     DataStore,
     DataStoreError,
@@ -75,7 +79,11 @@ type NtxResult<T> = Result<T, NtxError>;
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
 #[derive(Clone)]
 pub struct NtxContext {
+    /// TODO(sergerad): Remove block producer client when block proving moved to store.
     block_producer: BlockProducerClient,
+
+    /// Client for validating transactions via the Validator.
+    validator: ValidatorClient,
 
     /// The prover to delegate proofs to.
     ///
@@ -94,12 +102,14 @@ impl NtxContext {
     /// Creates a new [`NtxContext`] instance.
     pub fn new(
         block_producer: BlockProducerClient,
+        validator: ValidatorClient,
         prover: Option<RemoteTransactionProver>,
         store: StoreClient,
         script_cache: LruCache<Word, NoteScript>,
     ) -> Self {
         Self {
             block_producer,
+            validator,
             prover,
             store,
             script_cache,
@@ -147,7 +157,7 @@ impl NtxContext {
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         async move {
-            async move {
+            Box::pin(async move {
                 let data_store = NtxDataStore::new(
                     account,
                     chain_tip_header,
@@ -156,14 +166,26 @@ impl NtxContext {
                     self.script_cache.clone(),
                 );
 
+                // Filter notes.
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
-                let (successful, failed) = self.filter_notes(&data_store, notes).await?;
-                let executed = Box::pin(self.execute(&data_store, successful)).await?;
-                let proven = Box::pin(self.prove(executed.into())).await?;
-                let tx_id = proven.id();
-                self.submit(proven).await?;
-                Ok((tx_id, failed))
-            }
+                let (successful_notes, failed_notes) =
+                    self.filter_notes(&data_store, notes).await?;
+
+                // Execute transaction.
+                let executed_tx = Box::pin(self.execute(&data_store, successful_notes)).await?;
+
+                // Prove transaction.
+                let tx_inputs: TransactionInputs = executed_tx.into();
+                let proven_tx = Box::pin(self.prove(&tx_inputs)).await?;
+
+                // Validate proven transaction.
+                self.validate(&proven_tx, &tx_inputs).await?;
+
+                // Submit transaction to block producer.
+                self.submit(&proven_tx).await?;
+
+                Ok((proven_tx.id(), failed_notes))
+            })
             .in_current_span()
             .await
             .inspect_err(|err| tracing::Span::current().set_error(err))
@@ -245,10 +267,12 @@ impl NtxContext {
     /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
     /// proof locally.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
-    async fn prove(&self, tx_inputs: TransactionInputs) -> NtxResult<ProvenTransaction> {
+    async fn prove(&self, tx_inputs: &TransactionInputs) -> NtxResult<ProvenTransaction> {
         if let Some(remote) = &self.prover {
             remote.prove(tx_inputs).await
         } else {
+            // Only perform tx inptus clone for local proving.
+            let tx_inputs = tx_inputs.clone();
             tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx_inputs))
                 .await
                 .map_err(NtxError::Panic)?
@@ -258,11 +282,30 @@ impl NtxContext {
 
     /// Submits the transaction to the block producer.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
-    async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
+    async fn submit(&self, proven_tx: &ProvenTransaction) -> NtxResult<()> {
         self.block_producer
-            .submit_proven_transaction(tx)
+            .submit_proven_transaction(proven_tx)
             .await
             .map_err(NtxError::Submission)
+    }
+
+    /// Validates the transaction against the Validator.
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.validate", skip_all, err)]
+    async fn validate(
+        &self,
+        proven_tx: &ProvenTransaction,
+        tx_inputs: &TransactionInputs,
+    ) -> NtxResult<()> {
+        let request = proto::transaction::ProvenTransaction {
+            transaction: proven_tx.to_bytes(),
+            transaction_inputs: Some(tx_inputs.to_bytes()),
+        };
+        self.validator
+            .clone()
+            .submit_proven_transaction(request)
+            .await
+            .map_err(NtxError::Submission)?;
+        Ok(())
     }
 }
 

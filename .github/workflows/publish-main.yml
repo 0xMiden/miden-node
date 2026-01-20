@@ -18,6 +18,8 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       # Ensure the release tag refers to the latest commit on main.
       # Compare the commit SHA that triggered the workflow with the HEAD of the branch we just
       # checked out (main).
@@ -34,9 +36,22 @@ jobs:
             exit 1
           fi
           echo "Release tag matches main HEAD — continuing."
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq
       - name: Update Rust toolchain
+        run: rustup update --no-self-update
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall@1.16.6
+      - name: Install cargo-msrv
+        run: cargo binstall --no-confirm --force cargo-msrv
+      - name: Check MSRV for each workspace member
         run: |
-          rustup update --no-self-update
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ./scripts/check-msrv.sh
       - name: Run cargo publish
         run: cargo publish --workspace
         env:

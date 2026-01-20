@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use futures::TryStreamExt;
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::NetworkAccountId;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::lru_cache::LruCache;
 use miden_protocol::Word;
@@ -71,6 +71,8 @@ pub struct NetworkTransactionBuilder {
     store_url: Url,
     /// Address of the block producer gRPC server.
     block_producer_url: Url,
+    /// Address of the Validator server.
+    validator_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the performance impact.
     tx_prover_url: Option<Url>,
@@ -89,6 +91,7 @@ impl NetworkTransactionBuilder {
     pub fn new(
         store_url: Url,
         block_producer_url: Url,
+        validator_url: Url,
         tx_prover_url: Option<Url>,
         script_cache_size: NonZeroUsize,
     ) -> Self {
@@ -97,6 +100,7 @@ impl NetworkTransactionBuilder {
         Self {
             store_url,
             block_producer_url,
+            validator_url,
             tx_prover_url,
             script_cache,
             coordinator,
@@ -122,6 +126,7 @@ impl NetworkTransactionBuilder {
 
         let actor_context = AccountActorContext {
             block_producer_url: self.block_producer_url.clone(),
+            validator_url: self.validator_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
             chain_state: chain_state.clone(),
             store: store.clone(),
@@ -131,7 +136,7 @@ impl NetworkTransactionBuilder {
         // Spawn a background task to load network accounts from the store.
         // Accounts are sent through a channel in batches and processed in the main event loop.
         let (account_tx, mut account_rx) =
-            mpsc::channel::<NetworkAccountPrefix>(Self::ACCOUNT_CHANNEL_CAPACITY);
+            mpsc::channel::<NetworkAccountId>(Self::ACCOUNT_CHANNEL_CAPACITY);
         let account_loader_store = store.clone();
         let mut account_loader_handle = tokio::spawn(async move {
             account_loader_store
@@ -183,15 +188,15 @@ impl NetworkTransactionBuilder {
     /// Handles a batch of account IDs loaded from the store by spawning actors for them.
     #[tracing::instrument(
         name = "ntx.builder.handle_loaded_accounts",
-        skip(self, account_prefix, actor_context)
+        skip(self, account_id, actor_context)
     )]
     async fn handle_loaded_account(
         &mut self,
-        account_prefix: NetworkAccountPrefix,
+        account_id: NetworkAccountId,
         actor_context: &AccountActorContext,
     ) -> Result<(), anyhow::Error> {
         self.coordinator
-            .spawn_actor(AccountOrigin::store(account_prefix), actor_context)
+            .spawn_actor(AccountOrigin::store(account_id), actor_context)
             .await?;
         Ok(())
     }

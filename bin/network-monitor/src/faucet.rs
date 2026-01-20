@@ -88,14 +88,6 @@ pub struct GetMetadataResponse {
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(
-    parent = None,
-    target = COMPONENT,
-    name = "network_monitor.faucet.run_faucet_test_task",
-    skip_all,
-    level = "info",
-    ret(level = "debug")
-)]
 pub async fn run_faucet_test_task(
     faucet_url: Url,
     status_sender: watch::Sender<ServiceStatus>,

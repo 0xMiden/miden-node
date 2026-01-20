@@ -15,8 +15,8 @@ use miden_node_utils::limiter::{
     QueryParamNoteIdLimit,
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
+    QueryParamStorageMapKeyTotalLimit,
 };
-use miden_protocol::account::AccountId;
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteRecipient, NoteScript};
@@ -360,7 +360,7 @@ impl api_server::Api for RpcService {
                 let script = NoteScript::from_parts(mast, note.script().entrypoint());
                 let recipient =
                     NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
-                let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
+                let new_note = Note::new(note.assets().clone(), note.metadata().clone(), recipient);
                 OutputNote::Full(new_note)
             },
             other => other.clone(),
@@ -423,7 +423,8 @@ impl api_server::Api for RpcService {
                     let script = NoteScript::from_parts(mast, note.script().entrypoint());
                     let recipient =
                         NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
-                    let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
+                    let new_note =
+                        Note::new(note.assets().clone(), note.metadata().clone(), recipient);
                     OutputNote::Full(new_note)
                 },
                 other => other.clone(),
@@ -456,31 +457,6 @@ impl api_server::Api for RpcService {
         block_producer.clone().submit_proven_batch(request).await
     }
 
-    /// Returns details for public (public) account by id.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_account_details",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_details(
-        &self,
-        request: Request<proto::account::AccountId>,
-    ) -> std::result::Result<Response<proto::account::AccountDetails>, Status> {
-        debug!(target: COMPONENT, request = ?request.get_ref());
-
-        // Validating account using conversion:
-        let _account_id: AccountId = request
-            .get_ref()
-            .clone()
-            .try_into()
-            .map_err(|err| Status::invalid_argument(format!("Invalid account id: {err}")))?;
-
-        self.store.clone().get_account_details(request).await
-    }
-
     #[instrument(
         parent = None,
         target = COMPONENT,
@@ -503,20 +479,39 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "rpc.server.get_account_proof",
+        name = "rpc.server.get_account",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proof(
+    async fn get_account(
         &self,
-        request: Request<proto::rpc::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc::AccountProofResponse>, Status> {
+        request: Request<proto::rpc::AccountRequest>,
+    ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
+        use proto::rpc::account_request::account_detail_request::storage_map_detail_request::{
+            SlotData::MapKeys as ProtoMapKeys,
+            SlotData::AllEntries as ProtoMapAllEntries
+        };
+
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
 
-        self.store.clone().get_account_proof(request).await
+        // Validate total storage map key limit before forwarding to store
+        if let Some(details) = &request.details {
+            let total_keys: usize = details
+                .storage_maps
+                .iter()
+                .filter_map(|m| m.slot_data.as_ref())
+                .filter_map(|d| match d {
+                    ProtoMapKeys(keys) => Some(keys.map_keys.len()),
+                    ProtoMapAllEntries(_) => None,
+                })
+                .sum();
+            check::<QueryParamStorageMapKeyTotalLimit>(total_keys)?;
+        }
+
+        self.store.clone().get_account(request).await
     }
 
     #[instrument(
@@ -643,6 +638,7 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
         QueryParamNoteIdLimit as NoteId,
         QueryParamNoteTagLimit as NoteTag,
         QueryParamNullifierLimit as Nullifier,
+        QueryParamStorageMapKeyTotalLimit as StorageMapKeyTotal,
     };
 
     proto::rpc::RpcLimits {
@@ -664,6 +660,10 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
             ),
             ("SyncNotes".into(), endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)])),
             ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
+            (
+                "GetAccount".into(),
+                endpoint_limits(&[(StorageMapKeyTotal::PARAM_NAME, StorageMapKeyTotal::LIMIT)]),
+            ),
         ]),
     }
 });

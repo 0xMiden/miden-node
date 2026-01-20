@@ -165,4 +165,17 @@ pub struct MonitorConfig {
         help = "The URL of the explorer service"
     )]
     pub explorer_url: Option<Url>,
+
+    /// Maximum time without a chain tip update before marking RPC as unhealthy.
+    ///
+    /// If the chain tip does not increment within this duration, the RPC service will be
+    /// marked as unhealthy with a stale chain tip error.
+    #[arg(
+        long = "stale-chain-tip-threshold",
+        env = "MIDEN_MONITOR_STALE_CHAIN_TIP_THRESHOLD",
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
+        help = "Maximum time without a chain tip update before marking RPC as unhealthy"
+    )]
+    pub stale_chain_tip_threshold: Duration,
 }

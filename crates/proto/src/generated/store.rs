@@ -373,37 +373,12 @@ pub mod rpc_client {
             req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "CheckNullifiers"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state of an account with the specified ID.
-        pub async fn get_account_details(
-            &mut self,
-            request: impl tonic::IntoRequest<super::super::account::AccountId>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::account::AccountDetails>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/store.Rpc/GetAccountDetails",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("store.Rpc", "GetAccountDetails"));
-            self.inner.unary(req, path, codec).await
-        }
         /// Returns the latest state proof of the specified account.
-        pub async fn get_account_proof(
+        pub async fn get_account(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc::AccountProofRequest>,
+            request: impl tonic::IntoRequest<super::super::rpc::AccountRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc::AccountProofResponse>,
+            tonic::Response<super::super::rpc::AccountResponse>,
             tonic::Status,
         > {
             self.inner
@@ -415,11 +390,9 @@ pub mod rpc_client {
                     )
                 })?;
             let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/store.Rpc/GetAccountProof",
-            );
+            let path = http::uri::PathAndQuery::from_static("/store.Rpc/GetAccount");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "GetAccountProof"));
+            req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "GetAccount"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns raw block data for the specified block number.
@@ -729,20 +702,12 @@ pub mod rpc_server {
             tonic::Response<super::super::rpc::CheckNullifiersResponse>,
             tonic::Status,
         >;
-        /// Returns the latest state of an account with the specified ID.
-        async fn get_account_details(
-            &self,
-            request: tonic::Request<super::super::account::AccountId>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::account::AccountDetails>,
-            tonic::Status,
-        >;
         /// Returns the latest state proof of the specified account.
-        async fn get_account_proof(
+        async fn get_account(
             &self,
-            request: tonic::Request<super::super::rpc::AccountProofRequest>,
+            request: tonic::Request<super::super::rpc::AccountRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc::AccountProofResponse>,
+            tonic::Response<super::super::rpc::AccountResponse>,
             tonic::Status,
         >;
         /// Returns raw block data for the specified block number.
@@ -1012,25 +977,25 @@ pub mod rpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/store.Rpc/GetAccountDetails" => {
+                "/store.Rpc/GetAccount" => {
                     #[allow(non_camel_case_types)]
-                    struct GetAccountDetailsSvc<T: Rpc>(pub Arc<T>);
+                    struct GetAccountSvc<T: Rpc>(pub Arc<T>);
                     impl<
                         T: Rpc,
-                    > tonic::server::UnaryService<super::super::account::AccountId>
-                    for GetAccountDetailsSvc<T> {
-                        type Response = super::super::account::AccountDetails;
+                    > tonic::server::UnaryService<super::super::rpc::AccountRequest>
+                    for GetAccountSvc<T> {
+                        type Response = super::super::rpc::AccountResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::super::account::AccountId>,
+                            request: tonic::Request<super::super::rpc::AccountRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Rpc>::get_account_details(&inner, request).await
+                                <T as Rpc>::get_account(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1041,54 +1006,7 @@ pub mod rpc_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetAccountDetailsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/store.Rpc/GetAccountProof" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetAccountProofSvc<T: Rpc>(pub Arc<T>);
-                    impl<
-                        T: Rpc,
-                    > tonic::server::UnaryService<super::super::rpc::AccountProofRequest>
-                    for GetAccountProofSvc<T> {
-                        type Response = super::super::rpc::AccountProofResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                super::super::rpc::AccountProofRequest,
-                            >,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Rpc>::get_account_proof(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetAccountProofSvc(inner);
+                        let method = GetAccountSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -21,6 +21,7 @@ http                        = { workspace = true }
 miden-node-grpc-error-macro = { workspace = true }
 miden-node-utils            = { workspace = true }
 miden-protocol              = { workspace = true }
+miden-standards             = { workspace = true }
 prost                       = { workspace = true }
 thiserror                   = { workspace = true }
 tonic                       = { default-features = true, workspace = true }
@@ -28,7 +29,8 @@ tonic-prost                 = { workspace = true }
 url                         = { workspace = true }
 
 [dev-dependencies]
-proptest = { version = "1.7" }
+assert_matches = { workspace = true }
+proptest       = { version = "1.7" }
 
 [build-dependencies]
 fs-err                 = { workspace = true }

@@ -27,7 +27,7 @@ pub struct AccountSummary {
 /// Represents the storage header of an account.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountStorageHeader {
-    /// Storage slots with their types and commitments.
+    /// Storage slots with their types and data.
     #[prost(message, repeated, tag = "1")]
     pub slots: ::prost::alloc::vec::Vec<account_storage_header::StorageSlot>,
 }
@@ -42,7 +42,9 @@ pub mod account_storage_header {
         /// The type of the storage slot.
         #[prost(uint32, tag = "2")]
         pub slot_type: u32,
-        /// The commitment (Word) for this storage slot.
+        /// The data (Word) for this storage slot.
+        /// For value slots (slot_type=0), this is the actual value stored in the slot.
+        /// For map slots (slot_type=1), this is the root of the storage map.
         #[prost(message, optional, tag = "3")]
         pub commitment: ::core::option::Option<super::super::primitives::Digest>,
     }

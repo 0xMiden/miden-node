@@ -41,14 +41,16 @@ impl BlockProducerClient {
 
         Self { client: block_producer }
     }
+
     #[instrument(target = COMPONENT, name = "ntx.block_producer.client.submit_proven_transaction", skip_all, err)]
     pub async fn submit_proven_transaction(
         &self,
-        proven_tx: ProvenTransaction,
+        proven_tx: &ProvenTransaction,
     ) -> Result<(), Status> {
         let request = proto::transaction::ProvenTransaction {
             transaction: proven_tx.to_bytes(),
-            transaction_inputs: None,
+            transaction_inputs: None, /* Transaction inputs are only required for Validator
+                                       * transaction re-execution. */
         };
 
         self.client.clone().submit_proven_transaction(request).await?;

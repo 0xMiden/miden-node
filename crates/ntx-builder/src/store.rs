@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::NetworkAccountId;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::BlockRange;
@@ -111,9 +111,9 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,
-        prefix: NetworkAccountPrefix,
+        account_id: NetworkAccountId,
     ) -> Result<Option<Account>, StoreError> {
-        let request = proto::store::AccountIdPrefix { account_id_prefix: prefix.inner() };
+        let request = proto::store::AccountIdPrefix { account_id_prefix: account_id.prefix() };
 
         let store_response = self
             .inner
@@ -142,7 +142,7 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(
         &self,
-        network_account_prefix: NetworkAccountPrefix,
+        network_account_id: NetworkAccountId,
         block_num: u32,
     ) -> Result<Vec<NetworkNote>, StoreError> {
         // Upper bound of each note is ~10KB. Limit page size to ~10MB.
@@ -156,7 +156,7 @@ impl StoreClient {
             let req = proto::store::UnconsumedNetworkNotesRequest {
                 page_token,
                 page_size: PAGE_SIZE,
-                network_account_id_prefix: network_account_prefix.inner(),
+                network_account_id_prefix: network_account_id.prefix(),
                 block_num,
             };
             let resp = store_client.get_unconsumed_network_notes(req).await?.into_inner();
@@ -182,11 +182,11 @@ impl StoreClient {
     /// without waiting for all accounts to be preloaded.
     pub async fn stream_network_account_ids(
         &self,
-        sender: tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
+        sender: tokio::sync::mpsc::Sender<NetworkAccountId>,
     ) -> Result<(), StoreError> {
         let mut block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
 
-        while let Some(next_start) = self.load_page(block_range, &sender).await? {
+        while let Some(next_start) = self.load_accounts_page(block_range, &sender).await? {
             block_range = next_start..=BlockNumber::from(u32::MAX);
         }
 
@@ -197,10 +197,10 @@ impl StoreClient {
     ///
     /// Returns the next block number to fetch from, or `None` if the chain tip has been reached.
     #[instrument(target = COMPONENT, name = "store.client.load_accounts_page", skip_all, err)]
-    async fn load_page(
+    async fn load_accounts_page(
         &self,
         block_range: RangeInclusive<BlockNumber>,
-        sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
+        sender: &tokio::sync::mpsc::Sender<NetworkAccountId>,
     ) -> Result<Option<BlockNumber>, StoreError> {
         let (accounts, pagination_info) = self
             .fetch_network_account_ids_page(block_range)
@@ -225,7 +225,7 @@ impl StoreClient {
     async fn fetch_network_account_ids_page(
         &self,
         block_range: std::ops::RangeInclusive<BlockNumber>,
-    ) -> Result<(Vec<NetworkAccountPrefix>, proto::rpc::PaginationInfo), StoreError> {
+    ) -> Result<(Vec<NetworkAccountId>, proto::rpc::PaginationInfo), StoreError> {
         let mut retry_counter = 0u32;
 
         let response = loop {
@@ -265,13 +265,13 @@ impl StoreClient {
                         err,
                     ))
                 })?;
-                NetworkAccountPrefix::try_from(account_id).map_err(|_| {
+                NetworkAccountId::try_from(account_id).map_err(|_| {
                     StoreError::MalformedResponse(
                         "account id is not a valid network account".into(),
                     )
                 })
             })
-            .collect::<Result<Vec<NetworkAccountPrefix>, StoreError>>()?;
+            .collect::<Result<Vec<NetworkAccountId>, StoreError>>()?;
 
         let pagination_info = response.pagination_info.ok_or(
             ConversionError::MissingFieldInProtobufRepresentation {
@@ -290,8 +290,8 @@ impl StoreClient {
     )]
     async fn send_accounts_to_channel(
         &self,
-        accounts: Vec<NetworkAccountPrefix>,
-        sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
+        accounts: Vec<NetworkAccountId>,
+        sender: &tokio::sync::mpsc::Sender<NetworkAccountId>,
     ) -> Result<(), StoreError> {
         for account in accounts {
             // If the receiver is dropped, stop loading.

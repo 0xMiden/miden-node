@@ -205,6 +205,15 @@ fn test_vault_state_persists_across_blocks_without_changes() {
     let account_id = dummy_account();
     let faucet_id = dummy_faucet();
 
+    // Helper to query vault root at or before a block (range query)
+    let get_vault_root = |forest: &InnerForest, account_id: AccountId, block_num: BlockNumber| {
+        forest
+            .vault_roots
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
+            .next_back()
+            .map(|(_, root)| *root)
+    };
+
     // Block 1: Add 100 tokens
     let block_1 = BlockNumber::GENESIS.child();
     let mut vault_delta_1 = AccountVaultDelta::default();
@@ -228,18 +237,18 @@ fn test_vault_state_persists_across_blocks_without_changes() {
     let root_after_block_6 = forest.vault_roots[&(account_id, block_6)];
     assert_ne!(root_after_block_1, root_after_block_6);
 
-    // Verify get_vault_root finds the correct previous root for intermediate blocks
+    // Verify range query finds the correct previous root for intermediate blocks
     // Block 3 should return block 1's root (most recent before block 3)
-    let root_at_block_3 = forest.get_vault_root(account_id, BlockNumber::from(3));
-    assert_eq!(root_at_block_3, root_after_block_1);
+    let root_at_block_3 = get_vault_root(&forest, account_id, BlockNumber::from(3));
+    assert_eq!(root_at_block_3, Some(root_after_block_1));
 
     // Block 5 should also return block 1's root
-    let root_at_block_5 = forest.get_vault_root(account_id, BlockNumber::from(5));
-    assert_eq!(root_at_block_5, root_after_block_1);
+    let root_at_block_5 = get_vault_root(&forest, account_id, BlockNumber::from(5));
+    assert_eq!(root_at_block_5, Some(root_after_block_1));
 
     // Block 6 should return block 6's root
-    let root_at_block_6 = forest.get_vault_root(account_id, block_6);
-    assert_eq!(root_at_block_6, root_after_block_6);
+    let root_at_block_6 = get_vault_root(&forest, account_id, block_6);
+    assert_eq!(root_at_block_6, Some(root_after_block_6));
 }
 
 #[test]
@@ -418,4 +427,38 @@ fn test_storage_map_incremental_updates() {
     assert_ne!(root_1, root_2);
     assert_ne!(root_2, root_3);
     assert_ne!(root_1, root_3);
+}
+
+#[test]
+fn test_open_storage_map_returns_limit_exceeded_for_too_many_keys() {
+    use std::collections::BTreeMap;
+
+    use assert_matches::assert_matches;
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let slot_name = StorageSlotName::mock(3);
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a storage map with entries
+    let num_entries = AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES + 5;
+    let mut map_delta = StorageMapDelta::default();
+    for i in 0..num_entries as u32 {
+        let key = Word::from([i, 0, 0, 0]);
+        let value = Word::from([0, 0, 0, i]);
+        map_delta.insert(key, value);
+    }
+    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta))]);
+    let storage_delta = AccountStorageDelta::from_raw(raw);
+    let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
+    forest.update_account(block_num, &delta).unwrap();
+
+    // Request proofs for more than MAX_SMT_PROOF_ENTRIES keys.
+    // Should return LimitExceeded.
+    let keys: Vec<Word> = (0..num_entries as u32).map(|i| Word::from([i, 0, 0, 0])).collect();
+    let result = forest.open_storage_map(account_id, slot_name.clone(), block_num, &keys);
+
+    let details = result.expect("Should return Some").expect("Should not error");
+    assert_matches!(details.entries, StorageMapEntries::LimitExceeded);
 }

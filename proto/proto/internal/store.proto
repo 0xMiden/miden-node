@@ -31,11 +31,8 @@ service Rpc {
     // Verify proofs against the nullifier tree root in the latest block header.
     rpc CheckNullifiers(rpc.NullifierList) returns (rpc.CheckNullifiersResponse) {}
 
-    // Returns the latest state of an account with the specified ID.
-    rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
-
     // Returns the latest state proof of the specified account.
-    rpc GetAccountProof(rpc.AccountProofRequest) returns (rpc.AccountProofResponse) {}
+    rpc GetAccount(rpc.AccountRequest) returns (rpc.AccountResponse) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}

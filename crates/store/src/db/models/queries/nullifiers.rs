@@ -22,6 +22,7 @@ use miden_protocol::note::Nullifier;
 use miden_protocol::utils::{Deserializable, Serializable};
 
 use super::DatabaseError;
+use crate::COMPONENT;
 use crate::db::models::conv::{SqlTypeConvert, nullifier_prefix_to_raw_sql};
 use crate::db::models::utils::{get_nullifier_prefix, vec_raw_try_into};
 use crate::db::{NullifierInfo, schema};
@@ -162,6 +163,12 @@ pub(crate) fn select_all_nullifiers(
 /// INSERT INTO nullifiers (nullifier, nullifier_prefix, block_num)
 /// VALUES (?1, ?2, ?3)
 /// ```
+#[allow(clippy::too_many_lines)]
+#[tracing::instrument(
+    target = COMPONENT,
+    skip_all,
+    err,
+)]
 pub(crate) fn insert_nullifiers_for_block(
     conn: &mut SqliteConnection,
     nullifiers: &[Nullifier],

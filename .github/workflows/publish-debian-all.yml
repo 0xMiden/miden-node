@@ -25,12 +25,14 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     runs-on:
-      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@main
         with:
           fetch-depth: 0
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       - name: Build and Publish Node
         uses: ./.github/actions/debian
         with:
@@ -48,7 +50,7 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     runs-on:
-      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@main
@@ -71,7 +73,7 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     runs-on:
-      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@main
@@ -94,7 +96,7 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     runs-on:
-      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@main

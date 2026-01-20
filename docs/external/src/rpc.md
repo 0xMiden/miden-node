@@ -12,8 +12,7 @@ The gRPC service definition can be found in the Miden node's `proto` [directory]
 <!--toc:start-->
 
 - [CheckNullifiers](#checknullifiers)
-- [GetAccountDetails](#getaccountdetails)
-- [GetAccountProofs](#getaccountproofs)
+- [GetAccount](#getaccount)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetLimits](#getlimits)
@@ -100,13 +99,13 @@ match proof.verify_unset(&nullifier, &nullifier_tree_root) {
 
 **Limits:** `nullifier` (1000)
 
-### GetAccountDetails
+### GetAccount
 
-Request the latest state of an account.
+Request an account witness (Merkle proof of inclusion in the account tree) and optionally account details.
 
-### GetAccountProofs
+The witness proves the account's state commitment in the account tree. If details are requested, the response also includes the account's header, code, vault assets, and storage data. Account details are only available for public accounts.
 
-Request state proofs for accounts, including specific storage slots.
+If `block_num` is provided, returns the state at that historical block; otherwise, returns the latest state.
 
 ### GetBlockByNumber
 

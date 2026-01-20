@@ -557,6 +557,8 @@ pub enum GetStorageMapWitnessError {
     AccountNotFound(AccountId),
     #[error("account {0} is not public")]
     AccountNotPublic(AccountId),
+    #[error("merkle error")]
+    MerkleError(#[from] MerkleError),
     #[error(
         "storage map not found for account {account_id}, slot {slot_name} at block {block_num}"
     )]

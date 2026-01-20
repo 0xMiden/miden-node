@@ -19,14 +19,15 @@ use miden_node_proto::domain::account::{
     AccountVaultDetails,
     NetworkAccountPrefix,
     SlotData,
+    StorageMapEntries,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
 use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{AccountId, StorageSlotName};
 use miden_protocol::block::account_tree::{AccountTree, AccountWitness, account_id_to_smt_key};
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
@@ -1389,12 +1390,11 @@ impl State {
     pub async fn get_storage_map_witness(
         &self,
         account_id: AccountId,
-        map_root: Word,
-        map_key: Word,
+        slot_name: StorageSlotName,
+        block_num: BlockNumber,
+        key: Word,
     ) -> Result<miden_protocol::account::StorageMapWitness, crate::errors::GetStorageMapWitnessError>
     {
-        use miden_protocol::account::StorageSlotContent;
-
         use crate::errors::GetStorageMapWitnessError;
 
         // Validate that the account is public.
@@ -1402,29 +1402,44 @@ impl State {
             return Err(GetStorageMapWitnessError::AccountNotPublic(account_id));
         }
 
-        // Get the account's latest storage from the database
-        let account_storage = self
-            .db
-            .select_latest_account_storage(account_id)
-            .await
-            .map_err(GetStorageMapWitnessError::DatabaseError)?;
+        let map_details = match self.forest.read().await.open_storage_map(
+            account_id,
+            slot_name.clone(),
+            block_num,
+            &[key],
+        ) {
+            Some(Ok(map)) => Ok(map),
+            Some(Err(err)) => Err(GetStorageMapWitnessError::MerkleError(err)),
+            None => Err(GetStorageMapWitnessError::StorageMapNotFound {
+                account_id,
+                slot_name: slot_name.clone().into(),
+                block_num,
+            }),
+        }?;
 
         // Search through storage slots to find the map with matching root.
-        for slot in account_storage.slots() {
-            if let StorageSlotContent::Map(storage_map) = slot.content() {
-                if storage_map.root() == map_root {
-                    // Found the matching storage map, open it with the key.
-                    return Ok(storage_map.open(&map_key));
+        match map_details.entries {
+            StorageMapEntries::LimitExceeded => {
+                Err(GetStorageMapWitnessError::StorageMapNotFound {
+                    account_id,
+                    slot_name: slot_name.clone().into(),
+                    block_num,
+                })
+            },
+            StorageMapEntries::AllEntries(_items) => {
+                // For AllEntries, we don't have proofs needed for witness
+                Err(GetStorageMapWitnessError::StorageMapNotFound {
+                    account_id,
+                    slot_name: slot_name.clone().into(),
+                    block_num,
+                })
+            },
+            StorageMapEntries::EntriesWithProofs(smt_proofs) => {
+                for proof in smt_proofs {
+                    // TODO ...
                 }
-            }
+            },
         }
-
-        // Storage map with the given root was not found.
-        Err(GetStorageMapWitnessError::StorageMapNotFound {
-            account_id,
-            slot_name: String::new(),
-            block_num: self.latest_block_num().await,
-        })
     }
 }
 

@@ -327,7 +327,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         let storage_witness = self
             .state
-            .get_storage_map_witness(account_id, map_root, map_key)
+            .get_storage_map_witness_by_root(account_id, map_root, map_key)
             .await
             .map_err(internal_error)?;
 

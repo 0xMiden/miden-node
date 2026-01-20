@@ -142,7 +142,6 @@ impl StorageLoader for MemoryStorage {
                 break;
             }
 
-
             let entries = page
                 .commitments
                 .into_iter()
@@ -181,7 +180,6 @@ impl StorageLoader for MemoryStorage {
             if page.nullifiers.is_empty() {
                 break;
             }
-
 
             let entries = page.nullifiers.into_iter().map(|info| {
                 (info.nullifier.as_word(), block_num_to_nullifier_leaf(info.block_num))
@@ -247,7 +245,6 @@ impl StorageLoader for RocksDbStorage {
                 break;
             }
 
-
             let entries = page
                 .commitments
                 .into_iter()
@@ -294,7 +291,6 @@ impl StorageLoader for RocksDbStorage {
             if page.nullifiers.is_empty() {
                 break;
             }
-
 
             let entries = page.nullifiers.into_iter().map(|info| {
                 (info.nullifier.as_word(), block_num_to_nullifier_leaf(info.block_num))

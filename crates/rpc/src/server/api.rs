@@ -155,7 +155,6 @@ impl RpcService {
 #[tonic::async_trait]
 impl api_server::Api for RpcService {
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.check_nullifiers",
         skip_all,
@@ -181,7 +180,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_nullifiers",
         skip_all,
@@ -200,7 +198,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_header_by_number",
         skip_all,
@@ -217,7 +214,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_state",
         skip_all,
@@ -237,7 +233,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_storage_maps",
         skip_all,
@@ -254,7 +249,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_notes",
         skip_all,
@@ -273,7 +267,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_notes_by_id",
         skip_all,
@@ -302,7 +295,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_account_vault",
         skip_all,
@@ -319,7 +311,6 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_account_vault(request).await
     }
 
-    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
     async fn submit_proven_transaction(
         &self,
         request: Request<proto::transaction::ProvenTransaction>,
@@ -398,7 +389,6 @@ impl api_server::Api for RpcService {
         block_producer.clone().submit_proven_transaction(request).await
     }
 
-    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_batch", skip_all, err)]
     async fn submit_proven_batch(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
@@ -457,7 +447,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_by_number",
         skip_all,
@@ -476,7 +465,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account",
         skip_all,
@@ -514,7 +502,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.status",
         skip_all,
@@ -558,7 +545,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_note_script_by_root",
         skip_all,
@@ -575,7 +561,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_transactions",
         skip_all,
@@ -592,7 +577,6 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_limits",
         skip_all,

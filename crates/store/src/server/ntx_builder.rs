@@ -24,7 +24,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ///
     /// If the block number is not provided, block header for the latest block is returned.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.ntx_builder_server.get_block_header_by_number",
         skip_all,
@@ -44,7 +43,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     /// This returns all the blockchain-related information needed for executing transactions
     /// without authenticating notes.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.ntx_builder_server.get_current_blockchain_data",
         skip_all,
@@ -77,7 +75,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.ntx_builder_server.get_network_account_details_by_prefix",
         skip_all,
@@ -105,7 +102,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.ntx_builder_server.get_unconsumed_network_notes",
         skip_all,
@@ -160,7 +156,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ///
     /// The response includes pagination info with the last block number that was fully included.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.ntx_builder_server.get_network_account_ids",
         skip_all,
@@ -199,7 +194,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     }
 
     #[instrument(
-    parent = None,
     target = COMPONENT,
     name = "store.ntx_builder_server.get_note_script_by_root",
     skip_all,

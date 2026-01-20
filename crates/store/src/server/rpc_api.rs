@@ -46,7 +46,6 @@ impl rpc_server::Rpc for StoreApi {
     ///
     /// If the block number is not provided, block header for the latest block is returned.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.get_block_header_by_number",
         skip_all,
@@ -66,7 +65,6 @@ impl rpc_server::Rpc for StoreApi {
     /// This endpoint also returns Merkle authentication path for each requested nullifier which can
     /// be verified against the latest root of the nullifier database.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.check_nullifiers",
         skip_all,
@@ -98,7 +96,6 @@ impl rpc_server::Rpc for StoreApi {
     ///
     /// Currently the only supported prefix length is 16 bits.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.sync_nullifiers",
         skip_all,
@@ -147,7 +144,6 @@ impl rpc_server::Rpc for StoreApi {
     /// Returns info which can be used by the client to sync up to the latest state of the chain
     /// for the objects the client is interested in.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.sync_state",
         skip_all,
@@ -203,7 +199,6 @@ impl rpc_server::Rpc for StoreApi {
 
     /// Returns info which can be used by the client to sync note state.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.sync_notes",
         skip_all,
@@ -246,7 +241,6 @@ impl rpc_server::Rpc for StoreApi {
     /// If the list is empty or no [`Note`] matched the requested [`NoteId`] and empty list is
     /// returned.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.get_notes_by_id",
         skip_all,
@@ -282,7 +276,6 @@ impl rpc_server::Rpc for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.get_block_by_number",
         skip_all,
@@ -308,7 +301,6 @@ impl rpc_server::Rpc for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.get_account",
         skip_all,
@@ -330,7 +322,6 @@ impl rpc_server::Rpc for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.sync_account_vault",
         skip_all,
@@ -388,7 +379,6 @@ impl rpc_server::Rpc for StoreApi {
     ///
     /// Supports cursor-based pagination for large storage maps.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.sync_storage_maps",
         skip_all,
@@ -442,7 +432,6 @@ impl rpc_server::Rpc for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.status",
         skip_all,
@@ -462,7 +451,6 @@ impl rpc_server::Rpc for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.get_note_script_by_root",
         skip_all,
@@ -489,7 +477,6 @@ impl rpc_server::Rpc for StoreApi {
     }
 
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.rpc_server.sync_transactions",
         skip_all,

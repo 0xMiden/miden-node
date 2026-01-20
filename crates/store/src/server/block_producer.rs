@@ -32,7 +32,6 @@ impl block_producer_server::BlockProducer for StoreApi {
     ///
     /// If the block number is not provided, block header for the latest block is returned.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.block_producer_server.get_block_header_by_number",
         skip_all,
@@ -47,7 +46,6 @@ impl block_producer_server::BlockProducer for StoreApi {
 
     /// Updates the local DB by inserting a new block header and the related data.
     #[instrument(
-        parent = None,
         target = COMPONENT,
         name = "store.block_producer_server.apply_block",
         skip_all,
@@ -107,7 +105,6 @@ impl block_producer_server::BlockProducer for StoreApi {
 
     /// Returns data needed by the block producer to construct and prove the next block.
     #[instrument(
-            parent = None,
             target = COMPONENT,
             name = "store.block_producer_server.get_block_inputs",
             skip_all,
@@ -146,7 +143,6 @@ impl block_producer_server::BlockProducer for StoreApi {
     ///
     /// See [`State::get_batch_inputs`] for details.
     #[instrument(
-          parent = None,
           target = COMPONENT,
           name = "store.block_producer_server.get_batch_inputs",
           skip_all,
@@ -178,7 +174,6 @@ impl block_producer_server::BlockProducer for StoreApi {
     }
 
     #[instrument(
-            parent = None,
             target = COMPONENT,
             name = "store.block_producer_server.get_transaction_inputs",
             skip_all,

@@ -410,7 +410,7 @@ message StorageMapWitnessRequest {
 message StorageMapWitnessResponse {
     // Storage map witness data.
     message StorageWitness {
-        // The storage map key.
+        // The raw, user-provided storage map key.
         primitives.Digest key = 1;
 
         // The SMT opening proof for the key-value pair.

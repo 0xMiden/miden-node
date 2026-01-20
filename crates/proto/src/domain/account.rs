@@ -498,6 +498,14 @@ impl AccountStorageMapDetails {
             }
         }
     }
+
+    /// Creates storage map details indicating the limit was exceeded.
+    pub fn limit_exceeded(slot_name: StorageSlotName) -> Self {
+        Self {
+            slot_name,
+            entries: StorageMapEntries::LimitExceeded,
+        }
+    }
 }
 
 impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
@@ -638,6 +646,21 @@ pub struct AccountStorageDetails {
     pub map_details: Vec<AccountStorageMapDetails>,
 }
 
+impl AccountStorageDetails {
+    /// Creates storage details where all map slots indicate limit exceeded.
+    pub fn all_limits_exceeded(
+        header: AccountStorageHeader,
+        slot_names: impl IntoIterator<Item = StorageSlotName>,
+    ) -> Self {
+        Self {
+            header,
+            map_details: Vec::from_iter(
+                slot_names.into_iter().map(AccountStorageMapDetails::limit_exceeded),
+            ),
+        }
+    }
+}
+
 impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
     type Error = ConversionError;
 
@@ -731,6 +754,24 @@ pub struct AccountDetails {
     pub account_code: Option<Vec<u8>>,
     pub vault_details: AccountVaultDetails,
     pub storage_details: AccountStorageDetails,
+}
+
+impl AccountDetails {
+    /// Creates account details where all storage map slots indicate limit exceeded.
+    pub fn with_storage_limits_exceeded(
+        account_header: AccountHeader,
+        account_code: Option<Vec<u8>>,
+        vault_details: AccountVaultDetails,
+        storage_header: AccountStorageHeader,
+        slot_names: impl IntoIterator<Item = StorageSlotName>,
+    ) -> Self {
+        Self {
+            account_header,
+            account_code,
+            vault_details,
+            storage_details: AccountStorageDetails::all_limits_exceeded(storage_header, slot_names),
+        }
+    }
 }
 
 impl TryFrom<proto::rpc::account_response::AccountDetails> for AccountDetails {

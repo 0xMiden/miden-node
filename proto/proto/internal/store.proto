@@ -398,6 +398,8 @@ message StorageMapWitnessRequest {
     primitives.Digest map_key = 2;
 
     // Optional block number. If not provided, uses the latest state.
+    //
+    // The witness returned corresponds to the account state at the specified block number.
     optional fixed32 block_num = 3;
 
     // The storage slot name for the map.

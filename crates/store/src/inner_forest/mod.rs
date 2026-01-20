@@ -158,8 +158,7 @@ impl InnerForest {
     /// Retrieves the vault SMT root for an account at or before the given block.
     /// Retrieves the storage map SMT root for an account slot at or before the given block.
     ///
-    /// Finds the most recent storage root entry for the slot, since storage state persists
-    /// across blocks where no changes occur.
+    /// Finds the most recent storage root at or before the specified block number.
     pub(crate) fn get_storage_root(
         &self,
         account_id: AccountId,
@@ -177,7 +176,7 @@ impl InnerForest {
 
     /// Retrieves a storage map witness for the specified account and storage slot.
     ///
-    /// Finds the most recent storage root before the specified block.
+    /// Finds the most recent witness at or before the specified block number.
     ///
     /// Note that the `raw_key` is the raw, user-provided key that needs to be hashed in order to
     /// get the actual key into the storage map.

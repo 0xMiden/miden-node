@@ -8,7 +8,7 @@ use miden_node_utils::ErrorReport;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
 use tonic::{Request, Response, Status};
-use tracing::{debug, instrument};
+use tracing::debug;
 
 use crate::COMPONENT;
 use crate::db::models::Page;
@@ -23,13 +23,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     /// Returns block header for the specified block number.
     ///
     /// If the block number is not provided, block header for the latest block is returned.
-    #[instrument(
-        target = COMPONENT,
-        name = "store.ntx_builder_server.get_block_header_by_number",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_block_header_by_number(
         &self,
         request: Request<proto::rpc::BlockHeaderByNumberRequest>,
@@ -42,13 +35,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ///
     /// This returns all the blockchain-related information needed for executing transactions
     /// without authenticating notes.
-    #[instrument(
-        target = COMPONENT,
-        name = "store.ntx_builder_server.get_current_blockchain_data",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_current_blockchain_data(
         &self,
         request: Request<proto::blockchain::MaybeBlockNumber>,
@@ -74,13 +60,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         Ok(Response::new(response))
     }
 
-    #[instrument(
-        target = COMPONENT,
-        name = "store.ntx_builder_server.get_network_account_details_by_prefix",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_network_account_details_by_prefix(
         &self,
         request: Request<proto::store::AccountIdPrefix>,
@@ -101,12 +80,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         }))
     }
 
-    #[instrument(
-        target = COMPONENT,
-        name = "store.ntx_builder_server.get_unconsumed_network_notes",
-        skip_all,
-        err
-    )]
     async fn get_unconsumed_network_notes(
         &self,
         request: Request<proto::store::UnconsumedNetworkNotesRequest>,
@@ -155,13 +128,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     /// truncated at a block boundary to ensure all accounts from included blocks are returned.
     ///
     /// The response includes pagination info with the last block number that was fully included.
-    #[instrument(
-        target = COMPONENT,
-        name = "store.ntx_builder_server.get_network_account_ids",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_network_account_ids(
         &self,
         request: Request<BlockRange>,
@@ -193,13 +159,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         }))
     }
 
-    #[instrument(
-    target = COMPONENT,
-    name = "store.ntx_builder_server.get_note_script_by_root",
-    skip_all,
-    ret(level = "debug"),
-    err
-    )]
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,

@@ -9,9 +9,8 @@ use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProvenBlock};
 use miden_protocol::utils::Deserializable;
 use tonic::{Request, Response, Status};
-use tracing::{Instrument, instrument};
+use tracing::Instrument;
 
-use crate::COMPONENT;
 use crate::errors::ApplyBlockError;
 use crate::server::api::{
     StoreApi,
@@ -31,12 +30,6 @@ impl block_producer_server::BlockProducer for StoreApi {
     /// Returns block header for the specified block number.
     ///
     /// If the block number is not provided, block header for the latest block is returned.
-    #[instrument(
-        target = COMPONENT,
-        name = "store.block_producer_server.get_block_header_by_number",
-        skip_all,
-        err
-    )]
     async fn get_block_header_by_number(
         &self,
         request: Request<proto::rpc::BlockHeaderByNumberRequest>,
@@ -45,12 +38,6 @@ impl block_producer_server::BlockProducer for StoreApi {
     }
 
     /// Updates the local DB by inserting a new block header and the related data.
-    #[instrument(
-        target = COMPONENT,
-        name = "store.block_producer_server.apply_block",
-        skip_all,
-        err
-    )]
     async fn apply_block(
         &self,
         request: Request<proto::blockchain::Block>,
@@ -104,12 +91,6 @@ impl block_producer_server::BlockProducer for StoreApi {
     }
 
     /// Returns data needed by the block producer to construct and prove the next block.
-    #[instrument(
-            target = COMPONENT,
-            name = "store.block_producer_server.get_block_inputs",
-            skip_all,
-            err
-        )]
     async fn get_block_inputs(
         &self,
         request: Request<proto::store::BlockInputsRequest>,
@@ -142,12 +123,6 @@ impl block_producer_server::BlockProducer for StoreApi {
     /// Fetches the inputs for a transaction batch from the database.
     ///
     /// See [`State::get_batch_inputs`] for details.
-    #[instrument(
-          target = COMPONENT,
-          name = "store.block_producer_server.get_batch_inputs",
-          skip_all,
-          err
-        )]
     async fn get_batch_inputs(
         &self,
         request: Request<proto::store::BatchInputsRequest>,
@@ -173,12 +148,6 @@ impl block_producer_server::BlockProducer for StoreApi {
             .map_err(|err| tonic::Status::internal(err.as_report()))
     }
 
-    #[instrument(
-            target = COMPONENT,
-            name = "store.block_producer_server.get_transaction_inputs",
-            skip_all,
-            err
-        )]
     async fn get_transaction_inputs(
         &self,
         request: Request<proto::store::TransactionInputsRequest>,

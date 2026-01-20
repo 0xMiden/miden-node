@@ -290,8 +290,7 @@ impl StoreClient {
     #[instrument(
         target = COMPONENT,
         name = "store.client.submit_page",
-        skip(self, accounts, sender),
-        fields(chain_tip = chain_tip, current_height = current_height)
+        skip_all
     )]
     async fn submit_page(
         &self,

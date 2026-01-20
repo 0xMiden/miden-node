@@ -141,6 +141,20 @@ impl InnerForest {
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
+    /// Retrieves a vault root witness for the specified account block number.
+    ///
+    /// Finds the most recent vault root entry before the specified block number for the account.
+    pub(crate) fn get_vault_root(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Option<Word> {
+        self.vault_roots
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
+            .next_back()
+            .map(|(_, root)| *root)
+    }
+
     /// Retrieves the vault SMT root for an account at or before the given block.
     /// Retrieves the storage map SMT root for an account slot at or before the given block.
     ///
@@ -192,15 +206,11 @@ impl InnerForest {
         block_num: BlockNumber,
         asset_keys: BTreeSet<AssetVaultKey>,
     ) -> Result<Vec<AssetWitness>, WitnessError> {
-        let (_, root) = self
-            .vault_roots
-            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
-            .next_back()
-            .ok_or(WitnessError::RootNotFound)?;
+        let root = self.get_vault_root(account_id, block_num).ok_or(WitnessError::RootNotFound)?;
         let witnessees = asset_keys
             .into_iter()
             .map(|key| {
-                let proof = self.forest.open(*root, key.into())?;
+                let proof = self.forest.open(root, key.into())?;
                 let asset = AssetWitness::new(proof)?;
                 Ok(asset)
             })

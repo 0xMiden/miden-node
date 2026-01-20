@@ -487,7 +487,10 @@ impl api_server::Api for RpcService {
         &self,
         request: Request<proto::rpc::AccountRequest>,
     ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
-        use proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData::MapKeys as ProtoMapKeys;
+        use proto::rpc::account_request::account_detail_request::storage_map_detail_request::{
+            SlotData::MapKeys as ProtoMapKeys,
+            SlotData::AllEntries as ProtoMapAllEntries
+        };
 
         let request = request.into_inner();
 
@@ -501,7 +504,7 @@ impl api_server::Api for RpcService {
                 .filter_map(|m| m.slot_data.as_ref())
                 .filter_map(|d| match d {
                     ProtoMapKeys(keys) => Some(keys.map_keys.len()),
-                    _ => None,
+                    ProtoMapAllEntries(_) => None,
                 })
                 .sum();
             check::<QueryParamStorageMapKeyTotalLimit>(total_keys)?;

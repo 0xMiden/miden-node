@@ -88,7 +88,8 @@ impl Store {
         let ntx_builder_address = self.ntx_builder_listener.local_addr()?;
         let block_producer_address = self.block_producer_listener.local_addr()?;
         info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address,
-            block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.grpc_timeout, "Loading database");
+            block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.grpc_timeout,
+            "Loading database");
 
         let state =
             Arc::new(State::load(&self.data_directory).await.context("failed to load state")?);

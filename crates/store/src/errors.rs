@@ -206,6 +206,21 @@ pub enum StateInitializationError {
     DatabaseLoadError(#[from] DatabaseSetupError),
     #[error("inner forest error")]
     InnerForestError(#[from] InnerForestError),
+    #[error(
+        "{tree_name} SMT root ({tree_root:?}) does not match expected root from block {block_num} \
+         ({block_root:?}). Delete the tree storage directories and restart the node to rebuild \
+         from the database."
+    )]
+    TreeStorageDiverged {
+        tree_name: &'static str,
+        block_num: BlockNumber,
+        tree_root: Word,
+        block_root: Word,
+    },
+    #[error("public account {0} is missing details in database")]
+    PublicAccountMissingDetails(AccountId),
+    #[error("failed to convert account to delta: {0}")]
+    AccountToDeltaConversionFailed(String),
 }
 
 #[derive(Debug, Error)]

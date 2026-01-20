@@ -119,14 +119,8 @@ impl StoreCommand {
                 enable_otel: _,
                 grpc_timeout,
             } => {
-                Self::start(
-                    rpc_url,
-                    ntx_builder_url,
-                    block_producer_url,
-                    data_directory,
-                    grpc_timeout,
-                )
-                .await
+                Self::start(rpc_url, ntx_builder_url, block_producer_url, data_directory, grpc_timeout)
+                    .await
             },
         }
     }

@@ -3,8 +3,7 @@ use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use diesel::prelude::QueryableByName;
-use diesel::{Connection, RunQueryDsl, SqliteConnection};
+use diesel::{Connection, QueryableByName, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;

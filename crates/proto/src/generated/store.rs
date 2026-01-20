@@ -239,8 +239,11 @@ pub struct VaultAssetWitnessesRequest {
 /// Response containing vault asset witnesses.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VaultAssetWitnessesResponse {
+    /// Block number at which the witness was generated.
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
     /// List of asset witnesses.
-    #[prost(message, repeated, tag = "1")]
+    #[prost(message, repeated, tag = "2")]
     pub asset_witnesses: ::prost::alloc::vec::Vec<
         vault_asset_witnesses_response::VaultAssetWitness,
     >,

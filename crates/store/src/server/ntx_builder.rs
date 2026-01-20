@@ -291,6 +291,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .collect();
 
         Ok(Response::new(proto::store::VaultAssetWitnessesResponse {
+            block_num: block_num.as_u32(),
             asset_witnesses: proto_witnesses,
         }))
     }

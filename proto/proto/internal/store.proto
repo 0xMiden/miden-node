@@ -377,8 +377,11 @@ message VaultAssetWitnessesResponse {
         primitives.SmtOpening proof = 1;
     }
 
+    // Block number at which the witness was generated.
+    fixed32 block_num = 1;
+
     // List of asset witnesses.
-    repeated VaultAssetWitness asset_witnesses = 1;
+    repeated VaultAssetWitness asset_witnesses = 2;
 }
 
 // GET STORAGE MAP WITNESS

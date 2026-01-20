@@ -396,7 +396,7 @@ message StorageMapWitnessRequest {
     // The account ID for which to retrieve the storage map witness.
     account.AccountId account_id = 1;
 
-    // The storage map key for which to retrieve the witness.
+    // The raw, user-provided storage map key for which to retrieve the witness.
     primitives.Digest map_key = 2;
 
     // Optional block number. If not provided, uses the latest state.

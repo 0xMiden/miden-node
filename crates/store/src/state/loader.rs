@@ -237,13 +237,6 @@ pub async fn load_smt_forest(
 
         // Use the unified update method (will recognize it's a full-state delta)
         forest.update_account(block_num, &delta)?;
-
-        tracing::debug!(
-            target: COMPONENT,
-            %account_id,
-            %block_num,
-            "Initialized forest for account from DB"
-        );
     }
 
     Ok(forest)

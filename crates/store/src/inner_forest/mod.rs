@@ -12,7 +12,7 @@ use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
-use miden_protocol::errors::StorageMapError;
+use miden_protocol::errors::{AssetError, StorageMapError};
 use miden_protocol::{EMPTY_WORD, Word};
 use thiserror::Error;
 
@@ -44,6 +44,8 @@ pub enum WitnessError {
     MerkleError(#[from] MerkleError),
     #[error("storage map error")]
     StorageMapError(#[from] StorageMapError),
+    #[error("failed to construct asset")]
+    AssetError(#[from] AssetError),
 }
 
 // INNER FOREST
@@ -186,7 +188,8 @@ impl InnerForest {
             .into_iter()
             .map(|key| {
                 let proof = self.forest.open(*root, key.into())?;
-                Ok(AssetWitness::new_unchecked(proof))
+                let asset = AssetWitness::new(proof)?;
+                Ok(asset)
             })
             .collect::<Result<Vec<_>, WitnessError>>()?;
         Ok(witnessees)

@@ -412,27 +412,23 @@ impl DataStore for NtxDataStore {
 
         let store = self.store.clone();
         async move {
-            // Retrieve the account proof from the store.
+            // Retrieve the account details from the store.
             let account_request = AccountRequest {
                 account_id: foreign_account_id,
                 block_num: Some(ref_block),
+                // Request account code, account header, and storage header.
                 details: Some(AccountDetailRequest {
-                    code_commitment: Some(self.account.code().commitment()),
-                    asset_vault_commitment: Some(self.account.vault().root()), /* TODO(currentpr):
-                                                                                * what is the
-                                                                                * commitment that
-                                                                                * should be provided
-                                                                                * here? */
-                    storage_requests: Vec::new(), /* TODO(currentpr): Do these need to be
-                                                   * provided? */
+                    code_commitment: Some(Word::default()),
+                    asset_vault_commitment: None,
+                    storage_requests: vec![],
                 }),
             };
-            let account = store.get_account(account_request).await.map_err(|err| {
+            let account_response = store.get_account(account_request).await.map_err(|err| {
                 DataStoreError::other_with_source("failed to get account proof from store", err)
             })?;
 
             // Construct account from account proof account details.
-            let account_details = account.details.ok_or_else(|| {
+            let account_details = account_response.details.ok_or_else(|| {
                 DataStoreError::other("account proof does not contain account details")
             })?;
 
@@ -454,7 +450,7 @@ impl DataStore for NtxDataStore {
             })?;
 
             // Return partial account and witness.
-            Ok(AccountInputs::new(partial_account, account.witness))
+            Ok(AccountInputs::new(partial_account, account_response.witness))
         }
     }
 
@@ -478,9 +474,8 @@ impl DataStore for NtxDataStore {
                     block_num: Some(self.reference_header.block_num()),
                     details: Some(AccountDetailRequest {
                         code_commitment: None,
-                        asset_vault_commitment: Some(self.account.vault().root()), /* TODO(currentpr): what is the commitment that should be provided here? */
-                        storage_requests: Vec::new(), /* TODO(currentpr): Do these need to be
-                                                       * provided? */
+                        asset_vault_commitment: Some(Word::default()),
+                        storage_requests: Vec::new(),
                     }),
                 };
                 let account_response = store.get_account(account_request).await.map_err(|err| {
@@ -538,15 +533,13 @@ impl DataStore for NtxDataStore {
                         "requested storage slot has not been registered",
                     ));
                 };
-                // TODO(currentpr): use slot name...
                 let account_request = AccountRequest {
                     account_id,
                     block_num: Some(self.reference_header.block_num()),
                     details: Some(AccountDetailRequest {
-                        code_commitment: Some(self.account.code().commitment()),
-                        asset_vault_commitment: Some(self.account.vault().root()), /* TODO(currentpr): what is the commitment that should be provided here? */
-                        storage_requests: Vec::new(), /* TODO(currentpr): Do these need to be
-                                                       * provided? */
+                        code_commitment: Some(Word::default()),
+                        asset_vault_commitment: None,
+                        storage_requests: Vec::new(),
                     }),
                 };
                 let account_response = store.get_account(account_request).await.map_err(|err| {

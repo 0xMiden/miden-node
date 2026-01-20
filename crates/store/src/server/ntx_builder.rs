@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::num::{NonZero, TryFromIntError};
 
 use miden_crypto::merkle::smt::SmtProof;
@@ -7,6 +8,7 @@ use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::store::ntx_builder_server;
 use miden_node_utils::ErrorReport;
 use miden_protocol::Word;
+use miden_protocol::account::StorageSlotName;
 use miden_protocol::asset::AssetVaultKey;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
@@ -249,27 +251,29 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::VaultAssetWitnessesResponse>, Status> {
         let request = request.into_inner();
 
+        // Read account ID.
         let account_id =
-            read_account_id::<GetWitnessesError>(request.account_id).map_err(internal_error)?;
+            read_account_id::<GetWitnessesError>(request.account_id).map_err(invalid_argument)?;
 
-        // Convert vault keys from protobuf to AssetVaultKey.
+        // Read vault keys.
         let vault_keys = request
             .vault_keys
             .into_iter()
             .map(|key_digest| {
                 let word = read_root::<GetWitnessesError>(Some(key_digest), "VaultKey")
-                    .map_err(internal_error)?;
+                    .map_err(invalid_argument)?;
                 Ok(AssetVaultKey::new_unchecked(word))
             })
-            .collect::<Result<std::collections::BTreeSet<_>, Status>>()?;
+            .collect::<Result<BTreeSet<_>, Status>>()?;
 
-        // Extract block number from request, use latest if not provided
+        // Read block number from request, use latest if not provided.
         let block_num = if let Some(num) = request.block_num {
             num.into()
         } else {
             self.state.latest_block_num().await
         };
 
+        // Retrieve the asset witnesses.
         let asset_witnesses = self
             .state
             .get_vault_asset_witnesses(account_id, block_num, vault_keys)
@@ -280,8 +284,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let proto_witnesses = asset_witnesses
             .iter()
             .map(|witness| {
-                // AssetWitness can be converted to SmtProof to access its components.
-                use miden_protocol::crypto::merkle::smt::SmtProof;
                 let smt_proof: SmtProof = witness.clone().into();
                 let (path, leaf) = smt_proof.into_parts();
 
@@ -315,23 +317,27 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::StorageMapWitnessResponse>, Status> {
         let request = request.into_inner();
 
+        // Read the account ID.
         let account_id =
-            read_account_id::<GetWitnessesError>(request.account_id).map_err(internal_error)?;
+            read_account_id::<GetWitnessesError>(request.account_id).map_err(invalid_argument)?;
 
+        // Read the map key.
         let map_key =
-            read_root::<GetWitnessesError>(request.map_key, "MapKey").map_err(internal_error)?;
+            read_root::<GetWitnessesError>(request.map_key, "MapKey").map_err(invalid_argument)?;
 
-        // Extract slot name from request
-        let slot_name = miden_protocol::account::StorageSlotName::new(request.slot_name)
-            .map_err(|_| tonic::Status::invalid_argument("Invalid storage slot name"))?;
+        // Read the slot name.
+        let slot_name = StorageSlotName::new(request.slot_name).map_err(|err| {
+            tonic::Status::invalid_argument(format!("Invalid storage slot name: {err}"))
+        })?;
 
-        // Extract block number from request, use latest if not provided
+        // Read the block number, use latest if not provided.
         let block_num = if let Some(num) = request.block_num {
             num.into()
         } else {
             self.state.latest_block_num().await
         };
 
+        // Retrieve the storage map witness.
         let storage_witness = self
             .state
             .get_storage_map_witness(account_id, &slot_name, block_num, map_key)
@@ -339,7 +345,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .map_err(internal_error)?;
 
         // Convert StorageMapWitness to protobuf format by extracting witness data.
-        // StorageMapWitness can be converted to SmtProof to access its components.
         let smt_proof: SmtProof = storage_witness.into();
         let (path, leaf) = smt_proof.into_parts();
 

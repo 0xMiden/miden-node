@@ -23,8 +23,11 @@
 - Added gRPC-Web probe support to the `miden-network-monitor` binary ([#1484](https://github.com/0xMiden/miden-node/pull/1484)).
 - Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
 - Improve DB query performance for account queries ([#1496](https://github.com/0xMiden/miden-node/pull/1496).
+- Limit number of storage map keys in `GetAccount` requests ([#1517](https://github.com/0xMiden/miden-node/pull/1517)).
 - The network monitor now marks the chain as unhealthy if it fails to create new blocks ([#1512](https://github.com/0xMiden/miden-node/pull/1512)).
 - Block producer now detects if it is desync'd from the store's chain tip and aborts ([#1520](https://github.com/0xMiden/miden-node/pull/1520)).
+- Pin tool versions in CI ([#1523](https://github.com/0xMiden/miden-node/pull/1523)).
+- Add check to ensure tree store state is in sync with database storage ([#1532](https://github.com/0xMiden/miden-node/issues/1534)).
 
 ### Changes
 
@@ -60,11 +63,33 @@
 - Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
 - Fixed the network monitor counter account to use the storage slot name ([#1501](https://github.com/0xMiden/miden-node/pull/1501)).
 
-## v0.12.6
+## v0.12.8 (2026-01-15)
+
+### Enhancements
+
+- Enable traces within database closures ([#1511](https://github.com/0xMiden/miden-node/pull/1511)).
+
+## v0.12.7 (2026-01-15)
+
+### Enhancements
+
+- Emit database table size metrics ([#1511](https://github.com/0xMiden/miden-node/pull/1511)).
+- Improved telemetry in the network transaction builder ([#1508](https://github.com/0xMiden/miden-node/pull/1508)).
+- Improved telemetry in the store's `apply_block` ([#1508](https://github.com/0xMiden/miden-node/pull/1508)).
+
+### Fixes
+
+- Network transaction builder now marks notes from any error as failed ([#1508](https://github.com/0xMiden/miden-node/pull/1508)).
+- Network transaction builder now adheres to note limit set by protocol ([#1508](https://github.com/0xMiden/miden-node/pull/1508)).
+- Race condition resolved in the store's `apply_block` ([#1508](https://github.com/0xMiden/miden-node/pull/1508)).
+  - This presented as a database locked error and in rare cases a desync between the mempool and store. 
+
+## v0.12.6 (2026-01-12)
 
 ### Enhancements
 
 - Added Faucet metadata to the `miden-network-monitor` binary ([#1373](https://github.com/0xMiden/miden-node/pull/1373)).
+- Improve telemetry in the store ([#1504](https://github.com/0xMiden/miden-node/pull/1504)).
 
 ### Fixes
 
@@ -115,6 +140,7 @@
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
 - Added `validator` crate with initial protobuf, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
 - [BREAKING] Added `AccountTreeWithHistory` and integrate historical queries into `GetAccountProof` ([#1292](https://github.com/0xMiden/miden-node/pull/1292)).
+- [BREAKING] Added `rocksdb` feature to enable rocksdb backends of `LargeSmt` ([#1326](https://github.com/0xMiden/miden-node/pull/1326)).
 - [BREAKING] Handle past/historical `AccountProof` requests ([#1333](https://github.com/0xMiden/miden-node/pull/1333)).
 - Implement `DataStore::get_note_script()` for `NtxDataStore` (#[1332](https://github.com/0xMiden/miden-node/pull/1332)).
 - Started validating notes by their commitment instead of ID before entering the mempool ([#1338](https://github.com/0xMiden/miden-node/pull/1338)).

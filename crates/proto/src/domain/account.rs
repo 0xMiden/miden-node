@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
+use miden_node_utils::limiter::{QueryParamLimiter, QueryParamStorageMapKeyTotalLimit};
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -436,6 +437,15 @@ impl AccountStorageMapDetails {
     /// Maximum number of storage map entries that can be returned in a single response.
     pub const MAX_RETURN_ENTRIES: usize = 1000;
 
+    /// Maximum number of SMT proofs that can be returned in a single response.
+    ///
+    /// This limit is more restrictive than [`Self::MAX_RETURN_ENTRIES`] because SMT proofs
+    /// are larger (up to 64 inner nodes each) and more CPU-intensive to generate.
+    ///
+    /// This is defined by [`QueryParamStorageMapKeyTotalLimit::LIMIT`] and used both in RPC
+    /// validation and store-level enforcement to ensure consistent limits.
+    pub const MAX_SMT_PROOF_ENTRIES: usize = QueryParamStorageMapKeyTotalLimit::LIMIT;
+
     /// Creates storage map details with all entries from the storage map.
     ///
     /// If the storage map has too many entries (> `MAX_RETURN_ENTRIES`),
@@ -477,7 +487,7 @@ impl AccountStorageMapDetails {
     /// Use this when the caller has already obtained the proofs from an `SmtForest`.
     /// Returns `LimitExceeded` if too many proofs are provided.
     pub fn from_proofs(slot_name: StorageSlotName, proofs: Vec<SmtProof>) -> Self {
-        if proofs.len() > Self::MAX_RETURN_ENTRIES {
+        if proofs.len() > Self::MAX_SMT_PROOF_ENTRIES {
             Self {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,
@@ -487,6 +497,14 @@ impl AccountStorageMapDetails {
                 slot_name,
                 entries: StorageMapEntries::EntriesWithProofs(proofs),
             }
+        }
+    }
+
+    /// Creates storage map details indicating the limit was exceeded.
+    pub fn limit_exceeded(slot_name: StorageSlotName) -> Self {
+        Self {
+            slot_name,
+            entries: StorageMapEntries::LimitExceeded,
         }
     }
 }
@@ -629,6 +647,21 @@ pub struct AccountStorageDetails {
     pub map_details: Vec<AccountStorageMapDetails>,
 }
 
+impl AccountStorageDetails {
+    /// Creates storage details where all map slots indicate limit exceeded.
+    pub fn all_limits_exceeded(
+        header: AccountStorageHeader,
+        slot_names: impl IntoIterator<Item = StorageSlotName>,
+    ) -> Self {
+        Self {
+            header,
+            map_details: Vec::from_iter(
+                slot_names.into_iter().map(AccountStorageMapDetails::limit_exceeded),
+            ),
+        }
+    }
+}
+
 impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
     type Error = ConversionError;
 
@@ -722,6 +755,24 @@ pub struct AccountDetails {
     pub account_code: Option<Vec<u8>>,
     pub vault_details: AccountVaultDetails,
     pub storage_details: AccountStorageDetails,
+}
+
+impl AccountDetails {
+    /// Creates account details where all storage map slots indicate limit exceeded.
+    pub fn with_storage_limits_exceeded(
+        account_header: AccountHeader,
+        account_code: Option<Vec<u8>>,
+        vault_details: AccountVaultDetails,
+        storage_header: AccountStorageHeader,
+        slot_names: impl IntoIterator<Item = StorageSlotName>,
+    ) -> Self {
+        Self {
+            account_header,
+            account_code,
+            vault_details,
+            storage_details: AccountStorageDetails::all_limits_exceeded(storage_header, slot_names),
+        }
+    }
 }
 
 impl TryFrom<proto::rpc::account_response::AccountDetails> for AccountDetails {

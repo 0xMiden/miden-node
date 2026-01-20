@@ -88,7 +88,8 @@ impl Store {
         let ntx_builder_address = self.ntx_builder_listener.local_addr()?;
         let block_producer_address = self.block_producer_listener.local_addr()?;
         info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address,
-            block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.grpc_timeout, "Loading database");
+            block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.grpc_timeout,
+            "Loading database");
 
         let state =
             Arc::new(State::load(&self.data_directory).await.context("failed to load state")?);
@@ -123,6 +124,19 @@ impl Store {
         info!(target: COMPONENT, "Database loaded");
 
         let mut join_set = JoinSet::new();
+
+        join_set.spawn(async move {
+            // Manual tests on testnet indicate each iteration takes ~2s once things are OS cached.
+            //
+            // 5 minutes seems like a reasonable interval, where this should have minimal database
+            // IO impact while providing a decent view into table growth over time.
+            let mut interval = tokio::time::interval(Duration::from_secs(5 * 60));
+            let database = Arc::clone(&state);
+            loop {
+                interval.tick().await;
+                let _ = database.analyze_table_sizes().await;
+            }
+        });
 
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(

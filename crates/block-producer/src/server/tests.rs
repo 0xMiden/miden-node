@@ -94,6 +94,7 @@ async fn block_producer_startup_is_robust_to_network_failures() {
                 ntx_builder_listener,
                 block_producer_listener,
                 data_directory: dir,
+                grpc_timeout: std::time::Duration::from_secs(30),
             }
             .serve()
             .await
@@ -114,16 +115,34 @@ async fn block_producer_startup_is_robust_to_network_failures() {
     assert!(response.is_ok());
 
     // kill the store
-    // Use spawn_blocking because shutdown_timeout blocks and can't run in async context
-    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_millis(500)))
-        .await
-        .expect("shutdown should complete");
+    shutdown_store(store_runtime).await;
 
     // test: request against block-producer api should fail immediately
     let response = send_request(block_producer_client.clone(), 1).await;
     assert!(response.is_err());
 
     // test: restart the store and request should succeed
+    let store_runtime = restart_store(store_addr, data_directory.path()).await;
+    let response = send_request(block_producer_client.clone(), 2).await;
+    assert!(response.is_ok());
+
+    // Shutdown the store before data_directory is dropped to allow RocksDB to flush properly
+    shutdown_store(store_runtime).await;
+}
+
+/// Shuts down the store runtime properly to allow RocksDB to flush before the temp directory is
+/// deleted.
+async fn shutdown_store(store_runtime: runtime::Runtime) {
+    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_millis(500)))
+        .await
+        .expect("shutdown should complete");
+}
+
+/// Restarts a store using an existing data directory. Returns the runtime handle for shutdown.
+async fn restart_store(
+    store_addr: std::net::SocketAddr,
+    data_directory: &std::path::Path,
+) -> runtime::Runtime {
     let rpc_listener =
         TcpListener::bind("127.0.0.1:0").await.expect("store should bind the RPC port");
     let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
@@ -132,19 +151,22 @@ async fn block_producer_startup_is_robust_to_network_failures() {
     let block_producer_listener = TcpListener::bind(store_addr)
         .await
         .expect("store should bind the block-producer port");
-    task::spawn(async move {
+    let dir = data_directory.to_path_buf();
+    let store_runtime =
+        runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
+    store_runtime.spawn(async move {
         Store {
             rpc_listener,
             ntx_builder_listener,
             block_producer_listener,
-            data_directory: data_directory.path().to_path_buf(),
+            data_directory: dir,
+            grpc_timeout: std::time::Duration::from_secs(30),
         }
         .serve()
         .await
         .expect("store should start serving");
     });
-    let response = send_request(block_producer_client.clone(), 2).await;
-    assert!(response.is_ok());
+    store_runtime
 }
 
 /// Creates a dummy transaction and submits it to the block producer.

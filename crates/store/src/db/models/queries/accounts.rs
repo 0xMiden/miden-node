@@ -43,6 +43,7 @@ use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::{Deserializable, Serializable};
 
+use crate::COMPONENT;
 use crate::db::models::conv::{
     SqlTypeConvert,
     network_account_id_to_prefix_sql,
@@ -911,6 +912,11 @@ pub(crate) fn insert_account_storage_map_value(
 
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
 #[allow(clippy::too_many_lines)]
+#[tracing::instrument(
+    target = COMPONENT,
+    skip_all,
+    err,
+)]
 pub(crate) fn upsert_accounts(
     conn: &mut SqliteConnection,
     accounts: &[BlockAccountUpdate],

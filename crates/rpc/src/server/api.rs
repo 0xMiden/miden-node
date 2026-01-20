@@ -15,6 +15,7 @@ use miden_node_utils::limiter::{
     QueryParamNoteIdLimit,
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
+    QueryParamStorageMapKeyTotalLimit,
 };
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -487,9 +488,28 @@ impl api_server::Api for RpcService {
         &self,
         request: Request<proto::rpc::AccountRequest>,
     ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
+        use proto::rpc::account_request::account_detail_request::storage_map_detail_request::{
+            SlotData::MapKeys as ProtoMapKeys,
+            SlotData::AllEntries as ProtoMapAllEntries
+        };
+
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
+
+        // Validate total storage map key limit before forwarding to store
+        if let Some(details) = &request.details {
+            let total_keys: usize = details
+                .storage_maps
+                .iter()
+                .filter_map(|m| m.slot_data.as_ref())
+                .filter_map(|d| match d {
+                    ProtoMapKeys(keys) => Some(keys.map_keys.len()),
+                    ProtoMapAllEntries(_) => None,
+                })
+                .sum();
+            check::<QueryParamStorageMapKeyTotalLimit>(total_keys)?;
+        }
 
         self.store.clone().get_account(request).await
     }
@@ -618,6 +638,7 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
         QueryParamNoteIdLimit as NoteId,
         QueryParamNoteTagLimit as NoteTag,
         QueryParamNullifierLimit as Nullifier,
+        QueryParamStorageMapKeyTotalLimit as StorageMapKeyTotal,
     };
 
     proto::rpc::RpcLimits {
@@ -639,6 +660,10 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
             ),
             ("SyncNotes".into(), endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)])),
             ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
+            (
+                "GetAccount".into(),
+                endpoint_limits(&[(StorageMapKeyTotal::PARAM_NAME, StorageMapKeyTotal::LIMIT)]),
+            ),
         ]),
     }
 });

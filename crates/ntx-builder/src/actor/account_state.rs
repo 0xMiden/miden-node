@@ -211,10 +211,10 @@ impl NetworkAccountState {
                 match update {
                     NetworkAccountEffect::Updated(account_delta) => {
                         self.account.add_delta(&account_delta);
+                        tx_impact.account_delta = Some(account_id);
                     },
                     NetworkAccountEffect::Created(_) => {},
                 }
-                tx_impact.account_delta = Some(account_id);
             }
         }
         for note in network_notes {

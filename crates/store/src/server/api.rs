@@ -17,6 +17,7 @@ use crate::state::State;
 // STORE API
 // ================================================================================================
 
+#[derive(Clone)]
 pub struct StoreApi {
     pub(super) state: Arc<State>,
 }

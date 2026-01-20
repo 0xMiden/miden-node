@@ -158,8 +158,8 @@ impl InnerForest {
 
     /// Retrieves the storage map SMT root for an account slot at or before the given block.
     ///
-    /// Finds the most recent storage root at or before the specified block number.
-    pub(crate) fn get_storage_root(
+    /// Finds the most recent storage map root at or before the specified block number.
+    pub(crate) fn get_storage_map_root(
         &self,
         account_id: AccountId,
         slot_name: &StorageSlotName,
@@ -189,7 +189,7 @@ impl InnerForest {
     ) -> Result<StorageMapWitness, WitnessError> {
         let key = StorageMap::hash_key(raw_key);
         let root = self
-            .get_storage_root(account_id, slot_name, block_num)
+            .get_storage_map_root(account_id, slot_name, block_num)
             .ok_or(WitnessError::RootNotFound)?;
         let proof = self.forest.open(root, key)?;
 
@@ -230,7 +230,7 @@ impl InnerForest {
         block_num: BlockNumber,
         keys: &[Word],
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
-        let root = self.get_storage_root(account_id, &slot_name, block_num)?;
+        let root = self.get_storage_map_root(account_id, &slot_name, block_num)?;
 
         if keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
             return Some(Ok(AccountStorageMapDetails {

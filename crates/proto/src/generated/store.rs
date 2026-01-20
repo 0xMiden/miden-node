@@ -234,7 +234,8 @@ pub struct VaultAssetWitnessesRequest {
     pub vault_keys: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Optional block number. If not provided, uses the latest state.
     ///
-    /// The specified block number should be relatively near the chain tip else an error will be returned.
+    /// The specified block number should be relatively near the chain tip else an error will be
+    /// returned.
     #[prost(fixed32, optional, tag = "3")]
     pub block_num: ::core::option::Option<u32>,
 }
@@ -268,13 +269,15 @@ pub struct StorageMapWitnessRequest {
     /// The account ID for which to retrieve the storage map witness.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// The storage map key for which to retrieve the witness.
+    /// The raw, user-provided storage map key for which to retrieve the witness.
     #[prost(message, optional, tag = "2")]
     pub map_key: ::core::option::Option<super::primitives::Digest>,
     /// Optional block number. If not provided, uses the latest state.
     ///
     /// The witness returned corresponds to the account state at the specified block number.
-    /// The specified block number should be relatively near the chain tip else an error will be returned.
+    ///
+    /// The specified block number should be relatively near the chain tip else an error will be
+    /// returned.
     #[prost(fixed32, optional, tag = "3")]
     pub block_num: ::core::option::Option<u32>,
     /// The storage slot name for the map.

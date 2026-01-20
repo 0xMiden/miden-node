@@ -8,6 +8,7 @@ use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -201,12 +202,17 @@ impl StoreClient {
         block_range: RangeInclusive<BlockNumber>,
         sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
     ) -> Result<Option<BlockNumber>, StoreError> {
-        let (accounts, pagination_info) = self.fetch_page(block_range).await?;
+        let (accounts, pagination_info) = self
+            .fetch_page(block_range)
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))?;
 
         let chain_tip = pagination_info.chain_tip;
         let current_height = pagination_info.block_num;
 
-        self.submit_page(accounts, sender).await?;
+        self.submit_page(accounts, sender)
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))?;
 
         if current_height >= chain_tip {
             Ok(None)

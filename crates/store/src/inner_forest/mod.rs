@@ -196,7 +196,7 @@ impl InnerForest {
         Ok(StorageMapWitness::new(proof, vec![raw_key])?)
     }
 
-    /// Retrieves a vault asset witness for the specified account and asset keys at the specified
+    /// Retrieves a vault asset witnesses for the specified account and asset keys at the specified
     /// block number.
     pub fn get_vault_asset_witnesses(
         &self,

@@ -156,7 +156,6 @@ impl InnerForest {
             .map(|(_, root)| *root)
     }
 
-    /// Retrieves the vault SMT root for an account at or before the given block.
     /// Retrieves the storage map SMT root for an account slot at or before the given block.
     ///
     /// Finds the most recent storage root at or before the specified block number.

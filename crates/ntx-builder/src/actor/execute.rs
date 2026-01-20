@@ -4,6 +4,7 @@ use miden_node_proto::clients::ValidatorClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -13,6 +14,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript};
 use miden_protocol::transaction::{
     AccountInputs,
@@ -26,7 +28,6 @@ use miden_protocol::transaction::{
     TransactionInputs,
 };
 use miden_protocol::vm::FutureMaybeSend;
-use miden_protocol::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::utils::Serializable;

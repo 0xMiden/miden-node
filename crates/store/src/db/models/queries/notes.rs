@@ -853,8 +853,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
         let attachment = note.metadata.attachment();
 
-        let is_single_target_network_note =
-            NetworkAccountTarget::try_from(attachment.clone()).is_ok();
+        let is_single_target_network_note = NetworkAccountTarget::try_from(attachment).is_ok();
 
         let attachment_bytes = attachment.to_bytes();
 

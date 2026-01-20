@@ -1064,7 +1064,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountId {
     type Error = NetworkAccountError;
 
     fn try_from(attachment: &NoteAttachment) -> Result<Self, Self::Error> {
-        let target = NetworkAccountTarget::try_from(attachment.clone())
+        let target = NetworkAccountTarget::try_from(attachment)
             .map_err(|e| NetworkAccountError::InvalidAttachment(e.to_string()))?;
         Ok(NetworkAccountId(target.target_id()))
     }

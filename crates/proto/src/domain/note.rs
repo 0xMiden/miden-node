@@ -217,7 +217,7 @@ impl TryFrom<Note> for NetworkNote {
     type Error = NetworkNoteError;
 
     fn try_from(note: Note) -> Result<Self, Self::Error> {
-        SingleTargetNetworkNote::try_from(note.clone()).map(NetworkNote::SingleTarget)
+        SingleTargetNetworkNote::try_from(note).map(NetworkNote::SingleTarget)
     }
 }
 
@@ -281,7 +281,7 @@ impl TryFrom<Note> for SingleTargetNetworkNote {
     fn try_from(note: Note) -> Result<Self, Self::Error> {
         // Single-target network notes are identified by having a NetworkAccountTarget attachment
         let attachment = note.metadata().attachment();
-        let account_target = NetworkAccountTarget::try_from(attachment.clone())
+        let account_target = NetworkAccountTarget::try_from(attachment)
             .map_err(|e| NetworkNoteError::InvalidAttachment(e.to_string()))?;
         Ok(Self { note, account_target })
     }

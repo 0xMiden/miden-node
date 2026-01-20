@@ -61,6 +61,7 @@
 - Fixed missing asset setup for full account initialization ([#1461](https://github.com/0xMiden/miden-node/pull/1461)).
 - Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
 - Fixed the network monitor counter account to use the storage slot name ([#1501](https://github.com/0xMiden/miden-node/pull/1501)).
+- gRPC traces now correctly connect to the method implementation ([1553](https://github.com/0xMiden/miden-node/pull/1553)).
 
 ## v0.12.8 (2026-01-15)
 

@@ -169,8 +169,15 @@ impl InnerForest {
         block_num: BlockNumber,
         raw_key: Word,
     ) -> Result<StorageMapWitness, WitnessError> {
-        let root = self.get_storage_root(account_id, slot_name, block_num);
-        let proof = self.forest.open(root, raw_key)?;
+        let (_, root) = self
+            .storage_map_roots
+            .range(
+                (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                    ..=(account_id, slot_name.clone(), block_num),
+            )
+            .next_back()
+            .ok_or(WitnessError::RootNotFound)?;
+        let proof = self.forest.open(*root, raw_key)?;
 
         Ok(StorageMapWitness::new(proof, vec![raw_key])?)
     }

@@ -360,7 +360,7 @@ impl api_server::Api for RpcService {
                 let script = NoteScript::from_parts(mast, note.script().entrypoint());
                 let recipient =
                     NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
-                let new_note = Note::new(note.assets().clone(), note.metadata().clone(), recipient);
+                let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
                 OutputNote::Full(new_note)
             },
             other => other.clone(),
@@ -423,8 +423,7 @@ impl api_server::Api for RpcService {
                     let script = NoteScript::from_parts(mast, note.script().entrypoint());
                     let recipient =
                         NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
-                    let new_note =
-                        Note::new(note.assets().clone(), note.metadata().clone(), recipient);
+                    let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
                     OutputNote::Full(new_note)
                 },
                 other => other.clone(),

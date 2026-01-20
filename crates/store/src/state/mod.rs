@@ -17,6 +17,7 @@ use miden_node_proto::domain::account::{
     AccountStorageDetails,
     AccountStorageMapDetails,
     AccountVaultDetails,
+    NetworkAccountPrefix,
     SlotData,
     StorageMapRequest,
 };
@@ -366,7 +367,7 @@ impl State {
                     note_index,
                     note_id: note.id().as_word(),
                     note_commitment: note.commitment(),
-                    metadata: note.metadata().clone(),
+                    metadata: *note.metadata(),
                     details,
                     inclusion_path,
                 };
@@ -1206,12 +1207,12 @@ impl State {
     /// along with the next pagination token.
     pub async fn get_unconsumed_network_notes_for_account(
         &self,
-        network_account_prefix: u32,
+        network_account_id_prefix: NetworkAccountPrefix,
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db
-            .select_unconsumed_network_notes(network_account_prefix, block_num, page)
+            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
             .await
     }
 

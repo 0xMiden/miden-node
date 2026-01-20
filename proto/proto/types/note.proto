@@ -32,10 +32,13 @@ message NoteMetadata {
     // See `miden_protocol::note::note_tag` for more info.
     fixed32 tag = 3;
 
-    // Serialized note attachment
+    // Specifies when a note is ready to be consumed.
     //
-    // See `miden_protocol::note::NoteAttachment` for more info.
-    bytes attachment = 4;
+    // See `miden_protocol::note::execution_hint` for more info.
+    fixed64 execution_hint = 4;
+
+    // An arbitrary user-defined value.
+    fixed64 aux = 5;
 }
 
 // Represents a note.

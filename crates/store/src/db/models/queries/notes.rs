@@ -31,14 +31,14 @@ use miden_node_utils::limiter::{
     QueryParamNoteCommitmentLimit,
     QueryParamNoteTagLimit,
 };
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNoteIndex, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     NoteAssets,
-    NoteAttachment,
     NoteDetails,
+    NoteExecutionHint,
+    NoteExecutionMode,
     NoteId,
     NoteInclusionProof,
     NoteInputs,
@@ -50,11 +50,13 @@ use miden_protocol::note::{
     Nullifier,
 };
 use miden_protocol::utils::{Deserializable, Serializable};
-use miden_standards::note::NetworkAccountTarget;
+use miden_protocol::{Felt, Word};
 
 use crate::COMPONENT;
 use crate::db::models::conv::{
     SqlTypeConvert,
+    aux_to_raw_sql,
+    execution_hint_to_raw_sql,
     idx_to_raw_sql,
     note_type_to_raw_sql,
     raw_sql_to_idx,
@@ -95,7 +97,8 @@ use crate::errors::NoteSyncError;
 ///     note_type,
 ///     sender,
 ///     tag,
-///     attachment,
+///     aux,
+///     execution_hint,
 ///     inclusion_path
 /// FROM
 ///     notes
@@ -182,7 +185,8 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 ///     notes.note_type,
 ///     notes.sender,
 ///     notes.tag,
-///     notes.attachment,
+///     notes.aux,
+///     notes.execution_hint,
 ///     notes.assets,
 ///     notes.inputs,
 ///     notes.serial_num,
@@ -262,7 +266,8 @@ pub(crate) fn select_existing_note_commitments(
 ///     notes.note_type,
 ///     notes.sender,
 ///     notes.tag,
-///     notes.attachment,
+///     notes.aux,
+///     notes.execution_hint,
 ///     notes.assets,
 ///     notes.inputs,
 ///     notes.serial_num,
@@ -406,7 +411,8 @@ pub(crate) fn select_note_script_by_root(
 ///     notes.note_type,
 ///     notes.sender,
 ///     notes.tag,
-///     notes.attachment,
+///     notes.aux,
+///     notes.execution_hint,
 ///     notes.assets,
 ///     notes.inputs,
 ///     notes.serial_num,
@@ -416,7 +422,7 @@ pub(crate) fn select_note_script_by_root(
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
 /// WHERE
-///     is_single_target_network_note = TRUE AND tag = ?1 AND
+///     execution_mode = 0 AND tag = ?1 AND
 ///     committed_at <= ?2 AND
 ///     (consumed_at IS NULL OR consumed_at > ?2) AND notes.rowid >= ?3
 /// ORDER BY notes.rowid ASC
@@ -436,6 +442,12 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
     block_num: BlockNumber,
     mut page: Page,
 ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
     let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
     let rowid_sel_ge =
         diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
@@ -474,7 +486,7 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
             rowid_sel.clone(),
         ),
     )
-    .filter(schema::notes::is_single_target_network_note.eq(true))
+    .filter(schema::notes::execution_mode.eq(NoteExecutionMode::Network.to_raw_sql()))
     .filter(schema::notes::tag.eq(tag as i32))
     .filter(schema::notes::committed_at.le(block_num.to_raw_sql()))
     .filter(
@@ -578,7 +590,8 @@ pub struct NoteRecordWithScriptRawJoined {
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
-    pub attachment: Vec<u8>,
+    pub aux: i64,
+    pub execution_hint: i64,
     // #[diesel(embed)]
     // pub metadata: NoteMetadataRaw,
     pub assets: Option<Vec<u8>>,
@@ -602,7 +615,8 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             note_type,
             sender,
             tag,
-            attachment,
+            aux,
+            execution_hint,
             assets,
             inputs,
             serial_num,
@@ -617,7 +631,8 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             note_type,
             sender,
             tag,
-            attachment,
+            aux,
+            execution_hint,
             assets,
             inputs,
             serial_num,
@@ -644,7 +659,8 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             note_type,
             sender,
             tag,
-            attachment,
+            execution_hint,
+            aux,
             // metadata ^^^,
             assets,
             inputs,
@@ -655,7 +671,13 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             ..
         } = raw;
         let index = BlockNoteIndexRawRow { batch_index, note_index };
-        let metadata = NoteMetadataRawRow { note_type, sender, tag, attachment };
+        let metadata = NoteMetadataRawRow {
+            note_type,
+            sender,
+            tag,
+            aux,
+            execution_hint,
+        };
         let details = NoteDetailsRawRow { assets, inputs, serial_num };
 
         let metadata = metadata.try_into()?;
@@ -708,7 +730,8 @@ pub struct NoteRecordRawRow {
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
-    pub attachment: Vec<u8>,
+    pub aux: i64,
+    pub execution_hint: i64,
 
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
@@ -724,7 +747,8 @@ pub struct NoteMetadataRawRow {
     note_type: i32,
     sender: Vec<u8>, // AccountId
     tag: i32,
-    attachment: Vec<u8>,
+    aux: i64,
+    execution_hint: i64,
 }
 
 #[allow(clippy::cast_sign_loss)]
@@ -734,9 +758,11 @@ impl TryInto<NoteMetadata> for NoteMetadataRawRow {
         let sender = AccountId::read_from_bytes(&self.sender[..])?;
         let note_type = NoteType::try_from(self.note_type as u32)
             .map_err(DatabaseError::conversiont_from_sql::<NoteType, _, _>)?;
-        let tag = NoteTag::new(self.tag as u32);
-        let attachment = NoteAttachment::read_from_bytes(&self.attachment)?;
-        Ok(NoteMetadata::new(sender, note_type, tag).with_attachment(attachment))
+        let tag = NoteTag::from(self.tag as u32);
+        let execution_hint = NoteExecutionHint::try_from(self.execution_hint as u64)
+            .map_err(DatabaseError::conversiont_from_sql::<NoteExecutionHint, _, _>)?;
+        let aux = Felt::new(self.aux as u64);
+        Ok(NoteMetadata::new(sender, note_type, tag, execution_hint, aux)?)
     }
 }
 
@@ -841,26 +867,21 @@ pub struct NoteInsertRowInsert {
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
+    pub aux: i64,
+    pub execution_hint: i64,
 
-    pub attachment: Vec<u8>,
     pub consumed_at: Option<i64>,
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
     pub serial_num: Option<Vec<u8>>,
     pub nullifier: Option<Vec<u8>>,
     pub script_root: Option<Vec<u8>>,
-    pub is_single_target_network_note: bool,
+    pub execution_mode: i32,
     pub inclusion_path: Vec<u8>,
 }
 
 impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
-        let attachment = note.metadata.attachment();
-
-        let is_single_target_network_note = NetworkAccountTarget::try_from(attachment).is_ok();
-
-        let attachment_bytes = attachment.to_bytes();
-
         Self {
             committed_at: note.block_num.to_raw_sql(),
             batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
@@ -870,11 +891,12 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
             note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),
-            is_single_target_network_note,
-            attachment: attachment_bytes,
+            execution_mode: note.metadata.tag().execution_mode().to_raw_sql(),
+            aux: aux_to_raw_sql(note.metadata.aux()),
+            execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
             inclusion_path: note.inclusion_path.to_bytes(),
             consumed_at: None::<i64>, // New notes are always unconsumed.
-            nullifier: nullifier.as_ref().map(Nullifier::to_bytes),
+            nullifier: nullifier.as_ref().map(Nullifier::to_bytes), /* Beware: `Option<T>` also implements `to_bytes`, but this is not what you want. */
             assets: note.details.as_ref().map(|d| d.assets().to_bytes()),
             inputs: note.details.as_ref().map(|d| d.inputs().to_bytes()),
             script_root: note.details.as_ref().map(|d| d.script().root().to_bytes()),

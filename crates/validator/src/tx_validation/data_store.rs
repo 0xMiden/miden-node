@@ -58,11 +58,37 @@ impl DataStore for TransactionInputsDataStore {
 
     fn get_vault_asset_witnesses(
         &self,
-        _account_id: AccountId,
-        _vault_root: Word,
-        _vault_keys: BTreeSet<AssetVaultKey>,
+        account_id: AccountId,
+        vault_root: Word,
+        vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
-        std::future::ready(Ok(vec![]))
+        async move {
+            if self.tx_inputs.account().id() != account_id {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
+
+            if self.tx_inputs.account().vault().root() != vault_root {
+                return Err(DataStoreError::Other {
+                    error_msg: "vault root mismatch".into(),
+                    source: None,
+                });
+            }
+
+            Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
+                match self.tx_inputs.account().vault().open(vault_key) {
+                    Ok(vault_proof) => {
+                        AssetWitness::new(vault_proof.into()).map_err(|err| DataStoreError::Other {
+                            error_msg: "failed to open vault asset tree".into(),
+                            source: Some(err.into()),
+                        })
+                    },
+                    Err(err) => Err(DataStoreError::Other {
+                        error_msg: "failed to open vault".into(),
+                        source: Some(err.into()),
+                    }),
+                }
+            }))
+        }
     }
 
     fn get_storage_map_witness(

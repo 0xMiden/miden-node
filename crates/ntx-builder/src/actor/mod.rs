@@ -9,7 +9,7 @@ use std::time::Duration;
 use account_state::{NetworkAccountState, TransactionCandidate};
 use futures::FutureExt;
 use miden_node_proto::clients::{Builder, ValidatorClient};
-use miden_node_proto::domain::account::NetworkAccountId;
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
@@ -33,7 +33,7 @@ use crate::store::StoreClient;
 /// The reason an actor has shut down.
 pub enum ActorShutdownReason {
     /// Occurs when the transaction that created the actor is reverted.
-    AccountReverted(NetworkAccountId),
+    AccountReverted(NetworkAccountPrefix),
     /// Occurs when an account actor detects failure in the messaging channel used by the
     /// coordinator.
     EventChannelClosed,
@@ -42,7 +42,7 @@ pub enum ActorShutdownReason {
     /// Occurs when an account actor detects its corresponding cancellation token has been triggered
     /// by the coordinator. Cancellation tokens are triggered by the coordinator to initiate
     /// graceful shutdown of actors.
-    Cancelled(NetworkAccountId),
+    Cancelled(NetworkAccountPrefix),
 }
 
 // ACCOUNT ACTOR CONFIG
@@ -78,7 +78,7 @@ pub enum AccountOrigin {
     /// store yet.
     Transaction(Box<Account>),
     /// Accounts that already exist in the store.
-    Store(NetworkAccountId),
+    Store(NetworkAccountPrefix),
 }
 
 impl AccountOrigin {
@@ -93,16 +93,16 @@ impl AccountOrigin {
     }
 
     /// Returns an [`AccountOrigin::Store`].
-    pub fn store(account_id: NetworkAccountId) -> Self {
-        AccountOrigin::Store(account_id)
+    pub fn store(prefix: NetworkAccountPrefix) -> Self {
+        AccountOrigin::Store(prefix)
     }
 
-    /// Returns the [`NetworkAccountId`] of the account.
-    pub fn id(&self) -> NetworkAccountId {
+    /// Returns the [`NetworkAccountPrefix`] of the account.
+    pub fn prefix(&self) -> NetworkAccountPrefix {
         match self {
-            AccountOrigin::Transaction(account) => NetworkAccountId::try_from(account.id())
+            AccountOrigin::Transaction(account) => NetworkAccountPrefix::try_from(account.id())
                 .expect("actor accounts are always network accounts"),
-            AccountOrigin::Store(account_id) => *account_id,
+            AccountOrigin::Store(prefix) => *prefix,
         }
     }
 }
@@ -213,7 +213,7 @@ impl AccountActor {
         };
         let block_num = self.chain_state.read().await.chain_tip_header.block_num();
         let mut state =
-            NetworkAccountState::load(account, self.origin.id(), &self.store, block_num)
+            NetworkAccountState::load(account, self.origin.prefix(), &self.store, block_num)
                 .await
                 .expect("actor should be able to load account state");
 
@@ -229,7 +229,7 @@ impl AccountActor {
             };
             tokio::select! {
                 _ = self.cancel_token.cancelled() => {
-                    return ActorShutdownReason::Cancelled(self.origin.id());
+                    return ActorShutdownReason::Cancelled(self.origin.prefix());
                 }
                 // Handle mempool events.
                 event = self.event_rx.recv() => {

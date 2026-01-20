@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use miden_protocol::ProposedBlockError;
 use miden_protocol::block::{BlockNumber, BlockSigner, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
-use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::TransactionId;
 
 use crate::server::ValidatedTransactions;

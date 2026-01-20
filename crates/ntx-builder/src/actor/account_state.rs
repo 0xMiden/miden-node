@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 
-use miden_node_proto::domain::account::NetworkAccountId;
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::{NetworkNote, SingleTargetNetworkNote};
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
@@ -49,8 +49,8 @@ pub struct TransactionCandidate {
 /// The current state of a network account.
 #[derive(Clone)]
 pub struct NetworkAccountState {
-    /// The network account ID corresponding to the network account this state represents.
-    account_id: NetworkAccountId,
+    /// The network account prefix corresponding to the network account this state represents.
+    account_prefix: NetworkAccountPrefix,
 
     /// Component of this state which Contains the committed and inflight account updates as well
     /// as available and nullified notes.
@@ -74,23 +74,26 @@ impl NetworkAccountState {
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(
         account: Account,
-        account_id: NetworkAccountId,
+        account_prefix: NetworkAccountPrefix,
         store: &StoreClient,
         block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
-        let notes = store.get_unconsumed_network_notes(account_id, block_num.as_u32()).await?;
+        let notes = store.get_unconsumed_network_notes(account_prefix, block_num.as_u32()).await?;
         let notes = notes
             .into_iter()
-            .map(|note| {
-                let NetworkNote::SingleTarget(note) = note;
-                note
+            .filter_map(|note| {
+                if let NetworkNote::SingleTarget(note) = note {
+                    Some(note)
+                } else {
+                    None
+                }
             })
             .collect::<Vec<_>>();
         let account = NetworkAccountNoteState::new(account, notes);
 
         let state = Self {
             account,
-            account_id,
+            account_prefix,
             inflight_txs: BTreeMap::default(),
             nullifier_idx: HashSet::default(),
         };
@@ -163,7 +166,7 @@ impl NetworkAccountState {
             } => {
                 // Filter network notes relevant to this account.
                 let network_notes = filter_by_prefix_and_map_to_single_target(
-                    self.account_id,
+                    self.account_prefix,
                     network_notes.clone(),
                 );
                 self.add_transaction(*id, nullifiers, &network_notes, account_delta.as_ref());
@@ -206,12 +209,12 @@ impl NetworkAccountState {
 
         let mut tx_impact = TransactionImpact::default();
         if let Some(update) = account_delta.and_then(NetworkAccountEffect::from_protocol) {
-            let account_id = update.network_account_id();
-            if account_id == self.account_id {
+            let account_prefix = update.prefix();
+            if account_prefix == self.account_prefix {
                 match update {
                     NetworkAccountEffect::Updated(account_delta) => {
                         self.account.add_delta(&account_delta);
-                        tx_impact.account_delta = Some(account_id);
+                        tx_impact.account_delta = Some(account_prefix);
                     },
                     NetworkAccountEffect::Created(_) => {},
                 }
@@ -219,9 +222,9 @@ impl NetworkAccountState {
         }
         for note in network_notes {
             assert_eq!(
-                note.account_id(),
-                self.account_id,
-                "note's account ID does not match network account actor's account ID"
+                note.account_prefix(),
+                self.account_prefix,
+                "transaction note prefix does not match network account actor's prefix"
             );
             tx_impact.notes.insert(note.nullifier());
             self.nullifier_idx.insert(note.nullifier());
@@ -250,7 +253,7 @@ impl NetworkAccountState {
         };
 
         if let Some(prefix) = impact.account_delta {
-            if prefix == self.account_id {
+            if prefix == self.account_prefix {
                 self.account.commit_delta();
             }
         }
@@ -273,10 +276,10 @@ impl NetworkAccountState {
         };
 
         // Revert account creation.
-        if let Some(account_id) = impact.account_delta {
+        if let Some(account_prefix) = impact.account_delta {
             // Account creation reverted, actor must stop.
-            if account_id == self.account_id && self.account.revert_delta() {
-                return Some(ActorShutdownReason::AccountReverted(account_id));
+            if account_prefix == self.account_prefix && self.account.revert_delta() {
+                return Some(ActorShutdownReason::AccountReverted(account_prefix));
             }
         }
 
@@ -315,7 +318,7 @@ impl NetworkAccountState {
 #[derive(Clone, Default)]
 struct TransactionImpact {
     /// The network account this transaction added an account delta to.
-    account_delta: Option<NetworkAccountId>,
+    account_delta: Option<NetworkAccountPrefix>,
 
     /// Network notes this transaction created.
     notes: BTreeSet<Nullifier>,
@@ -332,14 +335,16 @@ impl TransactionImpact {
 
 /// Filters network notes by prefix and maps them to single target network notes.
 fn filter_by_prefix_and_map_to_single_target(
-    account_id: NetworkAccountId,
+    account_prefix: NetworkAccountPrefix,
     notes: Vec<NetworkNote>,
 ) -> Vec<SingleTargetNetworkNote> {
     notes
         .into_iter()
         .filter_map(|note| match note {
-            NetworkNote::SingleTarget(note) if note.account_id() == account_id => Some(note),
-            NetworkNote::SingleTarget(_) => None,
+            NetworkNote::SingleTarget(note) if note.account_prefix() == account_prefix => {
+                Some(note)
+            },
+            _ => None,
         })
         .collect::<Vec<_>>()
 }

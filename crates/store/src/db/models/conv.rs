@@ -32,11 +32,11 @@
     on relevant platforms"
 )]
 
-use miden_node_proto::domain::account::NetworkAccountId;
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_protocol::Felt;
 use miden_protocol::account::{StorageSlotName, StorageSlotType};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::NoteTag;
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert from database type {from_type} into {into_type}")]
@@ -78,10 +78,42 @@ impl SqlTypeConvert for BlockNumber {
     }
 }
 
-/// Converts a network account ID to its 30-bit prefix for database indexing.
-#[inline(always)]
-pub(crate) fn network_account_id_to_prefix_sql(id: NetworkAccountId) -> i64 {
-    i64::from(id.prefix())
+impl SqlTypeConvert for NetworkAccountPrefix {
+    type Raw = i64;
+
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        NetworkAccountPrefix::try_from(raw as u32).map_err(Self::map_err)
+    }
+    fn to_raw_sql(self) -> Self::Raw {
+        i64::from(self.inner())
+    }
+}
+
+impl SqlTypeConvert for NoteExecutionMode {
+    type Raw = i32;
+
+    #[inline(always)]
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        #[derive(Debug, thiserror::Error)]
+        #[error("valid values are 0 or 1 but found {0}")]
+        struct ValueError(i32);
+
+        Ok(match raw {
+            0 => Self::Network,
+            1 => Self::Local,
+            invalid => {
+                return Err(Self::map_err(ValueError(invalid)));
+            },
+        })
+    }
+
+    #[inline(always)]
+    fn to_raw_sql(self) -> Self::Raw {
+        match self {
+            NoteExecutionMode::Network => 0,
+            NoteExecutionMode::Local => 1,
+        }
+    }
 }
 
 impl SqlTypeConvert for NoteTag {
@@ -90,12 +122,12 @@ impl SqlTypeConvert for NoteTag {
     #[inline(always)]
     fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
         #[allow(clippy::cast_sign_loss)]
-        Ok(NoteTag::new(raw as u32))
+        Ok(NoteTag::from(raw as u32))
     }
 
     #[inline(always)]
     fn to_raw_sql(self) -> Self::Raw {
-        self.as_u32() as i32
+        u32::from(self) as i32
     }
 }
 
@@ -178,6 +210,24 @@ pub(crate) fn raw_sql_to_note_type(raw: i32) -> u8 {
 #[inline(always)]
 pub(crate) fn note_type_to_raw_sql(note_type: u8) -> i32 {
     i32::from(note_type)
+}
+
+#[inline(always)]
+pub(crate) fn raw_sql_to_execution_hint(raw: i64) -> u64 {
+    raw as u64
+}
+#[inline(always)]
+pub(crate) fn execution_hint_to_raw_sql(hint: u64) -> i64 {
+    hint as i64
+}
+
+#[inline(always)]
+pub(crate) fn raw_sql_to_aux(raw: i64) -> Felt {
+    Felt::try_from(raw as u64).unwrap()
+}
+#[inline(always)]
+pub(crate) fn aux_to_raw_sql(hint: Felt) -> i64 {
+    hint.inner() as i64
 }
 
 #[inline(always)]

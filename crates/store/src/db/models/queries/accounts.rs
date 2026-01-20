@@ -44,12 +44,7 @@ use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::{Deserializable, Serializable};
 
 use crate::COMPONENT;
-use crate::db::models::conv::{
-    SqlTypeConvert,
-    network_account_id_to_prefix_sql,
-    nonce_to_raw_sql,
-    raw_sql_to_nonce,
-};
+use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
@@ -922,7 +917,7 @@ pub(crate) fn upsert_accounts(
     accounts: &[BlockAccountUpdate],
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
-    use proto::domain::account::NetworkAccountId;
+    use proto::domain::account::NetworkAccountPrefix;
 
     let mut count = 0;
     for update in accounts {
@@ -930,8 +925,8 @@ pub(crate) fn upsert_accounts(
         let account_id_bytes = account_id.to_bytes();
         let block_num_raw = block_num.to_raw_sql();
 
-        let network_account_id = if account_id.is_network() {
-            Some(NetworkAccountId::try_from(account_id)?)
+        let network_account_id_prefix = if account_id.is_network() {
+            Some(NetworkAccountPrefix::try_from(account_id)?)
         } else {
             None
         };
@@ -1061,7 +1056,8 @@ pub(crate) fn upsert_accounts(
 
         let account_value = AccountRowInsert {
             account_id: account_id_bytes,
-            network_account_id_prefix: network_account_id.map(network_account_id_to_prefix_sql),
+            network_account_id_prefix: network_account_id_prefix
+                .map(NetworkAccountPrefix::to_raw_sql),
             account_commitment: update.final_state_commitment().to_bytes(),
             block_num: block_num_raw,
             nonce: full_account.as_ref().map(|account| nonce_to_raw_sql(account.nonce())),

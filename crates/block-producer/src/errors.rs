@@ -2,12 +2,11 @@ use core::error::Error as CoreError;
 
 use miden_block_prover::BlockProverError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
-use miden_protocol::errors::{ProposedBatchError, ProposedBlockError, ProvenBatchError};
 use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::TransactionId;
+use miden_protocol::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;

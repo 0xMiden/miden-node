@@ -27,11 +27,14 @@ pub struct NoteMetadata {
     /// See `miden_protocol::note::note_tag` for more info.
     #[prost(fixed32, tag = "3")]
     pub tag: u32,
-    /// Serialized note attachment
+    /// Specifies when a note is ready to be consumed.
     ///
-    /// See `miden_protocol::note::NoteAttachment` for more info.
-    #[prost(bytes = "vec", tag = "4")]
-    pub attachment: ::prost::alloc::vec::Vec<u8>,
+    /// See `miden_protocol::note::execution_hint` for more info.
+    #[prost(fixed64, tag = "4")]
+    pub execution_hint: u64,
+    /// An arbitrary user-defined value.
+    #[prost(fixed64, tag = "5")]
+    pub aux: u64,
 }
 /// Represents a note.
 ///

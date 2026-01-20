@@ -18,9 +18,8 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::NoteAttachment;
+use miden_protocol::note::{NoteExecutionMode, NoteTag};
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
-use miden_standards::note::NetworkAccountTarget;
 use thiserror::Error;
 
 use super::try_convert;
@@ -1023,72 +1022,63 @@ impl From<Asset> for proto::primitives::Asset {
 
 pub type AccountPrefix = u32;
 
-/// Newtype wrapper for network account IDs.
-///
+/// Newtype wrapper for network account prefix.
 /// Provides type safety for accounts that are meant for network execution.
-/// This wraps the full `AccountId` of a network account, typically extracted
-/// from a `NetworkAccountTarget` attachment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct NetworkAccountId(AccountId);
+pub struct NetworkAccountPrefix(u32);
 
-impl std::fmt::Display for NetworkAccountId {
+impl std::fmt::Display for NetworkAccountPrefix {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.0, f)
     }
 }
 
-impl NetworkAccountId {
-    /// Returns the inner `AccountId`.
-    pub fn inner(&self) -> AccountId {
+impl NetworkAccountPrefix {
+    pub fn inner(&self) -> u32 {
         self.0
-    }
-
-    /// Gets the 30-bit prefix of the account ID used for tag matching.
-    pub fn prefix(&self) -> AccountPrefix {
-        get_account_id_tag_prefix(self.0)
     }
 }
 
-impl TryFrom<AccountId> for NetworkAccountId {
+impl TryFrom<u32> for NetworkAccountPrefix {
+    type Error = NetworkAccountError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value >> 30 != 0 {
+            return Err(NetworkAccountError::InvalidPrefix(value));
+        }
+        Ok(NetworkAccountPrefix(value))
+    }
+}
+
+impl TryFrom<AccountId> for NetworkAccountPrefix {
     type Error = NetworkAccountError;
 
     fn try_from(id: AccountId) -> Result<Self, Self::Error> {
         if !id.is_network() {
             return Err(NetworkAccountError::NotNetworkAccount(id));
         }
-        Ok(NetworkAccountId(id))
+        let prefix = get_account_id_tag_prefix(id);
+        Ok(NetworkAccountPrefix(prefix))
     }
 }
 
-impl TryFrom<&NoteAttachment> for NetworkAccountId {
+impl TryFrom<NoteTag> for NetworkAccountPrefix {
     type Error = NetworkAccountError;
 
-    fn try_from(attachment: &NoteAttachment) -> Result<Self, Self::Error> {
-        let target = NetworkAccountTarget::try_from(attachment)
-            .map_err(|e| NetworkAccountError::InvalidAttachment(e.to_string()))?;
-        Ok(NetworkAccountId(target.target_id()))
+    fn try_from(tag: NoteTag) -> Result<Self, Self::Error> {
+        if tag.execution_mode() != NoteExecutionMode::Network || !tag.is_single_target() {
+            return Err(NetworkAccountError::InvalidExecutionMode(tag));
+        }
+
+        let tag_inner: u32 = tag.into();
+        assert!(tag_inner >> 30 == 0, "first 2 bits have to be 0");
+        Ok(NetworkAccountPrefix(tag_inner))
     }
 }
 
-impl TryFrom<NoteAttachment> for NetworkAccountId {
-    type Error = NetworkAccountError;
-
-    fn try_from(attachment: NoteAttachment) -> Result<Self, Self::Error> {
-        NetworkAccountId::try_from(&attachment)
-    }
-}
-
-impl From<NetworkAccountId> for AccountId {
-    fn from(value: NetworkAccountId) -> Self {
+impl From<NetworkAccountPrefix> for u32 {
+    fn from(value: NetworkAccountPrefix) -> Self {
         value.inner()
-    }
-}
-
-impl From<NetworkAccountId> for u32 {
-    /// Returns the 30-bit prefix of the network account ID.
-    /// This is used for note tag matching.
-    fn from(value: NetworkAccountId) -> Self {
-        value.prefix()
     }
 }
 
@@ -1096,20 +1086,10 @@ impl From<NetworkAccountId> for u32 {
 pub enum NetworkAccountError {
     #[error("account ID {0} is not a valid network account ID")]
     NotNetworkAccount(AccountId),
-    #[error("invalid network account attachment: {0}")]
-    InvalidAttachment(String),
-    #[error("invalid network account prefix: {0}")]
+    #[error("note tag {0} is not valid for network account execution")]
+    InvalidExecutionMode(NoteTag),
+    #[error("note prefix should be 30-bit long ({0} has non-zero in the 2 most significant bits)")]
     InvalidPrefix(u32),
-}
-
-/// Validates that a u32 represents a valid network account prefix.
-///
-/// Network accounts have a 30-bit prefix (top 2 bits must be 0).
-pub fn validate_network_account_prefix(prefix: u32) -> Result<u32, NetworkAccountError> {
-    if prefix >> 30 != 0 {
-        return Err(NetworkAccountError::InvalidPrefix(prefix));
-    }
-    Ok(prefix)
 }
 
 /// Gets the 30-bit prefix of the account ID.

@@ -366,6 +366,8 @@ message VaultAssetWitnessesRequest {
     repeated primitives.Digest vault_keys = 2;
 
     // Optional block number. If not provided, uses the latest state.
+    //
+    // The specified block number should be relatively near the chain tip else an error will be returned.
     optional fixed32 block_num = 3;
 }
 
@@ -400,6 +402,7 @@ message StorageMapWitnessRequest {
     // Optional block number. If not provided, uses the latest state.
     //
     // The witness returned corresponds to the account state at the specified block number.
+    // The specified block number should be relatively near the chain tip else an error will be returned.
     optional fixed32 block_num = 3;
 
     // The storage slot name for the map.

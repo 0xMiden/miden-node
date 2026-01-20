@@ -1,9 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use miden_crypto::merkle::smt::SmtLeaf;
 use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
 use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
-use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::account::{
+    AccountId,
+    NonFungibleDeltaAction,
+    StorageMapWitness,
+    StorageSlotName,
+};
+use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
@@ -141,6 +147,50 @@ impl InnerForest {
             )
             .next_back()
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+    }
+
+    pub(crate) fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        slot_name: StorageSlotName,
+        block_num: BlockNumber,
+        key: Word,
+    ) -> Result<StorageMapWitness, MerkleError> {
+        // Get SMT proof.
+        let root = self.get_storage_root(account_id, &slot_name, block_num);
+        let proof = self.forest.open(root, key)?;
+
+        // Get entries.
+        let map_details = self
+            .storage_map_entries(account_id, slot_name, block_num)
+            .expect("todo handle not found?");
+        let entries = match map_details.entries {
+            StorageMapEntries::LimitExceeded => Vec::new(),
+            StorageMapEntries::AllEntries(entries) => entries.clone(),
+            StorageMapEntries::EntriesWithProofs(smt_proofs) => {
+                let entries: Vec<(Word, Word)> = smt_proofs
+                    .iter()
+                    .flat_map(|proof| match proof.leaf() {
+                        SmtLeaf::Empty(_) => Vec::new(),
+                        SmtLeaf::Single((key, value)) => vec![(*key, *value)],
+                        SmtLeaf::Multiple(entries) => entries.clone(),
+                    })
+                    .collect();
+                entries
+            },
+        };
+
+        Ok(StorageMapWitness::new_unchecked(proof, entries))
+    }
+
+    pub async fn get_vault_asset_witnesses(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        asset_keys: BTreeSet<AssetVaultKey>,
+    ) -> Result<Vec<AssetWitness>, MerkleError> {
+        let vault_root = self.vault_roots.get(&(account_id, block_num)).unwrap(); // todo
+        todo!()
     }
 
     /// Opens a storage map and returns storage map details with SMT proofs for the given keys.

@@ -8,10 +8,11 @@
 //! - **Persistent mode** (`rocksdb` feature enabled): Trees are loaded from persistent storage if
 //!   data exists, otherwise rebuilt from the database and persisted.
 
+use std::future::Future;
 use std::num::NonZeroUsize;
 use std::path::Path;
 
-use miden_protocol::block::account_tree::account_id_to_smt_key;
+use miden_protocol::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockHeader, BlockNumber, Blockchain};
 #[cfg(not(feature = "rocksdb"))]
@@ -105,15 +106,13 @@ pub trait StorageLoader: SmtStorage + Sized {
     fn load_account_tree(
         self,
         db: &mut Db,
-    ) -> impl std::future::Future<Output = Result<LargeSmt<Self>, StateInitializationError>> + Send;
+    ) -> impl Future<Output = Result<AccountTree<LargeSmt<Self>>, StateInitializationError>> + Send;
 
     /// Loads a nullifier tree, either from persistent storage or by rebuilding from DB.
     fn load_nullifier_tree(
         self,
         db: &mut Db,
-    ) -> impl std::future::Future<
-        Output = Result<NullifierTree<LargeSmt<Self>>, StateInitializationError>,
-    > + Send;
+    ) -> impl Future<Output = Result<NullifierTree<LargeSmt<Self>>, StateInitializationError>> + Send;
 }
 
 // MEMORY STORAGE IMPLEMENTATION
@@ -128,7 +127,7 @@ impl StorageLoader for MemoryStorage {
     async fn load_account_tree(
         self,
         db: &mut Db,
-    ) -> Result<LargeSmt<Self>, StateInitializationError> {
+    ) -> Result<AccountTree<LargeSmt<Self>>, StateInitializationError> {
         let mut smt = LargeSmt::with_entries(self, std::iter::empty())
             .map_err(account_tree_large_smt_error_to_init_error)?;
 
@@ -161,9 +160,12 @@ impl StorageLoader for MemoryStorage {
             }
         }
 
-        Ok(smt)
+        AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)
     }
 
+    // TODO: Make the loading methodology for account and nullifier trees consistent.
+    // Currently we use `NullifierTree::new_unchecked()` for nullifiers but `AccountTree::new()`
+    // for accounts. Consider using `NullifierTree::with_storage_from_entries()` for consistency.
     async fn load_nullifier_tree(
         self,
         db: &mut Db,
@@ -218,13 +220,15 @@ impl StorageLoader for RocksDbStorage {
     async fn load_account_tree(
         self,
         db: &mut Db,
-    ) -> Result<LargeSmt<Self>, StateInitializationError> {
+    ) -> Result<AccountTree<LargeSmt<Self>>, StateInitializationError> {
         // If RocksDB storage has data, load from it directly
         let has_data = self
             .has_leaves()
             .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;
         if has_data {
-            return load_smt(self);
+            let smt = load_smt(self)?;
+            return AccountTree::new(smt)
+                .map_err(StateInitializationError::FailedToCreateAccountsTree);
         }
 
         info!(target: COMPONENT, "RocksDB account tree storage is empty, populating from SQLite");
@@ -261,7 +265,7 @@ impl StorageLoader for RocksDbStorage {
             }
         }
 
-        Ok(smt)
+        AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)
     }
 
     async fn load_nullifier_tree(

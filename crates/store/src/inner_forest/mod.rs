@@ -177,15 +177,18 @@ impl InnerForest {
 
     /// Retrieves a vault asset witness for the specified account and asset keys at the specified
     /// block number.
+    ///
+    /// Finds the latest root before the specified block number (inclusive).
     pub fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
         asset_keys: BTreeSet<AssetVaultKey>,
     ) -> Result<Vec<AssetWitness>, WitnessError> {
-        let root = self
+        let (_, root) = self
             .vault_roots
-            .get(&(account_id, block_num))
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
+            .next_back()
             .ok_or(WitnessError::RootNotFound)?;
         let witnessees = asset_keys
             .into_iter()

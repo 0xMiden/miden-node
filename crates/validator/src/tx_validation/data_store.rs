@@ -62,7 +62,7 @@ impl DataStore for TransactionInputsDataStore {
         _vault_root: Word,
         _vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
-        async move { Ok(vec![]) }
+        std::future::ready(Ok(vec![]))
     }
 
     fn get_storage_map_witness(

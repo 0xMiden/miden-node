@@ -275,11 +275,7 @@ pub async fn verify_tree_consistency(
     let latest_header = db.select_block_header_by_block_num(None).await?;
 
     let (block_num, expected_account_root, expected_nullifier_root) = latest_header
-        .map(|header| (
-            header.block_num(),
-            header.account_root(),
-            header.nullifier_root(),
-        ))
+        .map(|header| (header.block_num(), header.account_root(), header.nullifier_root()))
         .unwrap_or_default();
 
     // Verify account tree root
@@ -301,7 +297,6 @@ pub async fn verify_tree_consistency(
             block_root: expected_nullifier_root,
         });
     }
-
 
     Ok(())
 }

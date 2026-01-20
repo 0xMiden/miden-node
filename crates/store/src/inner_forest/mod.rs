@@ -466,9 +466,8 @@ impl InnerForest {
     /// A tuple containing the number of entries removed from:
     /// (vault_roots_removed, storage_map_roots_removed, storage_entries_removed)
     pub(crate) fn prune(&mut self, chain_tip: BlockNumber) -> (usize, usize, usize) {
-        let cutoff_block = BlockNumber::from(
-            chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION),
-        );
+        let cutoff_block =
+            BlockNumber::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
 
         let vault_removed = Self::prune_map_by_block(&mut self.vault_roots, cutoff_block);
         let storage_roots_removed =
@@ -507,11 +506,8 @@ impl InnerForest {
     ) -> usize {
         // BTreeMap iteration is sorted by key, so we can efficiently find all entries to remove.
         // Keys are (AccountId, BlockNumber), but we need to remove across all accounts.
-        let keys_to_remove: Vec<_> = map
-            .keys()
-            .filter(|(_, block_num)| *block_num < cutoff_block)
-            .copied()
-            .collect();
+        let keys_to_remove: Vec<_> =
+            map.keys().filter(|(_, block_num)| *block_num < cutoff_block).copied().collect();
 
         let removed = keys_to_remove.len();
         for key in keys_to_remove {

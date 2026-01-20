@@ -489,7 +489,8 @@ fn test_prune_vault_roots_removes_old_entries() {
     // Verify we have all entries before pruning
     assert_eq!(forest.vault_roots.len(), TEST_CHAIN_LENGTH as usize);
 
-    // Prune with chain_tip at TEST_CHAIN_LENGTH (cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION)
+    // Prune with chain_tip at TEST_CHAIN_LENGTH (cutoff = TEST_CHAIN_LENGTH -
+    // HISTORICAL_BLOCK_RETENTION)
     let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
     let (vault_removed, ..) = forest.prune(chain_tip);
 

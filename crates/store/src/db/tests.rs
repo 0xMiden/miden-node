@@ -2403,7 +2403,10 @@ fn test_cleanup_old_account_vault_assets() {
         .count()
         .get_result::<i64>(&mut conn)
         .unwrap();
-    assert_eq!(count, TEST_CHAIN_LENGTH as i64, "Should have TEST_CHAIN_LENGTH entries before cleanup");
+    assert_eq!(
+        count, TEST_CHAIN_LENGTH as i64,
+        "Should have TEST_CHAIN_LENGTH entries before cleanup"
+    );
 
     // Run cleanup with chain_tip at block TEST_CHAIN_LENGTH
     // cutoff = TEST_CHAIN_LENGTH - 50, so blocks < cutoff should be deleted
@@ -2450,7 +2453,10 @@ fn test_cleanup_old_account_vault_assets() {
         .select(dsl::block_num)
         .first::<i64>(&mut conn)
         .unwrap();
-    assert_eq!(latest_block, TEST_CHAIN_LENGTH as i64, "Latest entry should be from block TEST_CHAIN_LENGTH");
+    assert_eq!(
+        latest_block, TEST_CHAIN_LENGTH as i64,
+        "Latest entry should be from block TEST_CHAIN_LENGTH"
+    );
 }
 
 #[test]
@@ -2495,13 +2501,17 @@ fn test_cleanup_old_account_storage_map_values() {
         .count()
         .get_result::<i64>(&mut conn)
         .unwrap();
-    assert_eq!(count, TEST_CHAIN_LENGTH as i64, "Should have TEST_CHAIN_LENGTH entries before cleanup");
+    assert_eq!(
+        count, TEST_CHAIN_LENGTH as i64,
+        "Should have TEST_CHAIN_LENGTH entries before cleanup"
+    );
 
     // Run cleanup with chain_tip at block TEST_CHAIN_LENGTH
     let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
     let deleted = cleanup_old_account_storage_map_values(&mut conn, account_id, chain_tip).unwrap();
 
-    // cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION, blocks 1 to cutoff-1 should be deleted
+    // cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION, blocks 1 to cutoff-1 should be
+    // deleted
     let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
     let expected_deleted = cutoff - 1;
     assert_eq!(

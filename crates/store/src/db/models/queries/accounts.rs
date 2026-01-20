@@ -1190,7 +1190,7 @@ pub(crate) fn cleanup_old_account_vault_assets(
     chain_tip: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     let account_id_bytes = account_id.to_bytes();
-    let cutoff_block = chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION) as i64;
+    let cutoff_block = i64::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
 
     diesel::sql_query(
         r#"
@@ -1215,7 +1215,7 @@ pub(crate) fn cleanup_old_account_storage_map_values(
     chain_tip: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     let account_id_bytes = account_id.to_bytes();
-    let cutoff_block = chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION) as i64;
+    let cutoff_block = i64::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
 
     diesel::sql_query(
         r#"
@@ -1240,7 +1240,7 @@ pub fn cleanup_all_accounts(
     conn: &mut SqliteConnection,
     chain_tip: BlockNumber,
 ) -> Result<(usize, usize), DatabaseError> {
-    let cutoff_block = chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION) as i64;
+    let cutoff_block = i64::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
 
     let vault_deleted = diesel::sql_query(
         r#"

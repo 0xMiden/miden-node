@@ -151,14 +151,14 @@ impl InnerForest {
         account_id: AccountId,
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
-    ) -> Word {
+    ) -> Option<Word> {
         self.storage_map_roots
             .range(
                 (account_id, slot_name.clone(), BlockNumber::GENESIS)
                     ..=(account_id, slot_name.clone(), block_num),
             )
             .next_back()
-            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+            .map(|(_, root)| *root)
     }
 
     /// Retrieves a storage map witness for the specified account and storage entry.
@@ -171,15 +171,10 @@ impl InnerForest {
         block_num: BlockNumber,
         raw_key: Word,
     ) -> Result<StorageMapWitness, WitnessError> {
-        let (_, root) = self
-            .storage_map_roots
-            .range(
-                (account_id, slot_name.clone(), BlockNumber::GENESIS)
-                    ..=(account_id, slot_name.clone(), block_num),
-            )
-            .next_back()
+        let root = self
+            .get_storage_root(account_id, slot_name, block_num)
             .ok_or(WitnessError::RootNotFound)?;
-        let proof = self.forest.open(*root, raw_key)?;
+        let proof = self.forest.open(root, raw_key)?;
 
         Ok(StorageMapWitness::new(proof, vec![raw_key])?)
     }
@@ -224,12 +219,7 @@ impl InnerForest {
         block_num: BlockNumber,
         keys: &[Word],
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
-        let root = self.get_storage_root(account_id, &slot_name, block_num);
-
-        // Empty root means no storage map exists for this account/slot
-        if root == Self::empty_smt_root() {
-            return None;
-        }
+        let root = self.get_storage_root(account_id, &slot_name, block_num)?;
 
         if keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
             return Some(Ok(AccountStorageMapDetails {

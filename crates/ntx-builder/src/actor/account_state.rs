@@ -221,7 +221,7 @@ impl NetworkAccountState {
             assert_eq!(
                 note.account_id(),
                 self.account_id,
-                "transaction note prefix does not match network account actor's prefix"
+                "note's account ID does not match network account actor's account ID"
             );
             tx_impact.notes.insert(note.nullifier());
             self.nullifier_idx.insert(note.nullifier());

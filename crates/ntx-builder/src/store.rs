@@ -203,14 +203,14 @@ impl StoreClient {
         sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
     ) -> Result<Option<BlockNumber>, StoreError> {
         let (accounts, pagination_info) = self
-            .fetch_page(block_range)
+            .fetch_network_account_ids_page(block_range)
             .await
             .inspect_err(|err| tracing::Span::current().set_error(err))?;
 
         let chain_tip = pagination_info.chain_tip;
         let current_height = pagination_info.block_num;
 
-        self.submit_page(accounts, sender)
+        self.send_accounts_to_channel(accounts, sender)
             .await
             .inspect_err(|err| tracing::Span::current().set_error(err))?;
 
@@ -221,8 +221,8 @@ impl StoreClient {
         }
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.fetch_page", skip_all, err)]
-    async fn fetch_page(
+    #[instrument(target = COMPONENT, name = "store.client.fetch_network_account_ids_page", skip_all, err)]
+    async fn fetch_network_account_ids_page(
         &self,
         block_range: std::ops::RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NetworkAccountPrefix>, proto::rpc::PaginationInfo), StoreError> {
@@ -285,10 +285,10 @@ impl StoreClient {
 
     #[instrument(
         target = COMPONENT,
-        name = "store.client.submit_page",
+        name = "store.client.send_accounts_to_channel",
         skip_all
     )]
-    async fn submit_page(
+    async fn send_accounts_to_channel(
         &self,
         accounts: Vec<NetworkAccountPrefix>,
         sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,

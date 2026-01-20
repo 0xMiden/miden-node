@@ -15,7 +15,7 @@ use miden_node_utils::limiter::{
     QueryParamNoteIdLimit,
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
-    QueryParamStorageMapKeyLimit,
+    QueryParamStorageMapKeyTotalLimit,
 };
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -493,13 +493,18 @@ impl api_server::Api for RpcService {
 
         debug!(target: COMPONENT, ?request);
 
-        // Validate storage map key limits before forwarding to store
+        // Validate total storage map key limit before forwarding to store
         if let Some(details) = &request.details {
-            for storage_map in &details.storage_maps {
-                if let Some(ProtoMapKeys(keys)) = &storage_map.slot_data {
-                    check::<QueryParamStorageMapKeyLimit>(keys.map_keys.len())?;
-                }
-            }
+            let total_keys: usize = details
+                .storage_maps
+                .iter()
+                .filter_map(|m| m.slot_data.as_ref())
+                .filter_map(|d| match d {
+                    ProtoMapKeys(keys) => Some(keys.map_keys.len()),
+                    _ => None,
+                })
+                .sum();
+            check::<QueryParamStorageMapKeyTotalLimit>(total_keys)?;
         }
 
         self.store.clone().get_account(request).await
@@ -629,7 +634,7 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
         QueryParamNoteIdLimit as NoteId,
         QueryParamNoteTagLimit as NoteTag,
         QueryParamNullifierLimit as Nullifier,
-        QueryParamStorageMapKeyLimit as StorageMapKey,
+        QueryParamStorageMapKeyTotalLimit as StorageMapKeyTotal,
     };
 
     proto::rpc::RpcLimits {
@@ -653,7 +658,7 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
             ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
             (
                 "GetAccount".into(),
-                endpoint_limits(&[(StorageMapKey::PARAM_NAME, StorageMapKey::LIMIT)]),
+                endpoint_limits(&[(StorageMapKeyTotal::PARAM_NAME, StorageMapKeyTotal::LIMIT)]),
             ),
         ]),
     }

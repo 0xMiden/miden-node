@@ -142,9 +142,9 @@ impl InnerForest {
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
-    /// Retrieves a vault root witness for the specified account block number.
+    /// Retrieves a vault root for the specified account block number.
     ///
-    /// Finds the most recent vault root entry before the specified block number for the account.
+    /// Finds the most recent vault root before the specified block number for the account.
     pub(crate) fn get_vault_root(
         &self,
         account_id: AccountId,

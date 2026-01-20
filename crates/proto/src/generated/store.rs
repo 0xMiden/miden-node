@@ -250,7 +250,7 @@ pub mod vault_asset_witnesses_response {
     /// A vault asset witness containing the asset and its proof.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct VaultAssetWitness {
-        /// The Merkle proof for the asset's inclusion in the vault.
+        /// The SMT opening proof for the asset's inclusion in the vault.
         #[prost(message, optional, tag = "1")]
         pub proof: ::core::option::Option<super::super::primitives::SmtOpening>,
     }
@@ -289,9 +289,6 @@ pub mod storage_map_witness_response {
         /// The storage map key.
         #[prost(message, optional, tag = "1")]
         pub key: ::core::option::Option<super::super::primitives::Digest>,
-        /// The value associated with the key.
-        #[prost(message, optional, tag = "2")]
-        pub value: ::core::option::Option<super::super::primitives::Digest>,
         /// The SMT opening proof for the key-value pair.
         #[prost(message, optional, tag = "3")]
         pub proof: ::core::option::Option<super::super::primitives::SmtOpening>,

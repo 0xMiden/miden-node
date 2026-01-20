@@ -337,20 +337,11 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .map_err(internal_error)?;
 
         // Convert StorageMapWitness to protobuf format by extracting witness data.
-        let smt_proof: SmtProof = storage_witness.into();
-        let (path, leaf) = smt_proof.into_parts();
-
+        let proof: SmtProof = storage_witness.into();
         Ok(Response::new(proto::store::StorageMapWitnessResponse {
             witness: Some(proto::store::storage_map_witness_response::StorageWitness {
-                // Use the original map key from the request.
                 key: Some(map_key.into()),
-                // Extract the stored value from the leaf hash.
-                value: Some(leaf.hash().into()),
-                // Construct the SMT opening proof from path and leaf.
-                proof: Some(proto::primitives::SmtOpening {
-                    path: Some(path.into()),
-                    leaf: Some(leaf.into()),
-                }),
+                proof: Some(proof.into()),
             }),
             block_num: self.state.latest_block_num().await.as_u32(),
         }))

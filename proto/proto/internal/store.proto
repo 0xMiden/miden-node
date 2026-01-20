@@ -373,7 +373,7 @@ message VaultAssetWitnessesRequest {
 message VaultAssetWitnessesResponse {
     // A vault asset witness containing the asset and its proof.
     message VaultAssetWitness {
-        // The Merkle proof for the asset's inclusion in the vault.
+        // The SMT opening proof for the asset's inclusion in the vault.
         primitives.SmtOpening proof = 1;
     }
 
@@ -405,9 +405,6 @@ message StorageMapWitnessResponse {
     message StorageWitness {
         // The storage map key.
         primitives.Digest key = 1;
-
-        // The value associated with the key.
-        primitives.Digest value = 2;
 
         // The SMT opening proof for the key-value pair.
         primitives.SmtOpening proof = 3;

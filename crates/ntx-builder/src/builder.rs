@@ -133,13 +133,12 @@ impl NetworkTransactionBuilder {
         let (account_tx, mut account_rx) =
             mpsc::channel::<NetworkAccountPrefix>(Self::ACCOUNT_CHANNEL_CAPACITY);
         let account_loader_store = store.clone();
-        let account_loader_handle = tokio::spawn(async move {
+        let mut account_loader_handle = tokio::spawn(async move {
             account_loader_store
                 .stream_network_account_ids(account_tx)
                 .await
                 .context("failed to load network accounts from store")
         });
-        let mut account_loader = Some(account_loader_handle);
 
         // Main loop which manages actors and passes mempool events to them.
         loop {
@@ -169,14 +168,13 @@ impl NetworkTransactionBuilder {
                 // Handle account loader task completion/failure.
                 // If the task fails, we abort since the builder would be in a degraded state
                 // where existing notes against network accounts won't be processed.
-                Some(result) = async {
-                    match account_loader.as_mut() {
-                        Some(handle) => Some(handle.await),
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    account_loader = None;
-                    result.context("account loader task panicked").flatten()?;
+                result = &mut account_loader_handle => {
+                    result
+                        .context("account loader task panicked")
+                        .flatten()?;
+
+                    tracing::info!("account loading from store completed");
+                    account_loader_handle = tokio::spawn(std::future::pending());
                 },
             }
         }

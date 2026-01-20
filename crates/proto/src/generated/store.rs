@@ -229,14 +229,11 @@ pub struct VaultAssetWitnessesRequest {
     /// The account ID for which to retrieve vault asset witnesses.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// The vault root hash to verify against.
-    #[prost(message, optional, tag = "2")]
-    pub vault_root: ::core::option::Option<super::primitives::Digest>,
     /// Set of asset vault keys to retrieve witnesses for.
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "2")]
     pub vault_keys: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Optional block number. If not provided, uses the latest state.
-    #[prost(fixed32, optional, tag = "4")]
+    #[prost(fixed32, optional, tag = "3")]
     pub block_num: ::core::option::Option<u32>,
 }
 /// Response containing vault asset witnesses.

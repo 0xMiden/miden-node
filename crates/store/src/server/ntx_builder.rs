@@ -257,9 +257,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let account_id = read_account_id::<GetVaultAssetWitnessesError>(request.account_id)
             .map_err(internal_error)?;
 
-        let vault_root = read_root::<GetVaultAssetWitnessesError>(request.vault_root, "VaultRoot")
-            .map_err(internal_error)?;
-
         // Convert vault keys from protobuf to AssetVaultKey.
         let vault_keys = request
             .vault_keys
@@ -280,7 +277,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         let asset_witnesses = self
             .state
-            .get_vault_asset_witnesses(account_id, block_num, vault_root, vault_keys)
+            .get_vault_asset_witnesses(account_id, block_num, vault_keys)
             .await
             .map_err(internal_error)?;
 

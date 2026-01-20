@@ -362,14 +362,11 @@ message VaultAssetWitnessesRequest {
     // The account ID for which to retrieve vault asset witnesses.
     account.AccountId account_id = 1;
 
-    // The vault root hash to verify against.
-    primitives.Digest vault_root = 2;
-
     // Set of asset vault keys to retrieve witnesses for.
-    repeated primitives.Digest vault_keys = 3;
+    repeated primitives.Digest vault_keys = 2;
 
     // Optional block number. If not provided, uses the latest state.
-    optional fixed32 block_num = 4;
+    optional fixed32 block_num = 3;
 }
 
 // Response containing vault asset witnesses.

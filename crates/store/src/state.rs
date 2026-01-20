@@ -1331,7 +1331,6 @@ impl State {
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
-        _vault_root: Word,
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> Result<Vec<AssetWitness>, GetVaultAssetWitnessesError> {
         let witnesses = self

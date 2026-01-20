@@ -206,7 +206,7 @@ impl StoreClient {
         let chain_tip = pagination_info.chain_tip;
         let current_height = pagination_info.block_num;
 
-        self.submit_page(accounts, sender, chain_tip, current_height).await?;
+        self.submit_page(accounts, sender).await?;
 
         if current_height >= chain_tip {
             Ok(None)
@@ -215,13 +215,7 @@ impl StoreClient {
         }
     }
 
-    #[instrument(
-        target = COMPONENT,
-        name = "store.client.fetch_page",
-        skip_all,
-        fields(chain_tip, current_height),
-        err
-    )]
+    #[instrument(target = COMPONENT, name = "store.client.fetch_page", skip_all, err)]
     async fn fetch_page(
         &self,
         block_range: std::ops::RangeInclusive<BlockNumber>,
@@ -280,10 +274,6 @@ impl StoreClient {
             },
         )?;
 
-        tracing::Span::current()
-            .record("chain_tip", pagination_info.chain_tip)
-            .record("current_height", pagination_info.block_num);
-
         Ok((accounts, pagination_info))
     }
 
@@ -296,8 +286,6 @@ impl StoreClient {
         &self,
         accounts: Vec<NetworkAccountPrefix>,
         sender: &tokio::sync::mpsc::Sender<NetworkAccountPrefix>,
-        chain_tip: u32,
-        current_height: u32,
     ) -> Result<(), StoreError> {
         for account in accounts {
             // If the receiver is dropped, stop loading.

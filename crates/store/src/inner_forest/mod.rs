@@ -162,6 +162,8 @@ impl InnerForest {
     }
 
     /// Retrieves a storage map witness for the specified account and storage entry.
+    ///
+    /// Finds the most recent storage root entry before the specified block.
     pub(crate) fn get_storage_map_witness(
         &self,
         account_id: AccountId,

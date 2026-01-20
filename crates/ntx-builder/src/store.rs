@@ -303,6 +303,7 @@ impl StoreClient {
         for account in accounts {
             // If the receiver is dropped, stop loading.
             if sender.send(account).await.is_err() {
+                tracing::warn!("Account receiver dropped");
                 return Ok(());
             }
         }

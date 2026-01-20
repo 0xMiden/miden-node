@@ -12,7 +12,8 @@ use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
-use miden_protocol::{EMPTY_WORD, StorageMapError, Word};
+use miden_protocol::errors::StorageMapError;
+use miden_protocol::{EMPTY_WORD, Word};
 use thiserror::Error;
 
 #[cfg(test)]

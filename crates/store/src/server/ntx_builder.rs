@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::num::{NonZero, TryFromIntError};
 
 use miden_crypto::merkle::smt::SmtProof;
-use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
+use miden_node_proto::domain::account::{AccountInfo, validate_network_account_prefix};
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::store::ntx_builder_server;
@@ -102,13 +102,13 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let request = request.into_inner();
 
         // Validate that the call is for a valid network account prefix
-        let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
+        let prefix = validate_network_account_prefix(request.account_id_prefix).map_err(|err| {
             Status::invalid_argument(
                 err.as_report_context("request does not contain a valid network account prefix"),
             )
         })?;
         let account_info: Option<AccountInfo> =
-            self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
+            self.state.get_network_account_details_by_prefix(prefix).await?;
 
         Ok(Response::new(proto::store::MaybeAccountDetails {
             details: account_info.map(|acc| (&acc).into()),
@@ -128,8 +128,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::store::UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let block_num = BlockNumber::from(request.block_num);
-        let network_account_id_prefix =
-            NetworkAccountPrefix::try_from(request.network_account_id_prefix).map_err(|err| {
+        let network_account_prefix =
+            validate_network_account_prefix(request.network_account_id_prefix).map_err(|err| {
                 invalid_argument(err.as_report_context("invalid network_account_id_prefix"))
             })?;
 
@@ -143,7 +143,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created
         // instead
         let (notes, next_page) = state
-            .get_unconsumed_network_notes_for_account(network_account_id_prefix, block_num, page)
+            .get_unconsumed_network_notes_for_account(network_account_prefix, block_num, page)
             .await
             .map_err(internal_error)?;
 

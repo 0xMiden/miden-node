@@ -424,8 +424,8 @@ pub async fn verify_tree_consistency(
         return Err(StateInitializationError::TreeStorageDiverged {
             tree_name: "Account",
             block_num,
-            persistent_root: account_tree_root,
-            database_root: expected_account_root,
+            tree_root: account_tree_root,
+            block_root: expected_account_root,
         });
     }
 
@@ -434,8 +434,8 @@ pub async fn verify_tree_consistency(
         return Err(StateInitializationError::TreeStorageDiverged {
             tree_name: "Nullifier",
             block_num,
-            persistent_root: nullifier_tree_root,
-            database_root: expected_nullifier_root,
+            tree_root: nullifier_tree_root,
+            block_root: expected_nullifier_root,
         });
     }
 

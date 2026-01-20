@@ -176,7 +176,7 @@ impl NetworkTransactionBuilder {
                     }
                 } => {
                     account_loader = None;
-                    result.context("account loader task panicked")??;
+                    result.context("account loader task panicked").flatten()?;
                 },
             }
         }

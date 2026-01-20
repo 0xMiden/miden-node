@@ -147,6 +147,9 @@ impl InnerForest {
     ///
     /// Returns `None` if no storage root is tracked for this account/slot/block combination.
     /// Returns a `MerkleError` if the forest doesn't contain sufficient data for the proofs.
+    ///
+    /// If the number of requested keys exceeds [`AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES`],
+    /// returns `LimitExceeded`.
     pub(crate) fn open_storage_map(
         &self,
         account_id: AccountId,
@@ -161,7 +164,7 @@ impl InnerForest {
             return None;
         }
 
-        if keys.len() > AccountStorageMapDetails::MAX_RETURN_ENTRIES {
+        if keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
             return Some(Ok(AccountStorageMapDetails {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,

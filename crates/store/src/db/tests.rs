@@ -39,6 +39,7 @@ use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::crypto::rand::RpoRandomCoin;
 use miden_protocol::note::{
     Note,
+    NoteAttachment,
     NoteDetails,
     NoteExecutionHint,
     NoteHeader,
@@ -64,10 +65,10 @@ use miden_protocol::transaction::{
     TransactionId,
 };
 use miden_protocol::utils::{Deserializable, Serializable};
-use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
-use miden_standards::account::auth::AuthRpoFalcon512;
+use miden_protocol::{EMPTY_WORD, Felt, FieldElement, Word};
+use miden_standards::account::auth::AuthFalcon512Rpo;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::{NetworkAccountTarget, create_p2id_note};
 use pretty_assertions::assert_eq;
 use rand::Rng;
 
@@ -225,7 +226,7 @@ pub fn create_note(account_id: AccountId) -> Note {
             FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 10).unwrap(),
         )],
         NoteType::Public,
-        Felt::default(),
+        NoteAttachment::default(),
         &mut *rng,
     )
     .expect("Failed to create note")
@@ -257,7 +258,7 @@ fn sql_select_notes() {
             note_index: BlockNoteIndex::new(0, i.try_into().unwrap()).unwrap(),
             note_id: num_to_word(u64::try_from(i).unwrap()),
             note_commitment: num_to_word(u64::try_from(i).unwrap()),
-            metadata: *new_note.metadata(),
+            metadata: new_note.metadata().clone(),
             details: Some(NoteDetails::from(&new_note)),
             inclusion_path: SparseMerklePath::default(),
         };
@@ -282,108 +283,6 @@ fn sql_select_notes() {
 
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn sql_select_notes_different_execution_hints() {
-    let mut conn = create_db();
-    let conn = &mut conn;
-
-    let block_num = 1.into();
-    create_block(conn, block_num);
-
-    // test querying empty table
-    let notes = queries::select_all_notes(conn).unwrap();
-    assert!(notes.is_empty());
-
-    let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-
-    queries::upsert_accounts(conn, &[mock_block_account_update(sender, 0)], block_num).unwrap();
-
-    // test multiple entries
-    let mut state = vec![];
-
-    let new_note = create_note(sender);
-
-    let note_none = NoteRecord {
-        block_num,
-        note_index: BlockNoteIndex::new(0, 0).unwrap(),
-        note_id: num_to_word(0),
-        note_commitment: num_to_word(0),
-        metadata: NoteMetadata::new(
-            sender,
-            NoteType::Public,
-            0.into(),
-            NoteExecutionHint::none(),
-            Felt::default(),
-        )
-        .unwrap(),
-        details: Some(NoteDetails::from(&new_note)),
-        inclusion_path: SparseMerklePath::default(),
-    };
-    state.push(note_none.clone());
-
-    queries::insert_scripts(conn, [&note_none]).unwrap(); // only necessary for the first note
-    let res = queries::insert_notes(conn, &[(note_none, None)]);
-    assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-
-    let note_id = NoteId::from_raw(num_to_word(0));
-    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
-
-    assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::none());
-
-    let note_always = NoteRecord {
-        block_num,
-        note_index: BlockNoteIndex::new(0, 1).unwrap(),
-        note_id: num_to_word(1),
-        note_commitment: num_to_word(1),
-        metadata: NoteMetadata::new(
-            sender,
-            NoteType::Public,
-            0.into(),
-            NoteExecutionHint::always(),
-            Felt::default(),
-        )
-        .unwrap(),
-        details: Some(NoteDetails::from(&new_note)),
-        inclusion_path: SparseMerklePath::default(),
-    };
-    state.push(note_always.clone());
-
-    let res = queries::insert_notes(conn, &[(note_always, None)]);
-    assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-
-    let note_id = NoteId::from_raw(num_to_word(1));
-    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
-    assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::always());
-
-    let note_after_block = NoteRecord {
-        block_num,
-        note_index: BlockNoteIndex::new(0, 2).unwrap(),
-        note_id: num_to_word(2),
-        note_commitment: num_to_word(2),
-        metadata: NoteMetadata::new(
-            sender,
-            NoteType::Public,
-            2.into(),
-            NoteExecutionHint::after_block(12.into()).unwrap(),
-            Felt::default(),
-        )
-        .unwrap(),
-        details: Some(NoteDetails::from(&new_note)),
-        inclusion_path: SparseMerklePath::default(),
-    };
-    state.push(note_after_block.clone());
-
-    let res = queries::insert_notes(conn, &[(note_after_block, None)]);
-    assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-    let note_id = NoteId::from_raw(num_to_word(2));
-    let note = &queries::select_notes_by_id(conn, &[note_id]).unwrap()[0];
-    assert_eq!(
-        note.metadata.execution_hint(),
-        NoteExecutionHint::after_block(12.into()).unwrap()
-    );
-}
-
-#[test]
-#[miden_node_test_macro::enable_logging]
 fn sql_select_note_script_by_root() {
     let mut conn = create_db();
     let conn = &mut conn;
@@ -403,7 +302,7 @@ fn sql_select_note_script_by_root() {
         note_index: BlockNoteIndex::new(0, 0.try_into().unwrap()).unwrap(),
         note_id: num_to_word(0),
         note_commitment: num_to_word(0),
-        metadata: *new_note.metadata(),
+        metadata: new_note.metadata().clone(),
         details: Some(NoteDetails::from(&new_note)),
         inclusion_path: SparseMerklePath::default(),
     };
@@ -466,6 +365,11 @@ fn sql_unconsumed_network_notes() {
     create_block(&mut conn, 0.into());
     create_block(&mut conn, 1.into());
 
+    // Create a NetworkAccountTarget attachment for the network account
+    let target = NetworkAccountTarget::new(account_note.0, NoteExecutionHint::Always)
+        .expect("NetworkAccountTarget creation should succeed for network account");
+    let attachment: NoteAttachment = target.into();
+
     // Create an unconsumed note in each block.
     let notes = Vec::from_iter((0..2).map(|i: u32| {
         let note = NoteRecord {
@@ -476,11 +380,9 @@ fn sql_unconsumed_network_notes() {
             metadata: NoteMetadata::new(
                 account_note.0,
                 NoteType::Public,
-                NoteTag::from_account_id(account_note.0),
-                NoteExecutionHint::none(),
-                Felt::default(),
+                NoteTag::with_account_target(account_note.0),
             )
-            .unwrap(),
+            .with_attachment(attachment.clone()),
             details: None,
             inclusion_path: SparseMerklePath::default(),
         };
@@ -493,7 +395,7 @@ fn sql_unconsumed_network_notes() {
     (0..2).for_each(|i: u32| {
         let (result, _) = queries::select_unconsumed_network_notes_by_tag(
             &mut conn,
-            NoteTag::from_account_id(account_note.0).into(),
+            NoteTag::with_account_target(account_note.0).into(),
             i.into(),
             Page {
                 token: None,
@@ -510,7 +412,7 @@ fn sql_unconsumed_network_notes() {
     // Query against first block should return both notes.
     let (result, _) = queries::select_unconsumed_network_notes_by_tag(
         &mut conn,
-        NoteTag::from_account_id(account_note.0).into(),
+        NoteTag::with_account_target(account_note.0).into(),
         0.into(),
         Page {
             token: None,
@@ -523,7 +425,7 @@ fn sql_unconsumed_network_notes() {
     // Query against second block should return only first note.
     let (result, _) = queries::select_unconsumed_network_notes_by_tag(
         &mut conn,
-        NoteTag::from_account_id(account_note.0).into(),
+        NoteTag::with_account_target(account_note.0).into(),
         1.into(),
         Page {
             token: None,
@@ -1016,12 +918,10 @@ fn notes() {
     let new_note = create_note(sender);
     let note_index = BlockNoteIndex::new(0, 2).unwrap();
     let tag = 5u32;
-    let note_metadata =
-        NoteMetadata::new(sender, NoteType::Public, tag.into(), NoteExecutionHint::none(), ZERO)
-            .unwrap();
+    let note_metadata = NoteMetadata::new(sender, NoteType::Public, tag.into());
 
-    let values = [(note_index, new_note.id(), note_metadata)];
-    let notes_db = BlockNoteTree::with_entries(values.iter().copied()).unwrap();
+    let values = [(note_index, new_note.id(), &note_metadata)];
+    let notes_db = BlockNoteTree::with_entries(values).unwrap();
     let inclusion_path = notes_db.open(note_index);
 
     let note = NoteRecord {
@@ -1029,14 +929,7 @@ fn notes() {
         note_index,
         note_id: new_note.id().as_word(),
         note_commitment: new_note.commitment(),
-        metadata: NoteMetadata::new(
-            sender,
-            NoteType::Public,
-            tag.into(),
-            NoteExecutionHint::none(),
-            Felt::default(),
-        )
-        .unwrap(),
+        metadata: NoteMetadata::new(sender, NoteType::Public, tag.into()),
         details: Some(NoteDetails::from(&new_note)),
         inclusion_path: inclusion_path.clone(),
     };
@@ -1076,7 +969,7 @@ fn notes() {
         note_index: note.note_index,
         note_id: new_note.id().as_word(),
         note_commitment: new_note.commitment(),
-        metadata: note.metadata,
+        metadata: note.metadata.clone(),
         details: None,
         inclusion_path: inclusion_path.clone(),
     };
@@ -1345,7 +1238,7 @@ fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(component)
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
 }
@@ -1364,14 +1257,7 @@ fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader 
             Word::try_from([num, num, 0, 0]).unwrap(),
             Word::try_from([0, 0, num, num]).unwrap(),
         ),
-        NoteMetadata::new(
-            account_id,
-            NoteType::Public,
-            NoteTag::LocalAny(num as u32),
-            NoteExecutionHint::None,
-            Felt::default(),
-        )
-        .unwrap(),
+        NoteMetadata::new(account_id, NoteType::Public, NoteTag::new(num as u32)),
     )];
 
     TransactionHeader::new_unchecked(
@@ -1447,7 +1333,7 @@ fn mock_account_code_and_storage(
         .storage_mode(storage_mode)
         .with_assets(assets)
         .with_component(account_component)
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
 }
@@ -1608,7 +1494,7 @@ fn genesis_with_account_assets() {
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
@@ -1657,7 +1543,7 @@ fn genesis_with_account_storage_map() {
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component)
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
@@ -1704,7 +1590,7 @@ fn genesis_with_account_assets_and_storage() {
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
@@ -1735,7 +1621,7 @@ fn genesis_with_multiple_accounts() {
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component1)
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
@@ -1754,7 +1640,7 @@ fn genesis_with_multiple_accounts() {
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component2)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
@@ -1777,7 +1663,7 @@ fn genesis_with_multiple_accounts() {
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component3)
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
@@ -1940,15 +1826,8 @@ fn serialization_symmetry_note_metadata() {
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
     // Use a tag that roundtrips properly - NoteTag::LocalAny stores the full u32 including type
     // bits
-    let tag = NoteTag::from_account_id(sender);
-    let metadata = NoteMetadata::new(
-        sender,
-        NoteType::Public,
-        tag,
-        NoteExecutionHint::always(),
-        Felt::new(42),
-    )
-    .unwrap();
+    let tag = NoteTag::with_account_target(sender);
+    let metadata = NoteMetadata::new(sender, NoteType::Public, tag);
 
     let bytes = metadata.to_bytes();
     let restored = NoteMetadata::read_from_bytes(&bytes).unwrap();
@@ -2086,7 +1965,7 @@ fn db_roundtrip_notes() {
         note_index,
         note_id: new_note.id().as_word(),
         note_commitment: new_note.commitment(),
-        metadata: *new_note.metadata(),
+        metadata: new_note.metadata().clone(),
         details: Some(NoteDetails::from(&new_note)),
         inclusion_path: SparseMerklePath::default(),
     };
@@ -2280,7 +2159,7 @@ fn db_roundtrip_account_storage_with_maps() {
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_component(account_component)
-        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
+        .with_auth_component(AuthFalcon512Rpo::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap();
 
@@ -2346,5 +2225,59 @@ fn db_roundtrip_account_storage_with_maps() {
         account.commitment(),
         retrieved_account.commitment(),
         "Full account commitment must match after DB roundtrip"
+    );
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn test_note_metadata_with_attachment_roundtrip() {
+    let mut conn = create_db();
+    let block_num = BlockNumber::from(1);
+    create_block(&mut conn, block_num);
+
+    let (account_id, _) =
+        make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network);
+
+    let target = NetworkAccountTarget::new(account_id, NoteExecutionHint::Always)
+        .expect("NetworkAccountTarget creation should succeed for network account");
+    let attachment: NoteAttachment = target.into();
+
+    // Create NoteMetadata with the attachment
+    let metadata =
+        NoteMetadata::new(account_id, NoteType::Public, NoteTag::with_account_target(account_id))
+            .with_attachment(attachment.clone());
+
+    let note = NoteRecord {
+        block_num,
+        note_index: BlockNoteIndex::new(0, 0).unwrap(),
+        note_id: num_to_word(1),
+        note_commitment: num_to_word(1),
+        metadata: metadata.clone(),
+        details: None,
+        inclusion_path: SparseMerklePath::default(),
+    };
+
+    queries::insert_scripts(&mut conn, [&note]).unwrap();
+    queries::insert_notes(&mut conn, &[(note.clone(), None)]).unwrap();
+
+    // Fetch the note back and verify the attachment is preserved
+    let retrieved = queries::select_notes_by_id(&mut conn, &[NoteId::from_raw(note.note_id)])
+        .expect("select_notes_by_id should succeed");
+
+    assert_eq!(retrieved.len(), 1, "Should retrieve exactly one note");
+
+    let retrieved_metadata = &retrieved[0].metadata;
+    assert_eq!(
+        retrieved_metadata.attachment(),
+        metadata.attachment(),
+        "Attachment should be preserved after DB roundtrip"
+    );
+
+    let retrieved_target = NetworkAccountTarget::try_from(retrieved_metadata.attachment())
+        .expect("Should be able to parse NetworkAccountTarget from retrieved attachment");
+    assert_eq!(
+        retrieved_target.target_id(),
+        account_id,
+        "NetworkAccountTarget should have the correct target account ID"
     );
 }

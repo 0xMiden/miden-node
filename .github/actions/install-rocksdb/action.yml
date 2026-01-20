@@ -1,0 +1,14 @@
+name: "Install RocksDB dependencies"
+description: "Install dependencies for RocksDB compilation"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install LLVM/Clang for RocksDB
+      shell: bash
+      run: |
+        set -eux
+        sudo apt-get update
+        # Install clang/llvm for bindgen (needed for FFI bindings).
+        # RocksDB is compiled from source by librocksdb-sys.
+        sudo apt-get install -y clang llvm-dev libclang-dev

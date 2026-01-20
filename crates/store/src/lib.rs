@@ -7,6 +7,8 @@ mod inner_forest;
 mod server;
 pub mod state;
 
+#[cfg(feature = "rocksdb")]
+pub use accounts::PersistentAccountTree;
 pub use accounts::{AccountTreeWithHistory, HistoricalError, InMemoryAccountTree};
 pub use genesis::GenesisState;
 pub use server::{DataDirectory, Store};

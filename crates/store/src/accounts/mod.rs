@@ -21,13 +21,18 @@ use miden_protocol::crypto::merkle::{
     NodeIndex,
     SparseMerklePath,
 };
-use miden_protocol::{AccountTreeError, EMPTY_WORD, Word};
+use miden_protocol::errors::AccountTreeError;
+use miden_protocol::{EMPTY_WORD, Word};
 
 #[cfg(test)]
 mod tests;
 
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
+
+#[cfg(feature = "rocksdb")]
+/// Convenience for a persistent account tree.
+pub type PersistentAccountTree = AccountTree<LargeSmt<miden_crypto::merkle::smt::RocksDbStorage>>;
 
 // HISTORICAL ERROR TYPES
 // ================================================================================================

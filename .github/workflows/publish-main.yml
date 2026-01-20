@@ -18,6 +18,8 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+      - name: Install RocksDB
+        uses: ./.github/actions/install-rocksdb
       # Ensure the release tag refers to the latest commit on main.
       # Compare the commit SHA that triggered the workflow with the HEAD of the branch we just
       # checked out (main).
@@ -43,7 +45,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-binstall
+          tool: cargo-binstall@1.16.6
       - name: Install cargo-msrv
         run: cargo binstall --no-confirm --force cargo-msrv
       - name: Check MSRV for each workspace member

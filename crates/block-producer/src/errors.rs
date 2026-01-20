@@ -2,11 +2,12 @@ use core::error::Error as CoreError;
 
 use miden_block_prover::BlockProverError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
+use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::{ProposedBatchError, ProposedBlockError, ProvenBatchError};
 use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::TransactionId;
-use miden_protocol::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -20,15 +21,15 @@ use crate::validator::ValidatorError;
 pub enum BlockProducerError {
     /// A block-producer task completed although it should have ran indefinitely.
     #[error("task {task} completed unexpectedly")]
-    TaskFailedSuccessfully { task: &'static str },
+    UnexpectedTaskCompletion { task: &'static str },
 
     /// A block-producer task panic'd.
-    #[error("error joining {task} task")]
+    #[error("task {task} panic'd")]
     JoinError { task: &'static str, source: JoinError },
 
     /// A block-producer task reported a transport error.
-    #[error("task {task} had a transport error")]
-    TonicTransportError {
+    #[error("task {task} failed")]
+    TaskError {
         task: &'static str,
         source: anyhow::Error,
     },
@@ -209,6 +210,13 @@ pub enum BuildBlockError {
     StoreApplyBlockFailed(#[source] StoreError),
     #[error("failed to get block inputs from store")]
     GetBlockInputsFailed(#[source] StoreError),
+    #[error(
+        "Desync detected between block-producer's chain tip {local_chain_tip} and the store's {store_chain_tip}"
+    )]
+    Desync {
+        local_chain_tip: BlockNumber,
+        store_chain_tip: BlockNumber,
+    },
     #[error("failed to propose block")]
     ProposeBlockFailed(#[source] ProposedBlockError),
     #[error("failed to validate block")]

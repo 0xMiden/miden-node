@@ -34,7 +34,7 @@ jobs:
   # The documentation is uploaded as a github artifact IFF it is required for deployment i.e. on push into next.
   build:
     name: Build documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@main
 
@@ -66,7 +66,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
     steps:

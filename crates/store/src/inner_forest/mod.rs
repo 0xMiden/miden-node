@@ -198,8 +198,6 @@ impl InnerForest {
 
     /// Retrieves a vault asset witness for the specified account and asset keys at the specified
     /// block number.
-    ///
-    /// Finds the latest root before the specified block number (inclusive).
     pub fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,

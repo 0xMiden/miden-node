@@ -532,6 +532,13 @@ impl DataStore for NtxDataStore {
                 })
             } else {
                 // Get foreign account.
+                let Some(slot_name) = self.storage_slots.lock().await.get(&(account_id, map_root))
+                else {
+                    return Err(DataStoreError::other(
+                        "requested storage slot has not been registered",
+                    ));
+                };
+                // TODO(currentpr): use slot name...
                 let account_request = AccountRequest {
                     account_id,
                     block_num: Some(self.reference_header.block_num()),

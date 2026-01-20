@@ -175,9 +175,9 @@ impl InnerForest {
             .map(|(_, root)| *root)
     }
 
-    /// Retrieves a storage map witness for the specified account and storage entry.
+    /// Retrieves a storage map witness for the specified account and storage slot.
     ///
-    /// Finds the most recent storage root entry before the specified block.
+    /// Finds the most recent storage root before the specified block.
     ///
     /// Note that the `raw_key` is the raw, user-provided key that needs to be hashed in order to
     /// get the actual key into the storage map.

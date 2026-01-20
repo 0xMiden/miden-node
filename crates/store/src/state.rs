@@ -19,6 +19,7 @@ use miden_node_proto::domain::account::{
     AccountVaultDetails,
     NetworkAccountPrefix,
     SlotData,
+    StorageMapEntries,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
@@ -1199,6 +1200,32 @@ impl State {
             },
             None => AccountVaultDetails::empty(),
         };
+
+        // Check total keys limit upfront before expensive open operations
+        let total_keys: usize = storage_requests
+            .iter()
+            .filter_map(|req| match &req.slot_data {
+                SlotData::MapKeys(keys) => Some(keys.len()),
+                SlotData::All => None,
+            })
+            .sum();
+
+        if total_keys > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
+            return Ok(AccountDetails {
+                account_header,
+                account_code,
+                vault_details,
+                storage_details: AccountStorageDetails {
+                    header: storage_header,
+                    map_details: Vec::from_iter(storage_requests.into_iter().map(|req| {
+                        AccountStorageMapDetails {
+                            slot_name: req.slot_name,
+                            entries: StorageMapEntries::LimitExceeded,
+                        }
+                    })),
+                },
+            });
+        }
 
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());

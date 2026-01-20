@@ -234,16 +234,16 @@ pub struct VaultAssetWitnessesRequest {
     pub vault_keys: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Optional block number. If not provided, uses the latest state.
     ///
-    /// The specified block number must be within 50 blocks of the chain tip.
+    /// The specified block number should be relatively near the chain tip else an error will be returned.
     #[prost(fixed32, optional, tag = "3")]
     pub block_num: ::core::option::Option<u32>,
 }
 /// Response containing vault asset witnesses.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VaultAssetWitnessesResponse {
-    /// Block number at which the witness was generated.
+    /// Block number at which the witnesses were generated.
     ///
-    /// The witness returned corresponds to the account state at the specified block number.
+    /// The witnesses returned corresponds to the account state at the specified block number.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
     /// List of asset witnesses.
@@ -272,6 +272,9 @@ pub struct StorageMapWitnessRequest {
     #[prost(message, optional, tag = "2")]
     pub map_key: ::core::option::Option<super::primitives::Digest>,
     /// Optional block number. If not provided, uses the latest state.
+    ///
+    /// The witness returned corresponds to the account state at the specified block number.
+    /// The specified block number should be relatively near the chain tip else an error will be returned.
     #[prost(fixed32, optional, tag = "3")]
     pub block_num: ::core::option::Option<u32>,
     /// The storage slot name for the map.
@@ -293,7 +296,7 @@ pub mod storage_map_witness_response {
     /// Storage map witness data.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StorageWitness {
-        /// The storage map key.
+        /// The raw, user-provided storage map key.
         #[prost(message, optional, tag = "1")]
         pub key: ::core::option::Option<super::super::primitives::Digest>,
         /// The SMT opening proof for the key-value pair.

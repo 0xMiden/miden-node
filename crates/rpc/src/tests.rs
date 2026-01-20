@@ -458,9 +458,11 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
 /// Shuts down the store runtime properly to allow `RocksDB` to flush before the temp directory is
 /// deleted.
 async fn shutdown_store(store_runtime: Runtime) {
-    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_millis(500)))
+    task::spawn_blocking(move || store_runtime.shutdown_timeout(Duration::from_secs(3)))
         .await
         .expect("shutdown should complete");
+    // Give RocksDB time to release its lock file after the runtime shutdown
+    tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
 /// Restarts a store using an existing data directory. Returns the runtime handle for shutdown.

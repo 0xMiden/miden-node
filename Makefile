@@ -8,6 +8,7 @@ help:
 
 WARNINGS=RUSTDOCFLAGS="-D warnings"
 BUILD_PROTO=BUILD_PROTO=1
+CONTAINER_RUNTIME ?= docker
 
 # -- linting --------------------------------------------------------------------------------------
 
@@ -114,20 +115,20 @@ install-network-monitor: ## Installs network monitor binary
 # --- docker --------------------------------------------------------------------------------------
 
 .PHONY: docker-build-node
-docker-build-node: ## Builds the Miden node using Docker
+docker-build-node: ## Builds the Miden node using Docker (override with CONTAINER_RUNTIME=podman)
 	@CREATED=$$(date) && \
 	VERSION=$$(cat bin/node/Cargo.toml | grep -m 1 '^version' | cut -d '"' -f 2) && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	docker build --build-arg CREATED="$$CREATED" \
+	$(CONTAINER_RUNTIME) build --build-arg CREATED="$$CREATED" \
         		 --build-arg VERSION="$$VERSION" \
           		 --build-arg COMMIT="$$COMMIT" \
                  -f bin/node/Dockerfile \
                  -t miden-node-image .
 
 .PHONY: docker-run-node
-docker-run-node: ## Runs the Miden node as a Docker container
-	docker volume create miden-db
-	docker run --name miden-node \
+docker-run-node: ## Runs the Miden node as a Docker container (override with CONTAINER_RUNTIME=podman)
+	$(CONTAINER_RUNTIME) volume create miden-db
+	$(CONTAINER_RUNTIME) run --name miden-node \
 			   -p 57291:57291 \
                -v miden-db:/db \
                -d miden-node-image

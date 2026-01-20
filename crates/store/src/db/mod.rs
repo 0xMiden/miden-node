@@ -3,9 +3,10 @@ use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use diesel::{Connection, RunQueryDsl, SqliteConnection};
+use diesel::{Connection, QueryableByName, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader};
 use miden_protocol::asset::{Asset, AssetVaultKey};
@@ -22,7 +23,7 @@ use miden_protocol::note::{
 use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::{Deserializable, Serializable};
 use tokio::sync::oneshot;
-use tracing::{info, info_span, instrument};
+use tracing::{Instrument, info, instrument};
 
 use crate::COMPONENT;
 use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
@@ -273,10 +274,12 @@ impl Db {
         let conn = self
             .pool
             .get()
+            .in_current_span()
             .await
             .map_err(|e| DatabaseError::ConnectionPoolObtainError(Box::new(e)))?;
 
         conn.interact(|conn| <_ as diesel::Connection>::transaction::<R, E, Q>(conn, query))
+            .in_current_span()
             .await
             .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
     }
@@ -567,9 +570,6 @@ impl Db {
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
     ) -> Result<()> {
         self.transact("apply block", move |conn| -> Result<()> {
-            // TODO: This span is logged in a root span, we should connect it to the parent one.
-            let _span = info_span!(target: COMPONENT, "write_block_to_db").entered();
-
             models::queries::apply_block(
                 conn,
                 block.header(),
@@ -605,6 +605,47 @@ impl Db {
             models::queries::select_account_storage_map_values(conn, account_id, block_range)
         })
         .await
+    }
+
+    /// Emits size metrics for each table in the database, and the entire database.
+    #[instrument(target = COMPONENT, skip_all, err)]
+    pub async fn analyze_table_sizes(&self) -> Result<(), DatabaseError> {
+        self.transact("db analysis", |conn| {
+            #[derive(QueryableByName)]
+            struct TotalSize {
+                #[diesel(sql_type = diesel::sql_types::BigInt)]
+                size: i64,
+            }
+
+            #[derive(QueryableByName)]
+            struct Table {
+                #[diesel(sql_type = diesel::sql_types::Text)]
+                name: String,
+                #[diesel(sql_type = diesel::sql_types::BigInt)]
+                size: i64,
+            }
+
+            let tables =
+                diesel::sql_query("SELECT name, sum(payload) AS size FROM dbstat GROUP BY name")
+                    .load::<Table>(conn)?;
+
+            let span = tracing::Span::current();
+            for Table { name, size } in tables {
+                span.set_attribute(format!("database.table.{name}.size"), size);
+            }
+
+            let total = diesel::sql_query(
+                "SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()",
+            )
+            .get_result::<TotalSize>(conn)?;
+            span.set_attribute("database.total.size", total.size);
+
+            Result::<_, DatabaseError>::Ok(())
+        })
+        .await
+        .inspect_err(|err| tracing::Span::current().set_error(err))?;
+
+        Ok(())
     }
 
     /// Loads the network notes for an account that are unconsumed by a specified block number.

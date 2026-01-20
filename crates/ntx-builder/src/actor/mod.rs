@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use account_state::{NetworkAccountState, TransactionCandidate};
-use execute::NtxError;
 use futures::FutureExt;
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
@@ -296,6 +295,7 @@ impl AccountActor {
             self.script_cache.clone(),
         );
 
+        let notes = tx_candidate.notes.clone();
         let execution_result = context.execute_transaction(tx_candidate).await;
         match execution_result {
             // Execution completed without failed notes.
@@ -311,21 +311,10 @@ impl AccountActor {
             // Transaction execution failed.
             Err(err) => {
                 tracing::error!(err = err.as_report(), "network transaction failed");
-                match err {
-                    NtxError::AllNotesFailed(failed) => {
-                        let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                        state.notes_failed(notes.as_slice(), block_num);
-                        self.mode = ActorMode::NoViableNotes;
-                    },
-                    NtxError::InputNotes(_)
-                    | NtxError::NoteFilter(_)
-                    | NtxError::Execution(_)
-                    | NtxError::Proving(_)
-                    | NtxError::Submission(_)
-                    | NtxError::Panic(_) => {
-                        self.mode = ActorMode::NoViableNotes;
-                    },
-                }
+                self.mode = ActorMode::NoViableNotes;
+                let notes =
+                    notes.into_iter().map(|note| note.into_inner().into()).collect::<Vec<_>>();
+                state.notes_failed(notes.as_slice(), block_num);
             },
         }
     }

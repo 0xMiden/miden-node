@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
+use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::transaction::TransactionId;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Semaphore, mpsc};
@@ -229,7 +230,22 @@ impl Coordinator {
         event: &Arc<MempoolEvent>,
     ) -> Result<(), SendError<Arc<MempoolEvent>>> {
         let mut target_actors = HashMap::new();
-        if let MempoolEvent::TransactionAdded { id, network_notes, .. } = event.as_ref() {
+        if let MempoolEvent::TransactionAdded { id, network_notes, account_delta, .. } =
+            event.as_ref()
+        {
+            // We need to inform the account if it was updated. This lets it know that its own
+            // transaction has been applied, and in the future also resolves race conditions with
+            // external network transactions (once these are allowed).
+            if let Some(AccountUpdateDetails::Delta(delta)) = account_delta {
+                let account_id = delta.id();
+                if account_id.is_network() {
+                    let prefix = account_id.try_into().expect("account is network account");
+                    if let Some(actor) = self.actor_registry.get(&prefix) {
+                        target_actors.insert(prefix, actor);
+                    }
+                }
+            }
+
             // Determine target actors for each note.
             for note in network_notes {
                 if let NetworkNote::SingleTarget(note) = note {

@@ -378,6 +378,8 @@ message VaultAssetWitnessesResponse {
     }
 
     // Block number at which the witness was generated.
+    //
+    // The witnesses returned corresponds to the account state at the specified block number.
     fixed32 block_num = 1;
 
     // List of asset witnesses.

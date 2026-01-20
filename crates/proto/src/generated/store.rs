@@ -233,6 +233,8 @@ pub struct VaultAssetWitnessesRequest {
     #[prost(message, repeated, tag = "2")]
     pub vault_keys: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Optional block number. If not provided, uses the latest state.
+    ///
+    /// The specified block number must be within 50 blocks of the chain tip.
     #[prost(fixed32, optional, tag = "3")]
     pub block_num: ::core::option::Option<u32>,
 }
@@ -240,6 +242,8 @@ pub struct VaultAssetWitnessesRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VaultAssetWitnessesResponse {
     /// Block number at which the witness was generated.
+    ///
+    /// The witness returned corresponds to the account state at the specified block number.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
     /// List of asset witnesses.

@@ -202,17 +202,12 @@ impl StoreClient {
         block_range: RangeInclusive<BlockNumber>,
         sender: &tokio::sync::mpsc::Sender<NetworkAccountId>,
     ) -> Result<Option<BlockNumber>, StoreError> {
-        let (accounts, pagination_info) = self
-            .fetch_network_account_ids_page(block_range)
-            .await
-            .inspect_err(|err| tracing::Span::current().set_error(err))?;
+        let (accounts, pagination_info) = self.fetch_network_account_ids_page(block_range).await?;
 
         let chain_tip = pagination_info.chain_tip;
         let current_height = pagination_info.block_num;
 
-        self.send_accounts_to_channel(accounts, sender)
-            .await
-            .inspect_err(|err| tracing::Span::current().set_error(err))?;
+        self.send_accounts_to_channel(accounts, sender).await?;
 
         if current_height >= chain_tip {
             Ok(None)
@@ -223,6 +218,15 @@ impl StoreClient {
 
     #[instrument(target = COMPONENT, name = "store.client.fetch_network_account_ids_page", skip_all, err)]
     async fn fetch_network_account_ids_page(
+        &self,
+        block_range: std::ops::RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<NetworkAccountId>, proto::rpc::PaginationInfo), StoreError> {
+        self.fetch_network_account_ids_page_inner(block_range)
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+    }
+
+    async fn fetch_network_account_ids_page_inner(
         &self,
         block_range: std::ops::RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NetworkAccountId>, proto::rpc::PaginationInfo), StoreError> {

@@ -335,7 +335,8 @@ struct NtxDataStore {
     script_cache: LruCache<Word, NoteScript>,
     /// Mapping of storage map roots to storage slot names observed during various calls.
     ///
-    /// The slot names are used to retrieve storage map witnesses from the store.
+    /// The registered slot names are subsequently used to retrieve storage map witnesses from the
+    /// store.
     storage_slots: Arc<Mutex<BTreeMap<(AccountId, Word), StorageSlotName>>>,
 }
 
@@ -362,7 +363,7 @@ impl NtxDataStore {
         }
     }
 
-    /// Registers storage map slots names for the given account ID and storage header.
+    /// Registers storage map slot names for the given account ID and storage header.
     ///
     /// These slot names are subsequently used to query for storage map witnesses against the store.
     async fn register_storage_map_slots(
@@ -393,18 +394,18 @@ impl DataStore for NtxDataStore {
                 return Err(DataStoreError::AccountNotFound(account_id));
             }
 
+            // The latest supplied reference block must match the current reference block.
             match ref_blocks.last().copied() {
                 Some(reference) if reference == self.reference_header.block_num() => {},
-
                 Some(other) => return Err(DataStoreError::BlockNotFound(other)),
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
 
+            // Register slot names from the native account for later use.
             self.register_storage_map_slots(account_id, &self.account.storage().to_header())
                 .await;
 
             let partial_account = PartialAccount::from(&self.account);
-
             Ok((partial_account, self.reference_header.clone(), self.chain_mmr.clone()))
         }
     }
@@ -414,14 +415,16 @@ impl DataStore for NtxDataStore {
         foreign_account_id: AccountId,
         ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
-        debug_assert_eq!(ref_block, self.reference_header.block_num());
-
         async move {
+            debug_assert_eq!(ref_block, self.reference_header.block_num());
+
+            // Get foreign account inputs from store.
             let account_inputs =
                 self.store.get_account_inputs(foreign_account_id, ref_block).await.map_err(
                     |err| DataStoreError::other_with_source("failed to get account inputs", err),
                 )?;
 
+            // Register slot names from the foreign account for later use.
             self.register_storage_map_slots(foreign_account_id, account_inputs.storage().header())
                 .await;
 
@@ -437,6 +440,8 @@ impl DataStore for NtxDataStore {
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             let ref_block = self.reference_header.block_num();
+
+            // Get vault asset witnesses from the store.
             let witnesses = self
                 .store
                 .get_vault_asset_witnesses(account_id, vault_keys, Some(ref_block))
@@ -444,6 +449,7 @@ impl DataStore for NtxDataStore {
                 .map_err(|err| {
                     DataStoreError::other_with_source("failed to get vault asset witnesses", err)
                 })?;
+
             Ok(witnesses)
         }
     }
@@ -455,15 +461,18 @@ impl DataStore for NtxDataStore {
         map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
-            // Get slot name.
+            // The slot name that corresponds to the given account ID and map root must have been
+            // registered during previous calls of this data store.
             let storage_slots = self.storage_slots.lock().await;
             let Some(slot_name) = storage_slots.get(&(account_id, map_root)) else {
                 return Err(DataStoreError::other(
                     "requested storage slot has not been registered",
                 ));
             };
-            // Retrieve witness.
+
             let ref_block = self.reference_header.block_num();
+
+            // Get storage map witness from the store.
             let witness = self
                 .store
                 .get_storage_map_witness(account_id, slot_name.clone(), map_key, Some(ref_block))

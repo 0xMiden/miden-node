@@ -156,7 +156,7 @@ impl StoreClient {
         account_id: AccountId,
         block_num: BlockNumber,
     ) -> Result<AccountInputs, StoreError> {
-        // Convert domain to proto type.
+        // Construct proto request.
         let proto_request = proto::rpc::AccountRequest {
             account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
             block_num: Some(block_num.into()),
@@ -166,6 +166,7 @@ impl StoreClient {
         // Make the gRPC call.
         let proto_response = self.inner.clone().get_account(proto_request).await?.into_inner();
 
+        // Convert proto response to domain type.
         let account_response =
             AccountResponse::try_from(proto_response).map_err(StoreError::DeserializationError)?;
 
@@ -381,6 +382,7 @@ impl StoreClient {
         vault_keys: BTreeSet<AssetVaultKey>,
         block_num: Option<BlockNumber>,
     ) -> Result<Vec<AssetWitness>, StoreError> {
+        // Construct proto request.
         let request = proto::store::VaultAssetWitnessesRequest {
             account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
             vault_keys: vault_keys
@@ -393,18 +395,18 @@ impl StoreClient {
             block_num: block_num.map(|num| num.as_u32()),
         };
 
-        // Make the request to the store.
-        let response = self.inner.clone().get_vault_asset_witnesses(request).await?.into_inner();
+        // Make the gRPC request.
+        let witness_proto =
+            self.inner.clone().get_vault_asset_witnesses(request).await?.into_inner();
 
-        // Convert the response to domain types.
+        // Convert the response to domain type.
         let mut asset_witnesses = Vec::new();
-        for proto_witness in response.asset_witnesses {
-            let smt_proof = proto_witness.proof.ok_or_else(|| {
+        for asset_witness in witness_proto.asset_witnesses {
+            let smt_opening = asset_witness.proof.ok_or_else(|| {
                 StoreError::MalformedResponse("missing proof in vault asset witness".to_string())
             })?;
-
-            let proof: SmtProof = smt_proof.try_into().map_err(StoreError::DeserializationError)?;
-
+            let proof: SmtProof =
+                smt_opening.try_into().map_err(StoreError::DeserializationError)?;
             let witness = AssetWitness::new(proof)
                 .map_err(|err| StoreError::DeserializationError(ConversionError::from(err)))?;
 
@@ -422,6 +424,7 @@ impl StoreClient {
         map_key: Word,
         block_num: Option<BlockNumber>,
     ) -> Result<StorageMapWitness, StoreError> {
+        // Construct proto request.
         let request = proto::store::StorageMapWitnessRequest {
             account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
             map_key: Some(map_key.into()),
@@ -430,18 +433,18 @@ impl StoreClient {
         };
 
         // Make the request to the store.
-        let response = self.inner.clone().get_storage_map_witness(request).await?.into_inner();
+        let witness_proto = self.inner.clone().get_storage_map_witness(request).await?.into_inner();
 
         // Convert the response to domain type.
-        let witness_proto = response.witness.ok_or_else(|| {
+        let witness_proto = witness_proto.witness.ok_or_else(|| {
             StoreError::MalformedResponse("missing storage map witness in response".to_string())
         })?;
 
-        let smt_proof = witness_proto.proof.ok_or_else(|| {
+        let smt_opening = witness_proto.proof.ok_or_else(|| {
             StoreError::MalformedResponse("missing proof in storage map witness".to_string())
         })?;
 
-        let proof: SmtProof = smt_proof.try_into().map_err(StoreError::DeserializationError)?;
+        let proof: SmtProof = smt_opening.try_into().map_err(StoreError::DeserializationError)?;
 
         // Create the storage map witness using the proof and raw map key.
         let witness = StorageMapWitness::new(proof, [map_key]).map_err(|_err| {
@@ -478,16 +481,16 @@ pub fn build_minimal_foreign_account(
     account_details: &AccountDetails,
 ) -> Result<PartialAccount, ConversionError> {
     // Derive account code.
-    let account_code = account_details
+    let account_code_bytes = account_details
         .account_code
         .as_ref()
         .ok_or(ConversionError::AccountCodeMissing)?;
-    let account_code = AccountCode::from_bytes(account_code)?;
+    let account_code = AccountCode::from_bytes(account_code_bytes)?;
 
     // Derive partial storage. Storage maps are not required for foreign accounts.
     let partial_storage = PartialStorage::new(account_details.storage_details.header.clone(), [])?;
 
-    // Derive partial vault.
+    // Derive partial vault from vault root only.
     let partial_vault = PartialVault::new(account_details.account_header.vault_root());
 
     // Construct partial account.

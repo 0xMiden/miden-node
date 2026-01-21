@@ -92,7 +92,7 @@ pub async fn sync_state(
 ) -> (Duration, proto::rpc::SyncStateResponse) {
     let note_tags = account_ids
         .iter()
-        .map(|id| u32::from(NoteTag::from_account_id(*id)))
+        .map(|id| u32::from(NoteTag::with_account_target(*id)))
         .collect::<Vec<_>>();
 
     let account_ids = account_ids
@@ -158,7 +158,7 @@ pub async fn sync_notes(
 ) -> Duration {
     let note_tags = account_ids
         .iter()
-        .map(|id| u32::from(NoteTag::from_account_id(*id)))
+        .map(|id| u32::from(NoteTag::with_account_target(*id)))
         .collect::<Vec<_>>();
     let sync_request = proto::rpc::SyncNotesRequest {
         block_range: Some(proto::rpc::BlockRange { block_from: 0, block_to: None }),

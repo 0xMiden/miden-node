@@ -6,14 +6,13 @@ use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
+use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::crypto::merkle::mmr::MmrError;
 use miden_protocol::crypto::utils::DeserializationError;
-use miden_protocol::note::{NoteId, Nullifier};
-use miden_protocol::transaction::OutputNote;
-use miden_protocol::{
+use miden_protocol::errors::{
     AccountDeltaError,
     AccountError,
     AccountTreeError,
@@ -23,15 +22,16 @@ use miden_protocol::{
     NoteError,
     NullifierTreeError,
     StorageMapError,
-    Word,
 };
+use miden_protocol::note::{NoteId, Nullifier};
+use miden_protocol::transaction::OutputNote;
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 use tonic::Status;
 
 use crate::db::manager::ConnectionManagerError;
 use crate::db::models::conv::DatabaseTypeConversionError;
-use crate::inner_forest::InnerForestError;
+use crate::inner_forest::{InnerForestError, WitnessError};
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -534,6 +534,16 @@ pub enum SyncTransactionsError {
     DeserializationFailed(#[from] ConversionError),
     #[error("account {0} not found")]
     AccountNotFound(AccountId),
+    #[error("failed to retrieve witness")]
+    WitnessError(#[from] WitnessError),
+}
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetWitnessesError {
+    #[error("malformed request")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("failed to retrieve witness")]
+    WitnessError(#[from] WitnessError),
 }
 
 // SCHEMA VERIFICATION ERRORS

@@ -405,12 +405,6 @@ impl api_server::Api for BlockProducerRpcServer {
              .map_err(Into::into)
     }
 
-    #[instrument(
-         target = COMPONENT,
-         name = "block_producer.server.status",
-         skip_all,
-         err
-     )]
     async fn status(
         &self,
         _request: tonic::Request<()>,

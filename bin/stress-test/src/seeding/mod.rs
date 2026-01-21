@@ -34,6 +34,7 @@ use miden_protocol::block::{
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey as EcdsaSecretKey;
 use miden_protocol::crypto::dsa::falcon512_rpo::{PublicKey, SecretKey};
 use miden_protocol::crypto::rand::RpoRandomCoin;
+use miden_protocol::errors::AssetError;
 use miden_protocol::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
 use miden_protocol::transaction::{
     InputNote,
@@ -45,8 +46,8 @@ use miden_protocol::transaction::{
     TransactionHeader,
 };
 use miden_protocol::utils::Serializable;
-use miden_protocol::{AssetError, Felt, ONE, Word};
-use miden_standards::account::auth::AuthRpoFalcon512;
+use miden_protocol::{Felt, ONE, Word};
+use miden_standards::account::auth::AuthFalcon512Rpo;
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::create_p2id_note;
@@ -314,7 +315,7 @@ fn create_note(faucet_id: AccountId, target_id: AccountId, rng: &mut RpoRandomCo
         target_id,
         vec![asset],
         miden_protocol::note::NoteType::Public,
-        Felt::default(),
+        miden_protocol::note::NoteAttachment::default(),
         rng,
     )
     .expect("note creation failed")
@@ -327,7 +328,7 @@ fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorag
     AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
-        .with_auth_component(AuthRpoFalcon512::new(public_key.into()))
+        .with_auth_component(AuthFalcon512Rpo::new(public_key.into()))
         .with_component(BasicWallet)
         .build()
         .unwrap()
@@ -345,7 +346,7 @@ fn create_faucet() -> Account {
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
-        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key().into()))
+        .with_auth_component(AuthFalcon512Rpo::new(key_pair.public_key().into()))
         .build()
         .unwrap()
 }

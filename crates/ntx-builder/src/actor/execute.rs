@@ -2,12 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use miden_node_proto::clients::ValidatorClient;
-use miden_node_proto::domain::account::{
-    AccountDetailRequest,
-    AccountRequest,
-    AccountVaultDetails,
-    StorageMapEntries,
-};
+use miden_node_proto::domain::account::{AccountDetailRequest, AccountRequest};
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
@@ -16,7 +11,6 @@ use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
-    StorageMap,
     StorageMapWitness,
     StorageSlotContent,
     StorageSlotName,
@@ -24,7 +18,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use miden_protocol::crypto::merkle::smt::SmtLeaf;
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript};
 use miden_protocol::transaction::{
@@ -469,38 +462,16 @@ impl DataStore for NtxDataStore {
                 }
                 get_asset_witnesses(vault_keys, self.account.vault())
             } else {
-                // Get foreign account.
-                let account_request = AccountRequest {
-                    account_id,
-                    block_num: Some(self.reference_header.block_num()),
-                    details: Some(AccountDetailRequest {
-                        code_commitment: None,
-                        asset_vault_commitment: Some(Word::default()),
-                        storage_requests: Vec::new(),
-                    }),
-                };
-                let account_response = store.get_account(account_request).await.map_err(|err| {
-                    DataStoreError::other_with_source(
-                        "Failed to get account inputs from store",
-                        err,
-                    )
-                })?;
-
-                // Construct vault from account details.
-                let account_details = account_response.details.ok_or_else(|| {
-                    DataStoreError::other("account proof does not contain account details")
-                })?;
-                let assets = match &account_details.vault_details {
-                    AccountVaultDetails::LimitExceeded => {
-                        Err(DataStoreError::other("asset vault limit exceeded"))
-                    },
-                    AccountVaultDetails::Assets(assets) => Ok(assets),
-                }?;
-                let asset_vault = AssetVault::new(assets).map_err(|err| {
-                    DataStoreError::other_with_source("failed to create asset vault", err)
-                })?;
-
-                get_asset_witnesses(vault_keys, &asset_vault)
+                let witnesses = store
+                    .get_vault_asset_witnesses(account_id, vault_keys, None)
+                    .await
+                    .map_err(|err| {
+                        DataStoreError::other_with_source(
+                            "failed to get vault asset witnesses",
+                            err,
+                        )
+                    })?;
+                Ok(witnesses)
             }
         }
     }
@@ -527,75 +498,23 @@ impl DataStore for NtxDataStore {
                     }
                 })
             } else {
-                // Get foreign account.
-                let Some(slot_name) = self.storage_slots.lock().await.get(&(account_id, map_root))
-                else {
+                // Retrieve foreign account witness.
+
+                // Get slot name.
+                let storage_slots = self.storage_slots.lock().await;
+                let Some(slot_name) = storage_slots.get(&(account_id, map_root)) else {
                     return Err(DataStoreError::other(
                         "requested storage slot has not been registered",
                     ));
                 };
-                let account_request = AccountRequest {
-                    account_id,
-                    block_num: Some(self.reference_header.block_num()),
-                    details: Some(AccountDetailRequest {
-                        code_commitment: Some(Word::default()),
-                        asset_vault_commitment: None,
-                        storage_requests: Vec::new(),
-                    }),
-                };
-                let account_response = store.get_account(account_request).await.map_err(|err| {
-                    DataStoreError::other_with_source("failed to get account proof from store", err)
-                })?;
-                let account_details = account_response.details.ok_or_else(|| {
-                    DataStoreError::other("account proof does not contain account details")
-                })?;
-
-                // Search through foreign account's storage maps.
-                let mut map_witness = None;
-                for map_details in account_details.storage_details.map_details {
-                    match map_details.entries {
-                        StorageMapEntries::AllEntries(entries) => {
-                            let storage_map = StorageMap::with_entries(entries.iter().copied())
-                                .map_err(|err| {
-                                    DataStoreError::other_with_source(
-                                        "failed to create storage map from entries",
-                                        err,
-                                    )
-                                })?;
-                            if storage_map.root() == map_root {
-                                map_witness = Some(storage_map.open(&map_key));
-                                break;
-                            }
-                        },
-                        StorageMapEntries::EntriesWithProofs(proofs) => {
-                            // For proofs, we need to extract the key-value pairs from the leaf.
-                            let entries = proofs
-                                .into_iter()
-                                .flat_map(|proof| {
-                                    let (_, leaf) = proof.into_parts();
-                                    match leaf {
-                                        SmtLeaf::Empty(_) => Vec::new(),
-                                        SmtLeaf::Single((key, value)) => vec![(key, value)],
-                                        SmtLeaf::Multiple(entries) => entries,
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-                            let storage_map = StorageMap::with_entries(entries.iter().copied())
-                                .map_err(|err| {
-                                    DataStoreError::other_with_source(
-                                        "failed to create storage map from proof entries",
-                                        err,
-                                    )
-                                })?;
-                            if storage_map.root() == map_root {
-                                map_witness = Some(storage_map.open(&map_key));
-                                break;
-                            }
-                        },
-                        StorageMapEntries::LimitExceeded => {},
-                    }
-                }
-                map_witness
+                // Retrieve witness.
+                let witness = store
+                    .get_storage_map_witness(account_id, slot_name.clone(), map_key, None)
+                    .await
+                    .map_err(|err| {
+                        DataStoreError::other_with_source("failed to get storage map witness", err)
+                    })?;
+                Some(witness)
             };
 
             map_witness.ok_or_else(|| {

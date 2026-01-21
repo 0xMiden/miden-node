@@ -1,3 +1,4 @@
+use std::collections::{ BTreeSet};
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
@@ -12,7 +13,9 @@ use miden_node_proto::generated::rpc::account_request::account_detail_request::S
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountId};
+use miden_protocol::account::{Account, AccountId, StorageMapWitness, StorageSlotName};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::NoteScript;
@@ -296,9 +299,86 @@ impl StoreClient {
             Ok(None)
         }
     }
+
+    #[instrument(target = COMPONENT, name = "store.client.get_vault_asset_witnesses", skip_all, err)]
+    pub async fn get_vault_asset_witnesses(
+        &self,
+        account_id: AccountId,
+        vault_keys: BTreeSet<AssetVaultKey>,
+        block_num: Option<BlockNumber>,
+    ) -> Result<Vec<AssetWitness>, StoreError> {
+        let request = proto::store::VaultAssetWitnessesRequest {
+            account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+            vault_keys: vault_keys
+                .into_iter()
+                .map(|key| {
+                    let word: Word = key.into();
+                    word.into()
+                })
+                .collect(),
+            block_num: block_num.map(|num| num.as_u32()),
+        };
+
+        // Make the request to the store.
+        let response = self.inner.clone().get_vault_asset_witnesses(request).await?.into_inner();
+
+        // Convert the response to domain types.
+        let mut asset_witnesses = Vec::new();
+        for proto_witness in response.asset_witnesses {
+            let smt_proof = proto_witness.proof.ok_or_else(|| {
+                StoreError::MalformedResponse("missing proof in vault asset witness".to_string())
+            })?;
+
+            let proof: SmtProof = smt_proof.try_into().map_err(StoreError::DeserializationError)?;
+
+            let witness = AssetWitness::new(proof)
+                .map_err(|err| StoreError::DeserializationError(ConversionError::from(err)))?;
+
+            asset_witnesses.push(witness);
+        }
+
+        Ok(asset_witnesses)
+    }
+
+    #[instrument(target = COMPONENT, name = "store.client.get_storage_map_witness", skip_all, err)]
+    pub async fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        slot_name: StorageSlotName,
+        map_key: Word,
+        block_num: Option<BlockNumber>,
+    ) -> Result<StorageMapWitness, StoreError> {
+        let request = proto::store::StorageMapWitnessRequest {
+            account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+            map_key: Some(map_key.into()),
+            slot_name: slot_name.to_string(),
+            block_num: block_num.map(|num| num.as_u32()),
+        };
+
+        // Make the request to the store.
+        let response = self.inner.clone().get_storage_map_witness(request).await?.into_inner();
+
+        // Convert the response to domain type.
+        let witness_proto = response.witness.ok_or_else(|| {
+            StoreError::MalformedResponse("missing storage map witness in response".to_string())
+        })?;
+
+        let smt_proof = witness_proto.proof.ok_or_else(|| {
+            StoreError::MalformedResponse("missing proof in storage map witness".to_string())
+        })?;
+
+        let proof: SmtProof = smt_proof.try_into().map_err(StoreError::DeserializationError)?;
+
+        // Create the storage map witness using the proof and raw map key.
+        let witness = StorageMapWitness::new(proof, [map_key]).map_err(|_err| {
+            StoreError::MalformedResponse("failed to create storage map witness".to_string())
+        })?;
+
+        Ok(witness)
+    }
 }
 
-// Store errors
+// STORE ERROR
 // =================================================================================================
 
 #[derive(Debug, Error)]

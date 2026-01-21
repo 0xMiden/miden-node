@@ -442,10 +442,11 @@ impl DataStore for NtxDataStore {
         _vault_root: Word,
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
-        let store = self.store.clone();
         async move {
-            let witnesses = store
-                .get_vault_asset_witnesses(account_id, vault_keys, None)
+            let ref_block = self.reference_header.block_num();
+            let witnesses = self
+                .store
+                .get_vault_asset_witnesses(account_id, vault_keys, Some(ref_block))
                 .await
                 .map_err(|err| {
                     DataStoreError::other_with_source("failed to get vault asset witnesses", err)
@@ -460,7 +461,6 @@ impl DataStore for NtxDataStore {
         map_root: Word,
         map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
-        let store = self.store.clone();
         async move {
             // Get slot name.
             let storage_slots = self.storage_slots.lock().await;
@@ -470,8 +470,10 @@ impl DataStore for NtxDataStore {
                 ));
             };
             // Retrieve witness.
-            let witness = store
-                .get_storage_map_witness(account_id, slot_name.clone(), map_key, None)
+            let ref_block = self.reference_header.block_num();
+            let witness = self
+                .store
+                .get_storage_map_witness(account_id, slot_name.clone(), map_key, Some(ref_block))
                 .await
                 .map_err(|err| {
                     DataStoreError::other_with_source("failed to get storage map witness", err)

@@ -1,33 +1,42 @@
-use std::collections::{ BTreeSet};
+use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
-use miden_node_proto::domain::account::{AccountDetails, AccountRequest, AccountResponse, AccountVaultDetails, SlotData};
-use miden_node_proto::domain::account::NetworkAccountId;
+use miden_node_proto::domain::account::{
+    AccountDetails,
+    AccountResponse,
+    AccountVaultDetails,
+    NetworkAccountId,
+};
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
-use miden_node_proto::generated::rpc::account_request::account_detail_request::storage_map_detail_request::{MapKeys, SlotData as ProtoSlotData};
-use miden_node_proto::generated::rpc::account_request::AccountDetailRequest;
 use miden_node_proto::generated::rpc::BlockRange;
-use miden_node_proto::generated::rpc::account_request::account_detail_request::StorageMapDetailRequest;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
-use miden_protocol::transaction::AccountInputs;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountCode, AccountId, PartialAccount, PartialStorage, StorageMapWitness, StorageSlotName};
+use miden_protocol::account::{
+    Account,
+    AccountCode,
+    AccountId,
+    PartialAccount,
+    PartialStorage,
+    StorageMapWitness,
+    StorageSlotName,
+};
 use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness, PartialVault};
-use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
+use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::NoteScript;
+use miden_protocol::transaction::AccountInputs;
 use miden_tx::utils::{Deserializable, Serializable};
 use thiserror::Error;
 use tracing::{info, instrument};
 use url::Url;
 
-use crate::{COMPONENT};
+use crate::COMPONENT;
 
 // STORE CLIENT
 // ================================================================================================
@@ -148,31 +157,14 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.get_account", skip_all, err)]
     pub async fn get_account_inputs(
         &self,
-        request: AccountRequest,
+        account_id: AccountId,
+        block_num: BlockNumber,
     ) -> Result<AccountInputs, StoreError> {
         // Convert domain to proto type.
         let proto_request = proto::rpc::AccountRequest {
-            account_id: Some(proto::account::AccountId { id: request.account_id.to_bytes() }),
-            block_num: request
-                .block_num
-                .map(|block_num| proto::blockchain::BlockNumber { block_num: block_num.as_u32() }),
-            details: request.details.map(|details| AccountDetailRequest {
-                code_commitment: details.code_commitment.map(Into::into),
-                asset_vault_commitment: details.asset_vault_commitment.map(Into::into),
-                storage_maps: details
-                    .storage_requests
-                    .into_iter()
-                    .map(|req| StorageMapDetailRequest {
-                        slot_name: String::from(req.slot_name),
-                        slot_data: Some(match req.slot_data {
-                            SlotData::All => ProtoSlotData::AllEntries(true),
-                            SlotData::MapKeys(keys) => ProtoSlotData::MapKeys(MapKeys {
-                                map_keys: keys.into_iter().map(Into::into).collect(),
-                            }),
-                        }),
-                    })
-                    .collect(),
-            }),
+            account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+            block_num: Some(block_num.into()),
+            details: None,
         };
 
         // Make the gRPC call.

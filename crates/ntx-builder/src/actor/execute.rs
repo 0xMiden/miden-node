@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use miden_node_proto::clients::ValidatorClient;
-use miden_node_proto::domain::account::{AccountDetailRequest, AccountRequest};
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
@@ -406,23 +405,11 @@ impl DataStore for NtxDataStore {
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
         debug_assert_eq!(ref_block, self.reference_header.block_num());
 
-        let store = self.store.clone();
         async move {
-            // Retrieve the account details from the store.
-            let account_request = AccountRequest {
-                account_id: foreign_account_id,
-                block_num: Some(ref_block),
-                // Request account code, account header, and storage header.
-                details: Some(AccountDetailRequest {
-                    code_commitment: Some(Word::default()),
-                    asset_vault_commitment: None,
-                    storage_requests: vec![],
-                }),
-            };
             let account_inputs =
-                store.get_account_inputs(account_request).await.map_err(|err| {
-                    DataStoreError::other_with_source("failed to get account inputs", err)
-                })?;
+                self.store.get_account_inputs(foreign_account_id, ref_block).await.map_err(
+                    |err| DataStoreError::other_with_source("failed to get account inputs", err),
+                )?;
 
             // Register storage slots for the account.
             for slot_header in account_inputs.storage().header().slots() {

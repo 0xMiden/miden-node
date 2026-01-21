@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -14,7 +13,6 @@ use miden_protocol::block::BlockSigner;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_protocol::utils::Deserializable;
 use tokio::net::TcpListener;
-use tokio::sync::Barrier;
 use tokio::task::JoinSet;
 use url::Url;
 
@@ -222,19 +220,11 @@ impl BundledCommand {
             })
             .id();
 
-        // A sync point between the ntx-builder and block-producer components.
         let should_start_ntx_builder = !ntx_builder.disabled;
-        let checkpoint = if should_start_ntx_builder {
-            Barrier::new(2)
-        } else {
-            Barrier::new(1)
-        };
-        let checkpoint = Arc::new(checkpoint);
 
         // Start block-producer. The block-producer's endpoint is available after loading completes.
         let block_producer_id = join_set
             .spawn({
-                let checkpoint = Arc::clone(&checkpoint);
                 let store_url = Url::parse(&format!("http://{store_block_producer_address}"))
                     .context("Failed to parse URL")?;
                 let validator_url = Url::parse(&format!("http://{validator_address}"))
@@ -250,7 +240,6 @@ impl BundledCommand {
                         block_interval: block_producer.block_interval,
                         max_batches_per_block: block_producer.max_batches_per_block,
                         max_txs_per_batch: block_producer.max_txs_per_batch,
-                        production_checkpoint: checkpoint,
                         grpc_timeout,
                         mempool_tx_capacity: block_producer.mempool_tx_capacity,
                     }
@@ -323,8 +312,6 @@ impl BundledCommand {
                         block_producer_url,
                         validator_url,
                         ntx_builder.tx_prover_url,
-                        ntx_builder.ticker_interval,
-                        checkpoint,
                         ntx_builder.script_cache_size,
                     )
                     .run()

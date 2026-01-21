@@ -22,6 +22,7 @@
 - Added `GetLimits` endpoint to the RPC server ([#1410](https://github.com/0xMiden/miden-node/pull/1410)).
 - Added gRPC-Web probe support to the `miden-network-monitor` binary ([#1484](https://github.com/0xMiden/miden-node/pull/1484)).
 - Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
+- Decoupled ntx-builder from block-producer startup by loading network accounts asynchronously via a background task ([#????](https://github.com/0xMiden/miden-node/pull/????)).
 - Add foreign account support to validator ([#1493](https://github.com/0xMiden/miden-node/pull/1493)).
 - Improve DB query performance for account queries ([#1496](https://github.com/0xMiden/miden-node/pull/1496).
 - Limit number of storage map keys in `GetAccount` requests ([#1517](https://github.com/0xMiden/miden-node/pull/1517)).
@@ -65,6 +66,7 @@
 - Fixed missing asset setup for full account initialization ([#1461](https://github.com/0xMiden/miden-node/pull/1461)).
 - Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
 - Fixed the network monitor counter account to use the storage slot name ([#1501](https://github.com/0xMiden/miden-node/pull/1501)).
+- gRPC traces now correctly connect to the method implementation ([1553](https://github.com/0xMiden/miden-node/pull/1553)).
 
 ## v0.12.8 (2026-01-15)
 

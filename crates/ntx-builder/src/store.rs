@@ -154,7 +154,8 @@ impl StoreClient {
         Ok(account)
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.get_account", skip_all, err)]
+    /// Get the inputs for an account at a given block number from the store.
+    #[instrument(target = COMPONENT, name = "store.client.get_account_inputs", skip_all, err)]
     pub async fn get_account_inputs(
         &self,
         account_id: AccountId,

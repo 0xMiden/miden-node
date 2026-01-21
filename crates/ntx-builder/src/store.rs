@@ -3,12 +3,7 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
-use miden_node_proto::domain::account::{
-    AccountDetails,
-    AccountResponse,
-    AccountVaultDetails,
-    NetworkAccountId,
-};
+use miden_node_proto::domain::account::{AccountDetails, AccountResponse, NetworkAccountId};
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::BlockRange;
@@ -25,7 +20,7 @@ use miden_protocol::account::{
     StorageMapWitness,
     StorageSlotName,
 };
-use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness, PartialVault};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness, PartialVault};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::crypto::merkle::smt::SmtProof;
@@ -493,12 +488,7 @@ pub fn build_minimal_foreign_account(
     let partial_storage = PartialStorage::new(account_details.storage_details.header.clone(), [])?;
 
     // Derive partial vault.
-    let assets = match &account_details.vault_details {
-        AccountVaultDetails::LimitExceeded => Err(ConversionError::AssetVaultLimitExceeded),
-        AccountVaultDetails::Assets(assets) => Ok(assets),
-    }?;
-    let asset_vault = AssetVault::new(assets)?;
-    let partial_vault = PartialVault::new(asset_vault.root());
+    let partial_vault = PartialVault::new(account_details.account_header.vault_root());
 
     // Construct partial account.
     let partial_account = PartialAccount::new(

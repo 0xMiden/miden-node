@@ -674,8 +674,8 @@ impl State {
 
     /// Loads data to synchronize a client.
     ///
-    /// The client's request contains a list of tag prefixes, this method will return the first
-    /// block with a matching tag, or the chain tip. All the other values are filter based on this
+    /// The client's request contains a list of note tags, this method will return the first
+    /// block with a matching tag, or the chain tip. All the other values are filtered based on this
     /// block range.
     ///
     /// # Arguments

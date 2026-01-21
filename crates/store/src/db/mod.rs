@@ -656,9 +656,9 @@ impl Db {
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
-        // Network notes sent to a specific account have their tags set to the prefix of the target
-        // account ID. So we can convert the ID prefix into a note tag to query the notes for a
-        // given account.
+        // Single-target network notes have their tags derived from the target account ID.
+        // The 30-bit account ID prefix is used as the note tag, allowing us to query notes
+        // for a given network account.
         self.transact("unconsumed network notes for account", move |conn| {
             models::queries::select_unconsumed_network_notes_by_tag(
                 conn,

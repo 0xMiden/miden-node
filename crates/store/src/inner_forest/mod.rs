@@ -228,11 +228,11 @@ impl InnerForest {
         account_id: AccountId,
         slot_name: StorageSlotName,
         block_num: BlockNumber,
-        keys: &[Word],
+        raw_keys: &[Word],
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
         let root = self.get_storage_map_root(account_id, &slot_name, block_num)?;
 
-        if keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
+        if raw_keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
             return Some(Ok(AccountStorageMapDetails {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,
@@ -240,7 +240,10 @@ impl InnerForest {
         }
 
         // Collect SMT proofs for each key
-        let proofs = Result::from_iter(keys.iter().map(|key| self.forest.open(root, *key)));
+        let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {
+            let key = StorageMap::hash_key(*raw_key);
+            self.forest.open(root, key)
+        }));
 
         Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
     }

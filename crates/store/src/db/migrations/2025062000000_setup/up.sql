@@ -51,7 +51,7 @@ CREATE TABLE notes (
     note_type                     INTEGER NOT NULL, -- 1-Public (0b01), 2-Private (0b10), 3-Encrypted (0b11)
     sender                        BLOB    NOT NULL,
     tag                           INTEGER NOT NULL,
-    is_single_target_network_note INTEGER NOT NULL, -- 1 if note has NetworkAccountTarget attachment, 0 otherwise
+    network_note_type             INTEGER NOT NULL, -- 0-not a network note, 1-single account target network note
     attachment                    BLOB    NOT NULL, -- Serialized note attachment data
     inclusion_path                BLOB    NOT NULL, -- Serialized sparse Merkle path of the note in the block's note tree
     consumed_at                   INTEGER,          -- Block number when the note was consumed
@@ -63,7 +63,7 @@ CREATE TABLE notes (
 
     PRIMARY KEY (committed_at, batch_index, note_index),
     CONSTRAINT notes_type_in_enum CHECK (note_type BETWEEN 1 AND 3),
-    CONSTRAINT notes_is_single_target_network_note_is_bool CHECK (is_single_target_network_note BETWEEN 0 AND 1),
+    CONSTRAINT notes_network_note_type_in_enum CHECK (network_note_type BETWEEN 0 AND 1),
     CONSTRAINT notes_consumed_at_is_u32 CHECK (consumed_at BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_batch_index_is_u32 CHECK (batch_index BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_note_index_is_u32 CHECK (note_index BETWEEN 0 AND 0xFFFFFFFF)
@@ -74,7 +74,7 @@ CREATE INDEX idx_notes_note_commitment ON notes(note_commitment);
 CREATE INDEX idx_notes_sender ON notes(sender, committed_at);
 CREATE INDEX idx_notes_tag ON notes(tag, committed_at);
 CREATE INDEX idx_notes_nullifier ON notes(nullifier);
-CREATE INDEX idx_unconsumed_network_notes ON notes(is_single_target_network_note, consumed_at);
+CREATE INDEX idx_unconsumed_network_notes ON notes(network_note_type, consumed_at);
 -- Index for joining with block_headers on committed_at
 CREATE INDEX idx_notes_committed_at ON notes(committed_at);
 -- Index for joining with note_scripts

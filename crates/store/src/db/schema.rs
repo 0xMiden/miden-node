@@ -67,7 +67,7 @@ diesel::table! {
         note_type -> Integer,
         sender -> Binary,
         tag -> Integer,
-        is_single_target_network_note -> Bool,
+        network_note_type -> Integer,
         attachment -> Binary,
         inclusion_path -> Binary,
         consumed_at -> Nullable<BigInt>,

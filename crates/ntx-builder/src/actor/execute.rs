@@ -461,7 +461,7 @@ impl DataStore for NtxDataStore {
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         let store = self.store.clone();
         async move {
-            let map_witness = if self.account.id() == account_id {
+            let witness = if self.account.id() == account_id {
                 // Search through local account's storage slots.
                 self.account.storage().slots().iter().find_map(|slot| {
                     if let StorageSlotContent::Map(map) = slot.content() {
@@ -494,9 +494,7 @@ impl DataStore for NtxDataStore {
                 Some(witness)
             };
 
-            map_witness.ok_or_else(|| {
-                DataStoreError::other("account storage does not contain the expected root")
-            })
+            witness.ok_or_else(|| DataStoreError::other("storage map witness not found"))
         }
     }
 

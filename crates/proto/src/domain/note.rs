@@ -14,7 +14,7 @@ use miden_protocol::note::{
     Nullifier,
 };
 use miden_protocol::utils::{Deserializable, Serializable};
-use miden_standards::note::NetworkAccountTarget;
+use miden_standards::note::{NetworkAccountTarget, NetworkAccountTargetError};
 use thiserror::Error;
 
 use super::account::NetworkAccountId;
@@ -282,7 +282,7 @@ impl TryFrom<Note> for SingleTargetNetworkNote {
         // Single-target network notes are identified by having a NetworkAccountTarget attachment
         let attachment = note.metadata().attachment();
         let account_target = NetworkAccountTarget::try_from(attachment)
-            .map_err(|e| NetworkNoteError::InvalidAttachment(e.to_string()))?;
+            .map_err(NetworkNoteError::InvalidAttachment)?;
         Ok(Self { note, account_target })
     }
 }
@@ -315,7 +315,7 @@ where
 #[derive(Debug, Error)]
 pub enum NetworkNoteError {
     #[error("note does not have a valid NetworkAccountTarget attachment: {0}")]
-    InvalidAttachment(String),
+    InvalidAttachment(#[source] NetworkAccountTargetError),
 }
 
 // NOTE SCRIPT

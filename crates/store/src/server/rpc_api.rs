@@ -12,7 +12,7 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::note::NoteId;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, instrument};
+use tracing::{debug, info};
 
 use crate::COMPONENT;
 use crate::errors::{
@@ -45,15 +45,6 @@ impl rpc_server::Rpc for StoreApi {
     /// Returns block header for the specified block number.
     ///
     /// If the block number is not provided, block header for the latest block is returned.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_block_header_by_number",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn get_block_header_by_number(
         &self,
         request: Request<proto::rpc::BlockHeaderByNumberRequest>,
@@ -65,15 +56,6 @@ impl rpc_server::Rpc for StoreApi {
     ///
     /// This endpoint also returns Merkle authentication path for each requested nullifier which can
     /// be verified against the latest root of the nullifier database.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.check_nullifiers",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn check_nullifiers(
         &self,
         request: Request<proto::rpc::NullifierList>,
@@ -97,15 +79,6 @@ impl rpc_server::Rpc for StoreApi {
     /// Returns nullifiers that match the specified prefixes and have been consumed.
     ///
     /// Currently the only supported prefix length is 16 bits.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.sync_nullifiers",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_nullifiers(
         &self,
         request: Request<proto::rpc::SyncNullifiersRequest>,
@@ -146,15 +119,6 @@ impl rpc_server::Rpc for StoreApi {
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain
     /// for the objects the client is interested in.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.sync_state",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_state(
         &self,
         request: Request<proto::rpc::SyncStateRequest>,
@@ -202,15 +166,6 @@ impl rpc_server::Rpc for StoreApi {
     }
 
     /// Returns info which can be used by the client to sync note state.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.sync_notes",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_notes(
         &self,
         request: Request<proto::rpc::SyncNotesRequest>,
@@ -245,15 +200,6 @@ impl rpc_server::Rpc for StoreApi {
     ///
     /// If the list is empty or no [`Note`] matched the requested [`NoteId`] and empty list is
     /// returned.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_notes_by_id",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn get_notes_by_id(
         &self,
         request: Request<proto::note::NoteIdList>,
@@ -281,15 +227,6 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(proto::note::CommittedNoteList { notes }))
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_block_by_number",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn get_block_by_number(
         &self,
         request: Request<proto::blockchain::BlockNumber>,
@@ -307,15 +244,6 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(proto::blockchain::MaybeBlock { block }))
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_account",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn get_account(
         &self,
         request: Request<proto::rpc::AccountRequest>,
@@ -329,15 +257,6 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(account_data.into()))
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.sync_account_vault",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_account_vault(
         &self,
         request: Request<proto::rpc::SyncAccountVaultRequest>,
@@ -387,15 +306,6 @@ impl rpc_server::Rpc for StoreApi {
     /// Returns storage map updates for the specified account within a block range.
     ///
     /// Supports cursor-based pagination for large storage maps.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.sync_storage_maps",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_storage_maps(
         &self,
         request: Request<proto::rpc::SyncStorageMapsRequest>,
@@ -441,15 +351,6 @@ impl rpc_server::Rpc for StoreApi {
         }))
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.status",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
     async fn status(
         &self,
         _request: Request<()>,
@@ -461,14 +362,6 @@ impl rpc_server::Rpc for StoreApi {
         }))
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_note_script_by_root",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,
@@ -488,14 +381,6 @@ impl rpc_server::Rpc for StoreApi {
         }))
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.sync_transactions",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_transactions(
         &self,
         request: Request<proto::rpc::SyncTransactionsRequest>,

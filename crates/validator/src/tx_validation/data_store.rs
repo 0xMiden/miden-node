@@ -53,34 +53,39 @@ impl DataStore for TransactionInputsDataStore {
         foreign_account_id: AccountId,
         _ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
-        async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
+        async move {
+            self.tx_inputs.read_foreign_account_inputs(foreign_account_id).map_err(|err| {
+                DataStoreError::other_with_source("failed to read foreign account inputs", err)
+            })
+        }
     }
 
     fn get_vault_asset_witnesses(
         &self,
         _account_id: AccountId,
-        _vault_root: Word,
-        _vault_keys: BTreeSet<AssetVaultKey>,
+        vault_root: Word,
+        vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
-        std::future::ready(Ok(vec![]))
+        async move {
+            // Retrieve native and foreign account asset witnesses from the advice inputs.
+            self.tx_inputs
+                .read_vault_asset_witnesses(vault_root, vault_keys)
+                .map_err(|err| {
+                    DataStoreError::other_with_source("failed to read vault asset witnesses", err)
+                })
+        }
     }
 
     fn get_storage_map_witness(
         &self,
-        account_id: AccountId,
+        _account_id: AccountId,
         _map_root: Word,
         _map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
-            if self.tx_inputs.account().id() != account_id {
-                return Err(DataStoreError::AccountNotFound(account_id));
-            }
-
-            // For partial accounts, storage map witness is not available.
-            Err(DataStoreError::Other {
-                error_msg: "storage map witness not available with partial account state".into(),
-                source: None,
-            })
+            unimplemented!(
+                "get_storage_map_witness is not used during re-execution of transactions"
+            )
         }
     }
 
@@ -88,7 +93,7 @@ impl DataStore for TransactionInputsDataStore {
         &self,
         _script_root: Word,
     ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
-        async move { Ok(None) }
+        async move { unimplemented!("get_note_script is not used during re-execution of transactions") }
     }
 }
 

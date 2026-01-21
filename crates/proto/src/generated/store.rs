@@ -223,6 +223,92 @@ pub struct CurrentBlockchainData {
     #[prost(message, optional, tag = "2")]
     pub current_block_header: ::core::option::Option<super::blockchain::BlockHeader>,
 }
+/// Request for vault asset witnesses for a specific account.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VaultAssetWitnessesRequest {
+    /// The account ID for which to retrieve vault asset witnesses.
+    #[prost(message, optional, tag = "1")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+    /// Set of asset vault keys to retrieve witnesses for.
+    #[prost(message, repeated, tag = "2")]
+    pub vault_keys: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    /// The witnesses returned correspond to the account state at the specified block number.
+    ///
+    /// Optional block number. If not provided, uses the latest state.
+    ///
+    /// The specified block number should be relatively near the chain tip else an error will be
+    /// returned.
+    #[prost(fixed32, optional, tag = "3")]
+    pub block_num: ::core::option::Option<u32>,
+}
+/// Response containing vault asset witnesses.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VaultAssetWitnessesResponse {
+    /// Block number at which the witnesses were generated.
+    ///
+    /// The witnesses returned corresponds to the account state at the specified block number.
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
+    /// List of asset witnesses.
+    #[prost(message, repeated, tag = "2")]
+    pub asset_witnesses: ::prost::alloc::vec::Vec<
+        vault_asset_witnesses_response::VaultAssetWitness,
+    >,
+}
+/// Nested message and enum types in `VaultAssetWitnessesResponse`.
+pub mod vault_asset_witnesses_response {
+    /// A vault asset witness containing the asset and its proof.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct VaultAssetWitness {
+        /// The SMT opening proof for the asset's inclusion in the vault.
+        #[prost(message, optional, tag = "1")]
+        pub proof: ::core::option::Option<super::super::primitives::SmtOpening>,
+    }
+}
+/// Request for a storage map witness for a specific account and storage slot.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StorageMapWitnessRequest {
+    /// The account ID for which to retrieve the storage map witness.
+    #[prost(message, optional, tag = "1")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+    /// The raw, user-provided storage map key for which to retrieve the witness.
+    #[prost(message, optional, tag = "2")]
+    pub map_key: ::core::option::Option<super::primitives::Digest>,
+    /// Optional block number. If not provided, uses the latest state.
+    ///
+    /// The witness returned corresponds to the account state at the specified block number.
+    ///
+    /// The specified block number should be relatively near the chain tip else an error will be
+    /// returned.
+    #[prost(fixed32, optional, tag = "3")]
+    pub block_num: ::core::option::Option<u32>,
+    /// The storage slot name for the map.
+    #[prost(string, tag = "4")]
+    pub slot_name: ::prost::alloc::string::String,
+}
+/// Response containing a storage map witness.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StorageMapWitnessResponse {
+    /// The storage map witness.
+    #[prost(message, optional, tag = "1")]
+    pub witness: ::core::option::Option<storage_map_witness_response::StorageWitness>,
+    /// Block number at which the witness was generated.
+    #[prost(fixed32, tag = "2")]
+    pub block_num: u32,
+}
+/// Nested message and enum types in `StorageMapWitnessResponse`.
+pub mod storage_map_witness_response {
+    /// Storage map witness data.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct StorageWitness {
+        /// The raw, user-provided storage map key.
+        #[prost(message, optional, tag = "1")]
+        pub key: ::core::option::Option<super::super::primitives::Digest>,
+        /// The SMT opening proof for the key-value pair.
+        #[prost(message, optional, tag = "3")]
+        pub proof: ::core::option::Option<super::super::primitives::SmtOpening>,
+    }
+}
 /// Generated client implementations.
 pub mod rpc_client {
     #![allow(
@@ -2400,6 +2486,56 @@ pub mod ntx_builder_client {
                 .insert(GrpcMethod::new("store.NtxBuilder", "GetNoteScriptByRoot"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns vault asset witnesses for the specified account.
+        pub async fn get_vault_asset_witnesses(
+            &mut self,
+            request: impl tonic::IntoRequest<super::VaultAssetWitnessesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::VaultAssetWitnessesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/store.NtxBuilder/GetVaultAssetWitnesses",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("store.NtxBuilder", "GetVaultAssetWitnesses"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Returns a storage map witness for the specified account and storage map entry.
+        pub async fn get_storage_map_witness(
+            &mut self,
+            request: impl tonic::IntoRequest<super::StorageMapWitnessRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::StorageMapWitnessResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/store.NtxBuilder/GetStorageMapWitness",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("store.NtxBuilder", "GetStorageMapWitness"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2464,6 +2600,22 @@ pub mod ntx_builder_server {
             request: tonic::Request<super::super::note::NoteRoot>,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc::MaybeNoteScript>,
+            tonic::Status,
+        >;
+        /// Returns vault asset witnesses for the specified account.
+        async fn get_vault_asset_witnesses(
+            &self,
+            request: tonic::Request<super::VaultAssetWitnessesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::VaultAssetWitnessesResponse>,
+            tonic::Status,
+        >;
+        /// Returns a storage map witness for the specified account and storage map entry.
+        async fn get_storage_map_witness(
+            &self,
+            request: tonic::Request<super::StorageMapWitnessRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::StorageMapWitnessResponse>,
             tonic::Status,
         >;
     }
@@ -2825,6 +2977,101 @@ pub mod ntx_builder_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNoteScriptByRootSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/store.NtxBuilder/GetVaultAssetWitnesses" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetVaultAssetWitnessesSvc<T: NtxBuilder>(pub Arc<T>);
+                    impl<
+                        T: NtxBuilder,
+                    > tonic::server::UnaryService<super::VaultAssetWitnessesRequest>
+                    for GetVaultAssetWitnessesSvc<T> {
+                        type Response = super::VaultAssetWitnessesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::VaultAssetWitnessesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as NtxBuilder>::get_vault_asset_witnesses(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetVaultAssetWitnessesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/store.NtxBuilder/GetStorageMapWitness" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetStorageMapWitnessSvc<T: NtxBuilder>(pub Arc<T>);
+                    impl<
+                        T: NtxBuilder,
+                    > tonic::server::UnaryService<super::StorageMapWitnessRequest>
+                    for GetStorageMapWitnessSvc<T> {
+                        type Response = super::StorageMapWitnessResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::StorageMapWitnessRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as NtxBuilder>::get_storage_map_witness(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetStorageMapWitnessSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

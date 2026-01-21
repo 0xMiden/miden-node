@@ -1,12 +1,19 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
 use miden_protocol::account::delta::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
-use miden_protocol::account::{AccountId, NonFungibleDeltaAction, StorageSlotName};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::account::{
+    AccountId,
+    NonFungibleDeltaAction,
+    StorageMap,
+    StorageMapWitness,
+    StorageSlotName,
+};
+use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::{SMT_DEPTH, SmtForest};
 use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
+use miden_protocol::errors::{AssetError, StorageMapError};
 use miden_protocol::{EMPTY_WORD, Word};
 use thiserror::Error;
 
@@ -28,6 +35,18 @@ pub enum InnerForestError {
         prev_balance: u64,
         delta: i64,
     },
+}
+
+#[derive(Debug, Error)]
+pub enum WitnessError {
+    #[error("root not found")]
+    RootNotFound,
+    #[error("merkle error")]
+    MerkleError(#[from] MerkleError),
+    #[error("storage map error")]
+    StorageMapError(#[from] StorageMapError),
+    #[error("failed to construct asset")]
+    AssetError(#[from] AssetError),
 }
 
 // INNER FOREST
@@ -123,24 +142,74 @@ impl InnerForest {
             .map_or_else(Self::empty_smt_root, |(_, root)| *root)
     }
 
-    /// Retrieves the vault SMT root for an account at or before the given block.
-    /// Retrieves the storage map SMT root for an account slot at or before the given block.
-    ///
-    /// Finds the most recent storage root entry for the slot, since storage state persists
-    /// across blocks where no changes occur.
-    pub(crate) fn get_storage_root(
+    /// Retrieves a vault root for the specified account at or before the specified block.
+    pub(crate) fn get_vault_root(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Option<Word> {
+        self.vault_roots
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, block_num))
+            .next_back()
+            .map(|(_, root)| *root)
+    }
+
+    /// Retrieves the storage map root for an account slot at or before the specified block.
+    pub(crate) fn get_storage_map_root(
         &self,
         account_id: AccountId,
         slot_name: &StorageSlotName,
         block_num: BlockNumber,
-    ) -> Word {
+    ) -> Option<Word> {
         self.storage_map_roots
             .range(
                 (account_id, slot_name.clone(), BlockNumber::GENESIS)
                     ..=(account_id, slot_name.clone(), block_num),
             )
             .next_back()
-            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+            .map(|(_, root)| *root)
+    }
+
+    /// Retrieves a storage map witness for the specified account and storage slot.
+    ///
+    /// Finds the most recent witness at or before the specified block number.
+    ///
+    /// Note that the `raw_key` is the raw, user-provided key that needs to be hashed in order to
+    /// get the actual key into the storage map.
+    pub(crate) fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+        block_num: BlockNumber,
+        raw_key: Word,
+    ) -> Result<StorageMapWitness, WitnessError> {
+        let key = StorageMap::hash_key(raw_key);
+        let root = self
+            .get_storage_map_root(account_id, slot_name, block_num)
+            .ok_or(WitnessError::RootNotFound)?;
+        let proof = self.forest.open(root, key)?;
+
+        Ok(StorageMapWitness::new(proof, vec![raw_key])?)
+    }
+
+    /// Retrieves a vault asset witnesses for the specified account and asset keys at the specified
+    /// block number.
+    pub fn get_vault_asset_witnesses(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        asset_keys: BTreeSet<AssetVaultKey>,
+    ) -> Result<Vec<AssetWitness>, WitnessError> {
+        let root = self.get_vault_root(account_id, block_num).ok_or(WitnessError::RootNotFound)?;
+        let witnessees = asset_keys
+            .into_iter()
+            .map(|key| {
+                let proof = self.forest.open(root, key.into())?;
+                let asset = AssetWitness::new(proof)?;
+                Ok(asset)
+            })
+            .collect::<Result<Vec<_>, WitnessError>>()?;
+        Ok(witnessees)
     }
 
     /// Opens a storage map and returns storage map details with SMT proofs for the given keys.
@@ -155,16 +224,11 @@ impl InnerForest {
         account_id: AccountId,
         slot_name: StorageSlotName,
         block_num: BlockNumber,
-        keys: &[Word],
+        raw_keys: &[Word],
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
-        let root = self.get_storage_root(account_id, &slot_name, block_num);
+        let root = self.get_storage_map_root(account_id, &slot_name, block_num)?;
 
-        // Empty root means no storage map exists for this account/slot
-        if root == Self::empty_smt_root() {
-            return None;
-        }
-
-        if keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
+        if raw_keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
             return Some(Ok(AccountStorageMapDetails {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,
@@ -172,7 +236,10 @@ impl InnerForest {
         }
 
         // Collect SMT proofs for each key
-        let proofs = Result::from_iter(keys.iter().map(|key| self.forest.open(root, *key)));
+        let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {
+            let key = StorageMap::hash_key(*raw_key);
+            self.forest.open(root, key)
+        }));
 
         Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
     }

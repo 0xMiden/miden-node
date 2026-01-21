@@ -31,7 +31,7 @@ use tonic::Status;
 
 use crate::db::manager::ConnectionManagerError;
 use crate::db::models::conv::DatabaseTypeConversionError;
-use crate::inner_forest::InnerForestError;
+use crate::inner_forest::{InnerForestError, WitnessError};
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -534,6 +534,16 @@ pub enum SyncTransactionsError {
     DeserializationFailed(#[from] ConversionError),
     #[error("account {0} not found")]
     AccountNotFound(AccountId),
+    #[error("failed to retrieve witness")]
+    WitnessError(#[from] WitnessError),
+}
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetWitnessesError {
+    #[error("malformed request")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("failed to retrieve witness")]
+    WitnessError(#[from] WitnessError),
 }
 
 // SCHEMA VERIFICATION ERRORS

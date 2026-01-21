@@ -1,31 +1,25 @@
-use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
 use miden_node_utils::limiter::{QueryParamLimiter, QueryParamStorageMapKeyTotalLimit};
+use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
-    AccountCode,
     AccountHeader,
     AccountId,
-    AccountStorage,
     AccountStorageHeader,
-    PartialAccount,
-    PartialStorage,
     StorageMap,
-    StorageSlot,
     StorageSlotHeader,
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, PartialVault};
+use miden_protocol::asset::{Asset, AssetVault};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::crypto::merkle::SparseMerklePath;
-use miden_protocol::crypto::merkle::smt::{SmtLeaf, SmtProof};
+use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::NoteAttachment;
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
-use miden_protocol::{Word, ZERO};
 use miden_standards::note::NetworkAccountTarget;
 use thiserror::Error;
 
@@ -838,104 +832,6 @@ impl From<AccountDetails> for proto::rpc::account_response::AccountDetails {
             code,
             vault_details,
         }
-    }
-}
-
-impl TryFrom<&AccountDetails> for PartialAccount {
-    type Error = ConversionError;
-
-    fn try_from(account_details: &AccountDetails) -> Result<Self, Self::Error> {
-        // Derive account code.
-        let account_code = account_details
-            .account_code
-            .as_ref()
-            .ok_or(ConversionError::AccountCodeMissing)?;
-        let account_code = AccountCode::from_bytes(account_code)?;
-
-        // Derive partial storage.
-        let account_storage = {
-            // Build storage slots from header and map details.
-            let mut slots = Vec::new();
-
-            // Create a lookup map for storage map details by slot name.
-            let mut map_details_by_name = HashMap::new();
-            for map_detail in &account_details.storage_details.map_details {
-                map_details_by_name.insert(map_detail.slot_name.clone(), map_detail);
-            }
-
-            // Process each slot from the header.
-            // TODO(sergerad): Add AccountStorageHeader::into_iter() to avoid clones.
-            for slot_header in account_details.storage_details.header.slots() {
-                let slot = match slot_header.slot_type() {
-                    StorageSlotType::Value => {
-                        // For value slots, the header value IS the slot value.
-                        StorageSlot::with_value(slot_header.name().clone(), slot_header.value())
-                    },
-                    StorageSlotType::Map => {
-                        // For map slots, reconstruct from map details if available.
-                        if let Some(map_detail) = map_details_by_name.get(slot_header.name()) {
-                            match &map_detail.entries {
-                                StorageMapEntries::AllEntries(entries) => {
-                                    let storage_map =
-                                        StorageMap::with_entries(entries.iter().copied())?;
-                                    StorageSlot::with_map(slot_header.name().clone(), storage_map)
-                                },
-                                StorageMapEntries::EntriesWithProofs(proofs) => {
-                                    // Extract key-value pairs from proofs.
-                                    let entries: Vec<(Word, Word)> = proofs
-                                        .iter()
-                                        .flat_map(|proof| match proof.leaf() {
-                                            SmtLeaf::Empty(_) => Vec::new(),
-                                            SmtLeaf::Single((key, value)) => vec![(*key, *value)],
-                                            SmtLeaf::Multiple(entries) => entries.clone(),
-                                        })
-                                        .collect();
-                                    let storage_map =
-                                        StorageMap::with_entries(entries.iter().copied())?;
-                                    StorageSlot::with_map(slot_header.name().clone(), storage_map)
-                                },
-                                StorageMapEntries::LimitExceeded => {
-                                    // Create empty map when limit is exceeded
-                                    let storage_map = StorageMap::with_entries(std::iter::empty())?;
-                                    StorageSlot::with_map(slot_header.name().clone(), storage_map)
-                                },
-                            }
-                        } else {
-                            // No map details available, create empty map.
-                            let storage_map = StorageMap::with_entries(std::iter::empty())?;
-                            StorageSlot::with_map(slot_header.name().clone(), storage_map)
-                        }
-                    },
-                };
-                slots.push(slot);
-            }
-
-            AccountStorage::new(slots)?
-        };
-        let partial_storage = if account_details.account_header.nonce() == ZERO {
-            PartialStorage::new_full(account_storage)
-        } else {
-            PartialStorage::new_minimal(&account_storage)
-        };
-
-        // Derive partial vault.
-        let assets = match &account_details.vault_details {
-            AccountVaultDetails::LimitExceeded => Err(ConversionError::AssetVaultLimitExceeded),
-            AccountVaultDetails::Assets(assets) => Ok(assets),
-        }?;
-        let asset_vault = AssetVault::new(assets)?;
-        let partial_vault = PartialVault::new_minimal(&asset_vault);
-
-        // Construct partial account.
-        let partial_account = PartialAccount::new(
-            account_details.account_header.id(),
-            account_details.account_header.nonce(),
-            account_code,
-            partial_storage,
-            partial_vault,
-            None, // TODO(currentpr): Seed?
-        )?;
-        Ok(partial_account)
     }
 }
 

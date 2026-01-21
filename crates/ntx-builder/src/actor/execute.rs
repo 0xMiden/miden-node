@@ -2,21 +2,29 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use miden_node_proto::clients::ValidatorClient;
-use miden_node_proto::domain::account::{AccountDetailRequest, AccountRequest};
+use miden_node_proto::domain::account::{
+    AccountDetailRequest,
+    AccountDetails,
+    AccountRequest,
+    AccountVaultDetails,
+};
+use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountId,
     PartialAccount,
+    PartialStorage,
     StorageMapWitness,
     StorageSlotContent,
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript};
@@ -417,9 +425,10 @@ impl DataStore for NtxDataStore {
                     storage_requests: vec![],
                 }),
             };
-            let account_response = store.get_account(account_request).await.map_err(|err| {
-                DataStoreError::other_with_source("failed to get account proof from store", err)
-            })?;
+            let account_response =
+                store.get_account_inputs(account_request).await.map_err(|err| {
+                    DataStoreError::other_with_source("failed to get account proof from store", err)
+                })?;
 
             // Construct account from account proof account details.
             let account_details = account_response.details.ok_or_else(|| {
@@ -436,12 +445,13 @@ impl DataStore for NtxDataStore {
                 }
             }
 
-            let partial_account = PartialAccount::try_from(&account_details).map_err(|err| {
-                DataStoreError::other_with_source(
-                    "failed to construct partial account from account details",
-                    err,
-                )
-            })?;
+            let partial_account =
+                build_minimal_foreign_account(&account_details).map_err(|err| {
+                    DataStoreError::other_with_source(
+                        "failed to construct partial account from account details",
+                        err,
+                    )
+                })?;
 
             // Return partial account and witness.
             Ok(AccountInputs::new(partial_account, account_response.witness))
@@ -578,4 +588,41 @@ fn get_asset_witnesses(
             source: Some(Box::new(err)),
         })
     }))
+}
+
+/// Builds a minimal foreign account from the provided account details.
+///
+/// The account's partial storage does not contain storage maps as these are not required by the NTX
+/// Builder.
+fn build_minimal_foreign_account(
+    account_details: &AccountDetails,
+) -> Result<PartialAccount, ConversionError> {
+    // Derive account code.
+    let account_code = account_details
+        .account_code
+        .as_ref()
+        .ok_or(ConversionError::AccountCodeMissing)?;
+    let account_code = AccountCode::from_bytes(account_code)?;
+
+    // Derive partial storage. Storage maps are not required for foreign accounts.
+    let partial_storage = PartialStorage::new(account_details.storage_details.header.clone(), [])?;
+
+    // Derive partial vault.
+    let assets = match &account_details.vault_details {
+        AccountVaultDetails::LimitExceeded => Err(ConversionError::AssetVaultLimitExceeded),
+        AccountVaultDetails::Assets(assets) => Ok(assets),
+    }?;
+    let asset_vault = AssetVault::new(assets)?;
+    let partial_vault = PartialVault::new_minimal(&asset_vault);
+
+    // Construct partial account.
+    let partial_account = PartialAccount::new(
+        account_details.account_header.id(),
+        account_details.account_header.nonce(),
+        account_code,
+        partial_storage,
+        partial_vault,
+        None,
+    )?;
+    Ok(partial_account)
 }

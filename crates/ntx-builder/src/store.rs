@@ -143,7 +143,7 @@ impl StoreClient {
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_account", skip_all, err)]
-    pub async fn get_account(
+    pub async fn get_account_inputs(
         &self,
         request: AccountRequest,
     ) -> Result<AccountResponse, StoreError> {

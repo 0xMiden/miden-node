@@ -25,7 +25,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
-use tracing::{debug, info, instrument};
+use tracing::{debug, info};
 use url::Url;
 
 use crate::COMPONENT;
@@ -154,14 +154,6 @@ impl RpcService {
 
 #[tonic::async_trait]
 impl api_server::Api for RpcService {
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.check_nullifiers",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn check_nullifiers(
         &self,
         request: Request<proto::rpc::NullifierList>,
@@ -180,14 +172,6 @@ impl api_server::Api for RpcService {
         self.store.clone().check_nullifiers(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.sync_nullifiers",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_nullifiers(
         &self,
         request: Request<proto::rpc::SyncNullifiersRequest>,
@@ -199,14 +183,6 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_nullifiers(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_block_header_by_number",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_block_header_by_number(
         &self,
         request: Request<proto::rpc::BlockHeaderByNumberRequest>,
@@ -216,14 +192,6 @@ impl api_server::Api for RpcService {
         self.store.clone().get_block_header_by_number(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.sync_state",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_state(
         &self,
         request: Request<proto::rpc::SyncStateRequest>,
@@ -236,14 +204,6 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_state(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.sync_storage_maps",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_storage_maps(
         &self,
         request: Request<proto::rpc::SyncStorageMapsRequest>,
@@ -253,14 +213,6 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_storage_maps(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.sync_notes",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_notes(
         &self,
         request: Request<proto::rpc::SyncNotesRequest>,
@@ -272,14 +224,6 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_notes(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_notes_by_id",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_notes_by_id(
         &self,
         request: Request<proto::note::NoteIdList>,
@@ -301,14 +245,6 @@ impl api_server::Api for RpcService {
         self.store.clone().get_notes_by_id(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.sync_account_vault",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_account_vault(
         &self,
         request: tonic::Request<proto::rpc::SyncAccountVaultRequest>,
@@ -319,7 +255,6 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_account_vault(request).await
     }
 
-    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
     async fn submit_proven_transaction(
         &self,
         request: Request<proto::transaction::ProvenTransaction>,
@@ -360,7 +295,7 @@ impl api_server::Api for RpcService {
                 let script = NoteScript::from_parts(mast, note.script().entrypoint());
                 let recipient =
                     NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
-                let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
+                let new_note = Note::new(note.assets().clone(), note.metadata().clone(), recipient);
                 OutputNote::Full(new_note)
             },
             other => other.clone(),
@@ -398,7 +333,6 @@ impl api_server::Api for RpcService {
         block_producer.clone().submit_proven_transaction(request).await
     }
 
-    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_batch", skip_all, err)]
     async fn submit_proven_batch(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
@@ -423,7 +357,8 @@ impl api_server::Api for RpcService {
                     let script = NoteScript::from_parts(mast, note.script().entrypoint());
                     let recipient =
                         NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
-                    let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
+                    let new_note =
+                        Note::new(note.assets().clone(), note.metadata().clone(), recipient);
                     OutputNote::Full(new_note)
                 },
                 other => other.clone(),
@@ -456,14 +391,6 @@ impl api_server::Api for RpcService {
         block_producer.clone().submit_proven_batch(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_block_by_number",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_block_by_number(
         &self,
         request: Request<proto::blockchain::BlockNumber>,
@@ -475,14 +402,6 @@ impl api_server::Api for RpcService {
         self.store.clone().get_block_by_number(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_account",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_account(
         &self,
         request: Request<proto::rpc::AccountRequest>,
@@ -513,14 +432,6 @@ impl api_server::Api for RpcService {
         self.store.clone().get_account(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.status",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn status(
         &self,
         request: Request<()>,
@@ -557,14 +468,6 @@ impl api_server::Api for RpcService {
         }))
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_note_script_by_root",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,
@@ -574,14 +477,6 @@ impl api_server::Api for RpcService {
         self.store.clone().get_note_script_by_root(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.sync_transactions",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn sync_transactions(
         &self,
         request: Request<proto::rpc::SyncTransactionsRequest>,
@@ -591,14 +486,6 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_transactions(request).await
     }
 
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_limits",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
     async fn get_limits(
         &self,
         request: Request<()>,

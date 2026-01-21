@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, QueryableByName, RunQueryDsl, SqliteConnection};
-use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
+use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
@@ -668,7 +668,7 @@ impl Db {
     /// Pagination is used to limit the number of notes returned.
     pub(crate) async fn select_unconsumed_network_notes(
         &self,
-        network_account_id_prefix: NetworkAccountPrefix,
+        network_account_prefix: u32,
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
@@ -678,7 +678,7 @@ impl Db {
         self.transact("unconsumed network notes for account", move |conn| {
             models::queries::select_unconsumed_network_notes_by_tag(
                 conn,
-                network_account_id_prefix.into(),
+                network_account_prefix,
                 block_num,
                 page,
             )

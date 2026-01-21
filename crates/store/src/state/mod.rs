@@ -17,7 +17,6 @@ use miden_node_proto::domain::account::{
     AccountStorageDetails,
     AccountStorageMapDetails,
     AccountVaultDetails,
-    NetworkAccountPrefix,
     SlotData,
     StorageMapRequest,
 };
@@ -25,8 +24,9 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
 use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{AccountId, StorageMapWitness, StorageSlotName};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
@@ -62,7 +62,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::inner_forest::InnerForest;
+use crate::inner_forest::{InnerForest, WitnessError};
 use crate::{COMPONENT, DataDirectory};
 
 mod loader;
@@ -365,7 +365,7 @@ impl State {
                     note_index,
                     note_id: note.id().as_word(),
                     note_commitment: note.commitment(),
-                    metadata: *note.metadata(),
+                    metadata: note.metadata().clone(),
                     details,
                     inclusion_path,
                 };
@@ -1205,12 +1205,12 @@ impl State {
     /// along with the next pagination token.
     pub async fn get_unconsumed_network_notes_for_account(
         &self,
-        network_account_id_prefix: NetworkAccountPrefix,
+        network_account_prefix: u32,
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db
-            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
+            .select_unconsumed_network_notes(network_account_prefix, block_num, page)
             .await
     }
 
@@ -1230,5 +1230,40 @@ impl State {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
         self.db.select_transactions_records(account_ids, block_range).await
+    }
+
+    /// Returns vault asset witnesses for the specified account and block number.
+    pub async fn get_vault_asset_witnesses(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        vault_keys: BTreeSet<AssetVaultKey>,
+    ) -> Result<Vec<AssetWitness>, WitnessError> {
+        let witnesses = self
+            .forest
+            .read()
+            .await
+            .get_vault_asset_witnesses(account_id, block_num, vault_keys)?;
+        Ok(witnesses)
+    }
+
+    /// Returns a storage map witness for the specified account and storage entry at the block
+    /// number.
+    ///
+    /// Note that the `raw_key` is the raw, user-provided key that needs to be hashed in order to
+    /// get the actual key into the storage map.
+    pub async fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+        block_num: BlockNumber,
+        raw_key: Word,
+    ) -> Result<StorageMapWitness, WitnessError> {
+        let witness = self
+            .forest
+            .read()
+            .await
+            .get_storage_map_witness(account_id, slot_name, block_num, raw_key)?;
+        Ok(witness)
     }
 }

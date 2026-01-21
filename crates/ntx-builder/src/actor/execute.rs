@@ -2,29 +2,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use miden_node_proto::clients::ValidatorClient;
-use miden_node_proto::domain::account::{
-    AccountDetailRequest,
-    AccountDetails,
-    AccountRequest,
-    AccountVaultDetails,
-};
-use miden_node_proto::errors::ConversionError;
+use miden_node_proto::domain::account::{AccountDetailRequest, AccountRequest};
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
-    AccountCode,
     AccountId,
     PartialAccount,
-    PartialStorage,
     StorageMapWitness,
     StorageSlotContent,
     StorageSlotName,
-    StorageSlotType,
 };
-use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness, PartialVault};
+use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript};
@@ -425,36 +416,12 @@ impl DataStore for NtxDataStore {
                     storage_requests: vec![],
                 }),
             };
-            let account_response =
+            let account_inputs =
                 store.get_account_inputs(account_request).await.map_err(|err| {
-                    DataStoreError::other_with_source("failed to get account proof from store", err)
+                    DataStoreError::other_with_source("failed to get account inputs", err)
                 })?;
 
-            // Construct account from account proof account details.
-            let account_details = account_response.details.ok_or_else(|| {
-                DataStoreError::other("account proof does not contain account details")
-            })?;
-
-            // Register storage slots for the account.
-            for slot in account_details.storage_details.header.slots() {
-                if let StorageSlotType::Map = slot.slot_type() {
-                    self.storage_slots
-                        .lock()
-                        .await
-                        .insert((foreign_account_id, slot.value()), slot.name().clone());
-                }
-            }
-
-            let partial_account =
-                build_minimal_foreign_account(&account_details).map_err(|err| {
-                    DataStoreError::other_with_source(
-                        "failed to construct partial account from account details",
-                        err,
-                    )
-                })?;
-
-            // Return partial account and witness.
-            Ok(AccountInputs::new(partial_account, account_response.witness))
+            Ok(account_inputs)
         }
     }
 
@@ -588,41 +555,4 @@ fn get_asset_witnesses(
             source: Some(Box::new(err)),
         })
     }))
-}
-
-/// Builds a minimal foreign account from the provided account details.
-///
-/// The account's partial storage does not contain storage maps and the partial vault is constructed
-/// from the asset vault root only.
-fn build_minimal_foreign_account(
-    account_details: &AccountDetails,
-) -> Result<PartialAccount, ConversionError> {
-    // Derive account code.
-    let account_code = account_details
-        .account_code
-        .as_ref()
-        .ok_or(ConversionError::AccountCodeMissing)?;
-    let account_code = AccountCode::from_bytes(account_code)?;
-
-    // Derive partial storage. Storage maps are not required for foreign accounts.
-    let partial_storage = PartialStorage::new(account_details.storage_details.header.clone(), [])?;
-
-    // Derive partial vault.
-    let assets = match &account_details.vault_details {
-        AccountVaultDetails::LimitExceeded => Err(ConversionError::AssetVaultLimitExceeded),
-        AccountVaultDetails::Assets(assets) => Ok(assets),
-    }?;
-    let asset_vault = AssetVault::new(assets)?;
-    let partial_vault = PartialVault::new(asset_vault.root());
-
-    // Construct partial account.
-    let partial_account = PartialAccount::new(
-        account_details.account_header.id(),
-        account_details.account_header.nonce(),
-        account_code,
-        partial_storage,
-        partial_vault,
-        None,
-    )?;
-    Ok(partial_account)
 }

@@ -2,7 +2,7 @@ use std::collections::{ BTreeSet};
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
-use miden_node_proto::domain::account::{AccountRequest, AccountResponse,  SlotData};
+use miden_node_proto::domain::account::{AccountDetails, AccountRequest, AccountResponse, AccountVaultDetails, SlotData};
 use miden_node_proto::domain::account::NetworkAccountId;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
@@ -12,9 +12,10 @@ use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::rpc::account_request::account_detail_request::StorageMapDetailRequest;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
+use miden_protocol::transaction::AccountInputs;
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountId, StorageMapWitness, StorageSlotName};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::account::{Account, AccountCode, AccountId, PartialAccount, PartialStorage, StorageMapWitness, StorageSlotName};
+use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
@@ -24,7 +25,7 @@ use thiserror::Error;
 use tracing::{info, instrument};
 use url::Url;
 
-use crate::COMPONENT;
+use crate::{COMPONENT};
 
 // STORE CLIENT
 // ================================================================================================
@@ -146,7 +147,7 @@ impl StoreClient {
     pub async fn get_account_inputs(
         &self,
         request: AccountRequest,
-    ) -> Result<AccountResponse, StoreError> {
+    ) -> Result<AccountInputs, StoreError> {
         // Convert domain to proto type.
         let proto_request = proto::rpc::AccountRequest {
             account_id: Some(proto::account::AccountId { id: request.account_id.to_bytes() }),
@@ -173,10 +174,18 @@ impl StoreClient {
         };
 
         // Make the gRPC call.
-        let response = self.inner.clone().get_account(proto_request).await?.into_inner();
+        let proto_response = self.inner.clone().get_account(proto_request).await?.into_inner();
 
-        // Convert proto AccountResponse to domain AccountResponse
-        AccountResponse::try_from(response).map_err(StoreError::DeserializationError)
+        let account_response =
+            AccountResponse::try_from(proto_response).map_err(StoreError::DeserializationError)?;
+
+        // Build partial account.
+        let account_details = account_response
+            .details
+            .ok_or(StoreError::MissingDetails("account details".into()))?;
+        let partial_account = build_minimal_foreign_account(&account_details)?;
+
+        Ok(AccountInputs::new(partial_account, account_response.witness))
     }
 
     /// Returns the list of unconsumed network notes for a specific network account up to a
@@ -391,4 +400,46 @@ pub enum StoreError {
     DeserializationError(#[from] ConversionError),
     #[error("max iterations reached: {0}")]
     MaxIterationsReached(String),
+    #[error("missing details: {0}")]
+    MissingDetails(String),
+}
+
+// HELPERS
+// =================================================================================================
+
+/// Builds a minimal foreign account from the provided account details.
+///
+/// The account's partial storage does not contain storage maps and the partial vault is constructed
+/// from the asset vault root only.
+pub fn build_minimal_foreign_account(
+    account_details: &AccountDetails,
+) -> Result<PartialAccount, ConversionError> {
+    // Derive account code.
+    let account_code = account_details
+        .account_code
+        .as_ref()
+        .ok_or(ConversionError::AccountCodeMissing)?;
+    let account_code = AccountCode::from_bytes(account_code)?;
+
+    // Derive partial storage. Storage maps are not required for foreign accounts.
+    let partial_storage = PartialStorage::new(account_details.storage_details.header.clone(), [])?;
+
+    // Derive partial vault.
+    let assets = match &account_details.vault_details {
+        AccountVaultDetails::LimitExceeded => Err(ConversionError::AssetVaultLimitExceeded),
+        AccountVaultDetails::Assets(assets) => Ok(assets),
+    }?;
+    let asset_vault = AssetVault::new(assets)?;
+    let partial_vault = PartialVault::new(asset_vault.root());
+
+    // Construct partial account.
+    let partial_account = PartialAccount::new(
+        account_details.account_header.id(),
+        account_details.account_header.nonce(),
+        account_code,
+        partial_storage,
+        partial_vault,
+        None,
+    )?;
+    Ok(partial_account)
 }

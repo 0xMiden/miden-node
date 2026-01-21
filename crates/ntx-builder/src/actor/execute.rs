@@ -9,9 +9,9 @@ use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
     AccountId,
+    AccountStorageHeader,
     PartialAccount,
     StorageMapWitness,
-    StorageSlotContent,
     StorageSlotName,
     StorageSlotType,
 };
@@ -361,6 +361,24 @@ impl NtxDataStore {
             storage_slots: Arc::new(Mutex::new(BTreeMap::default())),
         }
     }
+
+    /// Registers storage map slots names for the given account ID and storage header.
+    ///
+    /// These slot names are subsequently used to query for storage map witnesses against the store.
+    async fn register_storage_map_slots(
+        &self,
+        account_id: AccountId,
+        storage_header: &AccountStorageHeader,
+    ) {
+        for slot_header in storage_header.slots() {
+            if let StorageSlotType::Map = slot_header.slot_type() {
+                self.storage_slots
+                    .lock()
+                    .await
+                    .insert((account_id, slot_header.value()), slot_header.name().clone());
+            }
+        }
+    }
 }
 
 impl DataStore for NtxDataStore {
@@ -382,15 +400,8 @@ impl DataStore for NtxDataStore {
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
 
-            // Register storage slots for the account.
-            for slot in self.account.storage().slots() {
-                if let StorageSlotContent::Map(map) = slot.content() {
-                    self.storage_slots
-                        .lock()
-                        .await
-                        .insert((account_id, map.root()), slot.name().clone());
-                }
-            }
+            self.register_storage_map_slots(account_id, &self.account.storage().to_header())
+                .await;
 
             let partial_account = PartialAccount::from(&self.account);
 
@@ -411,15 +422,8 @@ impl DataStore for NtxDataStore {
                     |err| DataStoreError::other_with_source("failed to get account inputs", err),
                 )?;
 
-            // Register storage slots for the account.
-            for slot_header in account_inputs.storage().header().slots() {
-                if let StorageSlotType::Map = slot_header.slot_type() {
-                    self.storage_slots.lock().await.insert(
-                        (foreign_account_id, slot_header.value()),
-                        slot_header.name().clone(),
-                    );
-                }
-            }
+            self.register_storage_map_slots(foreign_account_id, account_inputs.storage().header())
+                .await;
 
             Ok(account_inputs)
         }

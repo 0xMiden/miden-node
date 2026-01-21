@@ -592,8 +592,8 @@ fn get_asset_witnesses(
 
 /// Builds a minimal foreign account from the provided account details.
 ///
-/// The account's partial storage does not contain storage maps as these are not required by the NTX
-/// Builder.
+/// The account's partial storage does not contain storage maps and the partial vault is constructed
+/// from the asset vault root only.
 fn build_minimal_foreign_account(
     account_details: &AccountDetails,
 ) -> Result<PartialAccount, ConversionError> {
@@ -613,7 +613,7 @@ fn build_minimal_foreign_account(
         AccountVaultDetails::Assets(assets) => Ok(assets),
     }?;
     let asset_vault = AssetVault::new(assets)?;
-    let partial_vault = PartialVault::new_minimal(&asset_vault);
+    let partial_vault = PartialVault::new(asset_vault.root());
 
     // Construct partial account.
     let partial_account = PartialAccount::new(

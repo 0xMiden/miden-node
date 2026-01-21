@@ -278,8 +278,6 @@ pub struct StorageMapWitnessRequest {
     ///
     /// The witness returned corresponds to the account state at the specified block number.
     ///
-    /// Optional block number. If not provided, uses the latest state.
-    ///
     /// The specified block number should be relatively near the chain tip else an error will be
     /// returned.
     #[prost(fixed32, optional, tag = "3")]

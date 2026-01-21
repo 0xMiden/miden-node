@@ -22,12 +22,14 @@
 - Added `GetLimits` endpoint to the RPC server ([#1410](https://github.com/0xMiden/miden-node/pull/1410)).
 - Added gRPC-Web probe support to the `miden-network-monitor` binary ([#1484](https://github.com/0xMiden/miden-node/pull/1484)).
 - Add DB schema change check ([#1268](https://github.com/0xMiden/miden-node/pull/1485)).
+- Add foreign account support to validator ([#1493](https://github.com/0xMiden/miden-node/pull/1493)).
 - Improve DB query performance for account queries ([#1496](https://github.com/0xMiden/miden-node/pull/1496).
 - Limit number of storage map keys in `GetAccount` requests ([#1517](https://github.com/0xMiden/miden-node/pull/1517)).
 - The network monitor now marks the chain as unhealthy if it fails to create new blocks ([#1512](https://github.com/0xMiden/miden-node/pull/1512)).
 - Add support for foreign accounts to `NtxDataStore` and add `GetAccount` endpoint to NTX Builder gRPC store client ([#1521](https://github.com/0xMiden/miden-node/pull/1521)).
 - Block producer now detects if it is desync'd from the store's chain tip and aborts ([#1520](https://github.com/0xMiden/miden-node/pull/1520)).
 - Pin tool versions in CI ([#1523](https://github.com/0xMiden/miden-node/pull/1523)).
+- Add `GetVaultAssetWitnesses` and `GetStorageMapWitness` RPC endpoints to store ([#1529](https://github.com/0xMiden/miden-node/pull/1529)).
 - Add check to ensure tree store state is in sync with database storage ([#1532](https://github.com/0xMiden/miden-node/issues/1534)).
 
 ### Changes

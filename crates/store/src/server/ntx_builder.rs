@@ -1,10 +1,14 @@
+use std::collections::BTreeSet;
 use std::num::{NonZero, TryFromIntError};
 
+use miden_crypto::merkle::smt::SmtProof;
 use miden_node_proto::domain::account::{AccountInfo, validate_network_account_prefix};
+use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::store::ntx_builder_server;
-use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
+use miden_protocol::account::StorageSlotName;
+use miden_protocol::asset::AssetVaultKey;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
 use tonic::{Request, Response, Status};
@@ -12,8 +16,15 @@ use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::db::models::Page;
-use crate::errors::{GetNetworkAccountIdsError, GetNoteScriptByRootError};
-use crate::server::api::{StoreApi, internal_error, invalid_argument, read_block_range, read_root};
+use crate::errors::{GetNetworkAccountIdsError, GetNoteScriptByRootError, GetWitnessesError};
+use crate::server::api::{
+    StoreApi,
+    internal_error,
+    invalid_argument,
+    read_account_id,
+    read_block_range,
+    read_root,
+};
 
 // NTX BUILDER ENDPOINTS
 // ================================================================================================
@@ -244,6 +255,118 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         Ok(Response::new(proto::rpc::MaybeNoteScript {
             script: note_script.map(Into::into),
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.ntx_builder_server.get_vault_asset_witnesses",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_vault_asset_witnesses(
+        &self,
+        request: Request<proto::store::VaultAssetWitnessesRequest>,
+    ) -> Result<Response<proto::store::VaultAssetWitnessesResponse>, Status> {
+        let request = request.into_inner();
+
+        // Read account ID.
+        let account_id =
+            read_account_id::<GetWitnessesError>(request.account_id).map_err(invalid_argument)?;
+
+        // Read vault keys.
+        let vault_keys = request
+            .vault_keys
+            .into_iter()
+            .map(|key_digest| {
+                let word = read_root::<GetWitnessesError>(Some(key_digest), "VaultKey")
+                    .map_err(invalid_argument)?;
+                Ok(AssetVaultKey::new_unchecked(word))
+            })
+            .collect::<Result<BTreeSet<_>, Status>>()?;
+
+        // Read block number from request, use latest if not provided.
+        let block_num = if let Some(num) = request.block_num {
+            num.into()
+        } else {
+            self.state.latest_block_num().await
+        };
+
+        // Retrieve the asset witnesses.
+        let asset_witnesses = self
+            .state
+            .get_vault_asset_witnesses(account_id, block_num, vault_keys)
+            .await
+            .map_err(internal_error)?;
+
+        // Convert AssetWitness to protobuf format by extracting witness data.
+        let proto_witnesses = asset_witnesses
+            .into_iter()
+            .map(|witness| {
+                let proof: SmtProof = witness.into();
+                proto::store::vault_asset_witnesses_response::VaultAssetWitness {
+                    proof: Some(proof.into()),
+                }
+            })
+            .collect();
+
+        Ok(Response::new(proto::store::VaultAssetWitnessesResponse {
+            block_num: block_num.as_u32(),
+            asset_witnesses: proto_witnesses,
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.ntx_builder_server.get_storage_map_witness",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_storage_map_witness(
+        &self,
+        request: Request<proto::store::StorageMapWitnessRequest>,
+    ) -> Result<Response<proto::store::StorageMapWitnessResponse>, Status> {
+        let request = request.into_inner();
+
+        // Read the account ID.
+        let account_id =
+            read_account_id::<GetWitnessesError>(request.account_id).map_err(invalid_argument)?;
+
+        // Read the map key.
+        let map_key =
+            read_root::<GetWitnessesError>(request.map_key, "MapKey").map_err(invalid_argument)?;
+
+        // Read the slot name.
+        let slot_name = StorageSlotName::new(request.slot_name).map_err(|err| {
+            tonic::Status::invalid_argument(format!("Invalid storage slot name: {err}"))
+        })?;
+
+        // Read the block number, use latest if not provided.
+        let block_num = if let Some(num) = request.block_num {
+            num.into()
+        } else {
+            self.state.latest_block_num().await
+        };
+
+        // Retrieve the storage map witness.
+        let storage_witness = self
+            .state
+            .get_storage_map_witness(account_id, &slot_name, block_num, map_key)
+            .await
+            .map_err(internal_error)?;
+
+        // Convert StorageMapWitness to protobuf format by extracting witness data.
+        let proof: SmtProof = storage_witness.into();
+        Ok(Response::new(proto::store::StorageMapWitnessResponse {
+            witness: Some(proto::store::storage_map_witness_response::StorageWitness {
+                key: Some(map_key.into()),
+                proof: Some(proof.into()),
+            }),
+            block_num: self.state.latest_block_num().await.as_u32(),
         }))
     }
 }

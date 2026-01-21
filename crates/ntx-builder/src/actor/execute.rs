@@ -16,7 +16,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{AssetVault, AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript};
@@ -439,28 +439,18 @@ impl DataStore for NtxDataStore {
     fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
-        vault_root: Word,
+        _vault_root: Word,
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         let store = self.store.clone();
         async move {
-            if self.account.id() == account_id {
-                if self.account.vault().root() != vault_root {
-                    return Err(DataStoreError::other("vault root mismatch"));
-                }
-                get_asset_witnesses(vault_keys, self.account.vault())
-            } else {
-                let witnesses = store
-                    .get_vault_asset_witnesses(account_id, vault_keys, None)
-                    .await
-                    .map_err(|err| {
-                        DataStoreError::other_with_source(
-                            "failed to get vault asset witnesses",
-                            err,
-                        )
-                    })?;
-                Ok(witnesses)
-            }
+            let witnesses = store
+                .get_vault_asset_witnesses(account_id, vault_keys, None)
+                .await
+                .map_err(|err| {
+                    DataStoreError::other_with_source("failed to get vault asset witnesses", err)
+                })?;
+            Ok(witnesses)
         }
     }
 
@@ -472,40 +462,22 @@ impl DataStore for NtxDataStore {
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         let store = self.store.clone();
         async move {
-            let witness = if self.account.id() == account_id {
-                // Search through local account's storage slots.
-                self.account.storage().slots().iter().find_map(|slot| {
-                    if let StorageSlotContent::Map(map) = slot.content() {
-                        if map.root() == map_root {
-                            Some(map.open(&map_key))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-            } else {
-                // Retrieve foreign account witness.
-
-                // Get slot name.
-                let storage_slots = self.storage_slots.lock().await;
-                let Some(slot_name) = storage_slots.get(&(account_id, map_root)) else {
-                    return Err(DataStoreError::other(
-                        "requested storage slot has not been registered",
-                    ));
-                };
-                // Retrieve witness.
-                let witness = store
-                    .get_storage_map_witness(account_id, slot_name.clone(), map_key, None)
-                    .await
-                    .map_err(|err| {
-                        DataStoreError::other_with_source("failed to get storage map witness", err)
-                    })?;
-                Some(witness)
+            // Get slot name.
+            let storage_slots = self.storage_slots.lock().await;
+            let Some(slot_name) = storage_slots.get(&(account_id, map_root)) else {
+                return Err(DataStoreError::other(
+                    "requested storage slot has not been registered",
+                ));
             };
+            // Retrieve witness.
+            let witness = store
+                .get_storage_map_witness(account_id, slot_name.clone(), map_key, None)
+                .await
+                .map_err(|err| {
+                    DataStoreError::other_with_source("failed to get storage map witness", err)
+                })?;
 
-            witness.ok_or_else(|| DataStoreError::other("storage map witness not found"))
+            Ok(witness)
         }
     }
 
@@ -549,19 +521,4 @@ impl MastForestStore for NtxDataStore {
     ) -> Option<std::sync::Arc<miden_protocol::MastForest>> {
         self.mast_store.get(procedure_hash)
     }
-}
-
-// HELPERS
-// ================================================================================================
-
-fn get_asset_witnesses(
-    vault_keys: BTreeSet<AssetVaultKey>,
-    vault: &AssetVault,
-) -> Result<Vec<AssetWitness>, DataStoreError> {
-    Result::<Vec<_>, _>::from_iter(vault_keys.into_iter().map(|vault_key| {
-        AssetWitness::new(vault.open(vault_key).into()).map_err(|err| DataStoreError::Other {
-            error_msg: "failed to open vault asset tree".into(),
-            source: Some(Box::new(err)),
-        })
-    }))
 }

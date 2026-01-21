@@ -335,6 +335,8 @@ struct NtxDataStore {
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
     script_cache: LruCache<Word, NoteScript>,
     /// Mapping of storage map roots to storage slot names observed during various calls.
+    ///
+    /// The slot names are used to retrieve storage map witnesses from the store.
     storage_slots: Arc<Mutex<BTreeMap<(AccountId, Word), StorageSlotName>>>,
 }
 

@@ -24,6 +24,9 @@ impl TransactionInputsDataStore {
     pub fn new(tx_inputs: TransactionInputs) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(tx_inputs.account().code());
+        for code in tx_inputs.foreign_account_code() {
+            mast_store.load_account_code(code);
+        }
         Self { tx_inputs, mast_store }
     }
 }

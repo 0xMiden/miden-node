@@ -124,6 +124,7 @@ impl StorageLoader for MemoryStorage {
         Ok(MemoryStorage::default())
     }
 
+    #[instrument(target = COMPONENT, skip_all)]
     async fn load_account_tree(
         self,
         db: &mut Db,
@@ -138,6 +139,7 @@ impl StorageLoader for MemoryStorage {
                 .select_account_commitments_paged(ACCOUNT_COMMITMENTS_PAGE_SIZE, cursor)
                 .await?;
 
+            cursor = page.next_cursor;
             if page.commitments.is_empty() {
                 break;
             }
@@ -153,7 +155,6 @@ impl StorageLoader for MemoryStorage {
             smt.apply_mutations(mutations)
                 .map_err(account_tree_large_smt_error_to_init_error)?;
 
-            cursor = page.next_cursor;
             if cursor.is_none() {
                 break;
             }
@@ -165,6 +166,7 @@ impl StorageLoader for MemoryStorage {
     // TODO: Make the loading methodology for account and nullifier trees consistent.
     // Currently we use `NullifierTree::new_unchecked()` for nullifiers but `AccountTree::new()`
     // for accounts. Consider using `NullifierTree::with_storage_from_entries()` for consistency.
+    #[instrument(target = COMPONENT, skip_all)]
     async fn load_nullifier_tree(
         self,
         db: &mut Db,
@@ -177,6 +179,7 @@ impl StorageLoader for MemoryStorage {
         loop {
             let page = db.select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor).await?;
 
+            cursor = page.next_cursor;
             if page.nullifiers.is_empty() {
                 break;
             }
@@ -191,7 +194,6 @@ impl StorageLoader for MemoryStorage {
             smt.apply_mutations(mutations)
                 .map_err(account_tree_large_smt_error_to_init_error)?;
 
-            cursor = page.next_cursor;
             if cursor.is_none() {
                 break;
             }
@@ -215,6 +217,7 @@ impl StorageLoader for RocksDbStorage {
             .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))
     }
 
+    #[instrument(target = COMPONENT, skip_all)]
     async fn load_account_tree(
         self,
         db: &mut Db,
@@ -241,6 +244,7 @@ impl StorageLoader for RocksDbStorage {
                 .select_account_commitments_paged(ACCOUNT_COMMITMENTS_PAGE_SIZE, cursor)
                 .await?;
 
+            cursor = page.next_cursor;
             if page.commitments.is_empty() {
                 break;
             }
@@ -256,7 +260,6 @@ impl StorageLoader for RocksDbStorage {
             smt.apply_mutations(mutations)
                 .map_err(account_tree_large_smt_error_to_init_error)?;
 
-            cursor = page.next_cursor;
             if cursor.is_none() {
                 break;
             }
@@ -265,6 +268,7 @@ impl StorageLoader for RocksDbStorage {
         AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)
     }
 
+    #[instrument(target = COMPONENT, skip_all)]
     async fn load_nullifier_tree(
         self,
         db: &mut Db,
@@ -288,6 +292,7 @@ impl StorageLoader for RocksDbStorage {
         loop {
             let page = db.select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor).await?;
 
+            cursor = page.next_cursor;
             if page.nullifiers.is_empty() {
                 break;
             }
@@ -302,7 +307,6 @@ impl StorageLoader for RocksDbStorage {
             smt.apply_mutations(mutations)
                 .map_err(account_tree_large_smt_error_to_init_error)?;
 
-            cursor = page.next_cursor;
             if cursor.is_none() {
                 break;
             }

@@ -483,10 +483,10 @@ pub enum StoreError {
 // HELPERS
 // =================================================================================================
 
-/// Builds a minimal foreign account from the provided account details.
+/// Builds a minimal partial account from the provided account details.
 ///
-/// The account's partial storage does not contain storage maps and the partial vault is constructed
-/// from the asset vault root only.
+/// The partial account is built without storage maps or an asset vault. This is intended to be used
+/// to retrieve foreign account data during transaction execution.
 pub fn build_minimal_foreign_account(
     account_details: &AccountDetails,
 ) -> Result<PartialAccount, ConversionError> {

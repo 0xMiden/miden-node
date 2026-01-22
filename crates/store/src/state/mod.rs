@@ -1087,25 +1087,6 @@ impl State {
             None => AccountVaultDetails::empty(),
         };
 
-        // Check total keys limit upfront before expensive open operations
-        let total_keys: usize = storage_requests
-            .iter()
-            .filter_map(|req| match &req.slot_data {
-                SlotData::MapKeys(keys) => Some(keys.len()),
-                SlotData::All => None,
-            })
-            .sum();
-
-        if total_keys > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
-            return Ok(AccountDetails::with_storage_limits_exceeded(
-                account_header,
-                account_code,
-                vault_details,
-                storage_header,
-                storage_requests.into_iter().map(|req| req.slot_name),
-            ));
-        }
-
         let mut storage_map_details =
             Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 

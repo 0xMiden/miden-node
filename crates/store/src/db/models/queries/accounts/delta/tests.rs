@@ -14,12 +14,10 @@ use miden_protocol::account::delta::{
     StorageSlotDelta,
 };
 use miden_protocol::account::{
-    Account,
     AccountBuilder,
     AccountComponent,
     AccountDelta,
     AccountId,
-    AccountStorage,
     AccountStorageMode,
     AccountType,
     StorageSlot,

@@ -4,15 +4,7 @@ use std::num::TryFromIntError;
 // Re-export the GrpcError derive macro for convenience
 pub use miden_node_grpc_error_macro::GrpcError;
 use miden_protocol::crypto::merkle::smt::{SmtLeafError, SmtProofError};
-use miden_protocol::errors::{
-    AccountError,
-    AssetError,
-    AssetVaultError,
-    FeeError,
-    NoteError,
-    StorageMapError,
-    StorageSlotNameError,
-};
+use miden_protocol::errors::{AccountError, AssetError, FeeError, NoteError, StorageSlotNameError};
 use miden_protocol::utils::DeserializationError;
 use thiserror::Error;
 
@@ -29,10 +21,6 @@ pub enum ConversionError {
     AccountCodeMissing,
     #[error("account error")]
     AccountError(#[from] AccountError),
-    #[error("asset vault error")]
-    AssetVaultError(#[from] AssetVaultError),
-    #[error("vault has too many assets to return inline")]
-    AssetVaultLimitExceeded,
     #[error("fee parameters error")]
     FeeError(#[from] FeeError),
     #[error("hex error")]
@@ -47,8 +35,6 @@ pub enum ConversionError {
     SmtProofError(#[from] SmtProofError),
     #[error("storage slot name error")]
     StorageSlotNameError(#[from] StorageSlotNameError),
-    #[error("storage map error")]
-    StorageMapError(#[from] StorageMapError),
     #[error("integer conversion error: {0}")]
     TryFromIntError(#[from] TryFromIntError),
     #[error("too much data, expected {expected}, got {got}")]
@@ -64,8 +50,6 @@ pub enum ConversionError {
         entity: &'static str,
         field_name: &'static str,
     },
-    #[error("MMR error")]
-    MmrError(#[from] miden_protocol::crypto::merkle::mmr::MmrError),
     #[error("failed to deserialize {entity}")]
     DeserializationError {
         entity: &'static str,

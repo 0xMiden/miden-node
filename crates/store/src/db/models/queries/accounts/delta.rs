@@ -48,7 +48,7 @@ struct AccountStateDeltaRow {
 /// Data needed for applying a delta update to an existing account.
 /// Fetches only the minimal data required, avoiding loading full code and storage.
 #[derive(Debug, Clone)]
-pub(crate) struct AccountStateForDelta {
+pub(super) struct AccountStateForDelta {
     pub nonce: Felt,
     pub code_commitment: Word,
     pub storage_header: AccountStorageHeader,
@@ -58,7 +58,7 @@ pub(crate) struct AccountStateForDelta {
 /// Minimal account state computed from a partial delta update.
 /// Contains only the fields needed for the accounts table row insert.
 #[derive(Debug, Clone)]
-pub(crate) struct PartialAccountState {
+pub(super) struct PartialAccountState {
     pub nonce: Felt,
     pub code_commitment: Word,
     pub storage_header: AccountStorageHeader,
@@ -94,7 +94,7 @@ pub(super) enum AccountStateForInsert {
 /// FROM accounts
 /// WHERE account_id = ?1 AND is_latest = 1
 /// ```
-pub(crate) fn select_account_state_for_delta(
+pub(super) fn select_account_state_for_delta(
     conn: &mut SqliteConnection,
     account_id: AccountId,
 ) -> Result<AccountStateForDelta, DatabaseError> {
@@ -160,7 +160,7 @@ pub(crate) fn select_account_state_for_delta(
 /// FROM account_vault_assets
 /// WHERE account_id = ?1 AND is_latest = 1 AND vault_key IN (?2, ?3, ...)
 /// ```
-pub(crate) fn select_vault_balances_by_faucet_ids(
+pub(super) fn select_vault_balances_by_faucet_ids(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     faucet_ids: &[AccountId],

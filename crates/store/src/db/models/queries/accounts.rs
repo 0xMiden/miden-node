@@ -60,9 +60,11 @@ pub(crate) use at_block::{
 };
 
 mod delta;
-use delta::{AccountStateForInsert, apply_storage_delta_to_header, compute_vault_root_after_delta};
-pub(crate) use delta::{
+use delta::{
+    AccountStateForInsert,
     PartialAccountState,
+    apply_storage_delta_to_header,
+    compute_vault_root_after_delta,
     select_account_state_for_delta,
     select_vault_balances_by_faucet_ids,
 };

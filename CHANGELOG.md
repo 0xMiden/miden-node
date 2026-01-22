@@ -32,6 +32,7 @@
 - Add `GetVaultAssetWitnesses` and `GetStorageMapWitness` RPC endpoints to store ([#1529](https://github.com/0xMiden/miden-node/pull/1529)).
 - Add check to ensure tree store state is in sync with database storage ([#1532](https://github.com/0xMiden/miden-node/issues/1534)).
 - Improve speed account updates ([#1567](https://github.com/0xMiden/miden-node/pull/1567)).
+- Ensure store terminates on nullifier tree or account tree root vs header mismatch (#[#1569](https://github.com/0xMiden/miden-node/pull/1569)).
 
 ### Changes
 

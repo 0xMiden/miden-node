@@ -226,7 +226,7 @@ impl NtxContext {
 
         match Box::pin(checker.check_notes_consumability(
             data_store.account.id(),
-            data_store.reference_header.block_num(),
+            data_store.reference_block.block_num(),
             notes,
             TransactionArgs::default(),
         ))
@@ -260,7 +260,7 @@ impl NtxContext {
 
         Box::pin(executor.execute_transaction(
             data_store.account.id(),
-            data_store.reference_header.block_num(),
+            data_store.reference_block.block_num(),
             notes,
             TransactionArgs::default(),
         ))
@@ -326,7 +326,7 @@ impl NtxContext {
 /// This is sufficient for executing a network transaction.
 struct NtxDataStore {
     account: Account,
-    reference_header: BlockHeader,
+    reference_block: BlockHeader,
     chain_mmr: PartialBlockchain,
     mast_store: TransactionMastStore,
     /// Store client for retrieving note scripts.
@@ -344,7 +344,7 @@ impl NtxDataStore {
     /// Creates a new `NtxDataStore` with default cache size.
     fn new(
         account: Account,
-        reference_header: BlockHeader,
+        reference_block: BlockHeader,
         chain_mmr: PartialBlockchain,
         store: StoreClient,
         script_cache: LruCache<Word, NoteScript>,
@@ -354,7 +354,7 @@ impl NtxDataStore {
 
         Self {
             account,
-            reference_header,
+            reference_block,
             chain_mmr,
             mast_store,
             store,
@@ -394,7 +394,7 @@ impl DataStore for NtxDataStore {
 
             // The latest supplied reference block must match the current reference block.
             match ref_blocks.last().copied() {
-                Some(reference) if reference == self.reference_header.block_num() => {},
+                Some(reference) if reference == self.reference_block.block_num() => {},
                 Some(other) => return Err(DataStoreError::BlockNotFound(other)),
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
@@ -404,7 +404,7 @@ impl DataStore for NtxDataStore {
                 .await;
 
             let partial_account = PartialAccount::from(&self.account);
-            Ok((partial_account, self.reference_header.clone(), self.chain_mmr.clone()))
+            Ok((partial_account, self.reference_block.clone(), self.chain_mmr.clone()))
         }
     }
 
@@ -414,7 +414,7 @@ impl DataStore for NtxDataStore {
         ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
         async move {
-            debug_assert_eq!(ref_block, self.reference_header.block_num());
+            debug_assert_eq!(ref_block, self.reference_block.block_num());
 
             // Get foreign account inputs from store.
             let account_inputs =
@@ -437,7 +437,7 @@ impl DataStore for NtxDataStore {
         vault_keys: BTreeSet<AssetVaultKey>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
-            let ref_block = self.reference_header.block_num();
+            let ref_block = self.reference_block.block_num();
 
             // Get vault asset witnesses from the store.
             let witnesses = self
@@ -468,7 +468,7 @@ impl DataStore for NtxDataStore {
                 ));
             };
 
-            let ref_block = self.reference_header.block_num();
+            let ref_block = self.reference_block.block_num();
 
             // Get storage map witness from the store.
             let witness = self

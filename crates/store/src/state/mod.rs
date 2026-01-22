@@ -319,7 +319,7 @@ impl State {
             if nullifier_tree_update.as_mutation_set().root() != header.nullifier_root() {
                 // We do our best here to notify the serve routine, if it doesn't care (dropped the
                 // receiver) we can't do much.
-                let _ = self.termination_ask.send(ApplyBlockError::InvalidBlockError(
+                let _ = self.termination_ask.try_send(ApplyBlockError::InvalidBlockError(
                     InvalidBlockError::NewBlockInvalidNullifierRoot,
                 ));
                 return Err(InvalidBlockError::NewBlockInvalidNullifierRoot.into());
@@ -345,7 +345,7 @@ impl State {
                 })?;
 
             if account_tree_update.as_mutation_set().root() != header.account_root() {
-                let _ = self.termination_ask.send(ApplyBlockError::InvalidBlockError(
+                let _ = self.termination_ask.try_send(ApplyBlockError::InvalidBlockError(
                     InvalidBlockError::NewBlockInvalidAccountRoot,
                 ));
                 return Err(InvalidBlockError::NewBlockInvalidAccountRoot.into());

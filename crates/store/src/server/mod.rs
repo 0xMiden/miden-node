@@ -181,7 +181,7 @@ impl Store {
         // SAFETY: The joinset is definitely not empty.
         let service = async move { join_set.join_next().await.unwrap()?.map_err(Into::into) };
         tokio::select! {
-            result = service => return result,
+            result = service => result,
             Some(err) = termination_signal.recv() => {
                 Err(anyhow::anyhow!("received termination signal").context(err))
             }

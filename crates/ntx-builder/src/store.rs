@@ -1,3 +1,4 @@
+use std::ops::RangeInclusive;
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
@@ -7,6 +8,7 @@ use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::BlockRange;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -57,7 +59,7 @@ impl StoreClient {
                 Err(StoreError::GrpcClientError(err)) => {
                     // Exponential backoff with base 500ms and max 30s.
                     let backoff = Duration::from_millis(500)
-                        .saturating_mul(1 << retry_counter)
+                        .saturating_mul(1 << retry_counter.min(6))
                         .min(Duration::from_secs(30));
 
                     tracing::warn!(
@@ -173,62 +175,137 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    /// Get all network account IDs.
+    /// Streams network account IDs to the provided sender.
     ///
-    /// Since the `GetNetworkAccountIds` method is paginated, we loop through all pages until we
-    /// reach the end.
-    ///
-    /// Each page can return up to `MAX_RESPONSE_PAYLOAD_BYTES / AccountId::SERIALIZED_SIZE`
-    /// accounts (~289,000). With `100_000` iterations, which is assumed to be sufficient for the
-    /// foreseeable future.
-    #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
-    pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
-        const MAX_ITERATIONS: u32 = 100_000;
-
+    /// This method is designed to be run in a background task, sending accounts to the main event
+    /// loop as they are loaded. This allows the ntx-builder to start processing mempool events
+    /// without waiting for all accounts to be preloaded.
+    pub async fn stream_network_account_ids(
+        &self,
+        sender: tokio::sync::mpsc::Sender<NetworkAccountId>,
+    ) -> Result<(), StoreError> {
         let mut block_range = BlockNumber::from(0)..=BlockNumber::from(u32::MAX);
 
-        let mut ids = Vec::new();
-        let mut iterations_count = 0;
+        while let Some(next_start) = self.load_accounts_page(block_range, &sender).await? {
+            block_range = next_start..=BlockNumber::from(u32::MAX);
+        }
 
-        loop {
-            let response = self
+        Ok(())
+    }
+
+    /// Loads a single page of network accounts and submits them to the sender.
+    ///
+    /// Returns the next block number to fetch from, or `None` if the chain tip has been reached.
+    #[instrument(target = COMPONENT, name = "store.client.load_accounts_page", skip_all, err)]
+    async fn load_accounts_page(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+        sender: &tokio::sync::mpsc::Sender<NetworkAccountId>,
+    ) -> Result<Option<BlockNumber>, StoreError> {
+        let (accounts, pagination_info) = self.fetch_network_account_ids_page(block_range).await?;
+
+        let chain_tip = pagination_info.chain_tip;
+        let current_height = pagination_info.block_num;
+
+        self.send_accounts_to_channel(accounts, sender).await?;
+
+        if current_height >= chain_tip {
+            Ok(None)
+        } else {
+            Ok(Some(BlockNumber::from(current_height)))
+        }
+    }
+
+    #[instrument(target = COMPONENT, name = "store.client.fetch_network_account_ids_page", skip_all, err)]
+    async fn fetch_network_account_ids_page(
+        &self,
+        block_range: std::ops::RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<NetworkAccountId>, proto::rpc::PaginationInfo), StoreError> {
+        self.fetch_network_account_ids_page_inner(block_range)
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+    }
+
+    async fn fetch_network_account_ids_page_inner(
+        &self,
+        block_range: std::ops::RangeInclusive<BlockNumber>,
+    ) -> Result<(Vec<NetworkAccountId>, proto::rpc::PaginationInfo), StoreError> {
+        let mut retry_counter = 0u32;
+
+        let response = loop {
+            match self
                 .inner
                 .clone()
                 .get_network_account_ids(Into::<BlockRange>::into(block_range.clone()))
-                .await?
-                .into_inner();
+                .await
+            {
+                Ok(response) => break response.into_inner(),
+                Err(err) => {
+                    // Exponential backoff with base 500ms and max 30s.
+                    let backoff = Duration::from_millis(500)
+                        .saturating_mul(1 << retry_counter.min(6))
+                        .min(Duration::from_secs(30));
 
-            let accounts: Result<Vec<AccountId>, ConversionError> = response
-                .account_ids
-                .into_iter()
-                .map(|account_id| {
-                    AccountId::read_from_bytes(&account_id.id)
-                        .map_err(|err| ConversionError::deserialization_error("account_id", err))
-                })
-                .collect();
+                    tracing::warn!(
+                        ?backoff,
+                        %retry_counter,
+                        %err,
+                        "store connection failed while fetching committed accounts page, retrying"
+                    );
 
-            let pagination_info = response.pagination_info.ok_or(
-                ConversionError::MissingFieldInProtobufRepresentation {
-                    entity: "NetworkAccountIdList",
-                    field_name: "pagination_info",
+                    retry_counter += 1;
+                    tokio::time::sleep(backoff).await;
                 },
-            )?;
-
-            ids.extend(accounts?);
-            iterations_count += 1;
-            block_range =
-                BlockNumber::from(pagination_info.block_num)..=BlockNumber::from(u32::MAX);
-
-            if pagination_info.block_num >= pagination_info.chain_tip {
-                break;
             }
+        };
 
-            if iterations_count >= MAX_ITERATIONS {
-                return Err(StoreError::MaxIterationsReached("GetNetworkAccountIds".to_string()));
+        let accounts = response
+            .account_ids
+            .into_iter()
+            .map(|account_id| {
+                let account_id = AccountId::read_from_bytes(&account_id.id).map_err(|err| {
+                    StoreError::DeserializationError(ConversionError::deserialization_error(
+                        "account_id",
+                        err,
+                    ))
+                })?;
+                NetworkAccountId::try_from(account_id).map_err(|_| {
+                    StoreError::MalformedResponse(
+                        "account id is not a valid network account".into(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<NetworkAccountId>, StoreError>>()?;
+
+        let pagination_info = response.pagination_info.ok_or(
+            ConversionError::MissingFieldInProtobufRepresentation {
+                entity: "NetworkAccountIdList",
+                field_name: "pagination_info",
+            },
+        )?;
+
+        Ok((accounts, pagination_info))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.client.send_accounts_to_channel",
+        skip_all
+    )]
+    async fn send_accounts_to_channel(
+        &self,
+        accounts: Vec<NetworkAccountId>,
+        sender: &tokio::sync::mpsc::Sender<NetworkAccountId>,
+    ) -> Result<(), StoreError> {
+        for account in accounts {
+            // If the receiver is dropped, stop loading.
+            if sender.send(account).await.is_err() {
+                tracing::warn!("Account receiver dropped");
+                return Ok(());
             }
         }
 
-        Ok(ids)
+        Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]
@@ -268,6 +345,4 @@ pub enum StoreError {
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
-    #[error("max iterations reached: {0}")]
-    MaxIterationsReached(String),
 }

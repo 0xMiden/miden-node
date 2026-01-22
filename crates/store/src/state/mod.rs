@@ -130,6 +130,9 @@ pub struct State {
     /// To allow readers to access the tree data while an update in being performed, and prevent
     /// TOCTOU issues, there must be no concurrent writers. This locks to serialize the writers.
     writer: Mutex<()>,
+
+    /// Request termination of the process due to a fatal internal state error.
+    termination_ask: tokio::sync::mpsc::Sender<ApplyBlockError>,
 }
 
 impl State {
@@ -138,7 +141,10 @@ impl State {
 
     /// Loads the state from the data directory.
     #[instrument(target = COMPONENT, skip_all)]
-    pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
+    pub async fn load(
+        data_path: &Path,
+        termination_ask: tokio::sync::mpsc::Sender<ApplyBlockError>,
+    ) -> Result<Self, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())
             .map_err(StateInitializationError::DataDirectoryLoadError)?;
 
@@ -178,7 +184,14 @@ impl State {
         let writer = Mutex::new(());
         let db = Arc::new(db);
 
-        Ok(Self { db, block_store, inner, forest, writer })
+        Ok(Self {
+            db,
+            block_store,
+            inner,
+            forest,
+            writer,
+            termination_ask,
+        })
     }
 
     // STATE MUTATOR
@@ -304,6 +317,11 @@ impl State {
                 .map_err(InvalidBlockError::NewBlockNullifierAlreadySpent)?;
 
             if nullifier_tree_update.as_mutation_set().root() != header.nullifier_root() {
+                // We do our best here to notify the serve routine, if it doesn't care (dropped the
+                // receiver) we can't do much.
+                let _ = self.termination_ask.try_send(ApplyBlockError::InvalidBlockError(
+                    InvalidBlockError::NewBlockInvalidNullifierRoot,
+                ));
                 return Err(InvalidBlockError::NewBlockInvalidNullifierRoot.into());
             }
 
@@ -327,6 +345,9 @@ impl State {
                 })?;
 
             if account_tree_update.as_mutation_set().root() != header.account_root() {
+                let _ = self.termination_ask.try_send(ApplyBlockError::InvalidBlockError(
+                    InvalidBlockError::NewBlockInvalidAccountRoot,
+                ));
                 return Err(InvalidBlockError::NewBlockInvalidAccountRoot.into());
             }
 

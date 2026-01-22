@@ -371,12 +371,10 @@ impl NtxDataStore {
         account_id: AccountId,
         storage_header: &AccountStorageHeader,
     ) {
+        let mut storage_slots = self.storage_slots.lock().await;
         for slot_header in storage_header.slots() {
             if let StorageSlotType::Map = slot_header.slot_type() {
-                self.storage_slots
-                    .lock()
-                    .await
-                    .insert((account_id, slot_header.value()), slot_header.name().clone());
+                storage_slots.insert((account_id, slot_header.value()), slot_header.name().clone());
             }
         }
     }

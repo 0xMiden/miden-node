@@ -658,10 +658,7 @@ impl Db {
     ) -> Result<(Vec<NoteRecord>, Page)> {
         self.transact("unconsumed network notes for account", move |conn| {
             models::queries::select_unconsumed_network_notes_by_account_id(
-                conn,
-                account_id,
-                block_num,
-                page,
+                conn, account_id, block_num, page,
             )
         })
         .await

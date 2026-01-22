@@ -1232,9 +1232,7 @@ impl State {
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        self.db
-            .select_unconsumed_network_notes(account_id, block_num, page)
-            .await
+        self.db.select_unconsumed_network_notes(account_id, block_num, page).await
     }
 
     /// Returns the script for a note by its root.

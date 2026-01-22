@@ -112,14 +112,31 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(self.store_url.clone());
         let block_producer = BlockProducerClient::new(self.block_producer_url.clone());
 
-        let (chain_tip_header, chain_mmr) = store
-            .get_latest_blockchain_data_with_retry()
-            .await?
-            .expect("store should contain a latest block");
-        let mut mempool_events = block_producer
-            .subscribe_to_mempool_with_retry(chain_tip_header.block_num())
-            .await
-            .context("failed to subscribe to mempool events")?;
+        // Loop until we successfully subscribe.
+        //
+        // The mempool rejects our subscription if we don't have the same view of the chain aka
+        // if our chain tip does not match the mempools. This can occur if a new block is committed
+        // _after_ we fetch the chain tip from the store but _before_ our subscription request is
+        // handled.
+        //
+        // This is a hack-around for https://github.com/0xMiden/miden-node/issues/1566.
+        let (chain_tip_header, chain_mmr, mut mempool_events) = loop {
+            let (chain_tip_header, chain_mmr) = store
+                .get_latest_blockchain_data_with_retry()
+                .await?
+                .expect("store should contain a latest block");
+
+            match block_producer
+                .subscribe_to_mempool_with_retry(chain_tip_header.block_num())
+                .await
+            {
+                Ok(subscription) => break (chain_tip_header, chain_mmr, subscription),
+                Err(status) if status.code() == tonic::Code::InvalidArgument => {
+                    tracing::error!(err=%status, "mempool subscription failed due to desync, trying again");
+                },
+                Err(err) => return Err(err).context("failed to subscribe to mempool events"),
+            }
+        };
 
         // Create chain state that will be updated by the coordinator and read by actors.
         let chain_state = Arc::new(RwLock::new(ChainState::new(chain_tip_header, chain_mmr)));

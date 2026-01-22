@@ -156,7 +156,7 @@ impl StoreClient {
             let req = proto::store::UnconsumedNetworkNotesRequest {
                 page_token,
                 page_size: PAGE_SIZE,
-                network_account_id_prefix: network_account_id.prefix(),
+                account_id: Some(network_account_id.inner().into()),
                 block_num,
             };
             let resp = store_client.get_unconsumed_network_notes(req).await?.into_inner();

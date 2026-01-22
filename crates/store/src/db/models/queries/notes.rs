@@ -435,7 +435,7 @@ pub(crate) fn select_note_script_by_root(
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
 /// WHERE
-///     network_note_type = 1 AND tag = ?1 AND
+///     network_note_type = 1 AND target_account_id = ?1 AND
 ///     committed_at <= ?2 AND
 ///     (consumed_at IS NULL OR consumed_at > ?2) AND notes.rowid >= ?3
 /// ORDER BY notes.rowid ASC
@@ -449,9 +449,9 @@ pub(crate) fn select_note_script_by_root(
     clippy::too_many_lines,
     reason = "Lines will be reduced when schema is updated to simplify logic"
 )]
-pub(crate) fn select_unconsumed_network_notes_by_tag(
+pub(crate) fn select_unconsumed_network_notes_by_account_id(
     conn: &mut SqliteConnection,
-    tag: u32,
+    account_id: AccountId,
     block_num: BlockNumber,
     mut page: Page,
 ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
@@ -494,7 +494,7 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
         ),
     )
     .filter(schema::notes::network_note_type.eq(i32::from(NetworkNoteType::SingleTarget)))
-    .filter(schema::notes::tag.eq(tag as i32))
+    .filter(schema::notes::target_account_id.eq(Some(account_id.to_bytes())))
     .filter(schema::notes::committed_at.le(block_num.to_raw_sql()))
     .filter(
         schema::notes::consumed_at
@@ -861,22 +861,24 @@ pub struct NoteInsertRow {
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
 
+    pub network_note_type: i32,
+    pub target_account_id: Option<Vec<u8>>,
     pub attachment: Vec<u8>,
+    pub inclusion_path: Vec<u8>,
     pub consumed_at: Option<i64>,
+    pub nullifier: Option<Vec<u8>>,
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
-    pub serial_num: Option<Vec<u8>>,
-    pub nullifier: Option<Vec<u8>>,
     pub script_root: Option<Vec<u8>>,
-    pub network_note_type: i32,
-    pub inclusion_path: Vec<u8>,
+    pub serial_num: Option<Vec<u8>>,
 }
 
 impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRow {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
         let attachment = note.metadata.attachment();
 
-        let network_note_type = if NetworkAccountTarget::try_from(attachment).is_ok() {
+        let target_account_id = NetworkAccountTarget::try_from(attachment).ok();
+        let network_note_type = if target_account_id.is_some() {
             NetworkNoteType::SingleTarget
         } else {
             NetworkNoteType::None
@@ -894,6 +896,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRow {
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),
             network_note_type: network_note_type.into(),
+            target_account_id: target_account_id.map(|t| t.target_id().to_bytes()),
             attachment: attachment_bytes,
             inclusion_path: note.inclusion_path.to_bytes(),
             consumed_at: None::<i64>, // New notes are always unconsumed.

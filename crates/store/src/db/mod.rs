@@ -652,17 +652,14 @@ impl Db {
     /// Pagination is used to limit the number of notes returned.
     pub(crate) async fn select_unconsumed_network_notes(
         &self,
-        network_account_prefix: u32,
+        account_id: AccountId,
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
-        // Single-target network notes have their tags derived from the target account ID.
-        // The 30-bit account ID prefix is used as the note tag, allowing us to query notes
-        // for a given network account.
         self.transact("unconsumed network notes for account", move |conn| {
-            models::queries::select_unconsumed_network_notes_by_tag(
+            models::queries::select_unconsumed_network_notes_by_account_id(
                 conn,
-                network_account_prefix,
+                account_id,
                 block_num,
                 page,
             )

@@ -52,6 +52,7 @@ CREATE TABLE notes (
     sender                        BLOB    NOT NULL,
     tag                           INTEGER NOT NULL,
     network_note_type             INTEGER NOT NULL, -- 0-not a network note, 1-single account target network note
+    target_account_id             BLOB,             -- Full target account ID for single-target network notes
     attachment                    BLOB    NOT NULL, -- Serialized note attachment data
     inclusion_path                BLOB    NOT NULL, -- Serialized sparse Merkle path of the note in the block's note tree
     consumed_at                   INTEGER,          -- Block number when the note was consumed
@@ -74,7 +75,7 @@ CREATE INDEX idx_notes_note_commitment ON notes(note_commitment);
 CREATE INDEX idx_notes_sender ON notes(sender, committed_at);
 CREATE INDEX idx_notes_tag ON notes(tag, committed_at);
 CREATE INDEX idx_notes_nullifier ON notes(nullifier);
-CREATE INDEX idx_unconsumed_network_notes ON notes(network_note_type, consumed_at);
+CREATE INDEX idx_notes_target_account ON notes(target_account_id, committed_at) WHERE target_account_id IS NOT NULL;
 -- Index for joining with block_headers on committed_at
 CREATE INDEX idx_notes_committed_at ON notes(committed_at);
 -- Index for joining with note_scripts

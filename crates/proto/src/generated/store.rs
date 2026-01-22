@@ -168,7 +168,7 @@ pub struct MaybeAccountDetails {
 /// Returns a paginated list of unconsumed network notes for an account.
 ///
 /// Notes created or consumed after the specified block are excluded from the result.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UnconsumedNetworkNotesRequest {
     /// This should be null on the first call, and set to the response token until the response token
     /// is null, at which point all data has been fetched.
@@ -179,9 +179,9 @@ pub struct UnconsumedNetworkNotesRequest {
     /// Number of notes to retrieve per page.
     #[prost(uint64, tag = "2")]
     pub page_size: u64,
-    /// The network account ID prefix to filter notes by.
-    #[prost(uint32, tag = "3")]
-    pub network_account_id_prefix: u32,
+    /// The full account ID to filter notes by.
+    #[prost(message, optional, tag = "3")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
     /// The block number to filter the returned notes by.
     ///
     /// Notes that are created or consumed after this block are excluded from the result.

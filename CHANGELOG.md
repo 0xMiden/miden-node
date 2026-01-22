@@ -57,6 +57,7 @@
 - Fix race condition at DB shutdown in tests ([#1503](https://github.com/0xMiden/miden-node/pull/1503)).
 - [BREAKING] Updated to new miden-base protocol: removed `aux` and `execution_hint` from `NoteMetadata`, removed `NoteExecutionMode`, and `NoteMetadata::new()` is now infallible ([#1526](https://github.com/0xMiden/miden-node/pull/1526)).
 - [BREAKING] Network note queries now use full account ID instead of 30-bit prefix ([#1572](https://github.com/0xMiden/miden-node/pull/1572)).
+- Removed git information from node's `--version` CLI as it was often incorrect ([#1576](https://github.com/0xMiden/miden-node/pull/1576)).
 
 ### Fixes
 

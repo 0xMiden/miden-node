@@ -336,7 +336,24 @@ struct NtxDataStore {
     /// Mapping of storage map roots to storage slot names observed during various calls.
     ///
     /// The registered slot names are subsequently used to retrieve storage map witnesses from the
-    /// store.
+    /// store. We need this because the store interface (and the underling SMT forest) use storage
+    /// slot names, but the `DataStore` interface works with tree roots. To get around this problem
+    /// we populate this map when:
+    /// - The the native account is loaded (in `get_transaction_inputs()`).
+    /// - When a foreign account is loaded (in `get_foreign_account_inputs`).
+    ///
+    /// The assumption here are:
+    /// - Once an account is loaded, the mapping between `(account_id, map_root)` and slot names
+    ///   do not change. This is always the case.
+    /// - New storage slots created during transaction execution will not be accesses in the same
+    ///   transaction. The mechanism for adding new storage slots is not implemented yet, but the
+    ///   plan for it is consistent with this assumption.
+    ///
+    /// One nuance worth mentioning: it is possible that there could be a root collision where an
+    /// account has two storage maps with the same root. In this case, the map will contain only a
+    /// single entry with the storage slot name that was added last. Thus, technically, requests
+    /// to the store could be "wrong", but given that two identical maps have identical witnesses
+    /// this does not cause issues in practice.
     storage_slots: Arc<Mutex<BTreeMap<(AccountId, Word), StorageSlotName>>>,
 }
 

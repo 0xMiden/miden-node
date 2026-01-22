@@ -961,12 +961,12 @@ impl State {
         self.db.select_account(id).await
     }
 
-    /// Returns details for public (on-chain) network accounts.
-    pub async fn get_network_account_details_by_prefix(
+    /// Returns details for public (on-chain) network accounts by full account ID.
+    pub async fn get_network_account_details_by_id(
         &self,
-        id_prefix: u32,
+        account_id: AccountId,
     ) -> Result<Option<AccountInfo>, DatabaseError> {
-        self.db.select_network_account_by_prefix(id_prefix).await
+        self.db.select_network_account_by_id(account_id).await
     }
 
     /// Returns network account IDs within the specified block range (based on account creation

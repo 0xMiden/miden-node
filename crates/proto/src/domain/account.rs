@@ -1098,18 +1098,6 @@ pub enum NetworkAccountError {
     NotNetworkAccount(AccountId),
     #[error("invalid network account attachment: {0}")]
     InvalidAttachment(#[source] NetworkAccountTargetError),
-    #[error("invalid network account prefix: {0}")]
-    InvalidPrefix(u32),
-}
-
-/// Validates that a u32 represents a valid network account prefix.
-///
-/// Network accounts have a 30-bit prefix (top 2 bits must be 0).
-pub fn validate_network_account_prefix(prefix: u32) -> Result<u32, NetworkAccountError> {
-    if prefix >> 30 != 0 {
-        return Err(NetworkAccountError::InvalidPrefix(prefix));
-    }
-    Ok(prefix)
 }
 
 /// Gets the 30-bit prefix of the account ID.

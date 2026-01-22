@@ -24,7 +24,7 @@ diesel::table! {
 diesel::table! {
     accounts (account_id, block_num) {
         account_id -> Binary,
-        network_account_id_prefix -> Nullable<BigInt>,
+        network_account_type -> Integer,
         account_commitment -> Binary,
         code_commitment -> Nullable<Binary>,
         nonce -> Nullable<BigInt>,

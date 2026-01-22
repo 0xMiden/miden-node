@@ -32,7 +32,6 @@
     on relevant platforms"
 )]
 
-use miden_node_proto::domain::account::NetworkAccountId;
 use miden_protocol::Felt;
 use miden_protocol::account::{StorageSlotName, StorageSlotType};
 use miden_protocol::block::BlockNumber;
@@ -76,12 +75,6 @@ impl SqlTypeConvert for BlockNumber {
     fn to_raw_sql(self) -> Self::Raw {
         i64::from(self.as_u32())
     }
-}
-
-/// Converts a network account ID to its 30-bit prefix for database indexing.
-#[inline(always)]
-pub(crate) fn network_account_id_to_prefix_sql(id: NetworkAccountId) -> i64 {
-    i64::from(id.prefix())
 }
 
 impl SqlTypeConvert for NoteTag {

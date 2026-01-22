@@ -23,10 +23,11 @@ use crate::blocks::BlockStore;
 use crate::db::Db;
 use crate::errors::ApplyBlockError;
 use crate::state::State;
-use crate::{COMPONENT, GenesisState};
+use crate::{BlockProver, COMPONENT, GenesisState};
 
 mod api;
 mod block_producer;
+pub mod block_prover_client;
 mod ntx_builder;
 mod rpc_api;
 
@@ -35,6 +36,7 @@ pub struct Store {
     pub rpc_listener: TcpListener,
     pub ntx_builder_listener: TcpListener,
     pub block_producer_listener: TcpListener,
+    pub block_prover: Arc<BlockProver>,
     pub data_directory: PathBuf,
     /// Server-side timeout for an individual gRPC request.
     ///

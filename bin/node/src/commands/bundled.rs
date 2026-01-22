@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
-use miden_node_store::Store;
+use miden_node_store::{BlockProver, Store};
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
 use miden_protocol::block::BlockSigner;
@@ -20,6 +21,7 @@ use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
 use crate::commands::{
     BlockProducerConfig,
     DEFAULT_TIMEOUT,
+    ENV_BLOCK_PROVER_URL,
     ENV_ENABLE_OTEL,
     ENV_GENESIS_CONFIG_FILE,
     ENV_VALIDATOR_INSECURE_SECRET_KEY,
@@ -67,6 +69,10 @@ pub enum BundledCommand {
         /// Url at which to serve the RPC component's gRPC API.
         #[arg(long = "rpc.url", env = ENV_RPC_URL, value_name = "URL")]
         rpc_url: Url,
+
+        /// The remote block prover's gRPC url. If not provided, a local block prover will be used.
+        #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
+        block_prover_url: Option<Url>,
 
         /// Directory in which the Store component should store the database and raw block data.
         #[arg(long = "data-directory", env = ENV_DATA_DIRECTORY, value_name = "DIR")]
@@ -129,6 +135,7 @@ impl BundledCommand {
             },
             BundledCommand::Start {
                 rpc_url,
+                block_prover_url,
                 data_directory,
                 block_producer,
                 ntx_builder,
@@ -140,6 +147,7 @@ impl BundledCommand {
                 let signer = SecretKey::read_from_bytes(&secret_key_bytes)?;
                 Self::start(
                     rpc_url,
+                    block_prover_url,
                     data_directory,
                     ntx_builder,
                     block_producer,
@@ -154,6 +162,7 @@ impl BundledCommand {
     #[allow(clippy::too_many_lines)]
     async fn start(
         rpc_url: Url,
+        block_prover_url: Option<Url>,
         data_directory: PathBuf,
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
@@ -169,6 +178,13 @@ impl BundledCommand {
         let grpc_rpc = TcpListener::bind(grpc_rpc)
             .await
             .context("Failed to bind to RPC gRPC endpoint")?;
+
+        // Initialize local or remote block prover.
+        let block_prover = if let Some(url) = block_prover_url {
+            Arc::new(BlockProver::new_remote(url))
+        } else {
+            Arc::new(BlockProver::new_local(None))
+        };
 
         let block_producer_address = TcpListener::bind("127.0.0.1:0")
             .await
@@ -212,6 +228,7 @@ impl BundledCommand {
                     block_producer_listener: store_block_producer_listener,
                     ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
+                    block_prover,
                     grpc_timeout,
                 }
                 .serve()
@@ -235,7 +252,6 @@ impl BundledCommand {
                         store_url,
                         validator_url,
                         batch_prover_url: block_producer.batch_prover_url,
-                        block_prover_url: block_producer.block_prover_url,
                         batch_interval: block_producer.batch_interval,
                         block_interval: block_producer.block_interval,
                         max_batches_per_block: block_producer.max_batches_per_block,

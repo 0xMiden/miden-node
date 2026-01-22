@@ -96,7 +96,7 @@ service Rpc {
 // Store API for the BlockProducer component
 service BlockProducer {
     // Applies changes of a new block to the DB and in-memory data structures.
-    rpc ApplyBlock(blockchain.Block) returns (google.protobuf.Empty) {}
+    rpc ApplyBlock(ApplyBlockRequest) returns (google.protobuf.Empty) {}
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
@@ -110,6 +110,28 @@ service BlockProducer {
 
     // Returns data required to validate a new transaction.
     rpc GetTransactionInputs(TransactionInputsRequest) returns (TransactionInputs) {}
+}
+
+// APPLY BLOCK REQUEST
+// ================================================================================================
+
+// Applies a block to the state.
+message ApplyBlockRequest {
+    // Ordered batches encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::batch::OrderedBatches].
+    bytes ordered_batches = 1;
+    // Block inputs encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::BlockInputs].
+    bytes block_inputs = 2;
+    // Block header encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::BlockHeader].
+    bytes header = 3;
+    // Block header encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::BlockBody].
+    bytes body = 4;
+    // Signature encoded using [winter_utils::Serializable] implementation for
+    // [crypto::dsa::ecdsa_k256_keccak::Signature].
+    bytes signature = 5;
 }
 
 // GET BLOCK INPUTS

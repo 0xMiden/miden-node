@@ -8,6 +8,7 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 
+use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_proto::domain::account::{
     AccountDetailRequest,
     AccountDetails,
@@ -29,7 +30,7 @@ use miden_protocol::account::{AccountId, StorageMapWitness, StorageSlotName};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, ProvenBlock};
+use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, Blockchain};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 use miden_protocol::crypto::merkle::smt::{LargeSmt, SmtProof, SmtStorage};
 use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
@@ -219,12 +220,15 @@ impl State {
     // TODO: This span is logged in a root span, we should connect it to the parent span.
     #[allow(clippy::too_many_lines)]
     #[instrument(target = COMPONENT, skip_all, err)]
-    pub async fn apply_block(&self, block: ProvenBlock) -> Result<(), ApplyBlockError> {
+    pub async fn apply_block(
+        &self,
+        header: BlockHeader,
+        body: BlockBody,
+        signature: Signature,
+    ) -> Result<(), ApplyBlockError> {
         let _lock = self.writer.try_lock().map_err(|_| ApplyBlockError::ConcurrentWrite)?;
 
-        let header = block.header();
-
-        let tx_commitment = block.body().transactions().commitment();
+        let tx_commitment = body.transactions().commitment();
 
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
@@ -256,7 +260,7 @@ impl State {
             return Err(InvalidBlockError::NewBlockInvalidPrevCommitment.into());
         }
 
-        let block_data = block.to_bytes();
+        let block_data = body.to_bytes(); // TODO(currentpr): is this correct?
 
         // Save the block to the block store. In a case of a rolled-back DB transaction, the
         // in-memory state will be unchanged, but the block might still be written into the
@@ -281,8 +285,7 @@ impl State {
             let _span = info_span!(target: COMPONENT, "update_in_memory_structs").entered();
 
             // nullifiers can be produced only once
-            let duplicate_nullifiers: Vec<_> = block
-                .body()
+            let duplicate_nullifiers: Vec<_> = body
                 .created_nullifiers()
                 .iter()
                 .filter(|&nullifier| inner.nullifier_tree.get_block_num(nullifier).is_some())
@@ -304,11 +307,7 @@ impl State {
             let nullifier_tree_update = inner
                 .nullifier_tree
                 .compute_mutations(
-                    block
-                        .body()
-                        .created_nullifiers()
-                        .iter()
-                        .map(|nullifier| (*nullifier, block_num)),
+                    body.created_nullifiers().iter().map(|nullifier| (*nullifier, block_num)),
                 )
                 .map_err(InvalidBlockError::NewBlockNullifierAlreadySpent)?;
 
@@ -325,9 +324,7 @@ impl State {
             let account_tree_update = inner
                 .account_tree
                 .compute_mutations(
-                    block
-                        .body()
-                        .updated_accounts()
+                    body.updated_accounts()
                         .iter()
                         .map(|update| (update.account_id(), update.final_state_commitment())),
                 )
@@ -356,13 +353,12 @@ impl State {
         };
 
         // build note tree
-        let note_tree = block.body().compute_block_note_tree();
+        let note_tree = body.compute_block_note_tree();
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
         }
 
-        let notes = block
-            .body()
+        let notes = body
             .output_notes()
             .map(|(note_index, note)| {
                 let (details, nullifier) = match note {
@@ -401,12 +397,12 @@ impl State {
         // Extract public account updates with deltas before block is moved into async task.
         // Private accounts are filtered out since they don't expose their state changes.
         let account_deltas =
-            Vec::from_iter(block.body().updated_accounts().iter().filter_map(|update| {
-                match update.details() {
+            Vec::from_iter(body.updated_accounts().iter().filter_map(
+                |update| match update.details() {
                     AccountUpdateDetails::Delta(delta) => Some(delta.clone()),
                     AccountUpdateDetails::Private => None,
-                }
-            }));
+                },
+            ));
 
         // The DB and in-memory state updates need to be synchronized and are partially
         // overlapping. Namely, the DB transaction only proceeds after this task acquires the
@@ -414,8 +410,11 @@ impl State {
         // spawned.
         let db = Arc::clone(&self.db);
         let db_update_task = tokio::spawn(
-            async move { db.apply_block(allow_acquire, acquire_done, block, notes).await }
-                .in_current_span(),
+            async move {
+                db.apply_block(allow_acquire, acquire_done, header, body, signature, notes)
+                    .await
+            }
+            .in_current_span(),
         );
 
         // Wait for the message from the DB update task, that we ready to commit the DB transaction

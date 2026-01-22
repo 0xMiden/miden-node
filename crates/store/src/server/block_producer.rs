@@ -1,12 +1,14 @@
 use std::convert::Infallible;
 
+use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_proto::generated::store::block_producer_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
-use miden_protocol::block::{BlockNumber, ProvenBlock};
+use miden_protocol::batch::OrderedBatches;
+use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber};
 use miden_protocol::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
@@ -40,20 +42,35 @@ impl block_producer_server::BlockProducer for StoreApi {
     /// Updates the local DB by inserting a new block header and the related data.
     async fn apply_block(
         &self,
-        request: Request<proto::blockchain::Block>,
+        request: Request<proto::store::ApplyBlockRequest>,
     ) -> Result<Response<()>, Status> {
+        // Read the request.
         let request = request.into_inner();
-
-        let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("block deserialization error"))
+        let ordered_batches =
+            OrderedBatches::read_from_bytes(&request.ordered_batches).map_err(|err| {
+                Status::invalid_argument(
+                    err.as_report_context("failed to deserialize ordered batches"),
+                )
+            })?;
+        let block_inputs = BlockInputs::read_from_bytes(&request.block_inputs).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize block inputs"))
+        })?;
+        let header = BlockHeader::read_from_bytes(&request.header).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize block header"))
+        })?;
+        let body = BlockBody::read_from_bytes(&request.body).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize block body"))
+        })?;
+        let signature = Signature::read_from_bytes(&request.signature).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("failed to deserialize signature"))
         })?;
 
         let span = tracing::Span::current();
-        span.set_attribute("block.number", block.header().block_num());
-        span.set_attribute("block.commitment", block.header().commitment());
-        span.set_attribute("block.accounts.count", block.body().updated_accounts().len());
-        span.set_attribute("block.output_notes.count", block.body().output_notes().count());
-        span.set_attribute("block.nullifiers.count", block.body().created_nullifiers().len());
+        span.set_attribute("block.number", header.block_num());
+        span.set_attribute("block.commitment", header.commitment());
+        span.set_attribute("block.accounts.count", body.updated_accounts().len());
+        span.set_attribute("block.output_notes.count", body.output_notes().count());
+        span.set_attribute("block.nullifiers.count", body.created_nullifiers().len());
 
         // We perform the apply_block work in a separate task. This prevents the caller cancelling
         // the request and thereby cancelling the task at an arbitrary point of execution.
@@ -64,7 +81,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         tokio::spawn(
             async move {
                 this.state
-                    .apply_block(block)
+                    .apply_block(header, body, signature)
                     .await
                     .map(Response::new)
                     .inspect_err(|err| {

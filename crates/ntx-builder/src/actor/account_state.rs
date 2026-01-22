@@ -162,7 +162,7 @@ impl NetworkAccountState {
                 account_delta,
             } => {
                 // Filter network notes relevant to this account.
-                let network_notes = filter_by_prefix_and_map_to_single_target(
+                let network_notes = filter_by_account_id_and_map_to_single_target(
                     self.account_id,
                     network_notes.clone(),
                 );
@@ -249,8 +249,8 @@ impl NetworkAccountState {
             return;
         };
 
-        if let Some(prefix) = impact.account_delta {
-            if prefix == self.account_id {
+        if let Some(delta_account_id) = impact.account_delta {
+            if delta_account_id == self.account_id {
                 self.account.commit_delta();
             }
         }
@@ -330,8 +330,8 @@ impl TransactionImpact {
     }
 }
 
-/// Filters network notes by prefix and maps them to single target network notes.
-fn filter_by_prefix_and_map_to_single_target(
+/// Filters network notes by account ID and maps them to single target network notes.
+fn filter_by_account_id_and_map_to_single_target(
     account_id: NetworkAccountId,
     notes: Vec<NetworkNote>,
 ) -> Vec<SingleTargetNetworkNote> {

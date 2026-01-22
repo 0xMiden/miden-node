@@ -202,9 +202,9 @@ impl AccountActor {
         // Load the account state from the store and set up the account actor state.
         let account = {
             match self.origin {
-                AccountOrigin::Store(account_prefix) => self
+                AccountOrigin::Store(account_id) => self
                     .store
-                    .get_network_account(account_prefix)
+                    .get_network_account(account_id)
                     .await
                     .expect("actor should be able to load account")
                     .expect("actor account should exist"),

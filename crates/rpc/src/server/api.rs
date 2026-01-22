@@ -131,9 +131,9 @@ impl RpcService {
                     return Ok(header);
                 },
                 Err(err) if err.code() == tonic::Code::Unavailable => {
-                    // exponential backoff with base 500ms and max 30s
+                    // Exponential backoff with base 500ms and max 30s.
                     let backoff = Duration::from_millis(500)
-                        .saturating_mul(1 << retry_counter)
+                        .saturating_mul(1 << retry_counter.min(6))
                         .min(Duration::from_secs(30));
 
                     tracing::warn!(

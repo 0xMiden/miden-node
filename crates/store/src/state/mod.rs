@@ -130,6 +130,9 @@ pub struct State {
     /// To allow readers to access the tree data while an update in being performed, and prevent
     /// TOCTOU issues, there must be no concurrent writers. This locks to serialize the writers.
     writer: Mutex<()>,
+
+    /// Request termination of the process due to a fatal internal state error.
+    termination_ask: tokio::sync::mpsc::Sender<ApplyBlockError>,
 }
 
 impl State {
@@ -138,7 +141,10 @@ impl State {
 
     /// Loads the state from the data directory.
     #[instrument(target = COMPONENT, skip_all)]
-    pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
+    pub async fn load(
+        data_path: &Path,
+        termination_ask: tokio::sync::mpsc::Sender<ApplyBlockError>,
+    ) -> Result<Self, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())
             .map_err(StateInitializationError::DataDirectoryLoadError)?;
 
@@ -176,7 +182,14 @@ impl State {
         let writer = Mutex::new(());
         let db = Arc::new(db);
 
-        Ok(Self { db, block_store, inner, forest, writer })
+        Ok(Self {
+            db,
+            block_store,
+            inner,
+            forest,
+            writer,
+            termination_ask,
+        })
     }
 
     // STATE MUTATOR
@@ -302,6 +315,11 @@ impl State {
                 .map_err(InvalidBlockError::NewBlockNullifierAlreadySpent)?;
 
             if nullifier_tree_update.as_mutation_set().root() != header.nullifier_root() {
+                // We do our best here to notify the serve routine, if it doesn't care (dropped the
+                // receiver) we can't do much.
+                let _ = self.termination_ask.try_send(ApplyBlockError::InvalidBlockError(
+                    InvalidBlockError::NewBlockInvalidNullifierRoot,
+                ));
                 return Err(InvalidBlockError::NewBlockInvalidNullifierRoot.into());
             }
 
@@ -325,6 +343,9 @@ impl State {
                 })?;
 
             if account_tree_update.as_mutation_set().root() != header.account_root() {
+                let _ = self.termination_ask.try_send(ApplyBlockError::InvalidBlockError(
+                    InvalidBlockError::NewBlockInvalidAccountRoot,
+                ));
                 return Err(InvalidBlockError::NewBlockInvalidAccountRoot.into());
             }
 
@@ -672,8 +693,8 @@ impl State {
 
     /// Loads data to synchronize a client.
     ///
-    /// The client's request contains a list of tag prefixes, this method will return the first
-    /// block with a matching tag, or the chain tip. All the other values are filter based on this
+    /// The client's request contains a list of note tags, this method will return the first
+    /// block with a matching tag, or the chain tip. All the other values are filtered based on this
     /// block range.
     ///
     /// # Arguments
@@ -1205,13 +1226,11 @@ impl State {
     /// along with the next pagination token.
     pub async fn get_unconsumed_network_notes_for_account(
         &self,
-        network_account_prefix: u32,
+        account_id: AccountId,
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        self.db
-            .select_unconsumed_network_notes(network_account_prefix, block_num, page)
-            .await
+        self.db.select_unconsumed_network_notes(account_id, block_num, page).await
     }
 
     /// Returns the script for a note by its root.

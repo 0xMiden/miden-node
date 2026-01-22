@@ -459,7 +459,7 @@ pub mod rpc_client {
             req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "CheckNullifiers"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state proof of the specified account.
+        /// Returns the latest details the specified account.
         pub async fn get_account(
             &mut self,
             request: impl tonic::IntoRequest<super::super::rpc::AccountRequest>,
@@ -788,7 +788,7 @@ pub mod rpc_server {
             tonic::Response<super::super::rpc::CheckNullifiersResponse>,
             tonic::Status,
         >;
-        /// Returns the latest state proof of the specified account.
+        /// Returns the latest details the specified account.
         async fn get_account(
             &self,
             request: tonic::Request<super::super::rpc::AccountRequest>,
@@ -2461,7 +2461,7 @@ pub mod ntx_builder_client {
                 .insert(GrpcMethod::new("store.NtxBuilder", "GetNetworkAccountIds"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state proof of the specified account.
+        /// Returns the latest details of the specified account.
         pub async fn get_account(
             &mut self,
             request: impl tonic::IntoRequest<super::super::rpc::AccountRequest>,
@@ -2619,7 +2619,7 @@ pub mod ntx_builder_server {
             tonic::Response<super::NetworkAccountIdList>,
             tonic::Status,
         >;
-        /// Returns the latest state proof of the specified account.
+        /// Returns the latest details of the specified account.
         async fn get_account(
             &self,
             request: tonic::Request<super::super::rpc::AccountRequest>,

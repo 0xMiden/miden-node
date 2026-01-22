@@ -150,6 +150,10 @@ impl StoreClient {
     }
 
     /// Get the inputs for an account at a given block number from the store.
+    ///
+    /// Retrieves account details from the store. The retrieved details are limited to the account
+    /// code, account header, and storage header. The vault and storage slots are not required for
+    /// the purposes of the NTX Builder.
     #[instrument(target = COMPONENT, name = "store.client.get_account_inputs", skip_all, err)]
     pub async fn get_account_inputs(
         &self,

@@ -343,8 +343,8 @@ struct NtxDataStore {
     /// - When a foreign account is loaded (in `get_foreign_account_inputs`).
     ///
     /// The assumption here are:
-    /// - Once an account is loaded, the mapping between `(account_id, map_root)` and slot names
-    ///   do not change. This is always the case.
+    /// - Once an account is loaded, the mapping between `(account_id, map_root)` and slot names do
+    ///   not change. This is always the case.
     /// - New storage slots created during transaction execution will not be accesses in the same
     ///   transaction. The mechanism for adding new storage slots is not implemented yet, but the
     ///   plan for it is consistent with this assumption.

@@ -21,6 +21,7 @@ use tracing::{info, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::Db;
+use crate::errors::ApplyBlockError;
 use crate::state::State;
 use crate::{COMPONENT, GenesisState};
 
@@ -91,8 +92,13 @@ impl Store {
             block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.grpc_timeout,
             "Loading database");
 
-        let state =
-            Arc::new(State::load(&self.data_directory).await.context("failed to load state")?);
+        let (termination_ask, mut termination_signal) =
+            tokio::sync::mpsc::channel::<ApplyBlockError>(1);
+        let state = Arc::new(
+            State::load(&self.data_directory, termination_ask)
+                .await
+                .context("failed to load state")?,
+        );
 
         let rpc_service =
             store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
@@ -173,7 +179,13 @@ impl Store {
         );
 
         // SAFETY: The joinset is definitely not empty.
-        join_set.join_next().await.unwrap()?.map_err(Into::into)
+        let service = async move { join_set.join_next().await.unwrap()?.map_err(Into::into) };
+        tokio::select! {
+            result = service => return result,
+            Some(err) = termination_signal.recv() => {
+                Err(anyhow::anyhow!("received termination signal").context(err))
+            }
+        }
     }
 }
 

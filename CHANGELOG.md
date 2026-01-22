@@ -68,7 +68,7 @@
 - Fixed `GetNetworkAccountIds` pagination to return the chain tip ([#1489](https://github.com/0xMiden/miden-node/pull/1489)).
 - Fixed the network monitor counter account to use the storage slot name ([#1501](https://github.com/0xMiden/miden-node/pull/1501)).
 - gRPC traces now correctly connect to the method implementation ([1553](https://github.com/0xMiden/miden-node/pull/1553)).
-- Fixed ntx-builder crash on node restart after network transaction by adding missing `is_latest` filter to network account query ([#????](https://github.com/0xMiden/miden-node/pull/????)).
+- Fixed ntx-builder crash on node restart after network transaction by adding missing `is_latest` filter to network account query ([#1578](https://github.com/0xMiden/miden-node/pull/1578)).
 
 ## v0.12.8 (2026-01-15)
 

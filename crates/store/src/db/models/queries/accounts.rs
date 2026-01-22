@@ -339,7 +339,7 @@ pub struct PublicAccountIdsPage {
 ///
 /// Public accounts are those with `AccountStorageMode::Public` or `AccountStorageMode::Network`.
 /// We identify them by checking `code_commitment IS NOT NULL` - public accounts store their full
-/// state (including code_commitment), while private accounts only store the account_commitment.
+/// state (including `code_commitment`), while private accounts only store the `account_commitment`.
 ///
 /// # Raw SQL
 ///

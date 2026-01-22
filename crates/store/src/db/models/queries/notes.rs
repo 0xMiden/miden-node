@@ -805,7 +805,7 @@ pub(crate) fn insert_notes(
         .values(Vec::from_iter(
             notes
                 .iter()
-                .map(|(note, nullifier)| NoteInsertRowInsert::from((note.clone(), *nullifier))),
+                .map(|(note, nullifier)| NoteInsertRow::from((note.clone(), *nullifier))),
         ))
         .execute(conn)?;
     Ok(count)
@@ -848,7 +848,7 @@ pub(crate) fn insert_scripts<'a>(
 
 #[derive(Debug, Clone, PartialEq, Insertable)]
 #[diesel(table_name = schema::notes)]
-pub struct NoteInsertRowInsert {
+pub struct NoteInsertRow {
     pub committed_at: i64,
 
     pub batch_index: i32,
@@ -872,7 +872,7 @@ pub struct NoteInsertRowInsert {
     pub inclusion_path: Vec<u8>,
 }
 
-impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
+impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRow {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
         let attachment = note.metadata.attachment();
 

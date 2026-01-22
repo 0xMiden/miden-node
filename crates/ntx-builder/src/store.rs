@@ -160,7 +160,13 @@ impl StoreClient {
         let proto_request = proto::rpc::AccountRequest {
             account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
             block_num: Some(block_num.into()),
-            details: None,
+            // Request account code, account header, and storage header in order to build minimal
+            // partial account.
+            details: Some(proto::rpc::account_request::AccountDetailRequest {
+                code_commitment: Some(Word::default().into()),
+                asset_vault_commitment: None,
+                storage_maps: vec![],
+            }),
         };
 
         // Make the gRPC call.

@@ -321,7 +321,9 @@ impl InnerForest {
         let account_id = delta.id();
         let is_full_state = delta.is_full_state();
 
-        if !delta.vault().is_empty() {
+        // Update for new accounts (full-state) or when there are vault changes.
+        // New accounts need their vault root recorded even if the vault is empty.
+        if is_full_state || !delta.vault().is_empty() {
             self.update_account_vault(block_num, account_id, delta.vault(), is_full_state)?;
         }
 
@@ -408,16 +410,15 @@ impl InnerForest {
             entries.push((asset.vault_key().into(), value));
         }
 
-        if entries.is_empty() {
-            return Ok(());
-        }
+        let new_root = if entries.is_empty() {
+            prev_root
+        } else {
+            self.forest
+                .batch_insert(prev_root, entries.iter().copied())
+                .expect("forest insertion should succeed")
+        };
 
-        let updated_root = self
-            .forest
-            .batch_insert(prev_root, entries.iter().copied())
-            .expect("forest insertion should succeed");
-
-        self.vault_roots.insert((account_id, block_num), updated_root);
+        self.vault_roots.insert((account_id, block_num), new_root);
 
         tracing::debug!(
             target: crate::COMPONENT,

@@ -378,6 +378,55 @@ fn test_update_storage_map() {
 }
 
 #[test]
+fn test_full_state_delta_with_empty_vault_records_root() {
+    // Regression test for issue #1581: full-state deltas with empty vaults must still record
+    // the vault root so that subsequent `get_vault_asset_witnesses` calls succeed.
+    //
+    // The network counter account from the network monitor has an empty vault (it only uses
+    // storage slots). Without this fix, `get_vault_asset_witnesses` fails with "root not found"
+    // because no vault root was ever recorded for the account.
+    use miden_protocol::account::{Account, AccountStorage};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a full-state delta with an empty vault (like the network counter account).
+    let vault = AssetVault::new(&[]).unwrap();
+    let storage = AccountStorage::new(vec![]).unwrap();
+    let code = AccountCode::mock();
+    let nonce = Felt::ONE;
+    let account = Account::new(account_id, vault, storage, code, nonce, None).unwrap();
+    let full_delta = AccountDelta::try_from(account).unwrap();
+
+    // Sanity check: the vault delta should be empty.
+    assert!(full_delta.vault().is_empty());
+    assert!(full_delta.is_full_state());
+
+    forest.update_account(block_num, &full_delta).unwrap();
+
+    // The vault root must be recorded even though the vault is empty.
+    assert!(
+        forest.vault_roots.contains_key(&(account_id, block_num)),
+        "vault root should be recorded for full-state deltas with empty vaults"
+    );
+
+    // Verify the recorded root is the empty SMT root.
+    let recorded_root = forest.vault_roots[&(account_id, block_num)];
+    assert_eq!(
+        recorded_root,
+        InnerForest::empty_smt_root(),
+        "empty vault should have the empty SMT root"
+    );
+
+    // Verify `get_vault_asset_witnesses` succeeds (returns empty witnesses for empty keys).
+    let witnesses = forest
+        .get_vault_asset_witnesses(account_id, block_num, std::collections::BTreeSet::new())
+        .expect("get_vault_asset_witnesses should succeed for accounts with empty vaults");
+    assert!(witnesses.is_empty());
+}
+
+#[test]
 fn test_storage_map_incremental_updates() {
     use std::collections::BTreeMap;
 

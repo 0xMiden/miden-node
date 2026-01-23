@@ -64,18 +64,11 @@ type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
 
 /// Classifies accounts for database storage based on whether they are network accounts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
 pub(crate) enum NetworkAccountType {
     /// Not a network account.
-    None = 0,
+    None,
     /// A network account.
-    Network = 1,
-}
-
-impl From<NetworkAccountType> for i32 {
-    fn from(value: NetworkAccountType) -> Self {
-        value as i32
-    }
+    Network,
 }
 
 // ACCOUNT CODE
@@ -243,7 +236,7 @@ pub(crate) fn select_network_account_by_id(
 ) -> Result<Option<AccountInfo>, DatabaseError> {
     let maybe_summary = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::network_account_type.eq(i32::from(NetworkAccountType::Network)))
+        .filter(schema::accounts::network_account_type.eq(NetworkAccountType::Network.to_raw_sql()))
         .filter(schema::accounts::is_latest.eq(true))
         .get_result::<AccountSummaryRaw>(conn)
         .optional()
@@ -549,7 +542,7 @@ pub(crate) fn select_all_network_account_ids(
             schema::accounts::table
                 .filter(
                     schema::accounts::network_account_type
-                        .eq(i32::from(NetworkAccountType::Network)),
+                        .eq(NetworkAccountType::Network.to_raw_sql()),
                 )
                 .filter(schema::accounts::is_latest.eq(true)),
             (schema::accounts::account_id, schema::accounts::created_at_block),
@@ -1074,7 +1067,7 @@ pub(crate) fn upsert_accounts(
 
         let account_value = AccountRowInsert {
             account_id: account_id_bytes,
-            network_account_type: network_account_type.into(),
+            network_account_type: network_account_type.to_raw_sql(),
             account_commitment: update.final_state_commitment().to_bytes(),
             block_num: block_num_raw,
             nonce: full_account.as_ref().map(|account| nonce_to_raw_sql(account.nonce())),

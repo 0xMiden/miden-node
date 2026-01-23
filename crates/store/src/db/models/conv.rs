@@ -37,6 +37,8 @@ use miden_protocol::account::{StorageSlotName, StorageSlotType};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::NoteTag;
 
+use crate::db::models::queries::NetworkAccountType;
+
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert from database type {from_type} into {into_type}")]
 pub struct DatabaseTypeConversionError {
@@ -61,6 +63,29 @@ pub(crate) trait SqlTypeConvert: Sized {
             source: Box::new(source),
             from_type: std::any::type_name::<Self::Raw>(),
             into_type: std::any::type_name::<Self>(),
+        }
+    }
+}
+
+impl SqlTypeConvert for NetworkAccountType {
+    type Raw = i32;
+
+    fn to_raw_sql(self) -> Self::Raw {
+        match self {
+            NetworkAccountType::None => 0,
+            NetworkAccountType::Network => 1,
+        }
+    }
+
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
+        #[derive(Debug, thiserror::Error)]
+        #[error("invalid network account type value {0}")]
+        struct ValueError(i32);
+
+        match raw {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Network),
+            other => Err(Self::map_err(ValueError(other))),
         }
     }
 }

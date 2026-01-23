@@ -125,12 +125,12 @@ impl StoreClient {
         &self,
         account_id: NetworkAccountId,
     ) -> Result<Option<Account>, StoreError> {
-        let request = proto::store::AccountIdPrefix { account_id_prefix: account_id.prefix() };
+        let request = proto::account::AccountId::from(account_id.inner());
 
         let store_response = self
             .inner
             .clone()
-            .get_network_account_details_by_prefix(request)
+            .get_network_account_details_by_id(request)
             .await?
             .into_inner()
             .details;

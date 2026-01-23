@@ -427,6 +427,178 @@ fn test_full_state_delta_with_empty_vault_records_root() {
 }
 
 #[test]
+fn test_get_vault_asset_witnesses_with_keys_on_empty_vault() {
+    // Verify that requesting specific asset keys on an empty vault returns valid witnesses
+    // proving non-existence (the values should be EMPTY_WORD).
+    use miden_protocol::account::{Account, AccountStorage};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a full-state delta with an empty vault.
+    let vault = AssetVault::new(&[]).unwrap();
+    let storage = AccountStorage::new(vec![]).unwrap();
+    let code = AccountCode::mock();
+    let nonce = Felt::ONE;
+    let account = Account::new(account_id, vault, storage, code, nonce, None).unwrap();
+    let full_delta = AccountDelta::try_from(account).unwrap();
+
+    forest.update_account(block_num, &full_delta).unwrap();
+
+    // Request witnesses for assets that don't exist in the vault.
+    let asset_key = FungibleAsset::new(faucet_id, 0).unwrap().vault_key();
+    let asset_keys = BTreeSet::from_iter([asset_key]);
+
+    let witnesses = forest
+        .get_vault_asset_witnesses(account_id, block_num, asset_keys)
+        .expect("should return witnesses for non-existent assets proving their absence");
+
+    // Should return one witness proving the asset doesn't exist.
+    assert_eq!(witnesses.len(), 1);
+}
+
+#[test]
+fn test_get_storage_map_witness_with_keys_on_empty_slot() {
+    // Verify that requesting specific keys on a never-written storage slot returns valid
+    // witnesses proving non-existence.
+    use miden_protocol::account::{Account, AccountStorage};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a full-state delta with empty storage.
+    let vault = AssetVault::new(&[]).unwrap();
+    let storage = AccountStorage::new(vec![]).unwrap();
+    let code = AccountCode::mock();
+    let nonce = Felt::ONE;
+    let account = Account::new(account_id, vault, storage, code, nonce, None).unwrap();
+    let full_delta = AccountDelta::try_from(account).unwrap();
+
+    forest.update_account(block_num, &full_delta).unwrap();
+
+    // Request a witness for a key in a slot that was never written to.
+    let slot_name = StorageSlotName::mock(0);
+    let key = Word::from([1u32, 2, 3, 4]);
+
+    let witness = forest
+        .get_storage_map_witness(account_id, &slot_name, block_num, key)
+        .expect("should return witness for non-existent key proving its absence");
+
+    // The witness should contain a valid proof.
+    let _proof = witness.proof();
+}
+
+#[test]
+fn test_full_state_delta_with_empty_storage_map_allows_witness() {
+    // Regression test: similar to test_full_state_delta_with_empty_vault_records_root,
+    // a full-state delta with no storage map entries should still allow witnesses to be
+    // retrieved (proving non-existence of keys in the slot).
+    //
+    // Unlike vaults where every account has exactly one, storage maps are per-slot and we
+    // don't know which slots exist from an empty delta. The fix is to return the empty SMT
+    // root when a slot has never been written to, allowing proofs of non-existence.
+    use miden_protocol::account::{Account, AccountStorage};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a full-state delta with empty storage (like a new account with no storage updates).
+    let vault = AssetVault::new(&[]).unwrap();
+    let storage = AccountStorage::new(vec![]).unwrap();
+    let code = AccountCode::mock();
+    let nonce = Felt::ONE;
+    let account = Account::new(account_id, vault, storage, code, nonce, None).unwrap();
+    let full_delta = AccountDelta::try_from(account).unwrap();
+
+    // Sanity check: the storage delta should be empty.
+    assert!(full_delta.storage().is_empty());
+    assert!(full_delta.is_full_state());
+
+    forest.update_account(block_num, &full_delta).unwrap();
+
+    // Query a storage map witness for a slot that was never written to.
+    // This should succeed and return a valid proof against the empty SMT root,
+    // proving that the requested key doesn't exist.
+    let slot_name = StorageSlotName::mock(0);
+    let key = Word::from([1u32, 2, 3, 4]);
+
+    let witness = forest.get_storage_map_witness(account_id, &slot_name, block_num, key);
+    assert!(
+        witness.is_ok(),
+        "get_storage_map_witness should succeed for never-written slots, got: {:?}",
+        witness.err()
+    );
+}
+
+#[test]
+fn test_open_storage_map_on_empty_slot() {
+    // Verify that `open_storage_map` works for slots that were never written to,
+    // returning valid proofs against the empty SMT root.
+    use miden_protocol::account::{Account, AccountStorage};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a full-state delta with empty storage.
+    let vault = AssetVault::new(&[]).unwrap();
+    let storage = AccountStorage::new(vec![]).unwrap();
+    let code = AccountCode::mock();
+    let nonce = Felt::ONE;
+    let account = Account::new(account_id, vault, storage, code, nonce, None).unwrap();
+    let full_delta = AccountDelta::try_from(account).unwrap();
+
+    forest.update_account(block_num, &full_delta).unwrap();
+
+    // Query storage map details for a slot that was never written to.
+    let slot_name = StorageSlotName::mock(0);
+    let keys = vec![Word::from([1u32, 2, 3, 4]), Word::from([5u32, 6, 7, 8])];
+
+    let details = forest.open_storage_map(account_id, slot_name, block_num, &keys);
+    assert!(
+        details.is_ok(),
+        "open_storage_map should succeed for never-written slots, got: {:?}",
+        details.err()
+    );
+}
+
+#[test]
+fn test_storage_map_entries_on_empty_slot() {
+    // Verify that `storage_map_entries` returns empty entries for slots that were never written to.
+    use miden_node_proto::domain::account::StorageMapEntries;
+    use miden_protocol::account::{Account, AccountStorage};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a full-state delta with empty storage.
+    let vault = AssetVault::new(&[]).unwrap();
+    let storage = AccountStorage::new(vec![]).unwrap();
+    let code = AccountCode::mock();
+    let nonce = Felt::ONE;
+    let account = Account::new(account_id, vault, storage, code, nonce, None).unwrap();
+    let full_delta = AccountDelta::try_from(account).unwrap();
+
+    forest.update_account(block_num, &full_delta).unwrap();
+
+    // Query all entries for a slot that was never written to.
+    let slot_name = StorageSlotName::mock(0);
+    let details = forest.storage_map_entries(account_id, slot_name, block_num);
+
+    // Should return empty entries, not an error.
+    assert!(
+        matches!(details.entries, StorageMapEntries::AllEntries(ref e) if e.is_empty()),
+        "storage_map_entries should return empty entries for never-written slots, got: {:?}",
+        details.entries
+    );
+}
+
+#[test]
 fn test_storage_map_incremental_updates() {
     use std::collections::BTreeMap;
 

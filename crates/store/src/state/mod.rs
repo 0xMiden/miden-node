@@ -1114,19 +1114,9 @@ impl State {
             let details = match &slot_data {
                 SlotData::MapKeys(keys) => forest_guard
                     .open_storage_map(account_id, slot_name.clone(), block_num, keys)
-                    .ok_or_else(|| DatabaseError::StorageRootNotFound {
-                        account_id,
-                        slot_name: slot_name.to_string(),
-                        block_num,
-                    })?
                     .map_err(DatabaseError::MerkleError)?,
                 SlotData::All => forest_guard
-                    .storage_map_entries(account_id, slot_name.clone(), block_num)
-                    .ok_or_else(|| DatabaseError::StorageRootNotFound {
-                        account_id,
-                        slot_name: slot_name.to_string(),
-                        block_num,
-                    })?,
+                    .storage_map_entries(account_id, slot_name.clone(), block_num),
             };
 
             storage_map_details.push(details);

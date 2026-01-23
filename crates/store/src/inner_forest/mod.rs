@@ -184,9 +184,10 @@ impl InnerForest {
         raw_key: Word,
     ) -> Result<StorageMapWitness, WitnessError> {
         let key = StorageMap::hash_key(raw_key);
+        // Use empty root for slots that were never written to, proving non-existence.
         let root = self
             .get_storage_map_root(account_id, slot_name, block_num)
-            .ok_or(WitnessError::RootNotFound)?;
+            .unwrap_or_else(Self::empty_smt_root);
         let proof = self.forest.open(root, key)?;
 
         Ok(StorageMapWitness::new(proof, vec![raw_key])?)
@@ -214,56 +215,63 @@ impl InnerForest {
 
     /// Opens a storage map and returns storage map details with SMT proofs for the given keys.
     ///
-    /// Returns `None` if no storage root is tracked for this account/slot/block combination.
-    /// Returns a `MerkleError` if the forest doesn't contain sufficient data for the proofs.
+    /// Uses the empty SMT root for slots that were never written to, allowing proofs of
+    /// non-existence.
     pub(crate) fn open_storage_map(
         &self,
         account_id: AccountId,
         slot_name: StorageSlotName,
         block_num: BlockNumber,
         raw_keys: &[Word],
-    ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
-        let root = self.get_storage_map_root(account_id, &slot_name, block_num)?;
+    ) -> Result<AccountStorageMapDetails, MerkleError> {
+        // Use empty root for slots that were never written to, proving non-existence.
+        let root = self
+            .get_storage_map_root(account_id, &slot_name, block_num)
+            .unwrap_or_else(Self::empty_smt_root);
 
         // Collect SMT proofs for each key
         let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {
             let key = StorageMap::hash_key(*raw_key);
             self.forest.open(root, key)
-        }));
+        }))?;
 
-        Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
+        Ok(AccountStorageMapDetails::from_proofs(slot_name, proofs))
     }
 
     /// Returns all key-value entries for a specific account storage slot at or before a block.
     ///
     /// Uses range query semantics: finds the most recent entries at or before `block_num`.
-    /// Returns `None` if no entries exist for this account/slot up to the given block.
+    /// Returns empty entries for slots that were never written to.
     /// Returns `LimitExceeded` if there are too many entries to return.
     pub(crate) fn storage_map_entries(
         &self,
         account_id: AccountId,
         slot_name: StorageSlotName,
         block_num: BlockNumber,
-    ) -> Option<AccountStorageMapDetails> {
-        // Find the most recent entries at or before block_num
-        let entries = self
+    ) -> AccountStorageMapDetails {
+        // Find the most recent entries at or before block_num.
+        // Returns empty for slots that were never written to.
+        let Some(entries) = self
             .storage_entries
             .range(
                 (account_id, slot_name.clone(), BlockNumber::GENESIS)
                     ..=(account_id, slot_name.clone(), block_num),
             )
             .next_back()
-            .map(|(_, entries)| entries)?;
+            .map(|(_, entries)| entries)
+        else {
+            return AccountStorageMapDetails::from_forest_entries(slot_name, vec![]);
+        };
 
         if entries.len() > AccountStorageMapDetails::MAX_RETURN_ENTRIES {
-            return Some(AccountStorageMapDetails {
+            return AccountStorageMapDetails {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,
-            });
+            };
         }
         let entries = Vec::from_iter(entries.iter().map(|(k, v)| (*k, *v)));
 
-        Some(AccountStorageMapDetails::from_forest_entries(slot_name, entries))
+        AccountStorageMapDetails::from_forest_entries(slot_name, entries)
     }
 
     // PUBLIC INTERFACE

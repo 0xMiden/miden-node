@@ -234,7 +234,7 @@ pub mod account_storage_details {
         #[prost(string, tag = "1")]
         pub slot_name: ::prost::alloc::string::String,
         /// True when the number of entries exceeds the response limit.
-        /// When set, clients should use the `SyncStorageMaps` endpoint.
+        /// When set, clients should use the `SyncAccountStorageMaps` endpoint.
         #[prost(bool, tag = "2")]
         pub too_many_entries: bool,
         /// The map entries (with or without proofs). Empty when too_many_entries is true.
@@ -479,7 +479,7 @@ pub struct SyncStateResponse {
 /// Allows requesters to sync storage map values for specific public accounts within a block range,
 /// with support for cursor-based pagination to handle large storage maps.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SyncStorageMapsRequest {
+pub struct SyncAccountStorageMapsRequest {
     /// Block range from which to start synchronizing.
     ///
     /// If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
@@ -491,7 +491,7 @@ pub struct SyncStorageMapsRequest {
     pub account_id: ::core::option::Option<super::account::AccountId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SyncStorageMapsResponse {
+pub struct SyncAccountStorageMapsResponse {
     /// Pagination information.
     #[prost(message, optional, tag = "1")]
     pub pagination_info: ::core::option::Option<PaginationInfo>,
@@ -1041,11 +1041,11 @@ pub mod api_client {
             self.inner.unary(req, path, codec).await
         }
         /// Returns storage map updates for specified account and storage slots within a block range.
-        pub async fn sync_storage_maps(
+        pub async fn sync_account_storage_maps(
             &mut self,
-            request: impl tonic::IntoRequest<super::SyncStorageMapsRequest>,
+            request: impl tonic::IntoRequest<super::SyncAccountStorageMapsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::SyncStorageMapsResponse>,
+            tonic::Response<super::SyncAccountStorageMapsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -1057,9 +1057,9 @@ pub mod api_client {
                     )
                 })?;
             let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/rpc.Api/SyncStorageMaps");
+            let path = http::uri::PathAndQuery::from_static("/rpc.Api/SyncAccountStorageMaps");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncStorageMaps"));
+            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncAccountStorageMaps"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns transactions records for specific accounts within a block range.
@@ -1266,11 +1266,11 @@ pub mod api_server {
             tonic::Status,
         >;
         /// Returns storage map updates for specified account and storage slots within a block range.
-        async fn sync_storage_maps(
+        async fn sync_account_storage_maps(
             &self,
-            request: tonic::Request<super::SyncStorageMapsRequest>,
+            request: tonic::Request<super::SyncAccountStorageMapsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::SyncStorageMapsResponse>,
+            tonic::Response<super::SyncAccountStorageMapsResponse>,
             tonic::Status,
         >;
         /// Returns transactions records for specific accounts within a block range.
@@ -1948,25 +1948,25 @@ pub mod api_server {
                     };
                     Box::pin(fut)
                 }
-                "/rpc.Api/SyncStorageMaps" => {
+                "/rpc.Api/SyncAccountStorageMaps" => {
                     #[allow(non_camel_case_types)]
-                    struct SyncStorageMapsSvc<T: Api>(pub Arc<T>);
+                    struct SyncAccountStorageMapsSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<super::SyncStorageMapsRequest>
-                    for SyncStorageMapsSvc<T> {
-                        type Response = super::SyncStorageMapsResponse;
+                    > tonic::server::UnaryService<super::SyncAccountStorageMapsRequest>
+                    for SyncAccountStorageMapsSvc<T> {
+                        type Response = super::SyncAccountStorageMapsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SyncStorageMapsRequest>,
+                            request: tonic::Request<super::SyncAccountStorageMapsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Api>::sync_storage_maps(&inner, request).await
+                                <T as Api>::sync_account_storage_maps(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1977,7 +1977,7 @@ pub mod api_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = SyncStorageMapsSvc(inner);
+                        let method = SyncAccountStorageMapsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

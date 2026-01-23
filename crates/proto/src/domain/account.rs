@@ -416,12 +416,12 @@ pub struct AccountStorageMapDetails {
 ///
 /// When a storage map contains many entries (> [`AccountStorageMapDetails::MAX_RETURN_ENTRIES`]),
 /// returning all entries in a single RPC response creates performance issues. In such cases,
-/// the `LimitExceeded` variant indicates to the client to use the `SyncStorageMaps` endpoint
+/// the `LimitExceeded` variant indicates to the client to use the `SyncAccountStorageMaps` endpoint
 /// instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageMapEntries {
     /// The map has too many entries to return inline.
-    /// Clients must use `SyncStorageMaps` endpoint instead.
+    /// Clients must use `SyncAccountStorageMaps` endpoint instead.
     LimitExceeded,
 
     /// All storage map entries (key-value pairs) without proofs.

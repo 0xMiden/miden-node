@@ -204,13 +204,13 @@ impl api_server::Api for RpcService {
         self.store.clone().sync_state(request).await
     }
 
-    async fn sync_storage_maps(
+    async fn sync_account_storage_maps(
         &self,
-        request: Request<proto::rpc::SyncStorageMapsRequest>,
-    ) -> Result<Response<proto::rpc::SyncStorageMapsResponse>, Status> {
+        request: Request<proto::rpc::SyncAccountStorageMapsRequest>,
+    ) -> Result<Response<proto::rpc::SyncAccountStorageMapsResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
-        self.store.clone().sync_storage_maps(request).await
+        self.store.clone().sync_account_storage_maps(request).await
     }
 
     async fn sync_notes(

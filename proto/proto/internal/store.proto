@@ -84,7 +84,7 @@ service Rpc {
     rpc SyncAccountVault(rpc.SyncAccountVaultRequest) returns (rpc.SyncAccountVaultResponse) {}
 
     // Returns storage map updates for specified account and storage slots within a block range.
-    rpc SyncStorageMaps(rpc.SyncStorageMapsRequest) returns (rpc.SyncStorageMapsResponse) {}
+    rpc SyncAccountStorageMaps(rpc.SyncAccountStorageMapsRequest) returns (rpc.SyncAccountStorageMapsResponse) {}
 
     // Returns transactions records for specific accounts within a block range.
     rpc SyncTransactions(rpc.SyncTransactionsRequest) returns (rpc.SyncTransactionsResponse) {}

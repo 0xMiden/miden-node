@@ -697,11 +697,11 @@ pub mod rpc_client {
             self.inner.unary(req, path, codec).await
         }
         /// Returns storage map updates for specified account and storage slots within a block range.
-        pub async fn sync_storage_maps(
+        pub async fn sync_account_storage_maps(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc::SyncStorageMapsRequest>,
+            request: impl tonic::IntoRequest<super::super::rpc::SyncAccountStorageMapsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc::SyncStorageMapsResponse>,
+            tonic::Response<super::super::rpc::SyncAccountStorageMapsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -714,10 +714,10 @@ pub mod rpc_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/store.Rpc/SyncStorageMaps",
+                "/store.Rpc/SyncAccountStorageMaps",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "SyncStorageMaps"));
+            req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "SyncAccountStorageMaps"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns transactions records for specific accounts within a block range.
@@ -886,11 +886,11 @@ pub mod rpc_server {
             tonic::Status,
         >;
         /// Returns storage map updates for specified account and storage slots within a block range.
-        async fn sync_storage_maps(
+        async fn sync_account_storage_maps(
             &self,
-            request: tonic::Request<super::super::rpc::SyncStorageMapsRequest>,
+            request: tonic::Request<super::super::rpc::SyncAccountStorageMapsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc::SyncStorageMapsResponse>,
+            tonic::Response<super::super::rpc::SyncAccountStorageMapsResponse>,
             tonic::Status,
         >;
         /// Returns transactions records for specific accounts within a block range.
@@ -1480,15 +1480,15 @@ pub mod rpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/store.Rpc/SyncStorageMaps" => {
+                "/store.Rpc/SyncAccountStorageMaps" => {
                     #[allow(non_camel_case_types)]
-                    struct SyncStorageMapsSvc<T: Rpc>(pub Arc<T>);
+                    struct SyncAccountStorageMapsSvc<T: Rpc>(pub Arc<T>);
                     impl<
                         T: Rpc,
                     > tonic::server::UnaryService<
-                        super::super::rpc::SyncStorageMapsRequest,
-                    > for SyncStorageMapsSvc<T> {
-                        type Response = super::super::rpc::SyncStorageMapsResponse;
+                        super::super::rpc::SyncAccountStorageMapsRequest,
+                    > for SyncAccountStorageMapsSvc<T> {
+                        type Response = super::super::rpc::SyncAccountStorageMapsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1496,12 +1496,12 @@ pub mod rpc_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc::SyncStorageMapsRequest,
+                                super::super::rpc::SyncAccountStorageMapsRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Rpc>::sync_storage_maps(&inner, request).await
+                                <T as Rpc>::sync_account_storage_maps(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1512,7 +1512,7 @@ pub mod rpc_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = SyncStorageMapsSvc(inner);
+                        let method = SyncAccountStorageMapsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

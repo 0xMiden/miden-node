@@ -165,39 +165,6 @@ fn test_incremental_vault_updates() {
 }
 
 #[test]
-fn test_full_state_delta_starts_from_empty_root() {
-    let mut forest = InnerForest::new();
-    let account_id = dummy_account();
-    let faucet_id = dummy_faucet();
-    let block_num = BlockNumber::GENESIS.child();
-
-    // Simulate a pre-existing vault state that should be ignored for full-state deltas
-    let mut vault_delta_pre = AccountVaultDelta::default();
-    vault_delta_pre.add_asset(dummy_fungible_asset(faucet_id, 999)).unwrap();
-    let delta_pre =
-        dummy_partial_delta(account_id, vault_delta_pre, AccountStorageDelta::default());
-    forest.update_account(block_num, &delta_pre).unwrap();
-    assert!(forest.vault_roots.contains_key(&(account_id, block_num)));
-
-    // Now create a full-state delta at the same block
-    // A full-state delta should start from an empty root, not from the previous state
-    let asset = dummy_fungible_asset(faucet_id, 100);
-    let full_delta = dummy_full_state_delta(account_id, &[asset]);
-
-    // Create a fresh forest to compare
-    let mut fresh_forest = InnerForest::new();
-    fresh_forest.update_account(block_num, &full_delta).unwrap();
-    let fresh_root = fresh_forest.vault_roots[&(account_id, block_num)];
-
-    // Update the original forest with the full-state delta
-    forest.update_account(block_num, &full_delta).unwrap();
-    let updated_root = forest.vault_roots[&(account_id, block_num)];
-
-    // The full-state delta should produce the same root regardless of prior state
-    assert_eq!(updated_root, fresh_root);
-}
-
-#[test]
 fn test_vault_state_persists_across_blocks_without_changes() {
     // Regression test for issue #7: vault state should persist across blocks
     // where no changes occur, not reset to empty.

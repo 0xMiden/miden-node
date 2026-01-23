@@ -89,28 +89,6 @@ impl InnerForest {
         *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
     }
 
-    /// Retrieves the most recent vault SMT root for an account.
-    ///
-    /// Returns the latest vault root entry regardless of block number.
-    /// Used when applying incremental deltas where we always want the previous state.
-    ///
-    /// If no vault root is found for the account, returns an empty SMT root.
-    ///
-    /// # Arguments
-    ///
-    /// * `is_full_state` - If `true`, returns an empty SMT root (for new accounts or DB
-    ///   reconstruction where delta values are absolute). If `false`, looks up the previous state
-    ///   (for incremental updates where delta values are relative changes).
-    fn get_latest_vault_root(&self, account_id: AccountId, is_full_state: bool) -> Word {
-        if is_full_state {
-            return Self::empty_smt_root();
-        }
-        self.vault_roots
-            .range((account_id, BlockNumber::GENESIS)..=(account_id, BlockNumber::from(u32::MAX)))
-            .next_back()
-            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
-    }
-
     /// Retrieves the most recent storage map SMT root for an account slot.
     ///
     /// Returns the latest storage root entry regardless of block number.
@@ -321,10 +299,10 @@ impl InnerForest {
         let account_id = delta.id();
         let is_full_state = delta.is_full_state();
 
-        // Update for new accounts (full-state) or when there are vault changes.
-        // New accounts need their vault root recorded even if the vault is empty.
-        if is_full_state || !delta.vault().is_empty() {
-            self.update_account_vault(block_num, account_id, delta.vault(), is_full_state)?;
+        if is_full_state {
+            self.insert_account_vault(block_num, account_id, delta.vault());
+        } else if !delta.vault().is_empty() {
+            self.update_account_vault(block_num, account_id, delta.vault())?;
         }
 
         if !delta.storage().is_empty() {
@@ -333,18 +311,78 @@ impl InnerForest {
         Ok(())
     }
 
-    // PRIVATE METHODS
+    // ASSET VAULT DELTA PROCESSING
     // --------------------------------------------------------------------------------------------
 
-    /// Updates the forest with vault changes from a delta.
+    /// Retrieves the most recent vault SMT root for an account. If no vault root is found for the
+    /// account, returns an empty SMT root.
+    fn get_latest_vault_root(&self, account_id: AccountId) -> Word {
+        self.vault_roots
+            .range((account_id, BlockNumber::GENESIS)..=(account_id, BlockNumber::from(u32::MAX)))
+            .next_back()
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+    }
+
+    /// Inserts asset vault data into the forest for the specified account. Assumes that asset
+    /// vault for this account does not yet exist in the forest.
+    fn insert_account_vault(
+        &mut self,
+        block_num: BlockNumber,
+        account_id: AccountId,
+        delta: &AccountVaultDelta,
+    ) {
+        // get the current vault root for the account, and make sure it is empty
+        let prev_root = self.get_latest_vault_root(account_id);
+        assert_eq!(prev_root, Self::empty_smt_root(), "account should not be in the forest");
+
+        // if there are no assets in the vault, add a root of an empty SMT to the vault roots map
+        // so that the map has entries for all accounts, and then return (i.e., no need to insert
+        // anything into the forest)
+        if delta.is_empty() {
+            self.vault_roots.insert((account_id, block_num), prev_root);
+            return;
+        }
+
+        let mut entries: Vec<(Word, Word)> = Vec::new();
+
+        // process fungible assets
+        for (faucet_id, amount_delta) in delta.fungible().iter() {
+            let amount =
+                (*amount_delta).try_into().expect("full-state amount should be non-negative");
+            let asset = FungibleAsset::new(*faucet_id, amount).expect("valid faucet id");
+            entries.push((asset.vault_key().into(), asset.into()));
+        }
+
+        // process non-fungible assets
+        for (&asset, _action) in delta.non_fungible().iter() {
+            // TODO: assert that action is addition
+            entries.push((asset.vault_key().into(), asset.into()));
+        }
+
+        assert!(!entries.is_empty(), "non-empty delta should contain entries");
+        let num_entries = entries.len();
+
+        let new_root = self
+            .forest
+            .batch_insert(prev_root, entries)
+            .expect("forest insertion should succeed");
+
+        self.vault_roots.insert((account_id, block_num), new_root);
+
+        tracing::debug!(
+            target: crate::COMPONENT,
+            %account_id,
+            %block_num,
+            vault_entries = num_entries,
+            "Inserted vault into forest"
+        );
+    }
+
+    /// Updates the forest with vault changes from a delta. The vault delta is assumed to be
+    /// non-empty.
     ///
     /// Processes both fungible and non-fungible asset changes, building entries for the vault SMT
     /// and tracking the new root.
-    ///
-    /// # Arguments
-    ///
-    /// * `is_full_state` - If `true`, delta values are absolute (new account or DB reconstruction).
-    ///   If `false`, delta values are relative changes applied to previous state.
     ///
     /// # Errors
     ///
@@ -353,26 +391,25 @@ impl InnerForest {
         &mut self,
         block_num: BlockNumber,
         account_id: AccountId,
-        vault_delta: &AccountVaultDelta,
-        is_full_state: bool,
+        delta: &AccountVaultDelta,
     ) -> Result<(), InnerForestError> {
-        let prev_root = self.get_latest_vault_root(account_id, is_full_state);
+        assert!(!delta.is_empty(), "expected the delta not to be empty");
 
-        let mut entries = Vec::new();
+        // get the previous vault root; the root could be for an empty or non-empty SMT
+        let prev_root = self.get_latest_vault_root(account_id);
+
+        let mut entries: Vec<(Word, Word)> = Vec::new();
 
         // Process fungible assets
-        for (faucet_id, amount_delta) in vault_delta.fungible().iter() {
+        for (faucet_id, amount_delta) in delta.fungible().iter() {
             let key: Word =
                 FungibleAsset::new(*faucet_id, 0).expect("valid faucet id").vault_key().into();
 
-            let new_amount = if is_full_state {
-                // For full-state deltas, amount is the absolute value
-                (*amount_delta).try_into().expect("full-state amount should be non-negative")
-            } else {
-                // For partial deltas, amount is a change that must be applied to previous balance.
+            let new_amount = {
+                // amount delta is a change that must be applied to previous balance.
                 //
-                // TODO: SmtForest only exposes `fn open()` which computes a full Merkle
-                // proof. We only need the leaf, so a direct `fn get()` method would be faster.
+                // TODO: SmtForest only exposes `fn open()` which computes a full Merkle proof. We
+                // only need the leaf, so a direct `fn get()` method would be faster.
                 let prev_amount = self
                     .forest
                     .open(prev_root, key)
@@ -393,16 +430,13 @@ impl InnerForest {
             let value = if new_amount == 0 {
                 EMPTY_WORD
             } else {
-                let asset: Asset = FungibleAsset::new(*faucet_id, new_amount)
-                    .expect("valid fungible asset")
-                    .into();
-                Word::from(asset)
+                FungibleAsset::new(*faucet_id, new_amount).expect("valid fungible asset").into()
             };
             entries.push((key, value));
         }
 
         // Process non-fungible assets
-        for (asset, action) in vault_delta.non_fungible().iter() {
+        for (asset, action) in delta.non_fungible().iter() {
             let value = match action {
                 NonFungibleDeltaAction::Add => Word::from(Asset::NonFungible(*asset)),
                 NonFungibleDeltaAction::Remove => EMPTY_WORD,
@@ -410,13 +444,13 @@ impl InnerForest {
             entries.push((asset.vault_key().into(), value));
         }
 
-        let new_root = if entries.is_empty() {
-            prev_root
-        } else {
-            self.forest
-                .batch_insert(prev_root, entries.iter().copied())
-                .expect("forest insertion should succeed")
-        };
+        assert!(!entries.is_empty(), "non-empty delta should contain entries");
+        let num_entries = entries.len();
+
+        let new_root = self
+            .forest
+            .batch_insert(prev_root, entries)
+            .expect("forest insertion should succeed");
 
         self.vault_roots.insert((account_id, block_num), new_root);
 
@@ -424,11 +458,14 @@ impl InnerForest {
             target: crate::COMPONENT,
             %account_id,
             %block_num,
-            vault_entries = entries.len(),
+            vault_entries = num_entries,
             "Updated vault in forest"
         );
         Ok(())
     }
+
+    // STORAGE MAP DELTA PROCESSING
+    // --------------------------------------------------------------------------------------------
 
     /// Updates the forest with storage map changes from a delta.
     ///

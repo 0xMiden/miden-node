@@ -699,7 +699,9 @@ pub mod rpc_client {
         /// Returns storage map updates for specified account and storage slots within a block range.
         pub async fn sync_account_storage_maps(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::rpc::SyncAccountStorageMapsRequest>,
+            request: impl tonic::IntoRequest<
+                super::super::rpc::SyncAccountStorageMapsRequest,
+            >,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc::SyncAccountStorageMapsResponse>,
             tonic::Status,
@@ -717,7 +719,8 @@ pub mod rpc_client {
                 "/store.Rpc/SyncAccountStorageMaps",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "SyncAccountStorageMaps"));
+            req.extensions_mut()
+                .insert(GrpcMethod::new("store.Rpc", "SyncAccountStorageMaps"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns transactions records for specific accounts within a block range.

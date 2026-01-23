@@ -1057,9 +1057,12 @@ pub mod api_client {
                     )
                 })?;
             let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/rpc.Api/SyncAccountStorageMaps");
+            let path = http::uri::PathAndQuery::from_static(
+                "/rpc.Api/SyncAccountStorageMaps",
+            );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncAccountStorageMaps"));
+            req.extensions_mut()
+                .insert(GrpcMethod::new("rpc.Api", "SyncAccountStorageMaps"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns transactions records for specific accounts within a block range.

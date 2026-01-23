@@ -1,0 +1,44 @@
+# Alternative Approach: Pre-compute in InnerForest
+
+## Current Flow (this PR)
+```
+db.apply_block() -> upsert_accounts() -> [ad-hoc SmtForest computes roots]
+                                                    |
+State::apply_block() -----> InnerForest::apply_block_updates() -> [InnerForest recomputes same roots]
+```
+
+Duplicate SMT computation in both DB layer and InnerForest.
+
+## Alternative Flow
+```
+InnerForest::apply_block_updates() -> [computes roots, stores results]
+                                                    |
+                                                    v
+db.apply_block(precomputed_roots) -> upsert_accounts() -> [uses pre-computed roots]
+```
+
+## Required Changes
+
+1. **Extend InnerForest** to also track:
+   - Value slot updates (currently only tracks map roots)
+   - Full `AccountStorageHeader` per (account_id, block_num)
+
+2. **Add extraction method**:
+   ```rust
+   InnerForest::get_precomputed_state(account_id, block_num) -> (AccountStorageHeader, vault_root)
+   ```
+
+3. **Reorder apply_block**:
+   - Update InnerForest BEFORE db.apply_block
+   - Pass pre-computed roots to upsert_accounts
+
+4. **Remove** `apply_storage_delta_to_header()` and `compute_vault_root_after_delta()`
+
+## Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Single SMT computation | Tighter coupling between State and DB |
+| InnerForest as single source of truth | Must rollback InnerForest if DB fails |
+| | More memory (store full headers) |
+| | Complex locking during apply_block |

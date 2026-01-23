@@ -93,7 +93,7 @@ pub struct MaybeNoteScript {
     #[prost(message, optional, tag = "1")]
     pub script: ::core::option::Option<super::note::NoteScript>,
 }
-/// Returns the latest state proof of the specified account.
+/// Defines the request for account details.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountRequest {
     /// ID of the account for which we want to get data
@@ -747,7 +747,7 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "CheckNullifiers"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state proof of the specified account.
+        /// Returns the latest details of the specified account.
         pub async fn get_account(
             &mut self,
             request: impl tonic::IntoRequest<super::AccountRequest>,
@@ -1147,7 +1147,7 @@ pub mod api_server {
             tonic::Response<super::CheckNullifiersResponse>,
             tonic::Status,
         >;
-        /// Returns the latest state proof of the specified account.
+        /// Returns the latest details of the specified account.
         async fn get_account(
             &self,
             request: tonic::Request<super::AccountRequest>,

@@ -20,7 +20,7 @@ use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::NoteAttachment;
 use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
-use miden_standards::note::NetworkAccountTarget;
+use miden_standards::note::{NetworkAccountTarget, NetworkAccountTargetError};
 use thiserror::Error;
 
 use super::try_convert;
@@ -134,7 +134,7 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     }
 }
 
-// ACCOUNT PROOF REQUEST
+// ACCOUNT REQUEST
 // ================================================================================================
 
 /// Represents a request for an account proof.
@@ -1065,7 +1065,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountId {
 
     fn try_from(attachment: &NoteAttachment) -> Result<Self, Self::Error> {
         let target = NetworkAccountTarget::try_from(attachment)
-            .map_err(|e| NetworkAccountError::InvalidAttachment(e.to_string()))?;
+            .map_err(NetworkAccountError::InvalidAttachment)?;
         Ok(NetworkAccountId(target.target_id()))
     }
 }
@@ -1097,7 +1097,7 @@ pub enum NetworkAccountError {
     #[error("account ID {0} is not a valid network account ID")]
     NotNetworkAccount(AccountId),
     #[error("invalid network account attachment: {0}")]
-    InvalidAttachment(String),
+    InvalidAttachment(#[source] NetworkAccountTargetError),
     #[error("invalid network account prefix: {0}")]
     InvalidPrefix(u32),
 }

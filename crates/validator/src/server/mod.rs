@@ -169,15 +169,15 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
         &self,
         request: tonic::Request<proto::blockchain::ProposedBlock>,
     ) -> Result<tonic::Response<proto::blockchain::BlockSignature>, tonic::Status> {
-        let proposed_block_bytes = request.into_inner().proposed_block;
+        let proposed_block = info_span!("deserialize").in_scope(|| {
+            let proposed_block_bytes = request.into_inner().proposed_block;
 
-        // Deserialize the proposed block.
-        let proposed_block =
             ProposedBlock::read_from_bytes(&proposed_block_bytes).map_err(|err| {
                 tonic::Status::invalid_argument(format!(
                     "Failed to deserialize proposed block: {err}",
                 ))
-            })?;
+            })
+        })?;
 
         // Validate the block.
         let signature =
@@ -188,7 +188,9 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
                 })?;
 
         // Send the signature.
-        let response = proto::blockchain::BlockSignature { signature: signature.to_bytes() };
-        Ok(tonic::Response::new(response))
+        info_span!("serialize").in_scope(|| {
+            let response = proto::blockchain::BlockSignature { signature: signature.to_bytes() };
+            Ok(tonic::Response::new(response))
+        })
     }
 }

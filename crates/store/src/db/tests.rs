@@ -393,9 +393,9 @@ fn sql_unconsumed_network_notes() {
 
     // Both notes are unconsumed, query should return both notes on both blocks.
     (0..2).for_each(|i: u32| {
-        let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+        let (result, _) = queries::select_unconsumed_network_notes_by_account_id(
             &mut conn,
-            NoteTag::with_account_target(account_note.0).into(),
+            account_note.0,
             i.into(),
             Page {
                 token: None,
@@ -410,9 +410,9 @@ fn sql_unconsumed_network_notes() {
     queries::insert_nullifiers_for_block(&mut conn, &[notes[1].1.unwrap()], 1.into()).unwrap();
 
     // Query against first block should return both notes.
-    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+    let (result, _) = queries::select_unconsumed_network_notes_by_account_id(
         &mut conn,
-        NoteTag::with_account_target(account_note.0).into(),
+        account_note.0,
         0.into(),
         Page {
             token: None,
@@ -423,9 +423,9 @@ fn sql_unconsumed_network_notes() {
     assert_eq!(result.len(), 2);
 
     // Query against second block should return only first note.
-    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+    let (result, _) = queries::select_unconsumed_network_notes_by_account_id(
         &mut conn,
-        NoteTag::with_account_target(account_note.0).into(),
+        account_note.0,
         1.into(),
         Page {
             token: None,

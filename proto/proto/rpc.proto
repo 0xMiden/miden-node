@@ -30,7 +30,7 @@ service Api {
     // Verify proofs against the nullifier tree root in the latest block header.
     rpc CheckNullifiers(NullifierList) returns (CheckNullifiersResponse) {}
 
-    // Returns the latest state proof of the specified account.
+    // Returns the latest details of the specified account.
     rpc GetAccount(AccountRequest) returns (AccountResponse) {}
 
     // Returns raw block data for the specified block number.
@@ -219,7 +219,7 @@ message MaybeNoteScript {
 // GET ACCOUNT PROOF
 // ================================================================================================
 
-// Returns the latest state proof of the specified account.
+// Defines the request for account details.
 message AccountRequest {
     // Request the details for a public account.
     message AccountDetailRequest {

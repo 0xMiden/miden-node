@@ -17,6 +17,8 @@ mod test_macro;
 pub enum ConversionError {
     #[error("asset error")]
     AssetError(#[from] AssetError),
+    #[error("account code missing")]
+    AccountCodeMissing,
     #[error("account error")]
     AccountError(#[from] AccountError),
     #[error("fee parameters error")]
@@ -48,8 +50,6 @@ pub enum ConversionError {
         entity: &'static str,
         field_name: &'static str,
     },
-    #[error("MMR error")]
-    MmrError(#[from] miden_protocol::crypto::merkle::mmr::MmrError),
     #[error("failed to deserialize {entity}")]
     DeserializationError {
         entity: &'static str,

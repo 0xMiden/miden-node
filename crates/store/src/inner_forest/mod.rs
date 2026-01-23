@@ -216,9 +216,6 @@ impl InnerForest {
     ///
     /// Returns `None` if no storage root is tracked for this account/slot/block combination.
     /// Returns a `MerkleError` if the forest doesn't contain sufficient data for the proofs.
-    ///
-    /// If the number of requested keys exceeds [`AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES`],
-    /// returns `LimitExceeded`.
     pub(crate) fn open_storage_map(
         &self,
         account_id: AccountId,
@@ -227,13 +224,6 @@ impl InnerForest {
         raw_keys: &[Word],
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
         let root = self.get_storage_map_root(account_id, &slot_name, block_num)?;
-
-        if raw_keys.len() > AccountStorageMapDetails::MAX_SMT_PROOF_ENTRIES {
-            return Some(Ok(AccountStorageMapDetails {
-                slot_name,
-                entries: StorageMapEntries::LimitExceeded,
-            }));
-        }
 
         // Collect SMT proofs for each key
         let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {

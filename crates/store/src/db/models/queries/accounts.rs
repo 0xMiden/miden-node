@@ -602,7 +602,8 @@ pub(crate) fn select_all_network_account_ids(
     let account_ids_raw: Vec<(Vec<u8>, i64)> = Box::new(
         QueryDsl::select(
             schema::accounts::table
-                .filter(schema::accounts::network_account_id_prefix.is_not_null()),
+                .filter(schema::accounts::network_account_id_prefix.is_not_null())
+                .filter(schema::accounts::is_latest.eq(true)),
             (schema::accounts::account_id, schema::accounts::created_at_block),
         )
         .filter(

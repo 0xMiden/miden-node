@@ -134,7 +134,7 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     }
 }
 
-// ACCOUNT PROOF REQUEST
+// ACCOUNT REQUEST
 // ================================================================================================
 
 /// Represents a request for an account proof.

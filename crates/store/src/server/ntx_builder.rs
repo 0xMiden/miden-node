@@ -167,6 +167,19 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         }))
     }
 
+    async fn get_account(
+        &self,
+        request: Request<proto::rpc::AccountRequest>,
+    ) -> Result<Response<proto::rpc::AccountResponse>, Status> {
+        debug!(target: COMPONENT, ?request);
+        let request = request.into_inner();
+        let account_request = request.try_into()?;
+
+        let proof = self.state.get_account(account_request).await?;
+
+        Ok(Response::new(proof.into()))
+    }
+
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,

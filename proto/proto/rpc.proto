@@ -100,7 +100,7 @@ service Api {
     rpc SyncState(SyncStateRequest) returns (SyncStateResponse) {}
 
     // Returns storage map updates for specified account and storage slots within a block range.
-    rpc SyncStorageMaps(SyncStorageMapsRequest) returns (SyncStorageMapsResponse) {}
+    rpc SyncAccountStorageMaps(SyncAccountStorageMapsRequest) returns (SyncAccountStorageMapsResponse) {}
 
     // Returns transactions records for specific accounts within a block range.
     rpc SyncTransactions(SyncTransactionsRequest) returns (SyncTransactionsResponse) {}
@@ -344,7 +344,7 @@ message AccountStorageDetails {
         string slot_name = 1;
 
         // True when the number of entries exceeds the response limit.
-        // When set, clients should use the `SyncStorageMaps` endpoint.
+        // When set, clients should use the `SyncAccountStorageMaps` endpoint.
         bool too_many_entries = 2;
 
         // The map entries (with or without proofs). Empty when too_many_entries is true.
@@ -533,14 +533,14 @@ message SyncStateResponse {
     repeated note.NoteSyncRecord notes = 7;
 }
 
-// SYNC STORAGE MAP
+// SYNC ACCOUNT STORAGE MAP
 // ================================================================================================
 
 // Storage map synchronization request.
 //
 // Allows requesters to sync storage map values for specific public accounts within a block range,
 // with support for cursor-based pagination to handle large storage maps.
-message SyncStorageMapsRequest {
+message SyncAccountStorageMapsRequest {
     // Block range from which to start synchronizing.
     //
     // If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
@@ -551,7 +551,7 @@ message SyncStorageMapsRequest {
     account.AccountId account_id = 3;
 }
 
-message SyncStorageMapsResponse {
+message SyncAccountStorageMapsResponse {
     // Pagination information.
     PaginationInfo pagination_info = 1;
 

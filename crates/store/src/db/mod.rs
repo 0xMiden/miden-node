@@ -420,14 +420,14 @@ impl Db {
             .await
     }
 
-    /// Loads public account details from the DB based on the account ID's prefix.
+    /// Loads public account details for a network account by its full account ID.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_network_account_by_prefix(
+    pub async fn select_network_account_by_id(
         &self,
-        id_prefix: u32,
+        account_id: AccountId,
     ) -> Result<Option<AccountInfo>> {
-        self.transact("Get account by id prefix", move |conn| {
-            queries::select_account_by_id_prefix(conn, id_prefix)
+        self.transact("Get network account by id", move |conn| {
+            queries::select_network_account_by_id(conn, account_id)
         })
         .await
     }

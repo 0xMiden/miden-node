@@ -200,7 +200,9 @@ impl InnerForest {
         block_num: BlockNumber,
         asset_keys: BTreeSet<AssetVaultKey>,
     ) -> Result<Vec<AssetWitness>, WitnessError> {
-        let root = self.get_vault_root(account_id, block_num).ok_or(WitnessError::RootNotFound)?;
+        let Some(root) = self.get_vault_root(account_id, block_num) else {
+            return Ok(Vec::new());
+        };
         let witnessees = asset_keys
             .into_iter()
             .map(|key| {

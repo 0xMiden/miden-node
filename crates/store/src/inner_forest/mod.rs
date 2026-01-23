@@ -89,37 +89,6 @@ impl InnerForest {
         *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
     }
 
-    /// Retrieves the most recent storage map SMT root for an account slot.
-    ///
-    /// Returns the latest storage root entry regardless of block number.
-    /// Used when applying incremental deltas where we always want the previous state.
-    ///
-    /// If no storage root is found for the slot, returns an empty SMT root.
-    ///
-    /// # Arguments
-    ///
-    /// * `is_full_state` - If `true`, returns an empty SMT root (for new accounts or DB
-    ///   reconstruction where delta values are absolute). If `false`, looks up the previous state
-    ///   (for incremental updates where delta values are relative changes).
-    fn get_latest_storage_map_root(
-        &self,
-        account_id: AccountId,
-        slot_name: &StorageSlotName,
-        is_full_state: bool,
-    ) -> Word {
-        if is_full_state {
-            return Self::empty_smt_root();
-        }
-
-        self.storage_map_roots
-            .range(
-                (account_id, slot_name.clone(), BlockNumber::GENESIS)
-                    ..=(account_id, slot_name.clone(), BlockNumber::from(u32::MAX)),
-            )
-            .next_back()
-            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
-    }
-
     /// Retrieves a vault root for the specified account at or before the specified block.
     pub(crate) fn get_vault_root(
         &self,
@@ -305,9 +274,12 @@ impl InnerForest {
             self.update_account_vault(block_num, account_id, delta.vault())?;
         }
 
-        if !delta.storage().is_empty() {
-            self.update_account_storage(block_num, account_id, delta.storage(), is_full_state);
+        if is_full_state {
+            self.insert_account_storage(block_num, account_id, delta.storage());
+        } else if !delta.storage().is_empty() {
+            self.update_account_storage(block_num, account_id, delta.storage());
         }
+
         Ok(())
     }
 
@@ -467,65 +439,151 @@ impl InnerForest {
     // STORAGE MAP DELTA PROCESSING
     // --------------------------------------------------------------------------------------------
 
+    /// Retrieves the most recent storage map SMT root for an account slot. If no storage root is
+    /// found for the slot, returns an empty SMT root.
+    fn get_latest_storage_map_root(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+    ) -> Word {
+        self.storage_map_roots
+            .range(
+                (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                    ..=(account_id, slot_name.clone(), BlockNumber::from(u32::MAX)),
+            )
+            .next_back()
+            .map_or_else(Self::empty_smt_root, |(_, root)| *root)
+    }
+
+    /// Retrieves the most recent entries in the specified storage map. If no storage map exists
+    /// returns an empty map.
+    fn get_latest_storage_map_entries(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+    ) -> BTreeMap<Word, Word> {
+        self.storage_entries
+            .range(
+                (account_id, slot_name.clone(), BlockNumber::GENESIS)
+                    ..(account_id, slot_name.clone(), BlockNumber::from(u32::MAX)),
+            )
+            .next_back()
+            .map(|(_, entries)| entries.clone())
+            .unwrap_or_default()
+    }
+
+    /// Inserts all storage maps from the provided storage delta into the forest.
+    ///
+    /// Assumes that storage maps for the provided account are not in the forest already.
+    fn insert_account_storage(
+        &mut self,
+        block_num: BlockNumber,
+        account_id: AccountId,
+        delta: &AccountStorageDelta,
+    ) {
+        for (slot_name, map_delta) in delta.maps() {
+            // get the latest root for this map, and make sure the root is for an empty tree
+            let prev_root = self.get_latest_storage_map_root(account_id, slot_name);
+            assert_eq!(prev_root, Self::empty_smt_root(), "account should not be in the forest");
+
+            // build a vector of entries and filter out any empty values; such values shouldn't
+            // be present in full-state deltas, but it is good to exclude them explicitly
+            let map_entries: Vec<(Word, Word)> = map_delta
+                .entries()
+                .iter()
+                .filter_map(|(&key, &value)| {
+                    if value == EMPTY_WORD {
+                        None
+                    } else {
+                        Some((Word::from(key), value))
+                    }
+                })
+                .collect();
+
+            // if the delta is empty, make sure we create an entry in the storage map roots map,
+            // but no need to do anything else
+            if map_entries.is_empty() {
+                self.storage_map_roots
+                    .insert((account_id, slot_name.clone(), block_num), prev_root);
+
+                continue;
+            }
+
+            // insert the updates into the forest and update storage map roots map
+            let new_root = self
+                .forest
+                .batch_insert(prev_root, map_entries.iter().copied())
+                .expect("forest insertion should succeed");
+
+            self.storage_map_roots
+                .insert((account_id, slot_name.clone(), block_num), new_root);
+
+            assert!(map_entries.is_empty(), "a non-empty delta should have entries");
+            let num_entries = map_entries.len();
+
+            // keep track of the state of storage map entries
+            // TODO: this is a temporary solution until the LargeSmtForest is implemented as
+            // tracking multiple versions of all storage maps will be prohibitively expensive
+            let map_entries = BTreeMap::from_iter(map_entries);
+            self.storage_entries
+                .insert((account_id, slot_name.clone(), block_num), map_entries);
+
+            tracing::debug!(
+                target: crate::COMPONENT,
+                %account_id,
+                %block_num,
+                ?slot_name,
+                delta_entries = num_entries,
+                "Inserted storage map into forest"
+            );
+        }
+    }
+
     /// Updates the forest with storage map changes from a delta.
     ///
-    /// Processes storage map slot deltas, building SMTs for each modified slot
-    /// and tracking the new roots and accumulated entries.
-    ///
-    /// # Arguments
-    ///
-    /// * `is_full_state` - If `true`, delta values are absolute (new account or DB reconstruction).
-    ///   If `false`, delta values are relative changes applied to previous state.
+    /// Processes storage map slot deltas, building SMTs for each modified slot and tracking the
+    /// new roots and accumulated entries.
     fn update_account_storage(
         &mut self,
         block_num: BlockNumber,
         account_id: AccountId,
-        storage_delta: &AccountStorageDelta,
-        is_full_state: bool,
+        delta: &AccountStorageDelta,
     ) {
-        for (slot_name, map_delta) in storage_delta.maps() {
-            let prev_root = self.get_latest_storage_map_root(account_id, slot_name, is_full_state);
+        assert!(!delta.is_empty(), "expected the delta not to be empty");
 
-            let delta_entries: Vec<_> =
-                map_delta.entries().iter().map(|(key, value)| ((*key).into(), *value)).collect();
-
-            if delta_entries.is_empty() {
+        for (slot_name, map_delta) in delta.maps() {
+            // map delta shouldn't be empty, but if it is for some reason, there is nothing to do
+            if map_delta.is_empty() {
                 continue;
             }
 
-            let updated_root = self
+            // update the storage map tree in the forest and add an entry to the storage map roots
+            let prev_root = self.get_latest_storage_map_root(account_id, slot_name);
+            let delta_entries: Vec<(Word, Word)> =
+                map_delta.entries().iter().map(|(key, value)| ((*key).into(), *value)).collect();
+
+            let new_root = self
                 .forest
                 .batch_insert(prev_root, delta_entries.iter().copied())
                 .expect("forest insertion should succeed");
 
             self.storage_map_roots
-                .insert((account_id, slot_name.clone(), block_num), updated_root);
+                .insert((account_id, slot_name.clone(), block_num), new_root);
 
-            // Accumulate entries: start from previous block's entries or empty for full state
-            let mut accumulated_entries = if is_full_state {
-                BTreeMap::new()
-            } else {
-                self.storage_entries
-                    .range(
-                        (account_id, slot_name.clone(), BlockNumber::GENESIS)
-                            ..(account_id, slot_name.clone(), block_num),
-                    )
-                    .next_back()
-                    .map(|(_, entries)| entries.clone())
-                    .unwrap_or_default()
-            };
-
-            // Apply delta entries (insert or remove if value is EMPTY_WORD)
+            // merge the delta with the latest entries in the map
+            // TODO: this is a temporary solution until the LargeSmtForest is implemented as
+            // tracking multiple versions of all storage maps will be prohibitively expensive
+            let mut latest_entries = self.get_latest_storage_map_entries(account_id, slot_name);
             for (key, value) in &delta_entries {
                 if *value == EMPTY_WORD {
-                    accumulated_entries.remove(key);
+                    latest_entries.remove(key);
                 } else {
-                    accumulated_entries.insert(*key, *value);
+                    latest_entries.insert(*key, *value);
                 }
             }
 
             self.storage_entries
-                .insert((account_id, slot_name.clone(), block_num), accumulated_entries);
+                .insert((account_id, slot_name.clone(), block_num), latest_entries);
 
             tracing::debug!(
                 target: crate::COMPONENT,

@@ -29,7 +29,7 @@ impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
             .sender
             .ok_or_else(|| proto::note::NoteMetadata::missing_field(stringify!(sender)))?
             .try_into()?;
-        let note_type = NoteType::try_from(u64::from(value.note_type))?;
+        let note_type = NoteType::try_from(u64::try_from(value.note_type)?)?;
         let tag = NoteTag::new(value.tag);
 
         // Deserialize attachment if present
@@ -75,7 +75,7 @@ impl From<NetworkNote> for proto::note::NetworkNote {
 impl From<NoteMetadata> for proto::note::NoteMetadata {
     fn from(val: NoteMetadata) -> Self {
         let sender = Some(val.sender().into());
-        let note_type = val.note_type() as u32;
+        let note_type = val.note_type() as i32;
         let tag = val.tag().as_u32();
         let attachment = val.attachment().to_bytes();
 

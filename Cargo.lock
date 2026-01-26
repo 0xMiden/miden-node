@@ -2913,6 +2913,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "fs-err",
+ "futures",
  "hex",
  "indexmap 2.13.0",
  "miden-block-prover",

@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 
+use futures::TryFutureExt;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_proto::generated::store::block_producer_server;
 use miden_node_proto::generated::{self as proto};
@@ -72,18 +73,20 @@ impl block_producer_server::BlockProducer for StoreApi {
         span.set_attribute("block.output_notes.count", body.output_notes().count());
         span.set_attribute("block.nullifiers.count", body.created_nullifiers().len());
 
-        // We perform the apply_block work in a separate task. This prevents the caller cancelling
-        // the request and thereby cancelling the task at an arbitrary point of execution.
+        // We perform the apply/prove block work in a separate task. This prevents the caller
+        // cancelling the request and thereby cancelling the task at an arbitrary point of
+        // execution.
         //
         // Normally this shouldn't be a problem, however our apply_block isn't quite ACID compliant
         // so things get a bit messy. This is more a temporary hack-around to minimize this risk.
         let this = self.clone();
-        tokio::spawn(
+        // TODO(sergerad): Use block proof.
+        let _block_proof = tokio::spawn(
             async move {
+                // Note: This is an internal endpoint, so its safe to expose the full error
+                // report.
                 this.state
-                    .apply_block(header, body, signature)
-                    .await
-                    .map(Response::new)
+                    .apply_block(header.clone(), body, signature)
                     .inspect_err(|err| {
                         span.set_error(err);
                     })
@@ -92,11 +95,15 @@ impl block_producer_server::BlockProducer for StoreApi {
                             ApplyBlockError::InvalidBlockError(_) => tonic::Code::InvalidArgument,
                             _ => tonic::Code::Internal,
                         };
-
-                        // This is an internal endpoint, so its safe to expose the full error
-                        // report.
                         Status::new(code, err.as_report())
                     })
+                    .and_then(|_| {
+                        this.block_prover
+                            .prove(ordered_batches, header, block_inputs)
+                            .map_err(|err| Status::new(tonic::Code::Internal, err.as_report()))
+                    })
+                    .await
+                    .map(Response::new)
             }
             .in_current_span(),
         )
@@ -104,7 +111,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         .map_err(|err| {
             tonic::Status::internal(err.as_report_context("joining apply_block task failed"))
         })
-        .flatten()
+        .flatten()?;
+        Ok(Response::new(()))
     }
 
     /// Returns data needed by the block producer to construct and prove the next block.

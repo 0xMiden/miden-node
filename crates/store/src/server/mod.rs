@@ -102,14 +102,18 @@ impl Store {
                 .context("failed to load state")?,
         );
 
-        let rpc_service =
-            store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
+        let rpc_service = store::rpc_server::RpcServer::new(api::StoreApi {
+            state: Arc::clone(&state),
+            block_prover: Arc::clone(&self.block_prover),
+        });
         let ntx_builder_service = store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
             state: Arc::clone(&state),
+            block_prover: Arc::clone(&self.block_prover),
         });
         let block_producer_service =
             store::block_producer_server::BlockProducerServer::new(api::StoreApi {
                 state: Arc::clone(&state),
+                block_prover: Arc::clone(&self.block_prover),
             });
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(store_rpc_api_descriptor())

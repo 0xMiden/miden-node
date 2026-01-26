@@ -11,8 +11,8 @@ use miden_protocol::note::Nullifier;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
-use crate::COMPONENT;
 use crate::state::State;
+use crate::{BlockProver, COMPONENT};
 
 // STORE API
 // ================================================================================================
@@ -20,6 +20,7 @@ use crate::state::State;
 #[derive(Clone)]
 pub struct StoreApi {
     pub(super) state: Arc<State>,
+    pub(super) block_prover: Arc<BlockProver>,
 }
 
 impl StoreApi {

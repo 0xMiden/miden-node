@@ -650,6 +650,9 @@ message TransactionRecord {
 
     // A transaction header.
     transaction.TransactionHeader header = 2;
+
+    // The unique identifier of the transaction.
+    transaction.TransactionId transaction_id = 3;
 }
 
 // RPC LIMITS

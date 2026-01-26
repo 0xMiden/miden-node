@@ -125,6 +125,7 @@ impl TransactionRecord {
                 output_notes,
             }),
             block_num: self.block_num.as_u32(),
+            transaction_id: Some(self.transaction_id.into()),
         }
     }
 }

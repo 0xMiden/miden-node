@@ -580,6 +580,9 @@ pub struct TransactionRecord {
     /// A transaction header.
     #[prost(message, optional, tag = "2")]
     pub header: ::core::option::Option<super::transaction::TransactionHeader>,
+    /// The unique identifier of the transaction.
+    #[prost(message, optional, tag = "3")]
+    pub transaction_id: ::core::option::Option<super::transaction::TransactionId>,
 }
 /// Represents the query parameter limits for RPC endpoints.
 #[derive(Clone, PartialEq, ::prost::Message)]

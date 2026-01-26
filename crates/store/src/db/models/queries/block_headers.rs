@@ -142,6 +142,15 @@ impl TryInto<BlockHeader> for BlockHeaderRawRow {
     }
 }
 
+impl TryInto<(BlockHeader, Signature)> for BlockHeaderRawRow {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<(BlockHeader, Signature), Self::Error> {
+        let block_header = BlockHeader::read_from_bytes(&self.block_header[..])?;
+        let signature = Signature::read_from_bytes(&self.signature[..])?;
+        Ok((block_header, signature))
+    }
+}
+
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = schema::block_headers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
@@ -149,6 +158,15 @@ pub struct BlockHeaderInsert {
     pub block_num: i64,
     pub block_header: Vec<u8>,
     pub signature: Vec<u8>,
+}
+impl From<(&BlockHeader, &Signature)> for BlockHeaderInsert {
+    fn from(from: (&BlockHeader, &Signature)) -> Self {
+        Self {
+            block_num: from.0.block_num().to_raw_sql(),
+            block_header: from.0.to_bytes(),
+            signature: from.1.to_bytes(),
+        }
+    }
 }
 
 /// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
@@ -171,13 +189,9 @@ pub(crate) fn insert_block_header(
     block_header: &BlockHeader,
     signature: &Signature,
 ) -> Result<usize, DatabaseError> {
-    let block_header_insert = BlockHeaderInsert {
-        block_num: block_header.block_num().to_raw_sql(),
-        block_header: block_header.to_bytes(),
-        signature: signature.to_bytes(),
-    };
+    let block_header = BlockHeaderInsert::from((block_header, signature));
     let count = diesel::insert_into(schema::block_headers::table)
-        .values(&[block_header_insert])
+        .values(&[block_header])
         .execute(conn)?;
     Ok(count)
 }

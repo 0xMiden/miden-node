@@ -4,7 +4,7 @@
 
 ### Enhancements
 
-- [BREAKING] Updated miden-base dependencies to use `next` branch; renamed `NoteInputs` to `NoteStorage`, `.inputs()` to `.storage()`, and database `inputs` column to `storage` ([#????](https://github.com/0xMiden/miden-node/pull/????)).
+- [BREAKING] Updated miden-base dependencies to use `next` branch; renamed `NoteInputs` to `NoteStorage`, `.inputs()` to `.storage()`, and database `inputs` column to `storage` ([#1595](https://github.com/0xMiden/miden-node/pull/1595)).
 
 ## v0.13.0 (2026-01-23)
 

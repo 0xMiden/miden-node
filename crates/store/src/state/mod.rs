@@ -228,8 +228,8 @@ impl State {
     ) -> Result<(), ApplyBlockError> {
         let _lock = self.writer.try_lock().map_err(|_| ApplyBlockError::ConcurrentWrite)?;
 
+        // Validate that header and body match.
         let tx_commitment = body.transactions().commitment();
-
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
                 expected: tx_commitment,
@@ -241,13 +241,12 @@ impl State {
         let block_num = header.block_num();
         let block_commitment = header.commitment();
 
-        // ensures the right block header is being processed
+        // Validate that the applied block is the next block in sequence.
         let prev_block = self
             .db
             .select_block_header_by_block_num(None)
             .await?
             .ok_or(ApplyBlockError::DbBlockHeaderEmpty)?;
-
         let expected_block_num = prev_block.block_num().child();
         if block_num != expected_block_num {
             return Err(InvalidBlockError::NewBlockInvalidBlockNum {
@@ -260,7 +259,8 @@ impl State {
             return Err(InvalidBlockError::NewBlockInvalidPrevCommitment.into());
         }
 
-        let block_data = body.to_bytes(); // TODO(currentpr): is this correct?
+        // TODO(sergerad): Write entire `SignedBlock` when it is added to miden-protocol.
+        let block_data = body.to_bytes();
 
         // Save the block to the block store. In a case of a rolled-back DB transaction, the
         // in-memory state will be unchanged, but the block might still be written into the
@@ -272,8 +272,8 @@ impl State {
             async move { store.save_block(block_num, &block_data).await }.in_current_span(),
         );
 
-        // scope to read in-memory data, compute mutations required for updating account
-        // and nullifier trees, and validate the request
+        // Scope to read in-memory data, compute mutations required for updating account
+        // and nullifier trees, and validate the request.
         let (
             nullifier_tree_old_root,
             nullifier_tree_update,
@@ -352,7 +352,7 @@ impl State {
             )
         };
 
-        // build note tree
+        // Build note tree.
         let note_tree = body.compute_block_note_tree();
         if note_tree.root() != header.note_root() {
             return Err(InvalidBlockError::NewBlockInvalidNoteRoot.into());
@@ -389,9 +389,9 @@ impl State {
             })
             .collect::<Result<Vec<_>, InvalidBlockError>>()?;
 
-        // Signals the transaction is ready to be committed, and the write lock can be acquired
+        // Signals the transaction is ready to be committed, and the write lock can be acquired.
         let (allow_acquire, acquired_allowed) = oneshot::channel::<()>();
-        // Signals the write lock has been acquired, and the transaction can be committed
+        // Signals the write lock has been acquired, and the transaction can be committed.
         let (inform_acquire_done, acquire_done) = oneshot::channel::<()>();
 
         // Extract public account updates with deltas before block is moved into async task.
@@ -417,13 +417,13 @@ impl State {
             .in_current_span(),
         );
 
-        // Wait for the message from the DB update task, that we ready to commit the DB transaction
+        // Wait for the message from the DB update task, that we ready to commit the DB transaction.
         acquired_allowed.await.map_err(ApplyBlockError::ClosedChannel)?;
 
-        // Awaiting the block saving task to complete without errors
+        // Awaiting the block saving task to complete without errors.
         block_save_task.await??;
 
-        // Scope to update the in-memory data
+        // Scope to update the in-memory data.
         async move {
             // We need to hold the write lock here to prevent inconsistency between the in-memory
             // state and the DB state. Thus, we need to wait for the DB update task to complete
@@ -441,7 +441,7 @@ impl State {
             }
 
             // Notify the DB update task that the write lock has been acquired, so it can commit
-            // the DB transaction
+            // the DB transaction.
             inform_acquire_done
                 .send(())
                 .map_err(|_| ApplyBlockError::DbUpdateTaskFailed("Receiver was dropped".into()))?;

@@ -294,7 +294,7 @@ impl api_server::Api for RpcService {
                 Arc::make_mut(&mut mast).strip_decorators();
                 let script = NoteScript::from_parts(mast, note.script().entrypoint());
                 let recipient =
-                    NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
+                    NoteRecipient::new(note.serial_num(), script, note.storage().clone());
                 let new_note = Note::new(note.assets().clone(), note.metadata().clone(), recipient);
                 OutputNote::Full(new_note)
             },
@@ -356,7 +356,7 @@ impl api_server::Api for RpcService {
                     Arc::make_mut(&mut mast).strip_decorators();
                     let script = NoteScript::from_parts(mast, note.script().entrypoint());
                     let recipient =
-                        NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
+                        NoteRecipient::new(note.serial_num(), script, note.storage().clone());
                     let new_note =
                         Note::new(note.assets().clone(), note.metadata().clone(), recipient);
                     OutputNote::Full(new_note)

@@ -120,7 +120,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
 
 impl From<&BlockBody> for proto::blockchain::BlockBody {
     fn from(body: &BlockBody) -> Self {
-        todo!()
+        Self { block_body: body.to_bytes() }
     }
 }
 
@@ -141,7 +141,8 @@ impl TryFrom<&proto::blockchain::BlockBody> for BlockBody {
 impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
     type Error = ConversionError;
     fn try_from(value: proto::blockchain::BlockBody) -> Result<Self, Self::Error> {
-        todo!()
+        BlockBody::read_from_bytes(&value.block_body)
+            .map_err(|source| ConversionError::deserialization_error("BlockBody", source))
     }
 }
 

@@ -1,12 +1,6 @@
 # Changelog
 
-## v0.13.2 (TBC)
-
-### Fixes
-
-- NTX builder now loads foreign account code into the MAST store when consuming network notes ([#1598](https://github.com/0xMiden/miden-node/pull/1598)).
-
-## v0.13.1 (2026-01-24)
+## v0.13.1 (2026-01-27)
 
 ### Enhancements
 
@@ -15,6 +9,7 @@
 ### Fixes
 
 - Bootstrap's genesis configuration file is now optional again ([#1590](https://github.com/0xMiden/miden-node/pull/1590)).
+- NTX builder now loads foreign account code into the MAST store when consuming network notes ([#1598](https://github.com/0xMiden/miden-node/pull/1598)).
 
 ## v0.13.0 (2026-01-23)
 

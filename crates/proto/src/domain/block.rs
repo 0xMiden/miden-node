@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 
 use miden_protocol::account::AccountId;
 use miden_protocol::block::nullifier_tree::NullifierWitness;
-use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, FeeParameters};
+use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, FeeParameters};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::note::{NoteId, NoteInclusionProof};
 use miden_protocol::transaction::PartialBlockchain;
@@ -112,6 +112,36 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
             )?)?,
             value.timestamp,
         ))
+    }
+}
+
+// BLOCK BODY
+// ================================================================================================
+
+impl From<&BlockBody> for proto::blockchain::BlockBody {
+    fn from(body: &BlockBody) -> Self {
+        todo!()
+    }
+}
+
+impl From<BlockBody> for proto::blockchain::BlockBody {
+    fn from(body: BlockBody) -> Self {
+        (&body).into()
+    }
+}
+
+impl TryFrom<&proto::blockchain::BlockBody> for BlockBody {
+    type Error = ConversionError;
+
+    fn try_from(value: &proto::blockchain::BlockBody) -> Result<Self, Self::Error> {
+        value.try_into()
+    }
+}
+
+impl TryFrom<proto::blockchain::BlockBody> for BlockBody {
+    type Error = ConversionError;
+    fn try_from(value: proto::blockchain::BlockBody) -> Result<Self, Self::Error> {
+        todo!()
     }
 }
 

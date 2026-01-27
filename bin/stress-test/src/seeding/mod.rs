@@ -517,17 +517,10 @@ async fn get_block_inputs(
 /// Runs the store with the given data directory. Returns a tuple with:
 /// - a gRPC client to access the store
 /// - the URL of the store
+///
+/// The store uses a local prover.
 pub async fn start_store(
     data_directory: PathBuf,
-) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, Url) {
-    start_store_with_prover(data_directory, None).await
-}
-
-/// Starts the store with an optional remote block prover URL.
-/// If `block_prover_url` is None, the store will use a local block prover.
-pub async fn start_store_with_prover(
-    data_directory: PathBuf,
-    block_prover_url: Option<Url>,
 ) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, Url) {
     let rpc_listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -544,13 +537,7 @@ pub async fn start_store_with_prover(
         .expect("Failed to get store block-producer address");
     let dir = data_directory.clone();
 
-    let block_prover = {
-        if let Some(url) = block_prover_url {
-            Arc::new(BlockProver::new_remote(url))
-        } else {
-            Arc::new(BlockProver::new_local(None))
-        }
-    };
+    let block_prover = Arc::new(BlockProver::new_local(None));
 
     task::spawn(async move {
         Store {

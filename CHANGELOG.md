@@ -4,12 +4,8 @@
 
 ### Enhancements
 
-- Added `transaction_id` field to `TransactionRecord` proto message ([#1593](https://github.com/0xMiden/miden-node/pull/1593)).
-## v0.14.0 (TBC)
-
-### Enhancements
-
 - [BREAKING] Updated miden-base dependencies to use `next` branch; renamed `NoteInputs` to `NoteStorage`, `.inputs()` to `.storage()`, and database `inputs` column to `storage` ([#1595](https://github.com/0xMiden/miden-node/pull/1595)).
+- Added `transaction_id` field to `TransactionRecord` proto message ([#1593](https://github.com/0xMiden/miden-node/pull/1593)).
 
 ## v0.13.0 (2026-01-23)
 

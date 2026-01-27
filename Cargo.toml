@@ -49,9 +49,9 @@ miden-node-validator        = { path = "crates/validator", version = "0.13" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.13" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "sergerad-signed-block", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover = { branch = "sergerad-signed-block", git = "https://github.com/0xMiden/miden-base" }
 #miden-protocol        = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-protocol        = { git = "https://github.com/0xMiden/miden-base", branch = "sergerad-signed-block"}
+miden-protocol        = { branch = "sergerad-signed-block", git = "https://github.com/0xMiden/miden-base" }
 miden-standards       = { branch = "sergerad-signed-block", git = "https://github.com/0xMiden/miden-base" }
 miden-testing         = { branch = "sergerad-signed-block", git = "https://github.com/0xMiden/miden-base" }
 miden-tx              = { branch = "sergerad-signed-block", default-features = false, git = "https://github.com/0xMiden/miden-base" }

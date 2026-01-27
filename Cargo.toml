@@ -50,7 +50,8 @@ miden-remote-prover-client  = { path = "crates/remote-prover-client", version = 
 
 # miden-base aka protocol dependencies. These should be updated in sync.
 miden-block-prover    = { version = "0.13" }
-miden-protocol        = { default-features = false, version = "0.13" }
+#miden-protocol        = { default-features = false, version = "0.13" }
+miden-protocol        = { git = "https://github.com/0xMiden/miden-base", branch = "sergerad-signed-block"}
 miden-standards       = { version = "0.13" }
 miden-testing         = { version = "0.13" }
 miden-tx              = { default-features = false, version = "0.13" }

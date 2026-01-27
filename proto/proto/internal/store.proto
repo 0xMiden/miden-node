@@ -123,15 +123,8 @@ message ApplyBlockRequest {
     // Block inputs encoded using [winter_utils::Serializable] implementation for
     // [miden_objects::block::BlockInputs].
     bytes block_inputs = 2;
-    // Block header encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::block::BlockHeader].
-    bytes header = 3;
-    // Block header encoded using [winter_utils::Serializable] implementation for
-    // [miden_objects::block::BlockBody].
-    bytes body = 4;
-    // Signature encoded using [winter_utils::Serializable] implementation for
-    // [crypto::dsa::ecdsa_k256_keccak::Signature].
-    bytes signature = 5;
+    // Block signed by the Validator.
+    blockchain.SignedBlock block = 3;
 }
 
 // GET BLOCK INPUTS

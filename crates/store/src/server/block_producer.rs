@@ -45,8 +45,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         &self,
         request: Request<proto::store::ApplyBlockRequest>,
     ) -> Result<Response<()>, Status> {
-        // Read the request.
         let request = request.into_inner();
+        // Read ordered batches and block inputs.
         let ordered_batches =
             OrderedBatches::read_from_bytes(&request.ordered_batches).map_err(|err| {
                 Status::invalid_argument(
@@ -56,13 +56,29 @@ impl block_producer_server::BlockProducer for StoreApi {
         let block_inputs = BlockInputs::read_from_bytes(&request.block_inputs).map_err(|err| {
             Status::invalid_argument(err.as_report_context("failed to deserialize block inputs"))
         })?;
-        let header = BlockHeader::read_from_bytes(&request.header).map_err(|err| {
+        // Read block.
+        let Some(block) = request.block else {
+            return Err(Status::invalid_argument("empty block"));
+        };
+        // Read block header.
+        let Some(header) = block.header else {
+            return Err(Status::invalid_argument("empty header"));
+        };
+        let header = BlockHeader::try_from(header).map_err(|err| {
             Status::invalid_argument(err.as_report_context("failed to deserialize block header"))
         })?;
-        let body = BlockBody::read_from_bytes(&request.body).map_err(|err| {
+        // Read block body.
+        let Some(body) = block.body else {
+            return Err(Status::invalid_argument("empty body"));
+        };
+        let body = BlockBody::try_from(body).map_err(|err| {
             Status::invalid_argument(err.as_report_context("failed to deserialize block body"))
         })?;
-        let signature = Signature::read_from_bytes(&request.signature).map_err(|err| {
+        // Read signature.
+        let Some(signature) = block.signature else {
+            return Err(Status::invalid_argument("empty signature"));
+        };
+        let signature = Signature::try_from(signature).map_err(|err| {
             Status::invalid_argument(err.as_report_context("failed to deserialize signature"))
         })?;
 

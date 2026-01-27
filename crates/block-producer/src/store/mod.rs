@@ -251,9 +251,11 @@ impl StoreClient {
         let request = tonic::Request::new(proto::store::ApplyBlockRequest {
             ordered_batches: ordered_batches.to_bytes(),
             block_inputs: block_inputs.to_bytes(),
-            header: header.to_bytes(),
-            body: body.to_bytes(),
-            signature: signature.to_bytes(),
+            block: Some(proto::blockchain::SignedBlock {
+                header: Some(header.into()),
+                body: Some(body.into()),
+                signature: Some(signature.into()),
+            }),
         });
 
         self.client.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)

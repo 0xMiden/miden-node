@@ -10,18 +10,9 @@ pub struct ApplyBlockRequest {
     /// \[miden_objects::block::BlockInputs\].
     #[prost(bytes = "vec", tag = "2")]
     pub block_inputs: ::prost::alloc::vec::Vec<u8>,
-    /// Block header encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::block::BlockHeader\].
-    #[prost(bytes = "vec", tag = "3")]
-    pub header: ::prost::alloc::vec::Vec<u8>,
-    /// Block header encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::block::BlockBody\].
-    #[prost(bytes = "vec", tag = "4")]
-    pub body: ::prost::alloc::vec::Vec<u8>,
-    /// Signature encoded using \[winter_utils::Serializable\] implementation for
-    /// \[crypto::dsa::ecdsa_k256_keccak::Signature\].
-    #[prost(bytes = "vec", tag = "5")]
-    pub signature: ::prost::alloc::vec::Vec<u8>,
+    /// Block signed by the Validator.
+    #[prost(message, optional, tag = "3")]
+    pub block: ::core::option::Option<super::blockchain::SignedBlock>,
 }
 /// Returns data required to prove the next block.
 #[derive(Clone, PartialEq, ::prost::Message)]

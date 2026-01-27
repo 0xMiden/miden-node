@@ -62,8 +62,13 @@ pub struct NetworkAccountState {
     /// an impact are ignored.
     inflight_txs: BTreeMap<TransactionId, TransactionImpact>,
 
-    /// A set of nullifiers which have been registered for the network account.
-    nullifier_idx: HashSet<Nullifier>,
+    /// Nullifiers of all network notes targeted at this account.
+    ///
+    /// Used to filter mempool events: when a `TransactionAdded` event reports consumed nullifiers,
+    /// only those present in this set are processed (moved from `available_notes` to
+    /// `nullified_notes`). Nullifiers are added when notes are loaded or created, and removed
+    /// when the consuming transaction is committed.
+    known_nullifiers: HashSet<Nullifier>,
 }
 
 impl NetworkAccountState {
@@ -87,7 +92,7 @@ impl NetworkAccountState {
             })
             .collect::<Vec<_>>();
 
-        let nullifier_idx: HashSet<Nullifier> =
+        let known_nullifiers: HashSet<Nullifier> =
             notes.iter().map(SingleTargetNetworkNote::nullifier).collect();
 
         let account = NetworkAccountNoteState::new(account, notes);
@@ -96,7 +101,7 @@ impl NetworkAccountState {
             account,
             account_id,
             inflight_txs: BTreeMap::default(),
-            nullifier_idx,
+            known_nullifiers,
         };
 
         state.inject_telemetry();
@@ -228,12 +233,12 @@ impl NetworkAccountState {
                 "note's account ID does not match network account actor's account ID"
             );
             tx_impact.notes.insert(note.nullifier());
-            self.nullifier_idx.insert(note.nullifier());
+            self.known_nullifiers.insert(note.nullifier());
             self.account.add_note(note.clone());
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.
-            if !self.nullifier_idx.contains(nullifier) {
+            if !self.known_nullifiers.contains(nullifier) {
                 continue;
             }
             tx_impact.nullifiers.insert(*nullifier);
@@ -260,7 +265,7 @@ impl NetworkAccountState {
         }
 
         for nullifier in impact.nullifiers {
-            if self.nullifier_idx.remove(&nullifier) {
+            if self.known_nullifiers.remove(&nullifier) {
                 // Its possible for the account to no longer exist if the transaction creating it
                 // was reverted.
                 self.account.commit_nullifier(nullifier);
@@ -286,17 +291,17 @@ impl NetworkAccountState {
 
         // Revert notes.
         for note_nullifier in impact.notes {
-            if self.nullifier_idx.contains(&note_nullifier) {
+            if self.known_nullifiers.contains(&note_nullifier) {
                 self.account.revert_note(note_nullifier);
-                self.nullifier_idx.remove(&note_nullifier);
+                self.known_nullifiers.remove(&note_nullifier);
             }
         }
 
         // Revert nullifiers.
         for nullifier in impact.nullifiers {
-            if self.nullifier_idx.contains(&nullifier) {
+            if self.known_nullifiers.contains(&nullifier) {
                 self.account.revert_nullifier(nullifier);
-                self.nullifier_idx.remove(&nullifier);
+                self.known_nullifiers.remove(&nullifier);
             }
         }
 
@@ -311,7 +316,7 @@ impl NetworkAccountState {
         let span = tracing::Span::current();
 
         span.set_attribute("ntx.state.transactions", self.inflight_txs.len());
-        span.set_attribute("ntx.state.notes.total", self.nullifier_idx.len());
+        span.set_attribute("ntx.state.notes.total", self.known_nullifiers.len());
     }
 }
 
@@ -463,7 +468,7 @@ mod tests {
             account_id: NetworkAccountId,
             notes: Vec<SingleTargetNetworkNote>,
         ) -> Self {
-            let nullifier_idx: HashSet<Nullifier> =
+            let known_nullifiers: HashSet<Nullifier> =
                 notes.iter().map(SingleTargetNetworkNote::nullifier).collect();
 
             let account = NetworkAccountNoteState::new(account, notes);
@@ -472,7 +477,7 @@ mod tests {
                 account,
                 account_id,
                 inflight_txs: BTreeMap::default(),
-                nullifier_idx,
+                known_nullifiers,
             }
         }
     }
@@ -481,7 +486,7 @@ mod tests {
     // ============================================================================================
 
     /// Tests that initial notes loaded into `NetworkAccountState` have their nullifiers
-    /// registered in `nullifier_idx`.
+    /// registered in `known_nullifiers`.
     #[test]
     fn test_initial_notes_have_nullifiers_indexed() {
         let account = create_network_account(1);
@@ -498,14 +503,18 @@ mod tests {
             NetworkAccountState::new_for_testing(account, network_account_id, vec![note1, note2]);
 
         assert!(
-            state.nullifier_idx.contains(&nullifier1),
-            "nullifier_idx should contain first note's nullifier"
+            state.known_nullifiers.contains(&nullifier1),
+            "known_nullifiers should contain first note's nullifier"
         );
         assert!(
-            state.nullifier_idx.contains(&nullifier2),
-            "nullifier_idx should contain second note's nullifier"
+            state.known_nullifiers.contains(&nullifier2),
+            "known_nullifiers should contain second note's nullifier"
         );
-        assert_eq!(state.nullifier_idx.len(), 2, "nullifier_idx should have exactly 2 entries");
+        assert_eq!(
+            state.known_nullifiers.len(),
+            2,
+            "known_nullifiers should have exactly 2 entries"
+        );
     }
 
     /// Tests that when a `TransactionAdded` event arrives with nullifiers from initial notes,
@@ -557,7 +566,7 @@ mod tests {
         );
     }
 
-    /// Tests that after committing a transaction, the nullifier is removed from `nullifier_idx`.
+    /// Tests that after committing a transaction, the nullifier is removed from `known_nullifiers`.
     #[test]
     fn test_commit_removes_nullifier_from_index() {
         let account = create_network_account(1);
@@ -581,7 +590,7 @@ mod tests {
         state.mempool_update(&event);
 
         assert!(
-            state.nullifier_idx.contains(&nullifier1),
+            state.known_nullifiers.contains(&nullifier1),
             "nullifier should still be in index while transaction is inflight"
         );
 
@@ -592,7 +601,7 @@ mod tests {
         state.mempool_update(&commit_event);
 
         assert!(
-            !state.nullifier_idx.contains(&nullifier1),
+            !state.known_nullifiers.contains(&nullifier1),
             "nullifier should be removed from index after commit"
         );
     }
@@ -651,7 +660,7 @@ mod tests {
 
         let mut state = NetworkAccountState::new_for_testing(account, network_account_id, vec![]);
 
-        assert!(state.nullifier_idx.is_empty(), "nullifier_idx should be empty initially");
+        assert!(state.known_nullifiers.is_empty(), "known_nullifiers should be empty initially");
 
         let new_note = to_single_target_note(create_network_note(account_id, 1));
         let new_nullifier = new_note.nullifier();
@@ -668,7 +677,7 @@ mod tests {
 
         // Verify the new note's nullifier is now indexed
         assert!(
-            state.nullifier_idx.contains(&new_nullifier),
+            state.known_nullifiers.contains(&new_nullifier),
             "dynamically added note's nullifier should be indexed"
         );
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.13.1 (TBD)
+## v0.13.1 (2026-01-26)
 
 ### Enhancements
 
@@ -10,6 +10,7 @@
 
 - Bootstrap's genesis configuration file is now optional again ([#1590](https://github.com/0xMiden/miden-node/pull/1590)).
 - Network transaction builder fails if output notes are created ([#1599](https://github.com/0xMiden/miden-node/pull/1599)).
+- Fixed the copy button in the network monitor ([#1600](https://github.com/0xMiden/miden-node/pull/1600)).
 - Network transaction builder now loads foreign account code into the MAST store when consuming network notes ([#1598](https://github.com/0xMiden/miden-node/pull/1598)).
 
 ## v0.13.0 (2026-01-23)

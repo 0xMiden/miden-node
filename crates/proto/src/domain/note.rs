@@ -1,4 +1,5 @@
-use miden_protocol::Word;
+use std::sync::Arc;
+
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
@@ -13,7 +14,8 @@ use miden_protocol::note::{
     NoteType,
     Nullifier,
 };
-use miden_protocol::utils::{Deserializable, Serializable};
+use miden_protocol::utils::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::{MastForest, MastNodeId, Word};
 use miden_standards::note::{NetworkAccountTarget, NetworkAccountTargetError};
 use thiserror::Error;
 
@@ -327,5 +329,20 @@ impl From<NoteScript> for proto::note::NoteScript {
             entrypoint: script.entrypoint().into(),
             mast: script.mast().to_bytes(),
         }
+    }
+}
+
+impl TryFrom<proto::note::NoteScript> for NoteScript {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::note::NoteScript) -> Result<Self, Self::Error> {
+        let proto::note::NoteScript { entrypoint, mast } = value;
+
+        let mast = MastForest::read_from_bytes(&mast)
+            .map_err(|err| Self::Error::deserialization_error("note_script.mast", err))?;
+        let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)
+            .map_err(|err| Self::Error::deserialization_error("note_script.entrypoint", err))?;
+
+        Ok(Self::from_parts(Arc::new(mast), entrypoint))
     }
 }

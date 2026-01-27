@@ -9,6 +9,7 @@
 ### Fixes
 
 - Bootstrap's genesis configuration file is now optional again ([#1590](https://github.com/0xMiden/miden-node/pull/1590)).
+- Fixed the copy button in the network monitor ([#1600](https://github.com/0xMiden/miden-node/pull/1600)).
 
 ## v0.13.0 (2026-01-23)
 

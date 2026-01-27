@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.13.2 (TBC)
+
+### Fixes
+
+- NTX builder now loads foreign account code into the MAST store when consuming network notes ([#1598](https://github.com/0xMiden/miden-node/pull/1598)).
+
 ## v0.13.1 (2026-01-24)
 
 ### Enhancements

@@ -252,7 +252,7 @@ async fn apply_block(
 
     let start = Instant::now();
     store_client
-        .apply_block(ordered_batches, block_inputs, header.clone(), body, signature)
+        .apply_block(&ordered_batches, &block_inputs, &header, &body, &signature)
         .await
         .unwrap();
     metrics.track_block_insertion(start.elapsed(), block_size);

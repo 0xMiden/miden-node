@@ -242,11 +242,11 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.apply_block", skip_all, err)]
     pub async fn apply_block(
         &self,
-        ordered_batches: OrderedBatches,
-        block_inputs: BlockInputs,
-        header: BlockHeader,
-        body: BlockBody,
-        signature: Signature,
+        ordered_batches: &OrderedBatches,
+        block_inputs: &BlockInputs,
+        header: &BlockHeader,
+        body: &BlockBody,
+        signature: &Signature,
     ) -> Result<(), StoreError> {
         let request = tonic::Request::new(proto::store::ApplyBlockRequest {
             ordered_batches: ordered_batches.to_bytes(),

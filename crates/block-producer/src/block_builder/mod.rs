@@ -272,7 +272,7 @@ impl BlockBuilder {
         signature: Signature,
     ) -> Result<(), BuildBlockError> {
         self.store
-            .apply_block(ordered_batches, block_inputs, header.clone(), body, signature)
+            .apply_block(&ordered_batches, &block_inputs, &header, &body, &signature)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 

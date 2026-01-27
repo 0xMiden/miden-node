@@ -4,14 +4,13 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, QueryableByName, RunQueryDsl, SqliteConnection};
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader};
 use miden_protocol::asset::{Asset, AssetVaultKey};
-use miden_protocol::block::{BlockBody, BlockHeader, BlockNoteIndex, BlockNumber};
+use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, SignedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     NoteDetails,
@@ -568,20 +567,18 @@ impl Db {
         &self,
         allow_acquire: oneshot::Sender<()>,
         acquire_done: oneshot::Receiver<()>,
-        block_header: BlockHeader,
-        block_body: BlockBody,
-        signature: Signature,
+        signed_block: SignedBlock,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
     ) -> Result<()> {
         self.transact("apply block", move |conn| -> Result<()> {
             models::queries::apply_block(
                 conn,
-                &block_header,
-                &signature,
+                signed_block.header(),
+                signed_block.signature(),
                 &notes,
-                block_body.created_nullifiers(),
-                block_body.updated_accounts(),
-                block_body.transactions(),
+                signed_block.body().created_nullifiers(),
+                signed_block.body().updated_accounts(),
+                signed_block.body().transactions(),
             )?;
 
             // XXX FIXME TODO free floating mutex MUST NOT exist

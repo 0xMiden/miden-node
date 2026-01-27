@@ -9,7 +9,7 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::batch::OrderedBatches;
-use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber};
+use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, SignedBlock};
 use miden_protocol::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
@@ -99,10 +99,11 @@ impl block_producer_server::BlockProducer for StoreApi {
         // TODO(sergerad): Use block proof.
         let _block_proof = tokio::spawn(
             async move {
+                let signed_block = SignedBlock::new_unchecked(header.clone(), body, signature);
                 // Note: This is an internal endpoint, so its safe to expose the full error
                 // report.
                 this.state
-                    .apply_block(header.clone(), body, signature)
+                    .apply_block(signed_block)
                     .inspect_err(|err| {
                         span.set_error(err);
                     })
@@ -115,7 +116,7 @@ impl block_producer_server::BlockProducer for StoreApi {
                     })
                     .and_then(|_| {
                         this.block_prover
-                            .prove(ordered_batches, header, block_inputs)
+                            .prove(ordered_batches, block_inputs, &header)
                             .map_err(|err| Status::new(tonic::Code::Internal, err.as_report()))
                     })
                     .await

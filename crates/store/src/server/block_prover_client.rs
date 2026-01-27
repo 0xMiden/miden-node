@@ -44,8 +44,8 @@ impl BlockProver {
     pub async fn prove(
         &self,
         tx_batches: OrderedBatches,
-        block_header: BlockHeader,
         block_inputs: BlockInputs,
+        block_header: &BlockHeader,
     ) -> Result<BlockProof, StoreProverError> {
         match self {
             Self::Local(prover) => Ok(prover.prove(tx_batches, block_header, block_inputs)?),

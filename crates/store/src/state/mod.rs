@@ -8,7 +8,6 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_proto::domain::account::{
     AccountDetailRequest,
     AccountDetails,
@@ -30,7 +29,7 @@ use miden_protocol::account::{AccountId, StorageMapWitness, StorageSlotName};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
-use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, Blockchain};
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain, SignedBlock};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, MmrProof, PartialMmr};
 use miden_protocol::crypto::merkle::smt::{LargeSmt, SmtProof, SmtStorage};
 use miden_protocol::note::{NoteDetails, NoteId, NoteScript, Nullifier};
@@ -220,13 +219,11 @@ impl State {
     // TODO: This span is logged in a root span, we should connect it to the parent span.
     #[allow(clippy::too_many_lines)]
     #[instrument(target = COMPONENT, skip_all, err)]
-    pub async fn apply_block(
-        &self,
-        header: BlockHeader,
-        body: BlockBody,
-        signature: Signature,
-    ) -> Result<(), ApplyBlockError> {
+    pub async fn apply_block(&self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
         let _lock = self.writer.try_lock().map_err(|_| ApplyBlockError::ConcurrentWrite)?;
+
+        let header = signed_block.header();
+        let body = signed_block.body();
 
         // Validate that header and body match.
         let tx_commitment = body.transactions().commitment();
@@ -410,11 +407,8 @@ impl State {
         // spawned.
         let db = Arc::clone(&self.db);
         let db_update_task = tokio::spawn(
-            async move {
-                db.apply_block(allow_acquire, acquire_done, header, body, signature, notes)
-                    .await
-            }
-            .in_current_span(),
+            async move { db.apply_block(allow_acquire, acquire_done, signed_block, notes).await }
+                .in_current_span(),
         );
 
         // Wait for the message from the DB update task, that we ready to commit the DB transaction.

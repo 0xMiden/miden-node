@@ -11,8 +11,7 @@ use miden_node_utils::formatting::format_opt;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::batch::OrderedBatches;
-use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber};
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, SignedBlock};
 use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::ProvenTransaction;
 use miden_protocol::utils::Serializable;
@@ -244,18 +243,12 @@ impl StoreClient {
         &self,
         ordered_batches: &OrderedBatches,
         block_inputs: &BlockInputs,
-        header: &BlockHeader,
-        body: &BlockBody,
-        signature: &Signature,
+        signed_block: &SignedBlock,
     ) -> Result<(), StoreError> {
         let request = tonic::Request::new(proto::store::ApplyBlockRequest {
             ordered_batches: ordered_batches.to_bytes(),
             block_inputs: block_inputs.to_bytes(),
-            block: Some(proto::blockchain::SignedBlock {
-                header: Some(header.into()),
-                body: Some(body.into()),
-                signature: Some(signature.into()),
-            }),
+            block: Some(signed_block.into()),
         });
 
         self.client.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)

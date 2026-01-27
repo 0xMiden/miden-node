@@ -5,15 +5,7 @@ use anyhow::Context;
 use futures::FutureExt;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
-use miden_protocol::block::{
-    BlockBody,
-    BlockHeader,
-    BlockInputs,
-    BlockNumber,
-    ProposedBlock,
-    ProvenBlock,
-};
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock, SignedBlock};
 use miden_protocol::note::NoteHeader;
 use miden_protocol::transaction::TransactionHeader;
 use tokio::time::Duration;
@@ -124,8 +116,7 @@ impl BlockBuilder {
                 ProposedBlock::inject_telemetry(proposed_block);
             })
             .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
-            // TODO(sergerad): Add SignedBlock to miden-base and update validate_block to return it.
-            .and_then(|(ordered_batches, block_inputs, header, body, signature)| self.commit_block(mempool, ordered_batches, block_inputs, header, body, signature))
+            .and_then(|(ordered_batches, block_inputs, signed_block)| self.commit_block(mempool, ordered_batches, block_inputs, signed_block))
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
             .or_else(|err| async {
@@ -234,8 +225,7 @@ impl BlockBuilder {
         &self,
         proposed_block: ProposedBlock,
         block_inputs: BlockInputs,
-    ) -> Result<(OrderedBatches, BlockInputs, BlockHeader, BlockBody, Signature), BuildBlockError>
-    {
+    ) -> Result<(OrderedBatches, BlockInputs, SignedBlock), BuildBlockError> {
         // Concurrently build the block and validate it via the validator.
         let build_result = tokio::task::spawn_blocking({
             let proposed_block = proposed_block.clone();
@@ -258,7 +248,8 @@ impl BlockBuilder {
         }
 
         let (ordered_batches, ..) = proposed_block.into_parts();
-        Ok((ordered_batches, block_inputs, header, body, signature))
+        let signed_block = SignedBlock::new_unchecked(header, body, signature);
+        Ok((ordered_batches, block_inputs, signed_block))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.commit_block", skip_all, err)]
@@ -267,15 +258,14 @@ impl BlockBuilder {
         mempool: &SharedMempool,
         ordered_batches: OrderedBatches,
         block_inputs: BlockInputs,
-        header: BlockHeader,
-        body: BlockBody,
-        signature: Signature,
+        signed_block: SignedBlock,
     ) -> Result<(), BuildBlockError> {
         self.store
-            .apply_block(&ordered_batches, &block_inputs, &header, &body, &signature)
+            .apply_block(&ordered_batches, &block_inputs, &signed_block)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
+        let (header, ..) = signed_block.into_parts();
         mempool.lock().await.commit_block(header);
 
         Ok(())

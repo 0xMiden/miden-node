@@ -3,6 +3,11 @@
 ## v0.14.0 (TBD)
 
 - Move block proving from Blocker Producer to the Store ([#1579](https://github.com/0xMiden/miden-node/pull/1579)).
+## v0.14.0 (TBC)
+
+### Enhancements
+
+- [BREAKING] Updated miden-base dependencies to use `next` branch; renamed `NoteInputs` to `NoteStorage`, `.inputs()` to `.storage()`, and database `inputs` column to `storage` ([#1595](https://github.com/0xMiden/miden-node/pull/1595)).
 
 ## v0.13.0 (2026-01-23)
 

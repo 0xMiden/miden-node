@@ -60,7 +60,7 @@ CREATE TABLE notes (
     consumed_at                   INTEGER,          -- Block number when the note was consumed
     nullifier                     BLOB,             -- Only known for public notes, null for private notes
     assets                        BLOB,
-    inputs                        BLOB,
+    storage                       BLOB,
     script_root                   BLOB,
     serial_num                    BLOB,
 

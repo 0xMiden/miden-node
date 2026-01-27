@@ -138,8 +138,6 @@ pub enum NoteType {
     Public = 1,
     /// Private note - details are not visible on-chain.
     Private = 2,
-    /// Encrypted note - details are encrypted on-chain.
-    Encrypted = 3,
 }
 impl NoteType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -151,7 +149,6 @@ impl NoteType {
             Self::Unspecified => "NOTE_TYPE_UNSPECIFIED",
             Self::Public => "NOTE_TYPE_PUBLIC",
             Self::Private => "NOTE_TYPE_PRIVATE",
-            Self::Encrypted => "NOTE_TYPE_ENCRYPTED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -160,7 +157,6 @@ impl NoteType {
             "NOTE_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
             "NOTE_TYPE_PUBLIC" => Some(Self::Public),
             "NOTE_TYPE_PRIVATE" => Some(Self::Private),
-            "NOTE_TYPE_ENCRYPTED" => Some(Self::Encrypted),
             _ => None,
         }
     }

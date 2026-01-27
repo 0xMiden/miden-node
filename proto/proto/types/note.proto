@@ -15,8 +15,6 @@ enum NoteType {
     NOTE_TYPE_PUBLIC = 1;
     // Private note - details are not visible on-chain.
     NOTE_TYPE_PRIVATE = 2;
-    // Encrypted note - details are encrypted on-chain.
-    NOTE_TYPE_ENCRYPTED = 3;
 }
 
 // Represents a note's ID.

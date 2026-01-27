@@ -1,10 +1,11 @@
 # Changelog
 
-## v0.13.1 (2026-01-26)
+## v0.13.1 (2026-01-27)
 
 ### Enhancements
 
 - Bootstrap's genesis configuration file now allows eliding `wallet` and `fungible_faucet` fields ([#1590](https://github.com/0xMiden/miden-node/pull/1590)).
+- Updated miden-base dependencies to version 0.13.3 ([#????]()).
 
 ### Fixes
 

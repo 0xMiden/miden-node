@@ -86,13 +86,17 @@ impl NetworkAccountState {
                 note
             })
             .collect::<Vec<_>>();
+
+        let nullifier_idx: HashSet<Nullifier> =
+            notes.iter().map(SingleTargetNetworkNote::nullifier).collect();
+
         let account = NetworkAccountNoteState::new(account, notes);
 
         let state = Self {
             account,
             account_id,
             inflight_txs: BTreeMap::default(),
-            nullifier_idx: HashSet::default(),
+            nullifier_idx,
         };
 
         state.inject_telemetry();
@@ -342,4 +346,341 @@ fn filter_by_account_id_and_map_to_single_target(
             NetworkNote::SingleTarget(_) => None,
         })
         .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::sync::{Arc, Mutex};
+
+    use miden_protocol::account::{AccountBuilder, AccountStorageMode, AccountType};
+    use miden_protocol::asset::{Asset, FungibleAsset};
+    use miden_protocol::crypto::rand::RpoRandomCoin;
+    use miden_protocol::note::{Note, NoteAttachment, NoteExecutionHint, NoteType};
+    use miden_protocol::testing::account_id::AccountIdBuilder;
+    use miden_protocol::transaction::TransactionId;
+    use miden_protocol::{EMPTY_WORD, Felt, Hasher};
+    use miden_standards::note::{NetworkAccountTarget, create_p2id_note};
+
+    use super::*;
+
+    // HELPERS
+    // ============================================================================================
+
+    /// Creates a network account for testing.
+    fn create_network_account(seed: u8) -> Account {
+        use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+        use miden_standards::account::wallets::BasicWallet;
+
+        AccountBuilder::new([seed; 32])
+            .account_type(AccountType::RegularAccountUpdatableCode)
+            .storage_mode(AccountStorageMode::Network)
+            .with_component(BasicWallet)
+            .with_auth_component(NoopAuthComponent)
+            .build_existing()
+            .expect("should be able to build test account")
+    }
+
+    /// Creates a faucet account ID for testing.
+    fn create_faucet_id(seed: u8) -> miden_protocol::account::AccountId {
+        AccountIdBuilder::new()
+            .account_type(AccountType::FungibleFaucet)
+            .storage_mode(AccountStorageMode::Public)
+            .build_with_seed([seed; 32])
+    }
+
+    /// Creates a note targeted at the given network account.
+    fn create_network_note(
+        target_account_id: miden_protocol::account::AccountId,
+        seed: u8,
+    ) -> Note {
+        let coin_seed: [u64; 4] =
+            [u64::from(seed), u64::from(seed) + 1, u64::from(seed) + 2, u64::from(seed) + 3];
+        let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new).into())));
+        let mut rng = rng.lock().unwrap();
+
+        let faucet_id = create_faucet_id(seed.wrapping_add(100));
+
+        let target = NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
+            .expect("NetworkAccountTarget creation should succeed for network account");
+        let attachment: NoteAttachment = target.into();
+
+        create_p2id_note(
+            target_account_id,
+            target_account_id,
+            vec![Asset::Fungible(FungibleAsset::new(faucet_id, 10).unwrap())],
+            NoteType::Public,
+            attachment,
+            &mut *rng,
+        )
+        .expect("note creation should succeed")
+    }
+
+    /// Creates a `SingleTargetNetworkNote` from a `Note`.
+    fn to_single_target_note(note: Note) -> SingleTargetNetworkNote {
+        SingleTargetNetworkNote::try_from(note).expect("should convert to SingleTargetNetworkNote")
+    }
+
+    /// Creates a mock `TransactionId` for testing.
+    fn mock_tx_id(seed: u8) -> TransactionId {
+        TransactionId::new(
+            Hasher::hash(&[seed; 32]),
+            Hasher::hash(&[seed.wrapping_add(1); 32]),
+            EMPTY_WORD,
+            EMPTY_WORD,
+        )
+    }
+
+    /// Creates a mock `BlockHeader` for testing.
+    fn mock_block_header(block_num: u32) -> miden_protocol::block::BlockHeader {
+        use miden_node_utils::fee::test_fee_params;
+        use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
+
+        miden_protocol::block::BlockHeader::new(
+            0,
+            EMPTY_WORD,
+            BlockNumber::from(block_num),
+            EMPTY_WORD,
+            EMPTY_WORD,
+            EMPTY_WORD,
+            EMPTY_WORD,
+            EMPTY_WORD,
+            EMPTY_WORD,
+            SecretKey::new().public_key(),
+            test_fee_params(),
+            0,
+        )
+    }
+
+    impl NetworkAccountState {
+        /// Creates a new `NetworkAccountState` for testing.
+        ///
+        /// This mirrors the behavior of `load()` but with provided notes instead of
+        /// fetching from the store.
+        #[cfg(test)]
+        pub fn new_for_testing(
+            account: Account,
+            account_id: NetworkAccountId,
+            notes: Vec<SingleTargetNetworkNote>,
+        ) -> Self {
+            let nullifier_idx: HashSet<Nullifier> =
+                notes.iter().map(SingleTargetNetworkNote::nullifier).collect();
+
+            let account = NetworkAccountNoteState::new(account, notes);
+
+            Self {
+                account,
+                account_id,
+                inflight_txs: BTreeMap::default(),
+                nullifier_idx,
+            }
+        }
+    }
+
+    // TESTS
+    // ============================================================================================
+
+    /// Tests that initial notes loaded into `NetworkAccountState` have their nullifiers
+    /// registered in `nullifier_idx`.
+    #[test]
+    fn test_initial_notes_have_nullifiers_indexed() {
+        let account = create_network_account(1);
+        let account_id = account.id();
+        let network_account_id =
+            NetworkAccountId::try_from(account_id).expect("should be a network account");
+
+        let note1 = to_single_target_note(create_network_note(account_id, 1));
+        let note2 = to_single_target_note(create_network_note(account_id, 2));
+        let nullifier1 = note1.nullifier();
+        let nullifier2 = note2.nullifier();
+
+        let state =
+            NetworkAccountState::new_for_testing(account, network_account_id, vec![note1, note2]);
+
+        assert!(
+            state.nullifier_idx.contains(&nullifier1),
+            "nullifier_idx should contain first note's nullifier"
+        );
+        assert!(
+            state.nullifier_idx.contains(&nullifier2),
+            "nullifier_idx should contain second note's nullifier"
+        );
+        assert_eq!(state.nullifier_idx.len(), 2, "nullifier_idx should have exactly 2 entries");
+    }
+
+    /// Tests that when a `TransactionAdded` event arrives with nullifiers from initial notes,
+    /// those notes are properly moved from `available_notes` to `nullified_notes`.
+    #[test]
+    fn test_mempool_event_nullifies_initial_notes() {
+        let account = create_network_account(1);
+        let account_id = account.id();
+        let network_account_id =
+            NetworkAccountId::try_from(account_id).expect("should be a network account");
+
+        let note1 = to_single_target_note(create_network_note(account_id, 1));
+        let note2 = to_single_target_note(create_network_note(account_id, 2));
+        let nullifier1 = note1.nullifier();
+        let nullifier2 = note2.nullifier();
+
+        let mut state =
+            NetworkAccountState::new_for_testing(account, network_account_id, vec![note1, note2]);
+
+        let available_count = state.account.available_notes(&BlockNumber::from(0)).count();
+        assert_eq!(available_count, 2, "both notes should be available initially");
+
+        let tx_id = mock_tx_id(1);
+        let event = MempoolEvent::TransactionAdded {
+            id: tx_id,
+            nullifiers: vec![nullifier1],
+            network_notes: vec![],
+            account_delta: None,
+        };
+
+        let shutdown = state.mempool_update(&event);
+        assert!(shutdown.is_none(), "mempool_update should not trigger shutdown");
+
+        let available_nullifiers: Vec<_> = state
+            .account
+            .available_notes(&BlockNumber::from(0))
+            .map(|n| n.to_inner().nullifier())
+            .collect();
+        assert!(
+            !available_nullifiers.contains(&nullifier1),
+            "note1 should no longer be available"
+        );
+        assert!(available_nullifiers.contains(&nullifier2), "note2 should still be available");
+        assert_eq!(available_nullifiers.len(), 1, "only one note should be available");
+
+        assert!(
+            state.inflight_txs.contains_key(&tx_id),
+            "transaction should be tracked in inflight_txs"
+        );
+    }
+
+    /// Tests that after committing a transaction, the nullifier is removed from `nullifier_idx`.
+    #[test]
+    fn test_commit_removes_nullifier_from_index() {
+        let account = create_network_account(1);
+        let account_id = account.id();
+        let network_account_id =
+            NetworkAccountId::try_from(account_id).expect("should be a network account");
+
+        let note1 = to_single_target_note(create_network_note(account_id, 1));
+        let nullifier1 = note1.nullifier();
+
+        let mut state =
+            NetworkAccountState::new_for_testing(account, network_account_id, vec![note1]);
+
+        let tx_id = mock_tx_id(1);
+        let event = MempoolEvent::TransactionAdded {
+            id: tx_id,
+            nullifiers: vec![nullifier1],
+            network_notes: vec![],
+            account_delta: None,
+        };
+        state.mempool_update(&event);
+
+        assert!(
+            state.nullifier_idx.contains(&nullifier1),
+            "nullifier should still be in index while transaction is inflight"
+        );
+
+        let commit_event = MempoolEvent::BlockCommitted {
+            header: Box::new(mock_block_header(1)),
+            txs: vec![tx_id],
+        };
+        state.mempool_update(&commit_event);
+
+        assert!(
+            !state.nullifier_idx.contains(&nullifier1),
+            "nullifier should be removed from index after commit"
+        );
+    }
+
+    /// Tests that reverting a transaction restores the note to `available_notes`.
+    #[test]
+    fn test_revert_restores_note_to_available() {
+        let account = create_network_account(1);
+        let account_id = account.id();
+        let network_account_id =
+            NetworkAccountId::try_from(account_id).expect("should be a network account");
+
+        let note1 = to_single_target_note(create_network_note(account_id, 1));
+        let nullifier1 = note1.nullifier();
+
+        let mut state =
+            NetworkAccountState::new_for_testing(account, network_account_id, vec![note1]);
+
+        let tx_id = mock_tx_id(1);
+        let event = MempoolEvent::TransactionAdded {
+            id: tx_id,
+            nullifiers: vec![nullifier1],
+            network_notes: vec![],
+            account_delta: None,
+        };
+        state.mempool_update(&event);
+
+        // Verify note is not available
+        let available_count = state.account.available_notes(&BlockNumber::from(0)).count();
+        assert_eq!(available_count, 0, "note should not be available after being consumed");
+
+        // Revert the transaction
+        let revert_event =
+            MempoolEvent::TransactionsReverted(HashSet::from_iter(std::iter::once(tx_id)));
+        state.mempool_update(&revert_event);
+
+        // Verify note is available again
+        let available_nullifiers: Vec<_> = state
+            .account
+            .available_notes(&BlockNumber::from(0))
+            .map(|n| n.to_inner().nullifier())
+            .collect();
+        assert!(
+            available_nullifiers.contains(&nullifier1),
+            "note should be available again after revert"
+        );
+    }
+
+    /// Tests that nullifiers from dynamically added notes are also indexed.
+    #[test]
+    fn test_dynamically_added_notes_are_indexed() {
+        let account = create_network_account(1);
+        let account_id = account.id();
+        let network_account_id =
+            NetworkAccountId::try_from(account_id).expect("should be a network account");
+
+        let mut state = NetworkAccountState::new_for_testing(account, network_account_id, vec![]);
+
+        assert!(state.nullifier_idx.is_empty(), "nullifier_idx should be empty initially");
+
+        let new_note = to_single_target_note(create_network_note(account_id, 1));
+        let new_nullifier = new_note.nullifier();
+
+        let tx_id = mock_tx_id(1);
+        let event = MempoolEvent::TransactionAdded {
+            id: tx_id,
+            nullifiers: vec![],
+            network_notes: vec![NetworkNote::SingleTarget(new_note)],
+            account_delta: None,
+        };
+
+        state.mempool_update(&event);
+
+        // Verify the new note's nullifier is now indexed
+        assert!(
+            state.nullifier_idx.contains(&new_nullifier),
+            "dynamically added note's nullifier should be indexed"
+        );
+
+        // Verify the note is available
+        let available_nullifiers: Vec<_> = state
+            .account
+            .available_notes(&BlockNumber::from(0))
+            .map(|n| n.to_inner().nullifier())
+            .collect();
+        assert!(
+            available_nullifiers.contains(&new_nullifier),
+            "dynamically added note should be available"
+        );
+    }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.13.2 (TBD)
+
+### Fixes
+
+- Network transaction builder no longer creates conflicting transactions by consuming the same notes twice ([#1597](https://github.com/0xMiden/miden-node/issues/1597)).
+
 ## v0.13.1 (2026-01-27)
 
 ### Enhancements

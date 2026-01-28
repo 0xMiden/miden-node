@@ -2,6 +2,7 @@ use std::convert::Infallible;
 
 use futures::TryFutureExt;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_node_proto::errors::MissingFieldHelper;
 use miden_node_proto::generated::store::block_producer_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
@@ -57,30 +58,24 @@ impl block_producer_server::BlockProducer for StoreApi {
             Status::invalid_argument(err.as_report_context("failed to deserialize block inputs"))
         })?;
         // Read block.
-        let Some(block) = request.block else {
-            return Err(Status::invalid_argument("empty block"));
-        };
+        let block = request
+            .block
+            .ok_or(proto::store::ApplyBlockRequest::missing_field(stringify!(block)))?;
         // Read block header.
-        let Some(header) = block.header else {
-            return Err(Status::invalid_argument("empty header"));
-        };
-        let header = BlockHeader::try_from(header).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("failed to deserialize block header"))
-        })?;
+        let header: BlockHeader = block
+            .header
+            .ok_or(proto::blockchain::SignedBlock::missing_field(stringify!(header)))?
+            .try_into()?;
         // Read block body.
-        let Some(body) = block.body else {
-            return Err(Status::invalid_argument("empty body"));
-        };
-        let body = BlockBody::try_from(body).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("failed to deserialize block body"))
-        })?;
+        let body: BlockBody = block
+            .body
+            .ok_or(proto::blockchain::SignedBlock::missing_field(stringify!(body)))?
+            .try_into()?;
         // Read signature.
-        let Some(signature) = block.signature else {
-            return Err(Status::invalid_argument("empty signature"));
-        };
-        let signature = Signature::try_from(signature).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("failed to deserialize signature"))
-        })?;
+        let signature: Signature = block
+            .signature
+            .ok_or(proto::blockchain::SignedBlock::missing_field(stringify!(signature)))?
+            .try_into()?;
 
         let span = tracing::Span::current();
         span.set_attribute("block.number", header.block_num());

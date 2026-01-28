@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
-use miden_node_store::{BlockProver, Store};
+use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use miden_node_validator::Validator;
 use miden_protocol::block::BlockSigner;
@@ -179,13 +178,6 @@ impl BundledCommand {
             .await
             .context("Failed to bind to RPC gRPC endpoint")?;
 
-        // Initialize local or remote block prover.
-        let block_prover = if let Some(url) = block_prover_url {
-            Arc::new(BlockProver::new_remote(url))
-        } else {
-            Arc::new(BlockProver::new_local())
-        };
-
         let block_producer_address = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to block-producer gRPC endpoint")?
@@ -228,7 +220,7 @@ impl BundledCommand {
                     block_producer_listener: store_block_producer_listener,
                     ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
-                    block_prover,
+                    block_prover_url,
                     grpc_timeout,
                 }
                 .serve()

@@ -1,10 +1,9 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use miden_node_store::Store;
 use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
-use miden_node_store::{BlockProver, Store};
 use miden_node_utils::grpc::UrlExt;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_protocol::utils::Deserializable;
@@ -176,17 +175,9 @@ impl StoreCommand {
             .await
             .context("Failed to bind to store's block-producer gRPC URL")?;
 
-        let block_prover = {
-            if let Some(url) = block_prover_url {
-                Arc::new(BlockProver::new_remote(url))
-            } else {
-                Arc::new(BlockProver::new_local())
-            }
-        };
-
         Store {
             rpc_listener,
-            block_prover,
+            block_prover_url,
             ntx_builder_listener,
             block_producer_listener,
             data_directory,

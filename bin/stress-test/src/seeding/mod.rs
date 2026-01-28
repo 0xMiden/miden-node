@@ -8,7 +8,7 @@ use miden_air::ExecutionProof;
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::generated::store::rpc_client::RpcClient;
-use miden_node_store::{BlockProver, DataDirectory, GenesisState, Store};
+use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
@@ -541,12 +541,10 @@ pub async fn start_store(
         .expect("Failed to get store block-producer address");
     let dir = data_directory.clone();
 
-    let block_prover = Arc::new(BlockProver::new_local());
-
     task::spawn(async move {
         Store {
             rpc_listener,
-            block_prover,
+            block_prover_url: None,
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,

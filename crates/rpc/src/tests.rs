@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
@@ -7,8 +6,8 @@ use http::{HeaderMap, HeaderValue};
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
+use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
-use miden_node_store::{BlockProver, Store};
 use miden_node_utils::fee::test_fee;
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
@@ -432,7 +431,6 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
         .expect("Failed to bind store ntx-builder gRPC endpoint");
     let block_producer_listener =
         TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
-    let block_prover = Arc::new(BlockProver::new_local());
     // In order to later kill the store, we need to spawn a new runtime and run the store on
     // it. That allows us to kill all the tasks spawned by the store when we
     // kill the runtime.
@@ -441,7 +439,7 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     store_runtime.spawn(async move {
         Store {
             rpc_listener,
-            block_prover,
+            block_prover_url: None,
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
@@ -479,11 +477,10 @@ async fn restart_store(store_addr: SocketAddr, data_directory: &std::path::Path)
     let dir = data_directory.to_path_buf();
     let store_runtime =
         runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
-    let block_prover = Arc::new(BlockProver::new_local());
     store_runtime.spawn(async move {
         Store {
             rpc_listener,
-            block_prover,
+            block_prover_url: None,
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,

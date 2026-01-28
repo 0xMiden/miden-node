@@ -28,7 +28,7 @@ license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/miden-node"
 rust-version = "1.90"
-version      = "0.13.0"
+version      = "0.14.0"
 
 # Optimize the cryptography for faster tests involving account creation.
 [profile.test.package.miden-crypto]
@@ -36,17 +36,17 @@ opt-level = 2
 
 [workspace.dependencies]
 # Workspace crates.
-miden-node-block-producer   = { path = "crates/block-producer", version = "0.13" }
-miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.13" }
-miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.13" }
-miden-node-proto            = { path = "crates/proto", version = "0.13" }
-miden-node-proto-build      = { path = "proto", version = "0.13" }
-miden-node-rpc              = { path = "crates/rpc", version = "0.13" }
-miden-node-store            = { path = "crates/store", version = "0.13" }
+miden-node-block-producer   = { path = "crates/block-producer", version = "0.14" }
+miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.14" }
+miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.14" }
+miden-node-proto            = { path = "crates/proto", version = "0.14" }
+miden-node-proto-build      = { path = "proto", version = "0.14" }
+miden-node-rpc              = { path = "crates/rpc", version = "0.14" }
+miden-node-store            = { path = "crates/store", version = "0.14" }
 miden-node-test-macro       = { path = "crates/test-macro" }
-miden-node-utils            = { path = "crates/utils", version = "0.13" }
-miden-node-validator        = { path = "crates/validator", version = "0.13" }
-miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.13" }
+miden-node-utils            = { path = "crates/utils", version = "0.14" }
+miden-node-validator        = { path = "crates/validator", version = "0.14" }
+miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.14" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
 miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }

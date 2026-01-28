@@ -2734,6 +2734,7 @@ dependencies = [
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "reqwest",
+ "rocksdb-cxx-linkage-fix",
  "serde",
  "serde_json",
  "sha2",
@@ -2760,6 +2761,7 @@ dependencies = [
  "miden-node-utils",
  "miden-node-validator",
  "miden-protocol",
+ "rocksdb-cxx-linkage-fix",
  "tokio",
  "url",
 ]
@@ -2924,6 +2926,7 @@ dependencies = [
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "regex",
+ "rocksdb-cxx-linkage-fix",
  "serde",
  "termtree",
  "thiserror 2.0.18",
@@ -2953,6 +2956,7 @@ dependencies = [
  "miden-standards",
  "rand 0.9.2",
  "rayon",
+ "rocksdb-cxx-linkage-fix",
  "tokio",
  "tonic",
  "url",
@@ -3116,6 +3120,7 @@ dependencies = [
  "prometheus 0.14.0",
  "prost",
  "reqwest",
+ "rocksdb-cxx-linkage-fix",
  "semver 1.0.27",
  "serde",
  "serde_qs",
@@ -4733,6 +4738,10 @@ dependencies = [
  "libc",
  "librocksdb-sys",
 ]
+
+[[package]]
+name = "rocksdb-cxx-linkage-fix"
+version = "0.14.0"
 
 [[package]]
 name = "rsqlite-vfs"

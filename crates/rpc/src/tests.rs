@@ -432,7 +432,7 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
         .expect("Failed to bind store ntx-builder gRPC endpoint");
     let block_producer_listener =
         TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
-    let block_prover = Arc::new(BlockProver::new_local(None));
+    let block_prover = Arc::new(BlockProver::new_local());
     // In order to later kill the store, we need to spawn a new runtime and run the store on
     // it. That allows us to kill all the tasks spawned by the store when we
     // kill the runtime.
@@ -479,7 +479,7 @@ async fn restart_store(store_addr: SocketAddr, data_directory: &std::path::Path)
     let dir = data_directory.to_path_buf();
     let store_runtime =
         runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
-    let block_prover = Arc::new(BlockProver::new_local(None));
+    let block_prover = Arc::new(BlockProver::new_local());
     store_runtime.spawn(async move {
         Store {
             rpc_listener,

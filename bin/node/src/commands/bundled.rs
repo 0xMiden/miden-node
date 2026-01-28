@@ -183,7 +183,7 @@ impl BundledCommand {
         let block_prover = if let Some(url) = block_prover_url {
             Arc::new(BlockProver::new_remote(url))
         } else {
-            Arc::new(BlockProver::new_local(None))
+            Arc::new(BlockProver::new_local())
         };
 
         let block_producer_address = TcpListener::bind("127.0.0.1:0")

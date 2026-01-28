@@ -541,7 +541,7 @@ pub async fn start_store(
         .expect("Failed to get store block-producer address");
     let dir = data_directory.clone();
 
-    let block_prover = Arc::new(BlockProver::new_local(None));
+    let block_prover = Arc::new(BlockProver::new_local());
 
     task::spawn(async move {
         Store {

@@ -180,7 +180,7 @@ impl StoreCommand {
             if let Some(url) = block_prover_url {
                 Arc::new(BlockProver::new_remote(url))
             } else {
-                Arc::new(BlockProver::new_local(None))
+                Arc::new(BlockProver::new_local())
             }
         };
 

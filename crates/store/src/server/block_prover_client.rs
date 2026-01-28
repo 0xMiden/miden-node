@@ -1,5 +1,4 @@
 use miden_block_prover::{BlockProverError, LocalBlockProver};
-use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof};
 use miden_remote_prover_client::RemoteProverClientError;
@@ -29,10 +28,9 @@ pub enum BlockProver {
 }
 
 impl BlockProver {
-    pub fn new_local(security_level: Option<u32>) -> Self {
+    pub fn new_local() -> Self {
         info!(target: COMPONENT, "Using local block prover");
-        let security_level = security_level.unwrap_or(MIN_PROOF_SECURITY_LEVEL);
-        Self::Local(LocalBlockProver::new(security_level))
+        Self::Local(LocalBlockProver::new(0))
     }
 
     pub fn new_remote(endpoint: impl Into<String>) -> Self {

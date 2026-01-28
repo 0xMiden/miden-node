@@ -10,9 +10,9 @@ use crate::COMPONENT;
 #[derive(Debug, thiserror::Error)]
 pub enum StoreProverError {
     #[error("local proving failed")]
-    LocalProvingFailed(#[from] BlockProverError),
+    LocalProvingFailed(#[source] BlockProverError),
     #[error("remote proving failed")]
-    RemoteProvingFailed(#[from] RemoteProverClientError),
+    RemoteProvingFailed(#[source] RemoteProverClientError),
 }
 
 // BLOCK PROVER
@@ -46,10 +46,13 @@ impl BlockProver {
         block_header: &BlockHeader,
     ) -> Result<BlockProof, StoreProverError> {
         match self {
-            Self::Local(prover) => Ok(prover.prove(tx_batches, block_header, block_inputs)?),
-            Self::Remote(prover) => {
-                Ok(prover.prove(tx_batches, block_header, block_inputs).await?)
-            },
+            Self::Local(prover) => Ok(prover
+                .prove(tx_batches, block_header, block_inputs)
+                .map_err(StoreProverError::LocalProvingFailed)?),
+            Self::Remote(prover) => Ok(prover
+                .prove(tx_batches, block_header, block_inputs)
+                .await
+                .map_err(StoreProverError::RemoteProvingFailed)?),
         }
     }
 }

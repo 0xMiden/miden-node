@@ -1,3 +1,7 @@
+//! A temporary solution to missing c++ std library linkage when using a precompile static library
+//!
+//! For more information see: <https://github.com/rust-rocksdb/rust-rocksdb/pull/1029>
+
 use std::env;
 
 pub fn configure() {

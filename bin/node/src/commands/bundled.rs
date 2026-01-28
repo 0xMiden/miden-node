@@ -296,27 +296,29 @@ impl BundledCommand {
         ]);
 
         // Start network transaction builder. The endpoint is available after loading completes.
-        let store_ntx_builder_url = Url::parse(&format!("http://{store_ntx_builder_address}"))
-            .context("Failed to parse URL")?;
-
         if should_start_ntx_builder {
+            let store_ntx_builder_url = Url::parse(&format!("http://{store_ntx_builder_address}"))
+                .context("Failed to parse URL")?;
             let validator_url = Url::parse(&format!("http://{validator_address}"))
                 .context("Failed to parse URL")?;
+            let block_producer_url = Url::parse(&format!("http://{block_producer_address}"))
+                .context("Failed to parse URL")?;
+
+            let builder_config = ntx_builder.into_builder_config(
+                store_ntx_builder_url,
+                block_producer_url,
+                validator_url,
+            );
+
             let id = join_set
                 .spawn(async move {
-                    let block_producer_url =
-                        Url::parse(&format!("http://{block_producer_address}"))
-                            .context("Failed to parse URL")?;
-                    NetworkTransactionBuilder::new(
-                        store_ntx_builder_url,
-                        block_producer_url,
-                        validator_url,
-                        ntx_builder.tx_prover_url,
-                        ntx_builder.script_cache_size,
-                    )
-                    .run()
-                    .await
-                    .context("failed while serving ntx builder component")
+                    NetworkTransactionBuilder::new(builder_config)
+                        .initialize()
+                        .await
+                        .context("failed to initialize ntx builder")?
+                        .run()
+                        .await
+                        .context("failed while serving ntx builder component")
                 })
                 .id();
             component_ids.insert(id, "ntx-builder");

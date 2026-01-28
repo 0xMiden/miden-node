@@ -6,6 +6,10 @@
 
 - [BREAKING] Updated miden-base dependencies to use `next` branch; renamed `NoteInputs` to `NoteStorage`, `.inputs()` to `.storage()`, and database `inputs` column to `storage` ([#1595](https://github.com/0xMiden/miden-node/pull/1595)).
 
+### Changes
+
+- Refactored NTX Builder actor state into `AccountDeltaTracker` and `NotePool` for clarity, and added tracing instrumentation to event broadcasting ([#1611](https://github.com/0xMiden/miden-node/pull/1611)).
+
 ## v0.13.2 (2026-01-27)
 
 ### Fixes

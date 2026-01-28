@@ -112,11 +112,11 @@ impl BlockBuilder {
         self.get_block_inputs(selected)
             .inspect_ok(BlockBatchesAndInputs::inject_telemetry)
             .and_then(|inputs| self.propose_block(inputs))
-            .inspect_ok(|(proposed_block, _)| {
+            .inspect_ok(|proposed_block| {
                 ProposedBlock::inject_telemetry(proposed_block);
             })
-            .and_then(|(proposed_block, inputs)| self.validate_block(proposed_block, inputs))
-            .and_then(|(ordered_batches, block_inputs, signed_block)| self.commit_block(mempool, ordered_batches, block_inputs, signed_block))
+            .and_then(|proposed_block| self.validate_block(proposed_block))
+            .and_then(|(ordered_batches, signed_block)| self.commit_block(mempool, ordered_batches, signed_block))
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
             .or_else(|err| async {
@@ -210,22 +210,21 @@ impl BlockBuilder {
     async fn propose_block(
         &self,
         batches_inputs: BlockBatchesAndInputs,
-    ) -> Result<(ProposedBlock, BlockInputs), BuildBlockError> {
+    ) -> Result<ProposedBlock, BuildBlockError> {
         let BlockBatchesAndInputs { batches, inputs } = batches_inputs;
         let batches = batches.into_iter().map(Arc::unwrap_or_clone).collect();
 
-        let proposed_block = ProposedBlock::new(inputs.clone(), batches)
-            .map_err(BuildBlockError::ProposeBlockFailed)?;
+        let proposed_block =
+            ProposedBlock::new(inputs, batches).map_err(BuildBlockError::ProposeBlockFailed)?;
 
-        Ok((proposed_block, inputs))
+        Ok(proposed_block)
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.validate_block", skip_all, err)]
     async fn validate_block(
         &self,
         proposed_block: ProposedBlock,
-        block_inputs: BlockInputs,
-    ) -> Result<(OrderedBatches, BlockInputs, SignedBlock), BuildBlockError> {
+    ) -> Result<(OrderedBatches, SignedBlock), BuildBlockError> {
         // Concurrently build the block and validate it via the validator.
         let build_result = tokio::task::spawn_blocking({
             let proposed_block = proposed_block.clone();
@@ -249,7 +248,7 @@ impl BlockBuilder {
 
         let (ordered_batches, ..) = proposed_block.into_parts();
         let signed_block = SignedBlock::new_unchecked(header, body, signature);
-        Ok((ordered_batches, block_inputs, signed_block))
+        Ok((ordered_batches, signed_block))
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.commit_block", skip_all, err)]
@@ -257,11 +256,10 @@ impl BlockBuilder {
         &self,
         mempool: &SharedMempool,
         ordered_batches: OrderedBatches,
-        block_inputs: BlockInputs,
         signed_block: SignedBlock,
     ) -> Result<(), BuildBlockError> {
         self.store
-            .apply_block(&ordered_batches, &block_inputs, &signed_block)
+            .apply_block(&ordered_batches, &signed_block)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 

@@ -245,7 +245,7 @@ async fn apply_block(
     store_client: &StoreClient,
     metrics: &mut SeedingMetrics,
 ) -> BlockHeader {
-    let proposed_block = ProposedBlock::new(block_inputs.clone(), batches).unwrap();
+    let proposed_block = ProposedBlock::new(block_inputs, batches).unwrap();
     let (header, body) = proposed_block.clone().into_header_and_body().unwrap();
     let block_size: usize = header.to_bytes().len() + body.to_bytes().len();
     let signature = EcdsaSecretKey::new().sign(header.commitment());
@@ -254,10 +254,7 @@ async fn apply_block(
     let ordered_batches = proposed_block.batches().clone();
 
     let start = Instant::now();
-    store_client
-        .apply_block(&ordered_batches, &block_inputs, &signed_block)
-        .await
-        .unwrap();
+    store_client.apply_block(&ordered_batches, &signed_block).await.unwrap();
     metrics.track_block_insertion(start.elapsed(), block_size);
 
     let (header, ..) = signed_block.into_parts();

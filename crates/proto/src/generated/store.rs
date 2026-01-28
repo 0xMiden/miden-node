@@ -6,10 +6,6 @@ pub struct ApplyBlockRequest {
     /// \[miden_objects::batch::OrderedBatches\].
     #[prost(bytes = "vec", tag = "1")]
     pub ordered_batches: ::prost::alloc::vec::Vec<u8>,
-    /// Block inputs encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::block::BlockInputs\].
-    #[prost(bytes = "vec", tag = "2")]
-    pub block_inputs: ::prost::alloc::vec::Vec<u8>,
     /// Block signed by the Validator.
     #[prost(message, optional, tag = "3")]
     pub block: ::core::option::Option<super::blockchain::SignedBlock>,

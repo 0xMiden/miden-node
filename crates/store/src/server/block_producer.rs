@@ -10,7 +10,7 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_protocol::Word;
 use miden_protocol::batch::OrderedBatches;
-use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, SignedBlock};
+use miden_protocol::block::{BlockBody, BlockHeader, BlockNumber, SignedBlock};
 use miden_protocol::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
@@ -54,9 +54,6 @@ impl block_producer_server::BlockProducer for StoreApi {
                     err.as_report_context("failed to deserialize ordered batches"),
                 )
             })?;
-        let block_inputs = BlockInputs::read_from_bytes(&request.block_inputs).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("failed to deserialize block inputs"))
-        })?;
         // Read block.
         let block = request
             .block
@@ -76,6 +73,14 @@ impl block_producer_server::BlockProducer for StoreApi {
             .signature
             .ok_or(proto::blockchain::SignedBlock::missing_field(stringify!(signature)))?
             .try_into()?;
+
+        // Get block inputs from ordered batches.
+        let block_inputs =
+            self.block_inputs_from_ordered_batches(&ordered_batches).await.map_err(|err| {
+                Status::invalid_argument(
+                    err.as_report_context("failed to get block inputs from ordered batches"),
+                )
+            })?;
 
         let span = tracing::Span::current();
         span.set_attribute("block.number", header.block_num());

@@ -23,7 +23,7 @@ use miden_protocol::note::{
 use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::{Deserializable, Serializable};
 use tokio::sync::oneshot;
-use tracing::{Instrument, info, info_span, instrument};
+use tracing::{Instrument, info, instrument};
 
 use crate::COMPONENT;
 use crate::db::manager::{ConnectionManager, configure_connection_on_creation};

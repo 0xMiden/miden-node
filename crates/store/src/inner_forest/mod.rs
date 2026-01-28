@@ -641,15 +641,18 @@ impl InnerForest {
     /// Removes entries where `block_num < chain_tip - HISTORICAL_BLOCK_RETENTION`.
     /// Entries at the cutoff block are retained (the cutoff is inclusive).
     ///
-    /// The SmtForest itself is not pruned directly as it uses structural sharing and old roots
+    /// The `SmtForest` itself is not pruned directly as it uses structural sharing and old roots
     /// are naturally garbage-collected when they become unreachable.
     #[instrument(target = COMPONENT, skip_all, fields(block_num = %chain_tip), ret)]
     pub(crate) fn prune(&mut self, chain_tip: BlockNumber) -> (usize, usize, usize) {
         let cutoff_block =
             BlockNumber::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
 
-        let mut vault_roots_removed =
-            Self::prune_vault_roots_by_block(&mut self.vault_roots, &mut self.vault_roots_by_block, cutoff_block);
+        let mut vault_roots_removed = Self::prune_vault_roots_by_block(
+            &mut self.vault_roots,
+            &mut self.vault_roots_by_block,
+            cutoff_block,
+        );
         let storage_roots_removed = Self::prune_storage_roots_by_block(
             &mut self.storage_map_roots,
             &mut self.storage_slots_by_block,
@@ -666,13 +669,14 @@ impl InnerForest {
         (vault_removed, storage_roots_removed_count, storage_entries_removed)
     }
 
-    /// Prunes vault roots from maps keyed by (AccountId, BlockNumber) with a block index.
+    /// Prunes vault roots from maps keyed by (`AccountId`, `BlockNumber`) with a block index.
     fn prune_vault_roots_by_block(
         map: &mut BTreeMap<(AccountId, BlockNumber), Word>,
         index: &mut BTreeMap<BlockNumber, Vec<AccountId>>,
         cutoff_block: BlockNumber,
     ) -> Vec<Word> {
-        let blocks_to_prune: Vec<_> = index.range(..cutoff_block).map(|(block, _)| *block).collect();
+        let blocks_to_prune: Vec<_> =
+            index.range(..cutoff_block).map(|(block, _)| *block).collect();
         let mut removed_roots = Vec::new();
 
         for block in blocks_to_prune {
@@ -688,14 +692,15 @@ impl InnerForest {
         removed_roots
     }
 
-    /// Prunes storage map roots from maps keyed by (AccountId, StorageSlotName, BlockNumber)
+    /// Prunes storage map roots from maps keyed by (`AccountId`, `StorageSlotName`, `BlockNumber`)
     /// with a block index.
     fn prune_storage_roots_by_block(
         map: &mut BTreeMap<(AccountId, StorageSlotName, BlockNumber), Word>,
         index: &mut BTreeMap<BlockNumber, Vec<(AccountId, StorageSlotName)>>,
         cutoff_block: BlockNumber,
     ) -> Vec<Word> {
-        let blocks_to_prune: Vec<_> = index.range(..cutoff_block).map(|(block, _)| *block).collect();
+        let blocks_to_prune: Vec<_> =
+            index.range(..cutoff_block).map(|(block, _)| *block).collect();
         let mut removed_roots = Vec::new();
 
         for block in blocks_to_prune {
@@ -711,8 +716,8 @@ impl InnerForest {
         removed_roots
     }
 
-    /// Prunes entries from a map keyed by (AccountId, StorageSlotName, BlockNumber)
-    /// where block_num < cutoff.
+    /// Prunes entries from a map keyed by `(AccountId, StorageSlotName, BlockNumber)`
+    /// where `block_num < cutoff`.
     fn prune_entries_by_block_slot<V>(
         map: &mut BTreeMap<(AccountId, StorageSlotName, BlockNumber), V>,
         cutoff_block: BlockNumber,

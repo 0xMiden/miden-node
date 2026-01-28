@@ -444,3 +444,316 @@ fn test_storage_map_incremental_updates() {
     assert_ne!(root_2, root_3);
     assert_ne!(root_1, root_3);
 }
+
+#[test]
+fn test_open_storage_map_returns_proofs_for_many_keys() {
+    use std::collections::BTreeMap;
+
+    use assert_matches::assert_matches;
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let slot_name = StorageSlotName::mock(3);
+    let block_num = BlockNumber::GENESIS.child();
+
+    // Create a storage map with a few entries
+    let mut map_delta = StorageMapDelta::default();
+    for i in 0..20u32 {
+        let key = Word::from([i, 0, 0, 0]);
+        let value = Word::from([0, 0, 0, i]);
+        map_delta.insert(key, value);
+    }
+    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta))]);
+    let storage_delta = AccountStorageDelta::from_raw(raw);
+    let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
+    forest.update_account(block_num, &delta).unwrap();
+
+    let keys: Vec<Word> = (0..20u32).map(|i| Word::from([i, 0, 0, 0])).collect();
+    let result = forest.open_storage_map(account_id, slot_name.clone(), block_num, &keys);
+
+    let details = result.expect("Should return Some").expect("Should not error");
+    assert_matches!(details.entries, StorageMapEntries::EntriesWithProofs(entries) => {
+        assert_eq!(entries.len(), keys.len());
+    });
+}
+
+// PRUNING TESTS
+// ================================================================================================
+
+const TEST_CHAIN_LENGTH: u32 = 100;
+const TEST_SHORT_CHAIN: u32 = 10;
+const TEST_AMOUNT_MULTIPLIER: u32 = 100;
+const TEST_PRUNE_CHAIN_TIP: u32 = HISTORICAL_BLOCK_RETENTION + 5;
+
+#[test]
+fn test_prune_handles_empty_forest() {
+    let mut forest = InnerForest::new();
+
+    let (vault_removed, storage_roots_removed, storage_entries_removed) =
+        forest.prune(BlockNumber::GENESIS);
+
+    assert_eq!(vault_removed, 0);
+    assert_eq!(storage_roots_removed, 0);
+    assert_eq!(storage_entries_removed, 0);
+    assert!(forest.vault_roots.is_empty());
+    assert!(forest.storage_map_roots.is_empty());
+    assert!(forest.storage_entries.is_empty());
+}
+
+#[test]
+fn test_prune_removes_smt_roots_from_forest() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+    let slot_name = StorageSlotName::mock(7);
+
+    for i in 1..=TEST_PRUNE_CHAIN_TIP {
+        let block_num = BlockNumber::from(i);
+
+        let mut vault_delta = AccountVaultDelta::default();
+        vault_delta
+            .add_asset(dummy_fungible_asset(faucet_id, (i * TEST_AMOUNT_MULTIPLIER).into()))
+            .unwrap();
+        let storage_delta = if i == 1 {
+            let mut map_delta = StorageMapDelta::default();
+            map_delta.insert(Word::from([1u32, 0, 0, 0]), Word::from([0u32, 0, 0, 1]));
+            let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta))]);
+            AccountStorageDelta::from_raw(raw)
+        } else {
+            AccountStorageDelta::default()
+        };
+
+        let delta = dummy_partial_delta(account_id, vault_delta, storage_delta);
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    let retained_block = BlockNumber::from(TEST_PRUNE_CHAIN_TIP);
+    let pruned_block = BlockNumber::from(1u32);
+    let vault_root_retained = forest.vault_roots[&(account_id, retained_block)];
+    let vault_root_pruned = forest.vault_roots[&(account_id, pruned_block)];
+    let storage_root_pruned =
+        forest.storage_map_roots[&(account_id, slot_name.clone(), pruned_block)];
+
+    let (vault_removed, storage_roots_removed, storage_entries_removed) =
+        forest.prune(retained_block);
+
+    assert!(vault_removed > 0);
+    assert!(storage_roots_removed > 0);
+    assert!(storage_entries_removed > 0);
+    assert!(forest.vault_roots.contains_key(&(account_id, retained_block)));
+    assert!(!forest.vault_roots.contains_key(&(account_id, pruned_block)));
+    assert!(!forest.storage_map_roots.contains_key(&(account_id, slot_name, pruned_block)));
+
+    let asset_key: Word = FungibleAsset::new(faucet_id, 0).unwrap().vault_key().into();
+    assert!(forest.forest.open(vault_root_retained, asset_key).is_ok());
+
+    assert!(forest.forest.open(vault_root_pruned, asset_key).is_err());
+
+    let storage_key = StorageMap::hash_key(Word::from([1u32, 0, 0, 0]));
+    assert!(forest.forest.open(storage_root_pruned, storage_key).is_err());
+}
+
+#[test]
+fn test_prune_does_nothing_when_chain_is_young() {
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    for i in 1..=TEST_SHORT_CHAIN {
+        let block_num = BlockNumber::from(i);
+        let mut vault_delta = AccountVaultDelta::default();
+        vault_delta
+            .add_asset(dummy_fungible_asset(faucet_id, (i * TEST_AMOUNT_MULTIPLIER).into()))
+            .unwrap();
+        let delta = dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    let (vault_removed, storage_roots_removed, storage_entries_removed) =
+        forest.prune(BlockNumber::from(TEST_SHORT_CHAIN));
+
+    assert_eq!(vault_removed, 0);
+    assert_eq!(storage_roots_removed, 0);
+    assert_eq!(storage_entries_removed, 0);
+    assert_eq!(forest.vault_roots.len(), TEST_SHORT_CHAIN as usize);
+}
+
+#[test]
+fn test_prune_keeps_entries_at_retention_boundary() {
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    for i in 1..=HISTORICAL_BLOCK_RETENTION {
+        let block_num = BlockNumber::from(i);
+        let mut vault_delta = AccountVaultDelta::default();
+        vault_delta
+            .add_asset(dummy_fungible_asset(faucet_id, (i * TEST_AMOUNT_MULTIPLIER).into()))
+            .unwrap();
+        let delta = dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    let (vault_removed, storage_roots_removed, storage_entries_removed) =
+        forest.prune(BlockNumber::from(HISTORICAL_BLOCK_RETENTION));
+
+    assert_eq!(vault_removed, 0);
+    assert_eq!(storage_roots_removed, 0);
+    assert_eq!(storage_entries_removed, 0);
+    assert_eq!(forest.vault_roots.len(), HISTORICAL_BLOCK_RETENTION as usize);
+}
+
+#[test]
+fn test_prune_vault_roots_removes_old_entries() {
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let faucet_id = dummy_faucet();
+
+    for i in 1..=TEST_CHAIN_LENGTH {
+        let block_num = BlockNumber::from(i);
+        let amount = (i * TEST_AMOUNT_MULTIPLIER).into();
+        let mut vault_delta = AccountVaultDelta::default();
+        vault_delta.add_asset(dummy_fungible_asset(faucet_id, amount)).unwrap();
+        let delta = dummy_partial_delta(account_id, vault_delta, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    assert_eq!(forest.vault_roots.len(), TEST_CHAIN_LENGTH as usize);
+
+    let (vault_removed, ..) = forest.prune(BlockNumber::from(TEST_CHAIN_LENGTH));
+
+    let expected_removed = (TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION - 1) as usize;
+    assert_eq!(vault_removed, expected_removed);
+
+    let expected_remaining = (HISTORICAL_BLOCK_RETENTION + 1) as usize;
+    assert_eq!(forest.vault_roots.len(), expected_remaining);
+
+    let remaining_blocks = Vec::from_iter(forest.vault_roots.keys().map(|(_, b)| b.as_u32()));
+    let oldest_remaining = *remaining_blocks.iter().min().unwrap();
+    let expected_oldest = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    assert_eq!(oldest_remaining, expected_oldest);
+}
+
+#[test]
+fn test_prune_storage_map_roots_removes_old_entries() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let slot_name = StorageSlotName::mock(3);
+
+    for i in 1..=TEST_CHAIN_LENGTH {
+        let block_num = BlockNumber::from(i);
+        let key = Word::from([i, 0, 0, 0]);
+        let value = Word::from([0, 0, 0, i]);
+
+        let mut map_delta = StorageMapDelta::default();
+        map_delta.insert(key, value);
+        let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotDelta::Map(map_delta))]);
+        let storage_delta = AccountStorageDelta::from_raw(raw);
+        let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    assert_eq!(forest.storage_map_roots.len(), TEST_CHAIN_LENGTH as usize);
+
+    let (_, storage_roots_removed, storage_entries_removed) =
+        forest.prune(BlockNumber::from(TEST_CHAIN_LENGTH));
+
+    let expected_removed = (TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION - 1) as usize;
+    assert_eq!(storage_roots_removed, expected_removed);
+    assert_eq!(storage_entries_removed, expected_removed);
+
+    let expected_remaining = (HISTORICAL_BLOCK_RETENTION + 1) as usize;
+    assert_eq!(forest.storage_map_roots.len(), expected_remaining);
+    assert_eq!(forest.storage_entries.len(), expected_remaining);
+}
+
+#[test]
+fn test_prune_handles_multiple_accounts() {
+    let mut forest = InnerForest::new();
+    let account1 = dummy_account();
+    let account2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let faucet_id = dummy_faucet();
+
+    for i in 1..=TEST_CHAIN_LENGTH {
+        let block_num = BlockNumber::from(i);
+        let amount = (i * TEST_AMOUNT_MULTIPLIER).into();
+
+        let mut vault_delta1 = AccountVaultDelta::default();
+        vault_delta1.add_asset(dummy_fungible_asset(faucet_id, amount)).unwrap();
+        let delta1 = dummy_partial_delta(account1, vault_delta1, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta1).unwrap();
+
+        let mut vault_delta2 = AccountVaultDelta::default();
+        vault_delta2.add_asset(dummy_fungible_asset(account2, amount * 2)).unwrap();
+        let delta2 = dummy_partial_delta(account2, vault_delta2, AccountStorageDelta::default());
+        forest.update_account(block_num, &delta2).unwrap();
+    }
+
+    assert_eq!(forest.vault_roots.len(), (TEST_CHAIN_LENGTH * 2) as usize);
+
+    let (vault_removed, ..) = forest.prune(BlockNumber::from(TEST_CHAIN_LENGTH));
+
+    let expected_removed_per_account =
+        (TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION - 1) as usize;
+    assert_eq!(vault_removed, expected_removed_per_account * 2);
+
+    let expected_remaining_per_account = (HISTORICAL_BLOCK_RETENTION + 1) as usize;
+    let account1_entries = forest.vault_roots.keys().filter(|(id, _)| *id == account1).count();
+    let account2_entries = forest.vault_roots.keys().filter(|(id, _)| *id == account2).count();
+    assert_eq!(account1_entries, expected_remaining_per_account);
+    assert_eq!(account2_entries, expected_remaining_per_account);
+}
+
+#[test]
+fn test_prune_removes_storage_entries_for_multiple_slots() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::delta::{StorageMapDelta, StorageSlotDelta};
+
+    use super::HISTORICAL_BLOCK_RETENTION;
+
+    let mut forest = InnerForest::new();
+    let account_id = dummy_account();
+    let slot_a = StorageSlotName::mock(1);
+    let slot_b = StorageSlotName::mock(2);
+
+    for i in 1..=TEST_CHAIN_LENGTH {
+        let block_num = BlockNumber::from(i);
+        let mut map_delta_a = StorageMapDelta::default();
+        map_delta_a.insert(Word::from([i, 0, 0, 0]), Word::from([i, 0, 0, 1]));
+        let mut map_delta_b = StorageMapDelta::default();
+        map_delta_b.insert(Word::from([i, 0, 0, 2]), Word::from([i, 0, 0, 3]));
+        let raw = BTreeMap::from_iter([
+            (slot_a.clone(), StorageSlotDelta::Map(map_delta_a)),
+            (slot_b.clone(), StorageSlotDelta::Map(map_delta_b)),
+        ]);
+        let storage_delta = AccountStorageDelta::from_raw(raw);
+        let delta = dummy_partial_delta(account_id, AccountVaultDelta::default(), storage_delta);
+        forest.update_account(block_num, &delta).unwrap();
+    }
+
+    assert_eq!(forest.storage_map_roots.len(), (TEST_CHAIN_LENGTH * 2) as usize);
+    assert_eq!(forest.storage_entries.len(), (TEST_CHAIN_LENGTH * 2) as usize);
+
+    let chain_tip = BlockNumber::from(TEST_CHAIN_LENGTH);
+    let (_, storage_roots_removed, storage_entries_removed) = forest.prune(chain_tip);
+
+    let cutoff = TEST_CHAIN_LENGTH - HISTORICAL_BLOCK_RETENTION;
+    let expected_removed_per_slot = cutoff - 1;
+    let expected_removed = expected_removed_per_slot * 2;
+    assert_eq!(storage_roots_removed, expected_removed as usize);
+    assert_eq!(storage_entries_removed, expected_removed as usize);
+
+    let expected_remaining = HISTORICAL_BLOCK_RETENTION + 1;
+    assert_eq!(forest.storage_map_roots.len(), (expected_remaining * 2) as usize);
+    assert_eq!(forest.storage_entries.len(), (expected_remaining * 2) as usize);
+}

@@ -293,7 +293,8 @@ impl State {
         .in_current_span()
         .await?;
 
-        self.forest.write().await.apply_block_updates(block_num, account_deltas)?;
+        let mut forest = self.forest.write().await;
+        forest.apply_block_updates(block_num, account_deltas)?;
 
         info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
 

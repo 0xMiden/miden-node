@@ -78,17 +78,15 @@ impl State {
             return Err(InvalidBlockError::NewBlockInvalidPrevCommitment.into());
         }
 
-        // TODO(sergerad): Write entire `SignedBlock` when it is added to miden-protocol.
-        let block_data = body.to_bytes();
-
         // Save the block to the block store. In a case of a rolled-back DB transaction, the
         // in-memory state will be unchanged, but the block might still be written into the
         // block store. Thus, such block should be considered as block candidates, but not
         // finalized blocks. So we should check for the latest block when getting block from
         // the store.
+        let signed_block_bytes = signed_block.to_bytes();
         let store = Arc::clone(&self.block_store);
         let block_save_task = tokio::spawn(
-            async move { store.save_block(block_num, &block_data).await }.in_current_span(),
+            async move { store.save_block(block_num, &signed_block_bytes).await }.in_current_span(),
         );
 
         // Scope to read in-memory data, compute mutations required for updating account

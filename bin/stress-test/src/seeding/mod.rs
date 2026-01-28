@@ -249,6 +249,7 @@ async fn apply_block(
     let (header, body) = proposed_block.clone().into_header_and_body().unwrap();
     let block_size: usize = header.to_bytes().len() + body.to_bytes().len();
     let signature = EcdsaSecretKey::new().sign(header.commitment());
+    // SAFETY: The header, body, and signature are known to correspond to each other.
     let signed_block = SignedBlock::new_unchecked(header, body, signature);
     let ordered_batches = proposed_block.batches().clone();
 

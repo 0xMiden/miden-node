@@ -70,7 +70,7 @@ impl StoreApi {
             }
         }
 
-        // Retrive block inputs from the store.
+        // Retrieve block inputs from the store.
         self.state
             .get_block_inputs(
                 account_ids.into_iter().collect(),

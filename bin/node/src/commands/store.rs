@@ -44,7 +44,7 @@ pub enum StoreCommand {
         accounts_directory: PathBuf,
         /// Use the given configuration file to construct the genesis state from.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
-        genesis_config_file: PathBuf,
+        genesis_config_file: Option<PathBuf>,
         /// Insecure, hex-encoded validator secret key for development and testing purposes.
         ///
         /// If not provided, a predefined key is used.
@@ -114,7 +114,7 @@ impl StoreCommand {
             } => Self::bootstrap(
                 &data_directory,
                 &accounts_directory,
-                &genesis_config_file,
+                genesis_config_file.as_ref(),
                 validator_insecure_secret_key,
             ),
             StoreCommand::Start {
@@ -200,16 +200,22 @@ impl StoreCommand {
     fn bootstrap(
         data_directory: &Path,
         accounts_directory: &Path,
-        genesis_config: &PathBuf,
+        genesis_config: Option<&PathBuf>,
         validator_insecure_secret_key: String,
     ) -> anyhow::Result<()> {
         // Decode the validator key.
         let signer = SecretKey::read_from_bytes(&hex::decode(validator_insecure_secret_key)?)?;
 
-        // Read the toml.
-        let toml_str = fs_err::read_to_string(genesis_config)?;
-        let config = GenesisConfig::read_toml(toml_str.as_str())
-            .context(format!("Read from file: {}", genesis_config.display()))?;
+        // Parse genesis config (or default if not given).
+        let config = genesis_config
+            .map(|file_path| {
+                let toml_str = fs_err::read_to_string(file_path)?;
+                GenesisConfig::read_toml(toml_str.as_str()).with_context(|| {
+                    format!("failed to parse genesis config from file {}", file_path.display())
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
 
         let (genesis_state, secrets) = config.into_state(signer)?;
 

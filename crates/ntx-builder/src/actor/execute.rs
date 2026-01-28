@@ -439,6 +439,10 @@ impl DataStore for NtxDataStore {
                     |err| DataStoreError::other_with_source("failed to get account inputs", err),
                 )?;
 
+            // Ensure foreign account procedures are available to the executor via the mast store.
+            // This assumes the code was not loaded from before
+            self.mast_store.load_account_code(account_inputs.code());
+
             // Register slot names from the foreign account for later use.
             self.register_storage_map_slots(foreign_account_id, account_inputs.storage().header())
                 .await;

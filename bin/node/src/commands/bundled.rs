@@ -48,7 +48,7 @@ pub enum BundledCommand {
         accounts_directory: PathBuf,
         /// Constructs the genesis block from the given toml file.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "FILE")]
-        genesis_config_file: PathBuf,
+        genesis_config_file: Option<PathBuf>,
         /// Insecure, hex-encoded validator secret key for development and testing purposes.
         ///
         /// If not provided, a predefined key is used.

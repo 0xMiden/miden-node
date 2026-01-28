@@ -367,22 +367,12 @@ impl StoreClient {
     ) -> Result<Option<NoteScript>, StoreError> {
         let request = proto::note::NoteRoot { root: Some(root.into()) };
 
-        // Make the request to the store.
         let script = self.inner.clone().get_note_script_by_root(request).await?.into_inner().script;
 
-        // Handle result.
-        if let Some(script) = script {
-            // Deserialize the script.
-            let script = NoteScript::read_from_bytes(&script.mast).map_err(|err| {
-                StoreError::DeserializationError(ConversionError::deserialization_error(
-                    "note script",
-                    err,
-                ))
-            })?;
-            Ok(Some(script))
-        } else {
-            Ok(None)
-        }
+        script
+            .map(NoteScript::try_from)
+            .transpose()
+            .map_err(StoreError::DeserializationError)
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_vault_asset_witnesses", skip_all, err)]

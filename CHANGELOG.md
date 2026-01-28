@@ -9,6 +9,26 @@
 
 - [BREAKING] Updated miden-base dependencies to use `next` branch; renamed `NoteInputs` to `NoteStorage`, `.inputs()` to `.storage()`, and database `inputs` column to `storage` ([#1595](https://github.com/0xMiden/miden-node/pull/1595)).
 
+## v0.13.2 (2026-01-27)
+
+### Fixes
+
+- Network transaction builder no longer creates conflicting transactions by consuming the same notes twice ([#1597](https://github.com/0xMiden/miden-node/issues/1597)).
+
+## v0.13.1 (2026-01-27)
+
+### Enhancements
+
+- Bootstrap's genesis configuration file now allows eliding `wallet` and `fungible_faucet` fields ([#1590](https://github.com/0xMiden/miden-node/pull/1590)).
+- Updated miden-base dependencies to version 0.13.3 ([#1601](https://github.com/0xMiden/miden-node/pull/1601)).
+
+### Fixes
+
+- Bootstrap's genesis configuration file is now optional again ([#1590](https://github.com/0xMiden/miden-node/pull/1590)).
+- Network transaction builder fails if output notes are created ([#1599](https://github.com/0xMiden/miden-node/pull/1599)).
+- Fixed the copy button in the network monitor ([#1600](https://github.com/0xMiden/miden-node/pull/1600)).
+- Network transaction builder now loads foreign account code into the MAST store when consuming network notes ([#1598](https://github.com/0xMiden/miden-node/pull/1598)).
+
 ## v0.13.0 (2026-01-23)
 
 ### Enhancements

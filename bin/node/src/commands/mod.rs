@@ -68,6 +68,7 @@ pub struct NtxBuilderConfig {
     )]
     pub ticker_interval: Duration,
 
+    /// Size of the LRU cache for note scripts.
     #[arg(
         long = "ntx-builder.script-cache-size",
         env = ENV_NTX_SCRIPT_CACHE_SIZE,
@@ -75,6 +76,20 @@ pub struct NtxBuilderConfig {
         default_value_t = DEFAULT_NTX_SCRIPT_CACHE_SIZE
     )]
     pub script_cache_size: NonZeroUsize,
+}
+
+impl NtxBuilderConfig {
+    /// Converts this CLI config into the ntx-builder's internal config.
+    pub fn into_builder_config(
+        self,
+        store_url: Url,
+        block_producer_url: Url,
+        validator_url: Url,
+    ) -> miden_node_ntx_builder::NtxBuilderConfig {
+        miden_node_ntx_builder::NtxBuilderConfig::new(store_url, block_producer_url, validator_url)
+            .with_tx_prover_url(self.tx_prover_url)
+            .with_script_cache_size(self.script_cache_size)
+    }
 }
 
 /// Configuration for the Block Producer component

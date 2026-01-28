@@ -2230,7 +2230,7 @@ fn db_roundtrip_account_storage_with_maps() {
 
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn test_note_metadata_with_attachment_roundtrip() {
+fn db_roundtrip_note_metadata_attachment() {
     let mut conn = create_db();
     let block_num = BlockNumber::from(1);
     create_block(&mut conn, block_num);

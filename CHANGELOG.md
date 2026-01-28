@@ -30,6 +30,7 @@
 
 ### Enhancements
 
+- Added periodic cleanup of old account data from the database and in-memory forest ([#1304](https://github.com/0xMiden/miden-node/issues/1304)).
 - Added block validation endpoint to validator and integrated with block producer ([#1382](https://github.com/0xMiden/miden-node/pull/1381)).
 - Added support for timeouts in the WASM remote prover clients ([#1383](https://github.com/0xMiden/miden-node/pull/1383)).
 - Added mempool statistics to the block producer status in the `miden-network-monitor` binary ([#1392](https://github.com/0xMiden/miden-node/pull/1392)).

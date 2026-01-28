@@ -16,9 +16,19 @@ use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
 use miden_protocol::errors::{AssetError, StorageMapError};
 use miden_protocol::{EMPTY_WORD, Word};
 use thiserror::Error;
+use tracing::instrument;
+
+use crate::COMPONENT;
 
 #[cfg(test)]
 mod tests;
+
+// CONSTANTS
+// ================================================================================================
+
+/// Number of historical blocks to retain in the in-memory forest.
+/// Entries older than `chain_tip - HISTORICAL_BLOCK_RETENTION` will be pruned.
+pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 
 // ERRORS
 // ================================================================================================
@@ -69,6 +79,12 @@ pub(crate) struct InnerForest {
     /// Maps (`account_id`, `block_num`) to vault SMT root.
     /// Tracks asset vault versions across all blocks with structural sharing.
     vault_roots: BTreeMap<(AccountId, BlockNumber), Word>,
+
+    /// Tracks vault roots by block number for pruning.
+    vault_roots_by_block: BTreeMap<BlockNumber, Vec<AccountId>>,
+
+    /// Tracks storage map roots by block number for pruning.
+    storage_slots_by_block: BTreeMap<BlockNumber, Vec<(AccountId, StorageSlotName)>>,
 }
 
 impl InnerForest {
@@ -78,6 +94,8 @@ impl InnerForest {
             storage_map_roots: BTreeMap::new(),
             storage_entries: BTreeMap::new(),
             vault_roots: BTreeMap::new(),
+            vault_roots_by_block: BTreeMap::new(),
+            storage_slots_by_block: BTreeMap::new(),
         }
     }
 
@@ -229,6 +247,7 @@ impl InnerForest {
     /// # Errors
     ///
     /// Returns an error if applying a vault delta results in a negative balance.
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %block_num))]
     pub(crate) fn apply_block_updates(
         &mut self,
         block_num: BlockNumber,
@@ -245,6 +264,9 @@ impl InnerForest {
                 "Updated forest with account delta"
             );
         }
+
+        let _ = self.prune(block_num);
+
         Ok(())
     }
 
@@ -312,6 +334,7 @@ impl InnerForest {
         // anything into the forest)
         if delta.is_empty() {
             self.vault_roots.insert((account_id, block_num), prev_root);
+            self.vault_roots_by_block.entry(block_num).or_default().push(account_id);
             return;
         }
 
@@ -340,6 +363,7 @@ impl InnerForest {
             .expect("forest insertion should succeed");
 
         self.vault_roots.insert((account_id, block_num), new_root);
+        self.vault_roots_by_block.entry(block_num).or_default().push(account_id);
 
         tracing::debug!(
             target: crate::COMPONENT,
@@ -425,6 +449,7 @@ impl InnerForest {
             .expect("forest insertion should succeed");
 
         self.vault_roots.insert((account_id, block_num), new_root);
+        self.vault_roots_by_block.entry(block_num).or_default().push(account_id);
 
         tracing::debug!(
             target: crate::COMPONENT,
@@ -505,6 +530,10 @@ impl InnerForest {
             if map_entries.is_empty() {
                 self.storage_map_roots
                     .insert((account_id, slot_name.clone(), block_num), prev_root);
+                self.storage_slots_by_block
+                    .entry(block_num)
+                    .or_default()
+                    .push((account_id, slot_name.clone()));
 
                 continue;
             }
@@ -517,6 +546,10 @@ impl InnerForest {
 
             self.storage_map_roots
                 .insert((account_id, slot_name.clone(), block_num), new_root);
+            self.storage_slots_by_block
+                .entry(block_num)
+                .or_default()
+                .push((account_id, slot_name.clone()));
 
             assert!(!map_entries.is_empty(), "a non-empty delta should have entries");
             let num_entries = map_entries.len();
@@ -569,6 +602,10 @@ impl InnerForest {
 
             self.storage_map_roots
                 .insert((account_id, slot_name.clone(), block_num), new_root);
+            self.storage_slots_by_block
+                .entry(block_num)
+                .or_default()
+                .push((account_id, slot_name.clone()));
 
             // merge the delta with the latest entries in the map
             // TODO: this is a temporary solution until the LargeSmtForest is implemented as
@@ -594,5 +631,108 @@ impl InnerForest {
                 "Updated storage map in forest"
             );
         }
+    }
+
+    // PRUNING
+    // --------------------------------------------------------------------------------------------
+
+    /// Prunes old entries from the in-memory forest data structures.
+    ///
+    /// Removes entries where `block_num < chain_tip - HISTORICAL_BLOCK_RETENTION`.
+    /// Entries at the cutoff block are retained (the cutoff is inclusive).
+    ///
+    /// The `SmtForest` itself is not pruned directly as it uses structural sharing and old roots
+    /// are naturally garbage-collected when they become unreachable.
+    #[instrument(target = COMPONENT, skip_all, fields(block_num = %chain_tip), ret)]
+    pub(crate) fn prune(&mut self, chain_tip: BlockNumber) -> (usize, usize, usize) {
+        let cutoff_block =
+            BlockNumber::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
+
+        let mut vault_roots_removed = Self::prune_vault_roots_by_block(
+            &mut self.vault_roots,
+            &mut self.vault_roots_by_block,
+            cutoff_block,
+        );
+        let storage_roots_removed = Self::prune_storage_roots_by_block(
+            &mut self.storage_map_roots,
+            &mut self.storage_slots_by_block,
+            cutoff_block,
+        );
+        let storage_entries_removed =
+            Self::prune_entries_by_block_slot(&mut self.storage_entries, cutoff_block);
+
+        let vault_removed = vault_roots_removed.len();
+        let storage_roots_removed_count = storage_roots_removed.len();
+        vault_roots_removed.extend(storage_roots_removed);
+        self.forest.pop_smts(vault_roots_removed);
+
+        (vault_removed, storage_roots_removed_count, storage_entries_removed)
+    }
+
+    /// Prunes vault roots from maps keyed by (`AccountId`, `BlockNumber`) with a block index.
+    fn prune_vault_roots_by_block(
+        map: &mut BTreeMap<(AccountId, BlockNumber), Word>,
+        index: &mut BTreeMap<BlockNumber, Vec<AccountId>>,
+        cutoff_block: BlockNumber,
+    ) -> Vec<Word> {
+        let blocks_to_prune: Vec<_> =
+            index.range(..cutoff_block).map(|(block, _)| *block).collect();
+        let mut removed_roots = Vec::new();
+
+        for block in blocks_to_prune {
+            if let Some(accounts) = index.remove(&block) {
+                for account_id in accounts {
+                    if let Some(root) = map.remove(&(account_id, block)) {
+                        removed_roots.push(root);
+                    }
+                }
+            }
+        }
+
+        removed_roots
+    }
+
+    /// Prunes storage map roots from maps keyed by (`AccountId`, `StorageSlotName`, `BlockNumber`)
+    /// with a block index.
+    fn prune_storage_roots_by_block(
+        map: &mut BTreeMap<(AccountId, StorageSlotName, BlockNumber), Word>,
+        index: &mut BTreeMap<BlockNumber, Vec<(AccountId, StorageSlotName)>>,
+        cutoff_block: BlockNumber,
+    ) -> Vec<Word> {
+        let blocks_to_prune: Vec<_> =
+            index.range(..cutoff_block).map(|(block, _)| *block).collect();
+        let mut removed_roots = Vec::new();
+
+        for block in blocks_to_prune {
+            if let Some(slots) = index.remove(&block) {
+                for (account_id, slot_name) in slots {
+                    if let Some(root) = map.remove(&(account_id, slot_name, block)) {
+                        removed_roots.push(root);
+                    }
+                }
+            }
+        }
+
+        removed_roots
+    }
+
+    /// Prunes entries from a map keyed by `(AccountId, StorageSlotName, BlockNumber)`
+    /// where `block_num < cutoff`.
+    fn prune_entries_by_block_slot<V>(
+        map: &mut BTreeMap<(AccountId, StorageSlotName, BlockNumber), V>,
+        cutoff_block: BlockNumber,
+    ) -> usize {
+        let keys_to_remove: Vec<_> = map
+            .keys()
+            .filter(|(_, _, block_num)| *block_num < cutoff_block)
+            .cloned()
+            .collect();
+
+        let removed = keys_to_remove.len();
+        for key in keys_to_remove {
+            map.remove(&key);
+        }
+
+        removed
     }
 }

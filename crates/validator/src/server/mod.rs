@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,6 +8,7 @@ use anyhow::Context;
 use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
+use miden_node_store::Db;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::panic::catch_panic_layer_fn;
@@ -25,10 +27,11 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
-use tracing::{Instrument, info_span};
+use tracing::info_span;
 
 use crate::COMPONENT;
 use crate::block_validation::validate_block;
+use crate::db::{insert_transaction, load};
 use crate::tx_validation::validate_transaction;
 
 /// Number of transactions to keep in the validated transactions cache.
@@ -53,6 +56,9 @@ pub struct Validator<S> {
 
     /// The signer used to sign blocks.
     pub signer: S,
+
+    /// The data directory for the validator component's database files.
+    pub data_directory: PathBuf,
 }
 
 impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
@@ -62,6 +68,11 @@ impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
     /// encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
         tracing::info!(target: COMPONENT, endpoint=?self.address, "Initializing server");
+
+        // Initialize database connection.
+        let db = load(self.data_directory.join("validator.sqlite3"))
+            .await
+            .context("failed to initialize validator database")?;
 
         let listener = TcpListener::bind(self.address)
             .await
@@ -86,7 +97,7 @@ impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .timeout(self.grpc_timeout)
-            .add_service(api_server::ApiServer::new(ValidatorServer::new(self.signer)))
+            .add_service(api_server::ApiServer::new(ValidatorServer::new(self.signer, db)))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener))
@@ -103,14 +114,15 @@ impl<S: BlockSigner + Send + Sync + 'static> Validator<S> {
 /// Implements the gRPC API for the validator.
 struct ValidatorServer<S> {
     signer: S,
+    db: Db,
     validated_transactions: Arc<ValidatedTransactions>,
 }
 
 impl<S> ValidatorServer<S> {
-    fn new(signer: S) -> Self {
+    fn new(signer: S, db: Db) -> Self {
         let validated_transactions =
             Arc::new(ValidatedTransactions::new(NUM_VALIDATED_TRANSACTIONS));
-        Self { signer, validated_transactions }
+        Self { signer, db, validated_transactions }
     }
 }
 
@@ -154,14 +166,29 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
             Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
-        // Register the validated transaction.
-        let tx_id = validated_tx_header.id();
-        self.validated_transactions
-            .put(tx_id, validated_tx_header)
-            .instrument(info_span!("validated_txs.insert"))
+        // Store the validated transaction.
+        let result = self
+            .db
+            .transact("insert_transaction", move |conn| {
+                insert_transaction(conn, validated_tx_header)
+            })
             .await;
 
-        Ok(tonic::Response::new(()))
+        match result {
+            Ok(rows_affected) => {
+                if rows_affected == 1 {
+                    Ok(tonic::Response::new(()))
+                } else {
+                    tracing::error!(
+                        target: COMPONENT,
+                        rows_affected = rows_affected,
+                        "unexpected number of rows affected by insertion of proven transaction"
+                    );
+                    Err(tonic::Status::internal("failed to submit proven transaction"))
+                }
+            },
+            Err(err) => Err(err.into()),
+        }
     }
 
     /// Validates a proposed block and returns the block header and body.
@@ -181,11 +208,9 @@ impl<S: BlockSigner + Send + Sync + 'static> api_server::Api for ValidatorServer
 
         // Validate the block.
         let signature =
-            validate_block(proposed_block, &self.signer, self.validated_transactions.clone())
-                .await
-                .map_err(|err| {
-                    tonic::Status::invalid_argument(format!("Failed to validate block: {err}",))
-                })?;
+            validate_block(proposed_block, &self.signer, &self.db).await.map_err(|err| {
+                tonic::Status::invalid_argument(format!("Failed to validate block: {err}",))
+            })?;
 
         // Send the signature.
         info_span!("serialize").in_scope(|| {

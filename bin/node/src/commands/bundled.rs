@@ -257,6 +257,7 @@ impl BundledCommand {
                         address: validator_address,
                         grpc_timeout,
                         signer,
+                        data_directory,
                     }
                     .serve()
                     .await

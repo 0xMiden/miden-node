@@ -4,7 +4,7 @@ description            = "Miden C++ stdlib link helper"
 edition.workspace      = true
 homepage.workspace     = true
 license.workspace      = true
-name                   = "rocksdb-cxx-linkage-fix"
+name                   = "miden-node-rocksdb-cxx-linkage-fix"
 readme.workspace       = true
 repository.workspace   = true
 rust-version.workspace = true
@@ -12,5 +12,8 @@ version.workspace      = true
 
 [lib]
 path = "src/lib.rs"
+
+[lints]
+workspace = true
 
 [dependencies]

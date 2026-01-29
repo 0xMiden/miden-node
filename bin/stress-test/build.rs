@@ -1,3 +1,3 @@
 fn main() {
-    rocksdb_cxx_linkage_fix::configure();
+    miden_node_rocksdb_cxx_linkage_fix::configure();
 }

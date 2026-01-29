@@ -3,7 +3,7 @@ use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof};
 use miden_remote_prover_client::RemoteProverClientError;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
-use tracing::{info, instrument};
+use tracing::instrument;
 
 use crate::COMPONENT;
 
@@ -28,13 +28,11 @@ pub enum BlockProver {
 }
 
 impl BlockProver {
-    pub fn new_local() -> Self {
-        info!(target: COMPONENT, "Using local block prover");
+    pub fn local() -> Self {
         Self::Local(LocalBlockProver::new(0))
     }
 
-    pub fn new_remote(endpoint: impl Into<String>) -> Self {
-        info!(target: COMPONENT, "Using remote block prover");
+    pub fn remote(endpoint: impl Into<String>) -> Self {
         Self::Remote(RemoteBlockProver::new(endpoint))
     }
 

@@ -106,9 +106,9 @@ impl Store {
 
         // Initialize local or remote block prover.
         let block_prover = if let Some(url) = self.block_prover_url {
-            Arc::new(BlockProver::new_remote(url))
+            Arc::new(BlockProver::remote(url))
         } else {
-            Arc::new(BlockProver::new_local())
+            Arc::new(BlockProver::local())
         };
 
         let rpc_service = store::rpc_server::RpcServer::new(api::StoreApi {

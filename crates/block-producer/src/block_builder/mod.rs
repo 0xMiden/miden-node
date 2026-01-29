@@ -247,6 +247,9 @@ impl BlockBuilder {
         }
 
         let (ordered_batches, ..) = proposed_block.into_parts();
+        // SAFETY: The header, body, and signature are known to correspond to each other because the
+        // header and body are derived from the proposed block and the signature is verified
+        // against the corresponding commitment.
         let signed_block = SignedBlock::new_unchecked(header, body, signature);
         Ok((ordered_batches, signed_block))
     }

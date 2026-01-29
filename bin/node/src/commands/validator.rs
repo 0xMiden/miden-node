@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -9,6 +10,7 @@ use url::Url;
 
 use crate::commands::{
     DEFAULT_TIMEOUT,
+    ENV_DATA_DIRECTORY,
     ENV_ENABLE_OTEL,
     ENV_VALIDATOR_INSECURE_SECRET_KEY,
     ENV_VALIDATOR_URL,
@@ -40,6 +42,10 @@ pub enum ValidatorCommand {
         )]
         grpc_timeout: Duration,
 
+        /// Directory in which to store the database and raw block data.
+        #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
+        data_directory: PathBuf,
+
         /// Insecure, hex-encoded validator secret key for development and testing purposes.
         ///
         /// If not provided, a predefined key is used.
@@ -51,7 +57,11 @@ pub enum ValidatorCommand {
 impl ValidatorCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
         let Self::Start {
-            url, grpc_timeout, insecure_secret_key, ..
+            url,
+            grpc_timeout,
+            insecure_secret_key,
+            data_directory,
+            ..
         } = self;
 
         let address =
@@ -59,10 +69,15 @@ impl ValidatorCommand {
 
         let signer = SecretKey::read_from_bytes(hex::decode(insecure_secret_key)?.as_ref())?;
 
-        Validator { address, grpc_timeout, signer }
-            .serve()
-            .await
-            .context("failed while serving validator component")
+        Validator {
+            address,
+            grpc_timeout,
+            signer,
+            data_directory,
+        }
+        .serve()
+        .await
+        .context("failed while serving validator component")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

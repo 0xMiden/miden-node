@@ -1,12 +1,11 @@
-use std::sync::Arc;
-
+use miden_node_store::{DatabaseError, Db};
 use miden_protocol::block::{BlockNumber, BlockSigner, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::TransactionId;
-use tracing::{Instrument, info_span};
+use tracing::info_span;
 
-use crate::server::ValidatedTransactions;
+use crate::db::select_transactions;
 
 // BLOCK VALIDATION ERROR
 // ================================================================================================
@@ -17,6 +16,8 @@ pub enum BlockValidationError {
     TransactionNotValidated(TransactionId, BlockNumber),
     #[error("failed to build block")]
     BlockBuildingFailed(#[from] ProposedBlockError),
+    #[error("failed to select transactions")]
+    DatabaseError(#[from] DatabaseError),
 }
 
 // BLOCK VALIDATION
@@ -29,25 +30,15 @@ pub enum BlockValidationError {
 pub async fn validate_block<S: BlockSigner>(
     proposed_block: ProposedBlock,
     signer: &S,
-    validated_transactions: Arc<ValidatedTransactions>,
+    db: &Db,
 ) -> Result<Signature, BlockValidationError> {
-    // Check that all transactions in the proposed block have been validated
     let verify_span = info_span!("verify_transactions");
-    for tx_header in proposed_block.transactions() {
-        let tx_id = tx_header.id();
-        // TODO: LruCache is a poor abstraction since it locks many times.
-        if validated_transactions
-            .get(&tx_id)
-            .instrument(verify_span.clone())
-            .await
-            .is_none()
-        {
-            return Err(BlockValidationError::TransactionNotValidated(
-                tx_id,
-                proposed_block.block_num(),
-            ));
-        }
-    }
+
+    // Retrieve all validated transactions pertaining to the proposed block.
+    let tx_ids = proposed_block.transactions().map(|tx| tx.id()).collect::<Vec<_>>();
+    let validated_transactions = db
+        .transact("select_transactions", move |conn| select_transactions(conn, &tx_ids))
+        .await?;
 
     // Build the block header.
     let (header, _) = proposed_block.into_header_and_body()?;

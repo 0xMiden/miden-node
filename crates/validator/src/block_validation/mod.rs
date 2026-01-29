@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use miden_node_store::{DatabaseError, Db};
 use miden_protocol::block::{BlockNumber, BlockSigner, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_protocol::errors::ProposedBlockError;
-use miden_protocol::transaction::TransactionId;
+use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tracing::info_span;
 
 use crate::db::select_transactions;
@@ -14,10 +16,19 @@ use crate::db::select_transactions;
 pub enum BlockValidationError {
     #[error("transaction {0} in block {1} has not been validated")]
     TransactionNotValidated(TransactionId, BlockNumber),
+    #[error(
+        "the proposed transaction {proposed_tx} does not match the validated transaction {validated_tx}"
+    )]
+    TransactionMismatch {
+        proposed_tx: TransactionId,
+        validated_tx: TransactionId,
+    },
     #[error("failed to build block")]
     BlockBuildingFailed(#[from] ProposedBlockError),
     #[error("failed to select transactions")]
     DatabaseError(#[from] DatabaseError),
+    #[error("internal error: {0}")]
+    Other(String),
 }
 
 // BLOCK VALIDATION
@@ -34,11 +45,37 @@ pub async fn validate_block<S: BlockSigner>(
 ) -> Result<Signature, BlockValidationError> {
     let verify_span = info_span!("verify_transactions");
 
+    // Create a map of transactions from the proposed block.
+    let proposed_transactions = proposed_block
+        .transactions()
+        .map(|header| (header.id(), header.clone()))
+        .collect::<HashMap<TransactionId, TransactionHeader>>();
     // Retrieve all validated transactions pertaining to the proposed block.
-    let tx_ids = proposed_block.transactions().map(|tx| tx.id()).collect::<Vec<_>>();
+    let tx_ids = proposed_block.transactions().map(TransactionHeader::id).collect::<Vec<_>>();
+    let query_tx_ids = tx_ids.clone();
     let validated_transactions = db
-        .transact("select_transactions", move |conn| select_transactions(conn, &tx_ids))
+        .transact("select_transactions", move |conn| select_transactions(conn, &query_tx_ids))
         .await?;
+
+    // Check that every transaction from the proposed block has been validated.
+    for tx_id in tx_ids {
+        let Some(validated_tx) = validated_transactions.get(&tx_id) else {
+            return Err(BlockValidationError::TransactionNotValidated(
+                tx_id,
+                proposed_block.block_num(),
+            ));
+        };
+        // Check that the proposed and validated transactions are equal.
+        let proposed_tx = proposed_transactions.get(&tx_id).ok_or(BlockValidationError::Other(
+            "proposed transactions mapped incorrectly".into(),
+        ))?;
+        if validated_tx != proposed_tx {
+            return Err(BlockValidationError::TransactionMismatch {
+                proposed_tx: proposed_tx.id(),
+                validated_tx: validated_tx.id(),
+            });
+        }
+    }
 
     // Build the block header.
     let (header, _) = proposed_block.into_header_and_body()?;

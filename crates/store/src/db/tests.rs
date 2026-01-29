@@ -169,7 +169,7 @@ fn sql_select_transactions() {
         queries::select_transactions_by_accounts_and_block_range(
             conn,
             &[AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()],
-            BlockNumber::from(0)..=BlockNumber::from(2),
+            BlockNumber::GENESIS..=BlockNumber::from(2),
         )
         .unwrap()
     }
@@ -824,7 +824,7 @@ fn db_account() {
     let res = queries::select_accounts_by_block_range(
         conn,
         &account_ids,
-        BlockNumber::from(0)..=u32::MAX.into(),
+        BlockNumber::GENESIS..=u32::MAX.into(),
     )
     .unwrap();
     assert!(res.is_empty());
@@ -850,7 +850,7 @@ fn db_account() {
     let res = queries::select_accounts_by_block_range(
         conn,
         &account_ids,
-        BlockNumber::from(0)..=u32::MAX.into(),
+        BlockNumber::GENESIS..=u32::MAX.into(),
     )
     .unwrap();
     assert_eq!(
@@ -889,7 +889,7 @@ fn notes() {
     let block_num_1 = 1.into();
     create_block(conn, block_num_1);
 
-    let block_range = BlockNumber::from(0)..=BlockNumber::from(1);
+    let block_range = BlockNumber::GENESIS..=BlockNumber::from(1);
 
     // test empty table
     let (res, last_included_block) =
@@ -2021,7 +2021,7 @@ fn db_roundtrip_transactions() {
     let retrieved = queries::select_transactions_by_accounts_and_block_range(
         &mut conn,
         &[account_id],
-        BlockNumber::from(0)..=BlockNumber::from(2),
+        BlockNumber::GENESIS..=BlockNumber::from(2),
     )
     .unwrap();
 

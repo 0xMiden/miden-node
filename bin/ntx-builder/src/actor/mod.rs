@@ -12,6 +12,7 @@ use candidate::TransactionCandidate;
 use futures::FutureExt;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountDelta, AccountId};
@@ -23,11 +24,11 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_tx::FailedNote;
 use tokio::sync::{Semaphore, mpsc, watch};
 
-use crate::NoteError;
 use crate::chain_state::{ChainState, SharedChainState};
 use crate::clients::RpcClient;
 use crate::coordinator::AccountView;
 use crate::db::Db;
+use crate::{LOG_TARGET, NoteError};
 
 /// Compiles the standalone transaction script that sets the on-chain expiration of a network
 /// transaction to `delta` blocks. The script is account-independent, so the builder compiles it
@@ -282,6 +283,7 @@ impl AccountActor {
         self,
         semaphore: Arc<Semaphore>,
         mut view_rx: watch::Receiver<AccountView>,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
         let account_id = self.account_id;
 
@@ -341,10 +343,12 @@ impl AccountActor {
             };
 
             tokio::select! {
-                // Poll the view before the idle timer so a pending update is always processed
-                // rather than racing an idle shutdown. Tokio native.
+                // Check shutdown first, then poll the view before the idle timer, so cancellation
+                // wins and a pending update is always processed rather than racing an idle
+                // shutdown. Tokio native.
                 biased;
 
+                () = shutdown.cancelled() => return Ok(()),
                 // A committed block updated this account's view: the submission may have landed
                 // (advancing the in-memory account by its own delta) or expired, or new notes / a
                 // due retry may make work available. All of this is answered in memory.
@@ -373,7 +377,11 @@ impl AccountActor {
                 }
                 // Idle timeout: actor has been idle too long, deactivate.
                 () = idle_timeout_sleep => {
-                    tracing::info!(%account_id, "Account actor deactivated due to idle timeout");
+                    tracing::debug!(
+                        target: LOG_TARGET,
+                        %account_id,
+                        "Account actor deactivated due to idle timeout"
+                    );
                     return Ok(());
                 }
             }
@@ -511,6 +519,7 @@ impl AccountActor {
                 })
                 .collect::<Vec<_>>();
             tracing::info!(
+                target: LOG_TARGET,
                 %account_id,
                 rejected_count = failed_notes.len(),
                 "dropping network notes whose script roots are not allowlisted",
@@ -577,6 +586,7 @@ impl AccountActor {
         let account_id = tx_candidate.account.id();
         let note_ids: Vec<_> = notes.iter().map(|n| n.as_note().id()).collect();
         tracing::info!(
+            target: LOG_TARGET,
             %account_id,
             ?note_ids,
             num_notes = notes.len(),
@@ -592,6 +602,7 @@ impl AccountActor {
                 fetched_scripts,
             }) => {
                 tracing::info!(
+                    target: LOG_TARGET,
                     %account_id,
                     %tx_id,
                     num_failed = failed.len(),
@@ -622,6 +633,7 @@ impl AccountActor {
             Err(err) => {
                 let error_msg = err.as_report();
                 tracing::error!(
+                    target: LOG_TARGET,
                     %account_id,
                     ?note_ids,
                     err = %error_msg,
@@ -638,9 +650,12 @@ impl AccountActor {
                             .iter()
                             .map(|note| {
                                 tracing::info!(
-                                    note.id = %note.as_note().id(),
-                                    nullifier = %note.as_note().nullifier(),
-                                    err = %error_msg,
+                                    target: LOG_TARGET,
+                                    {
+                                        note.id = %note.as_note().id(),
+                                        nullifier = %note.as_note().nullifier(),
+                                        err = %error_msg,
+                                    },
                                     "note failed: transaction execution error",
                                 );
                                 (note.as_note().nullifier(), error.clone())
@@ -701,9 +716,12 @@ fn log_failed_notes(failed: Vec<FailedNote>) -> Vec<(Nullifier, NoteError)> {
         .map(|f| {
             let error_msg = f.error().as_report();
             tracing::info!(
-                note.id = %f.note().id(),
-                nullifier = %f.note().nullifier(),
-                err = %error_msg,
+                target: LOG_TARGET,
+                {
+                    note.id = %f.note().id(),
+                    nullifier = %f.note().nullifier(),
+                    err = %error_msg,
+                },
                 "note failed: consumability check",
             );
             let error: NoteError = Arc::new(std::io::Error::other(error_msg));
@@ -954,7 +972,7 @@ mod tests {
         let actor = AccountActor::new(account_id, &ctx);
         let (view_tx, view_rx) = watch::channel(view(0, None, 0));
         let semaphore = Arc::new(Semaphore::new(1));
-        let handle = tokio::spawn(actor.run(semaphore, view_rx));
+        let handle = tokio::spawn(actor.run(semaphore, view_rx, CancellationToken::new()));
 
         // Push a view update far more often than the idle timeout, advancing only the chain tip (no
         // new notes), for longer than the test's deadline. With a relative timer every update would

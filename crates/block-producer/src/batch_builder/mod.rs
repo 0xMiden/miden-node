@@ -6,6 +6,7 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::state::State;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
@@ -18,11 +19,11 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{Instrument, Span};
 use url::Url;
 
-use crate::COMPONENT;
 use crate::domain::batch::SelectedBatch;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{BuildBatchError, StoreError};
 use crate::mempool::SharedMempool;
+use crate::{COMPONENT, LOG_TARGET};
 
 // BATCH BUILDER
 // ================================================================================================
@@ -96,7 +97,11 @@ impl BatchBuilder {
     ///
     /// Full batches are spawned on each check and job completion. A batch of any size is attempted
     /// when no batch has been spawned for the maximum batch interval.
-    pub async fn run(mut self, mempool: SharedMempool) -> anyhow::Result<()> {
+    pub async fn run(
+        mut self,
+        mempool: SharedMempool,
+        shutdown: CancellationToken,
+    ) -> anyhow::Result<()> {
         let mut last_spawn = Instant::now();
         let mut full_batch_check = tokio::time::interval(self.intervals.full_batch_check_interval);
         full_batch_check.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -108,6 +113,10 @@ impl BatchBuilder {
             let has_active_job = !self.active_jobs.is_empty();
 
             tokio::select! {
+                () = shutdown.cancelled() => {
+                    Self::abort_active_jobs(&mut self.active_jobs);
+                    return Ok(());
+                },
                 _ = force_at => {
                     last_spawn = Instant::now();
                     if has_available_worker {
@@ -200,6 +209,10 @@ impl BatchBuilder {
         self.active_jobs.len() < self.num_workers.get()
     }
 
+    fn abort_active_jobs(active_jobs: &mut JoinSet<Result<(), BuildBatchError>>) {
+        active_jobs.abort_all();
+    }
+
     fn handle_job_result(
         result: Result<Result<(), BuildBatchError>, JoinError>,
     ) -> Result<(), BuildBatchError> {
@@ -207,7 +220,7 @@ impl BatchBuilder {
             Ok(Ok(())) => Ok(()),
             Ok(Err(err)) => Err(err),
             Err(crash) => {
-                tracing::error!(message=%crash, "Batch worker pool panic'd");
+                tracing::error!(target: LOG_TARGET, message=%crash, "Batch worker pool panic'd");
                 panic!("Batch worker pool panic: {crash}");
             },
         }
@@ -472,5 +485,28 @@ fn proposed_batch_telemetry(batch: &ProposedBatch) -> ProposedBatchTelemetry {
         account_updates_count: batch.account_updates().len(),
         input_notes_count: usize::from(batch.input_notes().num_notes()),
         output_notes_count: batch.output_notes().len(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::pending;
+    use std::time::Duration;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn abort_active_jobs_cancels_batch_jobs_without_waiting_for_completion() {
+        let mut active_jobs = JoinSet::new();
+        active_jobs.spawn(async { pending::<Result<(), BuildBatchError>>().await });
+
+        BatchBuilder::abort_active_jobs(&mut active_jobs);
+
+        let result = tokio::time::timeout(Duration::from_millis(100), active_jobs.join_next())
+            .await
+            .expect("aborted batch job should be joinable immediately")
+            .expect("join set should contain the aborted batch job");
+
+        assert!(result.is_err_and(|err| err.is_cancelled()));
     }
 }

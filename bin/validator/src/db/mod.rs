@@ -5,24 +5,30 @@ use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{Database, ReadTx, WriteTx};
+use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::serde::Serializable;
-use tracing::instrument;
 
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
 use crate::tx_validation::ValidatedTransaction;
 use crate::{COMPONENT, LOG_TARGET};
 
 /// Open a connection to the DB after verifying that it is at the latest schema version.
-#[instrument(target = COMPONENT, skip_all)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip_all,
+)]
 pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
 /// Open a connection to the DB with a specific pool size after verifying that it is at the latest
 /// schema version.
-#[instrument(target = COMPONENT, skip_all)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip_all,
+)]
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
@@ -33,13 +39,19 @@ pub async fn load_with_pool_size(
 }
 
 /// Creates a new database, applies all migrations, and opens a connection pool.
-#[instrument(target = COMPONENT, skip_all)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip_all,
+)]
 pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
     setup_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
 /// Creates a new database with a specific pool size and applies all migrations.
-#[instrument(target = COMPONENT, skip_all)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip_all,
+)]
 pub async fn setup_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
@@ -50,7 +62,10 @@ pub async fn setup_with_pool_size(
 }
 
 /// Applies all pending migrations to an existing DB.
-#[instrument(target = COMPONENT, skip_all)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip_all,
+)]
 pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError> {
     migrate_database(database_filepath.as_ref())?;
     Ok(())
@@ -71,7 +86,14 @@ fn open_with_pool_size(
 }
 
 /// Inserts a new validated transaction into the database.
-#[instrument(target = COMPONENT, skip_all, fields(tx_id = %tx_info.tx_id()), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip_all,
+    fields(
+        tx_id = %tx_info.tx_id(),
+    ),
+    err,
+)]
 pub(crate) fn insert_transaction(
     tx: &WriteTx<'_>,
     tx_info: &ValidatedTransaction,
@@ -117,7 +139,11 @@ pub(crate) fn insert_transaction(
 ///   WHERE id = ?
 /// );
 /// ```
-#[instrument(target = COMPONENT, skip(tx), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx),
+    err,
+)]
 pub(crate) fn transaction_exists(
     tx: &ReadTx<'_>,
     tx_id: TransactionId,
@@ -148,7 +174,11 @@ pub(crate) fn transaction_exists(
 ///   WHERE id = ?
 /// );
 /// ```
-#[instrument(target = COMPONENT, skip(tx), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx),
+    err,
+)]
 pub(crate) fn find_unvalidated_transactions(
     tx: &ReadTx<'_>,
     tx_ids: &[TransactionId],
@@ -178,7 +208,11 @@ pub(crate) fn find_unvalidated_transactions(
 ///
 /// Inserts a new row if no block header exists at the given block number, or replaces the
 /// existing block header if one already exists.
-#[instrument(target = COMPONENT, skip(tx, header), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx, header),
+    err,
+)]
 pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(), DatabaseError> {
     let block_num = i64::from(header.block_num().as_u32());
     let block_header = header.to_bytes();
@@ -192,7 +226,11 @@ pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(),
 /// Loads the chain tip (block header with the highest block number) from the database.
 ///
 /// Returns `None` if no block headers have been persisted (i.e. bootstrap has not been run).
-#[instrument(target = COMPONENT, skip(tx), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx),
+    err,
+)]
 pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseError> {
     Ok(tx
         .query(
@@ -207,7 +245,11 @@ pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseEr
 /// Loads a block header by its block number.
 ///
 /// Returns `None` if no block header exists at the given block number.
-#[instrument(target = COMPONENT, skip(tx), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx),
+    err,
+)]
 pub fn load_block_header(
     tx: &ReadTx<'_>,
     block_num: BlockNumber,
@@ -223,7 +265,11 @@ pub fn load_block_header(
 }
 
 /// Returns the total number of validated transactions in the database.
-#[instrument(target = COMPONENT, skip(tx), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx),
+    err,
+)]
 pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
     Ok(tx
         .query("SELECT COUNT(*) FROM validated_transactions", &[], |row| row.get::<i64>(0))?
@@ -233,7 +279,11 @@ pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseErro
 }
 
 /// Returns the total number of signed blocks in the database.
-#[instrument(target = COMPONENT, skip(tx), err)]
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx),
+    err,
+)]
 pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
     Ok(tx
         .query("SELECT COUNT(*) FROM block_headers", &[], |row| row.get::<i64>(0))?

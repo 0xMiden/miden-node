@@ -124,7 +124,7 @@ mod tests {
     use rusqlite::Connection;
 
     use super::*;
-    use crate::sqlite::{in_list_blob, in_list_i64};
+    use crate::sqlite::InList;
 
     fn in_memory() -> Connection {
         let conn = Connection::open_in_memory().expect("open in-memory db");
@@ -206,7 +206,7 @@ mod tests {
             w.execute("INSERT INTO items (id) VALUES (?1)", &[&id]).unwrap();
         }
 
-        let wanted = in_list_i64([1, 3]);
+        let wanted = InList::from_i64s([1, 3]);
         let mut ids = w
             .query(
                 "SELECT id FROM items WHERE id IN (SELECT value FROM rarray(?1))",
@@ -228,7 +228,7 @@ mod tests {
         w.execute("INSERT INTO items (id, payload) VALUES (1, ?1)", &[&a]).unwrap();
         w.execute("INSERT INTO items (id, payload) VALUES (2, ?1)", &[&b]).unwrap();
 
-        let wanted = in_list_blob([a.as_slice()]);
+        let wanted = InList::from_blobs([a.as_slice()]);
         let ids = w
             .query(
                 "SELECT id FROM items WHERE payload IN (SELECT value FROM rarray(?1))",

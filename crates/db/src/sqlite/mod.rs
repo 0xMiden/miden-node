@@ -6,6 +6,6 @@ mod pool;
 mod tx;
 
 pub use codec::{DbValue, DbValueRef, FromSqlValue, ToSqlValue};
-pub use in_list::{InList, in_list_blob, in_list_i64};
+pub use in_list::InList;
 pub use pool::{Database, ReadTransaction, WriteTransaction};
 pub use tx::{ReadTx, Row, WriteTx};

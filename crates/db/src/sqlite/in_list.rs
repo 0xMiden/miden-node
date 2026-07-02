@@ -21,21 +21,23 @@ use crate::sqlite::codec::{DbValue, ToSqlValue};
 #[derive(Debug, Clone, PartialEq)]
 pub struct InList(Vec<Value>);
 
+impl InList {
+    /// Builds an integer-keyed `IN` list. Pair with `... IN (SELECT value FROM rarray(?))`.
+    pub fn from_i64s(items: impl IntoIterator<Item = i64>) -> Self {
+        Self(items.into_iter().map(Value::Integer).collect())
+    }
+
+    /// Builds a BLOB-keyed `IN` list. Pair with `... IN (SELECT value FROM rarray(?))`; the column
+    /// is compared directly against the bound blobs, with no hex conversion.
+    pub fn from_blobs<'a>(items: impl IntoIterator<Item = &'a [u8]>) -> Self {
+        Self(items.into_iter().map(|bytes| Value::Blob(bytes.to_vec())).collect())
+    }
+}
+
 impl ToSqlValue for InList {
     fn to_sql_value(&self) -> DbValue {
         DbValue::array(self.0.clone())
     }
-}
-
-/// Builds an integer-keyed `IN` list. Pair with `... IN (SELECT value FROM rarray(?))`.
-pub fn in_list_i64(items: impl IntoIterator<Item = i64>) -> InList {
-    InList(items.into_iter().map(Value::Integer).collect())
-}
-
-/// Builds a BLOB-keyed `IN` list. Pair with `... IN (SELECT value FROM rarray(?))`; the column is
-/// compared directly against the bound blobs, with no hex conversion.
-pub fn in_list_blob<'a>(items: impl IntoIterator<Item = &'a [u8]>) -> InList {
-    InList(items.into_iter().map(|bytes| Value::Blob(bytes.to_vec())).collect())
 }
 
 #[cfg(test)]
@@ -46,19 +48,22 @@ mod tests {
     fn in_list_i64_collects_integer_values() {
         // Different list lengths produce the same SQL template (`rarray(?1)`); only the bound
         // parameter contents differ.
-        assert_eq!(in_list_i64([1]).0, vec![Value::Integer(1)]);
+        assert_eq!(InList::from_i64s([1]).0, vec![Value::Integer(1)]);
         assert_eq!(
-            in_list_i64([1, 2, 3]).0,
+            InList::from_i64s([1, 2, 3]).0,
             vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)]
         );
-        assert_eq!(in_list_i64(std::iter::empty()).0, Vec::<Value>::new());
+        assert_eq!(InList::from_i64s(std::iter::empty()).0, Vec::<Value>::new());
     }
 
     #[test]
     fn in_list_blob_collects_blob_values() {
-        assert_eq!(in_list_blob([[0x0a, 0xff].as_slice()]).0, vec![Value::Blob(vec![0x0a, 0xff])]);
         assert_eq!(
-            in_list_blob([[0x01].as_slice(), [0x02].as_slice()]).0,
+            InList::from_blobs([[0x0a, 0xff].as_slice()]).0,
+            vec![Value::Blob(vec![0x0a, 0xff])]
+        );
+        assert_eq!(
+            InList::from_blobs([[0x01].as_slice(), [0x02].as_slice()]).0,
             vec![Value::Blob(vec![0x01]), Value::Blob(vec![0x02])]
         );
     }

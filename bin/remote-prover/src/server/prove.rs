@@ -18,8 +18,9 @@ impl grpc::server::remote_prover_api::Prove for ProverService {
     )]
     async fn handle(
         &self,
-        _request: &tonic::Request<()>,
         (proof_kind, request): Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         miden_span_record!(
             request.kind = %proof_kind,

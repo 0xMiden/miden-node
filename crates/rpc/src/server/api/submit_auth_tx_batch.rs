@@ -46,8 +46,9 @@ impl sequencer_api::SubmitAuthenticatedTxBatch for SequencerInternalService {
 
     async fn handle(
         &self,
-        _request: &tonic::Request<()>,
         (batch, inputs): Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         self.block_producer
             .submit_authenticated_tx_batch(batch, inputs)

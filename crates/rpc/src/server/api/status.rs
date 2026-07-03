@@ -27,8 +27,9 @@ impl proto::server::rpc_api::Status for RpcService {
     )]
     async fn handle(
         &self,
-        _request: &tonic::Request<()>,
         _input: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         let block_producer_status = match &self.mode {
             RpcMode::Sequencer { block_producer, .. } => {

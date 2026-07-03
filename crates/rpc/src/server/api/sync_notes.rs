@@ -30,8 +30,9 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
     )]
     async fn handle(
         &self,
-        _request: &tonic::Request<()>,
         request: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         tracing::trace!(target: LOG_TARGET, ?request);
 

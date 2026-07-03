@@ -53,8 +53,9 @@ impl grpc::server::validator_api::BlockSubscription for ValidatorService {
     )]
     async fn handle(
         &self,
-        _request: &tonic::Request<()>,
         request: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::ItemStream> {
         miden_span_record!(block.from = request.block_from,);
 

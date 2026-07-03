@@ -41,13 +41,13 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
     )]
     async fn handle(
         &self,
-        request_context: &Request<()>,
         input: Self::Input,
+        metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         let mut request = input;
-        let is_authorized_network_tx = self.is_authorized_network_tx(request_context.metadata());
-        let original_accept_header =
-            request_context.metadata().get(http::header::ACCEPT.as_str()).cloned();
+        let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
+        let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
         tracing::trace!(target: LOG_TARGET, ?request);
 

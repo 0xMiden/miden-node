@@ -2,7 +2,6 @@ use miden_node_proto::generated as proto;
 use miden_node_utils::grpc::ClientIp;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
-use tonic::Request;
 use tracing::debug;
 
 use super::super::{COMPONENT, RpcService};
@@ -38,11 +37,12 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
     )]
     async fn handle(
         &self,
-        request_context: &Request<()>,
         input: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::ItemStream> {
         let request = input;
-        let client_ip = ClientIp::from_request(request_context);
+        let client_ip = ClientIp::from_extensions(extensions);
 
         debug!(target: LOG_TARGET, "Subscribing to block proofs");
 

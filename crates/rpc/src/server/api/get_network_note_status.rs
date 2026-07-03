@@ -28,11 +28,11 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
     )]
     async fn handle(
         &self,
-        request_context: &Request<()>,
         request: Self::Input,
+        metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        let original_accept_header =
-            request_context.metadata().get(http::header::ACCEPT.as_str()).cloned();
+        let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
         tracing::trace!(target: LOG_TARGET, ?request);
 

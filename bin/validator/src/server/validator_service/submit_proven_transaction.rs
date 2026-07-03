@@ -25,8 +25,9 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
     )]
     async fn handle(
         &self,
-        _request: &tonic::Request<()>,
         input: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         // Reject requests while a backup subscription is streaming.
         let _guard = self

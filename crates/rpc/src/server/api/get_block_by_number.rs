@@ -30,8 +30,9 @@ impl proto::server::rpc_api::GetBlockByNumber for RpcService {
     )]
     async fn handle(
         &self,
-        _request: &tonic::Request<()>,
         request: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         debug!(target: LOG_TARGET, ?request, "Getting block by number");
 

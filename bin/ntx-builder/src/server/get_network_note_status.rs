@@ -29,7 +29,11 @@ impl grpc::server::ntx_builder_api::GetNetworkNoteStatus for NtxBuilderRpcServer
         ),
         err,
     )]
-    async fn handle(&self, note_id: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _request: &tonic::Request<()>,
+        note_id: Self::Input,
+    ) -> tonic::Result<Self::Output> {
         let row = self.db.get_note_status(note_id).await.map_err(|err| {
             tracing::error!(target: LOG_TARGET, error = %err, "Failed to query note status from DB");
             tonic::Status::internal("database error")

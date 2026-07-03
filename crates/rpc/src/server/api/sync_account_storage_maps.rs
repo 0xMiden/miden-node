@@ -30,7 +30,11 @@ impl proto::server::rpc_api::SyncAccountStorageMaps for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _request: &tonic::Request<()>,
+        request: Self::Input,
+    ) -> tonic::Result<Self::Output> {
         tracing::trace!(target: LOG_TARGET, ?request);
 
         let account_id = read_account_id::<proto::rpc::SyncAccountStorageMapsRequest, Status>(

@@ -35,7 +35,11 @@ impl proto::server::rpc_api::GetAccount for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _request: &tonic::Request<()>,
+        request: Self::Input,
+    ) -> tonic::Result<Self::Output> {
         miden_span_record!(
             account.id = %request.account_id,
         );

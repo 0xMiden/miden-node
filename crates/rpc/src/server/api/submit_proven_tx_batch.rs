@@ -8,7 +8,6 @@ use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_tx_batch_prover::LocalBatchProver;
-use tonic::metadata::{Ascii, MetadataValue};
 use tonic::{Request, Status};
 
 use super::{RpcMode, RpcService};
@@ -16,8 +15,6 @@ use crate::{COMPONENT, LOG_TARGET};
 
 pub struct SubmitProvenTxBatchInput {
     request: proto::transaction::TransactionBatch,
-    is_authorized_network_tx: bool,
-    original_accept_header: Option<MetadataValue<Ascii>>,
 }
 
 #[tonic::async_trait]
@@ -26,30 +23,11 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
     type Output = proto::blockchain::BlockNumber;
 
     fn decode(request: proto::transaction::TransactionBatch) -> tonic::Result<Self::Input> {
-        Ok(SubmitProvenTxBatchInput {
-            request,
-            is_authorized_network_tx: false,
-            original_accept_header: None,
-        })
+        Ok(SubmitProvenTxBatchInput { request })
     }
 
     fn encode(output: Self::Output) -> tonic::Result<proto::blockchain::BlockNumber> {
         Ok(output)
-    }
-
-    async fn full(
-        &self,
-        request: Request<proto::transaction::TransactionBatch>,
-    ) -> tonic::Result<proto::blockchain::BlockNumber> {
-        let is_authorized_network_tx = self.is_authorized_network_tx(request.metadata());
-        let original_accept_header = request.metadata().get(http::header::ACCEPT.as_str()).cloned();
-
-        let mut input = Self::decode(request.into_inner())?;
-        input.is_authorized_network_tx = is_authorized_network_tx;
-        input.original_accept_header = original_accept_header;
-
-        let output = self.handle(input).await?;
-        Self::encode(output)
     }
 
     #[miden_instrument(
@@ -58,12 +36,15 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, input: Self::Input) -> tonic::Result<Self::Output> {
-        let SubmitProvenTxBatchInput {
-            request,
-            is_authorized_network_tx,
-            original_accept_header,
-        } = input;
+    async fn handle(
+        &self,
+        request_context: &Request<()>,
+        input: Self::Input,
+    ) -> tonic::Result<Self::Output> {
+        let SubmitProvenTxBatchInput { request } = input;
+        let is_authorized_network_tx = self.is_authorized_network_tx(request_context.metadata());
+        let original_accept_header =
+            request_context.metadata().get(http::header::ACCEPT.as_str()).cloned();
 
         tracing::trace!(target: LOG_TARGET, ?request);
 

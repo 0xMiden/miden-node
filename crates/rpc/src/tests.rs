@@ -516,14 +516,11 @@ impl ntx_builder_api::GetNetworkNoteStatus for FixedNtxBuilder {
         Ok(output)
     }
 
-    async fn handle(&self, _input: Self::Input) -> tonic::Result<Self::Output> {
-        Ok(self.response.clone())
-    }
-
-    async fn full(
+    async fn handle(
         &self,
-        request: Request<proto::note::NoteId>,
-    ) -> tonic::Result<proto::rpc::GetNetworkNoteStatusResponse> {
+        request: &Request<()>,
+        _input: Self::Input,
+    ) -> tonic::Result<Self::Output> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
         let accept = request
             .metadata()
@@ -531,7 +528,8 @@ impl ntx_builder_api::GetNetworkNoteStatus for FixedNtxBuilder {
             .and_then(|value| value.to_str().ok())
             .map(str::to_string);
         *self.last_accept.lock().expect("last_accept mutex should not be poisoned") = accept;
-        self.handle(request.into_inner()).await.and_then(Self::encode)
+
+        Ok(self.response.clone())
     }
 }
 

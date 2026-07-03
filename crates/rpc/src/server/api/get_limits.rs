@@ -24,7 +24,11 @@ impl proto::server::rpc_api::GetLimits for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, _request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _request: &tonic::Request<()>,
+        _input: Self::Input,
+    ) -> tonic::Result<Self::Output> {
         debug!(target: LOG_TARGET, "Getting limits");
 
         Ok(RPC_LIMITS.clone())

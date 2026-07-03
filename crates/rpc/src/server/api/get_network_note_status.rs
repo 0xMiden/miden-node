@@ -2,7 +2,6 @@ use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use tonic::Request;
-use tonic::metadata::{Ascii, MetadataValue};
 use tracing::debug;
 
 use super::{RpcMode, RpcService};
@@ -10,7 +9,6 @@ use crate::{COMPONENT, LOG_TARGET};
 
 pub struct GetNetworkNoteStatusInput {
     request: proto::note::NoteId,
-    original_accept_header: Option<MetadataValue<Ascii>>,
 }
 
 #[tonic::async_trait]
@@ -19,20 +17,11 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
     type Output = proto::rpc::GetNetworkNoteStatusResponse;
 
     fn decode(request: proto::note::NoteId) -> tonic::Result<Self::Input> {
-        Ok(GetNetworkNoteStatusInput { request, original_accept_header: None })
+        Ok(GetNetworkNoteStatusInput { request })
     }
 
     fn encode(output: Self::Output) -> tonic::Result<proto::rpc::GetNetworkNoteStatusResponse> {
         Ok(output)
-    }
-
-    async fn full(&self, request: Request<proto::note::NoteId>) -> tonic::Result<Self::Output> {
-        let original_accept_header = request.metadata().get(http::header::ACCEPT.as_str()).cloned();
-        let mut input = Self::decode(request.into_inner())?;
-        input.original_accept_header = original_accept_header;
-
-        let output = self.handle(input).await?;
-        Self::encode(output)
     }
 
     #[miden_instrument(
@@ -41,8 +30,14 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, request: Self::Input) -> tonic::Result<Self::Output> {
-        let GetNetworkNoteStatusInput { request, original_accept_header } = request;
+    async fn handle(
+        &self,
+        request_context: &Request<()>,
+        request: Self::Input,
+    ) -> tonic::Result<Self::Output> {
+        let GetNetworkNoteStatusInput { request } = request;
+        let original_accept_header =
+            request_context.metadata().get(http::header::ACCEPT.as_str()).cloned();
 
         tracing::trace!(target: LOG_TARGET, ?request);
 

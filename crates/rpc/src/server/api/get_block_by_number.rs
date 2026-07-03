@@ -28,7 +28,11 @@ impl proto::server::rpc_api::GetBlockByNumber for RpcService {
         ),
         err,
     )]
-    async fn handle(&self, request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _request: &tonic::Request<()>,
+        request: Self::Input,
+    ) -> tonic::Result<Self::Output> {
         debug!(target: LOG_TARGET, ?request, "Getting block by number");
 
         let block_num = BlockNumber::from(request.block_num);

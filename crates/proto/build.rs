@@ -432,14 +432,20 @@ impl UnaryMethod {
     ///
     ///     fn decode(request: <Method::request>) -> tonic::Result<Self::Input>;
     ///     fn encode(output: Self::Output) -> tonic::Result<Method::response>;
-    ///     async fn handle(&self, input: Self::Input) -> tonic::Result<Self::Output>;
+    ///     async fn handle(
+    ///         &self,
+    ///         request: &tonic::Request<()>,
+    ///         input: Self::Input,
+    ///     ) -> tonic::Result<Self::Output>;
     ///
     ///     async fn full(
     ///         &self,
     ///         request: tonic::Request<<Method::Request>>,
     ///     ) -> tonic::Result<<Method::response>> {
-    ///         let input = Self::decode(request.into_inner())?;
-    ///         let output = self.handle(input).await?;
+    ///         let (metadata, extensions, message) = request.into_parts();
+    ///         let request = tonic::Request::from_parts(metadata, extensions, ());
+    ///         let input = Self::decode(message)?;
+    ///         let output = self.handle(&request, input).await?;
     ///         Self::encode(output)
     ///     }
     /// }
@@ -462,6 +468,7 @@ impl UnaryMethod {
         ret.new_fn("handle")
             .set_async(true)
             .arg_ref_self()
+            .arg("request", "&tonic::Request<()>")
             .arg("input", "Self::Input")
             .ret("tonic::Result<Self::Output>");
 
@@ -470,8 +477,10 @@ impl UnaryMethod {
             .arg_ref_self()
             .arg("request", format!("tonic::Request<{}>", &self.request))
             .ret(format!("tonic::Result<{}>", &self.response))
-            .line("let input = Self::decode(request.into_inner())?;")
-            .line("let output = self.handle(input).await?;")
+            .line("let (metadata, extensions, message) = request.into_parts();")
+            .line("let request = tonic::Request::from_parts(metadata, extensions, ());")
+            .line("let input = Self::decode(message)?;")
+            .line("let output = self.handle(&request, input).await?;")
             .line("Self::encode(output)");
 
         ret
@@ -498,13 +507,19 @@ impl ServerStream {
     ///
     ///     fn decode(request: <Method::request>) -> tonic::Result<Self::Input>;
     ///     fn encode(item: Self::Item) -> tonic::Result<Method::response>;
-    ///     async fn handle(&self, input: Self::Input) -> tonic::Result<Self::ItemStream>;
+    ///     async fn handle(
+    ///         &self,
+    ///         request: &tonic::Request<()>,
+    ///         input: Self::Input,
+    ///     ) -> tonic::Result<Self::ItemStream>;
     ///
     ///     async fn full(&self, request: tonic::Request<<Method::request>>) -> tonic::Result<Pin<Box<dyn Stream<...>>>> {
     ///         use tokio_stream::StreamExt as _;
-    ///         let input = Self::decode(request.into_inner())?;
-    ///         let stream = self.handle(input).await?;
-    ///         Ok(Box::pin(stream.map(|item| item.and_then(|i| Self::encode(i)))))
+    ///         let (metadata, extensions, message) = request.into_parts();
+    ///         let request = tonic::Request::from_parts(metadata, extensions, ());
+    ///         let input = Self::decode(message)?;
+    ///         let stream = self.handle(&request, input).await?;
+    ///         Ok(Box::pin(stream.map(|item| item.and_then(Self::encode))))
     ///     }
     /// }
     /// ```
@@ -537,6 +552,7 @@ impl ServerStream {
         ret.new_fn("handle")
             .set_async(true)
             .arg_ref_self()
+            .arg("request", "&tonic::Request<()>")
             .arg("input", "Self::Input")
             .ret("tonic::Result<Self::ItemStream>");
 
@@ -546,9 +562,11 @@ impl ServerStream {
             .arg("request", format!("tonic::Request<{}>", &self.request))
             .ret(format!("tonic::Result<{boxed_stream}>"))
             .line("use tonic::codegen::tokio_stream::StreamExt as _;")
-            .line("let input = Self::decode(request.into_inner())?;")
-            .line("let stream = self.handle(input).await?;")
-            .line("Ok(Box::pin(stream.map(|item| item.and_then(|i| Self::encode(i)))))");
+            .line("let (metadata, extensions, message) = request.into_parts();")
+            .line("let request = tonic::Request::from_parts(metadata, extensions, ());")
+            .line("let input = Self::decode(message)?;")
+            .line("let stream = self.handle(&request, input).await?;")
+            .line("Ok(Box::pin(stream.map(|item| item.and_then(Self::encode))))");
 
         ret
     }

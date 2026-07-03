@@ -28,7 +28,11 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _request: &tonic::Request<()>,
+        request: Self::Input,
+    ) -> tonic::Result<Self::Output> {
         tracing::trace!(target: LOG_TARGET, ?request);
 
         let range = read_block_range::<Status>(request.block_range, "SyncNotesRequest")?;

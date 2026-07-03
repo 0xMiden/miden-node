@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Context;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::AccountId;
 use miden_standards::note::AccountTargetNetworkNote;
 use tokio::sync::{Notify, Semaphore};
 use tokio::task::JoinSet;
 
+use crate::LOG_TARGET;
 use crate::actor::{AccountActor, AccountActorContext};
 use crate::committed_block::CommittedBlockEffects;
 
@@ -101,6 +103,9 @@ pub struct Coordinator {
     /// Their actor spawn is deferred until a committed block carries the account's creation, at
     /// which point [`Coordinator::handle_committed_block`] promotes them to a real actor.
     pending_spawns: HashSet<AccountId>,
+
+    /// Cancellation signal shared by all actors spawned by this coordinator.
+    shutdown: CancellationToken,
 }
 
 impl Coordinator {
@@ -110,6 +115,7 @@ impl Coordinator {
         max_inflight_transactions: usize,
         max_account_crashes: usize,
         actor_context: AccountActorContext,
+        shutdown: CancellationToken,
     ) -> Self {
         Self {
             actor_registry: HashMap::new(),
@@ -119,6 +125,7 @@ impl Coordinator {
             crash_counts: HashMap::new(),
             max_account_crashes,
             pending_spawns: HashSet::new(),
+            shutdown,
         }
     }
 
@@ -133,8 +140,11 @@ impl Coordinator {
             && count >= self.max_account_crashes
         {
             tracing::warn!(
-                account.id = %account_id,
-                crash_count = count,
+                target: LOG_TARGET,
+                {
+                    account.id = %account_id,
+                    crash_count = count,
+                },
                 "Account deactivated due to repeated crashes, skipping actor spawn"
             );
             return;
@@ -142,7 +152,8 @@ impl Coordinator {
 
         if self.actor_registry.contains_key(&account_id) {
             tracing::error!(
-                account.id = %account_id,
+                target: LOG_TARGET,
+                { account.id = %account_id },
                 "Account actor already exists",
             );
             return;
@@ -153,11 +164,16 @@ impl Coordinator {
         let handle = ActorHandle::new(notify);
 
         let semaphore = self.semaphore.clone();
+        let shutdown = self.shutdown.clone();
         self.actor_join_set
-            .spawn(Box::pin(async move { (account_id, actor.run(semaphore).await) }));
+            .spawn(Box::pin(async move { (account_id, actor.run(semaphore, shutdown).await) }));
 
         self.actor_registry.insert(account_id, handle);
-        tracing::info!(account.id = %account_id, "Created actor for account");
+        tracing::debug!(
+            target: LOG_TARGET,
+            { account.id = %account_id },
+            "Created actor for account"
+        );
     }
 
     /// Spawns an actor for the given account if its committed state exists in the DB; otherwise
@@ -185,7 +201,8 @@ impl Coordinator {
             self.spawn_actor(account_id);
         } else {
             tracing::info!(
-                account.id = %account_id,
+                target: LOG_TARGET,
+                { account.id = %account_id },
                 "deferring actor spawn until the account's creation is committed",
             );
             self.pending_spawns.insert(account_id);
@@ -246,14 +263,18 @@ impl Coordinator {
                 let count = self.crash_counts.entry(account_id).or_insert(0);
                 *count += 1;
                 tracing::error!(
-                    account.id = %account_id,
-                    "Account actor crashed: {err:#}"
+                    target: LOG_TARGET,
+                    {
+                        account.id = %account_id,
+                        error = %format!("{err:#}"),
+                    },
+                    "Account actor crashed"
                 );
                 self.actor_registry.remove(&account_id);
                 Ok(None)
             },
             Some(Err(err)) => {
-                tracing::error!(err = %err, "actor task failed");
+                tracing::error!(target: LOG_TARGET, error = %err, "Actor task failed");
                 Ok(None)
             },
             None => {
@@ -261,6 +282,24 @@ impl Coordinator {
                 std::future::pending().await
             },
         }
+    }
+
+    /// Waits for all currently running actors to exit after cancellation.
+    pub async fn shutdown(&mut self) -> anyhow::Result<()> {
+        while let Some(result) = self.actor_join_set.join_next().await {
+            match result {
+                Ok((_account_id, Ok(()))) => {},
+                Ok((account_id, Err(err))) => {
+                    return Err(err).with_context(|| {
+                        format!("account actor {account_id} failed during shutdown")
+                    });
+                },
+                Err(err) if err.is_cancelled() => {},
+                Err(err) => return Err(err).context("account actor failed to join"),
+            }
+        }
+        self.actor_registry.clear();
+        Ok(())
     }
 }
 
@@ -277,7 +316,7 @@ impl Coordinator {
         let (tx, rx) = tokio::sync::mpsc::channel(8);
         let mut actor_context = AccountActorContext::test(&db);
         actor_context.request_tx = tx;
-        (Self::new(4, 10, actor_context), dir, rx)
+        (Self::new(4, 10, actor_context, CancellationToken::new()), dir, rx)
     }
 }
 

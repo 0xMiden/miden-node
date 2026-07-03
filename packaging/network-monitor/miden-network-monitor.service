@@ -7,7 +7,6 @@ WantedBy=multi-user.target
 
 [Service]
 Type=exec
-EnvironmentFile=/lib/systemd/system/miden-network-monitor.env
 ExecStart=/usr/bin/miden-network-monitor start
 WorkingDirectory=/opt/miden-network-monitor
 User=miden-network-monitor

@@ -10,12 +10,12 @@ use crate::LOG_TARGET;
 
 #[tonic::async_trait]
 impl proto::server::rpc_api::ProofSubscription for RpcService {
-    type Input = proto::rpc::ProofSubscriptionRequest;
+    type Input = BlockNumber;
     type Item = StreamItem;
     type ItemStream = SubscriptionStream;
 
     fn decode(request: proto::rpc::ProofSubscriptionRequest) -> tonic::Result<Self::Input> {
-        Ok(request)
+        Ok(BlockNumber::from(request.block_from))
     }
 
     fn encode(event: Self::Item) -> tonic::Result<proto::rpc::ProofSubscriptionResponse> {
@@ -31,7 +31,7 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
         name = "proof_subscription",
         skip_all,
         fields(
-            block.from = %input.block_from,
+            block.from = %input,
         ),
         err,
     )]
@@ -41,13 +41,11 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::ItemStream> {
-        let request = input;
         let client_ip = ClientIp::from_extensions(extensions);
 
         debug!(target: LOG_TARGET, "Subscribing to block proofs");
 
-        let from = BlockNumber::from(request.block_from);
-
+        let from = input;
         SubscriptionStream::proofs(self, from, client_ip)
     }
 }

@@ -10,12 +10,12 @@ use crate::LOG_TARGET;
 
 #[tonic::async_trait]
 impl proto::server::rpc_api::BlockSubscription for RpcService {
-    type Input = proto::rpc::BlockSubscriptionRequest;
+    type Input = BlockNumber;
     type Item = StreamItem;
     type ItemStream = SubscriptionStream;
 
     fn decode(request: proto::rpc::BlockSubscriptionRequest) -> tonic::Result<Self::Input> {
-        Ok(request)
+        Ok(BlockNumber::from(request.block_from))
     }
 
     fn encode(event: Self::Item) -> tonic::Result<proto::rpc::BlockSubscriptionResponse> {
@@ -30,7 +30,7 @@ impl proto::server::rpc_api::BlockSubscription for RpcService {
         name = "block_subscription",
         skip_all,
         fields(
-            block.from = %input.block_from,
+            block.from = %input,
         ),
         err,
     )]
@@ -40,12 +40,11 @@ impl proto::server::rpc_api::BlockSubscription for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::ItemStream> {
-        let request = input;
         let client_ip = ClientIp::from_extensions(extensions);
 
         debug!(target: LOG_TARGET, "Subscribing to blocks");
 
-        let from = BlockNumber::from(request.block_from);
+        let from = input;
         SubscriptionStream::blocks(self, from, client_ip)
     }
 }

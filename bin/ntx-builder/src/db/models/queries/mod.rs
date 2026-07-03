@@ -33,7 +33,7 @@ mod tests;
 
 /// Applies a committed block's effects to the database in a single transaction:
 ///
-/// - Upserts each touched network account: new full-state deltas insert, partial deltas apply to
+/// - Upserts each touched network account: new full-state path insert, partial patches apply to
 ///   the existing committed row.
 /// - Inserts each network note (`INSERT OR IGNORE` to tolerate redeliveries).
 /// - Marks any of our pending notes whose nullifiers appear in this block as `committed_at =

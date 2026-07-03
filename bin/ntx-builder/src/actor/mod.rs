@@ -374,7 +374,7 @@ impl AccountActor {
         }
     }
 
-    /// Decides the actor's next mode after a coordinator notification, advancing the in-memory
+    /// Decides the actor's next mode after a coordinator notification, patching the in-memory
     /// account when the actor's own transaction lands.
     ///
     /// - In `NoViableNotes`/`NotesAvailable`, a wake means the DB may now have new work; advance to

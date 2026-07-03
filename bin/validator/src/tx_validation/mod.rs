@@ -5,6 +5,7 @@ pub use data_store::TransactionInputsDataStore;
 use miden_node_utils::spawn::{spawn_blocking_in_current_span, spawn_blocking_in_span};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
+use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionHeader,
@@ -31,7 +32,7 @@ pub enum TransactionValidationError {
         executed_tx_header: Box<TransactionHeader>,
     },
     #[error("transaction proof verification failed")]
-    ProofVerificationFailed(#[from] miden_protocol::errors::TransactionVerifierError),
+    ProofVerificationFailed(#[from] TransactionVerifierError),
 }
 
 // TRANSACTION VALIDATION

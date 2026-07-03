@@ -94,7 +94,7 @@ pub(crate) struct AccountStateForest<B: Backend = ForestInMemoryBackend> {
     storage_map_key_cache: LruCache<StorageMapKeyHash, StorageMapKey>,
 
     /// Reverse lookup from hashed SMT vault keys to raw vault keys.
-    vault_key_cache: LruCache<AssetVaultKeyHash, AssetVaultKey>,
+    pub(crate) vault_key_cache: LruCache<AssetVaultKeyHash, AssetVaultKey>,
 }
 
 #[cfg(test)]
@@ -204,15 +204,6 @@ impl<B: Backend> AccountStateForest<B> {
 
     pub(crate) fn cache_storage_map_keys(&self, raw_keys: impl IntoIterator<Item = StorageMapKey>) {
         self.storage_map_key_cache
-            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
-    }
-
-    fn cache_vault_keys_from_patch(&mut self, patch: &AccountPatch) {
-        self.cache_vault_keys(patch.vault().iter().map(|(vault_key, _)| *vault_key));
-    }
-
-    pub(crate) fn cache_vault_keys(&self, raw_keys: impl IntoIterator<Item = AssetVaultKey>) {
-        self.vault_key_cache
             .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
     }
 
@@ -554,7 +545,9 @@ impl<B: Backend> AccountStateForest<B> {
         }
 
         self.cache_storage_map_keys_from_patch(patch);
-        self.cache_vault_keys_from_patch(patch);
+        let raw_keys = patch.vault().iter().map(|(vault_key, _)| *vault_key);
+        self.vault_key_cache
+            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
     }
 
     // ASSET VAULT DELTA PROCESSING
@@ -601,7 +594,7 @@ impl<B: Backend> AccountStateForest<B> {
             return;
         }
 
-        let mut entries: Vec<(AssetVaultKey, Word)> = Vec::new();
+        let mut entries: Vec<(AssetVaultKey, Word)> = Vec::with_capacity(vault_patch.num_assets());
 
         for (vault_key, value) in vault_patch.iter() {
             entries.push((*vault_key, *value));

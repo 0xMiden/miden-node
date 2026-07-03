@@ -149,11 +149,13 @@ impl State {
         block_num: BlockNumber,
     ) -> Result<AccountVaultDetails, DatabaseError> {
         let assets = self.db.select_account_vault_at_block(account_id, block_num).await?;
+        let keys = assets.iter().map(miden_protocol::asset::Asset::vault_key);
 
-        self.forest
-            .write()
-            .await
-            .cache_vault_keys(assets.iter().map(miden_protocol::asset::Asset::vault_key));
+        let forest = self.forest.write().await;
+
+        forest
+            .vault_key_cache
+            .put_many(keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
 
         Ok(AccountVaultDetails::from_assets(assets))
     }

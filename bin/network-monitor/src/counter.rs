@@ -202,25 +202,10 @@ impl IncrementService {
     /// [`CounterTrackingService`]); the returned success count is used purely as a best-effort
     /// latency target — on a fresh wallet/counter pair both start at zero and advance together.
     fn handle_increment_success(&mut self, account_patch: &AccountPatch, tx_id: String) -> u64 {
-        let wallet = &self.tx.wallet_account;
-        let mut storage = wallet.storage().clone();
-        for (slot_name, value) in account_patch.storage().values() {
-            storage
-                .set_item(slot_name, value.value().unwrap_or_else(Word::empty))
-                .expect("wallet tx only writes existing value slots");
-        }
-        let new_nonce = account_patch.final_nonce().unwrap_or_else(|| wallet.nonce());
-        let updated_wallet = Account::new(
-            wallet.id(),
-            wallet.vault().clone(),
-            storage,
-            wallet.code().clone(),
-            new_nonce,
-            None,
-        )
-        .expect("rebuilding the wallet from its own transaction delta cannot fail");
-        self.tx.wallet_account = updated_wallet;
-
+        self.tx
+            .wallet_account
+            .apply_patch(account_patch)
+            .expect("successful tx should apply patch correctly");
         self.details.success_count += 1;
         self.details.last_tx_id = Some(tx_id);
 

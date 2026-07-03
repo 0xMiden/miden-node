@@ -125,7 +125,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         }
 
         // Verify batch transaction proofs.
-        verify_batch_proof(&proven_batch, &proposed_batch).await?;
+        verify_batch_proof(proven_batch, &proposed_batch).await?;
 
         match &self.mode {
             RpcMode::Sequencer { block_producer, validator } => {
@@ -210,12 +210,20 @@ impl RpcService {
     }
 }
 
+/// Verifies that the provided `proven_batch` is a valid proof for the `proposed_batch`.
+///
+/// Errors on id mismatch, or the proof cannot be verified [`MIN_PROOF_SECURITY_LEVEL`]
 async fn verify_batch_proof(
-    proven_batch: &ProvenBatch,
+    proven_batch: ProvenBatch,
     proposed_batch: &ProposedBatch,
 ) -> tonic::Result<()> {
     if proven_batch.id() != proposed_batch.id() {
-        return Err(Status::invalid_argument("batch proof did not match proposed batch"));
+        return Err(Status::invalid_argument(format!(
+            "batch proof did not match proposed batch in block commitment {}: proven id={}, proposed id={}",
+            proposed_batch.reference_block_header().commitment(),
+            proven_batch.id(),
+            proposed_batch.id()
+        )));
     }
 
     let proven_batch = proven_batch.clone();

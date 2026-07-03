@@ -9,18 +9,14 @@ use super::super::{COMPONENT, RpcService};
 use super::stream::{StreamItem, SubscriptionStream};
 use crate::LOG_TARGET;
 
-pub struct ProofSubscriptionInput {
-    request: proto::rpc::ProofSubscriptionRequest,
-}
-
 #[tonic::async_trait]
 impl proto::server::rpc_api::ProofSubscription for RpcService {
-    type Input = ProofSubscriptionInput;
+    type Input = proto::rpc::ProofSubscriptionRequest;
     type Item = StreamItem;
     type ItemStream = SubscriptionStream;
 
     fn decode(request: proto::rpc::ProofSubscriptionRequest) -> tonic::Result<Self::Input> {
-        Ok(ProofSubscriptionInput { request })
+        Ok(request)
     }
 
     fn encode(event: Self::Item) -> tonic::Result<proto::rpc::ProofSubscriptionResponse> {
@@ -36,7 +32,7 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
         name = "proof_subscription",
         skip_all,
         fields(
-            block.from = %input.request.block_from,
+            block.from = %input.block_from,
         ),
         err,
     )]
@@ -45,7 +41,7 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
         request_context: &Request<()>,
         input: Self::Input,
     ) -> tonic::Result<Self::ItemStream> {
-        let ProofSubscriptionInput { request } = input;
+        let request = input;
         let client_ip = ClientIp::from_request(request_context);
 
         debug!(target: LOG_TARGET, "Subscribing to block proofs");

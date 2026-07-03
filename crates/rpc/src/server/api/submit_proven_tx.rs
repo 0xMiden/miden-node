@@ -20,17 +20,13 @@ use tracing::debug;
 use super::{COMPONENT, RpcMode, RpcService};
 use crate::LOG_TARGET;
 
-pub struct SubmitProvenTxInput {
-    request: proto::transaction::ProvenTransaction,
-}
-
 #[tonic::async_trait]
 impl proto::server::rpc_api::SubmitProvenTx for RpcService {
-    type Input = SubmitProvenTxInput;
+    type Input = proto::transaction::ProvenTransaction;
     type Output = proto::blockchain::BlockNumber;
 
     fn decode(request: proto::transaction::ProvenTransaction) -> tonic::Result<Self::Input> {
-        Ok(SubmitProvenTxInput { request })
+        Ok(request)
     }
 
     fn encode(output: Self::Output) -> tonic::Result<proto::blockchain::BlockNumber> {
@@ -48,7 +44,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         request_context: &Request<()>,
         input: Self::Input,
     ) -> tonic::Result<Self::Output> {
-        let SubmitProvenTxInput { mut request } = input;
+        let mut request = input;
         let is_authorized_network_tx = self.is_authorized_network_tx(request_context.metadata());
         let original_accept_header =
             request_context.metadata().get(http::header::ACCEPT.as_str()).cloned();

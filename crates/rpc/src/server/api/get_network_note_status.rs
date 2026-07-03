@@ -7,17 +7,13 @@ use tracing::debug;
 use super::{RpcMode, RpcService};
 use crate::{COMPONENT, LOG_TARGET};
 
-pub struct GetNetworkNoteStatusInput {
-    request: proto::note::NoteId,
-}
-
 #[tonic::async_trait]
 impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
-    type Input = GetNetworkNoteStatusInput;
+    type Input = proto::note::NoteId;
     type Output = proto::rpc::GetNetworkNoteStatusResponse;
 
     fn decode(request: proto::note::NoteId) -> tonic::Result<Self::Input> {
-        Ok(GetNetworkNoteStatusInput { request })
+        Ok(request)
     }
 
     fn encode(output: Self::Output) -> tonic::Result<proto::rpc::GetNetworkNoteStatusResponse> {
@@ -35,7 +31,6 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
         request_context: &Request<()>,
         request: Self::Input,
     ) -> tonic::Result<Self::Output> {
-        let GetNetworkNoteStatusInput { request } = request;
         let original_accept_header =
             request_context.metadata().get(http::header::ACCEPT.as_str()).cloned();
 

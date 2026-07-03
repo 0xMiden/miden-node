@@ -8,7 +8,6 @@ WantedBy=multi-user.target
 [Service]
 Type=exec
 Environment="OTEL_SERVICE_NAME=miden-ntx-builder"
-EnvironmentFile=/lib/systemd/system/miden-ntx-builder.env
 ExecStart=/usr/bin/miden-ntx-builder start
 WorkingDirectory=/opt/miden-ntx-builder
 User=miden-ntx-builder

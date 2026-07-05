@@ -62,7 +62,7 @@ COPY . .
 # timestamp, so only files that genuinely changed since the cached build
 # look newer to Cargo.
 RUN while read -r ts path; do \
-        [ -e "$path" ] && touch -d "@$ts" "$path"; \
+        [ -e "$path" ] && touch -d "@$ts" "$path" || true; \
     done < docker-file-mtimes.tsv && \
     rm -f docker-file-mtimes.tsv
 RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \

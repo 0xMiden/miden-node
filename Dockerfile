@@ -27,15 +27,29 @@ WORKDIR /app
 
 
 FROM chef AS planner
+ARG BIN
 COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
+# Scope the recipe to this binary's dependency graph. Different binaries in
+# this workspace enable different, non-overlapping feature sets on shared
+# deps (e.g. miden-protocol, miden-tx); preparing/cooking for the whole
+# workspace would resolve a feature union that never matches what `cargo
+# build --bin ${BIN}` below actually needs, forcing those crates (and
+# everything downstream of them) to recompile on every build regardless of
+# caching.
+RUN cargo chef prepare --recipe-path recipe.json --bin ${BIN}
 
 FROM chef AS builder
 ARG BIN
 # Automatic per-platform arg (no manual wiring needed for multi-platform
-# buildx builds). Used to key the cache mounts below so that amd64 and arm64
-# builds never share compiled objects, registry sources, or git checkouts —
-# artifacts from one architecture cannot be reused for another.
+# buildx builds). Used, together with BIN, to key the cache mounts below so
+# that amd64 and arm64 builds never share compiled objects or checkouts —
+# artifacts from one architecture cannot be reused for another. The compiled
+# /app/target mount is additionally keyed by BIN: different binaries in this
+# workspace enable different feature sets on shared deps, so giving each
+# binary its own target dir avoids matrix builds serializing on (and
+# invalidating) a shared, lock-guarded mount for artifacts they can't reuse
+# anyway. Registry/git-db mounts stay arch-only since raw sources have no
+# feature dependence and are worth sharing across binaries.
 ARG TARGETARCH
 # Disable incremental compilation: Docker normalises COPY timestamps, which
 # breaks Rust's mtime-based fingerprinting and causes stale .rlib reuse.
@@ -48,8 +62,8 @@ COPY --from=planner /app/recipe.json recipe.json
 # caches are fragile when concurrent CI builds race or a build is interrupted.
 RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=locked,id=app-target-${TARGETARCH},target=/app/target \
-    cargo chef cook --release --recipe-path recipe.json
+    --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
+    cargo chef cook --release --recipe-path recipe.json --bin ${BIN}
 # Build application
 COPY . .
 # BuildKit normalises every COPY'd file to the same timestamp regardless of
@@ -67,7 +81,7 @@ RUN while read -r ts path; do \
     rm -f docker-file-mtimes.tsv
 RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=locked,id=app-target-${TARGETARCH},target=/app/target \
+    --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
     cargo build --release --locked --bin ${BIN} && \
     mkdir -p /app/bin && \
     cp /app/target/release/${BIN} /app/bin/${BIN}

@@ -12,8 +12,8 @@ use protox::prost::Message;
 /// fn <service>_api_descriptor() -> FileDescriptorSet;
 /// ```
 fn main() -> miette::Result<()> {
-    // build_rs::output::rerun_if_changed("./proto");
-    // build_rs::output::rerun_if_changed("Cargo.toml");
+    build_rs::output::rerun_if_changed("./proto");
+    build_rs::output::rerun_if_changed("Cargo.toml");
 
     let out_dir = build_rs::input::out_dir();
     let schema_dir = build_rs::input::cargo_manifest_dir().join("proto");

@@ -7,14 +7,7 @@ use std::str::FromStr;
 use indexmap::IndexMap;
 use miden_node_utils::crypto::get_random_coin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
-use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountFile,
-    AccountId,
-    AccountType,
-    FungibleAssetDelta,
-};
+use miden_protocol::account::{Account, AccountBuilder, AccountFile, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::block::FeeParameters;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
@@ -540,47 +533,25 @@ fn prepare_fungible_asset_update(
     faucets: &IndexMap<TokenSymbolStr, Account>,
     faucet_issuance: &mut IndexMap<AccountId, u64>,
 ) -> Result<Vec<Asset>, GenesisConfigError> {
-    let assets =
-        Result::<Vec<_>, _>::from_iter(assets.into_iter().map(|AssetEntry { amount, symbol }| {
+    assets
+        .into_iter()
+        .map(|AssetEntry { amount, symbol }| {
             let faucet_account = faucets.get(&symbol).ok_or_else(|| {
                 GenesisConfigError::MissingFaucetDefinition { symbol: symbol.clone() }
             })?;
+            let faucet_id = faucet_account.id();
 
-            Ok::<_, GenesisConfigError>(FungibleAsset::new(faucet_account.id(), amount)?)
-        }))?;
+            let issuance: &mut u64 = faucet_issuance.entry(faucet_id).or_default();
+            tracing::debug!(
+                target: LOG_TARGET,
+                "Updating faucet issuance {faucet} with {issuance} += {amount}",
+                faucet = faucet_id.to_hex()
+            );
+            issuance
+                .checked_add_assign(&amount)
+                .map_err(|_| GenesisConfigError::IssuanceOverflow)?;
 
-    let mut wallet_asset_delta = FungibleAssetDelta::default();
-    assets
-        .into_iter()
-        .try_for_each(|fungible_asset| wallet_asset_delta.add(fungible_asset))?;
-
-    wallet_asset_delta.iter().try_for_each(|(vault_key, amount)| {
-        let faucet_id = vault_key.faucet_id();
-        let issuance: &mut u64 = faucet_issuance.entry(faucet_id).or_default();
-        tracing::debug!(
-            target: LOG_TARGET,
-            "Updating faucet issuance {faucet} with {issuance} += {amount}",
-            faucet = faucet_id.to_hex()
-        );
-
-        // check against total supply is deferred
-        issuance
-            .checked_add_assign(
-                &u64::try_from(*amount)
-                    .expect("Issuance must always be positive in the scope of genesis config"),
-            )
-            .map_err(|_| GenesisConfigError::IssuanceOverflow)?;
-
-        Ok::<_, GenesisConfigError>(())
-    })?;
-
-    // Materialize the aggregated fungible asset additions to be added to the wallet vault.
-    wallet_asset_delta
-        .iter()
-        .map(|(vault_key, amount)| {
-            let amount = u64::try_from(*amount)
-                .expect("Issuance must always be positive in the scope of genesis config");
-            Ok(Asset::Fungible(FungibleAsset::new(vault_key.faucet_id(), amount)?))
+            Ok(Asset::Fungible(FungibleAsset::new(faucet_id, amount)?))
         })
         .collect()
 }

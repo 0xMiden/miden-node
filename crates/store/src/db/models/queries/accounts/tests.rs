@@ -29,8 +29,10 @@ use miden_protocol::account::{
     StorageSlotPatch,
     StorageSlotType,
 };
+use miden_protocol::asset::{NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{EMPTY_WORD, Felt, Word};
 use miden_standards::account::auth::{Approver, AuthSingleSig};
@@ -961,6 +963,45 @@ fn test_select_account_vault_at_block_historical_with_updates() {
 
     assert!(amounts.contains(&3000), "Block 3 should have vault_key_1 with 3000 tokens");
     assert!(amounts.contains(&500), "Block 3 should have vault_key_2 with 500 tokens");
+}
+
+/// Tests that the query bounds the number of rows it reads, so an over-the-limit vault is detected
+/// without materializing the whole set.
+#[test]
+fn test_select_account_vault_at_block_bounds_read_to_limit() {
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    let block_1 = BlockNumber::from_epoch(0);
+    insert_block_header(&mut conn, block_1);
+
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account.to_commitment(),
+        AccountUpdateDetails::Public(patch),
+    );
+    upsert_accounts(&mut conn, std::slice::from_ref(&account_update), block_1)
+        .expect("upsert_accounts failed");
+
+    // Insert two assets more than the return limit, each with a distinct vault key.
+    let faucet_id = AccountIdBuilder::new()
+        .account_type(AccountType::Public)
+        .build_with_seed([7; 32]);
+    let asset_count = AccountVaultDetails::MAX_RETURN_ENTRIES + 2;
+    for i in 0..asset_count {
+        let details = NonFungibleAssetDetails::new(faucet_id, vec![i as u8, (i >> 8) as u8]);
+        let asset = Asset::NonFungible(NonFungibleAsset::new(&details));
+        insert_account_vault_asset(&mut conn, account_id, block_1, asset.vault_key(), Some(asset))
+            .expect("insert vault asset failed");
+    }
+
+    // The query is capped at `MAX_RETURN_ENTRIES + 1` rows even though more assets exist, which is
+    // enough for the caller to detect that the limit was exceeded.
+    let assets = select_account_vault_at_block(&mut conn, account_id, block_1)
+        .expect("query should succeed");
+    assert_eq!(assets.len(), AccountVaultDetails::MAX_RETURN_ENTRIES + 1);
 }
 
 /// Tests that a 5-block history returns the correct asset per block.

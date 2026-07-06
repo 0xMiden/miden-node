@@ -149,6 +149,11 @@ impl State {
         block_num: BlockNumber,
     ) -> Result<AccountVaultDetails, DatabaseError> {
         let assets = self.db.select_account_vault_at_block(account_id, block_num).await?;
+
+        if assets.len() > AccountVaultDetails::MAX_RETURN_ENTRIES {
+            return Ok(AccountVaultDetails::LimitExceeded);
+        }
+
         let keys = assets.iter().map(miden_protocol::asset::Asset::vault_key);
 
         let forest = self.forest.write().await;

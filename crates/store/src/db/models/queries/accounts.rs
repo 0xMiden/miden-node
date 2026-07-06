@@ -19,7 +19,7 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
+use miden_node_proto::domain::account::{AccountInfo, AccountSummary, AccountVaultDetails};
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamAccountIdLimit,
@@ -568,7 +568,11 @@ pub(crate) fn select_account_vault_assets(
 ///     GROUP BY vault_key
 /// ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
 /// WHERE a.account_id = ?
+/// LIMIT ?
 /// ```
+///
+/// The read is bounded to [`AccountVaultDetails::MAX_RETURN_ENTRIES`] + 1 rows so an over-the-limit
+/// vault can be detected without materializing the whole set.
 pub(crate) fn select_account_vault_at_block(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -578,6 +582,8 @@ pub(crate) fn select_account_vault_at_block(
 
     let account_id_bytes = account_id.to_bytes();
     let block_num_sql = block_num.to_raw_sql();
+    let limit_sql =
+        i64::try_from(AccountVaultDetails::MAX_RETURN_ENTRIES + 1).expect("should fit within i64");
 
     let entries: Vec<Option<Vec<u8>>> = diesel::sql_query(
         r"
@@ -589,11 +595,13 @@ pub(crate) fn select_account_vault_at_block(
             GROUP BY vault_key
         ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
         WHERE a.account_id = ?
+        LIMIT ?
         ",
     )
     .bind::<Binary, _>(&account_id_bytes)
     .bind::<BigInt, _>(block_num_sql)
     .bind::<Binary, _>(&account_id_bytes)
+    .bind::<BigInt, _>(limit_sql)
     .load::<AssetRow>(conn)?
     .into_iter()
     .map(|row| row.asset)

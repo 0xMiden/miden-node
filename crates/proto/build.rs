@@ -432,14 +432,20 @@ impl UnaryMethod {
     ///
     ///     fn decode(request: <Method::request>) -> tonic::Result<Self::Input>;
     ///     fn encode(output: Self::Output) -> tonic::Result<Method::response>;
-    ///     async fn handle(&self, input: Self::Input) -> tonic::Result<Self::Output>;
+    ///     async fn handle(
+    ///         &self,
+    ///         input: Self::Input,
+    ///         metadata: &tonic::metadata::MetadataMap,
+    ///         extensions: &tonic::codegen::http::Extensions,
+    ///     ) -> tonic::Result<Self::Output>;
     ///
     ///     async fn full(
     ///         &self,
     ///         request: tonic::Request<<Method::Request>>,
     ///     ) -> tonic::Result<<Method::response>> {
-    ///         let input = Self::decode(request.into_inner())?;
-    ///         let output = self.handle(input).await?;
+    ///         let (metadata, extensions, message) = request.into_parts();
+    ///         let input = Self::decode(message)?;
+    ///         let output = self.handle(input, &metadata, &extensions).await?;
     ///         Self::encode(output)
     ///     }
     /// }
@@ -463,6 +469,8 @@ impl UnaryMethod {
             .set_async(true)
             .arg_ref_self()
             .arg("input", "Self::Input")
+            .arg("metadata", "&tonic::metadata::MetadataMap")
+            .arg("extensions", "&tonic::codegen::http::Extensions")
             .ret("tonic::Result<Self::Output>");
 
         ret.new_fn("full")
@@ -470,8 +478,9 @@ impl UnaryMethod {
             .arg_ref_self()
             .arg("request", format!("tonic::Request<{}>", &self.request))
             .ret(format!("tonic::Result<{}>", &self.response))
-            .line("let input = Self::decode(request.into_inner())?;")
-            .line("let output = self.handle(input).await?;")
+            .line("let (metadata, extensions, message) = request.into_parts();")
+            .line("let input = Self::decode(message)?;")
+            .line("let output = self.handle(input, &metadata, &extensions).await?;")
             .line("Self::encode(output)");
 
         ret
@@ -498,13 +507,19 @@ impl ServerStream {
     ///
     ///     fn decode(request: <Method::request>) -> tonic::Result<Self::Input>;
     ///     fn encode(item: Self::Item) -> tonic::Result<Method::response>;
-    ///     async fn handle(&self, input: Self::Input) -> tonic::Result<Self::ItemStream>;
+    ///     async fn handle(
+    ///         &self,
+    ///         input: Self::Input,
+    ///         metadata: &tonic::metadata::MetadataMap,
+    ///         extensions: &tonic::codegen::http::Extensions,
+    ///     ) -> tonic::Result<Self::ItemStream>;
     ///
     ///     async fn full(&self, request: tonic::Request<<Method::request>>) -> tonic::Result<Pin<Box<dyn Stream<...>>>> {
     ///         use tokio_stream::StreamExt as _;
-    ///         let input = Self::decode(request.into_inner())?;
-    ///         let stream = self.handle(input).await?;
-    ///         Ok(Box::pin(stream.map(|item| item.and_then(|i| Self::encode(i)))))
+    ///         let (metadata, extensions, message) = request.into_parts();
+    ///         let input = Self::decode(message)?;
+    ///         let stream = self.handle(input, &metadata, &extensions).await?;
+    ///         Ok(Box::pin(stream.map(|item| item.and_then(Self::encode))))
     ///     }
     /// }
     /// ```
@@ -538,6 +553,8 @@ impl ServerStream {
             .set_async(true)
             .arg_ref_self()
             .arg("input", "Self::Input")
+            .arg("metadata", "&tonic::metadata::MetadataMap")
+            .arg("extensions", "&tonic::codegen::http::Extensions")
             .ret("tonic::Result<Self::ItemStream>");
 
         ret.new_fn("full")
@@ -546,9 +563,10 @@ impl ServerStream {
             .arg("request", format!("tonic::Request<{}>", &self.request))
             .ret(format!("tonic::Result<{boxed_stream}>"))
             .line("use tonic::codegen::tokio_stream::StreamExt as _;")
-            .line("let input = Self::decode(request.into_inner())?;")
-            .line("let stream = self.handle(input).await?;")
-            .line("Ok(Box::pin(stream.map(|item| item.and_then(|i| Self::encode(i)))))");
+            .line("let (metadata, extensions, message) = request.into_parts();")
+            .line("let input = Self::decode(message)?;")
+            .line("let stream = self.handle(input, &metadata, &extensions).await?;")
+            .line("Ok(Box::pin(stream.map(|item| item.and_then(Self::encode))))");
 
         ret
     }

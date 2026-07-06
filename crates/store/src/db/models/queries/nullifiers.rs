@@ -73,7 +73,9 @@ pub(crate) fn select_nullifiers_by_prefix(
     pub const ROW_OVERHEAD_BYTES: usize = NULLIFIER_BYTES + BLOCK_NUM_BYTES; // 36 bytes
     pub const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
-    assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
+    if prefix_len != 16 {
+        return Err(DatabaseError::UnsupportedNullifierPrefixLength { prefix_len });
+    }
 
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {

@@ -75,6 +75,8 @@ pub enum DatabaseError {
          use a stricter filter to reduce the number of transactions returned"
     )]
     TransactionPageExceedsPayloadLimit { block_num: BlockNumber },
+    #[error("unsupported nullifier prefix length {prefix_len}, only 16-bit prefixes are supported")]
+    UnsupportedNullifierPrefixLength { prefix_len: u8 },
     #[error("data corrupted: {0}")]
     DataCorrupted(String),
     #[error(transparent)]

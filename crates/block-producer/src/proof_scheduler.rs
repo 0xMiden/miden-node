@@ -24,7 +24,6 @@ use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockNumber, BlockProof};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
@@ -287,12 +286,7 @@ enum ProveBlockError {
 
 impl ProveBlockError {
     fn from_prover_error(err: ProverError) -> Self {
-        match err {
-            ProverError::RemoteProvingFailed(RemoteProverClientError::InvalidEndpoint(uri)) => {
-                Self::Fatal(ProofSchedulerError::InvalidProverEndpoint(uri))
-            },
-            _ => Self::Transient(err.into()),
-        }
+        Self::Transient(err.into())
     }
 }
 

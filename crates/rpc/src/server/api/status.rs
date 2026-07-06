@@ -25,7 +25,12 @@ impl proto::server::rpc_api::Status for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, _request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
+    ) -> tonic::Result<Self::Output> {
         let block_producer_status = match &self.mode {
             RpcMode::Sequencer { block_producer, .. } => {
                 Some(block_producer_status_to_proto(block_producer.status().await))

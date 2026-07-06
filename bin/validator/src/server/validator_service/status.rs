@@ -29,7 +29,12 @@ impl grpc::server::validator_api::Status for ValidatorService {
         })
     }
 
-    async fn handle(&self, _input: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
+    ) -> tonic::Result<Self::Output> {
         unimplemented!()
     }
 

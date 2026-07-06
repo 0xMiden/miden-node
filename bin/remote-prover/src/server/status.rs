@@ -17,7 +17,12 @@ impl grpc::server::remote_prover_worker_status_api::Status for StatusService {
     type Input = ();
     type Output = grpc::remote_prover::WorkerStatus;
 
-    async fn handle(&self, _input: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
+    ) -> tonic::Result<Self::Output> {
         Ok(grpc::remote_prover::WorkerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             supported_proof_type: self.kind as i32,

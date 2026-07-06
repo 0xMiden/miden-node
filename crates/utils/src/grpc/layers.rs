@@ -58,16 +58,16 @@ pub fn rate_limit_per_ip(
 /// The originating client IP, resolved by [`ResolveClientIpLayer`] and stored in a request's
 /// extensions.
 ///
-/// gRPC handlers can read this via `request.extensions().get::<ClientIp>()` to obtain the
+/// gRPC handlers can read this via `ClientIp::from_extensions(request.extensions())` to obtain the
 /// load-balancer-aware client address without re-implementing IP extraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClientIp(pub IpAddr);
 
 impl ClientIp {
-    /// Returns the client IP resolved for `request` by [`ResolveClientIpLayer`], or `None` if it
-    /// could not be determined.
-    pub fn from_request<T>(request: &tonic::Request<T>) -> Option<IpAddr> {
-        request.extensions().get::<Self>().map(|ip| ip.0)
+    /// Returns the client IP resolved into `extensions` by [`ResolveClientIpLayer`], or `None` if
+    /// it could not be determined.
+    pub fn from_extensions(extensions: &http::Extensions) -> Option<IpAddr> {
+        extensions.get::<Self>().map(|ip| ip.0)
     }
 }
 

@@ -245,7 +245,7 @@ pub(crate) async fn run(rpc_url: Url, num_transactions: u64, remote_prover_url: 
     let prover = Arc::new(match remote_prover_url {
         Some(url) => {
             println!("Using remote prover at {url} (rate-limited ramp from 1 to 10 req/s).");
-            BenchmarkProver::remote(url)
+            BenchmarkProver::remote(&url).expect("remote prover client should be constructed")
         },
         None => BenchmarkProver::local(),
     });

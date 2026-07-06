@@ -33,7 +33,6 @@ TAPLO_CONFIG = $(CONFIG_DIR)/taplo.toml
 clippy: ## Runs Clippy with configs
 	cargo clippy --locked --all-targets --all-features --workspace -- -D warnings
 	cargo clippy --locked --all-targets --all-features -p miden-remote-prover -- -D warnings
-	cargo clippy --locked -p miden-remote-prover-client --target wasm32-unknown-unknown --no-default-features --features batch-prover,block-prover,tx-prover -- -D warnings
 
 
 .PHONY: fix
@@ -135,7 +134,6 @@ check-features: ## Checks all feature combinations compile without warnings usin
 .PHONY: build
 build: ## Builds all crates and re-builds protobuf bindings for proto crates
 	cargo build --locked --workspace
-	cargo build --locked -p miden-remote-prover-client --target wasm32-unknown-unknown --no-default-features --features batch-prover,block-prover,tx-prover # no-std compatible build
 
 # --- installing ----------------------------------------------------------------------------------
 

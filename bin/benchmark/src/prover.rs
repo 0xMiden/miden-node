@@ -13,11 +13,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use miden_node_proto::clients::{Builder, RemoteProverClient};
+use miden_node_proto::generated::remote_prover::{ProofRequest, ProofType};
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionInputs};
-use miden_remote_prover_client::RemoteTransactionProver;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_tx::{LocalTransactionProver, TransactionProverError};
 use tokio::sync::{Mutex, Semaphore};
+use url::Url;
 
 // SCHEDULE CONSTANTS
 // ================================================================================================
@@ -48,7 +51,7 @@ const RETRY_BACKOFF_SHIFT_CAP: u32 = 6;
 pub(crate) enum BenchmarkProver {
     Local(LocalTransactionProver),
     Remote {
-        prover: RemoteTransactionProver,
+        prover: Box<RemoteTransactionProver>,
         limiter: Arc<RampingRateLimiter>,
         permits: Arc<Semaphore>,
     },
@@ -66,13 +69,15 @@ impl BenchmarkProver {
         matches!(self, Self::Remote { .. })
     }
 
-    pub(crate) fn remote(endpoint: String) -> Self {
-        let prover = RemoteTransactionProver::new(endpoint).with_timeout(PROVE_TIMEOUT);
-        Self::Remote {
-            prover,
+    pub(crate) fn remote(endpoint: &str) -> Result<Self> {
+        let url = Url::parse(endpoint)
+            .with_context(|| format!("invalid remote prover url: {endpoint}"))?;
+        let prover = RemoteTransactionProver::new(url, PROVE_TIMEOUT)?;
+        Ok(Self::Remote {
+            prover: Box::new(prover),
             limiter: Arc::new(RampingRateLimiter::new()),
             permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
-        }
+        })
     }
 
     /// Prove the given executed transaction. The remote path paces dispatch through the rate
@@ -156,6 +161,54 @@ fn is_retryable(err: &TransactionProverError) -> bool {
         src = e.source();
     }
     false
+}
+
+// REMOTE TRANSACTION PROVER
+// ================================================================================================
+
+/// Thin wrapper around the remote-prover gRPC service that proves transactions.
+///
+/// The connection is lazy: the underlying channel connects on first use and is shared (cheaply
+/// cloned) across all subsequent calls.
+#[derive(Clone)]
+pub(crate) struct RemoteTransactionProver {
+    client: RemoteProverClient,
+}
+
+impl RemoteTransactionProver {
+    /// Creates a new [`RemoteTransactionProver`] with a lazy connection to the given gRPC endpoint.
+    fn new(url: Url, timeout: Duration) -> Result<Self> {
+        let client = Builder::new(url)
+            .with_tls()?
+            .with_timeout(timeout)
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .without_auth_header()
+            .with_otel_context_injection()
+            .connect_lazy::<RemoteProverClient>();
+
+        Ok(Self { client })
+    }
+
+    async fn prove(
+        &self,
+        tx_inputs: &TransactionInputs,
+    ) -> Result<ProvenTransaction, TransactionProverError> {
+        let request = tonic::Request::new(ProofRequest {
+            proof_type: ProofType::Transaction.into(),
+            payload: tx_inputs.to_bytes(),
+        });
+
+        let response = self.client.clone().prove(request).await.map_err(|err| {
+            TransactionProverError::other_with_source("failed to prove transaction", err)
+        })?;
+
+        ProvenTransaction::read_from_bytes(&response.into_inner().payload).map_err(|_| {
+            TransactionProverError::other(
+                "failed to deserialize received response from remote transaction prover",
+            )
+        })
+    }
 }
 
 // RAMPING RATE LIMITER

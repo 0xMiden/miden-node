@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
-use http::{HeaderMap, HeaderValue};
+use http::{Extensions, HeaderMap, HeaderValue};
 use miden_node_block_producer::{BlockProducerApi, BlockProducerApiConfig};
 use miden_node_proto::clients::{
     Builder,
@@ -52,6 +52,7 @@ use tokio::net::TcpListener;
 use tokio::task;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Request;
+use tonic::metadata::MetadataMap;
 use url::Url;
 
 use crate::server::api::RpcService;
@@ -512,22 +513,20 @@ impl ntx_builder_api::GetNetworkNoteStatus for FixedNtxBuilder {
         Ok(output)
     }
 
-    async fn handle(&self, _input: Self::Input) -> tonic::Result<Self::Output> {
-        Ok(self.response.clone())
-    }
-
-    async fn full(
+    async fn handle(
         &self,
-        request: Request<proto::note::NoteId>,
-    ) -> tonic::Result<proto::rpc::GetNetworkNoteStatusResponse> {
+        _input: Self::Input,
+        metadata: &MetadataMap,
+        _extensions: &Extensions,
+    ) -> tonic::Result<Self::Output> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
-        let accept = request
-            .metadata()
+        let accept = metadata
             .get(ACCEPT.as_str())
             .and_then(|value| value.to_str().ok())
             .map(str::to_string);
         *self.last_accept.lock().expect("last_accept mutex should not be poisoned") = accept;
-        self.handle(request.into_inner()).await.and_then(Self::encode)
+
+        Ok(self.response.clone())
     }
 }
 

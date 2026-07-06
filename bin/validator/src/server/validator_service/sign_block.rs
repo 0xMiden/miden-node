@@ -31,7 +31,12 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
         })
     }
 
-    async fn handle(&self, proposed_block: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        proposed_block: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
+    ) -> tonic::Result<Self::Output> {
         // Reject requests while a backup subscription is streaming.
         let _guard = self.serve_lock.try_read().map_err(|_| {
             tonic::Status::resource_exhausted("validator is busy streaming a backup")

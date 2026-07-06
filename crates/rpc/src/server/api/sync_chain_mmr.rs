@@ -30,7 +30,12 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         ),
         err,
     )]
-    async fn handle(&self, request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        request: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
+    ) -> tonic::Result<Self::Output> {
         debug!(target: LOG_TARGET, "Syncing chain MMR");
 
         let current_client_block_height = BlockNumber::from(request.current_client_block_height);

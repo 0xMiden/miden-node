@@ -34,7 +34,12 @@ impl proto::server::rpc_api::SyncTransactions for RpcService {
         skip_all,
         err,
     )]
-    async fn handle(&self, request: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        request: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
+    ) -> tonic::Result<Self::Output> {
         tracing::trace!(target: LOG_TARGET, ?request);
 
         let range = read_block_range::<Status>(request.block_range, "SyncTransactionsRequest")?;

@@ -83,8 +83,8 @@ impl BatchBuilder {
         batch_prover_url: Option<Url>,
         intervals: BatchIntervals,
     ) -> anyhow::Result<Self> {
-        let batch_prover = batch_prover_url.map_or_else(
-            || Ok(BatchProver::local(MIN_PROOF_SECURITY_LEVEL)),
+        let batch_prover = batch_prover_url.map_or(
+            Ok(BatchProver::local(MIN_PROOF_SECURITY_LEVEL)),
             BatchProver::remote,
         )?;
 

@@ -42,7 +42,10 @@ impl Db {
         database_filepath: &Path,
         connection_pool_size: NonZeroUsize,
     ) -> Result<Self, DatabaseError> {
-        let manager = ConnectionManager::new(database_filepath.to_str().unwrap());
+        let path_str = database_filepath.to_str().ok_or_else(|| {
+            DatabaseError::NonUtf8Path(database_filepath.to_string_lossy().into_owned())
+        })?;
+        let manager = ConnectionManager::new(path_str);
         let pool = deadpool_diesel::Pool::builder(manager)
             .max_size(connection_pool_size.get())
             .build()?;

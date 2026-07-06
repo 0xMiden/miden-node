@@ -51,6 +51,8 @@ pub enum DatabaseError {
     SchemaVerification(#[from] SchemaVerificationError),
     #[error("I/O error")]
     Io(#[from] io::Error),
+    #[error("database file path is not valid UTF-8: {0}")]
+    NonUtf8Path(String),
     #[error("pool build error")]
     PoolBuild(#[from] deadpool::managed::BuildError),
     #[error("Setup deadpool connection pool failed")]

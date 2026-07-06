@@ -21,7 +21,12 @@ impl sequencer_api::SubmitAuthenticatedTx for SequencerInternalService {
         Ok(output)
     }
 
-    async fn handle(&self, tx: Self::Input) -> tonic::Result<Self::Output> {
+    async fn handle(
+        &self,
+        tx: Self::Input,
+        _metadata: &tonic::metadata::MetadataMap,
+        _extensions: &tonic::codegen::http::Extensions,
+    ) -> tonic::Result<Self::Output> {
         self.block_producer
             .submit_authenticated_tx(tx)
             .await

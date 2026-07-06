@@ -853,3 +853,83 @@ fn upsert_full_state_delta() {
     assert_eq!(loaded_account.code().commitment(), account.code().commitment());
     assert_eq!(loaded_account.storage().to_commitment(), account.storage().to_commitment());
 }
+
+/// Tests that `apply_storage_patch` mirrors the protocol's patch semantics for slot creation,
+/// update, and removal, for both value and map slots.
+#[test]
+fn apply_storage_patch_handles_create_update_and_remove() {
+    use std::collections::HashMap;
+
+    use miden_protocol::account::{
+        AccountStorageHeader,
+        StorageMapPatchEntries,
+        StorageSlotHeader,
+        StorageSlotType,
+    };
+
+    use super::apply_storage_patch;
+
+    let removed_value_name = StorageSlotName::mock(10);
+    let removed_map_name = StorageSlotName::mock(11);
+    let updated_value_name = StorageSlotName::mock(12);
+    let created_value_name = StorageSlotName::mock(13);
+    let created_map_name = StorageSlotName::mock(14);
+
+    let old_value = Word::from([Felt::new_unchecked(1); 4]);
+    let updated_value = Word::from([Felt::new_unchecked(2); 4]);
+    let created_value = Word::from([Felt::new_unchecked(3); 4]);
+    let old_map_root = StorageMap::with_entries(std::iter::empty()).unwrap().root();
+
+    let mut slots = vec![
+        StorageSlotHeader::new(removed_value_name.clone(), StorageSlotType::Value, old_value),
+        StorageSlotHeader::new(removed_map_name.clone(), StorageSlotType::Map, old_map_root),
+        StorageSlotHeader::new(updated_value_name.clone(), StorageSlotType::Value, old_value),
+    ];
+    slots.sort_by_key(StorageSlotHeader::id);
+    let header = AccountStorageHeader::new(slots).unwrap();
+
+    let patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([
+        (removed_value_name.clone(), StorageSlotPatch::Value(StorageValuePatch::Remove)),
+        (removed_map_name.clone(), StorageSlotPatch::Map(StorageMapPatch::Remove)),
+        (
+            updated_value_name.clone(),
+            StorageSlotPatch::Value(StorageValuePatch::Update { value: updated_value }),
+        ),
+        (
+            created_value_name.clone(),
+            StorageSlotPatch::Value(StorageValuePatch::Create { value: created_value }),
+        ),
+        (
+            created_map_name.clone(),
+            StorageSlotPatch::Map(StorageMapPatch::Create {
+                entries: StorageMapPatchEntries::new(),
+            }),
+        ),
+    ]))
+    .unwrap();
+
+    let new_header =
+        apply_storage_patch(&header, &patch, &HashMap::new()).expect("patch should apply");
+
+    assert_eq!(new_header.num_slots(), 3, "two slots removed, two created");
+    assert!(
+        new_header.find_slot_header_by_name(&removed_value_name).is_none(),
+        "removed value slot should be dropped from the header"
+    );
+    assert!(
+        new_header.find_slot_header_by_name(&removed_map_name).is_none(),
+        "removed map slot should be dropped from the header"
+    );
+
+    let updated_slot = new_header.find_slot_header_by_name(&updated_value_name).unwrap();
+    assert_eq!(updated_slot.value(), updated_value);
+    assert_eq!(updated_slot.slot_type(), StorageSlotType::Value);
+
+    let created_slot = new_header.find_slot_header_by_name(&created_value_name).unwrap();
+    assert_eq!(created_slot.value(), created_value);
+    assert_eq!(created_slot.slot_type(), StorageSlotType::Value);
+
+    let created_map_slot = new_header.find_slot_header_by_name(&created_map_name).unwrap();
+    assert_eq!(created_map_slot.value(), old_map_root, "empty map root expected");
+    assert_eq!(created_map_slot.slot_type(), StorageSlotType::Map);
+}

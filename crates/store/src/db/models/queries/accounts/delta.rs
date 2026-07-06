@@ -8,7 +8,7 @@
 //!
 //! Instead, only the minimal data needed for the update is fetched.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection};
@@ -19,8 +19,10 @@ use miden_protocol::account::{
     AccountStoragePatch,
     StorageMap,
     StorageMapKey,
+    StoragePatchOperation,
     StorageSlotHeader,
     StorageSlotName,
+    StorageSlotType,
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -174,6 +176,8 @@ pub(super) fn select_latest_vault_assets(
 ///
 /// For value slots, updates the slot value directly.
 /// For map slots, uses the precomputed roots for updated maps.
+/// Removed slots are dropped from the header and created slots are added to it, mirroring
+/// [`miden_protocol::account::AccountStorage`]'s patch application.
 pub(super) fn apply_storage_patch(
     header: &AccountStorageHeader,
     patch: &AccountStoragePatch,
@@ -181,16 +185,27 @@ pub(super) fn apply_storage_patch(
 ) -> Result<AccountStorageHeader, DatabaseError> {
     let mut value_updates: HashMap<&StorageSlotName, Word> = HashMap::new();
     let mut map_updates: HashMap<&StorageSlotName, Word> = HashMap::new();
+    let mut removed: HashSet<&StorageSlotName> = HashSet::new();
 
     for (slot_name, value_patch) in patch.values() {
-        value_updates.insert(slot_name, value_patch.value().unwrap_or(EMPTY_WORD));
+        match value_patch.value() {
+            Some(value) => {
+                value_updates.insert(slot_name, value);
+            },
+            None => {
+                removed.insert(slot_name);
+            },
+        }
     }
 
     for (slot_name, map_patch) in patch.maps() {
         let Some(map_patch_entries) = map_patch.entries() else {
+            removed.insert(slot_name);
             continue;
         };
-        if map_patch_entries.is_empty() {
+        // Empty entries are a no-op for updates, but creating a map slot with no entries is
+        // meaningful and must still produce the slot.
+        if map_patch_entries.is_empty() && map_patch.patch_op() != StoragePatchOperation::Create {
             continue;
         }
 
@@ -208,16 +223,27 @@ pub(super) fn apply_storage_patch(
         map_updates.insert(slot_name, storage_map.root());
     }
 
-    let slots = Vec::from_iter(header.slots().map(|slot| {
-        let slot_name = slot.name();
-        if let Some(&new_value) = value_updates.get(slot_name) {
-            StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
-        } else if let Some(&new_root) = map_updates.get(slot_name) {
-            StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
-        } else {
-            slot.clone()
-        }
-    }));
+    let mut slots =
+        Vec::from_iter(header.slots().filter(|slot| !removed.contains(slot.name())).map(|slot| {
+            let slot_name = slot.name();
+            if let Some(new_value) = value_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
+            } else if let Some(new_root) = map_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
+            } else {
+                slot.clone()
+            }
+        }));
+
+    // Any updates left over belong to slots created by the patch.
+    for (slot_name, value) in value_updates {
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Value, value));
+    }
+    for (slot_name, root) in map_updates {
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Map, root));
+    }
+
+    slots.sort_by_key(StorageSlotHeader::id);
 
     AccountStorageHeader::new(slots).map_err(|e| {
         DatabaseError::DataCorrupted(format!("Failed to create storage header: {e:?}"))

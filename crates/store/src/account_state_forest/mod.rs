@@ -195,11 +195,15 @@ impl<B: Backend> AccountStateForest<B> {
             .collect()
     }
 
-    fn cache_storage_map_keys_from_patch(&mut self, patch: &AccountPatch) {
+    fn cache_hashed_keys_from_patch(&mut self, patch: &AccountPatch) {
         let raw_keys = patch.storage().maps().flat_map(|(_slot_name, map_patch)| {
             map_patch.entries().into_iter().flat_map(|e| e.as_map().keys().copied())
         });
         self.cache_storage_map_keys(raw_keys);
+
+        let raw_keys = patch.vault().iter().map(|(vault_key, _)| *vault_key);
+        self.vault_key_cache
+            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
     }
 
     pub(crate) fn cache_storage_map_keys(&self, raw_keys: impl IntoIterator<Item = StorageMapKey>) {
@@ -544,10 +548,7 @@ impl<B: Backend> AccountStateForest<B> {
             self.update_account_storage(block_num, account_id, patch.storage());
         }
 
-        self.cache_storage_map_keys_from_patch(patch);
-        let raw_keys = patch.vault().iter().map(|(vault_key, _)| *vault_key);
-        self.vault_key_cache
-            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
+        self.cache_hashed_keys_from_patch(patch);
     }
 
     // ASSET VAULT DELTA PROCESSING

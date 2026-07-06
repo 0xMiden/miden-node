@@ -83,10 +83,8 @@ impl BatchBuilder {
         batch_prover_url: Option<Url>,
         intervals: BatchIntervals,
     ) -> anyhow::Result<Self> {
-        let batch_prover = batch_prover_url.map_or(
-            Ok(BatchProver::local(MIN_PROOF_SECURITY_LEVEL)),
-            BatchProver::remote,
-        )?;
+        let batch_prover = batch_prover_url
+            .map_or(Ok(BatchProver::local(MIN_PROOF_SECURITY_LEVEL)), BatchProver::remote)?;
 
         Ok(Self {
             active_jobs: JoinSet::new(),

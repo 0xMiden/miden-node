@@ -108,9 +108,15 @@ impl ProveRequest for LocalTransactionProver {
     type Output = ProvenTransaction;
 
     async fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
-        LocalTransactionProver::prove(self, input).await.map_err(|e| {
-            tonic::Status::internal(e.as_report_context("failed to prove transaction"))
+        spawn_blocking_in_current_span(move || {
+            futures::executor::block_on(LocalTransactionProver::default().prove(input)).map_err(
+                |e| tonic::Status::internal(e.as_report_context("failed to prove transaction")),
+            )
         })
+        .await
+        .map_err(|e| {
+            tonic::Status::internal(e.as_report_context("transaction prover task panicked"))
+        })?
     }
 }
 

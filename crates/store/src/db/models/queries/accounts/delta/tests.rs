@@ -12,11 +12,13 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     AccountId,
+    AccountIdVersion,
     AccountPatch,
     AccountStoragePatch,
     AccountType,
     AccountUpdateDetails,
     AccountVaultPatch,
+    AssetCallbackFlag,
     StorageMap,
     StorageMapKey,
     StorageMapPatch,
@@ -25,7 +27,7 @@ use miden_protocol::account::{
     StorageSlotPatch,
     StorageValuePatch,
 };
-use miden_protocol::asset::{Asset, AssetCallbackFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::testing::account_id::{
@@ -127,7 +129,7 @@ fn optimized_delta_matches_full_account_method() {
     ];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -326,7 +328,7 @@ fn optimized_delta_updates_non_empty_vault() {
         vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc vault push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc vault push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -372,7 +374,7 @@ fn optimized_delta_updates_non_empty_vault() {
         Asset::Fungible(FungibleAsset::new(faucet_id_1, ADDED_AMOUNT_BLOCK_2).unwrap());
     let mut vault_patch = AccountVaultPatch::default();
     vault_patch.insert_asset(added_asset);
-    vault_patch.remove_asset(removed_asset.vault_key());
+    vault_patch.remove_asset(removed_asset.id());
 
     let final_nonce =
         Felt::new_unchecked(full_account_before.nonce().as_canonical_u64() + NONCE_DELTA);
@@ -468,12 +470,17 @@ fn optimized_delta_updates_preserve_callback_flag() {
 
     let mut conn = setup_test_db();
 
-    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
+    let faucet_id = AccountId::dummy(
+        [41u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Enabled,
+    );
 
     let component_storage =
         vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc vault push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc vault push.1 end")
         .unwrap();
     let component = AccountComponent::new(
         account_component_code,
@@ -516,10 +523,8 @@ fn optimized_delta_updates_preserve_callback_flag() {
     let apply_callback_delta = |conn: &mut SqliteConnection, block, amount| {
         let prev = select_full_account(conn, account.id()).expect("load account");
 
-        let callback_template = FungibleAsset::new(faucet_id, amount)
-            .unwrap()
-            .with_callbacks(AssetCallbackFlag::Enabled);
-        let vault_key = callback_template.vault_key();
+        let callback_template = FungibleAsset::new(faucet_id, amount).unwrap();
+        let vault_key = callback_template.id();
 
         // The patch carries the absolute end-state, so accumulate the previous balance for this
         // asset and add the new amount on top.
@@ -527,11 +532,8 @@ fn optimized_delta_updates_preserve_callback_flag() {
             Some(Asset::Fungible(f)) => f.amount().as_u64(),
             _ => 0,
         };
-        let absolute_asset = Asset::Fungible(
-            FungibleAsset::new(faucet_id, prev_amount + amount)
-                .unwrap()
-                .with_callbacks(AssetCallbackFlag::Enabled),
-        );
+        let absolute_asset =
+            Asset::Fungible(FungibleAsset::new(faucet_id, prev_amount + amount).unwrap());
         let mut vault_patch = AccountVaultPatch::default();
         vault_patch.insert_asset(absolute_asset);
         let final_nonce = Felt::new_unchecked(prev.nonce().as_canonical_u64() + NONCE_DELTA);
@@ -623,7 +625,7 @@ fn optimized_delta_updates_storage_map_header() {
         vec![StorageSlot::with_map(StorageSlotName::mock(SLOT_INDEX_MAP), storage_map)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc map push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc map push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -726,8 +728,12 @@ fn upsert_private_account() {
     insert_block_header(&mut conn, block_num);
 
     // Create a private account ID
-    let account_id =
-        AccountId::dummy(ACCOUNT_ID_SEED, AccountIdVersion::Version1, AccountType::Private);
+    let account_id = AccountId::dummy(
+        ACCOUNT_ID_SEED,
+        AccountIdVersion::Version1,
+        AccountType::Private,
+        AssetCallbackFlag::Disabled,
+    );
 
     let account_commitment = Word::from([
         Felt::new_unchecked(COMMITMENT_WORDS[0]),
@@ -794,7 +800,7 @@ fn upsert_full_state_delta() {
         vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), slot_value)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc bar push.2 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc bar push.2 end")
         .unwrap();
 
     let component = AccountComponent::new(

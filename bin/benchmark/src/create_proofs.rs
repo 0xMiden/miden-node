@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use miden_processor::LoadedMastForest;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
@@ -22,7 +23,7 @@ use miden_protocol::account::{
     PartialAccount,
     StorageMapKey,
 };
-use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, FungibleAsset, TokenSymbol};
+use miden_protocol::asset::{Asset, AssetId, AssetWitness, FungibleAsset, TokenSymbol};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::RandomCoin;
@@ -37,7 +38,7 @@ use miden_protocol::transaction::{
     TransactionArgs,
 };
 use miden_protocol::utils::serde::Serializable;
-use miden_protocol::{Felt, MastForest, Word};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
@@ -52,7 +53,7 @@ use miden_tx::{
     TransactionExecutor,
     TransactionMastStore,
 };
-use rand::Rng;
+use rand::RngExt;
 use rayon::prelude::*;
 use url::Url;
 
@@ -534,7 +535,7 @@ impl DataStore for BenchmarkDataStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        vault_keys: BTreeSet<AssetId>,
     ) -> Result<Vec<AssetWitness>, DataStoreError> {
         let account = self.get_account(account_id)?;
 
@@ -564,7 +565,7 @@ impl DataStore for BenchmarkDataStore {
 }
 
 impl MastForestStore for BenchmarkDataStore {
-    fn get(&self, procedure_hash: &Word) -> Option<Arc<MastForest>> {
+    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- [BREAKING] Updated to miden-vm v0. and miden-crypto v0.27. The minimum supported Rust version is now 1.96. Asset vault keys are now typed `AssetId`s, the asset callback flag moved into the faucet's account ID, and the VM's proving futures are no longer `Send` (they are now driven on blocking threads). The `LargeSmt` on-disk layout changed (in-memory horizon moved from depth 24 to depth 16) ([#XXXX](https://github.com/0xMiden/node/pull/XXXX)).
+
 - [BREAKING] Updated `miden-protocol` dependencies to use the `next` branch (v0.16). Block and transaction account updates now use the absolute `AccountPatch` representation instead of the relative `AccountDelta`, and the `miden-tx-batch-prover` crate was renamed to `miden-tx-batch` ([#2282](https://github.com/0xMiden/node/pull/2282)).
 
 ## v0.15.0 (2026-06-10)
@@ -40,7 +42,7 @@
 ## v0.15.0-rc.0 (2026-06-03)
 
 This release is a major step in distributing the node and changes how node components are packaged, bootstrapped, and
-operated. 
+operated.
 
 ### RPC API
 

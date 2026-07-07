@@ -338,7 +338,7 @@ fn decode_attachments(bytes: &[u8]) -> Result<NoteAttachments, ConversionError> 
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType};
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
 
     use super::*;
 
@@ -347,7 +347,12 @@ mod tests {
         // Build a NoteHeader with a known details_commitment and metadata.
         let details_commitment =
             NoteDetailsCommitment::from_raw(Word::try_from([1u64, 2, 3, 4]).unwrap());
-        let sender = AccountId::dummy([1; 15], AccountIdVersion::Version1, AccountType::Public);
+        let sender = AccountId::dummy(
+            [1; 15],
+            AccountIdVersion::Version1,
+            AccountType::Public,
+            AssetCallbackFlag::Disabled,
+        );
         let metadata = NoteMetadata::new(
             PartialNoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::from(7u32)),
             &NoteAttachments::default(),

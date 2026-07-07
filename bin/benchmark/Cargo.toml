@@ -20,7 +20,10 @@ workspace = true
 anyhow           = { workspace = true }
 clap             = { features = ["env", "string"], workspace = true }
 fs-err           = { workspace = true }
+futures          = { workspace = true }
 miden-node-proto = { workspace = true }
+miden-node-utils = { workspace = true }
+miden-processor  = { workspace = true }                                   # TODO: removable by re-exporting LoadedMastForest from miden-tx
 miden-protocol   = { features = ["std", "testing"], workspace = true }
 miden-standards  = { workspace = true }
 miden-tx         = { features = ["concurrent", "std"], workspace = true }

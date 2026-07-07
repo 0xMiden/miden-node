@@ -121,7 +121,7 @@ const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize =
     NonZeroUsize::new(1_000).expect("literal is non-zero");
 
 /// Default duration after which an idle network account actor will deactivate.
-const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
 /// Default per-request timeout for the remote transaction prover.
 const DEFAULT_PROVER_TIMEOUT: Duration = Duration::from_secs(10);

@@ -61,8 +61,8 @@ use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyMana
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
-use rand::Rng;
 use rand::seq::SliceRandom;
+use rand::{Rng, RngExt};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::prelude::ParallelSlice;
 use tokio::fs;
@@ -530,7 +530,10 @@ fn create_account(
         let component_storage =
             vec![StorageSlot::with_map(benchmark_storage_map_slot(), storage_map)];
         let component_code = CodeBuilder::default()
-            .compile_component_code("benchmark::storage_map", "pub proc noop push.0 drop end")
+            .compile_component_code(
+                "benchmark::storage_map",
+                "@account_procedure pub proc noop push.0 drop end",
+            )
             .unwrap();
         let component = AccountComponent::new(
             component_code,
@@ -698,7 +701,7 @@ fn create_existing_account_patch(
     for asset in note_assets.iter() {
         let updated_asset = account
             .vault()
-            .get(asset.vault_key())
+            .get(asset.id())
             .expect("note asset should be present in the account vault");
         vault_patch.insert_asset(updated_asset);
     }

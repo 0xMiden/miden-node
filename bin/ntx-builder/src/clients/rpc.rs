@@ -27,7 +27,7 @@ use miden_protocol::account::{
     StorageMapWitness,
     StorageSlotName,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
+use miden_protocol::asset::{Asset, AssetVault, AssetId, AssetWitness, PartialVault};
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::{AccountInputs, ProvenTransaction, TransactionInputs};
@@ -281,7 +281,7 @@ impl RpcClient {
     pub async fn get_vault_asset_witnesses(
         &self,
         account_id: AccountId,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        vault_keys: BTreeSet<AssetId>,
         block_num: Option<BlockNumber>,
     ) -> Result<Vec<AssetWitness>, RpcError> {
         if vault_keys.is_empty() {

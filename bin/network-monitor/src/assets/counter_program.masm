@@ -16,6 +16,7 @@ const OWNER_SLOT = word("miden::monitor::counter_contract::owner")
 
 # Increment function with note authentication
 # => []
+@account_procedure
 pub proc increment
     # Ensure the note sender matches the authorized wallet.
     push.OWNER_SLOT[0..2] exec.active_account::get_item
@@ -45,6 +46,7 @@ end
 
 # Get the counter (no auth required)
 # => [count]
+@account_procedure
 pub proc get_count
     push.COUNTER_SLOT[0..2] exec.active_account::get_item
     # => [count, 0, 0, 0]

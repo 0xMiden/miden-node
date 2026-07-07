@@ -229,7 +229,7 @@ fn forest_versions_are_continuous_for_sequential_updates() {
     let slot_name = StorageSlotName::mock(9);
     let raw_key = StorageMapKey::from_index(1u32);
     let storage_key = raw_key.hash().into();
-    let asset_key: Word = FungibleAsset::new(faucet_id, 0).unwrap().vault_key().into();
+    let asset_key: Word = FungibleAsset::new(faucet_id, 0).unwrap().id().into();
 
     for i in 1..=3u32 {
         let block_num = BlockNumber::from(i);
@@ -507,7 +507,7 @@ fn storage_map_empty_entries_query() {
     let component_storage = vec![StorageSlot::with_map(slot_name.clone(), storage_map)];
 
     let component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc test push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc test push.1 end")
         .unwrap();
     let account_component = AccountComponent::new(
         component_code,
@@ -708,7 +708,7 @@ fn prune_removes_smt_roots_from_forest() {
     assert!(forest.get_storage_map_root(account_id, &slot_name, pruned_block).is_none());
     assert!(forest.get_storage_map_root(account_id, &slot_name, retained_block).is_some());
 
-    let asset_key: Word = FungibleAsset::new(faucet_id, 0).unwrap().vault_key().into();
+    let asset_key: Word = FungibleAsset::new(faucet_id, 0).unwrap().id().into();
     let retained_tree = forest.tree_id_for_vault_root(account_id, retained_block);
     let pruned_tree = forest.tree_id_for_vault_root(account_id, pruned_block);
     assert_matches!(forest.forest.open(retained_tree, asset_key), Ok(_));

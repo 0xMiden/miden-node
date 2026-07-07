@@ -52,10 +52,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
     }
 
     // check account balance, and ensure ordering is retained
-    let faucet_vault_key = miden_protocol::asset::AssetVaultKey::new_fungible(
-        native_faucet.id(),
-        miden_protocol::asset::AssetCallbackFlag::Disabled,
-    );
+    let faucet_vault_key = miden_protocol::asset::AssetId::new_fungible(native_faucet.id());
     assert_matches!(wallet1.vault().get_balance(faucet_vault_key), Ok(val) => {
         assert_eq!(val.as_u64(), 999_000);
     });

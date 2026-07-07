@@ -24,7 +24,7 @@ pub(crate) fn insert_into_leaf(
                 Ok(Some(old_value))
             } else {
                 let mut pairs = vec![*kv_pair, (key, value)];
-                pairs.sort_by(|(key_1, _), (key_2, _)| key_1.cmp(key_2));
+                pairs.sort_by_key(|(key, _)| *key);
                 *leaf = SmtLeaf::Multiple(pairs);
                 Ok(None)
             }

@@ -20,7 +20,7 @@ use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use crate::COMPONENT;

@@ -20,6 +20,7 @@ use miden_protocol::account::{
     AccountType,
     AccountUpdateDetails,
     AccountVaultPatch,
+    AssetCallbackFlag,
     StorageMap,
     StorageMapKey,
     StorageMapPatch,
@@ -124,7 +125,12 @@ fn reconstruct_account_storage_at_block(
 
 fn create_test_account_with_storage() -> (Account, AccountId) {
     // Create a simple public account with one value storage slot
-    let account_id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Public);
+    let account_id = AccountId::dummy(
+        [1u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
 
     let storage_value = Word::from([
         Felt::new_unchecked(1),
@@ -135,7 +141,7 @@ fn create_test_account_with_storage() -> (Account, AccountId) {
     let component_storage = vec![StorageSlot::with_value(StorageSlotName::mock(0), storage_value)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -197,7 +203,7 @@ fn create_account_with_map_storage(
     let component_storage = vec![StorageSlot::with_map(slot_name, storage_map)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc map push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc map push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -246,7 +252,12 @@ fn test_select_account_header_at_block_returns_none_for_nonexistent() {
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
 
-    let account_id = AccountId::dummy([99u8; 15], AccountIdVersion::Version1, AccountType::Public);
+    let account_id = AccountId::dummy(
+        [99u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
 
     // Query for a non-existent account
     let result =
@@ -453,7 +464,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         vec![StorageSlot::with_value(StorageSlotName::mock(0), storage_value_modified)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component_2 = AccountComponent::new(
@@ -533,7 +544,12 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     let mut conn = setup_test_db();
 
     // Create account with 3 storage slots
-    let account_id = AccountId::dummy([2u8; 15], AccountIdVersion::Version1, AccountType::Public);
+    let account_id = AccountId::dummy(
+        [2u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
 
     let slot_value_1 = Word::from([1, 2, 3, 4u32]);
     let slot_value_2 = Word::from([5, 6, 7, 8u32]);
@@ -546,7 +562,7 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     ];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -609,10 +625,15 @@ fn test_upsert_accounts_with_empty_storage() {
     let mut conn = setup_test_db();
 
     // Create account with no component storage slots (only auth slot)
-    let account_id = AccountId::dummy([3u8; 15], AccountIdVersion::Version1, AccountType::Public);
+    let account_id = AccountId::dummy(
+        [3u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc foo push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -753,7 +774,7 @@ fn test_select_latest_account_storage_multiple_slots() {
     ];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "pub proc map push.1 end")
+        .compile_component_code("test::interface", "@account_procedure pub proc map push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -906,7 +927,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
 
     // Insert vault asset at block 1: vault_key_1 = 1000 tokens
     let asset_v1 = Asset::Fungible(FungibleAsset::new(faucet_id, 1000).unwrap());
-    let vault_key_1 = asset_v1.vault_key();
+    let vault_key_1 = asset_v1.id();
 
     insert_account_vault_asset(&mut conn, account_id, block_1, vault_key_1, Some(asset_v1))
         .expect("insert vault asset failed");
@@ -919,7 +940,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     // Add a second vault_key at block 2 (different faucet for different vault key)
     let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
     let asset_key2 = Asset::Fungible(FungibleAsset::new(faucet_id_2, 500).unwrap());
-    let vault_key_2 = asset_key2.vault_key();
+    let vault_key_2 = asset_key2.id();
     insert_account_vault_asset(&mut conn, account_id, block_2, vault_key_2, Some(asset_key2))
         .expect("insert second vault asset failed");
 
@@ -993,7 +1014,7 @@ fn test_select_account_vault_at_block_bounds_read_to_limit() {
     for i in 0..asset_count {
         let details = NonFungibleAssetDetails::new(faucet_id, vec![i as u8, (i >> 8) as u8]);
         let asset = Asset::NonFungible(NonFungibleAsset::new(&details));
-        insert_account_vault_asset(&mut conn, account_id, block_1, asset.vault_key(), Some(asset))
+        insert_account_vault_asset(&mut conn, account_id, block_1, asset.id(), Some(asset))
             .expect("insert vault asset failed");
     }
 
@@ -1010,7 +1031,7 @@ fn test_select_account_vault_at_block_exponential_updates() {
     const BLOCK_COUNT: u32 = 5;
 
     use assert_matches::assert_matches;
-    use miden_protocol::asset::{AssetCallbackFlag, AssetVaultKey, FungibleAsset};
+    use miden_protocol::asset::{AssetId, FungibleAsset};
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 
     let mut conn = setup_test_db();
@@ -1037,7 +1058,7 @@ fn test_select_account_vault_at_block_exponential_updates() {
             .expect("upsert_accounts failed");
     }
 
-    let vault_key = AssetVaultKey::new_fungible(faucet_id, AssetCallbackFlag::Disabled);
+    let vault_key = AssetId::new_fungible(faucet_id);
 
     for (index, block) in blocks.iter().enumerate() {
         let amount = 1u64 << index;
@@ -1097,7 +1118,7 @@ fn test_select_account_vault_at_block_with_deletion() {
 
     // Insert vault asset at block 1
     let asset = Asset::Fungible(FungibleAsset::new(faucet_id, 1000).unwrap());
-    let vault_key = asset.vault_key();
+    let vault_key = asset.id();
 
     insert_account_vault_asset(&mut conn, account_id, block_1, vault_key, Some(asset))
         .expect("insert vault asset failed");
@@ -1172,7 +1193,7 @@ fn make_full_state_update(account: &Account) -> BlockAccountUpdate {
 /// The `push_value` must be different for each variant to produce a distinct MAST root and thus a
 /// distinct [`AccountCode::commitment`].
 fn build_account_with_code(push_value: u32) -> Account {
-    let code_src = format!("pub proc variant push.{push_value} end");
+    let code_src = format!("@account_procedure pub proc variant push.{push_value} end");
     let component_code = CodeBuilder::default()
         .compile_component_code("test::code_prune", &code_src)
         .unwrap();
@@ -1355,10 +1376,30 @@ fn network_accounts_subset_classifies_correctly() {
 
     // Three accounts with distinct classifications. AccountIds are dummies — the queries only care
     // about the (account_id, network_account_type, is_latest) tuple, not protocol-level validity.
-    let network_id = AccountId::dummy([1u8; 15], AccountIdVersion::Version1, AccountType::Public);
-    let public_id = AccountId::dummy([2u8; 15], AccountIdVersion::Version1, AccountType::Public);
-    let private_id = AccountId::dummy([3u8; 15], AccountIdVersion::Version1, AccountType::Private);
-    let unknown_id = AccountId::dummy([4u8; 15], AccountIdVersion::Version1, AccountType::Public);
+    let network_id = AccountId::dummy(
+        [1u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let public_id = AccountId::dummy(
+        [2u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
+    let private_id = AccountId::dummy(
+        [3u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Private,
+        AssetCallbackFlag::Disabled,
+    );
+    let unknown_id = AccountId::dummy(
+        [4u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
 
     for (id, ty) in [
         (network_id, NetworkAccountType::Network),

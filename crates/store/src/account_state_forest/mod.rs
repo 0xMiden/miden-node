@@ -21,15 +21,15 @@ use miden_protocol::account::{
     StorageMapKeyHash,
     StorageSlotName,
 };
-use miden_protocol::asset::{Asset, AssetVaultKey, AssetVaultKeyHash};
+use miden_protocol::asset::{Asset, AssetId, AssetIdHash};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::{
-    ForestOperation,
     LargeSmtForest,
     LargeSmtForestError,
     LineageId,
     RootInfo,
     SMT_DEPTH,
+    SmtForestOperation,
     SmtUpdateBatch,
     TreeId,
 };
@@ -94,7 +94,7 @@ pub(crate) struct AccountStateForest<B: Backend = ForestInMemoryBackend> {
     storage_map_key_cache: LruCache<StorageMapKeyHash, StorageMapKey>,
 
     /// Reverse lookup from hashed SMT vault keys to raw vault keys.
-    pub(crate) vault_key_cache: LruCache<AssetVaultKeyHash, AssetVaultKey>,
+    pub(crate) vault_key_cache: LruCache<AssetIdHash, AssetId>,
 }
 
 #[cfg(test)]
@@ -182,14 +182,14 @@ impl<B: Backend> AccountStateForest<B> {
 
     fn build_forest_operations(
         entries: impl IntoIterator<Item = (Word, Word)>,
-    ) -> Vec<ForestOperation> {
+    ) -> Vec<SmtForestOperation> {
         entries
             .into_iter()
             .map(|(key, value)| {
                 if value == EMPTY_WORD {
-                    ForestOperation::remove(key)
+                    SmtForestOperation::remove(key)
                 } else {
-                    ForestOperation::insert(key, value)
+                    SmtForestOperation::insert(key, value)
                 }
             })
             .collect()
@@ -220,7 +220,7 @@ impl<B: Backend> AccountStateForest<B> {
         &mut self,
         lineage: LineageId,
         block_num: BlockNumber,
-        operations: Vec<ForestOperation>,
+        operations: Vec<SmtForestOperation>,
     ) -> Word {
         let updates = if operations.is_empty() {
             SmtUpdateBatch::empty()
@@ -336,7 +336,7 @@ impl<B: Backend> AccountStateForest<B> {
         let hashed_entries = entries
             .map(|entry| {
                 let entry = entry.map_err(Self::map_forest_error_to_witness)?;
-                Ok((AssetVaultKeyHash::from_raw(entry.key), entry.value))
+                Ok((AssetIdHash::from_raw(entry.key), entry.value))
             })
             .collect::<Result<Vec<_>, WitnessError>>()?;
 
@@ -352,7 +352,7 @@ impl<B: Backend> AccountStateForest<B> {
             .flatten()
             .zip(hashed_entries)
             .map(|(raw_key, (_hashed_key, value))| {
-                Asset::from_key_value(raw_key, value).map_err(WitnessError::from)
+                Asset::from_id_and_value(raw_key, value).map_err(WitnessError::from)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -474,7 +474,7 @@ impl<B: Backend> AccountStateForest<B> {
             .zip(hashed_entries)
             .map(|(raw_key, (_hashed_key, value))| (raw_key, value))
             .collect::<Vec<_>>();
-        entries.sort_by(|(key_a, _), (key_b, _)| key_a.cmp(key_b));
+        entries.sort_by_key(|(key, _)| *key);
 
         Ok(AccountStorageMapResult::Details(AccountStorageMapDetails::from_forest_entries(
             slot_name, entries,
@@ -595,7 +595,7 @@ impl<B: Backend> AccountStateForest<B> {
             return;
         }
 
-        let mut entries: Vec<(AssetVaultKey, Word)> = Vec::with_capacity(vault_patch.num_assets());
+        let mut entries: Vec<(AssetId, Word)> = Vec::with_capacity(vault_patch.num_assets());
 
         for (vault_key, value) in vault_patch.iter() {
             entries.push((*vault_key, *value));
@@ -690,7 +690,7 @@ impl<B: Backend> AccountStateForest<B> {
     ) {
         assert!(!vault_patch.is_empty(), "expected the patch not to be empty");
 
-        let mut entries: Vec<(AssetVaultKey, Word)> = Vec::new();
+        let mut entries: Vec<(AssetId, Word)> = Vec::new();
 
         for (vault_key, value) in vault_patch.iter() {
             entries.push((*vault_key, *value));

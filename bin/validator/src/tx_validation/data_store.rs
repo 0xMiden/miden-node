@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain, TransactionInputs};
@@ -67,7 +67,7 @@ impl DataStore for TransactionInputsDataStore {
         &self,
         _account_id: AccountId,
         vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        vault_keys: BTreeSet<AssetId>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             // Retrieve native and foreign account asset witnesses from the advice inputs.
@@ -101,7 +101,7 @@ impl DataStore for TransactionInputsDataStore {
 }
 
 impl MastForestStore for TransactionInputsDataStore {
-    fn get(&self, procedure_hash: &Word) -> Option<std::sync::Arc<miden_protocol::MastForest>> {
+    fn get(&self, procedure_hash: &Word) -> Option<miden_processor::LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
 }

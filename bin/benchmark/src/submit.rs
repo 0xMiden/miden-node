@@ -156,7 +156,7 @@ async fn submit_all(
 
     let total = txs.len();
     let mut set = tokio::task::JoinSet::new();
-    for (i, (tx, inputs)) in txs.into_iter().zip(tx_inputs.into_iter()).enumerate() {
+    for (i, (tx, inputs)) in txs.into_iter().zip(tx_inputs).enumerate() {
         let permit = semaphore.clone().acquire_owned().await.unwrap();
         // Round-robin across the connection pool so concurrent submissions ride separate HTTP/2
         // sockets instead of multiplexing over one channel.
@@ -218,7 +218,7 @@ async fn submit_sequential(
     let total = txs.len();
     let mut outcomes = Vec::with_capacity(total);
 
-    for (i, (tx, inputs)) in txs.into_iter().zip(tx_inputs.into_iter()).enumerate() {
+    for (i, (tx, inputs)) in txs.into_iter().zip(tx_inputs).enumerate() {
         let request = proto::transaction::ProvenTransaction {
             transaction: tx.to_bytes(),
             transaction_inputs: Some(inputs),

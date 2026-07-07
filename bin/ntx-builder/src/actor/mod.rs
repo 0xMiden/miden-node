@@ -554,32 +554,42 @@ impl AccountActor {
                 failed_notes: failed,
                 fetched_scripts,
             }) => {
+                // Partition failed notes by whether the checker dropped them purely because the
+                // combined per-tx cycle budget was exhausted (`num_cycles().is_some()`). Such notes
+                // are individually consumable, so we leave them untouched so `available_notes`
+                // re-selects them next round, letting a large note land in its own transaction
+                // once its batch-mates have committed.
+                //
+                // Notes with `num_cycles() == None` are genuine consumability failures and are
+                // penalized as usual.
+                let (deferred, genuine) = partition_failed_notes(failed);
+
                 tracing::info!(
                     target: LOG_TARGET,
                     %account_id,
                     %tx_id,
-                    num_failed = failed.len(),
-                    "network transaction executed with some failed notes",
+                    num_genuine_failed = genuine.len(),
+                    num_deferred = deferred.len(),
+                    "network transaction executed",
                 );
                 self.cache_note_scripts(fetched_scripts).await;
 
-                // A tx carries work only if at least one candidate note survived consumability
-                // filtering; if every note failed there is nothing on-chain to wait for.
-                let all_notes_failed = failed.len() == notes.len();
+                if !deferred.is_empty() {
+                    log_deferred_notes(deferred);
+                }
 
-                if !failed.is_empty() {
-                    let failed_notes = log_failed_notes(failed);
+                if !genuine.is_empty() {
+                    let failed_notes = log_failed_notes(genuine);
                     self.mark_notes_failed(&failed_notes, block_num).await;
                 }
 
-                if all_notes_failed {
-                    ActorMode::NoViableNotes
-                } else {
-                    ActorMode::WaitForBlock {
-                        submitted_tx_id: tx_id,
-                        submitted_at: block_num,
-                        pending_patch: account_patch,
-                    }
+                // A non-empty successful set is guaranteed by `filter_notes` (it returns
+                // `AllNotesFailed` otherwise), so a transaction was always submitted here and
+                // carries real work to wait for.
+                ActorMode::WaitForBlock {
+                    submitted_tx_id: tx_id,
+                    submitted_at: block_num,
+                    pending_patch: account_patch,
                 }
             },
             // Transaction execution failed.
@@ -659,6 +669,35 @@ impl AccountActor {
         }
         // Wait for the coordinator to confirm the DB write.
         let _ = ack_rx.await;
+    }
+}
+
+/// Splits failed notes into `(deferred, genuine)`.
+///
+/// `deferred` notes were dropped by the consumability checker only because the combined per-tx
+/// cycle budget was exhausted. They are individually consumable and must not be penalized.
+/// `genuine` notes (`num_cycles() == None`) failed consumability for other reasons and are
+/// penalized normally.
+fn partition_failed_notes(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<FailedNote>) {
+    failed.into_iter().partition(|note| note.num_cycles().is_some())
+}
+
+/// Logs each note deferred because the combined per-tx cycle budget was exhausted.
+///
+/// These notes are individually consumable and are intentionally *not* penalized (no
+/// `(nullifier, error)` pairs are returned), so they remain eligible for selection in a subsequent
+/// round with their `attempt_count` untouched.
+fn log_deferred_notes(deferred: Vec<FailedNote>) {
+    for note in deferred {
+        tracing::info!(
+            target: LOG_TARGET,
+            {
+                note.id = %note.note().id(),
+                nullifier = %note.note().nullifier(),
+                num_cycles = ?note.num_cycles(),
+            },
+            "note deferred: exceeded per-tx cycle budget, will retry next round",
+        );
     }
 }
 
@@ -850,5 +889,37 @@ mod tests {
 
         assert_ne!(one.root(), thirty.root(), "distinct deltas must yield distinct scripts");
         assert_ne!(thirty.root(), max.root(), "distinct deltas must yield distinct scripts");
+    }
+
+    /// The success-branch classification must route notes dropped only for the per-tx cycle budget
+    /// (`num_cycles = Some`) to the deferred (un-penalized) set, while genuine consumability
+    /// failures (`num_cycles = None`) stay in the penalized set. A misclassification here would
+    /// either permanently drop consumable notes or stop penalizing real failures.
+    #[test]
+    fn partition_failed_notes_defers_only_cycle_limited_notes() {
+        use miden_tx::TransactionExecutorError;
+
+        use crate::test_utils::mock_single_target_note;
+
+        let account_id = mock_network_account_id();
+        let deferred_note = mock_single_target_note(account_id, 1).into_note();
+        let genuine_note = mock_single_target_note(account_id, 2).into_note();
+        let deferred_id = deferred_note.id();
+        let genuine_id = genuine_note.id();
+
+        let err = || TransactionExecutorError::AccountUpdateCommitment("test error");
+        let failed = vec![
+            // Dropped because the combined cycle budget was exhausted: carries a cycle count.
+            FailedNote::new(deferred_note, err(), Some(1234)),
+            // A genuine consumability failure: no cycle count.
+            FailedNote::new(genuine_note, err(), None),
+        ];
+
+        let (deferred, genuine) = partition_failed_notes(failed);
+
+        assert_eq!(deferred.len(), 1, "exactly the cycle-limited note must be deferred");
+        assert_eq!(deferred[0].note().id(), deferred_id);
+        assert_eq!(genuine.len(), 1, "exactly the genuine failure must be penalized");
+        assert_eq!(genuine[0].note().id(), genuine_id);
     }
 }

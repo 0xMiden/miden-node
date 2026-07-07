@@ -12,8 +12,6 @@ use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_recor
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{BatchId, ProposedBatch, ProvenBatch};
 use miden_protocol::transaction::TransactionId;
-use miden_remote_prover_client::RemoteBatchProver;
-use miden_tx_batch_prover::LocalBatchProver;
 use tokio::task::{JoinError, JoinSet};
 use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{Instrument, Span};
@@ -24,6 +22,10 @@ use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{BuildBatchError, StoreError};
 use crate::mempool::SharedMempool;
 use crate::{COMPONENT, LOG_TARGET};
+
+mod remote_prover;
+use remote_prover::BatchProver;
+pub use remote_prover::RemoteProverError;
 
 // BATCH BUILDER
 // ================================================================================================
@@ -80,17 +82,17 @@ impl BatchBuilder {
         num_workers: NonZeroUsize,
         batch_prover_url: Option<Url>,
         intervals: BatchIntervals,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let batch_prover = batch_prover_url
-            .map_or(BatchProver::local(MIN_PROOF_SECURITY_LEVEL), BatchProver::remote);
+            .map_or(Ok(BatchProver::local(MIN_PROOF_SECURITY_LEVEL)), BatchProver::remote)?;
 
-        Self {
+        Ok(Self {
             active_jobs: JoinSet::new(),
             num_workers,
             intervals,
             batch_prover,
             store,
-        }
+        })
     }
 
     /// Starts the [`BatchBuilder`], creating and proving batches dynamically.
@@ -399,33 +401,6 @@ impl BatchJob {
             .map_err(BuildBatchError::MempoolPoisoned)?
             .rollback_batch(batch_id);
         Ok(())
-    }
-}
-
-// BATCH PROVER
-// ================================================================================================
-
-/// Represents a batch prover which can be either local or remote.
-#[derive(Clone)]
-enum BatchProver {
-    Local(LocalBatchProver),
-    Remote(RemoteBatchProver),
-}
-
-impl BatchProver {
-    const fn kind(&self) -> &'static str {
-        match self {
-            BatchProver::Local(_) => "local",
-            BatchProver::Remote(_) => "remote",
-        }
-    }
-
-    fn local(security_level: u32) -> Self {
-        Self::Local(LocalBatchProver::new(security_level))
-    }
-
-    fn remote(endpoint: impl Into<String>) -> Self {
-        Self::Remote(RemoteBatchProver::new(endpoint))
     }
 }
 

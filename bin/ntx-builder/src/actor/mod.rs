@@ -19,13 +19,12 @@ use miden_protocol::account::{Account, AccountDelta, AccountId};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteScript, Nullifier};
 use miden_protocol::transaction::{TransactionId, TransactionScript};
-use miden_remote_prover_client::RemoteTransactionProver;
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::FailedNote;
 use tokio::sync::{Notify, Semaphore, mpsc};
 
 use crate::chain_state::{ChainState, SharedChainState};
-use crate::clients::RpcClient;
+use crate::clients::{RemoteTransactionProver, RpcClient};
 use crate::db::Db;
 use crate::{LOG_TARGET, NoteError};
 
@@ -159,7 +158,8 @@ impl AccountActorContext {
                     Duration::from_secs(30),
                 )
                 .expect("rpc client should be constructed"),
-                prover: RemoteTransactionProver::new(url.as_str()),
+                prover: RemoteTransactionProver::new(url.clone(), Duration::from_secs(10))
+                    .expect("prover client should be constructed"),
             },
             state: State {
                 db: db.clone(),

@@ -118,7 +118,7 @@ impl Sequencer {
             self.batch_workers,
             self.batch_prover_url,
             batch_intervals,
-        );
+        )?;
         let api_config = BlockProducerApiConfig {
             max_txs_per_batch: self.max_txs_per_batch,
             max_batches_per_block: self.max_batches_per_block,
@@ -127,7 +127,7 @@ impl Sequencer {
         let mempool = Mempool::shared(chain_tip, api_config.mempool_config());
         let api = BlockProducerApi::from_shared_mempool(mempool.clone(), store, shutdown.clone());
         let block_prover = if let Some(url) = self.block_prover_url {
-            Arc::new(BlockProver::remote(url))
+            Arc::new(BlockProver::remote(url)?)
         } else {
             Arc::new(BlockProver::local())
         };

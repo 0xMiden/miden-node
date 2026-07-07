@@ -13,9 +13,9 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::utils::DeserializationError;
 use miden_protocol::errors::{ProposedBatchError, ProposedBlockError, ProvenBatchError};
 use miden_protocol::note::Nullifier;
-use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 
+use crate::batch_builder::RemoteProverError;
 use crate::mempool::MempoolPoisonError;
 use crate::validator::ValidatorError;
 
@@ -28,8 +28,6 @@ pub enum ProofSchedulerError {
     MissingProvingInputs(BlockNumber),
     #[error("failed to deserialize proving inputs for block")]
     DeserializationFailed(#[source] DeserializationError),
-    #[error("invalid remote prover endpoint: {0}")]
-    InvalidProverEndpoint(String),
 }
 
 // Add transaction and add user batch errors
@@ -113,7 +111,7 @@ pub enum BuildBatchError {
     ProveBatchError(#[source] ProvenBatchError),
 
     #[error("failed to prove batch with remote prover")]
-    RemoteProverClientError(#[source] RemoteProverClientError),
+    RemoteProverClientError(#[source] RemoteProverError),
 
     #[error("batch proof security level is too low: {0} < {1}")]
     SecurityLevelTooLow(u32, u32),

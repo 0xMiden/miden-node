@@ -6,13 +6,12 @@ use std::time::Duration;
 use anyhow::Context;
 use builder::BlockStream;
 use chain_state::SharedChainState;
-use clients::RpcClient;
+use clients::{RemoteTransactionProver, RpcClient};
 use db::Db;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::block::{BlockNumber, SignedBlock};
-use miden_remote_prover_client::RemoteTransactionProver;
 use tokio::sync::mpsc;
 use tonic::metadata::AsciiMetadataValue;
 use url::Url;
@@ -123,6 +122,9 @@ const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize =
 
 /// Default duration after which an idle network account actor will deactivate.
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+/// Default per-request timeout for the remote transaction prover.
+const DEFAULT_PROVER_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Default maximum number of crashes an account actor is allowed before being deactivated.
 const DEFAULT_MAX_ACCOUNT_CRASHES: usize = 10;
@@ -459,7 +461,10 @@ impl NtxBuilderConfig {
         let actor_context = AccountActorContext {
             clients: GrpcClients {
                 rpc,
-                prover: RemoteTransactionProver::new(self.tx_prover_url.as_str()),
+                prover: RemoteTransactionProver::new(
+                    self.tx_prover_url.clone(),
+                    DEFAULT_PROVER_TIMEOUT,
+                )?,
             },
             state: State {
                 db,

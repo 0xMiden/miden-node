@@ -1,9 +1,13 @@
 use miden_block_prover::{BlockProverError as LocalBlockProverError, LocalBlockProver};
+use miden_node_proto::clients::{Builder, RemoteProverClient};
+use miden_node_proto::generated::remote_prover::{ProofRequest, ProofType};
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::batch::OrderedBatches;
-use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof};
-use miden_remote_prover_client::{RemoteBlockProver, RemoteProverClientError};
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof, ProposedBlock};
+use miden_protocol::errors::ProposedBlockError;
+use miden_protocol::utils::serde::{Deserializable, DeserializationError, Serializable};
+use url::Url;
 
 use crate::COMPONENT;
 
@@ -12,9 +16,20 @@ pub enum ProverError {
     #[error("local proving failed")]
     LocalProvingFailed(#[source] LocalBlockProverError),
     #[error("remote proving failed")]
-    RemoteProvingFailed(#[source] RemoteProverClientError),
+    RemoteProvingFailed(#[source] RemoteProverError),
     #[error("local proving task join error")]
     LocalProvingTaskJoin(#[source] tokio::task::JoinError),
+}
+
+/// Errors returned by [`RemoteBlockProver`].
+#[derive(Debug, thiserror::Error)]
+pub enum RemoteProverError {
+    #[error("failed to build proposed block")]
+    ProposeBlock(#[source] ProposedBlockError),
+    #[error("remote prover request failed")]
+    Grpc(#[source] tonic::Status),
+    #[error("failed to deserialize block proof from remote prover")]
+    Deserialize(#[source] DeserializationError),
 }
 
 // BLOCK PROVER
@@ -26,7 +41,7 @@ pub enum ProverError {
 /// The remote proving variant is intended for production use.
 pub enum BlockProver {
     Local(LocalBlockProver),
-    Remote(RemoteBlockProver),
+    Remote(Box<RemoteBlockProver>),
 }
 
 impl BlockProver {
@@ -34,8 +49,8 @@ impl BlockProver {
         Self::Local(LocalBlockProver::new(0))
     }
 
-    pub fn remote(endpoint: impl Into<String>) -> Self {
-        Self::Remote(RemoteBlockProver::new(endpoint))
+    pub fn remote(url: Url) -> anyhow::Result<Self> {
+        Ok(Self::Remote(Box::new(RemoteBlockProver::new(url)?)))
     }
 
     #[miden_instrument(
@@ -62,10 +77,59 @@ impl BlockProver {
                 .await
                 .map_err(ProverError::LocalProvingTaskJoin)?
             },
-            Self::Remote(prover) => Ok(prover
+            Self::Remote(prover) => prover
                 .prove(tx_batches, block_header, block_inputs)
                 .await
-                .map_err(ProverError::RemoteProvingFailed)?),
+                .map_err(ProverError::RemoteProvingFailed),
         }
+    }
+}
+
+// REMOTE BLOCK PROVER
+// ================================================================================================
+
+/// Thin wrapper around the remote-prover gRPC service that proves entire blocks.
+///
+/// The connection is lazy: the underlying channel connects on first use and is shared (cheaply
+/// cloned) across all subsequent calls.
+#[derive(Clone)]
+pub struct RemoteBlockProver {
+    client: RemoteProverClient,
+}
+
+impl RemoteBlockProver {
+    /// Creates a new [`RemoteBlockProver`] with a lazy connection to the given gRPC endpoint.
+    fn new(url: Url) -> anyhow::Result<Self> {
+        let client = Builder::new(url)
+            .with_tls()?
+            .without_timeout()
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .without_auth_header()
+            .with_otel_context_injection()
+            .connect_lazy::<RemoteProverClient>();
+
+        Ok(Self { client })
+    }
+
+    async fn prove(
+        &self,
+        tx_batches: OrderedBatches,
+        block_header: &BlockHeader,
+        block_inputs: BlockInputs,
+    ) -> Result<BlockProof, RemoteProverError> {
+        let proposed_block =
+            ProposedBlock::new_at(block_inputs, tx_batches.into_vec(), block_header.timestamp())
+                .map_err(RemoteProverError::ProposeBlock)?;
+
+        let request = tonic::Request::new(ProofRequest {
+            proof_type: ProofType::Block.into(),
+            payload: proposed_block.to_bytes(),
+        });
+
+        let response = self.client.clone().prove(request).await.map_err(RemoteProverError::Grpc)?;
+
+        BlockProof::read_from_bytes(&response.into_inner().payload)
+            .map_err(RemoteProverError::Deserialize)
     }
 }

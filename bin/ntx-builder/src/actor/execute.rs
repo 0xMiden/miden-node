@@ -37,7 +37,6 @@ use miden_protocol::transaction::{
     TransactionScript,
 };
 use miden_protocol::vm::FutureMaybeSend;
-use miden_remote_prover_client::RemoteTransactionProver;
 use miden_standards::note::AccountTargetNetworkNote;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
@@ -56,7 +55,7 @@ use miden_tx::{
 use tracing::Instrument;
 
 use crate::actor::candidate::TransactionCandidate;
-use crate::clients::{RpcClient, RpcError};
+use crate::clients::{RemoteTransactionProver, RpcClient, RpcError};
 use crate::db::Db;
 use crate::{COMPONENT, LOG_TARGET};
 

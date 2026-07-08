@@ -3092,17 +3092,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-large-smt-backend-rocksdb"
-version = "0.15.1"
-dependencies = [
- "miden-crypto",
- "miden-node-rocksdb-cxx-linkage-fix",
- "miden-protocol",
- "rayon",
- "rocksdb",
-]
-
-[[package]]
 name = "miden-lifted-air"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3337,10 +3326,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-node-rocksdb-cxx-linkage-fix"
-version = "0.15.1"
-
-[[package]]
 name = "miden-node-rpc"
 version = "0.15.1"
 dependencies = [
@@ -3389,7 +3374,6 @@ dependencies = [
  "indexmap",
  "libsqlite3-sys",
  "miden-crypto",
- "miden-large-smt-backend-rocksdb",
  "miden-node-db",
  "miden-node-proto",
  "miden-node-test-macro",
@@ -3456,7 +3440,7 @@ dependencies = [
  "humantime",
  "itertools 0.14.0",
  "lru",
- "miden-large-smt-backend-rocksdb",
+ "miden-crypto",
  "miden-node-tracing-macro",
  "miden-protocol",
  "opentelemetry",

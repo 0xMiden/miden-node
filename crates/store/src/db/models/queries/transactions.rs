@@ -49,7 +49,6 @@ pub struct TransactionRecordRaw {
     input_notes: Vec<u8>,
     output_notes: Vec<u8>,
     size_in_bytes: i64,
-    fee: Vec<u8>,
 }
 
 /// Insert transactions to the DB using the given [`SqliteConnection`].
@@ -94,7 +93,6 @@ pub struct TransactionSummaryRowInsert {
     input_notes: Vec<u8>,
     output_notes: Vec<u8>,
     size_in_bytes: i64,
-    fee: Vec<u8>,
 }
 
 impl TransactionSummaryRowInsert {
@@ -146,7 +144,6 @@ impl TransactionSummaryRowInsert {
             input_notes: input_notes_binary,
             output_notes: output_notes_binary,
             size_in_bytes,
-            fee: transaction_header.fee().to_bytes(),
         }
     }
 }
@@ -321,7 +318,6 @@ fn with_output_note_proofs(
     raw_transactions: Vec<TransactionRecordRaw>,
 ) -> Result<Vec<crate::db::TransactionRecord>, DatabaseError> {
     use miden_protocol::Word;
-    use miden_protocol::asset::FungibleAsset;
 
     // Pre-deserialize output notes to collect IDs for the batch lookup.
     let mut tx_output_notes = Vec::with_capacity(raw_transactions.len());
@@ -394,7 +390,6 @@ fn with_output_note_proofs(
                 Word::read_from_bytes(&raw.final_state_commitment)?,
                 InputNotes::new_unchecked(input_notes),
                 output_notes,
-                FungibleAsset::read_from_bytes(&raw.fee)?,
             );
 
             Ok(crate::db::TransactionRecord {

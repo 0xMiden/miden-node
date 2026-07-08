@@ -7,33 +7,35 @@ use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryD
 use miden_node_utils::fee::test_fee_params;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
-    AccountDelta,
     AccountId,
     AccountIdVersion,
+    AccountPatch,
     AccountStorage,
-    AccountStorageDelta,
     AccountStorageHeader,
+    AccountStoragePatch,
     AccountType,
-    AccountVaultDelta,
+    AccountUpdateDetails,
+    AccountVaultPatch,
     StorageMap,
-    StorageMapDelta,
     StorageMapKey,
+    StorageMapPatch,
     StorageSlot,
     StorageSlotContent,
-    StorageSlotDelta,
     StorageSlotName,
+    StorageSlotPatch,
     StorageSlotType,
 };
+use miden_protocol::asset::{NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{EMPTY_WORD, Felt, Word};
-use miden_standards::account::auth::AuthSingleSig;
+use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::code_builder::CodeBuilder;
 
 use super::*;
@@ -146,10 +148,10 @@ fn create_test_account_with_storage() -> (Account, AccountId) {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(
+        .with_auth_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
-        ))
+        )))
         .build_existing()
         .unwrap();
 
@@ -208,10 +210,10 @@ fn create_account_with_map_storage(
     AccountBuilder::new([9u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(
+        .with_auth_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
-        ))
+        )))
         .build_existing()
         .unwrap()
 }
@@ -233,66 +235,6 @@ fn assert_storage_map_slot_entries(
 
     let entries = BTreeMap::from_iter(storage_map.entries().map(|(key, value)| (*key, *value)));
     assert_eq!(&entries, expected, "map entries mismatch");
-}
-
-/// Test helper: query vault assets at a specific block by finding the most recent
-/// update for each `vault_key`.
-///
-/// Uses a single raw SQL query with a subquery join:
-/// ```sql
-/// SELECT a.asset FROM account_vault_assets a
-/// INNER JOIN (
-///     SELECT vault_key, MAX(block_num) as max_block
-///     FROM account_vault_assets
-///     WHERE account_id = ? AND block_num <= ?
-///     GROUP BY vault_key
-/// ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
-/// WHERE a.account_id = ?
-/// ```
-pub(super) fn select_account_vault_at_block(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<Vec<Asset>, DatabaseError> {
-    use diesel::sql_types::{BigInt, Binary};
-
-    let account_id_bytes = account_id.to_bytes();
-    let block_num_sql = block_num.to_raw_sql();
-
-    let entries: Vec<Option<Vec<u8>>> = diesel::sql_query(
-        r"
-        SELECT a.asset FROM account_vault_assets a
-        INNER JOIN (
-            SELECT vault_key, MAX(block_num) as max_block
-            FROM account_vault_assets
-            WHERE account_id = ? AND block_num <= ?
-            GROUP BY vault_key
-        ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
-        WHERE a.account_id = ?
-        ",
-    )
-    .bind::<Binary, _>(&account_id_bytes)
-    .bind::<BigInt, _>(block_num_sql)
-    .bind::<Binary, _>(&account_id_bytes)
-    .load::<AssetRow>(conn)?
-    .into_iter()
-    .map(|row| row.asset)
-    .collect();
-
-    // Convert to assets, filtering out deletions (None values)
-    let mut assets = Vec::new();
-    for asset_bytes in entries.into_iter().flatten() {
-        let asset = Asset::read_from_bytes(&asset_bytes)?;
-        assets.push(asset);
-    }
-
-    Ok(assets)
-}
-
-#[derive(QueryableByName)]
-struct AssetRow {
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
-    asset: Option<Vec<u8>>,
 }
 
 // ACCOUNT HEADER AT BLOCK TESTS
@@ -324,11 +266,11 @@ fn test_select_account_header_at_block_returns_correct_header() {
     insert_block_header(&mut conn, block_num);
 
     // Insert the account
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
     let account_update = BlockAccountUpdate::new(
         account_id,
         account.to_commitment(),
-        AccountUpdateDetails::Delta(delta),
+        AccountUpdateDetails::Public(patch),
     );
 
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
@@ -361,11 +303,11 @@ fn test_select_account_header_at_block_historical_query() {
 
     // Insert the account at block 1
     let nonce_1 = account.nonce();
-    let delta_1 = AccountDelta::try_from(account.clone()).unwrap();
+    let patch_1 = AccountPatch::try_from(account.clone()).unwrap();
     let account_update_1 = BlockAccountUpdate::new(
         account_id,
         account.to_commitment(),
-        AccountUpdateDetails::Delta(delta_1),
+        AccountUpdateDetails::Public(patch_1),
     );
 
     upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
@@ -400,11 +342,11 @@ fn test_select_account_vault_at_block_empty() {
     insert_block_header(&mut conn, block_num);
 
     // Insert account without vault assets
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
     let account_update = BlockAccountUpdate::new(
         account_id,
         account.to_commitment(),
-        AccountUpdateDetails::Delta(delta),
+        AccountUpdateDetails::Public(patch),
     );
 
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
@@ -432,12 +374,15 @@ fn test_upsert_accounts_inserts_storage_header() {
     let storage_slots_len = account.storage().slots().len();
     let account_commitment = account.to_commitment();
 
-    // Create full state delta from the account
-    let delta = AccountDelta::try_from(account).unwrap();
-    assert!(delta.is_full_state(), "Delta should be full state");
+    // Create full state patch from the account
+    let patch = AccountPatch::try_from(account).unwrap();
+    assert!(patch.is_full_state(), "Patch should be full state");
 
-    let account_update =
-        BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Delta(delta));
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Public(patch),
+    );
 
     // Upsert account
     let result = upsert_accounts(&mut conn, &[account_update], block_num);
@@ -486,13 +431,13 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     let storage_commitment_1 = account.storage().to_commitment();
     let account_commitment_1 = account.to_commitment();
 
-    // First update with original account - full state delta
-    let delta_1 = AccountDelta::try_from(account).unwrap();
+    // First update with original account - full state patch
+    let patch_1 = AccountPatch::try_from(account).unwrap();
 
     let account_update_1 = BlockAccountUpdate::new(
         account_id,
         account_commitment_1,
-        AccountUpdateDetails::Delta(delta_1),
+        AccountUpdateDetails::Public(patch_1),
     );
 
     upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
@@ -521,23 +466,23 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     let account_2 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(component_2)
-        .with_auth_component(AuthSingleSig::new(
+        .with_auth_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
-        ))
+        )))
         .build_existing()
         .unwrap();
 
     let storage_commitment_2 = account_2.storage().to_commitment();
     let account_commitment_2 = account_2.to_commitment();
 
-    // Second update with modified account - full state delta
-    let delta_2 = AccountDelta::try_from(account_2).unwrap();
+    // Second update with modified account - full state patch
+    let patch_2 = AccountPatch::try_from(account_2).unwrap();
 
     let account_update_2 = BlockAccountUpdate::new(
         account_id,
         account_commitment_2,
-        AccountUpdateDetails::Delta(delta_2),
+        AccountUpdateDetails::Public(patch_2),
     );
 
     upsert_accounts(&mut conn, &[account_update_2], block_num_2).expect("Second upsert failed");
@@ -614,10 +559,10 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(
+        .with_auth_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
-        ))
+        )))
         .build_existing()
         .unwrap();
 
@@ -626,10 +571,13 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
 
     let storage_commitment = account.storage().to_commitment();
     let account_commitment = account.to_commitment();
-    let delta = AccountDelta::try_from(account).unwrap();
+    let patch = AccountPatch::try_from(account).unwrap();
 
-    let account_update =
-        BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Delta(delta));
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Public(patch),
+    );
 
     upsert_accounts(&mut conn, &[account_update], block_num)
         .expect("Upsert with multiple storage slots failed");
@@ -677,10 +625,10 @@ fn test_upsert_accounts_with_empty_storage() {
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(
+        .with_auth_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
-        ))
+        )))
         .build_existing()
         .unwrap();
 
@@ -689,10 +637,13 @@ fn test_upsert_accounts_with_empty_storage() {
 
     let storage_commitment = account.storage().to_commitment();
     let account_commitment = account.to_commitment();
-    let delta = AccountDelta::try_from(account).unwrap();
+    let patch = AccountPatch::try_from(account).unwrap();
 
-    let account_update =
-        BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Delta(delta));
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Public(patch),
+    );
 
     upsert_accounts(&mut conn, &[account_update], block_num)
         .expect("Upsert with empty storage failed");
@@ -762,9 +713,12 @@ fn test_select_latest_account_storage_ordering_semantics() {
         "storage commitments should be order-independent"
     );
 
-    let delta = AccountDelta::try_from(account).unwrap();
-    let account_update =
-        BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Delta(delta));
+    let patch = AccountPatch::try_from(account).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Public(patch),
+    );
 
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
 
@@ -812,18 +766,21 @@ fn test_select_latest_account_storage_multiple_slots() {
     let account = AccountBuilder::new([9u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(
+        .with_auth_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
-        ))
+        )))
         .build_existing()
         .unwrap();
 
     let account_id = account.id();
     let account_commitment = account.to_commitment();
-    let delta = AccountDelta::try_from(account).unwrap();
-    let account_update =
-        BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Delta(delta));
+    let patch = AccountPatch::try_from(account).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Public(patch),
+    );
 
     upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
 
@@ -857,36 +814,40 @@ fn test_select_latest_account_storage_slot_updates() {
     let account_id = account.id();
     let account_commitment = account.to_commitment();
 
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
-    let account_update =
-        BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Delta(delta));
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Public(patch),
+    );
 
     upsert_accounts(&mut conn, &[account_update], block_1).expect("upsert_accounts failed");
 
-    let mut map_delta = StorageMapDelta::default();
-    map_delta.insert(key_1, value_2);
-    map_delta.insert(key_2, value_3);
-    let storage_delta = AccountStorageDelta::from_raw(BTreeMap::from_iter([(
+    let map_patch = StorageMapPatch::from_iters([], [(key_1, value_2), (key_2, value_3)]);
+    let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
         slot_name.clone(),
-        StorageSlotDelta::Map(map_delta),
-    )]));
+        StorageSlotPatch::Map(map_patch),
+    )]))
+    .unwrap();
 
-    let partial_delta = AccountDelta::new(
+    let final_nonce = Felt::new_unchecked(account.nonce().as_canonical_u64() + 1);
+    let partial_patch = AccountPatch::new(
         account_id,
-        storage_delta,
-        AccountVaultDelta::default(),
-        Felt::new_unchecked(1),
+        storage_patch,
+        AccountVaultPatch::default(),
+        None,
+        Some(final_nonce),
     )
     .unwrap();
 
     let mut expected_account = account.clone();
-    expected_account.apply_delta(&partial_delta).unwrap();
+    expected_account.apply_patch(&partial_patch).unwrap();
     let expected_commitment = expected_account.to_commitment();
 
     let account_update = BlockAccountUpdate::new(
         account_id,
         expected_commitment,
-        AccountUpdateDetails::Delta(partial_delta),
+        AccountUpdateDetails::Public(partial_patch),
     );
 
     upsert_accounts(&mut conn, &[account_update], block_2).expect("upsert_accounts failed");
@@ -931,11 +892,11 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     insert_block_header(&mut conn, block_3);
 
     // Insert account at block 1
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
     let account_update = BlockAccountUpdate::new(
         account_id,
         account.to_commitment(),
-        AccountUpdateDetails::Delta(delta),
+        AccountUpdateDetails::Public(patch),
     );
 
     for block in [block_1, block_2, block_3] {
@@ -1004,6 +965,45 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     assert!(amounts.contains(&500), "Block 3 should have vault_key_2 with 500 tokens");
 }
 
+/// Tests that the query bounds the number of rows it reads, so an over-the-limit vault is detected
+/// without materializing the whole set.
+#[test]
+fn test_select_account_vault_at_block_bounds_read_to_limit() {
+    let mut conn = setup_test_db();
+    let (account, _) = create_test_account_with_storage();
+    let account_id = account.id();
+
+    let block_1 = BlockNumber::from_epoch(0);
+    insert_block_header(&mut conn, block_1);
+
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account.to_commitment(),
+        AccountUpdateDetails::Public(patch),
+    );
+    upsert_accounts(&mut conn, std::slice::from_ref(&account_update), block_1)
+        .expect("upsert_accounts failed");
+
+    // Insert two assets more than the return limit, each with a distinct vault key.
+    let faucet_id = AccountIdBuilder::new()
+        .account_type(AccountType::Public)
+        .build_with_seed([7; 32]);
+    let asset_count = AccountVaultDetails::MAX_RETURN_ENTRIES + 2;
+    for i in 0..asset_count {
+        let details = NonFungibleAssetDetails::new(faucet_id, vec![i as u8, (i >> 8) as u8]);
+        let asset = Asset::NonFungible(NonFungibleAsset::new(&details));
+        insert_account_vault_asset(&mut conn, account_id, block_1, asset.vault_key(), Some(asset))
+            .expect("insert vault asset failed");
+    }
+
+    // The query is capped at `MAX_RETURN_ENTRIES + 1` rows even though more assets exist, which is
+    // enough for the caller to detect that the limit was exceeded.
+    let assets = select_account_vault_at_block(&mut conn, account_id, block_1)
+        .expect("query should succeed");
+    assert_eq!(assets.len(), AccountVaultDetails::MAX_RETURN_ENTRIES + 1);
+}
+
 /// Tests that a 5-block history returns the correct asset per block.
 #[test]
 fn test_select_account_vault_at_block_exponential_updates() {
@@ -1025,11 +1025,11 @@ fn test_select_account_vault_at_block_exponential_updates() {
         insert_block_header(&mut conn, *block);
     }
 
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
     let account_update = BlockAccountUpdate::new(
         account_id,
         account.to_commitment(),
-        AccountUpdateDetails::Delta(delta),
+        AccountUpdateDetails::Public(patch),
     );
 
     for block in &blocks {
@@ -1083,11 +1083,11 @@ fn test_select_account_vault_at_block_with_deletion() {
     insert_block_header(&mut conn, block_3);
 
     // Insert account at block 1
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
     let account_update = BlockAccountUpdate::new(
         account_id,
         account.to_commitment(),
-        AccountUpdateDetails::Delta(delta),
+        AccountUpdateDetails::Public(patch),
     );
 
     for block in [block_1, block_2, block_3] {
@@ -1157,12 +1157,12 @@ fn account_code_exists(conn: &mut SqliteConnection, code_commitment: Word) -> bo
 
 /// Creates a full-state [`BlockAccountUpdate`] for the given account.
 fn make_full_state_update(account: &Account) -> BlockAccountUpdate {
-    let delta = AccountDelta::try_from(account.clone()).unwrap();
-    assert!(delta.is_full_state(), "expected full-state delta");
+    let patch = AccountPatch::try_from(account.clone()).unwrap();
+    assert!(patch.is_full_state(), "expected full-state patch");
     BlockAccountUpdate::new(
         account.id(),
         account.to_commitment(),
-        AccountUpdateDetails::Delta(delta),
+        AccountUpdateDetails::Public(patch),
     )
 }
 
@@ -1190,10 +1190,10 @@ fn build_account_with_code(push_value: u32) -> Account {
     AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(
+        .with_auth_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
-        ))
+        )))
         .build_existing()
         .unwrap()
 }

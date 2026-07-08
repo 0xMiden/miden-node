@@ -15,7 +15,7 @@ use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
-use miden_protocol::account::{Account, AccountDelta, AccountId};
+use miden_protocol::account::{Account, AccountId, AccountPatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteScript, Nullifier};
 use miden_protocol::transaction::{TransactionId, TransactionScript};
@@ -199,7 +199,7 @@ enum ActorMode {
     /// block. Landing is detected from the pushed [`AccountView`]: the coordinator reports the
     /// latest transaction id committed against each network account (mirroring
     /// `accounts.last_tx_id`), so the actor checks whether its own submitted id is the account's
-    /// latest. On landing it applies `pending_delta` to its in-memory account, avoiding a re-read
+    /// latest. On landing it applies `pending_patch` to its in-memory account, avoiding a re-read
     /// of the full account from the database.
     WaitForBlock {
         /// Id of the network transaction the actor submitted.
@@ -207,9 +207,9 @@ enum ActorMode {
         /// Chain tip block number at submission. With [`ActorConfig::tx_expiration_delta`] this
         /// bounds how long the actor waits before retrying.
         submitted_at: BlockNumber,
-        /// The account delta the submitted transaction produced, applied to the in-memory account
+        /// The account patch the submitted transaction produced, applied to the in-memory account
         /// once the transaction lands.
-        pending_delta: AccountDelta,
+        pending_patch: AccountPatch,
     },
 }
 
@@ -397,7 +397,7 @@ impl AccountActor {
     ///   otherwise stay idle without touching the DB.
     /// - In `WaitForBlock`, use the view rather than a DB query:
     ///   - If `last_committed_tx` equals the actor's submitted id, the transaction landed: apply its
-    ///     `pending_delta` to the in-memory account and resume selection.
+    ///     `pending_patch` to the in-memory account and resume selection.
     ///   - Else if `tx_expiration_delta` blocks have passed since submission, the submission expired:
     ///     reload the account from the DB (in case a different transaction changed it while we
     ///     waited) and resume selection.
@@ -430,23 +430,25 @@ impl AccountActor {
             ActorMode::WaitForBlock {
                 submitted_tx_id,
                 submitted_at,
-                pending_delta,
+                pending_patch,
             } => {
                 let elapsed = view.chain_tip.checked_sub(submitted_at.as_u32()).unwrap_or_default();
                 if view.last_committed_tx == Some(submitted_tx_id) {
                     // The landed transaction is the one we executed, so the committed state is our
-                    // in-memory account plus the delta it produced.
+                    // in-memory account plus the patch it produced.
                     account
-                        .apply_delta(&pending_delta)
-                        .context("failed to apply landed transaction delta to in-memory account")?;
+                        .apply_patch(&pending_patch)
+                        .context("failed to apply landed transaction patch to in-memory account")?;
                     tracing::info!(
+                        target: LOG_TARGET,
                         account_id = %self.account_id,
                         tx_id = %submitted_tx_id,
-                        "submitted transaction landed; advanced in-memory account by its delta",
+                        "submitted transaction landed; advanced in-memory account by its patch",
                     );
                     ActorMode::NotesAvailable
                 } else if elapsed.as_u32() >= u32::from(self.config.tx_expiration_delta.get()) {
                     tracing::info!(
+                        target: LOG_TARGET,
                         account_id = %self.account_id,
                         %submitted_at,
                         current_tip = %view.chain_tip,
@@ -469,7 +471,7 @@ impl AccountActor {
                     ActorMode::WaitForBlock {
                         submitted_tx_id,
                         submitted_at,
-                        pending_delta,
+                        pending_patch,
                     }
                 }
             },
@@ -597,7 +599,7 @@ impl AccountActor {
         match execution_result {
             Ok(execute::NtxExecutionResult {
                 tx_id,
-                account_delta,
+                account_patch,
                 failed_notes: failed,
                 fetched_scripts,
             }) => {
@@ -625,7 +627,7 @@ impl AccountActor {
                     ActorMode::WaitForBlock {
                         submitted_tx_id: tx_id,
                         submitted_at: block_num,
-                        pending_delta: account_delta,
+                        pending_patch: account_patch,
                     }
                 }
             },
@@ -735,22 +737,23 @@ mod tests {
     use std::num::NonZeroU16;
 
     use miden_protocol::ONE;
-    use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
+    use miden_protocol::account::{Account, AccountPatch, AccountStoragePatch, AccountVaultPatch};
     use tokio::sync::watch;
 
     use super::*;
     use crate::db::Db;
     use crate::test_utils::{mock_account, mock_network_account_id, mock_transaction_id};
 
-    /// Builds a valid nonce-only [`AccountDelta`] for `account_id`.
-    fn nonce_bump_delta(account_id: AccountId) -> AccountDelta {
-        AccountDelta::new(
-            account_id,
-            AccountStorageDelta::default(),
-            AccountVaultDelta::default(),
-            ONE,
+    /// Builds a valid nonce-only [`AccountPatch`] that advances `account` by a single nonce.
+    fn nonce_bump_patch(account: &Account) -> AccountPatch {
+        AccountPatch::new(
+            account.id(),
+            AccountStoragePatch::default(),
+            AccountVaultPatch::default(),
+            None,
+            Some(account.nonce() + ONE),
         )
-        .expect("a nonce-only delta is valid")
+        .expect("a nonce-only patch is valid")
     }
 
     /// Builds an actor wired to `db` for the given account.
@@ -773,17 +776,16 @@ mod tests {
     }
 
     /// When the submitted transaction lands (its id is the view's latest committed tx), the actor
-    /// advances its in-memory account by exactly the delta the transaction produced.
+    /// advances its in-memory account by exactly the patch the transaction produced.
     #[tokio::test]
-    async fn landing_advances_in_memory_account_by_its_delta() {
+    async fn landing_advances_in_memory_account_by_its_patch() {
         let (db, _dir) = Db::test_setup().await;
         let account = mock_account(mock_network_account_id());
-        let account_id = account.id();
         let submitted = mock_transaction_id(7);
 
-        let delta = nonce_bump_delta(account_id);
+        let patch = nonce_bump_patch(&account);
         let mut expected = account.clone();
-        expected.apply_delta(&delta).unwrap();
+        expected.apply_patch(&patch).unwrap();
 
         let actor = test_actor(&db, &account);
         let mut in_memory = account.clone();
@@ -796,7 +798,7 @@ mod tests {
                 ActorMode::WaitForBlock {
                     submitted_tx_id: submitted,
                     submitted_at: 0_u32.into(),
-                    pending_delta: delta,
+                    pending_patch: patch,
                 },
                 &view,
                 &mut notes_cursor,
@@ -809,7 +811,7 @@ mod tests {
         assert_eq!(
             in_memory.to_commitment(),
             expected.to_commitment(),
-            "the in-memory account must be advanced by the landed tx's delta",
+            "the in-memory account must be advanced by the landed tx's patch",
         );
     }
 
@@ -833,7 +835,7 @@ mod tests {
                 ActorMode::WaitForBlock {
                     submitted_tx_id: submitted,
                     submitted_at: 0_u32.into(),
-                    pending_delta: nonce_bump_delta(account.id()),
+                    pending_patch: nonce_bump_patch(&account),
                 },
                 &view,
                 &mut notes_cursor,

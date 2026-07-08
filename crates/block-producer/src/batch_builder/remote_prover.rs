@@ -5,7 +5,7 @@ use miden_node_proto::generated::remote_prover::{ProofRequest, ProofType};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::transaction::{OutputNote, ProvenTransaction};
 use miden_protocol::utils::serde::{Deserializable, DeserializationError, Serializable};
-use miden_tx_batch_prover::LocalBatchProver;
+use miden_tx_batch::LocalBatchProver;
 use url::Url;
 
 /// Errors returned by [`RemoteBatchProver`].
@@ -37,8 +37,8 @@ impl BatchProver {
         }
     }
 
-    pub(super) fn local(security_level: u32) -> Self {
-        Self::Local(LocalBatchProver::new(security_level))
+    pub(super) fn local() -> Self {
+        Self::Local(LocalBatchProver::new())
     }
 
     pub(super) fn remote(url: Url) -> anyhow::Result<Self> {

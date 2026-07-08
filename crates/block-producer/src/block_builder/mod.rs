@@ -8,7 +8,13 @@ use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
-use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock, SignedBlock};
+use miden_protocol::block::{
+    BlockInputs,
+    BlockNumber,
+    BlockSignatures,
+    ProposedBlock,
+    SignedBlock,
+};
 use miden_protocol::transaction::TransactionHeader;
 use tokio::time::Duration;
 use tracing::Span;
@@ -295,16 +301,18 @@ impl BlockBuilder {
 
         // Verify the signature against the built block to ensure that the validator has provided a
         // valid signature for the relevant block.
-        if !signature.verify(header.commitment(), header.validator_key()) {
-            return Err(BuildBlockError::InvalidSignature);
-        }
+        let signatures =
+            BlockSignatures::new(vec![signature]).map_err(|_| BuildBlockError::InvalidSignature)?;
+        signatures
+            .verify_against(header.commitment(), header.validator_keys())
+            .map_err(|_| BuildBlockError::InvalidSignature)?;
 
         let (ordered_batches, ..) = proposed_block.into_parts();
 
         // SAFETY: The header, body, and signature are known to correspond to each other because the
         // header and body are derived from the proposed block and the signature is verified against
         // the corresponding commitment.
-        let signed_block = SignedBlock::new_unchecked(header, body, signature);
+        let signed_block = SignedBlock::new_unchecked(header, body, signatures);
         Ok(BlockCommit {
             ordered_batches,
             block_inputs,

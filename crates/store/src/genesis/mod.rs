@@ -1,3 +1,4 @@
+use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountPatch, AccountUpdateDetails};
 use miden_protocol::block::account_tree::{AccountIdKey, AccountTree};
@@ -7,8 +8,10 @@ use miden_protocol::block::{
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
+    BlockSignatures,
     FeeParameters,
     SignedBlock,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks};
@@ -48,12 +51,12 @@ impl UnsignedGenesisBlock {
     }
 
     pub fn into_block(self, signature: Signature) -> anyhow::Result<GenesisBlock> {
-        anyhow::ensure!(
-            signature.verify(self.header.commitment(), self.header.validator_key()),
-            "genesis block signature verification failed",
-        );
+        let signatures = BlockSignatures::new(vec![signature])?;
+        signatures
+            .verify_against(self.header.commitment(), self.header.validator_keys())
+            .context("genesis block signature verification failed")?;
 
-        Ok(GenesisBlock(SignedBlock::new(self.header, self.body, signature)?))
+        Ok(GenesisBlock(SignedBlock::new(self.header, self.body, signatures)?))
     }
 }
 
@@ -77,12 +80,10 @@ impl TryFrom<SignedBlock> for GenesisBlock {
             block.header().block_num(),
         );
 
-        anyhow::ensure!(
-            block
-                .signature()
-                .verify(block.header().commitment(), block.header().validator_key()),
-            "genesis block signature verification failed",
-        );
+        block
+            .signatures()
+            .verify_against(block.header().commitment(), block.header().validator_keys())
+            .context("genesis block signature verification failed")?;
 
         Ok(Self(block))
     }
@@ -146,6 +147,8 @@ impl GenesisState {
 
         let empty_transactions = OrderedTransactionHeaders::new_unchecked(Vec::new());
 
+        let validator_keys = ValidatorKeys::new(vec![self.validator_key])?;
+
         let header = BlockHeader::new(
             self.version,
             Word::empty(),
@@ -156,7 +159,7 @@ impl GenesisState {
             empty_block_note_tree.root(),
             Word::empty(),
             TransactionKernel.to_commitment(),
-            self.validator_key,
+            validator_keys,
             self.fee_parameters,
             self.timestamp,
         );

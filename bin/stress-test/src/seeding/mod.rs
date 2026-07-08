@@ -33,6 +33,7 @@ use miden_protocol::block::{
     BlockHeader,
     BlockInputs,
     BlockNumber,
+    BlockSignatures,
     FeeParameters,
     ProposedBlock,
     SignedBlock,
@@ -360,8 +361,9 @@ async fn apply_block(
     let (header, body) = proposed_block.clone().into_header_and_body().unwrap();
     let block_size: usize = header.to_bytes().len() + body.to_bytes().len();
     let signature = signer.sign(header.commitment());
+    let signatures = BlockSignatures::new(vec![signature]).unwrap();
     // SAFETY: The header, body, and signature are known to correspond to each other.
-    let signed_block = SignedBlock::new_unchecked(header, body, signature);
+    let signed_block = SignedBlock::new_unchecked(header, body, signatures);
     let header = signed_block.header().clone();
     let ordered_batches = proposed_block.batches().clone();
 
@@ -532,7 +534,11 @@ fn create_account(
         let component_code = CodeBuilder::default()
             .compile_component_code(
                 "benchmark::storage_map",
-                "@account_procedure pub proc noop push.0 drop end",
+                "\
+@account_procedure
+pub proc noop
+    push.0 drop
+end",
             )
             .unwrap();
         let component = AccountComponent::new(

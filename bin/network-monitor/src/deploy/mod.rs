@@ -12,7 +12,6 @@ use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
-use miden_processor::LoadedMastForest;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, PartialAccount, StorageMapKey};
 use miden_protocol::asset::{AssetId, AssetWitness};
@@ -33,6 +32,7 @@ use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
     DataStore,
     DataStoreError,
+    LoadedMastForest,
     LocalTransactionProver,
     MastForestStore,
     TransactionExecutor,

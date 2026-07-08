@@ -8,7 +8,6 @@ use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
-use miden_processor::LoadedMastForest;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -45,6 +44,7 @@ use miden_tx::{
     DataStoreError,
     ExecutionOptions,
     FailedNote,
+    LoadedMastForest,
     MastForestStore,
     NoteCheckerError,
     NoteConsumptionChecker,

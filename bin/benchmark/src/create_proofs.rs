@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use miden_processor::LoadedMastForest;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
     Account,
@@ -49,6 +48,7 @@ use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
     DataStore,
     DataStoreError,
+    LoadedMastForest,
     MastForestStore,
     TransactionExecutor,
     TransactionMastStore,

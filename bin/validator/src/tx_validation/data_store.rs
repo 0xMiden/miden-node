@@ -9,7 +9,13 @@ use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain, TransactionInputs};
 use miden_protocol::vm::FutureMaybeSend;
-use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
+use miden_tx::{
+    DataStore,
+    DataStoreError,
+    LoadedMastForest,
+    MastForestStore,
+    TransactionMastStore,
+};
 
 // TRANSACTION INPUTS DATA STORE
 // ================================================================================================
@@ -101,7 +107,7 @@ impl DataStore for TransactionInputsDataStore {
 }
 
 impl MastForestStore for TransactionInputsDataStore {
-    fn get(&self, procedure_hash: &Word) -> Option<miden_processor::LoadedMastForest> {
+    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
 }

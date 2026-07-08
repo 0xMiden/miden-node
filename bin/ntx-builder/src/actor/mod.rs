@@ -41,7 +41,11 @@ use crate::{LOG_TARGET, NoteError};
 pub(crate) fn expiration_tx_script(delta: NonZeroU16) -> anyhow::Result<TransactionScript> {
     let delta = delta.get();
     let source = format!(
-        "@transaction_script\npub proc main\n    push.{delta} exec.::miden::protocol::tx::update_expiration_block_delta\nend"
+        "\
+@transaction_script
+pub proc main
+    push.{delta} exec.::miden::protocol::tx::update_expiration_block_delta
+end"
     );
     CodeBuilder::new()
         .compile_tx_script(source)

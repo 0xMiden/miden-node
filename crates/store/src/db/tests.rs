@@ -33,6 +33,7 @@ use miden_protocol::block::{
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::SparseMerklePath;
@@ -99,7 +100,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -604,7 +605,7 @@ fn db_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -637,7 +638,7 @@ fn db_block_header() {
         num_to_word(17),
         num_to_word(18),
         num_to_word(19),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         21_u8.into(),
     );
@@ -2230,7 +2231,7 @@ fn serialization_symmetry_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -2317,7 +2318,7 @@ fn db_roundtrip_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );

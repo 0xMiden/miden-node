@@ -63,12 +63,10 @@ fn validate_genesis_block(block: &SignedBlock) -> anyhow::Result<()> {
         block.header().block_num(),
     );
 
-    anyhow::ensure!(
-        block
-            .signature()
-            .verify(block.header().commitment(), block.header().validator_key()),
-        "genesis block signature verification failed",
-    );
+    block
+        .signatures()
+        .verify_against(block.header().commitment(), block.header().validator_keys())
+        .context("genesis block signature verification failed")?;
 
     Ok(())
 }

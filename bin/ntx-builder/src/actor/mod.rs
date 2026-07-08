@@ -18,7 +18,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountPatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteScript, Nullifier};
-use miden_protocol::transaction::{TransactionId, TransactionScript};
+use miden_protocol::transaction::{TransactionArgs, TransactionId};
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_tx::FailedNote;
 use tokio::sync::{Notify, Semaphore, mpsc};
@@ -28,17 +28,17 @@ use crate::clients::{RemoteTransactionProver, RpcClient};
 use crate::db::Db;
 use crate::{LOG_TARGET, NoteError};
 
-/// Builds the canonical [`ExpirationTransactionScript`] for `delta` blocks and returns the compiled
-/// script paired with its `TX_SCRIPT_ARGS` word.
+/// Builds the [`TransactionArgs`] that attach the canonical [`ExpirationTransactionScript`] for
+/// `delta` blocks, with the script paired to the `TX_SCRIPT_ARGS` word it reads its delta from.
 ///
 /// The script itself is account-independent and its MAST root is identical for every delta (the
 /// delta travels in the args word, not the code), so the builder derives this once at startup and
-/// shares the pair across all actors. The matching root
+/// shares the args across all actors. The matching root
 /// ([`ExpirationTransactionScript::script_root`]) is what network accounts must allowlist for these
 /// transactions to be accepted on-chain.
-pub(crate) fn expiration_script_and_args(delta: NonZeroU16) -> (TransactionScript, Word) {
+pub(crate) fn expiration_tx_args(delta: NonZeroU16) -> TransactionArgs {
     let script = ExpirationTransactionScript::new(delta);
-    (script.into(), script.tx_script_args())
+    TransactionArgs::default().with_tx_script_and_args(script.into(), script.tx_script_args())
 }
 
 // ACTOR REQUESTS
@@ -81,12 +81,9 @@ pub struct State {
     pub chain: Arc<SharedChainState>,
     /// Shared LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
     pub script_cache: LruCache<Word, NoteScript>,
-    /// Pre-compiled transaction script that sets each network tx's on-chain expiration delta.
-    /// Shared into every executed transaction.
-    pub expiration_script: TransactionScript,
-    /// The `TX_SCRIPT_ARGS` word (`[delta, 0, 0, 0]`) that [`Self::expiration_script`] reads its
-    /// delta from. Must be attached alongside the script, otherwise the delta defaults to zero.
-    pub expiration_script_args: Word,
+    /// Pre-built transaction args carrying the canonical expiration script and its delta word.
+    /// Cloned into every executed transaction to set the network tx's on-chain expiration delta.
+    pub expiration_tx_args: TransactionArgs,
 }
 
 /// Per-actor configuration knobs.
@@ -145,8 +142,7 @@ impl AccountActorContext {
         );
         let chain_state = Arc::new(SharedChainState::new(block_header, chain_mmr));
         let (request_tx, _request_rx) = mpsc::channel(1);
-        let (expiration_script, expiration_script_args) =
-            expiration_script_and_args(NonZeroU16::new(30).unwrap());
+        let expiration_tx_args = expiration_tx_args(NonZeroU16::new(30).unwrap());
 
         Self {
             clients: GrpcClients {
@@ -164,8 +160,7 @@ impl AccountActorContext {
                 db: db.clone(),
                 chain: chain_state,
                 script_cache: LruCache::new(NonZeroUsize::new(1).unwrap()),
-                expiration_script,
-                expiration_script_args,
+                expiration_tx_args,
             },
             config: ActorConfig {
                 max_notes_per_tx: NonZeroUsize::new(1).unwrap(),
@@ -529,8 +524,7 @@ impl AccountActor {
             self.state.script_cache.clone(),
             self.state.db.clone(),
             self.config.max_cycles,
-            self.state.expiration_script.clone(),
-            self.state.expiration_script_args,
+            self.state.expiration_tx_args.clone(),
             self.config.request_backoff_initial,
             self.config.request_backoff_max,
         );
@@ -842,19 +836,19 @@ mod tests {
     /// delta in its first element.
     #[test]
     fn expiration_script_shares_root_and_encodes_delta_in_args() {
-        let (one_script, one_args) = expiration_script_and_args(NonZeroU16::new(1).unwrap());
-        let (thirty_script, thirty_args) = expiration_script_and_args(NonZeroU16::new(30).unwrap());
-        let (max_script, max_args) = expiration_script_and_args(NonZeroU16::MAX);
+        let one = expiration_tx_args(NonZeroU16::new(1).unwrap());
+        let thirty = expiration_tx_args(NonZeroU16::new(30).unwrap());
+        let max = expiration_tx_args(NonZeroU16::MAX);
 
         // All deltas resolve to the single allowlistable root.
         let root = ExpirationTransactionScript::script_root();
-        assert_eq!(one_script.root(), root);
-        assert_eq!(thirty_script.root(), root);
-        assert_eq!(max_script.root(), root);
+        assert_eq!(one.tx_script().unwrap().root(), root);
+        assert_eq!(thirty.tx_script().unwrap().root(), root);
+        assert_eq!(max.tx_script().unwrap().root(), root);
 
         // The delta rides in the first element of the args word.
-        assert_eq!(one_args[0], Felt::from(1_u16));
-        assert_eq!(thirty_args[0], Felt::from(30_u16));
-        assert_eq!(max_args[0], Felt::from(u16::MAX));
+        assert_eq!(one.tx_script_args()[0], Felt::from(1_u16));
+        assert_eq!(thirty.tx_script_args()[0], Felt::from(30_u16));
+        assert_eq!(max.tx_script_args()[0], Felt::from(u16::MAX));
     }
 }

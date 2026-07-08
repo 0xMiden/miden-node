@@ -34,7 +34,6 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionId,
     TransactionInputs,
-    TransactionScript,
 };
 use miden_protocol::vm::FutureMaybeSend;
 use miden_standards::note::AccountTargetNetworkNote;
@@ -154,13 +153,9 @@ pub struct NtxContext {
     /// Maximum number of VM execution cycles for network transactions.
     max_cycles: u32,
 
-    /// Pre-compiled transaction script that sets the network tx's on-chain expiration delta. Cloned
-    /// into the [`TransactionArgs`] of the executed transaction.
-    expiration_script: TransactionScript,
-
-    /// The `TX_SCRIPT_ARGS` word (`[delta, 0, 0, 0]`) that [`Self::expiration_script`] reads its
-    /// delta from. Attached together with the script; without it the delta would default to zero.
-    expiration_script_args: Word,
+    /// Pre-built transaction args carrying the canonical expiration script and its delta word.
+    /// Cloned into each executed transaction to set its on-chain expiration delta.
+    expiration_tx_args: TransactionArgs,
 
     /// [`ExponentialBuilder`] used to back off retries on transient request failures.
     request_backoff: ExponentialBuilder,
@@ -178,8 +173,7 @@ impl NtxContext {
         script_cache: LruCache<Word, NoteScript>,
         db: Db,
         max_cycles: u32,
-        expiration_script: TransactionScript,
-        expiration_script_args: Word,
+        expiration_tx_args: TransactionArgs,
         request_backoff_initial: Duration,
         request_backoff_max: Duration,
     ) -> Self {
@@ -190,8 +184,7 @@ impl NtxContext {
             script_cache,
             db,
             max_cycles,
-            expiration_script,
-            expiration_script_args,
+            expiration_tx_args,
             request_backoff,
         }
     }
@@ -414,9 +407,8 @@ impl NtxContext {
 
         // Attach the canonical expiration script (with its delta args) so the submitted tx is
         // rejected on-chain if it does not land within the configured block delta. Serviced network
-        // accounts must allowlist this script's root; see the `expiration_script` field docs.
-        let tx_args = TransactionArgs::default()
-            .with_tx_script_and_args(self.expiration_script.clone(), self.expiration_script_args);
+        // accounts must allowlist this script's root; see the `expiration_tx_args` field docs.
+        let tx_args = self.expiration_tx_args.clone();
 
         Box::pin(executor.execute_transaction(
             data_store.account.id(),

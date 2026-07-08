@@ -101,29 +101,27 @@ pub(crate) fn insert_transaction(
     let id = tx_info.tx_id().to_bytes();
     let block_num = i64::from(tx_info.block_num().as_u32());
     let account_id = tx_info.account_id().to_bytes();
-    let account_delta = tx_info.account_delta().to_bytes();
+    let account_patch = tx_info.account_patch().to_bytes();
     let input_notes = tx_info.input_notes().to_bytes();
     let output_notes = tx_info.output_notes().to_bytes();
     let initial_account_hash = tx_info.initial_account_hash().to_bytes();
     let final_account_hash = tx_info.final_account_hash().to_bytes();
-    let fee = tx_info.fee().amount().as_u64().to_le_bytes().to_vec();
 
     tx.execute(
         "INSERT INTO validated_transactions \
-         (id, block_num, account_id, account_delta, input_notes, output_notes, \
-          initial_account_hash, final_account_hash, fee) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+         (id, block_num, account_id, account_patch, input_notes, output_notes, \
+          initial_account_hash, final_account_hash) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
          ON CONFLICT DO NOTHING",
         &[
             &id,
             &block_num,
             &account_id,
-            &account_delta,
+            &account_patch,
             &input_notes,
             &output_notes,
             &initial_account_hash,
             &final_account_hash,
-            &fee,
         ],
     )
 }
@@ -333,10 +331,10 @@ mod tests {
         db.write("insert_row", move |tx| {
             tx.execute(
                 "INSERT INTO validated_transactions \
-                 (id, block_num, account_id, account_delta, input_notes, output_notes, \
-                  initial_account_hash, final_account_hash, fee) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty, &empty],
+                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
+                  initial_account_hash, final_account_hash) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
             )
         })
         .await

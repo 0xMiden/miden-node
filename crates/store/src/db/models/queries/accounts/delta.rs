@@ -8,21 +8,23 @@
 //!
 //! Instead, only the minimal data needed for the update is fetched.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection};
-use miden_protocol::account::delta::AccountStorageDelta;
 use miden_protocol::account::{
     Account,
     AccountId,
     AccountStorageHeader,
+    AccountStoragePatch,
     StorageMap,
     StorageMapKey,
+    StoragePatchOperation,
     StorageSlotHeader,
     StorageSlotName,
+    StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::asset::Asset;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{EMPTY_WORD, Felt, Word};
 
@@ -67,6 +69,10 @@ pub(super) struct PartialAccountState {
 
 /// Represents the account state to be inserted, either from a full account or from a partial delta
 /// update.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "built per account update and consumed immediately"
+)]
 pub(super) enum AccountStateForInsert {
     /// Private account - no public state stored
     Private,
@@ -133,58 +139,6 @@ pub(super) fn select_minimal_account_state_headers(
     Ok(AccountStateHeadersForDelta { nonce, code_commitment, storage_header })
 }
 
-/// Selects vault balances for specific vault keys.
-///
-/// Optimized query that only fetches balances for the vault keys
-/// that are being updated by a delta, rather than loading all vault assets.
-///
-/// Returns a map from the vault key word to the current balance (absent if not found). Keyed by
-/// vault key rather than faucet id because the callback flag is part of the key.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT vault_key, asset
-/// FROM account_vault_assets
-/// WHERE account_id = ?1 AND is_latest = 1 AND vault_key IN (?2, ?3, ...)
-/// ```
-pub(super) fn select_vault_balances_by_vault_keys(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    vault_keys: &[AssetVaultKey],
-) -> Result<HashMap<Word, u64>, DatabaseError> {
-    use schema::account_vault_assets as vault;
-
-    if vault_keys.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let account_id_bytes = account_id.to_bytes();
-
-    let vault_key_bytes: Vec<Vec<u8>> =
-        vault_keys.iter().map(|vault_key| vault_key.to_word().to_bytes()).collect();
-
-    let entries: Vec<(Vec<u8>, Option<Vec<u8>>)> =
-        SelectDsl::select(vault::table, (vault::vault_key, vault::asset))
-            .filter(vault::account_id.eq(&account_id_bytes))
-            .filter(vault::is_latest.eq(true))
-            .filter(vault::vault_key.eq_any(&vault_key_bytes))
-            .load(conn)?;
-
-    let mut balances = HashMap::new();
-
-    for (_vault_key_bytes, maybe_asset_bytes) in entries {
-        if let Some(asset_bytes) = maybe_asset_bytes {
-            let asset = Asset::read_from_bytes(&asset_bytes)?;
-            if let Asset::Fungible(fungible) = asset {
-                balances.insert(fungible.vault_key().to_word(), fungible.amount().as_u64());
-            }
-        }
-    }
-
-    Ok(balances)
-}
-
 /// Selects the latest vault assets for an account.
 ///
 /// # Raw SQL
@@ -218,29 +172,45 @@ pub(super) fn select_latest_vault_assets(
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Applies storage delta to an existing storage header using precomputed map roots.
+/// Applies a storage patch to an existing storage header using precomputed map roots.
 ///
 /// For value slots, updates the slot value directly.
 /// For map slots, uses the precomputed roots for updated maps.
-pub(super) fn apply_storage_delta(
+/// Removed slots are dropped from the header and created slots are added to it, mirroring
+/// [`miden_protocol::account::AccountStorage`]'s patch application.
+pub(super) fn apply_storage_patch(
     header: &AccountStorageHeader,
-    delta: &AccountStorageDelta,
+    patch: &AccountStoragePatch,
     map_entries: &HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>,
 ) -> Result<AccountStorageHeader, DatabaseError> {
     let mut value_updates: HashMap<&StorageSlotName, Word> = HashMap::new();
     let mut map_updates: HashMap<&StorageSlotName, Word> = HashMap::new();
+    let mut removed: HashSet<&StorageSlotName> = HashSet::new();
 
-    for (slot_name, new_value) in delta.values() {
-        value_updates.insert(slot_name, *new_value);
+    for (slot_name, value_patch) in patch.values() {
+        match value_patch.value() {
+            Some(value) => {
+                value_updates.insert(slot_name, value);
+            },
+            None => {
+                removed.insert(slot_name);
+            },
+        }
     }
 
-    for (slot_name, map_delta) in delta.maps() {
-        if map_delta.is_empty() {
+    for (slot_name, map_patch) in patch.maps() {
+        let Some(map_patch_entries) = map_patch.entries() else {
+            removed.insert(slot_name);
+            continue;
+        };
+        // Empty entries are a no-op for updates, but creating a map slot with no entries is
+        // meaningful and must still produce the slot.
+        if map_patch_entries.is_empty() && map_patch.patch_op() != StoragePatchOperation::Create {
             continue;
         }
 
         let mut entries = map_entries.get(slot_name).cloned().unwrap_or_default();
-        for (key, value) in map_delta.entries() {
+        for (key, value) in map_patch_entries.as_map() {
             if *value == EMPTY_WORD {
                 entries.remove(key);
             } else {
@@ -253,16 +223,27 @@ pub(super) fn apply_storage_delta(
         map_updates.insert(slot_name, storage_map.root());
     }
 
-    let slots = Vec::from_iter(header.slots().map(|slot| {
-        let slot_name = slot.name();
-        if let Some(&new_value) = value_updates.get(slot_name) {
-            StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
-        } else if let Some(&new_root) = map_updates.get(slot_name) {
-            StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
-        } else {
-            slot.clone()
-        }
-    }));
+    let mut slots =
+        Vec::from_iter(header.slots().filter(|slot| !removed.contains(slot.name())).map(|slot| {
+            let slot_name = slot.name();
+            if let Some(new_value) = value_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
+            } else if let Some(new_root) = map_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
+            } else {
+                slot.clone()
+            }
+        }));
+
+    // Any updates left over belong to slots created by the patch.
+    for (slot_name, value) in value_updates {
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Value, value));
+    }
+    for (slot_name, root) in map_updates {
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Map, root));
+    }
+
+    slots.sort_by_key(StorageSlotHeader::id);
 
     AccountStorageHeader::new(slots).map_err(|e| {
         DatabaseError::DataCorrupted(format!("Failed to create storage header: {e:?}"))

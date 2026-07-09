@@ -134,14 +134,29 @@ impl State {
                     AccountUpdateDetails::Private => None,
                 },
             ));
+        let account_forest_update = self.with_forest_read_blocking(|forest| {
+            forest
+                .compute_block_update_mutations(block_num, account_patches)
+                .map_err(|err| ApplyBlockError::AccountStateForestMutation(err.as_report()))
+        })?;
+        let precomputed_public_states = account_forest_update.account_states.clone();
 
         // The DB and in-memory state updates need to be synchronized and are partially overlapping.
         // Namely, the DB transaction only proceeds after this task acquires the in-memory write
         // lock. This requires the DB update to run concurrently, so a new task is spawned.
         let db = Arc::clone(&self.db);
         let db_update_task = tokio::spawn(
-            async move { db.apply_block(allow_acquire, acquire_done, signed_block, notes).await }
-                .in_current_span(),
+            async move {
+                db.apply_block(
+                    allow_acquire,
+                    acquire_done,
+                    signed_block,
+                    notes,
+                    precomputed_public_states,
+                )
+                .await
+            }
+            .in_current_span(),
         );
 
         // Wait for the message from the DB update task, that we ready to commit the DB transaction.
@@ -193,8 +208,9 @@ impl State {
         })?;
 
         self.with_forest_write_blocking(|forest| {
-            forest.apply_block_updates(block_num, account_patches);
-        });
+            forest.apply_precomputed_block_update(block_num, account_forest_update)
+        })
+        .map_err(|err| ApplyBlockError::AccountStateForestMutation(err.as_report()))?;
 
         // Push to cache and notify replica subscribers.
         self.block_cache

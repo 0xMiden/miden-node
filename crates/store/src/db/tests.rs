@@ -225,7 +225,13 @@ fn sql_select_note_script_by_root() {
 
     let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
-    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block_num).unwrap();
+    queries::upsert_accounts(
+        conn,
+        &[mock_block_account_update(account_id, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let new_note = create_note(account_id);
 
@@ -273,6 +279,7 @@ fn make_account_and_note(
                 AccountUpdateDetails::Public(AccountPatch::try_from(account).unwrap()),
             )],
             block_num,
+            &queries::PrecomputedPublicAccountStates::new(),
         )
         .unwrap();
 
@@ -320,6 +327,7 @@ fn sql_select_accounts() {
                 AccountUpdateDetails::Private,
             )],
             block_num,
+            &queries::PrecomputedPublicAccountStates::new(),
         );
         assert_eq!(res.unwrap(), 1, "One element must have been inserted");
 
@@ -347,8 +355,13 @@ fn sync_account_vault_basic_validation() {
     create_block(conn, block_to);
 
     for block in [block_from, block_mid, block_to] {
-        queries::upsert_accounts(conn, &[mock_block_account_update(public_account_id, 0)], block)
-            .unwrap();
+        queries::upsert_accounts(
+            conn,
+            &[mock_block_account_update(public_account_id, 0)],
+            block,
+            &queries::PrecomputedPublicAccountStates::new(),
+        )
+        .unwrap();
     }
 
     // Create test vault assets from two different faucets to get different vault keys.
@@ -679,7 +692,13 @@ fn notes() {
 
     // test insertion
 
-    queries::upsert_accounts(conn, &[mock_block_account_update(sender, 0)], block_num_1).unwrap();
+    queries::upsert_accounts(
+        conn,
+        &[mock_block_account_update(sender, 0)],
+        block_num_1,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let new_note = create_note(sender);
     let note_index = BlockNoteIndex::new(0, 2).unwrap();
@@ -785,6 +804,7 @@ fn note_sync_across_multiple_blocks() {
             conn,
             &[mock_block_account_update(sender, block_num_raw.into())],
             block_num,
+            &queries::PrecomputedPublicAccountStates::new(),
         )
         .unwrap();
 
@@ -866,6 +886,7 @@ fn note_sync_multi_respects_payload_limit() {
             conn,
             &[mock_block_account_update(sender, block_num_raw.into())],
             block_num,
+            &queries::PrecomputedPublicAccountStates::new(),
         )
         .unwrap();
 
@@ -922,7 +943,13 @@ fn note_sync_no_matching_tags() {
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
     let block_num = BlockNumber::from(1);
     create_block(conn, block_num);
-    queries::upsert_accounts(conn, &[mock_block_account_update(sender, 0)], block_num).unwrap();
+    queries::upsert_accounts(
+        conn,
+        &[mock_block_account_update(sender, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     // Insert a note with tag 10.
     let new_note = create_note(sender);
@@ -999,8 +1026,20 @@ fn sql_account_storage_map_values_insertion() {
     let account_id =
         AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
 
-    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block1).unwrap();
-    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block2).unwrap();
+    queries::upsert_accounts(
+        conn,
+        &[mock_block_account_update(account_id, 0)],
+        block1,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        conn,
+        &[mock_block_account_update(account_id, 0)],
+        block2,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let slot_name = StorageSlotName::mock(3);
     let key1 = StorageMapKey::new(Word::from([1u32, 2, 3, 4]));
@@ -1090,8 +1129,13 @@ fn select_storage_map_sync_values() {
     let block3 = BlockNumber::from(3);
 
     for block in [block1, block2, block3] {
-        queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block)
-            .unwrap();
+        queries::upsert_accounts(
+            &mut conn,
+            &[mock_block_account_update(account_id, 0)],
+            block,
+            &queries::PrecomputedPublicAccountStates::new(),
+        )
+        .unwrap();
     }
 
     // Insert data across multiple blocks using individual inserts Block 1: key1 -> value1, key2 ->
@@ -1232,12 +1276,27 @@ fn select_storage_map_sync_values_paginates_until_last_block() {
     create_block(&mut conn, block2);
     create_block(&mut conn, block3);
 
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block1)
-        .unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 1)], block2)
-        .unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 2)], block3)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 0)],
+        block1,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 1)],
+        block2,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 2)],
+        block3,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     queries::insert_account_storage_map_value(
         &mut conn,
@@ -1291,8 +1350,13 @@ fn select_storage_map_sync_values_all_entries_in_genesis_block() {
     let genesis = BlockNumber::GENESIS;
     create_block(&mut conn, genesis);
 
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], genesis)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 0)],
+        genesis,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     // Insert 3 entries, all in genesis block
     for i in 0..3 {
@@ -1339,8 +1403,13 @@ fn select_storage_map_sync_values_all_entries_in_single_non_genesis_block() {
     let block5 = BlockNumber::from(5);
     create_block(&mut conn, block5);
 
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block5)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 0)],
+        block5,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     for i in 0..3 {
         queries::insert_account_storage_map_value(
@@ -1379,12 +1448,27 @@ fn select_storage_map_sync_values_multi_block_pagination() {
     create_block(&mut conn, block2);
     create_block(&mut conn, block3);
 
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block1)
-        .unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 1)], block2)
-        .unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 2)], block3)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 0)],
+        block1,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 1)],
+        block2,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 2)],
+        block3,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     // 1 entry in block 1, 1 in block 2, 1 in block 3
     queries::insert_account_storage_map_value(
@@ -1450,9 +1534,24 @@ async fn reconstruct_storage_map_from_db_pages_until_latest() {
             create_block(db_conn, block2);
             create_block(db_conn, block3);
 
-            queries::upsert_accounts(db_conn, &[mock_block_account_update(account_id, 0)], block1)?;
-            queries::upsert_accounts(db_conn, &[mock_block_account_update(account_id, 1)], block2)?;
-            queries::upsert_accounts(db_conn, &[mock_block_account_update(account_id, 2)], block3)?;
+            queries::upsert_accounts(
+                db_conn,
+                &[mock_block_account_update(account_id, 0)],
+                block1,
+                &queries::PrecomputedPublicAccountStates::new(),
+            )?;
+            queries::upsert_accounts(
+                db_conn,
+                &[mock_block_account_update(account_id, 1)],
+                block2,
+                &queries::PrecomputedPublicAccountStates::new(),
+            )?;
+            queries::upsert_accounts(
+                db_conn,
+                &[mock_block_account_update(account_id, 2)],
+                block3,
+                &queries::PrecomputedPublicAccountStates::new(),
+            )?;
 
             queries::insert_account_storage_map_value(
                 db_conn,
@@ -1516,7 +1615,12 @@ async fn reconstruct_storage_map_from_db_returns_limit_exceeded_for_single_block
         db_conn.transaction(|db_conn| {
             create_block(db_conn, block5);
 
-            queries::upsert_accounts(db_conn, &[mock_block_account_update(account_id, 0)], block5)?;
+            queries::upsert_accounts(
+                db_conn,
+                &[mock_block_account_update(account_id, 0)],
+                block5,
+                &queries::PrecomputedPublicAccountStates::new(),
+            )?;
 
             // Insert 3 entries, all in the same block
             for i in 1..=3 {
@@ -1683,7 +1787,13 @@ fn insert_transactions(conn: &mut SqliteConnection) -> usize {
             mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 2);
         let ordered_tx_headers = OrderedTransactionHeaders::new_unchecked(vec![mock_tx1, mock_tx2]);
 
-        queries::upsert_accounts(conn, &account_updates, block_num).unwrap();
+        queries::upsert_accounts(
+            conn,
+            &account_updates,
+            block_num,
+            &queries::PrecomputedPublicAccountStates::new(),
+        )
+        .unwrap();
 
         let count = queries::insert_transactions(conn, block_num, &ordered_tx_headers).unwrap();
         Ok::<_, DatabaseError>(count)
@@ -1763,6 +1873,7 @@ fn test_select_account_code_by_commitment() {
             AccountUpdateDetails::Public(AccountPatch::try_from(account).unwrap()),
         )],
         block_num_1,
+        &queries::PrecomputedPublicAccountStates::new(),
     )
     .unwrap();
 
@@ -1812,6 +1923,7 @@ fn test_select_account_code_by_commitment_multiple_codes() {
             AccountUpdateDetails::Public(AccountPatch::try_from(account_v1).unwrap()),
         )],
         block_num_1,
+        &queries::PrecomputedPublicAccountStates::new(),
     )
     .unwrap();
 
@@ -1846,6 +1958,7 @@ fn test_select_account_code_by_commitment_multiple_codes() {
             AccountUpdateDetails::Public(AccountPatch::try_from(account_v2).unwrap()),
         )],
         block_num_2,
+        &queries::PrecomputedPublicAccountStates::new(),
     )
     .unwrap();
 
@@ -2162,7 +2275,13 @@ fn regression_1461_full_state_delta_inserts_vault_assets() {
         AccountUpdateDetails::Public(account_patch),
     );
 
-    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[block_update],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let (_, vault_assets) = queries::select_account_vault_assets(
         &mut conn,
@@ -2376,7 +2495,13 @@ fn db_roundtrip_account() {
         account_commitment,
         AccountUpdateDetails::Public(account_patch),
     );
-    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[block_update],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     // Retrieve
     let retrieved = queries::select_all_accounts(&mut conn).unwrap();
@@ -2402,8 +2527,13 @@ fn db_roundtrip_notes() {
     create_block(&mut conn, block_num);
 
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(sender, 0)], block_num)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(sender, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let new_note = create_note(sender);
     let note_index = BlockNoteIndex::new(0, 0).unwrap();
@@ -2455,8 +2585,13 @@ fn db_roundtrip_vault_assets() {
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
 
     // Create account first
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block_num)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
     let asset: Asset = fungible_asset.into();
@@ -2490,14 +2625,24 @@ fn db_roundtrip_storage_map_values() {
     create_block(&mut conn, block_num);
 
     let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block_num)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
     let slot_name = StorageSlotName::mock(5);
     let key = StorageMapKey::from_index(12345u32);
     let value = num_to_word(67890);
 
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 1)], block_num)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 1)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     // Insert
     queries::insert_account_storage_map_value(
@@ -2598,7 +2743,13 @@ fn db_roundtrip_account_storage_with_maps() {
         account.to_commitment(),
         AccountUpdateDetails::Public(account_patch),
     );
-    queries::upsert_accounts(&mut conn, &[block_update], block_num).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[block_update],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     // Retrieve the storage using select_latest_account_storage (reconstructs from header + map
     // values)
@@ -2731,8 +2882,13 @@ fn test_prune_history() {
 
     // Create account
     for block in [block_0, block_old, block_cutoff, block_update, block_tip] {
-        queries::upsert_accounts(conn, &[mock_block_account_update(public_account_id, 0)], block)
-            .unwrap();
+        queries::upsert_accounts(
+            conn,
+            &[mock_block_account_update(public_account_id, 0)],
+            block,
+            &queries::PrecomputedPublicAccountStates::new(),
+        )
+        .unwrap();
     }
 
     // Insert vault assets at different blocks - use different faucets for different vault keys.
@@ -3035,12 +3191,27 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     create_block(&mut conn, block2);
     create_block(&mut conn, block3);
 
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block1)
-        .unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 1)], block2)
-        .unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 2)], block3)
-        .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 0)],
+        block1,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 1)],
+        block2,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(account_id, 2)],
+        block3,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let slot_map = StorageSlotName::mock(1);
     let slot_value = StorageSlotName::mock(2);
@@ -3470,7 +3641,13 @@ fn db_roundtrip_transactions() {
     create_block(&mut conn, block_num);
 
     let bob = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(bob, 0)], block_num).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(bob, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let tx = mock_block_transaction(bob, 1);
     let ordered = OrderedTransactionHeaders::new_unchecked(vec![tx.clone()]);
@@ -3534,7 +3711,13 @@ fn db_roundtrip_transactions_filters_missing_output_note_sync_records() {
     create_block(&mut conn, block_num);
 
     let bob = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(bob, 0)], block_num).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(bob, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let tx = mock_block_transaction(bob, 1);
     let ordered = OrderedTransactionHeaders::new_unchecked(vec![tx.clone()]);
@@ -3570,7 +3753,13 @@ fn select_transactions_records_resolves_consumed_public_note_refs() {
     create_block(&mut conn, block_num);
 
     let bob = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(bob, 0)], block_num).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(bob, 0)],
+        block_num,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     // `mock_block_transaction` consumes a single authenticated input whose nullifier is
     // `num_to_nullifier(num)`. Record a public note carrying that same nullifier so the node can
@@ -3619,8 +3808,20 @@ fn select_transactions_records_reports_truncation_below_payload_cap() {
     let block2 = BlockNumber::from(2);
     create_block(&mut conn, block1);
     create_block(&mut conn, block2);
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(bob, 0)], block1).unwrap();
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(bob, 1)], block2).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(bob, 0)],
+        block1,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(bob, 1)],
+        block2,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let cap = miden_node_utils::limiter::MAX_RESPONSE_PAYLOAD_BYTES;
     // `block1` nearly fills the cap on its own, then `block2` pushes the running total past it. The
@@ -3663,7 +3864,13 @@ fn select_transactions_records_errors_when_single_block_exceeds_payload_cap() {
 
     let block1 = BlockNumber::from(1);
     create_block(&mut conn, block1);
-    queries::upsert_accounts(&mut conn, &[mock_block_account_update(bob, 0)], block1).unwrap();
+    queries::upsert_accounts(
+        &mut conn,
+        &[mock_block_account_update(bob, 0)],
+        block1,
+        &queries::PrecomputedPublicAccountStates::new(),
+    )
+    .unwrap();
 
     let cap = miden_node_utils::limiter::MAX_RESPONSE_PAYLOAD_BYTES;
     let oversized_notes = cap / OUTPUT_NOTE_SIZE_BYTES + 100;

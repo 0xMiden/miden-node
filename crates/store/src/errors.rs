@@ -209,6 +209,8 @@ pub enum ApplyBlockError {
     ClosedChannel(#[from] RecvError),
     #[error("concurrent write detected")]
     ConcurrentWrite,
+    #[error("account state forest mutation failed: {0}")]
+    AccountStateForestMutation(String),
     #[error("database doesn't have any block header data")]
     DbBlockHeaderEmpty,
     #[error("database update failed: {0}")]

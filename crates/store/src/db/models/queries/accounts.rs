@@ -62,8 +62,7 @@ mod delta;
 use delta::{
     AccountStateForInsert,
     PartialAccountState,
-    apply_storage_patch,
-    select_latest_vault_assets,
+    apply_storage_patch_with_roots,
     select_minimal_account_state_headers,
 };
 
@@ -322,6 +321,16 @@ pub struct PublicAccountStateRootsPage {
     /// If `Some`, there are more results. Use this as the `after_account_id` for the next page.
     pub next_cursor: Option<AccountId>,
 }
+
+/// Public account state commitments computed by the account state forest before SQLite writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PrecomputedPublicAccountState {
+    pub(crate) account_id: AccountId,
+    pub(crate) vault_root: Word,
+    pub(crate) storage_map_roots: BTreeMap<StorageSlotName, Word>,
+}
+
+pub(crate) type PrecomputedPublicAccountStates = BTreeMap<AccountId, PrecomputedPublicAccountState>;
 
 /// Selects public account IDs with pagination.
 ///
@@ -867,56 +876,6 @@ fn select_latest_storage_map_entries_all(
     group_storage_map_entries(map_values)
 }
 
-fn select_latest_storage_map_entries_for_slots(
-    conn: &mut SqliteConnection,
-    account_id: &AccountId,
-    slot_names: &[StorageSlotName],
-) -> Result<HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    if slot_names.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    if let [slot_name] = slot_names {
-        let entries = select_latest_storage_map_entries_for_slot(conn, account_id, slot_name)?;
-        if entries.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let mut map_entries = HashMap::new();
-        map_entries.insert(slot_name.clone(), entries);
-        return Ok(map_entries);
-    }
-
-    let slot_names = Vec::from_iter(slot_names.iter().cloned().map(StorageSlotName::to_raw_sql));
-    let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
-            .filter(t::account_id.eq(&account_id.to_bytes()))
-            .filter(t::is_latest.eq(true))
-            .filter(t::slot_name.eq_any(slot_names))
-            .load(conn)?;
-
-    group_storage_map_entries(map_values)
-}
-
-fn select_latest_storage_map_entries_for_slot(
-    conn: &mut SqliteConnection,
-    account_id: &AccountId,
-    slot_name: &StorageSlotName,
-) -> Result<BTreeMap<StorageMapKey, Word>, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
-            .filter(t::account_id.eq(&account_id.to_bytes()))
-            .filter(t::is_latest.eq(true))
-            .filter(t::slot_name.eq(slot_name.clone().to_raw_sql()))
-            .load(conn)?;
-
-    Ok(group_storage_map_entries(map_values)?.remove(slot_name).unwrap_or_default())
-}
-
 fn group_storage_map_entries(
     map_values: Vec<(String, Vec<u8>, Vec<u8>)>,
 ) -> Result<HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>, DatabaseError> {
@@ -1121,9 +1080,10 @@ fn prepare_partial_account_update(
     update: &BlockAccountUpdate,
     account_id: AccountId,
     patch: &AccountPatch,
+    precomputed: &PrecomputedPublicAccountState,
 ) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
     // Build the minimal account state needed for partial patch application. Only load the storage
-    // map entries that will receive updates. The next line fetches the header, which will always
+    // header, nonce, and code commitment. The next line fetches the header, which will always
     // change unless the patch is empty.
     let state_headers = select_minimal_account_state_headers(conn, account_id)?;
 
@@ -1149,28 +1109,14 @@ fn prepare_partial_account_update(
         }
     }
 
-    // First collect entries that have associated changes.
-    let slot_names = Vec::from_iter(patch.storage().maps().filter_map(|(slot_name, map_patch)| {
-        if map_patch.entries().is_none_or(StorageMapPatchEntries::is_empty) {
-            None
-        } else {
-            Some(slot_name.clone())
-        }
-    }));
-
-    let map_entries = select_latest_storage_map_entries_for_slots(conn, &account_id, &slot_names)?;
-
     // Apply the patch storage to the given storage header.
-    let new_storage_header =
-        apply_storage_patch(&state_headers.storage_header, patch.storage(), &map_entries)?;
+    let new_storage_header = apply_storage_patch_with_roots(
+        &state_headers.storage_header,
+        patch.storage(),
+        &precomputed.storage_map_roots,
+    )?;
 
-    // --- Update the vault root by constructing the asset vault from DB.
-    let new_vault_root = {
-        let assets = select_latest_vault_assets(conn, account_id)?;
-        let mut vault = AssetVault::new(&assets)?;
-        vault.apply_patch(patch.vault())?;
-        vault.root()
-    };
+    let new_vault_root = precomputed.vault_root;
 
     // --- Compute updated account state for the accounts row. --- Use the absolute final nonce.
     let new_nonce = patch.final_nonce().unwrap_or(state_headers.nonce);
@@ -1243,6 +1189,7 @@ pub(crate) fn upsert_accounts(
     conn: &mut SqliteConnection,
     accounts: &[BlockAccountUpdate],
     block_num: BlockNumber,
+    precomputed_public_states: &PrecomputedPublicAccountStates,
 ) -> Result<usize, DatabaseError> {
     let mut count = 0;
     for update in accounts {
@@ -1287,7 +1234,12 @@ pub(crate) fn upsert_accounts(
 
             // Update of an existing account
             AccountUpdateDetails::Public(patch) => {
-                prepare_partial_account_update(conn, update, account_id, patch)?
+                let precomputed = precomputed_public_states.get(&account_id).ok_or_else(|| {
+                    DatabaseError::DataCorrupted(format!(
+                        "missing precomputed public account state for account {account_id}"
+                    ))
+                })?;
+                prepare_partial_account_update(conn, update, account_id, patch, precomputed)?
             },
         };
 

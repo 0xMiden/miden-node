@@ -9,6 +9,7 @@ use miden_node_utils::fee::test_fee_params;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
+    Account,
     AccountBuilder,
     AccountComponent,
     AccountId,
@@ -40,12 +41,15 @@ use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::code_builder::CodeBuilder;
 
 use crate::db::models::queries::accounts::{
+    PrecomputedPublicAccountState,
+    PrecomputedPublicAccountStates,
     select_account_header_with_storage_header_at_block,
     select_account_vault_at_block,
     select_full_account,
     upsert_accounts,
 };
 use crate::db::schema::accounts;
+use crate::errors::DatabaseError;
 
 fn setup_test_db() -> SqliteConnection {
     crate::db::migrations::test_connection()
@@ -80,6 +84,130 @@ fn insert_block_header(conn: &mut SqliteConnection, block_num: BlockNumber) {
         ))
         .execute(conn)
         .expect("Failed to insert block header");
+}
+
+fn precomputed_state_from_account(account: &Account) -> PrecomputedPublicAccountState {
+    PrecomputedPublicAccountState {
+        account_id: account.id(),
+        vault_root: account.vault().root(),
+        storage_map_roots: account
+            .storage()
+            .slots()
+            .iter()
+            .filter_map(|slot| match slot.content() {
+                miden_protocol::account::StorageSlotContent::Map(map) => {
+                    Some((slot.name().clone(), map.root()))
+                },
+                miden_protocol::account::StorageSlotContent::Value(_) => None,
+            })
+            .collect(),
+    }
+}
+
+fn precomputed_states_from_account(account: &Account) -> PrecomputedPublicAccountStates {
+    PrecomputedPublicAccountStates::from_iter([(
+        account.id(),
+        precomputed_state_from_account(account),
+    )])
+}
+
+fn callback_enabled_faucet_id() -> AccountId {
+    AccountId::dummy(
+        [41u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Enabled,
+    )
+}
+
+fn callback_delta_test_account(seed: [u8; 32], slot_index: usize) -> Account {
+    let component_storage =
+        vec![StorageSlot::with_value(StorageSlotName::mock(slot_index), EMPTY_WORD)];
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", "@account_procedure pub proc vault push.1 end")
+        .unwrap();
+    let component = AccountComponent::new(
+        account_component_code,
+        component_storage,
+        AccountComponentMetadata::new("test"),
+    )
+    .unwrap();
+
+    AccountBuilder::new(seed)
+        .account_type(AccountType::Public)
+        .with_component(component)
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            PublicKeyCommitment::from(EMPTY_WORD),
+            AuthScheme::Falcon512Poseidon2,
+        )))
+        .build_existing()
+        .unwrap()
+}
+
+fn insert_public_account(conn: &mut SqliteConnection, block_num: BlockNumber, account: &Account) {
+    let patch_initial = AccountPatch::try_from(account.clone()).unwrap();
+    upsert_accounts(
+        conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            account.to_commitment(),
+            AccountUpdateDetails::Public(patch_initial),
+        )],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("initial upsert failed");
+}
+
+fn apply_callback_delta(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    faucet_id: AccountId,
+    block: BlockNumber,
+    amount: u64,
+    nonce_delta: u64,
+) -> Account {
+    let prev = select_full_account(conn, account_id).expect("load account");
+    let callback_template = FungibleAsset::new(faucet_id, amount).unwrap();
+    let prev_amount = match prev.vault().get(callback_template.id()) {
+        Some(Asset::Fungible(f)) => f.amount().as_u64(),
+        _ => 0,
+    };
+
+    let absolute_asset =
+        Asset::Fungible(FungibleAsset::new(faucet_id, prev_amount + amount).unwrap());
+    let mut vault_patch = AccountVaultPatch::default();
+    vault_patch.insert_asset(absolute_asset);
+    let final_nonce = Felt::new_unchecked(prev.nonce().as_canonical_u64() + nonce_delta);
+    let patch = AccountPatch::new(
+        account_id,
+        AccountStoragePatch::new(),
+        vault_patch,
+        None,
+        Some(final_nonce),
+    )
+    .unwrap();
+
+    let mut expected = prev.clone();
+    expected.apply_patch(&patch).unwrap();
+    let precomputed_public_states = precomputed_states_from_account(&expected);
+
+    upsert_accounts(
+        conn,
+        &[BlockAccountUpdate::new(
+            account_id,
+            expected.to_commitment(),
+            AccountUpdateDetails::Public(patch),
+        )],
+        block,
+        &precomputed_public_states,
+    )
+    .expect("partial delta upsert failed");
+
+    let after = select_full_account(conn, account_id).expect("load account after");
+    assert_eq!(after.vault().root(), expected.vault().root(), "vault root mismatch");
+    assert_eq!(after.to_commitment(), expected.to_commitment(), "commitment mismatch");
+    after
 }
 
 /// Tests that the optimized delta update path produces the same results as the old
@@ -161,7 +289,13 @@ fn optimized_delta_matches_full_account_method() {
         account.to_commitment(),
         AccountUpdateDetails::Public(patch_initial),
     );
-    upsert_accounts(&mut conn, &[account_update_initial], block_1).expect("Initial upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update_initial],
+        block_1,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("Initial upsert failed");
 
     // Verify initial state
     let full_account_before =
@@ -229,6 +363,7 @@ fn optimized_delta_matches_full_account_method() {
     let final_commitment = final_account_for_commitment.to_commitment();
     let expected_storage_commitment = final_account_for_commitment.storage().to_commitment();
     let expected_vault_root = final_account_for_commitment.vault().root();
+    let precomputed_public_states = precomputed_states_from_account(&final_account_for_commitment);
 
     // ----- Apply the partial patch via upsert_accounts (optimized path) -----
     let account_update = BlockAccountUpdate::new(
@@ -236,7 +371,8 @@ fn optimized_delta_matches_full_account_method() {
         final_commitment,
         AccountUpdateDetails::Public(partial_patch),
     );
-    upsert_accounts(&mut conn, &[account_update], block_2).expect("Partial delta upsert failed");
+    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
+        .expect("Partial delta upsert failed");
 
     // ----- VERIFY: Query the DB and check that optimized path produced correct results -----
 
@@ -363,7 +499,13 @@ fn optimized_delta_updates_non_empty_vault() {
         account.to_commitment(),
         AccountUpdateDetails::Public(patch_initial),
     );
-    upsert_accounts(&mut conn, &[account_update_initial], block_1).expect("Initial upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update_initial],
+        block_1,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("Initial upsert failed");
 
     let full_account_before =
         select_full_account(&mut conn, account.id()).expect("Failed to load full account");
@@ -391,13 +533,15 @@ fn optimized_delta_updates_non_empty_vault() {
     expected_account.apply_patch(&partial_patch).unwrap();
     let expected_commitment = expected_account.to_commitment();
     let expected_vault_root = expected_account.vault().root();
+    let precomputed_public_states = precomputed_states_from_account(&expected_account);
 
     let account_update = BlockAccountUpdate::new(
         account.id(),
         expected_commitment,
         AccountUpdateDetails::Public(partial_patch),
     );
-    upsert_accounts(&mut conn, &[account_update], block_2).expect("Partial delta upsert failed");
+    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
+        .expect("Partial delta upsert failed");
 
     let vault_assets_after = select_account_vault_at_block(&mut conn, account.id(), block_2)
         .expect("Query vault should succeed");
@@ -435,13 +579,15 @@ fn optimized_delta_updates_non_empty_vault() {
     expected_after_3.apply_patch(&partial_patch_3).unwrap();
     let commitment_3 = expected_after_3.to_commitment();
     let expected_vault_root_3 = expected_after_3.vault().root();
+    let precomputed_public_states_3 = precomputed_states_from_account(&expected_after_3);
 
     let account_update_3 = BlockAccountUpdate::new(
         account.id(),
         commitment_3,
         AccountUpdateDetails::Public(partial_patch_3),
     );
-    upsert_accounts(&mut conn, &[account_update_3], block_3).expect("Block 3 upsert failed");
+    upsert_accounts(&mut conn, &[account_update_3], block_3, &precomputed_public_states_3)
+        .expect("Block 3 upsert failed");
 
     let full_account_final =
         select_full_account(&mut conn, account.id()).expect("Failed to load after block 3");
@@ -470,34 +616,6 @@ fn optimized_delta_updates_preserve_callback_flag() {
 
     let mut conn = setup_test_db();
 
-    let faucet_id = AccountId::dummy(
-        [41u8; 15],
-        AccountIdVersion::Version1,
-        AccountType::Public,
-        AssetCallbackFlag::Enabled,
-    );
-
-    let component_storage =
-        vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
-    let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "@account_procedure pub proc vault push.1 end")
-        .unwrap();
-    let component = AccountComponent::new(
-        account_component_code,
-        component_storage,
-        AccountComponentMetadata::new("test"),
-    )
-    .unwrap();
-    let account = AccountBuilder::new(ACCOUNT_SEED)
-        .account_type(AccountType::Public)
-        .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
-            PublicKeyCommitment::from(EMPTY_WORD),
-            AuthScheme::Falcon512Poseidon2,
-        )))
-        .build_existing()
-        .unwrap();
-
     let block_1 = BlockNumber::from(1u32);
     let block_2 = BlockNumber::from(2u32);
     let block_3 = BlockNumber::from(3u32);
@@ -505,69 +623,26 @@ fn optimized_delta_updates_preserve_callback_flag() {
     insert_block_header(&mut conn, block_2);
     insert_block_header(&mut conn, block_3);
 
-    // Block 1: full-state insert of the (asset-less) account.
-    let patch_initial = AccountPatch::try_from(account.clone()).unwrap();
-    upsert_accounts(
+    let faucet_id = callback_enabled_faucet_id();
+    let account = callback_delta_test_account(ACCOUNT_SEED, SLOT_INDEX);
+    insert_public_account(&mut conn, block_1, &account);
+
+    apply_callback_delta(
         &mut conn,
-        &[BlockAccountUpdate::new(
-            account.id(),
-            account.to_commitment(),
-            AccountUpdateDetails::Public(patch_initial),
-        )],
-        block_1,
-    )
-    .expect("Initial upsert failed");
-
-    // Applies a partial vault delta that adds `amount` of a callback-enabled asset, then asserts
-    // the store's recomputed state matches the protocol's reference application.
-    let apply_callback_delta = |conn: &mut SqliteConnection, block, amount| {
-        let prev = select_full_account(conn, account.id()).expect("load account");
-
-        let callback_template = FungibleAsset::new(faucet_id, amount).unwrap();
-        let vault_key = callback_template.id();
-
-        // The patch carries the absolute end-state, so accumulate the previous balance for this
-        // asset and add the new amount on top.
-        let prev_amount = match prev.vault().get(vault_key) {
-            Some(Asset::Fungible(f)) => f.amount().as_u64(),
-            _ => 0,
-        };
-        let absolute_asset =
-            Asset::Fungible(FungibleAsset::new(faucet_id, prev_amount + amount).unwrap());
-        let mut vault_patch = AccountVaultPatch::default();
-        vault_patch.insert_asset(absolute_asset);
-        let final_nonce = Felt::new_unchecked(prev.nonce().as_canonical_u64() + NONCE_DELTA);
-        let patch = AccountPatch::new(
-            account.id(),
-            AccountStoragePatch::new(),
-            vault_patch,
-            None,
-            Some(final_nonce),
-        )
-        .unwrap();
-
-        let mut expected = prev.clone();
-        expected.apply_patch(&patch).unwrap();
-
-        upsert_accounts(
-            conn,
-            &[BlockAccountUpdate::new(
-                account.id(),
-                expected.to_commitment(),
-                AccountUpdateDetails::Public(patch),
-            )],
-            block,
-        )
-        .expect("partial delta upsert failed");
-
-        let after = select_full_account(conn, account.id()).expect("load account after");
-        assert_eq!(after.vault().root(), expected.vault().root(), "vault root mismatch");
-        assert_eq!(after.to_commitment(), expected.to_commitment(), "commitment mismatch");
-        after
-    };
-
-    apply_callback_delta(&mut conn, block_2, ADDED_AMOUNT_BLOCK_2);
-    let final_account = apply_callback_delta(&mut conn, block_3, ADDED_AMOUNT_BLOCK_3);
+        account.id(),
+        faucet_id,
+        block_2,
+        ADDED_AMOUNT_BLOCK_2,
+        NONCE_DELTA,
+    );
+    let final_account = apply_callback_delta(
+        &mut conn,
+        account.id(),
+        faucet_id,
+        block_3,
+        ADDED_AMOUNT_BLOCK_3,
+        NONCE_DELTA,
+    );
 
     let final_assets: Vec<Asset> = final_account.vault().assets().collect();
     assert_eq!(final_assets.len(), 1, "Should have exactly 1 vault asset");
@@ -656,7 +731,13 @@ fn optimized_delta_updates_storage_map_header() {
         account.to_commitment(),
         AccountUpdateDetails::Public(patch_initial),
     );
-    upsert_accounts(&mut conn, &[account_update_initial], block_1).expect("Initial upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update_initial],
+        block_1,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("Initial upsert failed");
 
     let full_account_before =
         select_full_account(&mut conn, account.id()).expect("Failed to load full account");
@@ -683,13 +764,15 @@ fn optimized_delta_updates_storage_map_header() {
     expected_account.apply_patch(&partial_patch).unwrap();
     let expected_commitment = expected_account.to_commitment();
     let expected_storage_commitment = expected_account.storage().to_commitment();
+    let precomputed_public_states = precomputed_states_from_account(&expected_account);
 
     let account_update = BlockAccountUpdate::new(
         account.id(),
         expected_commitment,
         AccountUpdateDetails::Public(partial_patch),
     );
-    upsert_accounts(&mut conn, &[account_update], block_2).expect("Partial delta upsert failed");
+    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
+        .expect("Partial delta upsert failed");
 
     let (header_after, storage_header_after) =
         select_account_header_with_storage_header_at_block(&mut conn, account.id(), block_2)
@@ -706,6 +789,187 @@ fn optimized_delta_updates_storage_map_header() {
         expected_commitment,
         "Account commitment should match after map delta"
     );
+}
+
+#[test]
+fn apply_storage_patch_with_roots_uses_precomputed_map_root() {
+    use miden_protocol::account::{AccountStorageHeader, StorageSlotHeader, StorageSlotType};
+
+    use super::apply_storage_patch_with_roots;
+
+    let slot_name = StorageSlotName::mock(70);
+    let key = StorageMapKey::new(Word::from([Felt::new_unchecked(71); 4]));
+    let old_value = Word::from([Felt::new_unchecked(72); 4]);
+    let new_value = Word::from([Felt::new_unchecked(73); 4]);
+    let old_root = StorageMap::with_entries([(key, old_value)]).unwrap().root();
+    let new_root = StorageMap::with_entries([(key, new_value)]).unwrap().root();
+    let header = AccountStorageHeader::new(vec![StorageSlotHeader::new(
+        slot_name.clone(),
+        StorageSlotType::Map,
+        old_root,
+    )])
+    .unwrap();
+    let patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
+        slot_name.clone(),
+        StorageSlotPatch::Map(StorageMapPatch::from_iters([], [(key, new_value)])),
+    )]))
+    .unwrap();
+    let precomputed_roots = BTreeMap::from_iter([(slot_name.clone(), new_root)]);
+
+    let new_header = apply_storage_patch_with_roots(&header, &patch, &precomputed_roots).unwrap();
+
+    let updated_slot = new_header.find_slot_header_by_name(&slot_name).unwrap();
+    assert_eq!(updated_slot.value(), new_root);
+    assert_eq!(updated_slot.slot_type(), StorageSlotType::Map);
+}
+
+#[test]
+fn partial_public_upsert_requires_precomputed_state() {
+    const ACCOUNT_SEED: [u8; 32] = [80u8; 32];
+    const SLOT_INDEX: usize = 0;
+
+    let mut conn = setup_test_db();
+    let block_1 = BlockNumber::from(1u32);
+    let block_2 = BlockNumber::from(2u32);
+    insert_block_header(&mut conn, block_1);
+    insert_block_header(&mut conn, block_2);
+
+    let component_storage =
+        vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code(
+            "test::interface",
+            "@account_procedure pub proc required push.1 end",
+        )
+        .unwrap();
+    let component = AccountComponent::new(
+        account_component_code,
+        component_storage,
+        AccountComponentMetadata::new("test"),
+    )
+    .unwrap();
+    let account = AccountBuilder::new(ACCOUNT_SEED)
+        .account_type(AccountType::Public)
+        .with_component(component)
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            PublicKeyCommitment::from(EMPTY_WORD),
+            AuthScheme::Falcon512Poseidon2,
+        )))
+        .build_existing()
+        .unwrap();
+
+    let patch_initial = AccountPatch::try_from(account.clone()).unwrap();
+    upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            account.to_commitment(),
+            AccountUpdateDetails::Public(patch_initial),
+        )],
+        block_1,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("initial full-state upsert should not need precomputed roots");
+
+    let mut current_account = select_full_account(&mut conn, account.id()).unwrap();
+    let patch = AccountPatch::new(
+        account.id(),
+        AccountStoragePatch::new(),
+        AccountVaultPatch::default(),
+        None,
+        Some(Felt::new_unchecked(current_account.nonce().as_canonical_u64() + 1)),
+    )
+    .unwrap();
+    current_account.apply_patch(&patch).unwrap();
+
+    let err = upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            current_account.to_commitment(),
+            AccountUpdateDetails::Public(patch),
+        )],
+        block_2,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect_err("partial public upsert should require precomputed roots");
+
+    assert_matches!(err, DatabaseError::DataCorrupted(message) if message.contains("missing precomputed public account state"));
+}
+
+#[test]
+fn partial_public_upsert_rejects_bad_precomputed_root() {
+    const ACCOUNT_SEED: [u8; 32] = [81u8; 32];
+    const SLOT_INDEX: usize = 0;
+
+    let mut conn = setup_test_db();
+    let block_1 = BlockNumber::from(1u32);
+    let block_2 = BlockNumber::from(2u32);
+    insert_block_header(&mut conn, block_1);
+    insert_block_header(&mut conn, block_2);
+
+    let component_storage =
+        vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
+    let account_component_code = CodeBuilder::default()
+        .compile_component_code("test::interface", "@account_procedure pub proc badroot push.1 end")
+        .unwrap();
+    let component = AccountComponent::new(
+        account_component_code,
+        component_storage,
+        AccountComponentMetadata::new("test"),
+    )
+    .unwrap();
+    let account = AccountBuilder::new(ACCOUNT_SEED)
+        .account_type(AccountType::Public)
+        .with_component(component)
+        .with_auth_component(AuthSingleSig::new(Approver::new(
+            PublicKeyCommitment::from(EMPTY_WORD),
+            AuthScheme::Falcon512Poseidon2,
+        )))
+        .build_existing()
+        .unwrap();
+
+    let patch_initial = AccountPatch::try_from(account.clone()).unwrap();
+    upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            account.to_commitment(),
+            AccountUpdateDetails::Public(patch_initial),
+        )],
+        block_1,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("initial full-state upsert should not need precomputed roots");
+
+    let mut expected_account = select_full_account(&mut conn, account.id()).unwrap();
+    let patch = AccountPatch::new(
+        account.id(),
+        AccountStoragePatch::new(),
+        AccountVaultPatch::default(),
+        None,
+        Some(Felt::new_unchecked(expected_account.nonce().as_canonical_u64() + 1)),
+    )
+    .unwrap();
+    expected_account.apply_patch(&patch).unwrap();
+
+    let mut precomputed = precomputed_states_from_account(&expected_account);
+    precomputed.get_mut(&account.id()).unwrap().vault_root =
+        Word::from([Felt::new_unchecked(999); 4]);
+
+    let err = upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            expected_account.to_commitment(),
+            AccountUpdateDetails::Public(patch),
+        )],
+        block_2,
+        &precomputed,
+    )
+    .expect_err("bad precomputed roots should be validated against the final commitment");
+
+    assert_matches!(err, DatabaseError::AccountCommitmentsMismatch { .. });
 }
 
 /// Tests that a private account update (no public state) is handled correctly.
@@ -746,8 +1010,13 @@ fn upsert_private_account() {
     let account_update =
         BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Private);
 
-    upsert_accounts(&mut conn, &[account_update], block_num)
-        .expect("Private account upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("Private account upsert failed");
 
     // Verify the account exists and commitment matches
 
@@ -830,8 +1099,13 @@ fn upsert_full_state_delta() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_num)
-        .expect("Full-state delta upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("Full-state delta upsert failed");
 
     // Verify the account state was stored correctly
     let (header, storage_header) =

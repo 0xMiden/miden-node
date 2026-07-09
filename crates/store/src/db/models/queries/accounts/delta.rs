@@ -12,21 +12,22 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection};
+#[cfg(test)]
+use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::{
     Account,
     AccountId,
     AccountStorageHeader,
     AccountStoragePatch,
-    StorageMap,
-    StorageMapKey,
     StoragePatchOperation,
     StorageSlotHeader,
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::Asset;
+#[cfg(test)]
+use miden_protocol::account::{StorageMap, StorageMapKey};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_protocol::{EMPTY_WORD, Felt, Word};
+use miden_protocol::{Felt, Word};
 
 use crate::db::models::conv::raw_sql_to_nonce;
 use crate::db::schema;
@@ -139,36 +140,6 @@ pub(super) fn select_minimal_account_state_headers(
     Ok(AccountStateHeadersForDelta { nonce, code_commitment, storage_header })
 }
 
-/// Selects the latest vault assets for an account.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT vault_key, asset
-/// FROM account_vault_assets
-/// WHERE account_id = ?1 AND is_latest = 1
-/// ```
-pub(super) fn select_latest_vault_assets(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-) -> Result<Vec<Asset>, DatabaseError> {
-    use schema::account_vault_assets as vault;
-
-    let entries: Vec<(Vec<u8>, Option<Vec<u8>>)> =
-        SelectDsl::select(vault::table, (vault::vault_key, vault::asset))
-            .filter(vault::account_id.eq(account_id.to_bytes()))
-            .filter(vault::is_latest.eq(true))
-            .load(conn)?;
-
-    entries
-        .into_iter()
-        .filter_map(|(_vault_key_bytes, maybe_asset_bytes)| {
-            maybe_asset_bytes.map(|bytes| Asset::read_from_bytes(&bytes))
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(Into::into)
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -178,6 +149,7 @@ pub(super) fn select_latest_vault_assets(
 /// For map slots, uses the precomputed roots for updated maps.
 /// Removed slots are dropped from the header and created slots are added to it, mirroring
 /// [`miden_protocol::account::AccountStorage`]'s patch application.
+#[cfg(test)]
 pub(super) fn apply_storage_patch(
     header: &AccountStorageHeader,
     patch: &AccountStoragePatch,
@@ -221,6 +193,77 @@ pub(super) fn apply_storage_patch(
         let storage_map =
             StorageMap::with_entries(entries).map_err(DatabaseError::StorageMapError)?;
         map_updates.insert(slot_name, storage_map.root());
+    }
+
+    let mut slots =
+        Vec::from_iter(header.slots().filter(|slot| !removed.contains(slot.name())).map(|slot| {
+            let slot_name = slot.name();
+            if let Some(new_value) = value_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
+            } else if let Some(new_root) = map_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
+            } else {
+                slot.clone()
+            }
+        }));
+
+    // Any updates left over belong to slots created by the patch.
+    for (slot_name, value) in value_updates {
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Value, value));
+    }
+    for (slot_name, root) in map_updates {
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Map, root));
+    }
+
+    slots.sort_by_key(StorageSlotHeader::id);
+
+    AccountStorageHeader::new(slots).map_err(|e| {
+        DatabaseError::DataCorrupted(format!("Failed to create storage header: {e:?}"))
+    })
+}
+
+/// Applies a storage patch to an existing storage header using precomputed map roots.
+///
+/// This mirrors the legacy storage patch path for value-slot updates, map-slot removal, no-op map
+/// updates, and slot creation. For map slots whose final root is needed, it uses the root supplied
+/// by the caller instead of loading the previous map entries and reconstructing the map.
+pub(super) fn apply_storage_patch_with_roots(
+    header: &AccountStorageHeader,
+    patch: &AccountStoragePatch,
+    precomputed_map_roots: &BTreeMap<StorageSlotName, Word>,
+) -> Result<AccountStorageHeader, DatabaseError> {
+    let mut value_updates: HashMap<&StorageSlotName, Word> = HashMap::new();
+    let mut map_updates: HashMap<&StorageSlotName, Word> = HashMap::new();
+    let mut removed: HashSet<&StorageSlotName> = HashSet::new();
+
+    for (slot_name, value_patch) in patch.values() {
+        match value_patch.value() {
+            Some(value) => {
+                value_updates.insert(slot_name, value);
+            },
+            None => {
+                removed.insert(slot_name);
+            },
+        }
+    }
+
+    for (slot_name, map_patch) in patch.maps() {
+        let Some(map_patch_entries) = map_patch.entries() else {
+            removed.insert(slot_name);
+            continue;
+        };
+        // Empty entries are a no-op for updates, but creating a map slot with no entries is
+        // meaningful and must still produce the slot.
+        if map_patch_entries.is_empty() && map_patch.patch_op() != StoragePatchOperation::Create {
+            continue;
+        }
+
+        let root = precomputed_map_roots.get(slot_name).copied().ok_or_else(|| {
+            DatabaseError::DataCorrupted(format!(
+                "missing precomputed storage map root for slot {slot_name}"
+            ))
+        })?;
+        map_updates.insert(slot_name, root);
     }
 
     let mut slots =

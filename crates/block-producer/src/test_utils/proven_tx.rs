@@ -15,7 +15,7 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::vm::ExecutionProof;
 use miden_protocol::{Felt, ONE, Word};
-use rand::Rng;
+use rand::RngExt;
 
 use super::MockPrivateAccount;
 use crate::domain::transaction::AuthenticatedTransaction;

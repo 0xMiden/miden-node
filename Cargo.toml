@@ -10,9 +10,7 @@ members = [
   "crates/block-producer",
   "crates/db",
   "crates/grpc-error-macro",
-  "crates/large-smt-backend-rocksdb",
   "crates/proto",
-  "crates/rocksdb-cxx-linkage-fix",
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
@@ -32,7 +30,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/node"
-rust-version = "1.93"
+rust-version = "1.96"
 version      = "0.15.1"
 
 # Optimize the cryptography for faster tests involving account creation.
@@ -44,20 +42,16 @@ debug = true
 
 [workspace.dependencies]
 # Workspace crates.
-miden-large-smt-backend-rocksdb = { path = "crates/large-smt-backend-rocksdb", version = "0.15.1" }
-miden-node-block-producer       = { path = "crates/block-producer", version = "0.15.1" }
-miden-node-db                   = { path = "crates/db", version = "0.15.1" }
-miden-node-grpc-error-macro     = { path = "crates/grpc-error-macro", version = "0.15.1" }
-miden-node-proto                = { path = "crates/proto", version = "0.15.1" }
-miden-node-proto-build          = { path = "proto", version = "0.15.1" }
-miden-node-rpc                  = { path = "crates/rpc", version = "0.15.1" }
-miden-node-store                = { path = "crates/store", version = "0.15.1" }
-miden-node-test-macro           = { path = "crates/test-macro" }
-miden-node-tracing-macro        = { path = "crates/tracing-macro", version = "0.15.1" }
-miden-node-utils                = { path = "crates/utils", version = "0.15.1" }
-# Temporary workaround until <https://github.com/rust-rocksdb/rust-rocksdb/pull/1029>
-# is part of `rocksdb-rust` release
-miden-node-rocksdb-cxx-linkage-fix = { path = "crates/rocksdb-cxx-linkage-fix", version = "0.15.1" }
+miden-node-block-producer   = { path = "crates/block-producer", version = "0.15.1" }
+miden-node-db               = { path = "crates/db", version = "0.15.1" }
+miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.15.1" }
+miden-node-proto            = { path = "crates/proto", version = "0.15.1" }
+miden-node-proto-build      = { path = "proto", version = "0.15.1" }
+miden-node-rpc              = { path = "crates/rpc", version = "0.15.1" }
+miden-node-store            = { path = "crates/store", version = "0.15.1" }
+miden-node-test-macro       = { path = "crates/test-macro" }
+miden-node-tracing-macro    = { path = "crates/tracing-macro", version = "0.15.1" }
+miden-node-utils            = { path = "crates/utils", version = "0.15.1" }
 
 # miden-protocol dependencies. These should be updated in sync.
 miden-block-prover = { branch = "next", git = "https://github.com/0xMiden/protocol.git" }
@@ -68,7 +62,7 @@ miden-tx           = { branch = "next", default-features = false, git = "https:/
 miden-tx-batch     = { branch = "next", git = "https://github.com/0xMiden/protocol.git" }
 
 # Other miden dependencies. These should align with those expected by miden-protocol.
-miden-crypto = { version = "0.25" }
+miden-crypto = { version = "0.27" }
 
 # External dependencies
 anyhow            = { version = "1.0" }
@@ -102,8 +96,8 @@ prost              = { default-features = false, version = "=0.14.3" }
 prost-types        = { default-features = false, version = "=0.14.3" }
 protox             = { version = "=0.9.1" }
 quote              = { version = "1.0" }
-rand               = { version = "0.9" }
-rand_chacha        = { default-features = false, version = "0.9" }
+rand               = { version = "0.10" }
+rand_chacha        = { default-features = false, version = "0.10" }
 rayon              = { version = "1.10" }
 reqwest            = { version = "0.13" }
 rstest             = { version = "0.26" }
@@ -158,10 +152,11 @@ should_panic_without_expect  = "allow" # We don't care about the specific panic 
 # Configure `cargo-typos`
 [workspace.metadata.typos]
 files.extend-exclude = [
-  "*.min.js",          # Minified JS bundles (vendored htmx etc.).
-  "*.svg",             # SVG files.
-  "benchmark-proofs/", # miden-benchmark output.
-  "logs/",             # Native benchmark process logs.
-  "node-data*/",       # Native benchmark runtime data dir + any sibling clones (RocksDB LOGs etc.).
-  "snapshots/",        # Snapshot tarballs used by the bench replay workflow.
+  "*.min.js",             # Minified JS bundles (vendored htmx etc.).
+  "*.svg",                # SVG files.
+  "benchmark-proofs/",    # miden-benchmark output.
+  "logs/",                # Native benchmark process logs.
+  "node-data*/",          # Native benchmark runtime data dir + any sibling clones (RocksDB LOGs etc.).
+  "snapshots/",           # Snapshot tarballs used by the bench replay workflow.
+  "stress-test-store-*/", # Stress-test RocksDB stores (generated LOGs contain non-word tokens).
 ]

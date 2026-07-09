@@ -63,12 +63,10 @@ fn validate_genesis_block(block: &SignedBlock) -> anyhow::Result<()> {
         block.header().block_num(),
     );
 
-    anyhow::ensure!(
-        block
-            .signature()
-            .verify(block.header().commitment(), block.header().validator_key()),
-        "genesis block signature verification failed",
-    );
+    block
+        .signatures()
+        .verify_against(block.header().commitment(), block.header().validator_keys())
+        .context("genesis block signature verification failed")?;
 
     Ok(())
 }
@@ -121,7 +119,7 @@ const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize =
     NonZeroUsize::new(1_000).expect("literal is non-zero");
 
 /// Default duration after which an idle network account actor will deactivate.
-const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
 /// Default per-request timeout for the remote transaction prover.
 const DEFAULT_PROVER_TIMEOUT: Duration = Duration::from_secs(10);

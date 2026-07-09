@@ -18,6 +18,7 @@ use miden_protocol::account::{
     AccountType,
     AccountUpdateDetails,
     AccountVaultPatch,
+    AssetCallbackFlag,
     StorageMapKey,
     StorageMapPatchEntries,
     StorageSlot,
@@ -32,6 +33,7 @@ use miden_protocol::block::{
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::SparseMerklePath;
@@ -74,7 +76,7 @@ use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, P2idNote};
 use pretty_assertions::assert_eq;
-use rand::Rng;
+use rand::RngExt;
 use tempfile::tempdir;
 
 use super::{AccountInfo, NoteRecord, NoteSyncRecord, NullifierInfo, TransactionRecord};
@@ -98,7 +100,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -294,8 +296,12 @@ fn sql_select_accounts() {
     // test multiple entries
     let mut state = vec![];
     for i in 0..10u8 {
-        let account_id =
-            AccountId::dummy([i; 15], AccountIdVersion::Version1, AccountType::Private);
+        let account_id = AccountId::dummy(
+            [i; 15],
+            AccountIdVersion::Version1,
+            AccountType::Private,
+            AssetCallbackFlag::Disabled,
+        );
         let account_commitment = num_to_word(u64::from(i));
         state.push(AccountInfo {
             summary: AccountSummary {
@@ -349,8 +355,8 @@ fn sync_account_vault_basic_validation() {
     let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
     let fungible_asset_1 = Asset::Fungible(FungibleAsset::new(public_account_id, 1000).unwrap());
     let fungible_asset_2 = Asset::Fungible(FungibleAsset::new(faucet_id_2, 2000).unwrap());
-    let vault_key_1 = fungible_asset_1.vault_key();
-    let vault_key_2 = fungible_asset_2.vault_key();
+    let vault_key_1 = fungible_asset_1.id();
+    let vault_key_2 = fungible_asset_2.id();
 
     // Insert vault assets for the public account at different blocks
     queries::insert_account_vault_asset(
@@ -599,7 +605,7 @@ fn db_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -632,7 +638,7 @@ fn db_block_header() {
         num_to_word(17),
         num_to_word(18),
         num_to_word(19),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         21_u8.into(),
     );
@@ -1691,6 +1697,7 @@ fn mock_account_code_and_storage(
     init_seed: Option<[u8; 32]>,
 ) -> Account {
     let component_code = "\
+    @account_procedure
     pub proc account_procedure_1
         push.1.2
         add
@@ -1786,6 +1793,7 @@ fn test_select_account_code_by_commitment_multiple_codes() {
 
     // Create account with code v1 at block 1
     let code_v1_str = "\
+        @account_procedure
         pub proc account_procedure_1
             push.1.2
             add
@@ -1809,6 +1817,7 @@ fn test_select_account_code_by_commitment_multiple_codes() {
 
     // Create account with different code v2 at block 2
     let code_v2_str = "\
+        @account_procedure
         pub proc account_procedure_1
             push.3.4
             mul
@@ -1862,7 +1871,7 @@ fn test_select_account_code_by_commitment_multiple_codes() {
 #[miden_node_test_macro::enable_logging]
 async fn genesis_with_account_assets() {
     use crate::genesis::GenesisState;
-    let component_code = "pub proc foo push.1 end";
+    let component_code = "@account_procedure pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1933,7 +1942,7 @@ async fn genesis_with_account_storage_map() {
         StorageSlot::with_empty_value(StorageSlotName::mock(1)),
     ];
 
-    let component_code = "pub proc foo push.1 end";
+    let component_code = "@account_procedure pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -1992,7 +2001,7 @@ async fn genesis_with_account_assets_and_storage() {
         StorageSlot::with_map(StorageSlotName::mock(2), storage_map),
     ];
 
-    let component_code = "pub proc foo push.1 end";
+    let component_code = "@account_procedure pub proc foo push.1 end";
 
     let account_component_code = CodeBuilder::default()
         .compile_component_code("foo::interface", component_code)
@@ -2035,7 +2044,7 @@ async fn genesis_with_multiple_accounts() {
     use crate::genesis::GenesisState;
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("foo::interface", "pub proc foo push.1 end")
+        .compile_component_code("foo::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
     let account_component1 = AccountComponent::new(
         account_component_code,
@@ -2058,7 +2067,7 @@ async fn genesis_with_multiple_accounts() {
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("bar::interface", "pub proc bar push.2 end")
+        .compile_component_code("bar::interface", "@account_procedure pub proc bar push.2 end")
         .unwrap();
     let account_component2 = AccountComponent::new(
         account_component_code,
@@ -2092,7 +2101,7 @@ async fn genesis_with_multiple_accounts() {
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("baz::interface", "pub proc baz push.3 end")
+        .compile_component_code("baz::interface", "@account_procedure pub proc baz push.3 end")
         .unwrap();
     let account_component3 = AccountComponent::new(
         account_component_code,
@@ -2167,7 +2176,7 @@ fn regression_1461_full_state_delta_inserts_vault_assets() {
     let expected_asset: Asset = fungible_asset.into();
     assert_eq!(vault_asset.block_num, block_num);
     assert_eq!(vault_asset.asset, Some(expected_asset));
-    assert_eq!(vault_asset.vault_key, expected_asset.vault_key());
+    assert_eq!(vault_asset.vault_key, expected_asset.id());
 }
 
 // SERIALIZATION SYMMETRY TESTS
@@ -2222,7 +2231,7 @@ fn serialization_symmetry_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -2309,7 +2318,7 @@ fn db_roundtrip_block_header() {
         num_to_word(7),
         num_to_word(8),
         num_to_word(9),
-        SigningKey::new().public_key(),
+        ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap(),
         test_fee_params(),
         11_u8.into(),
     );
@@ -2451,7 +2460,7 @@ fn db_roundtrip_vault_assets() {
 
     let fungible_asset = FungibleAsset::new(faucet_id, 5000).unwrap();
     let asset: Asset = fungible_asset.into();
-    let vault_key = asset.vault_key();
+    let vault_key = asset.id();
 
     // Insert vault asset
     queries::insert_account_vault_asset(&mut conn, account_id, block_num, vault_key, Some(asset))
@@ -2557,7 +2566,7 @@ fn db_roundtrip_account_storage_with_maps() {
         StorageSlot::with_empty_value(StorageSlotName::mock(2)),
     ];
 
-    let component_code = "pub proc foo push.1 end";
+    let component_code = "@account_procedure pub proc foo push.1 end";
     let account_component_code = CodeBuilder::default()
         .compile_component_code("test::interface", component_code)
         .unwrap();
@@ -2732,9 +2741,9 @@ fn test_prune_history() {
     let asset_1 = Asset::Fungible(FungibleAsset::new(public_account_id, 1000).unwrap());
     let asset_2 = Asset::Fungible(FungibleAsset::new(faucet_2, 2000).unwrap());
     let asset_3 = Asset::Fungible(FungibleAsset::new(faucet_3, 3000).unwrap());
-    let vault_key_old = asset_1.vault_key();
-    let vault_key_cutoff = asset_2.vault_key();
-    let vault_key_recent = asset_3.vault_key();
+    let vault_key_old = asset_1.id();
+    let vault_key_cutoff = asset_2.id();
+    let vault_key_recent = asset_3.id();
 
     // Old entry at block_old (should be deleted when cutoff is at block_cutoff for
     // chain_tip=block_tip)
@@ -2922,7 +2931,7 @@ fn test_prune_history() {
     // latest
     let faucet_4 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3).unwrap();
     let asset_old = Asset::Fungible(FungibleAsset::new(faucet_4, 9999).unwrap());
-    let vault_key_old_latest = asset_old.vault_key();
+    let vault_key_old_latest = asset_old.id();
     queries::insert_account_vault_asset(
         conn,
         public_account_id,

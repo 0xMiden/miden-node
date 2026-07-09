@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use indexmap::IndexMap;
-use miden_node_utils::crypto::get_random_coin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountFile, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -207,7 +206,7 @@ impl GenesisConfig {
             tracing::debug!(target: LOG_TARGET, index, assets = ?assets, "Adding wallet account");
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
-            let secret_key = RpoSecretKey::with_rng(&mut get_random_coin(&mut rng));
+            let secret_key = RpoSecretKey::with_rng(&mut rng);
             let auth =
                 Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
             let init_seed: [u8; 32] = rng.random();
@@ -402,7 +401,7 @@ impl FungibleFaucetConfig {
             account_type,
         } = self;
         let mut rng = ChaCha20Rng::from_seed(rand::random());
-        let secret_key = RpoSecretKey::with_rng(&mut get_random_coin(&mut rng));
+        let secret_key = RpoSecretKey::with_rng(&mut rng);
         let auth = AuthSingleSig::new(Approver::new(
             secret_key.public_key().into(),
             AuthScheme::Falcon512Poseidon2,

@@ -3446,7 +3446,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
- "rand 0.10.2",
  "reqwest",
  "thiserror 2.0.18",
  "tokio",

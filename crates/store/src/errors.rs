@@ -8,6 +8,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::crypto::merkle::mmr::MmrError;
+use miden_protocol::crypto::merkle::smt::{LargeSmtForestError, LineageId};
 use miden_protocol::crypto::utils::DeserializationError;
 use miden_protocol::errors::{
     AccountDeltaError,
@@ -25,6 +26,21 @@ use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 
 use crate::db::models::conv::DatabaseTypeConversionError;
+
+#[derive(Debug, Error)]
+pub enum AccountStateForestUpdateError {
+    #[error("account {account_id} vault lineage already exists")]
+    VaultLineageAlreadyExists { account_id: AccountId },
+    #[error("account {account_id} storage map lineage for slot {slot_name} already exists")]
+    StorageLineageAlreadyExists {
+        account_id: AccountId,
+        slot_name: miden_protocol::account::StorageSlotName,
+    },
+    #[error("computed forest mutations are missing lineage {lineage}")]
+    MissingComputedRoot { lineage: LineageId },
+    #[error(transparent)]
+    Forest(#[from] LargeSmtForestError),
+}
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -209,8 +225,10 @@ pub enum ApplyBlockError {
     ClosedChannel(#[from] RecvError),
     #[error("concurrent write detected")]
     ConcurrentWrite,
-    #[error("account state forest mutation failed: {0}")]
-    AccountStateForestMutation(String),
+    #[error("account state forest update preparation failed")]
+    AccountStateForestPreparation(#[source] AccountStateForestUpdateError),
+    #[error("account state forest mutation failed")]
+    AccountStateForestMutation(#[source] LargeSmtForestError),
     #[error("database doesn't have any block header data")]
     DbBlockHeaderEmpty,
     #[error("database update failed: {0}")]

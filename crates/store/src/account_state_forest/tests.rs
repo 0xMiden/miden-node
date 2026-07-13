@@ -375,11 +375,14 @@ fn storage_map_remove_resets_forest_lineage_for_later_create() {
     let prepared_remove = forest
         .compute_block_update_mutations(BlockNumber::from(2u32), [remove_patch])
         .unwrap();
-    let removed_root = prepared_remove.account_states[&account_id].storage_map_roots[&slot_name];
-    assert_eq!(removed_root, AccountStateForest::empty_smt_root());
+    assert!(prepared_remove.account_states[&account_id].storage_map_roots.is_empty());
+    let lineage =
+        AccountStateForest::<ForestInMemoryBackend>::storage_lineage_id(account_id, &slot_name);
+    assert_eq!(forest.forest.latest_version(lineage), Some(1));
     forest
         .apply_precomputed_block_update(BlockNumber::from(2u32), prepared_remove)
         .unwrap();
+    assert_eq!(forest.forest.latest_version(lineage), Some(1));
 
     let create_new = StorageMapPatch::Create {
         entries: StorageMapPatchEntries::from_iter([(new_key, new_value)]),
@@ -498,9 +501,10 @@ fn precomputed_roots_match_one_phase_update() {
 #[test]
 fn compute_block_update_mutations_rejects_full_state_existing_lineages() {
     use std::collections::BTreeMap;
-    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     use miden_protocol::account::{StorageMapPatch, StorageMapPatchEntries, StorageSlotPatch};
+
+    use crate::errors::AccountStateForestUpdateError;
 
     let account_id = dummy_account();
     let faucet_id = dummy_faucet();
@@ -523,13 +527,16 @@ fn compute_block_update_mutations_rejects_full_state_existing_lineages() {
     )
     .unwrap();
 
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
-            vault_forest
-                .compute_block_update_mutations(block_2, [duplicate_vault_full_state])
-                .unwrap();
-        }))
-        .is_err()
+    let Err(err) =
+        vault_forest.compute_block_update_mutations(block_2, [duplicate_vault_full_state])
+    else {
+        panic!("duplicate full-state vault lineage should fail");
+    };
+    assert_matches!(
+        err,
+        AccountStateForestUpdateError::VaultLineageAlreadyExists {
+            account_id: duplicate_account_id,
+        } if duplicate_account_id == account_id
     );
 
     let mut storage_forest = AccountStateForest::new();
@@ -547,7 +554,7 @@ fn compute_block_update_mutations_rejects_full_state_existing_lineages() {
 
     let empty_map_create = StorageMapPatch::Create { entries: StorageMapPatchEntries::new() };
     let duplicate_storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name,
+        slot_name.clone(),
         StorageSlotPatch::Map(empty_map_create),
     )]))
     .unwrap();
@@ -560,13 +567,17 @@ fn compute_block_update_mutations_rejects_full_state_existing_lineages() {
     )
     .unwrap();
 
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
-            storage_forest
-                .compute_block_update_mutations(block_2, [duplicate_storage_full_state])
-                .unwrap();
-        }))
-        .is_err()
+    let Err(err) =
+        storage_forest.compute_block_update_mutations(block_2, [duplicate_storage_full_state])
+    else {
+        panic!("duplicate full-state storage lineage should fail");
+    };
+    assert_matches!(
+        err,
+        AccountStateForestUpdateError::StorageLineageAlreadyExists {
+            account_id: duplicate_account_id,
+            slot_name: duplicate_slot_name,
+        } if duplicate_account_id == account_id && duplicate_slot_name == slot_name
     );
 }
 

@@ -46,6 +46,7 @@ use thiserror::Error;
 use crate::COMPONENT;
 pub use crate::db::models::queries::HISTORICAL_BLOCK_RETENTION;
 use crate::db::models::queries::{PrecomputedPublicAccountState, PrecomputedPublicAccountStates};
+use crate::errors::AccountStateForestUpdateError;
 
 #[cfg(test)]
 mod tests;
@@ -223,12 +224,12 @@ impl<B: Backend> AccountStateForest<B> {
     fn single_new_root<B2: Backend>(
         mutations: &SmtForestMutationSet<B2>,
         lineage: LineageId,
-    ) -> Word {
+    ) -> Result<Word, AccountStateForestUpdateError> {
         mutations
             .roots()
             .find(|root| root.lineage() == lineage)
-            .unwrap_or_else(|| panic!("missing computed root for lineage {lineage}"))
-            .root()
+            .map(|root| root.root())
+            .ok_or(AccountStateForestUpdateError::MissingComputedRoot { lineage })
     }
 
     fn remove_current_tree_operations(
@@ -251,18 +252,15 @@ impl<B: Backend> AccountStateForest<B> {
         batch: &mut SmtForestUpdateBatch,
         lineages: &mut AccountUpdateForestLineages,
         patch: &AccountPatch,
-    ) {
+    ) -> Result<(), AccountStateForestUpdateError> {
         let account_id = patch.id();
         if !patch.is_full_state() && patch.vault().is_empty() {
-            return;
+            return Ok(());
         }
 
         let lineage = Self::vault_lineage_id(account_id);
-        if patch.is_full_state() {
-            assert!(
-                self.forest.latest_version(lineage).is_none(),
-                "account should not be in the forest"
-            );
+        if patch.is_full_state() && self.forest.latest_version(lineage).is_some() {
+            return Err(AccountStateForestUpdateError::VaultLineageAlreadyExists { account_id });
         }
 
         let operations = Self::build_forest_operations(
@@ -271,6 +269,7 @@ impl<B: Backend> AccountStateForest<B> {
         let updates = Self::update_batch_from_operations(operations);
         batch.operations(lineage).add_operations(updates.into_iter());
         lineages.vault.insert(account_id, lineage);
+        Ok(())
     }
 
     fn add_full_state_storage_updates(
@@ -278,7 +277,7 @@ impl<B: Backend> AccountStateForest<B> {
         batch: &mut SmtForestUpdateBatch,
         lineages: &mut AccountUpdateForestLineages,
         patch: &AccountPatch,
-    ) {
+    ) -> Result<(), AccountStateForestUpdateError> {
         let account_id = patch.id();
         for (slot_name, map_patch) in patch.storage().maps() {
             let raw_map_entries = Vec::from_iter(
@@ -296,10 +295,12 @@ impl<B: Backend> AccountStateForest<B> {
                 raw_map_entries.iter().map(|(raw_key, value)| (raw_key.hash().into(), *value)),
             );
             let lineage = Self::storage_lineage_id(account_id, slot_name);
-            assert!(
-                self.forest.latest_version(lineage).is_none(),
-                "account should not be in the forest"
-            );
+            if self.forest.latest_version(lineage).is_some() {
+                return Err(AccountStateForestUpdateError::StorageLineageAlreadyExists {
+                    account_id,
+                    slot_name: slot_name.clone(),
+                });
+            }
 
             let updates = Self::update_batch_from_operations(operations);
             batch.operations(lineage).add_operations(updates.into_iter());
@@ -309,6 +310,7 @@ impl<B: Backend> AccountStateForest<B> {
                 .or_default()
                 .insert(slot_name.clone(), lineage);
         }
+        Ok(())
     }
 
     fn add_partial_storage_updates(
@@ -324,24 +326,30 @@ impl<B: Backend> AccountStateForest<B> {
         let account_id = patch.id();
         for (slot_name, map_patch) in patch.storage().maps() {
             let lineage = Self::storage_lineage_id(account_id, slot_name);
-            let operations = match map_patch.entries() {
-                Some(entries)
-                    if entries.is_empty()
-                        && map_patch.patch_op() != StoragePatchOperation::Create =>
-                {
-                    continue;
-                },
-                Some(entries) => Self::build_forest_operations(
-                    entries.as_map().iter().map(|(key, value)| (key.hash().into(), *value)),
-                ),
-                None => self.remove_current_tree_operations(lineage)?,
-            };
-
-            if operations.is_empty()
-                && map_patch.entries().is_none()
-                && self.forest.latest_version(lineage).is_none()
-            {
+            let Some(entries) = map_patch.entries() else {
+                // Removing the slot from the account storage header makes this lineage
+                // inaccessible. Keep it unchanged so historical forest queries remain available; a
+                // later Create replaces the lineage contents.
                 continue;
+            };
+            if entries.is_empty() && map_patch.patch_op() != StoragePatchOperation::Create {
+                continue;
+            }
+
+            let mut operations = if map_patch.patch_op() == StoragePatchOperation::Create {
+                self.remove_current_tree_operations(lineage)?
+            } else {
+                Vec::new()
+            };
+            operations.extend(Self::build_forest_operations(
+                entries.as_map().iter().map(|(key, value)| (key.hash().into(), *value)),
+            ));
+
+            if operations.is_empty() && self.forest.latest_version(lineage).is_none() {
+                // An empty Create still needs an empty lineage and its root.
+                if map_patch.patch_op() != StoragePatchOperation::Create {
+                    continue;
+                }
             }
 
             let updates = Self::update_batch_from_operations(operations);
@@ -359,14 +367,15 @@ impl<B: Backend> AccountStateForest<B> {
     fn prepare_block_update_batch(
         &self,
         account_patches: &[AccountPatch],
-    ) -> Result<(SmtForestUpdateBatch, AccountUpdateForestLineages), LargeSmtForestError> {
+    ) -> Result<(SmtForestUpdateBatch, AccountUpdateForestLineages), AccountStateForestUpdateError>
+    {
         let mut batch = SmtForestUpdateBatch::empty();
         let mut lineages = AccountUpdateForestLineages::default();
 
         for patch in account_patches {
-            self.add_vault_updates(&mut batch, &mut lineages, patch);
+            self.add_vault_updates(&mut batch, &mut lineages, patch)?;
             if patch.is_full_state() {
-                self.add_full_state_storage_updates(&mut batch, &mut lineages, patch);
+                self.add_full_state_storage_updates(&mut batch, &mut lineages, patch)?;
             } else {
                 self.add_partial_storage_updates(&mut batch, &mut lineages, patch)?;
             }
@@ -380,27 +389,22 @@ impl<B: Backend> AccountStateForest<B> {
         account_patches: &[AccountPatch],
         lineages: &AccountUpdateForestLineages,
         mutations: &SmtForestMutationSet<B2>,
-    ) -> PrecomputedPublicAccountStates {
+    ) -> Result<PrecomputedPublicAccountStates, AccountStateForestUpdateError> {
         let mut account_states = PrecomputedPublicAccountStates::new();
 
         for patch in account_patches {
             let account_id = patch.id();
-            let vault_root = lineages.vault.get(&account_id).map_or_else(
-                || self.get_latest_vault_root(account_id),
-                |lineage| Self::single_new_root(mutations, *lineage),
-            );
-            let storage_map_roots = lineages
-                .storage
-                .get(&account_id)
-                .map(|lineages| {
-                    lineages
-                        .iter()
-                        .map(|(slot_name, lineage)| {
-                            (slot_name.clone(), Self::single_new_root(mutations, *lineage))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let vault_root = match lineages.vault.get(&account_id) {
+                Some(lineage) => Self::single_new_root(mutations, *lineage)?,
+                None => self.get_latest_vault_root(account_id),
+            };
+            let mut storage_map_roots = BTreeMap::new();
+            if let Some(account_lineages) = lineages.storage.get(&account_id) {
+                for (slot_name, lineage) in account_lineages {
+                    storage_map_roots
+                        .insert(slot_name.clone(), Self::single_new_root(mutations, *lineage)?);
+                }
+            }
 
             account_states.insert(
                 account_id,
@@ -412,7 +416,7 @@ impl<B: Backend> AccountStateForest<B> {
             );
         }
 
-        account_states
+        Ok(account_states)
     }
 
     fn cache_hashed_keys_from_patch(&mut self, patch: &AccountPatch) {
@@ -733,12 +737,15 @@ impl<B: Backend> AccountStateForest<B> {
         &self,
         block_num: BlockNumber,
         account_updates: impl IntoIterator<Item = AccountPatch>,
-    ) -> Result<PreparedAccountStateForestBlockUpdate<B>, LargeSmtForestError> {
+    ) -> Result<PreparedAccountStateForestBlockUpdate<B>, AccountStateForestUpdateError> {
         let account_patches = account_updates.into_iter().collect::<Vec<_>>();
         let (batch, lineages) = self.prepare_block_update_batch(&account_patches)?;
         let mutations = self.forest.compute_forest_mutations(block_num.as_u64(), batch)?;
-        let account_states =
-            self.precomputed_account_states_from_mutations(&account_patches, &lineages, &mutations);
+        let account_states = self.precomputed_account_states_from_mutations(
+            &account_patches,
+            &lineages,
+            &mutations,
+        )?;
 
         Ok(PreparedAccountStateForestBlockUpdate {
             account_states,

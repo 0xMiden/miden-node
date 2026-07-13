@@ -137,7 +137,7 @@ impl State {
         let account_forest_update = self.with_forest_read_blocking(|forest| {
             forest
                 .compute_block_update_mutations(block_num, account_patches)
-                .map_err(|err| ApplyBlockError::AccountStateForestMutation(err.as_report()))
+                .map_err(ApplyBlockError::AccountStateForestPreparation)
         })?;
         let precomputed_public_states = account_forest_update.account_states.clone();
 
@@ -210,7 +210,7 @@ impl State {
         self.with_forest_write_blocking(|forest| {
             forest.apply_precomputed_block_update(block_num, account_forest_update)
         })
-        .map_err(|err| ApplyBlockError::AccountStateForestMutation(err.as_report()))?;
+        .map_err(ApplyBlockError::AccountStateForestMutation)?;
 
         // Push to cache and notify replica subscribers.
         self.block_cache

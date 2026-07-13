@@ -26,6 +26,7 @@ pub use db::{
     TransactionRecord,
 };
 pub use errors::{
+    AccountStateForestUpdateError,
     ApplyBlockError,
     ApplyBlockWithProvingInputsError,
     DatabaseError,

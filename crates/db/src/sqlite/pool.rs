@@ -47,7 +47,7 @@ struct SqliteManager {
     path: PathBuf,
     /// When set, connections are configured `PRAGMA query_only = ON` and skip the writer-only
     /// `journal_mode` setup — used for the reader pool.
-    query_only: bool,
+    read_only: bool,
 }
 
 impl Manager for SqliteManager {
@@ -56,11 +56,11 @@ impl Manager for SqliteManager {
 
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         let path = self.path.clone();
-        let query_only = self.query_only;
+        let read_only = self.read_only;
         SyncWrapper::new(Runtime::Tokio1, move || {
             let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
                 .map_err(SqliteManagerError::Open)?;
-            configure_connection(&conn, query_only).map_err(SqliteManagerError::Configure)?;
+            configure_connection(&conn, read_only).map_err(SqliteManagerError::Configure)?;
             Ok(conn)
         })
         .await
@@ -92,10 +92,10 @@ impl Manager for SqliteManager {
 /// Both pools open the file `READ_WRITE`; reader connections are made read-only at runtime with
 /// `PRAGMA query_only = ON` (which, unlike opening `READ_ONLY`, still lets them create the WAL
 /// `-shm` file and read a WAL database).
-fn configure_connection(conn: &Connection, query_only: bool) -> rusqlite::Result<()> {
+fn configure_connection(conn: &Connection, read_only: bool) -> rusqlite::Result<()> {
     // busy_timeout makes concurrent writers wait instead of failing immediately; foreign keys
     // enforce referential integrity.
-    if query_only {
+    if read_only {
         // A query_only connection cannot set `journal_mode` (it is a write); WAL is already
         // persisted in the file header by the writer / migration path.
         conn.execute_batch(
@@ -144,13 +144,13 @@ impl Database {
     ) -> Result<Self, DatabaseError> {
         let writer = Pool::builder(SqliteManager {
             path: database_filepath.to_path_buf(),
-            query_only: false,
+            read_only: false,
         })
         .max_size(1)
         .build()?;
         let readers = Pool::builder(SqliteManager {
             path: database_filepath.to_path_buf(),
-            query_only: true,
+            read_only: true,
         })
         .max_size(connection_pool_size.get())
         .build()?;

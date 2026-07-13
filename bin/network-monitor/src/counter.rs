@@ -156,6 +156,7 @@ pub struct IncrementService {
     config: MonitorConfig,
     rpc_client: RpcClient,
     tx: TxBuilder,
+    prover: LocalTransactionProver,
     failures: FailureTracker,
     details: IncrementDetails,
     latency_state: Arc<Mutex<LatencyState>>,
@@ -175,6 +176,7 @@ impl IncrementService {
         wallet_account: Account,
         secret_key: SecretKey,
         counter_account: Account,
+        prover: LocalTransactionProver,
         accounts_sender: watch::Sender<TrackedAccounts>,
         latency_state: Arc<Mutex<LatencyState>>,
     ) -> Result<Self> {
@@ -187,6 +189,7 @@ impl IncrementService {
             config,
             rpc_client,
             tx,
+            prover,
             failures: FailureTracker::default(),
             details,
             latency_state,
@@ -273,7 +276,7 @@ impl IncrementService {
     )]
     async fn try_regenerate_accounts(&mut self) -> Result<()> {
         let (wallet_account, secret_key, counter_account) =
-            create_and_deploy_accounts(&self.config.rpc_url)
+            create_and_deploy_accounts(&self.config.rpc_url, &self.prover)
                 .await
                 .context("failed to regenerate accounts")?;
 
@@ -325,6 +328,7 @@ impl IncrementService {
         let counter_account = self.tx.counter_account.clone();
         let block_header = self.tx.block_header.clone();
         let secret_key = self.tx.secret_key.clone();
+        let prover = self.prover.clone();
         let (proven_tx, tx_inputs, account_patch) = spawn_blocking_in_current_span(move || {
             let account_id = wallet_account.id();
             let block_num = block_header.block_num();
@@ -348,9 +352,7 @@ impl IncrementService {
             // The patch captures the wallet's nonce bump and counter-slot write; the increment task
             // applies it to keep its local wallet copy in sync with chain.
             let account_patch = executed_tx.account_patch().clone();
-            let proven_tx =
-                futures::executor::block_on(LocalTransactionProver::default().prove(executed_tx))
-                    .context("Failed to prove transaction")?;
+            let proven_tx = prover.prove(executed_tx).context("failed to prove transaction")?;
 
             Ok::<_, anyhow::Error>((proven_tx, tx_inputs, account_patch))
         })

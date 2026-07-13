@@ -132,7 +132,7 @@ impl ProofRequestExt for ProofRequest {
             .unwrap();
 
         let tx = Box::pin(tx.execute()).await.unwrap();
-        let tx = LocalTransactionProver::default().prove(tx.tx_inputs().clone()).await.unwrap();
+        let tx = LocalTransactionProver::default().prove(tx.tx_inputs().clone()).unwrap();
 
         ProposedBatch::new(
             vec![Arc::new(tx)],

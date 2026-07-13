@@ -89,20 +89,12 @@ impl BenchmarkProver {
         executed_tx: ExecutedTransaction,
     ) -> Result<ProvenTransaction> {
         match self {
-            Self::Local => {
-                // The prover's future is not `Send` (the VM's execution tracer holds raw pointers
-                // across await points), so drive it to completion on a blocking thread. Proving is
-                // pure CPU work with no runtime dependency, so a plain executor drives it without
-                // needing a tokio handle.
-                spawn_blocking_in_current_span(move || {
-                    futures::executor::block_on(
-                        LocalTransactionProver::default().prove(executed_tx),
-                    )
-                })
-                .await
-                .map_err(|err| anyhow::anyhow!("local prover task panicked: {err}"))?
-                .map_err(|err| anyhow::anyhow!("local proving failed: {err}"))
-            },
+            Self::Local => spawn_blocking_in_current_span(move || {
+                LocalTransactionProver::default().prove(executed_tx)
+            })
+            .await
+            .map_err(|err| anyhow::anyhow!("local prover task panicked: {err}"))?
+            .map_err(|err| anyhow::anyhow!("local proving failed: {err}")),
             Self::Remote { prover, limiter, permits } => {
                 let tx_inputs: TransactionInputs = executed_tx.into();
                 prove_remote_with_retry(prover, limiter, permits, &tx_inputs).await

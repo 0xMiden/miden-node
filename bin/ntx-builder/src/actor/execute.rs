@@ -433,8 +433,8 @@ impl NtxContext {
         }
     }
 
-    /// Splits cycle-limited failed notes into `(deferred, oversized)` by re-checking each one on its
-    /// own.
+    /// Splits cycle-limited failed notes into `(deferred, oversized)` by re-checking each one on
+    /// its own.
     async fn classify_cycle_limited(
         &self,
         data_store: &NtxDataStore,

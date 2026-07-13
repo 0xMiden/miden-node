@@ -219,17 +219,6 @@ impl<B: Backend> AccountStateForest<B> {
         }
     }
 
-    fn single_new_root<B2: Backend>(
-        mutations: &SmtForestMutationSet<B2>,
-        lineage: LineageId,
-    ) -> Result<Word, AccountStateForestUpdateError> {
-        mutations
-            .roots()
-            .find(|root| root.lineage() == lineage)
-            .map(|root| root.root())
-            .ok_or(AccountStateForestUpdateError::MissingComputedRoot { lineage })
-    }
-
     fn remove_current_tree_operations(
         &self,
         lineage: LineageId,
@@ -389,18 +378,26 @@ impl<B: Backend> AccountStateForest<B> {
         mutations: &SmtForestMutationSet<B2>,
     ) -> Result<PrecomputedPublicAccountStates, AccountStateForestUpdateError> {
         let mut account_states = PrecomputedPublicAccountStates::new();
+        let roots = mutations
+            .roots()
+            .map(|root| (root.lineage(), root.root()))
+            .collect::<BTreeMap<_, _>>();
 
         for patch in account_patches {
             let account_id = patch.id();
             let vault_root = match lineages.vault.get(&account_id) {
-                Some(lineage) => Self::single_new_root(mutations, *lineage)?,
+                Some(lineage) => roots.get(lineage).copied().ok_or(
+                    AccountStateForestUpdateError::MissingComputedRoot { lineage: *lineage },
+                )?,
                 None => self.get_latest_vault_root(account_id),
             };
             let mut storage_map_roots = BTreeMap::new();
             if let Some(account_lineages) = lineages.storage.get(&account_id) {
                 for (slot_name, lineage) in account_lineages {
-                    storage_map_roots
-                        .insert(slot_name.clone(), Self::single_new_root(mutations, *lineage)?);
+                    let root = roots.get(lineage).copied().ok_or(
+                        AccountStateForestUpdateError::MissingComputedRoot { lineage: *lineage },
+                    )?;
+                    storage_map_roots.insert(slot_name.clone(), root);
                 }
             }
 

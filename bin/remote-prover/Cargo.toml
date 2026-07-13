@@ -16,7 +16,6 @@ workspace = true
 
 [dependencies]
 anyhow                 = { workspace = true }
-async-trait            = { workspace = true }
 clap                   = { features = ["env"], workspace = true }
 humantime              = { workspace = true }
 miden-block-prover     = { workspace = true }

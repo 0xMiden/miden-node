@@ -264,7 +264,7 @@ fn format_err_breakdown(by_code: HashMap<tonic::Code, u64>) -> String {
         return "no errors".to_string();
     }
     let mut entries: Vec<(tonic::Code, u64)> = by_code.into_iter().collect();
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
     let parts: Vec<String> = entries.iter().map(|(c, n)| format!("{c:?}={n}")).collect();
     parts.join(", ")
 }

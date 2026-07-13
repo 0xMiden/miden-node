@@ -42,7 +42,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{LocalTransactionProver, TransactionExecutor};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use tokio::sync::{Mutex, watch};
 use tracing::{debug, error, info, warn};
@@ -72,7 +72,7 @@ const RESYNC_FAILURE_THRESHOLD: usize = 3;
 const REGENERATE_FAILURE_THRESHOLD: usize = 10;
 
 /// Minimum time between account regeneration attempts.
-const REGENERATE_COOLDOWN: Duration = Duration::from_secs(3600);
+const REGENERATE_COOLDOWN: Duration = Duration::from_hours(1);
 
 /// Number of consecutive polls observing the pending-increments gap above
 /// [`MonitorConfig::counter_pending_unhealthy_threshold`] before flipping the Network Transactions
@@ -156,6 +156,7 @@ pub struct IncrementService {
     config: MonitorConfig,
     rpc_client: RpcClient,
     tx: TxBuilder,
+    prover: LocalTransactionProver,
     failures: FailureTracker,
     details: IncrementDetails,
     latency_state: Arc<Mutex<LatencyState>>,
@@ -175,6 +176,7 @@ impl IncrementService {
         wallet_account: Account,
         secret_key: SecretKey,
         counter_account: Account,
+        prover: LocalTransactionProver,
         accounts_sender: watch::Sender<TrackedAccounts>,
         latency_state: Arc<Mutex<LatencyState>>,
     ) -> Result<Self> {
@@ -187,6 +189,7 @@ impl IncrementService {
             config,
             rpc_client,
             tx,
+            prover,
             failures: FailureTracker::default(),
             details,
             latency_state,
@@ -273,7 +276,7 @@ impl IncrementService {
     )]
     async fn try_regenerate_accounts(&mut self) -> Result<()> {
         let (wallet_account, secret_key, counter_account) =
-            create_and_deploy_accounts(&self.config.rpc_url)
+            create_and_deploy_accounts(&self.config.rpc_url, &self.prover)
                 .await
                 .context("failed to regenerate accounts")?;
 
@@ -325,7 +328,7 @@ impl IncrementService {
         let counter_account = self.tx.counter_account.clone();
         let block_header = self.tx.block_header.clone();
         let secret_key = self.tx.secret_key.clone();
-        let handle = tokio::runtime::Handle::current();
+        let prover = self.prover.clone();
         let (proven_tx, tx_inputs, account_patch) = spawn_blocking_in_current_span(move || {
             let account_id = wallet_account.id();
             let block_num = block_header.block_num();
@@ -337,22 +340,19 @@ impl IncrementService {
                 BasicAuthenticator::new(&[AuthSecretKey::Falcon512Poseidon2(secret_key)]);
             let executor = TransactionExecutor::new(&data_store).with_authenticator(&authenticator);
 
-            let executed_tx = handle
-                .block_on(executor.execute_transaction(
-                    account_id,
-                    block_num,
-                    InputNotes::default(),
-                    tx_args,
-                ))
-                .context("Failed to execute transaction")?;
+            let executed_tx = futures::executor::block_on(executor.execute_transaction(
+                account_id,
+                block_num,
+                InputNotes::default(),
+                tx_args,
+            ))
+            .context("Failed to execute transaction")?;
 
             let tx_inputs = executed_tx.tx_inputs().to_bytes();
             // The patch captures the wallet's nonce bump and counter-slot write; the increment task
             // applies it to keep its local wallet copy in sync with chain.
             let account_patch = executed_tx.account_patch().clone();
-            let proven_tx = handle
-                .block_on(LocalTransactionProver::default().prove(executed_tx))
-                .context("Failed to prove transaction")?;
+            let proven_tx = prover.prove(executed_tx).context("failed to prove transaction")?;
 
             Ok::<_, anyhow::Error>((proven_tx, tx_inputs, account_patch))
         })
@@ -715,7 +715,7 @@ async fn setup_increment_task(
         secret_key,
         increment_script,
         block_header,
-        rng: ChaCha20Rng::from_os_rng(),
+        rng: ChaCha20Rng::from_rng(&mut rand::rng()),
     };
 
     Ok((tx, IncrementDetails::default()))
@@ -1154,7 +1154,8 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
     let script_src = format!(
         "use external_contract::wallet_counter
 
-        begin
+        @transaction_script
+        pub proc main
             call.wallet_counter::increment
 {note_section}
         end"

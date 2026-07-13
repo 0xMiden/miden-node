@@ -11,7 +11,9 @@ import "types/primitives.proto";
 message SignedBlock {
     BlockHeader header = 1;
     BlockBody body = 2;
-    BlockSignature signature = 3;
+    // The validators' positional signatures over the block header, one per key in the parent's
+    // validator set.
+    repeated BlockSignature signatures = 3;
 }
 
 // Represents a proposed block.
@@ -80,8 +82,8 @@ message BlockHeader {
     // A commitment to a set of IDs of transactions which affected accounts in this block.
     primitives.Digest tx_commitment = 8;
 
-    // The validator's ECDSA public key.
-    ValidatorPublicKey validator_key = 9;
+    // The set of validator ECDSA public keys authorized to sign the next block.
+    repeated ValidatorPublicKey validator_keys = 9;
 
     // A commitment to all transaction kernels supported by this block.
     primitives.Digest tx_kernel_commitment = 10;

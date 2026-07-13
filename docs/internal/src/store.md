@@ -14,8 +14,8 @@ chain state (aka nuke the existing database) on each release.
 
 The account and nullifier trees are persisted in separate RocksDB instances under
 `<data-directory>/accounttree` and `<data-directory>/nullifiertree`, managed by
-`crates/large-smt-backend-rocksdb`. Column families: `leaves`, `st24`–`st56` (subtrees at each
-depth), `metadata` (root/counts), `depth24` (cached depth-24 hashes for fast startup).
+`RocksDbStorage` from `miden-crypto`. Column families: `leaves`, `st16`–`st56` (subtrees at each
+depth), `metadata` (root/counts), `depth16` (cached depth-16 hashes for fast startup).
 
 Compaction parallelism and background jobs are set to `rayon::current_num_threads()` automatically.
 WAL sync per write is disabled for throughput; a 512 MiB WAL cap bounds recovery time. Bloom filter

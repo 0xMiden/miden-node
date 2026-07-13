@@ -20,7 +20,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
@@ -44,6 +44,7 @@ use miden_tx::{
     DataStoreError,
     ExecutionOptions,
     FailedNote,
+    LoadedMastForest,
     MastForestStore,
     NoteCheckerError,
     NoteConsumptionChecker,
@@ -234,8 +235,6 @@ impl NtxContext {
             Some(self.max_cycles),
             self.max_cycles,
             ExecutionOptions::DEFAULT_CORE_TRACE_FRAGMENT_SIZE,
-            false,
-            false,
         )
         .expect("max_cycles should be within valid range");
 
@@ -520,8 +519,7 @@ impl NtxContext {
         .map_err(NtxError::Execution)
     }
 
-    /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
-    /// proof locally.
+    /// Delegates the transaction proof to the configured remote prover.
     ///
     /// Transient transport failures against the remote prover are retried in-place; intrinsic
     /// proving errors (witness rejected, malformed inputs) escape on the first attempt.
@@ -748,7 +746,7 @@ impl DataStore for NtxDataStore {
         &self,
         account_id: AccountId,
         _vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        vault_keys: BTreeSet<AssetId>,
     ) -> impl FutureMaybeSend<Result<Vec<AssetWitness>, DataStoreError>> {
         async move {
             let ref_block = self.reference_block.block_num();
@@ -876,10 +874,7 @@ impl DataStore for NtxDataStore {
 }
 
 impl MastForestStore for NtxDataStore {
-    fn get(
-        &self,
-        procedure_hash: &miden_protocol::Word,
-    ) -> Option<std::sync::Arc<miden_protocol::MastForest>> {
+    fn get(&self, procedure_hash: &miden_protocol::Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
 }

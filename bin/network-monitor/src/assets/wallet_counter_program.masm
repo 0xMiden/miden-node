@@ -16,6 +16,7 @@ const COUNTER_SLOT = word("miden::monitor::wallet_contract::counter")
 
 # Increment the wallet's own counter slot.
 # => []
+@account_procedure
 pub proc increment
     push.COUNTER_SLOT[0..2] exec.active_account::get_item
     # => [count, 0, 0, 0]
@@ -32,6 +33,7 @@ end
 
 # Read the wallet's own counter slot (no auth required).
 # => [count]
+@account_procedure
 pub proc get_count
     push.COUNTER_SLOT[0..2] exec.active_account::get_item
     # => [count, 0, 0, 0]

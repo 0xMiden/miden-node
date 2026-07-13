@@ -92,7 +92,7 @@ pub const DEFAULT_VALIDATOR_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_MEMPOOL_TX_CAPACITY: NonZeroUsize = NonZeroUsize::new(
     DEFAULT_MAX_BATCHES_PER_BLOCK.get()
         * DEFAULT_MAX_TXS_PER_BATCH.get()
-        * (Duration::from_secs(60).div_duration_f32(DEFAULT_BLOCK_INTERVAL)) as usize,
+        * (Duration::from_mins(1).div_duration_f32(DEFAULT_BLOCK_INTERVAL)) as usize,
 )
 .unwrap();
 

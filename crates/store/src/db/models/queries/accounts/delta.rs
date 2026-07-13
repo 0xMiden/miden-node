@@ -218,8 +218,8 @@ pub(super) fn apply_storage_patch(
             }
         }
 
-        let storage_map = StorageMap::with_entries(entries.into_iter())
-            .map_err(DatabaseError::StorageMapError)?;
+        let storage_map =
+            StorageMap::with_entries(entries).map_err(DatabaseError::StorageMapError)?;
         map_updates.insert(slot_name, storage_map.root());
     }
 

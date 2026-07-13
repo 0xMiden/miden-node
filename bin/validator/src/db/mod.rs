@@ -14,6 +14,18 @@ use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_
 use crate::tx_validation::ValidatedTransaction;
 use crate::{COMPONENT, LOG_TARGET};
 
+/// SQL statements, kept in dedicated `.sql` files (under `sql/`).
+mod sql {
+    pub(super) const INSERT_TRANSACTION: &str = include_str!("sql/insert_transaction.sql");
+    pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
+    pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
+    pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
+    pub(super) const LOAD_BLOCK_HEADER: &str = include_str!("sql/load_block_header.sql");
+    pub(super) const COUNT_VALIDATED_TRANSACTIONS: &str =
+        include_str!("sql/count_validated_transactions.sql");
+    pub(super) const COUNT_SIGNED_BLOCKS: &str = include_str!("sql/count_signed_blocks.sql");
+}
+
 /// Open a connection to the DB after verifying that it is at the latest schema version.
 #[miden_instrument(
     target = COMPONENT,
@@ -108,11 +120,7 @@ pub(crate) fn insert_transaction(
     let final_account_hash = tx_info.final_account_hash().to_bytes();
 
     tx.execute(
-        "INSERT INTO validated_transactions \
-         (id, block_num, account_id, account_patch, input_notes, output_notes, \
-          initial_account_hash, final_account_hash) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
-         ON CONFLICT DO NOTHING",
+        sql::INSERT_TRANSACTION,
         &[
             &id,
             &block_num,
@@ -127,16 +135,6 @@ pub(crate) fn insert_transaction(
 }
 
 /// Returns whether a transaction with the given id has already been validated.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT EXISTS(
-///   SELECT 1
-///   FROM validated_transactions
-///   WHERE id = ?
-/// );
-/// ```
 #[miden_instrument(
     target = COMPONENT,
     skip(tx),
@@ -147,11 +145,7 @@ pub(crate) fn transaction_exists(
     tx_id: TransactionId,
 ) -> Result<bool, DatabaseError> {
     let exists = tx
-        .query(
-            "SELECT EXISTS(SELECT 1 FROM validated_transactions WHERE id = ?1)",
-            &[&tx_id.to_bytes()],
-            |row| row.get::<i64>(0),
-        )?
+        .query(sql::TRANSACTION_EXISTS, &[&tx_id.to_bytes()], |row| row.get::<i64>(0))?
         .first()
         .copied()
         .unwrap_or(0)
@@ -162,16 +156,6 @@ pub(crate) fn transaction_exists(
 /// Scans the database for transaction Ids that do not exist.
 ///
 /// If the resulting vector is empty, all supplied transaction ids have been validated in the past.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT EXISTS(
-///   SELECT 1
-///   FROM validated_transactions
-///   WHERE id = ?
-/// );
-/// ```
 #[miden_instrument(
     target = COMPONENT,
     skip(tx),
@@ -185,11 +169,7 @@ pub(crate) fn find_unvalidated_transactions(
     for tx_id in tx_ids {
         // Check whether each transaction id exists in the database.
         let exists = tx
-            .query(
-                "SELECT EXISTS(SELECT 1 FROM validated_transactions WHERE id = ?1)",
-                &[&tx_id.to_bytes()],
-                |row| row.get::<i64>(0),
-            )?
+            .query(sql::TRANSACTION_EXISTS, &[&tx_id.to_bytes()], |row| row.get::<i64>(0))?
             .first()
             .copied()
             .unwrap_or(0)
@@ -214,10 +194,7 @@ pub(crate) fn find_unvalidated_transactions(
 pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(), DatabaseError> {
     let block_num = i64::from(header.block_num().as_u32());
     let block_header = header.to_bytes();
-    tx.execute(
-        "REPLACE INTO block_headers (block_num, block_header) VALUES (?1, ?2)",
-        &[&block_num, &block_header],
-    )?;
+    tx.execute(sql::UPSERT_BLOCK_HEADER, &[&block_num, &block_header])?;
     Ok(())
 }
 
@@ -231,11 +208,7 @@ pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(),
 )]
 pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseError> {
     Ok(tx
-        .query(
-            "SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1",
-            &[],
-            |row| row.get::<BlockHeader>(0),
-        )?
+        .query(sql::LOAD_CHAIN_TIP, &[], |row| row.get::<BlockHeader>(0))?
         .into_iter()
         .next())
 }
@@ -253,11 +226,9 @@ pub fn load_block_header(
     block_num: BlockNumber,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
     Ok(tx
-        .query(
-            "SELECT block_header FROM block_headers WHERE block_num = ?1",
-            &[&i64::from(block_num.as_u32())],
-            |row| row.get::<BlockHeader>(0),
-        )?
+        .query(sql::LOAD_BLOCK_HEADER, &[&i64::from(block_num.as_u32())], |row| {
+            row.get::<BlockHeader>(0)
+        })?
         .into_iter()
         .next())
 }
@@ -270,7 +241,7 @@ pub fn load_block_header(
 )]
 pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
     Ok(tx
-        .query("SELECT COUNT(*) FROM validated_transactions", &[], |row| row.get::<i64>(0))?
+        .query(sql::COUNT_VALIDATED_TRANSACTIONS, &[], |row| row.get::<i64>(0))?
         .into_iter()
         .next()
         .unwrap_or(0))
@@ -284,7 +255,7 @@ pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseErro
 )]
 pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
     Ok(tx
-        .query("SELECT COUNT(*) FROM block_headers", &[], |row| row.get::<i64>(0))?
+        .query(sql::COUNT_SIGNED_BLOCKS, &[], |row| row.get::<i64>(0))?
         .into_iter()
         .next()
         .unwrap_or(0))

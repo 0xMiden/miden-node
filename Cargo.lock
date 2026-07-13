@@ -2926,7 +2926,7 @@ dependencies = [
 
 [[package]]
 name = "miden-benchmark"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3180,7 +3180,7 @@ dependencies = [
 
 [[package]]
 name = "miden-network-monitor"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -3212,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3232,7 +3232,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-block-producer"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3261,7 +3261,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-db"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "build-rs",
@@ -3280,7 +3280,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-grpc-error-macro"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "quote",
  "syn 2.0.118",
@@ -3288,7 +3288,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "build-rs",
@@ -3315,7 +3315,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto-build"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "build-rs",
  "codegen",
@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-rpc"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "futures",
@@ -3360,7 +3360,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-store"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3393,7 +3393,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-stress-test"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "clap",
  "fs-err",
@@ -3418,7 +3418,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-tracing-macro"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3427,7 +3427,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-utils"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "miden-ntx-builder"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -3595,7 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "miden-remote-prover"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -3777,7 +3777,7 @@ dependencies = [
 
 [[package]]
 name = "miden-validator"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "aws-config",
@@ -7079,7 +7079,7 @@ checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "xtask"
-version = "0.15.1"
+version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
  "clap",

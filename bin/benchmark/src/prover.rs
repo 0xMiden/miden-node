@@ -50,7 +50,7 @@ const RETRY_BACKOFF_SHIFT_CAP: u32 = 6;
 // ================================================================================================
 
 pub(crate) enum BenchmarkProver {
-    Local,
+    Local(LocalTransactionProver),
     Remote {
         prover: Box<RemoteTransactionProver>,
         limiter: Arc<RampingRateLimiter>,
@@ -60,7 +60,7 @@ pub(crate) enum BenchmarkProver {
 
 impl BenchmarkProver {
     pub(crate) fn local() -> Self {
-        Self::Local
+        Self::Local(LocalTransactionProver::default())
     }
 
     /// Whether proofs for this prover should be dispatched concurrently. The remote prover paces
@@ -89,12 +89,13 @@ impl BenchmarkProver {
         executed_tx: ExecutedTransaction,
     ) -> Result<ProvenTransaction> {
         match self {
-            Self::Local => spawn_blocking_in_current_span(move || {
-                LocalTransactionProver::default().prove(executed_tx)
-            })
-            .await
-            .map_err(|err| anyhow::anyhow!("local prover task panicked: {err}"))?
-            .map_err(|err| anyhow::anyhow!("local proving failed: {err}")),
+            Self::Local(prover) => {
+                let prover = prover.clone();
+                spawn_blocking_in_current_span(move || prover.prove(executed_tx))
+                    .await
+                    .context("local prover task panicked")?
+                    .context("local proving failed")
+            },
             Self::Remote { prover, limiter, permits } => {
                 let tx_inputs: TransactionInputs = executed_tx.into();
                 prove_remote_with_retry(prover, limiter, permits, &tx_inputs).await

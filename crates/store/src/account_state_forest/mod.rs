@@ -228,6 +228,13 @@ impl<B: Backend> AccountStateForest<B> {
         }
     }
 
+    /// Builds the leaf removals needed to replace a storage-map lineage with an empty tree.
+    ///
+    /// `LargeSmtForest` does not currently expose a lineage reset or replacement mutation, so this
+    /// operation enumerates the latest tree and costs O(n) in its number of entries. A removed map
+    /// remains the latest version of its lineage until it is recreated; pruning cannot discard that
+    /// latest version. The `account_state_forest` benchmark tracks the resulting recreation cost so
+    /// this fallback remains visible until the forest API provides a constant-size reset primitive.
     fn remove_current_tree_operations(
         &self,
         lineage: LineageId,
@@ -324,8 +331,9 @@ impl<B: Backend> AccountStateForest<B> {
             let lineage = Self::storage_lineage_id(account_id, slot_name);
             let Some(entries) = map_patch.entries() else {
                 // Removing the slot from the account storage header makes this lineage
-                // inaccessible. Keep it unchanged so historical forest queries remain available; a
-                // later Create replaces the lineage contents.
+                // inaccessible. The forest has no lineage reset primitive, so keep it unchanged for
+                // historical queries. This retains the latest tree indefinitely; a later Create
+                // replaces it by enumerating and removing its leaves.
                 continue;
             };
             if entries.is_empty() && map_patch.patch_op() != StoragePatchOperation::Create {

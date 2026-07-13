@@ -28,16 +28,18 @@ use crate::clients::{RemoteTransactionProver, RpcClient};
 use crate::db::Db;
 use crate::{LOG_TARGET, NoteError};
 
-/// Builds the [`TransactionArgs`] that attach the canonical [`ExpirationTransactionScript`] for
-/// `delta` blocks, with the script paired to the `TX_SCRIPT_ARGS` word it reads its delta from.
+/// Builds the [`TransactionArgs`] shared by every network transaction.
+///
+/// Currently these attach the canonical [`ExpirationTransactionScript`] for `expiration_delta`
+/// blocks, with the script paired to the `TX_SCRIPT_ARGS` word it reads its delta from.
 ///
 /// The script itself is account-independent and its MAST root is identical for every delta (the
-/// delta travels in the args word, not the code), so the builder derives this once at startup and
-/// shares the args across all actors. The matching root
+/// delta travels in the args word, not the code), so the builder derives these once at startup and
+/// shares them across all actors. The matching root
 /// ([`ExpirationTransactionScript::script_root`]) is what network accounts must allowlist for these
 /// transactions to be accepted on-chain.
-pub(crate) fn expiration_tx_args(delta: NonZeroU16) -> TransactionArgs {
-    let script = ExpirationTransactionScript::new(delta);
+pub(crate) fn build_tx_args(expiration_delta: NonZeroU16) -> TransactionArgs {
+    let script = ExpirationTransactionScript::new(expiration_delta);
     TransactionArgs::default().with_tx_script_and_args(script.into(), script.tx_script_args())
 }
 
@@ -81,9 +83,12 @@ pub struct State {
     pub chain: Arc<SharedChainState>,
     /// Shared LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
     pub script_cache: LruCache<Word, NoteScript>,
-    /// Pre-built transaction args carrying the canonical expiration script and its delta word.
-    /// Cloned into every executed transaction to set the network tx's on-chain expiration delta.
-    pub expiration_tx_args: TransactionArgs,
+    /// [`TransactionArgs`] used by every network transaction.
+    ///
+    /// These are constant and are therefore prebuilt and cloned for each transaction.
+    ///
+    /// Currently this contains the transaction expiration script.
+    pub tx_args: TransactionArgs,
 }
 
 /// Per-actor configuration knobs.
@@ -142,7 +147,7 @@ impl AccountActorContext {
         );
         let chain_state = Arc::new(SharedChainState::new(block_header, chain_mmr));
         let (request_tx, _request_rx) = mpsc::channel(1);
-        let expiration_tx_args = expiration_tx_args(NonZeroU16::new(30).unwrap());
+        let tx_args = build_tx_args(NonZeroU16::new(30).unwrap());
 
         Self {
             clients: GrpcClients {
@@ -160,7 +165,7 @@ impl AccountActorContext {
                 db: db.clone(),
                 chain: chain_state,
                 script_cache: LruCache::new(NonZeroUsize::new(1).unwrap()),
-                expiration_tx_args,
+                tx_args,
             },
             config: ActorConfig {
                 max_notes_per_tx: NonZeroUsize::new(1).unwrap(),
@@ -524,7 +529,7 @@ impl AccountActor {
             self.state.script_cache.clone(),
             self.state.db.clone(),
             self.config.max_cycles,
-            self.state.expiration_tx_args.clone(),
+            self.state.tx_args.clone(),
             self.config.request_backoff_initial,
             self.config.request_backoff_max,
         );
@@ -836,9 +841,9 @@ mod tests {
     /// delta in its first element.
     #[test]
     fn expiration_script_shares_root_and_encodes_delta_in_args() {
-        let one = expiration_tx_args(NonZeroU16::new(1).unwrap());
-        let thirty = expiration_tx_args(NonZeroU16::new(30).unwrap());
-        let max = expiration_tx_args(NonZeroU16::MAX);
+        let one = build_tx_args(NonZeroU16::new(1).unwrap());
+        let thirty = build_tx_args(NonZeroU16::new(30).unwrap());
+        let max = build_tx_args(NonZeroU16::MAX);
 
         // All deltas resolve to the single allowlistable root.
         let root = ExpirationTransactionScript::script_root();

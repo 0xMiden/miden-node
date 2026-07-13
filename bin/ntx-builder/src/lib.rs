@@ -458,7 +458,7 @@ impl NtxBuilderConfig {
         shutdown: CancellationToken,
     ) -> anyhow::Result<(Coordinator, mpsc::Receiver<actor::ActorRequest>)> {
         let (request_tx, actor_request_rx) = mpsc::channel(self.account_channel_capacity);
-        let expiration_tx_args = actor::expiration_tx_args(self.tx_expiration_delta);
+        let tx_args = actor::build_tx_args(self.tx_expiration_delta);
         let actor_context = AccountActorContext {
             clients: GrpcClients {
                 rpc,
@@ -471,7 +471,7 @@ impl NtxBuilderConfig {
                 db,
                 chain,
                 script_cache: LruCache::new(self.script_cache_size),
-                expiration_tx_args,
+                tx_args,
             },
             config: ActorConfig {
                 max_notes_per_tx: self.max_notes_per_tx,

@@ -153,9 +153,9 @@ pub struct NtxContext {
     /// Maximum number of VM execution cycles for network transactions.
     max_cycles: u32,
 
-    /// Pre-built transaction args carrying the canonical expiration script and its delta word.
-    /// Cloned into each executed transaction to set its on-chain expiration delta.
-    expiration_tx_args: TransactionArgs,
+    /// [`TransactionArgs`] shared by every network transaction. Cloned into each executed
+    /// transaction. Currently carries the canonical expiration script and its delta word.
+    tx_args: TransactionArgs,
 
     /// [`ExponentialBuilder`] used to back off retries on transient request failures.
     request_backoff: ExponentialBuilder,
@@ -173,7 +173,7 @@ impl NtxContext {
         script_cache: LruCache<Word, NoteScript>,
         db: Db,
         max_cycles: u32,
-        expiration_tx_args: TransactionArgs,
+        tx_args: TransactionArgs,
         request_backoff_initial: Duration,
         request_backoff_max: Duration,
     ) -> Self {
@@ -184,7 +184,7 @@ impl NtxContext {
             script_cache,
             db,
             max_cycles,
-            expiration_tx_args,
+            tx_args,
             request_backoff,
         }
     }
@@ -407,8 +407,8 @@ impl NtxContext {
 
         // Attach the canonical expiration script (with its delta args) so the submitted tx is
         // rejected on-chain if it does not land within the configured block delta. Serviced network
-        // accounts must allowlist this script's root; see the `expiration_tx_args` field docs.
-        let tx_args = self.expiration_tx_args.clone();
+        // accounts must allowlist this script's root; see the `tx_args` field docs.
+        let tx_args = self.tx_args.clone();
 
         Box::pin(executor.execute_transaction(
             data_store.account.id(),

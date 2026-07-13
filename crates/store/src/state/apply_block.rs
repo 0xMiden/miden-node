@@ -9,6 +9,7 @@ use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::account_tree::AccountMutationSet;
 use miden_protocol::block::nullifier_tree::NullifierMutationSet;
 use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, SignedBlock};
+use miden_protocol::crypto::merkle::smt::LargeSmtForestError;
 use miden_protocol::note::{NoteDetails, Nullifier};
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::serde::Serializable;
@@ -69,13 +70,15 @@ impl State {
     /// - a transaction is open in the DB and the writes are started.
     /// - while the transaction is not committed, concurrent reads are allowed, both the DB and the
     ///   in-memory representations, which are consistent at this stage.
-    /// - prior to committing the changes to the DB, an exclusive lock to the in-memory data is
-    ///   acquired, preventing concurrent reads to the in-memory data, since that will be
-    ///   out-of-sync w.r.t. the DB.
+    /// - prior to committing the changes to the DB, exclusive locks to the canonical in-memory
+    ///   state and account-state forest are acquired, preventing readers from observing them at
+    ///   different block heights.
     /// - the DB transaction is committed, and requests that read only from the DB can proceed to
     ///   use the fresh data.
-    /// - the in-memory structures are updated, including the latest block pointer and the lock is
-    ///   released.
+    /// - the account-state forest and canonical in-memory structures are updated, including the
+    ///   latest block pointer, and both locks are released.
+    /// - if the forest update fails after the DB commit, the process aborts. The durable database
+    ///   remains authoritative and the forest is rebuilt during the next startup.
     // TODO: This span is logged in a root span, we should connect it to the parent span.
     #[miden_instrument(
         target = COMPONENT,
@@ -168,7 +171,7 @@ impl State {
         // Awaiting the block saving task to complete without errors.
         block_save_task.await??;
 
-        self.with_inner_write_blocking(|inner| {
+        self.with_inner_and_forest_write_blocking(|inner, forest| {
             // We need to check that neither the nullifier tree nor the account tree have changed
             // while we were waiting for the DB preparation task to complete. If either of them did
             // change, we do not proceed with in-memory and database updates, since it may lead to
@@ -192,28 +195,24 @@ impl State {
                 .block_on(db_update_task)?
                 .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
-            // Update the in-memory data structures after successful commit of the DB transaction
-            inner
-                .nullifier_tree
-                .apply_mutations(nullifier_tree_update)
-                .expect("Unreachable: old nullifier tree root must be checked before this step");
-            inner
-                .account_tree
-                .apply_mutations(account_tree_update)
-                .expect("Unreachable: old account tree root must be checked before this step");
+            // The DB is now committed. Keep both write locks held while advancing the forest and
+            // canonical in-memory state so readers cannot observe different block heights.
+            Self::finalize_committed_state(
+                || forest.apply_precomputed_block_update(block_num, account_forest_update),
+                || {
+                    inner.nullifier_tree.apply_mutations(nullifier_tree_update).expect(
+                        "Unreachable: old nullifier tree root must be checked before this step",
+                    );
+                    inner.account_tree.apply_mutations(account_tree_update).expect(
+                        "Unreachable: old account tree root must be checked before this step",
+                    );
 
-            inner.blockchain.push(block_commitment);
+                    inner.blockchain.push(block_commitment);
+                },
+            );
 
             Ok(())
         })?;
-
-        // Canonical state and SQLite are committed above. A forest failure from this point is not
-        // retryable: the node must stop normal processing and rebuild the forest before serving
-        // forest-backed state.
-        self.with_forest_write_blocking(|forest| {
-            forest.apply_precomputed_block_update(block_num, account_forest_update)
-        })
-        .map_err(ApplyBlockError::AccountStateForestMutation)?;
 
         // Push to cache and notify replica subscribers.
         self.block_cache
@@ -224,6 +223,40 @@ impl State {
         tracing::debug!(target: LOG_TARGET, "Block applied");
 
         Ok(())
+    }
+
+    /// Publishes the forest and canonical in-memory state after the database commit.
+    ///
+    /// The forest is advanced first because its persistent backend remains fallible. Canonical
+    /// in-memory state must not advance if that operation fails.
+    fn finalize_committed_state(
+        apply_forest: impl FnOnce() -> Result<(), LargeSmtForestError>,
+        advance_canonical_state: impl FnOnce(),
+    ) {
+        if let Err(error) = apply_forest() {
+            Self::abort_after_committed_forest_failure(&error);
+        }
+
+        advance_canonical_state();
+    }
+
+    /// Terminates after a forest failure that occurred after the canonical DB commit.
+    ///
+    /// Returning would expose a committed block with stale forest state. Tests panic so the fatal
+    /// path can be asserted without terminating the test process; production aborts immediately and
+    /// rebuilds the forest from the canonical database on restart.
+    fn abort_after_committed_forest_failure(error: &LargeSmtForestError) -> ! {
+        tracing::error!(
+            target: LOG_TARGET,
+            error = %error,
+            "account-state forest update failed after database commit; aborting for rebuild"
+        );
+
+        #[cfg(test)]
+        panic!("account-state forest update failed after database commit: {error}");
+
+        #[cfg(not(test))]
+        std::process::abort();
     }
 
     /// Saves the proving inputs for the given block to the block store.
@@ -400,5 +433,29 @@ impl State {
             .collect::<Result<Vec<_>, InvalidBlockError>>()?;
 
         Ok(notes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::io;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use miden_protocol::crypto::merkle::smt::LargeSmtForestError;
+
+    use super::State;
+
+    #[test]
+    fn injected_post_commit_backend_failure_prevents_canonical_state_advance() {
+        let error = LargeSmtForestError::fatal_from(io::Error::other("injected backend failure"));
+        let canonical_state_advanced = Cell::new(false);
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            State::finalize_committed_state(|| Err(error), || canonical_state_advanced.set(true));
+        }));
+
+        assert!(result.is_err(), "a post-commit forest failure must be fatal");
+        assert!(!canonical_state_advanced.get());
     }
 }

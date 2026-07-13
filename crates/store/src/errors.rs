@@ -237,8 +237,6 @@ pub enum ApplyBlockError {
     ConcurrentWrite,
     #[error("account state forest update preparation failed")]
     AccountStateForestPreparation(#[source] AccountStateForestUpdateError),
-    #[error("account state forest mutation failed")]
-    AccountStateForestMutation(#[source] LargeSmtForestError),
     #[error("database doesn't have any block header data")]
     DbBlockHeaderEmpty,
     #[error("database update failed: {0}")]

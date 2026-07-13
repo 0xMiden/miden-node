@@ -207,6 +207,9 @@ impl State {
             Ok(())
         })?;
 
+        // Canonical state and SQLite are committed above. A forest failure from this point is not
+        // retryable: the node must stop normal processing and rebuild the forest before serving
+        // forest-backed state.
         self.with_forest_write_blocking(|forest| {
             forest.apply_precomputed_block_update(block_num, account_forest_update)
         })

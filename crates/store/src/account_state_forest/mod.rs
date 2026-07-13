@@ -101,9 +101,18 @@ pub(crate) struct AccountStateForest<B: Backend = ForestInMemoryBackend> {
     pub(crate) vault_key_cache: LruCache<AssetIdHash, AssetId>,
 }
 
+/// Account-state forest mutations and roots prepared against one forest snapshot.
+///
+/// The update is bound to the `block_num` passed to
+/// [`AccountStateForest::compute_block_update_mutations`] and to the forest lineage versions and
+/// roots observed by that call. It must be applied exactly once, to the same forest, without an
+/// intervening mutation. The type is consumed on application to prevent accidental reuse.
 pub(crate) struct PreparedAccountStateForestBlockUpdate<B: Backend = ForestInMemoryBackend> {
+    /// Roots derived from `mutations` for persistence alongside the corresponding block.
     pub(crate) account_states: PrecomputedPublicAccountStates,
+    /// Snapshot-bound forest mutations that produce `account_states`.
     mutations: SmtForestMutationSet<B>,
+    /// Patches retained to update raw-key caches after the forest mutation succeeds.
     account_patches: Vec<AccountPatch>,
 }
 
@@ -675,9 +684,17 @@ impl<B: Backend> AccountStateForest<B> {
     // PUBLIC INTERFACE
     // --------------------------------------------------------------------------------------------
 
-    /// Computes a mutation set tied to the forest's current lineage versions and roots.
+    /// Prepares an account-state forest update without mutating the forest.
     ///
-    /// The returned update must be applied before any intervening forest mutation.
+    /// The returned update is tied to `block_num` and the forest's current lineage versions and
+    /// roots. It must be passed exactly once to [`Self::apply_precomputed_block_update`] with the
+    /// same `block_num`, before any intervening forest mutation. Its precomputed account roots must
+    /// only be persisted as part of committing that same block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a full-state patch targets an existing lineage, a computed lineage
+    /// root is missing, or the forest backend cannot prepare the mutation set.
     pub(crate) fn compute_block_update_mutations(
         &self,
         block_num: BlockNumber,
@@ -727,7 +744,19 @@ impl<B: Backend> AccountStateForest<B> {
         Ok(())
     }
 
-    /// Applies a previously computed block update and prunes expired forest history.
+    /// Applies a previously prepared block update and prunes expired forest history.
+    ///
+    /// `block_num` must match the value used to prepare `update`, and the forest must not have been
+    /// mutated since preparation. The update is consumed and cannot be applied twice.
+    ///
+    /// If the block and [`PreparedAccountStateForestBlockUpdate::account_states`] have already been
+    /// committed to canonical storage, an error from this method leaves the forest inconsistent
+    /// with canonical state. The caller must stop normal processing and rebuild the forest before
+    /// serving forest-backed state; retrying the block is not a recovery mechanism.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the backend cannot apply the prepared mutations.
     pub(crate) fn apply_precomputed_block_update(
         &mut self,
         block_num: BlockNumber,

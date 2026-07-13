@@ -27,17 +27,25 @@ use tokio::sync::oneshot::error::RecvError;
 
 use crate::db::models::conv::DatabaseTypeConversionError;
 
+/// Errors produced while preparing or rebuilding account-state forest updates.
+///
+/// The underlying [`LargeSmtForestError`] is preserved so callers can distinguish fatal backend
+/// failures from invalid update preparation.
 #[derive(Debug, Error)]
 pub enum AccountStateForestUpdateError {
+    /// A full-state patch attempted to create a vault lineage that is already present.
     #[error("account {account_id} vault lineage already exists")]
     VaultLineageAlreadyExists { account_id: AccountId },
+    /// A full-state patch attempted to create a storage-map lineage that is already present.
     #[error("account {account_id} storage map lineage for slot {slot_name} already exists")]
     StorageLineageAlreadyExists {
         account_id: AccountId,
         slot_name: miden_protocol::account::StorageSlotName,
     },
+    /// The forest mutation set did not contain a root for a lineage it was expected to update.
     #[error("computed forest mutations are missing lineage {lineage}")]
     MissingComputedRoot { lineage: LineageId },
+    /// The forest backend failed while computing, reading, or applying mutations.
     #[error(transparent)]
     Forest(#[from] LargeSmtForestError),
 }

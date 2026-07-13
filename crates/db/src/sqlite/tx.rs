@@ -126,8 +126,10 @@ mod tests {
     use super::*;
     use crate::sqlite::InList;
 
-    fn in_memory() -> Connection {
-        let conn = Connection::open_in_memory().expect("open in-memory db");
+    /// Opens a connection to a fresh, file-backed database in a temporary directory.
+    fn temp_db() -> (tempfile::TempDir, Connection) {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let conn = Connection::open(dir.path().join("test.sqlite3")).expect("open db");
         // `rarray()` is provided by rusqlite's `array` extension, which must be loaded per
         // connection (the pool does this in `configure_connection`).
         rusqlite::vtab::array::load_module(&conn).expect("load array module");
@@ -135,12 +137,12 @@ mod tests {
             "CREATE TABLE items (id INTEGER PRIMARY KEY, payload BLOB, label TEXT);",
         )
         .expect("create table");
-        conn
+        (dir, conn)
     }
 
     #[test]
     fn write_then_read_roundtrips_through_the_codec() {
-        let mut conn = in_memory();
+        let (_dir, mut conn) = temp_db();
         let tx = conn.transaction().unwrap();
         let w = WriteTx::new(&tx);
 
@@ -166,7 +168,7 @@ mod tests {
 
     #[test]
     fn null_column_reads_as_none() {
-        let mut conn = in_memory();
+        let (_dir, mut conn) = temp_db();
         let tx = conn.transaction().unwrap();
         let w = WriteTx::new(&tx);
 
@@ -185,7 +187,7 @@ mod tests {
 
     #[test]
     fn query_returns_empty_for_missing_row() {
-        let mut conn = in_memory();
+        let (_dir, mut conn) = temp_db();
         let tx = conn.transaction().unwrap();
         let r = ReadTx::new(&tx);
 
@@ -199,7 +201,7 @@ mod tests {
     // without tripping `debug_assert_no_dynamic_in` (tests run with debug assertions on).
     #[test]
     fn in_list_i64_rarray_runs_and_matches() {
-        let mut conn = in_memory();
+        let (_dir, mut conn) = temp_db();
         let tx = conn.transaction().unwrap();
         let w = WriteTx::new(&tx);
         for id in [1i64, 2, 3, 4] {
@@ -220,7 +222,7 @@ mod tests {
 
     #[test]
     fn in_list_blob_matches_blob_column() {
-        let mut conn = in_memory();
+        let (_dir, mut conn) = temp_db();
         let tx = conn.transaction().unwrap();
         let w = WriteTx::new(&tx);
         let a = vec![0xAAu8, 0xBB];

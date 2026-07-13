@@ -576,8 +576,7 @@ impl AccountActor {
 
                 log_deferred_notes(deferred);
 
-                if !genuine.is_empty() {
-                    let failed_notes = log_failed_notes(genuine);
+                let failed_notes = log_failed_notes(genuine);
                     self.mark_notes_failed(&failed_notes, block_num).await;
                 }
 

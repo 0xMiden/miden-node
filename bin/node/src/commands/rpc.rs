@@ -72,7 +72,7 @@ pub struct GrpcOptions {
     #[arg(
         long = "rpc.grpc.max-connection-age",
         env = "MIDEN_NODE_RPC_GRPC_MAX_CONNECTION_AGE",
-        default_value = duration_to_human_readable_string(Duration::from_secs(30 * 60)),
+        default_value = duration_to_human_readable_string(Duration::from_mins(30)),
         value_parser = humantime::parse_duration,
         value_name = "DURATION",
         help_heading = super::section::RPC_CONFIGURATION_HELP_HEADING

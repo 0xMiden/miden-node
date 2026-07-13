@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn banned_ip_reports_expiry() {
-        let ban = IpBanList::new(Duration::from_secs(600), 16);
+        let ban = IpBanList::new(Duration::from_mins(10), 16);
         let before = Instant::now();
         ban.add(ip(1));
         let after = Instant::now();
@@ -94,8 +94,8 @@ mod tests {
         // The ban expires `BAN_DURATION` after the instant it was added, which lies somewhere
         // between `before` and `after`.
         let until = ban.banned_until(ip(1)).expect("ip should be banned");
-        assert!(until >= before + Duration::from_secs(600));
-        assert!(until <= after + Duration::from_secs(600));
+        assert!(until >= before + Duration::from_mins(10));
+        assert!(until <= after + Duration::from_mins(10));
         assert!(ban.banned_until(ip(2)).is_none());
     }
 
@@ -109,21 +109,21 @@ mod tests {
 
     #[test]
     fn most_recent_ban_wins_over_stale_entry() {
-        let ban = IpBanList::new(Duration::from_secs(600), 16);
+        let ban = IpBanList::new(Duration::from_mins(10), 16);
         let now = Instant::now();
         {
             let mut banned = ban.banned.lock().unwrap();
             // A stale, already-expired entry followed by a fresh, live ban for the same IP. The
             // live entry must take precedence over the leftover stale one.
             banned.push_back((ip(1), now));
-            banned.push_back((ip(1), now + Duration::from_secs(600)));
+            banned.push_back((ip(1), now + Duration::from_mins(10)));
         }
         assert!(ban.banned_until(ip(1)).is_some());
     }
 
     #[test]
     fn oldest_entry_is_evicted_at_capacity() {
-        let ban = IpBanList::new(Duration::from_secs(600), 2);
+        let ban = IpBanList::new(Duration::from_mins(10), 2);
         ban.add(ip(1));
         ban.add(ip(2));
         ban.add(ip(3));

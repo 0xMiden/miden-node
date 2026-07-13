@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG RUST_VERSION=1.93
+ARG RUST_VERSION=1.96
 ARG DEBIAN_RELEASE=bookworm
 ARG BIN
 ARG PORT

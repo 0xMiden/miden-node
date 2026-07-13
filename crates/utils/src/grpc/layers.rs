@@ -45,7 +45,7 @@ pub fn rate_limit_per_ip(
         .context("invalid gRPC rate limit configuration")?;
     let limiter = std::sync::Arc::clone(config.limiter());
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        let mut interval = tokio::time::interval(Duration::from_mins(1));
         loop {
             interval.tick().await;
             // avoid a DoS vector
@@ -147,6 +147,7 @@ impl GrpcIpExtractor {
 impl KeyExtractor for GrpcIpExtractor {
     type Key = IpAddr;
 
+    #[expect(clippy::result_large_err, reason = "error type is dictated by tower-governor")]
     fn extract<T>(
         &self,
         request: &http::Request<T>,

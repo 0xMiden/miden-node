@@ -78,7 +78,7 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
         // Check if this variant is marked as internal
         let is_internal = variant.attrs.iter().any(|attr| {
             attr.path().is_ident("grpc")
-                && attr.parse_args::<Ident>().map(|i| i == "internal").unwrap_or(false)
+                && attr.parse_args::<Ident>().is_ok_and(|i| i == "internal")
         });
 
         // Extract doc comments

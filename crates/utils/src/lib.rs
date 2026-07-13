@@ -1,7 +1,6 @@
 pub mod block_cache;
 pub mod clap;
 pub mod cors;
-pub mod crypto;
 #[cfg(feature = "testing")]
 pub mod fee;
 pub mod formatting;

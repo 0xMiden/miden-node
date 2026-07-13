@@ -3,7 +3,6 @@
 //! This module contains functionality for deploying Miden accounts to the network.
 
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -11,9 +10,11 @@ use backon::{ExponentialBuilder, Retryable};
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
+use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
+use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, PartialAccount, StorageMapKey};
-use miden_protocol::asset::{AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
@@ -27,11 +28,11 @@ use miden_protocol::transaction::{
     TransactionInputs,
 };
 use miden_protocol::utils::serde::Serializable;
-use miden_protocol::{MastForest, Word};
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
     DataStore,
     DataStoreError,
+    LoadedMastForest,
     LocalTransactionProver,
     MastForestStore,
     TransactionExecutor,
@@ -144,13 +145,16 @@ pub async fn create_genesis_aware_rpc_client(
 /// Used both at startup and by the increment task when accounts are fundamentally outdated
 /// (e.g., after a network reset) and re-syncing from the RPC is not sufficient. The accounts
 /// are never persisted to disk; the monitor re-creates them on every restart.
-pub async fn create_and_deploy_accounts(rpc_url: &Url) -> Result<(Account, SecretKey, Account)> {
+pub async fn create_and_deploy_accounts(
+    rpc_url: &Url,
+    prover: &LocalTransactionProver,
+) -> Result<(Account, SecretKey, Account)> {
     tracing::info!(target: LOG_TARGET, "Creating fresh monitor accounts");
 
     let (wallet_account, secret_key) = create_wallet_account()?;
     let counter_account = create_counter_account(wallet_account.id())?;
 
-    deploy_counter_account(&counter_account, rpc_url).await?;
+    deploy_counter_account(&counter_account, rpc_url, prover).await?;
     tracing::info!(target: LOG_TARGET, "Successfully created and deployed accounts");
 
     Ok((wallet_account, secret_key, counter_account))
@@ -190,7 +194,7 @@ async fn execute_counter_genesis_tx(
     data_store.add_account(counter_account.clone());
 
     let executor: TransactionExecutor<'_, '_, _, BasicAuthenticator> =
-        TransactionExecutor::new(&data_store).with_debug_mode();
+        TransactionExecutor::new(&data_store);
 
     let tx_args = TransactionArgs::default();
 
@@ -230,7 +234,11 @@ pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<Transaction
     skip_all,
     ret(level = "debug"),
 )]
-pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) -> Result<()> {
+pub async fn deploy_counter_account(
+    counter_account: &Account,
+    rpc_url: &Url,
+    prover: &LocalTransactionProver,
+) -> Result<()> {
     // Deploy counter account to the network using a genesis-aware RPC client.
     let mut rpc_client = create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
 
@@ -238,9 +246,11 @@ pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) ->
 
     let transaction_inputs = executed_tx.tx_inputs().to_bytes();
 
-    let prover = LocalTransactionProver::default();
-
-    let proven_tx = prover.prove(executed_tx).await.context("Failed to prove transaction")?;
+    let prover = prover.clone();
+    let proven_tx = spawn_blocking_in_current_span(move || prover.prove(executed_tx))
+        .await
+        .context("prover task panicked")?
+        .context("Failed to prove transaction")?;
 
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
@@ -324,7 +334,7 @@ impl DataStore for MonitorDataStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_keys: BTreeSet<AssetVaultKey>,
+        vault_keys: BTreeSet<AssetId>,
     ) -> Result<Vec<AssetWitness>, DataStoreError> {
         let account = self.get_account(account_id)?;
 
@@ -354,7 +364,7 @@ impl DataStore for MonitorDataStore {
 }
 
 impl MastForestStore for MonitorDataStore {
-    fn get(&self, procedure_hash: &Word) -> Option<Arc<MastForest>> {
+    fn get(&self, procedure_hash: &Word) -> Option<LoadedMastForest> {
         self.mast_store.get(procedure_hash)
     }
 }

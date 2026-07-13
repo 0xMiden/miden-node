@@ -4,6 +4,7 @@ use std::path::Path;
 use assert_matches::assert_matches;
 use miden_protocol::ONE;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 
 use super::*;
 
@@ -52,10 +53,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
     }
 
     // check account balance, and ensure ordering is retained
-    let faucet_vault_key = miden_protocol::asset::AssetVaultKey::new_fungible(
-        native_faucet.id(),
-        miden_protocol::asset::AssetCallbackFlag::Disabled,
-    );
+    let faucet_vault_key = miden_protocol::asset::AssetId::new_fungible(native_faucet.id());
     assert_matches!(wallet1.vault().get_balance(faucet_vault_key), Ok(val) => {
         assert_eq!(val.as_u64(), 999_000);
     });
@@ -101,9 +99,7 @@ fn parsing_account_from_file() -> TestResult {
     // Create a test wallet account and save it to a .mac file
     let init_seed: [u8; 32] = rand::random();
     let mut rng = rand_chacha::ChaCha20Rng::from_seed(rand::random());
-    let secret_key = miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey::with_rng(
-        &mut miden_node_utils::crypto::get_random_coin(&mut rng),
-    );
+    let secret_key = SecretKey::with_rng(&mut rng);
     let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
 
     let test_account = create_basic_wallet(init_seed, auth, AccountType::Public)?;
@@ -155,9 +151,7 @@ fn parsing_native_faucet_from_file() -> TestResult {
     // Create a faucet account and save it to a .mac file
     let init_seed: [u8; 32] = rand::random();
     let mut rng = rand_chacha::ChaCha20Rng::from_seed(rand::random());
-    let secret_key = miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey::with_rng(
-        &mut miden_node_utils::crypto::get_random_coin(&mut rng),
-    );
+    let secret_key = SecretKey::with_rng(&mut rng);
     let auth = AuthSingleSig::new(Approver::new(
         secret_key.public_key().into(),
         AuthScheme::Falcon512Poseidon2,
@@ -230,9 +224,7 @@ fn native_faucet_from_file_must_be_faucet_type() -> TestResult {
     // Create a regular wallet account (not a faucet) and try to use it as native faucet
     let init_seed: [u8; 32] = rand::random();
     let mut rng = rand_chacha::ChaCha20Rng::from_seed(rand::random());
-    let secret_key = miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey::with_rng(
-        &mut miden_node_utils::crypto::get_random_coin(&mut rng),
-    );
+    let secret_key = SecretKey::with_rng(&mut rng);
     let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
 
     let regular_account = create_basic_wallet(init_seed, auth, AccountType::Public)?;

@@ -170,7 +170,7 @@ impl AccountActorContext {
             config: ActorConfig {
                 max_notes_per_tx: NonZeroUsize::new(1).unwrap(),
                 max_note_attempts: 1,
-                idle_timeout: Duration::from_secs(60),
+                idle_timeout: Duration::from_mins(1),
                 max_cycles: 1 << 18,
                 tx_expiration_delta: NonZeroU16::new(30).unwrap(),
                 request_backoff_initial: Duration::from_millis(1),

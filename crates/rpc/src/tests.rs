@@ -40,6 +40,7 @@ use miden_protocol::account::{
     AccountPatch,
     AccountType,
     AccountUpdateDetails,
+    AssetCallbackFlag,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
@@ -150,7 +151,12 @@ fn build_test_proven_tx(
     patch: &AccountPatch,
     genesis: Word,
 ) -> ProvenTransaction {
-    let account_id = AccountId::dummy([0; 15], AccountIdVersion::Version1, AccountType::Public);
+    let account_id = AccountId::dummy(
+        [0; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
 
     let account_update = TxAccountUpdate::new(
         account_id,
@@ -451,8 +457,12 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
 
     // Seed a row marking a known AccountId as a network account directly in the store's SQLite DB.
     // The store uses WAL mode so a secondary connection is safe.
-    let network_account_id =
-        AccountId::dummy([7u8; 15], AccountIdVersion::Version1, AccountType::Public);
+    let network_account_id = AccountId::dummy(
+        [7u8; 15],
+        AccountIdVersion::Version1,
+        AccountType::Public,
+        AssetCallbackFlag::Disabled,
+    );
     miden_node_store::test_support::seed_network_account(
         &store.data_directory_path().join("miden-store.sqlite3"),
         network_account_id,
@@ -948,8 +958,17 @@ async fn sync_endpoints_reject_block_to_beyond_chain_tip() {
     // A range ending one block past the genesis tip; otherwise valid (non-empty, start <= end).
     let block_range = || Some(proto::rpc::BlockRange { block_from: 0, block_to: 1 });
     // Any public account id works: the chain-tip check happens before the account is queried.
-    let account_id =
-        || Some(AccountId::dummy([0; 15], AccountIdVersion::Version1, AccountType::Public).into());
+    let account_id = || {
+        Some(
+            AccountId::dummy(
+                [0; 15],
+                AccountIdVersion::Version1,
+                AccountType::Public,
+                AssetCallbackFlag::Disabled,
+            )
+            .into(),
+        )
+    };
 
     let status = rpc_client
         .sync_nullifiers(proto::rpc::SyncNullifiersRequest {

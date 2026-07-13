@@ -12,7 +12,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::NoteTag;
 use miden_protocol::utils::serde::Serializable;
-use rand::Rng;
+use rand::RngExt;
 use rand::seq::SliceRandom;
 use tokio::fs;
 
@@ -562,7 +562,7 @@ async fn sync_transactions_paginated(
             block_num: target_block_to,
         });
 
-        aggregated_records.extend(response.transactions.into_iter());
+        aggregated_records.extend(response.transactions);
         let reached_block = info.block_num;
         let chain_tip = info.chain_tip;
         final_pagination_info =

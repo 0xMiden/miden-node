@@ -102,7 +102,7 @@ pub fn mock_block_header(block_num: BlockNumber) -> miden_protocol::block::Block
 /// verify against the header's validator key, which is fine for tests that exercise database-level
 /// bootstrap (signature validation happens in the CLI handler, not in `Db::bootstrap`).
 pub fn mock_genesis_block() -> miden_protocol::block::SignedBlock {
-    use miden_protocol::block::{BlockBody, SignedBlock};
+    use miden_protocol::block::{BlockBody, BlockSignatures, SignedBlock};
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use miden_protocol::transaction::OrderedTransactionHeaders;
 
@@ -114,7 +114,8 @@ pub fn mock_genesis_block() -> miden_protocol::block::SignedBlock {
         OrderedTransactionHeaders::new_unchecked(Vec::new()),
     );
     let signature = SigningKey::new().sign(header.commitment());
-    SignedBlock::new_unchecked(header, body, signature)
+    let signatures = BlockSignatures::new(vec![signature]).unwrap();
+    SignedBlock::new_unchecked(header, body, signatures)
 }
 
 /// Builds a full-state [`AccountUpdateDetails`] for a network account. The returned account passes
@@ -143,7 +144,7 @@ pub fn mock_network_account_update() -> (Account, miden_protocol::account::Accou
 /// See [`mock_genesis_block`] for the signature caveat.
 pub fn mock_genesis_block_with_network_account() -> (miden_protocol::block::SignedBlock, AccountId)
 {
-    use miden_protocol::block::{BlockAccountUpdate, BlockBody, SignedBlock};
+    use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockSignatures, SignedBlock};
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use miden_protocol::transaction::OrderedTransactionHeaders;
 
@@ -159,5 +160,6 @@ pub fn mock_genesis_block_with_network_account() -> (miden_protocol::block::Sign
         OrderedTransactionHeaders::new_unchecked(Vec::new()),
     );
     let signature = SigningKey::new().sign(header.commitment());
-    (SignedBlock::new_unchecked(header, body, signature), account_id)
+    let signatures = BlockSignatures::new(vec![signature]).unwrap();
+    (SignedBlock::new_unchecked(header, body, signatures), account_id)
 }

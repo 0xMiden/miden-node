@@ -27,10 +27,12 @@ use miden_protocol::account::{
 };
 #[cfg(test)]
 use miden_protocol::account::{StorageMap, StorageMapKey};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{Felt, Word};
 
-use crate::db::models::conv::raw_sql_to_nonce;
+use super::NetworkAccountType;
+use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_nonce};
 use crate::db::schema;
 use crate::errors::DatabaseError;
 
@@ -40,14 +42,51 @@ mod tests;
 // TYPES
 // ================================================================================================
 
-/// Raw row type for account state delta queries.
-///
-/// Fields: (`nonce`, `code_commitment`, `storage_header`)
+/// Latest account row fields needed by account update preparation.
 #[derive(diesel::prelude::Queryable)]
-struct AccountStateDeltaRow {
+pub(super) struct LatestAccountStateRow {
+    created_at_block: i64,
+    network_account_type: i32,
     nonce: Option<i64>,
     code_commitment: Option<Vec<u8>>,
     storage_header: Option<Vec<u8>>,
+}
+
+impl LatestAccountStateRow {
+    pub(super) fn created_at_block(&self) -> Result<BlockNumber, DatabaseError> {
+        Ok(BlockNumber::from_raw_sql(self.created_at_block)?)
+    }
+
+    pub(super) fn network_account_type(&self) -> Result<NetworkAccountType, DatabaseError> {
+        Ok(NetworkAccountType::from_raw_sql(self.network_account_type)?)
+    }
+
+    pub(super) fn state_headers(
+        &self,
+        account_id: AccountId,
+    ) -> Result<AccountStateHeadersForDelta, DatabaseError> {
+        let nonce = raw_sql_to_nonce(self.nonce.ok_or_else(|| {
+            DatabaseError::DataCorrupted(format!("No nonce found for account {account_id}"))
+        })?);
+
+        let code_commitment = self
+            .code_commitment
+            .as_deref()
+            .map(Word::read_from_bytes)
+            .transpose()?
+            .ok_or_else(|| {
+                DatabaseError::DataCorrupted(format!(
+                    "No code_commitment found for account {account_id}"
+                ))
+            })?;
+
+        let storage_header = match self.storage_header.as_deref() {
+            Some(bytes) => AccountStorageHeader::read_from_bytes(bytes)?,
+            None => AccountStorageHeader::new(Vec::new())?,
+        };
+
+        Ok(AccountStateHeadersForDelta { nonce, code_commitment, storage_header })
+    }
 }
 
 /// Data needed for applying a delta update to an existing account. Fetches only the minimal data
@@ -95,27 +134,30 @@ pub(super) enum AccountStateForInsert {
 // QUERIES
 // ================================================================================================
 
-/// Selects the minimal account state needed for applying a delta update.
+/// Selects the latest account state needed to prepare any account update.
 ///
-/// Optimized query that only fetches:
-/// - `nonce` (to add `nonce_delta`)
+/// The query fetches:
+/// - `created_at_block` and `network_account_type` for every update
+/// - `nonce` (preserved when a partial patch omits its final nonce)
 /// - `code_commitment` (unchanged in partial deltas)
 /// - `storage_header` (to apply storage delta)
 ///
 /// # Raw SQL
 ///
 /// ```sql
-/// SELECT nonce, code_commitment, storage_header
+/// SELECT created_at_block, network_account_type, nonce, code_commitment, storage_header
 /// FROM accounts
 /// WHERE account_id = ?1 AND is_latest = 1
 /// ```
-pub(super) fn select_minimal_account_state_headers(
+pub(super) fn select_latest_account_state(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-) -> Result<AccountStateHeadersForDelta, DatabaseError> {
-    let row: AccountStateDeltaRow = SelectDsl::select(
+) -> Result<Option<LatestAccountStateRow>, DatabaseError> {
+    let row = SelectDsl::select(
         schema::accounts::table,
         (
+            schema::accounts::created_at_block,
+            schema::accounts::network_account_type,
             schema::accounts::nonce,
             schema::accounts::code_commitment,
             schema::accounts::storage_header,
@@ -124,29 +166,9 @@ pub(super) fn select_minimal_account_state_headers(
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
     .filter(schema::accounts::is_latest.eq(true))
     .get_result(conn)
-    .optional()?
-    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    .optional()?;
 
-    let nonce = raw_sql_to_nonce(row.nonce.ok_or_else(|| {
-        DatabaseError::DataCorrupted(format!("No nonce found for account {account_id}"))
-    })?);
-
-    let code_commitment = row
-        .code_commitment
-        .map(|bytes| Word::read_from_bytes(&bytes))
-        .transpose()?
-        .ok_or_else(|| {
-            DatabaseError::DataCorrupted(format!(
-                "No code_commitment found for account {account_id}"
-            ))
-        })?;
-
-    let storage_header = match row.storage_header {
-        Some(bytes) => AccountStorageHeader::read_from_bytes(&bytes)?,
-        None => AccountStorageHeader::new(Vec::new())?,
-    };
-
-    Ok(AccountStateHeadersForDelta { nonce, code_commitment, storage_header })
+    Ok(row)
 }
 
 // HELPER FUNCTIONS

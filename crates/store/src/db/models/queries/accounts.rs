@@ -61,10 +61,11 @@ pub(crate) use at_block::select_account_header_with_storage_header_at_block;
 mod delta;
 use delta::{
     AccountStateForInsert,
+    LatestAccountStateRow,
     PartialAccountState,
     PrecomputedFullAccountState,
     apply_storage_patch_with_roots,
-    select_minimal_account_state_headers,
+    select_latest_account_state,
 };
 
 #[cfg(test)]
@@ -1154,16 +1155,15 @@ fn prepare_precomputed_full_account_update(
 
 /// Prepare partial patch data for account upserts and follow-up storage and vault inserts.
 fn prepare_partial_account_update(
-    conn: &mut SqliteConnection,
     update: &BlockAccountUpdate,
     account_id: AccountId,
     patch: &AccountPatch,
     precomputed: &PrecomputedPublicAccountState,
+    existing: &LatestAccountStateRow,
 ) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
-    // Build the minimal account state needed for partial patch application. Only load the storage
-    // header, nonce, and code commitment. The next line fetches the header, which will always
-    // change unless the patch is empty.
-    let state_headers = select_minimal_account_state_headers(conn, account_id)?;
+    // Build the minimal account state needed for partial patch application from the latest row that
+    // was loaded with the account's creation metadata.
+    let state_headers = existing.state_headers(account_id)?;
 
     // --- Process asset updates. --------------------------------- The patch carries absolute final
     // values, so encode `Some` as update and `None` (an empty value word) as removal.
@@ -1274,22 +1274,12 @@ pub(crate) fn upsert_accounts(
         let account_id = update.account_id();
         let account_id_bytes = account_id.to_bytes();
 
-        // Pull the latest row (if any) so we can carry forward `created_at_block` and the
-        // `network_account_type` classification, both of which are fixed at account creation.
-        let existing: Option<(i64, i32)> = QueryDsl::select(
-            schema::accounts::table.filter(
-                schema::accounts::account_id
-                    .eq(&account_id_bytes)
-                    .and(schema::accounts::is_latest.eq(true)),
-            ),
-            (schema::accounts::created_at_block, schema::accounts::network_account_type),
-        )
-        .first(conn)
-        .optional()
-        .map_err(DatabaseError::Diesel)?;
+        // Pull the latest row once. Partial updates consume the state headers below, while every
+        // update carries forward creation metadata.
+        let existing = select_latest_account_state(conn, account_id)?;
 
-        let created_at_block = match existing {
-            Some((raw, _)) => BlockNumber::from_raw_sql(raw)?,
+        let created_at_block = match &existing {
+            Some(row) => row.created_at_block()?,
             None => block_num,
         };
 
@@ -1326,14 +1316,16 @@ pub(crate) fn upsert_accounts(
                         "missing precomputed public account state for account {account_id}"
                     ))
                 })?;
-                prepare_partial_account_update(conn, update, account_id, patch, precomputed)?
+                let existing =
+                    existing.as_ref().ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+                prepare_partial_account_update(update, account_id, patch, precomputed, existing)?
             },
         };
 
         // Inherit the classification when the account already exists; otherwise classify it once at
         // creation based on the new state.
-        let network_account_type = match existing {
-            Some((_, raw)) => NetworkAccountType::from_raw_sql(raw)?,
+        let network_account_type = match &existing {
+            Some(row) => row.network_account_type()?,
             None => match &account_state {
                 AccountStateForInsert::FullAccount(account)
                     if NetworkAccount::new(account.clone()).is_ok() =>

@@ -574,9 +574,7 @@ impl AccountActor {
                 );
                 self.cache_note_scripts(fetched_scripts).await;
 
-                if !deferred.is_empty() {
-                    log_deferred_notes(deferred);
-                }
+                log_deferred_notes(deferred);
 
                 if !genuine.is_empty() {
                     let failed_notes = log_failed_notes(genuine);

@@ -248,9 +248,9 @@ pub async fn deploy_counter_account(
 
     let prover = prover.clone();
     let proven_tx = spawn_blocking_in_current_span(move || prover.prove(executed_tx))
-    .await
-    .context("prover task panicked")?
-    .context("Failed to prove transaction")?;
+        .await
+        .context("prover task panicked")?
+        .context("Failed to prove transaction")?;
 
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),

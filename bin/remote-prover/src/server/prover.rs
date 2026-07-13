@@ -119,9 +119,9 @@ impl ProveRequest for LocalBatchProver {
     type Output = ProvenBatch;
 
     fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
-        let executed_batch = BatchExecutor::new().execute(input).map_err(|e| {
-            tonic::Status::internal(e.as_report_context("failed to execute batch"))
-        })?;
+        let executed_batch = BatchExecutor::new()
+            .execute(input)
+            .map_err(|e| tonic::Status::internal(e.as_report_context("failed to execute batch")))?;
         self.prove(executed_batch)
             .map_err(|e| tonic::Status::internal(e.as_report_context("failed to prove batch")))
     }

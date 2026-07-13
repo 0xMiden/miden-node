@@ -125,7 +125,6 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
 
 fn precomputed_states_from_account(account: &Account) -> PrecomputedPublicAccountStates {
     let state = PrecomputedPublicAccountState {
-        account_id: account.id(),
         vault_root: account.vault().root(),
         storage_map_roots: account
             .storage()

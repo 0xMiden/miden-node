@@ -88,7 +88,6 @@ fn insert_block_header(conn: &mut SqliteConnection, block_num: BlockNumber) {
 
 fn precomputed_state_from_account(account: &Account) -> PrecomputedPublicAccountState {
     PrecomputedPublicAccountState {
-        account_id: account.id(),
         vault_root: account.vault().root(),
         storage_map_roots: account
             .storage()

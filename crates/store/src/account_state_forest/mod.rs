@@ -403,11 +403,7 @@ impl<B: Backend> AccountStateForest<B> {
 
             account_states.insert(
                 account_id,
-                PrecomputedPublicAccountState {
-                    account_id,
-                    vault_root,
-                    storage_map_roots,
-                },
+                PrecomputedPublicAccountState { vault_root, storage_map_roots },
             );
         }
 

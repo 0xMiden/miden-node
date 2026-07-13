@@ -327,7 +327,6 @@ pub struct PublicAccountStateRootsPage {
 /// Public account state commitments computed by the account state forest before SQLite writes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PrecomputedPublicAccountState {
-    pub(crate) account_id: AccountId,
     pub(crate) vault_root: Word,
     pub(crate) storage_map_roots: BTreeMap<StorageSlotName, Word>,
 }

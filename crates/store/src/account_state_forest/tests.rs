@@ -1,7 +1,13 @@
 use assert_matches::assert_matches;
 use miden_node_proto::domain::account::{AccountVaultDetails, StorageMapEntries};
 use miden_protocol::Felt;
-use miden_protocol::account::{AccountCode, AccountType, StorageMapKey};
+use miden_protocol::account::{
+    AccountCode,
+    AccountStoragePatch,
+    AccountType,
+    AccountVaultPatch,
+    StorageMapKey,
+};
 use miden_protocol::asset::{
     Asset,
     AssetVault,
@@ -361,7 +367,7 @@ fn storage_map_remove_resets_forest_lineage_for_later_create() {
         )]))
         .unwrap(),
     );
-    forest.apply_block_updates(BlockNumber::from(1u32), [old_patch]);
+    forest.update_account(BlockNumber::from(1u32), &old_patch);
 
     let remove_patch = dummy_partial_patch(
         account_id,
@@ -410,23 +416,25 @@ fn storage_map_remove_resets_forest_lineage_for_later_create() {
 }
 
 #[test]
-fn precomputed_roots_match_one_phase_update() {
+fn precomputed_and_applied_roots_match_protocol_state() {
     use std::collections::BTreeMap;
 
-    use miden_protocol::account::{StorageMapPatch, StorageSlotPatch};
+    use miden_protocol::account::{StorageMap, StorageMapPatch, StorageSlotPatch};
 
     let account_id = dummy_account();
     let faucet_id = dummy_faucet();
     let slot_name = StorageSlotName::mock(12);
     let raw_key = StorageMapKey::from_index(12);
 
-    let mut prepared_forest = AccountStateForest::new();
-    let mut one_phase_forest = AccountStateForest::new();
+    let mut forest = AccountStateForest::new();
 
     let block_1 = BlockNumber::GENESIS.child();
     let value_1 = Word::from([12u32, 0, 0, 0]);
+    let asset_1 = dummy_fungible_asset(faucet_id, 120);
+    let expected_vault_root_1 = AssetVault::new(&[asset_1]).unwrap().root();
+    let expected_map_root_1 = StorageMap::with_entries([(raw_key, value_1)]).unwrap().root();
     let mut vault_patch_1 = AccountVaultPatch::default();
-    vault_patch_1.insert_asset(dummy_fungible_asset(faucet_id, 120));
+    vault_patch_1.insert_asset(asset_1);
     let map_patch_1 = StorageMapPatch::from_iters([], [(raw_key, value_1)]);
     let storage_patch_1 = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
         slot_name.clone(),
@@ -435,35 +443,26 @@ fn precomputed_roots_match_one_phase_update() {
     .unwrap();
     let patch_1 = dummy_partial_patch(account_id, vault_patch_1, storage_patch_1);
 
-    let prepared_1 = prepared_forest
-        .compute_block_update_mutations(block_1, [patch_1.clone()])
-        .unwrap();
-    one_phase_forest.update_account(block_1, &patch_1);
+    let prepared_1 = forest.compute_block_update_mutations(block_1, [patch_1.clone()]).unwrap();
 
     let account_state_1 = prepared_1.account_states.get(&account_id).unwrap();
-    assert_eq!(
-        account_state_1.vault_root,
-        one_phase_forest.get_vault_root(account_id, block_1).unwrap()
-    );
-    assert_eq!(
-        account_state_1.storage_map_roots[&slot_name],
-        one_phase_forest.get_storage_map_root(account_id, &slot_name, block_1).unwrap()
-    );
+    assert_eq!(account_state_1.vault_root, expected_vault_root_1);
+    assert_eq!(account_state_1.storage_map_roots[&slot_name], expected_map_root_1);
 
-    prepared_forest.apply_precomputed_block_update(block_1, prepared_1).unwrap();
+    forest.apply_precomputed_block_update(block_1, prepared_1).unwrap();
+    assert_eq!(forest.get_vault_root(account_id, block_1), Some(expected_vault_root_1));
     assert_eq!(
-        prepared_forest.get_vault_root(account_id, block_1),
-        one_phase_forest.get_vault_root(account_id, block_1)
-    );
-    assert_eq!(
-        prepared_forest.get_storage_map_root(account_id, &slot_name, block_1),
-        one_phase_forest.get_storage_map_root(account_id, &slot_name, block_1)
+        forest.get_storage_map_root(account_id, &slot_name, block_1),
+        Some(expected_map_root_1)
     );
 
     let block_2 = block_1.child();
     let value_2 = Word::from([24u32, 0, 0, 0]);
+    let asset_2 = dummy_fungible_asset(faucet_id, 240);
+    let expected_vault_root_2 = AssetVault::new(&[asset_2]).unwrap().root();
+    let expected_map_root_2 = StorageMap::with_entries([(raw_key, value_2)]).unwrap().root();
     let mut vault_patch_2 = AccountVaultPatch::default();
-    vault_patch_2.insert_asset(dummy_fungible_asset(faucet_id, 240));
+    vault_patch_2.insert_asset(asset_2);
     let map_patch_2 = StorageMapPatch::from_iters([], [(raw_key, value_2)]);
     let storage_patch_2 = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
         slot_name.clone(),
@@ -472,30 +471,40 @@ fn precomputed_roots_match_one_phase_update() {
     .unwrap();
     let patch_2 = dummy_partial_patch(account_id, vault_patch_2, storage_patch_2);
 
-    let prepared_2 = prepared_forest
-        .compute_block_update_mutations(block_2, [patch_2.clone()])
-        .unwrap();
-    one_phase_forest.update_account(block_2, &patch_2);
+    let prepared_2 = forest.compute_block_update_mutations(block_2, [patch_2.clone()]).unwrap();
 
     let account_state_2 = prepared_2.account_states.get(&account_id).unwrap();
-    assert_eq!(
-        account_state_2.vault_root,
-        one_phase_forest.get_vault_root(account_id, block_2).unwrap()
-    );
-    assert_eq!(
-        account_state_2.storage_map_roots[&slot_name],
-        one_phase_forest.get_storage_map_root(account_id, &slot_name, block_2).unwrap()
-    );
+    assert_eq!(account_state_2.vault_root, expected_vault_root_2);
+    assert_eq!(account_state_2.storage_map_roots[&slot_name], expected_map_root_2);
 
-    prepared_forest.apply_precomputed_block_update(block_2, prepared_2).unwrap();
+    forest.apply_precomputed_block_update(block_2, prepared_2).unwrap();
+    assert_eq!(forest.get_vault_root(account_id, block_2), Some(expected_vault_root_2));
     assert_eq!(
-        prepared_forest.get_vault_root(account_id, block_2),
-        one_phase_forest.get_vault_root(account_id, block_2)
+        forest.get_storage_map_root(account_id, &slot_name, block_2),
+        Some(expected_map_root_2)
     );
-    assert_eq!(
-        prepared_forest.get_storage_map_root(account_id, &slot_name, block_2),
-        one_phase_forest.get_storage_map_root(account_id, &slot_name, block_2)
-    );
+}
+
+#[test]
+fn rebuild_updates_accept_disjoint_accounts_at_the_same_version() {
+    let account_1 = dummy_account();
+    let account_2 =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
+    let block_num = BlockNumber::from(12u32);
+    let asset_1 = dummy_fungible_asset(dummy_faucet(), 120);
+    let asset_2 = dummy_fungible_asset(dummy_faucet(), 240);
+    let expected_root_1 = AssetVault::new(&[asset_1]).unwrap().root();
+    let expected_root_2 = AssetVault::new(&[asset_2]).unwrap().root();
+    let patches = [
+        dummy_full_state_patch(account_1, &[asset_1]),
+        dummy_full_state_patch(account_2, &[asset_2]),
+    ];
+    let mut forest = AccountStateForest::new();
+
+    forest.apply_rebuild_updates(block_num, patches).unwrap();
+
+    assert_eq!(forest.get_vault_root(account_1, block_num), Some(expected_root_1));
+    assert_eq!(forest.get_vault_root(account_2, block_num), Some(expected_root_2));
 }
 
 #[test]

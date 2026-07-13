@@ -80,7 +80,11 @@ use rand::RngExt;
 use tempfile::tempdir;
 
 use super::{AccountInfo, NoteRecord, NoteSyncRecord, NullifierInfo, TransactionRecord};
-use crate::account_state_forest::{AccountStorageMapResult, HISTORICAL_BLOCK_RETENTION};
+use crate::account_state_forest::{
+    AccountStorageMapResult,
+    HISTORICAL_BLOCK_RETENTION,
+    TestAccountStateForestExt,
+};
 use crate::db::models::queries::{
     PrecomputedPublicAccountState,
     PrecomputedPublicAccountStates,

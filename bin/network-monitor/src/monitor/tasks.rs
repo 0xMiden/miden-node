@@ -7,6 +7,7 @@ use anyhow::Result;
 use backon::{ExponentialBuilder, Retryable};
 use miden_node_proto::clients::RemoteProverClient;
 use miden_node_utils::tasks::Tasks as SupervisedTasks;
+use miden_tx::LocalTransactionProver;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{Mutex, watch};
 use tracing::{debug, warn};
@@ -251,8 +252,9 @@ async fn run_ntx(
 async fn bootstrap_ntx(
     config: &MonitorConfig,
 ) -> Result<(IncrementService, CounterTrackingService)> {
+    let prover = LocalTransactionProver::default();
     let (wallet_account, secret_key, counter_account) =
-        create_and_deploy_accounts(&config.rpc_url).await?;
+        create_and_deploy_accounts(&config.rpc_url, &prover).await?;
 
     let (accounts_tx, accounts_rx) = watch::channel(TrackedAccounts {
         wallet: wallet_account.clone(),
@@ -266,6 +268,7 @@ async fn bootstrap_ntx(
         wallet_account,
         secret_key,
         counter_account,
+        prover,
         accounts_tx,
         latency_state.clone(),
     )

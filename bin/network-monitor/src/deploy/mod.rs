@@ -145,13 +145,16 @@ pub async fn create_genesis_aware_rpc_client(
 /// Used both at startup and by the increment task when accounts are fundamentally outdated
 /// (e.g., after a network reset) and re-syncing from the RPC is not sufficient. The accounts
 /// are never persisted to disk; the monitor re-creates them on every restart.
-pub async fn create_and_deploy_accounts(rpc_url: &Url) -> Result<(Account, SecretKey, Account)> {
+pub async fn create_and_deploy_accounts(
+    rpc_url: &Url,
+    prover: &LocalTransactionProver,
+) -> Result<(Account, SecretKey, Account)> {
     tracing::info!(target: LOG_TARGET, "Creating fresh monitor accounts");
 
     let (wallet_account, secret_key) = create_wallet_account()?;
     let counter_account = create_counter_account(wallet_account.id())?;
 
-    deploy_counter_account(&counter_account, rpc_url).await?;
+    deploy_counter_account(&counter_account, rpc_url, prover).await?;
     tracing::info!(target: LOG_TARGET, "Successfully created and deployed accounts");
 
     Ok((wallet_account, secret_key, counter_account))
@@ -231,7 +234,11 @@ pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<Transaction
     skip_all,
     ret(level = "debug"),
 )]
-pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) -> Result<()> {
+pub async fn deploy_counter_account(
+    counter_account: &Account,
+    rpc_url: &Url,
+    prover: &LocalTransactionProver,
+) -> Result<()> {
     // Deploy counter account to the network using a genesis-aware RPC client.
     let mut rpc_client = create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
 
@@ -239,12 +246,11 @@ pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) ->
 
     let transaction_inputs = executed_tx.tx_inputs().to_bytes();
 
-    let proven_tx = spawn_blocking_in_current_span(move || {
-        futures::executor::block_on(LocalTransactionProver::default().prove(executed_tx))
-    })
-    .await
-    .context("prover task panicked")?
-    .context("Failed to prove transaction")?;
+    let prover = prover.clone();
+    let proven_tx = spawn_blocking_in_current_span(move || prover.prove(executed_tx))
+        .await
+        .context("prover task panicked")?
+        .context("Failed to prove transaction")?;
 
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),

@@ -50,7 +50,7 @@ const RETRY_BACKOFF_SHIFT_CAP: u32 = 6;
 // ================================================================================================
 
 pub(crate) enum BenchmarkProver {
-    Local,
+    Local(LocalTransactionProver),
     Remote {
         prover: Box<RemoteTransactionProver>,
         limiter: Arc<RampingRateLimiter>,
@@ -60,7 +60,7 @@ pub(crate) enum BenchmarkProver {
 
 impl BenchmarkProver {
     pub(crate) fn local() -> Self {
-        Self::Local
+        Self::Local(LocalTransactionProver::default())
     }
 
     /// Whether proofs for this prover should be dispatched concurrently. The remote prover paces
@@ -89,19 +89,12 @@ impl BenchmarkProver {
         executed_tx: ExecutedTransaction,
     ) -> Result<ProvenTransaction> {
         match self {
-            Self::Local => {
-                // The prover's future is not `Send` (the VM's execution tracer holds raw pointers
-                // across await points), so drive it to completion on a blocking thread. Proving is
-                // pure CPU work with no runtime dependency, so a plain executor drives it without
-                // needing a tokio handle.
-                spawn_blocking_in_current_span(move || {
-                    futures::executor::block_on(
-                        LocalTransactionProver::default().prove(executed_tx),
-                    )
-                })
-                .await
-                .map_err(|err| anyhow::anyhow!("local prover task panicked: {err}"))?
-                .map_err(|err| anyhow::anyhow!("local proving failed: {err}"))
+            Self::Local(prover) => {
+                let prover = prover.clone();
+                spawn_blocking_in_current_span(move || prover.prove(executed_tx))
+                    .await
+                    .context("local prover task panicked")?
+                    .context("local proving failed")
             },
             Self::Remote { prover, limiter, permits } => {
                 let tx_inputs: TransactionInputs = executed_tx.into();

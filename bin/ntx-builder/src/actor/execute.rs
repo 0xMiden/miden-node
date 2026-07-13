@@ -437,8 +437,7 @@ impl NtxContext {
         .map_err(NtxError::Execution)
     }
 
-    /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
-    /// proof locally.
+    /// Delegates the transaction proof to the configured remote prover.
     ///
     /// Transient transport failures against the remote prover are retried in-place; intrinsic
     /// proving errors (witness rejected, malformed inputs) escape on the first attempt.

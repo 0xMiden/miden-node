@@ -2,15 +2,13 @@ use miden_block_prover::LocalBlockProver;
 use miden_node_proto::BlockProofRequest;
 use miden_node_proto::generated::remote_prover as proto;
 use miden_node_utils::ErrorReport;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument};
+use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::block::BlockProof;
 use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch::{BatchExecutor, LocalBatchProver};
-use tracing::Instrument;
 
 use crate::COMPONENT;
 use crate::server::proof_kind::ProofKind;
@@ -34,11 +32,20 @@ impl Prover {
 
     /// Proves a [`proto::ProofRequest`] using the appropriate prover implementation as specified
     /// during construction.
-    pub async fn prove(&self, request: proto::ProofRequest) -> Result<proto::Proof, tonic::Status> {
+    pub fn prove(&self, request: proto::ProofRequest) -> Result<proto::Proof, tonic::Status> {
         match self {
-            Prover::Transaction(prover) => prover.prove_request(request).await,
-            Prover::Batch(prover) => prover.prove_request(request).await,
-            Prover::Block(prover) => prover.prove_request(request).await,
+            Prover::Transaction(prover) => prover.prove_request(request),
+            Prover::Batch(prover) => prover.prove_request(request),
+            Prover::Block(prover) => prover.prove_request(request),
+        }
+    }
+
+    /// Returns the context attached to failures of the blocking task running this prover.
+    pub const fn task_panic_context(&self) -> &'static str {
+        match self {
+            Prover::Transaction(_) => "transaction prover task panicked",
+            Prover::Batch(_) => "batch prover task panicked",
+            Prover::Block(_) => "block prover task panicked",
         }
     }
 }
@@ -52,30 +59,24 @@ impl Prover {
 ///
 /// Implementations of this trait only need to provide the input and outputs types, as well as the
 /// proof implementation.
-#[async_trait::async_trait]
 trait ProveRequest: Send + Sync {
     type Input: miden_protocol::utils::serde::Deserializable + Send;
     type Output: miden_protocol::utils::serde::Serializable + Send;
 
-    async fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status>;
+    fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status>;
 
     /// Entry-point to the proof request handling.
     ///
     /// Decodes the request, proves it, and encodes the response.
-    async fn prove_request(
-        &self,
-        request: proto::ProofRequest,
-    ) -> Result<proto::Proof, tonic::Status> {
+    #[miden_instrument(
+        target=COMPONENT,
+        name="prove",
+        skip_all,
+        err,
+    )]
+    fn prove_request(&self, request: proto::ProofRequest) -> Result<proto::Proof, tonic::Status> {
         let input = Self::decode_request(request)?;
-
-        let prove_span = tracing::info_span!("prove", target = COMPONENT);
-        let result = self.prove(input).instrument(prove_span).await;
-
-        if let Err(e) = &result {
-            tracing::Span::current().set_error(e);
-        }
-
-        result.map(|output| Self::encode_response(output))
+        self.prove(input).map(|output| Self::encode_response(output))
     }
 
     #[miden_instrument(
@@ -102,60 +103,38 @@ trait ProveRequest: Send + Sync {
     }
 }
 
-#[async_trait::async_trait]
 impl ProveRequest for LocalTransactionProver {
     type Input = TransactionInputs;
     type Output = ProvenTransaction;
 
-    async fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
-        spawn_blocking_in_current_span(move || {
-            futures::executor::block_on(LocalTransactionProver::default().prove(input)).map_err(
-                |e| tonic::Status::internal(e.as_report_context("failed to prove transaction")),
-            )
+    fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
+        self.prove(input).map_err(|e| {
+            tonic::Status::internal(e.as_report_context("failed to prove transaction"))
         })
-        .await
-        .map_err(|e| {
-            tonic::Status::internal(e.as_report_context("transaction prover task panicked"))
-        })?
     }
 }
 
-#[async_trait::async_trait]
 impl ProveRequest for LocalBatchProver {
     type Input = ProposedBatch;
     type Output = ProvenBatch;
 
-    async fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
-        let prover = self.clone();
-
-        spawn_blocking_in_current_span(move || {
-            let executed_batch = BatchExecutor::new().execute(input).map_err(|e| {
-                tonic::Status::internal(e.as_report_context("failed to execute batch"))
-            })?;
-            prover
-                .prove(executed_batch)
-                .map_err(|e| tonic::Status::internal(e.as_report_context("failed to prove batch")))
-        })
-        .await
-        .map_err(|e| tonic::Status::internal(e.as_report_context("batch prover task panicked")))?
+    fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
+        let executed_batch = BatchExecutor::new()
+            .execute(input)
+            .map_err(|e| tonic::Status::internal(e.as_report_context("failed to execute batch")))?;
+        self.prove(executed_batch)
+            .map_err(|e| tonic::Status::internal(e.as_report_context("failed to prove batch")))
     }
 }
 
-#[async_trait::async_trait]
 impl ProveRequest for LocalBlockProver {
     type Input = BlockProofRequest;
     type Output = BlockProof;
 
-    async fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
-        let prover = self.clone();
+    fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
         let BlockProofRequest { tx_batches, block_header, block_inputs } = input;
 
-        spawn_blocking_in_current_span(move || {
-            prover
-                .prove(tx_batches, &block_header, block_inputs)
-                .map_err(|e| tonic::Status::internal(e.as_report_context("failed to prove block")))
-        })
-        .await
-        .map_err(|e| tonic::Status::internal(e.as_report_context("block prover task panicked")))?
+        self.prove(tx_batches, &block_header, block_inputs)
+            .map_err(|e| tonic::Status::internal(e.as_report_context("failed to prove block")))
     }
 }

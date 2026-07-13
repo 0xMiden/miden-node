@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use miden_large_smt_backend_rocksdb::{RocksDbConfig, RocksDbDurabilityMode};
+use miden_crypto::merkle::smt::{RocksDbConfig, RocksDbDurabilityMode};
 
 pub(crate) const DEFAULT_ROCKSDB_MAX_OPEN_FDS: i32 = 64;
 pub(crate) const DEFAULT_ROCKSDB_CACHE_SIZE: usize = 2 << 30;

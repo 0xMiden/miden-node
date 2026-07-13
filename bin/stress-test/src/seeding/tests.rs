@@ -64,7 +64,7 @@ fn public_account_note_contains_requested_distinct_vault_assets() {
     assert_eq!(assets.num_assets(), 5);
 
     let distinct_vault_keys =
-        assets.iter().map(Asset::vault_key).collect::<std::collections::BTreeSet<_>>();
+        assets.iter().map(Asset::id).collect::<std::collections::BTreeSet<_>>();
     assert_eq!(distinct_vault_keys.len(), 5);
 }
 

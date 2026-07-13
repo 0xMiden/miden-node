@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn staleness_window_scales_with_interval_and_timeout() {
-        let window = probe_staleness_window(Duration::from_secs(120), Duration::from_secs(10));
+        let window = probe_staleness_window(Duration::from_mins(2), Duration::from_secs(10));
         assert_eq!(window, Duration::from_secs(250));
     }
 }

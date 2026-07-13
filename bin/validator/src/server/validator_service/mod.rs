@@ -5,7 +5,13 @@ use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::Database;
 use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
-use miden_protocol::block::{BlockHeader, BlockNumber, ProposedBlock, SignedBlock};
+use miden_protocol::block::{
+    BlockHeader,
+    BlockNumber,
+    BlockSignatures,
+    ProposedBlock,
+    SignedBlock,
+};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::crypto::utils::Serializable;
 use miden_protocol::errors::ProposedBlockError;
@@ -53,6 +59,8 @@ pub enum ValidatorError {
     NoChainTip,
     #[error("failed to backup block")]
     BlockBackupFailed(#[source] std::io::Error),
+    #[error("expected a single-key validator set, got {actual} keys")]
+    UnexpectedValidatorSetSize { actual: usize },
 }
 
 // VALIDATOR SERVICE
@@ -100,9 +108,15 @@ impl ValidatorService {
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoChainTip)?;
         let signing_key = signer.public_key();
-        if &signing_key != chain_tip.validator_key() {
+        let expected_key = match chain_tip.validator_keys().as_keys() {
+            [key] => key,
+            keys => {
+                return Err(ValidatorError::UnexpectedValidatorSetSize { actual: keys.len() });
+            },
+        };
+        if &signing_key != expected_key {
             return Err(ValidatorError::ValidatorKeyMismatch {
-                expected: chain_tip.validator_key().clone(),
+                expected: expected_key.clone(),
                 actual: signing_key,
             });
         }
@@ -200,9 +214,15 @@ impl ValidatorService {
         // Otherwise we could be signing a block for a different key, making the
         // signature invalid.
         let signing_key = self.signer.public_key();
-        if &signing_key != proposed_header.validator_key() {
+        let expected_key = match proposed_header.validator_keys().as_keys() {
+            [key] => key,
+            keys => {
+                return Err(ValidatorError::UnexpectedValidatorSetSize { actual: keys.len() });
+            },
+        };
+        if &signing_key != expected_key {
             return Err(ValidatorError::ValidatorKeyMismatch {
-                expected: proposed_header.validator_key().clone(),
+                expected: expected_key.clone(),
                 actual: signing_key,
             });
         }
@@ -210,13 +230,15 @@ impl ValidatorService {
         let signature = self.sign_header(&proposed_header).await?;
 
         // Back up the signed block to disk.
-        let signed_block = SignedBlock::new_unchecked(proposed_header, proposed_body, signature);
+        let signatures = BlockSignatures::new(vec![signature.clone()])
+            .map_err(|err| ValidatorError::BlockSigningFailed(err.to_string()))?;
+        let signed_block = SignedBlock::new_unchecked(proposed_header, proposed_body, signatures);
         self.block_store
             .save_block(signed_block.header().block_num(), &signed_block.to_bytes())
             .await
             .map_err(ValidatorError::BlockBackupFailed)?;
 
-        let (header, _, signature) = signed_block.into_parts();
+        let (header, ..) = signed_block.into_parts();
         Ok((signature, header))
     }
 

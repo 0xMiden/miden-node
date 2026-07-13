@@ -43,7 +43,7 @@ use miden_protocol::account::{
     StorageSlotName,
     StorageSlotType,
 };
-use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_standards::account::auth::NetworkAccount;
@@ -816,7 +816,7 @@ pub(crate) fn select_latest_account_storage(
                     // For map slots, reconstruct from map entries
                     let entries =
                         map_entries_by_slot.get(slot_header.name()).cloned().unwrap_or_default();
-                    let storage_map = StorageMap::with_entries(entries.into_iter())?;
+                    let storage_map = StorageMap::with_entries(entries)?;
                     StorageSlot::with_map(slot_header.name().clone(), storage_map)
                 },
             };
@@ -950,7 +950,7 @@ impl TryFrom<AccountVaultUpdateRaw> for AccountVaultValue {
     type Error = DatabaseError;
 
     fn try_from(raw: AccountVaultUpdateRaw) -> Result<Self, Self::Error> {
-        let vault_key = AssetVaultKey::try_from(Word::read_from_bytes(&raw.vault_key)?)?;
+        let vault_key = AssetId::try_from(Word::read_from_bytes(&raw.vault_key)?)?;
         let asset = raw.asset.map(|bytes| Asset::read_from_bytes(&bytes)).transpose()?;
         let block_num = BlockNumber::from_raw_sql(raw.block_num)?;
 
@@ -994,7 +994,7 @@ pub(crate) fn insert_account_vault_asset(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    vault_key: AssetVaultKey,
+    vault_key: AssetId,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
     let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
@@ -1073,7 +1073,7 @@ pub(crate) fn insert_account_storage_map_value(
 }
 
 type PendingStorageInserts = Vec<(AccountId, StorageSlotName, StorageMapKey, Word)>;
-type PendingAssetInserts = Vec<(AccountId, AssetVaultKey, Option<Asset>)>;
+type PendingAssetInserts = Vec<(AccountId, AssetId, Option<Asset>)>;
 
 fn prepare_full_account_update(
     update: &BlockAccountUpdate,
@@ -1108,7 +1108,7 @@ fn prepare_full_account_update(
             Asset::NonFungible(_) => true,
         };
         if should_insert {
-            assets.push((account_id, asset.vault_key(), Some(asset)));
+            assets.push((account_id, asset.id(), Some(asset)));
         }
     }
 
@@ -1134,7 +1134,7 @@ fn prepare_partial_account_update(
         let update_or_remove = if *value == Word::empty() {
             None
         } else {
-            Some(Asset::from_key_value(*vault_key, *value)?)
+            Some(Asset::from_id_and_value(*vault_key, *value)?)
         };
         assets.push((account_id, *vault_key, update_or_remove));
     }
@@ -1482,7 +1482,7 @@ pub(crate) struct AccountAssetRowInsert {
 impl AccountAssetRowInsert {
     pub(crate) fn new(
         account_id: &AccountId,
-        vault_key: &AssetVaultKey,
+        vault_key: &AssetId,
         block_num: BlockNumber,
         asset: Option<Asset>,
         is_latest: bool,

@@ -82,7 +82,7 @@ fn measure_disk_usage_bytes(data_dir: &Path) -> DiskUsage {
 
 /// Returns the byte length of the file at `path`, or `0` if it does not exist.
 fn path_size_bytes(path: &Path) -> u64 {
-    fs_err::metadata(path).map(|m| m.len()).unwrap_or(0)
+    fs_err::metadata(path).map_or(0, |m| m.len())
 }
 
 /// Returns the total byte length of all files in `path` iteratively, or `0` on any error.

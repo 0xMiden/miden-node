@@ -178,8 +178,8 @@ async fn signing_key_mismatch_rejected() {
     // Start a validator with a different key, modelling a validator configured with the wrong key.
     let rogue_signer = ValidatorSigner::new_local(random_secret_key());
     assert_ne!(
-        rogue_signer.public_key(),
-        *genesis_header.validator_key(),
+        [rogue_signer.public_key()].as_slice(),
+        genesis_header.validator_keys().as_keys(),
         "test requires a signing key that differs from the genesis validator key",
     );
 

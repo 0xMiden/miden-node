@@ -16,6 +16,7 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, Sqlite
 use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::{
     Account,
+    AccountCode,
     AccountId,
     AccountStorageHeader,
     AccountStoragePatch,
@@ -68,17 +69,25 @@ pub(super) struct PartialAccountState {
     pub vault_root: Word,
 }
 
+/// Full account state assembled from a full-state patch and precomputed Merkle roots.
+#[derive(Debug, Clone)]
+pub(super) struct PrecomputedFullAccountState {
+    pub nonce: Felt,
+    pub code: AccountCode,
+    pub storage_header: AccountStorageHeader,
+    pub vault_root: Word,
+    pub is_network_account: bool,
+}
+
 /// Represents the account state to be inserted, either from a full account or from a partial delta
 /// update.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "built per account update and consumed immediately"
-)]
 pub(super) enum AccountStateForInsert {
     /// Private account - no public state stored
     Private,
     /// Full account state (from full-state delta, i.e., new account)
     FullAccount(Account),
+    /// Full account state assembled without reconstructing its vault and storage maps.
+    PrecomputedFullState(PrecomputedFullAccountState),
     /// Partial account state (from partial delta, i.e., existing account update)
     PartialState(PartialAccountState),
 }

@@ -81,7 +81,12 @@ use tempfile::tempdir;
 
 use super::{AccountInfo, NoteRecord, NoteSyncRecord, NullifierInfo, TransactionRecord};
 use crate::account_state_forest::{AccountStorageMapResult, HISTORICAL_BLOCK_RETENTION};
-use crate::db::models::queries::{StorageMapValue, insert_account_storage_map_value};
+use crate::db::models::queries::{
+    PrecomputedPublicAccountState,
+    PrecomputedPublicAccountStates,
+    StorageMapValue,
+    insert_account_storage_map_value,
+};
 use crate::db::models::{queries, utils};
 use crate::errors::DatabaseError;
 
@@ -112,6 +117,24 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         Ok::<_, DatabaseError>(())
     })
     .unwrap();
+}
+
+fn precomputed_states_from_account(account: &Account) -> PrecomputedPublicAccountStates {
+    let state = PrecomputedPublicAccountState {
+        account_id: account.id(),
+        vault_root: account.vault().root(),
+        storage_map_roots: account
+            .storage()
+            .slots()
+            .iter()
+            .filter_map(|slot| match slot.content() {
+                StorageSlotContent::Map(map) => Some((slot.name().clone(), map.root())),
+                StorageSlotContent::Value(_) => None,
+            })
+            .collect(),
+    };
+
+    PrecomputedPublicAccountStates::from_iter([(account.id(), state)])
 }
 
 #[test]
@@ -276,10 +299,10 @@ fn make_account_and_note(
             &[BlockAccountUpdate::new(
                 account_id,
                 account.to_commitment(),
-                AccountUpdateDetails::Public(AccountPatch::try_from(account).unwrap()),
+                AccountUpdateDetails::Public(AccountPatch::try_from(account.clone()).unwrap()),
             )],
             block_num,
-            &queries::PrecomputedPublicAccountStates::new(),
+            &precomputed_states_from_account(&account),
         )
         .unwrap();
 
@@ -1870,10 +1893,10 @@ fn test_select_account_code_by_commitment() {
         &[BlockAccountUpdate::new(
             account.id(),
             account.to_commitment(),
-            AccountUpdateDetails::Public(AccountPatch::try_from(account).unwrap()),
+            AccountUpdateDetails::Public(AccountPatch::try_from(account.clone()).unwrap()),
         )],
         block_num_1,
-        &queries::PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .unwrap();
 
@@ -1920,10 +1943,10 @@ fn test_select_account_code_by_commitment_multiple_codes() {
         &[BlockAccountUpdate::new(
             account_v1.id(),
             account_v1.to_commitment(),
-            AccountUpdateDetails::Public(AccountPatch::try_from(account_v1).unwrap()),
+            AccountUpdateDetails::Public(AccountPatch::try_from(account_v1.clone()).unwrap()),
         )],
         block_num_1,
-        &queries::PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account_v1),
     )
     .unwrap();
 
@@ -1955,10 +1978,10 @@ fn test_select_account_code_by_commitment_multiple_codes() {
         &[BlockAccountUpdate::new(
             account_v2.id(),
             account_v2.to_commitment(),
-            AccountUpdateDetails::Public(AccountPatch::try_from(account_v2).unwrap()),
+            AccountUpdateDetails::Public(AccountPatch::try_from(account_v2.clone()).unwrap()),
         )],
         block_num_2,
-        &queries::PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account_v2),
     )
     .unwrap();
 
@@ -2279,7 +2302,7 @@ fn regression_1461_full_state_delta_inserts_vault_assets() {
         &mut conn,
         &[block_update],
         block_num,
-        &queries::PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .unwrap();
 
@@ -2499,7 +2522,7 @@ fn db_roundtrip_account() {
         &mut conn,
         &[block_update],
         block_num,
-        &queries::PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .unwrap();
 
@@ -2747,7 +2770,7 @@ fn db_roundtrip_account_storage_with_maps() {
         &mut conn,
         &[block_update],
         block_num,
-        &queries::PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .unwrap();
 

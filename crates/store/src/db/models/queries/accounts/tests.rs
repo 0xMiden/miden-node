@@ -489,6 +489,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     let account_commitment_1 = account.to_commitment();
 
     // First update with original account - full state patch
+    let precomputed_1 = precomputed_states_from_account(&account);
     let patch_1 = AccountPatch::try_from(account).unwrap();
 
     let account_update_1 = BlockAccountUpdate::new(
@@ -497,13 +498,8 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         AccountUpdateDetails::Public(patch_1),
     );
 
-    upsert_accounts(
-        &mut conn,
-        &[account_update_1],
-        block_num_1,
-        &PrecomputedPublicAccountStates::new(),
-    )
-    .expect("First upsert failed");
+    upsert_accounts(&mut conn, &[account_update_1], block_num_1, &precomputed_1)
+        .expect("First upsert failed");
 
     // Create modified account with different storage value
     let storage_value_modified = Word::from([
@@ -540,6 +536,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     let account_commitment_2 = account_2.to_commitment();
 
     // Second update with modified account - full state patch
+    let precomputed_2 = precomputed_states_from_account(&account_2);
     let patch_2 = AccountPatch::try_from(account_2).unwrap();
 
     let account_update_2 = BlockAccountUpdate::new(
@@ -548,13 +545,8 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         AccountUpdateDetails::Public(patch_2),
     );
 
-    upsert_accounts(
-        &mut conn,
-        &[account_update_2],
-        block_num_2,
-        &PrecomputedPublicAccountStates::new(),
-    )
-    .expect("Second upsert failed");
+    upsert_accounts(&mut conn, &[account_update_2], block_num_2, &precomputed_2)
+        .expect("Second upsert failed");
 
     // Verify 2 total account rows exist (both historical records)
     let total_accounts: i64 = schema::accounts::table
@@ -1008,7 +1000,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
             &mut conn,
             std::slice::from_ref(&account_update),
             block,
-            &PrecomputedPublicAccountStates::new(),
+            &precomputed_states_from_account(&account),
         )
         .expect("upsert_accounts failed");
     }
@@ -1151,7 +1143,7 @@ fn test_select_account_vault_at_block_exponential_updates() {
             &mut conn,
             std::slice::from_ref(&account_update),
             *block,
-            &PrecomputedPublicAccountStates::new(),
+            &precomputed_states_from_account(&account),
         )
         .expect("upsert_accounts failed");
     }
@@ -1214,7 +1206,7 @@ fn test_select_account_vault_at_block_with_deletion() {
             &mut conn,
             std::slice::from_ref(&account_update),
             block,
-            &PrecomputedPublicAccountStates::new(),
+            &precomputed_states_from_account(&account),
         )
         .expect("upsert_accounts failed");
     }
@@ -1361,7 +1353,7 @@ fn test_prune_account_code_retains_latest_after_code_change() {
         &mut conn,
         &[make_full_state_update(&account_a)],
         block_0,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account_a),
     )
     .expect("initial upsert failed");
 
@@ -1370,7 +1362,7 @@ fn test_prune_account_code_retains_latest_after_code_change() {
         &mut conn,
         &[make_full_state_update(&account_b)],
         block_code_b,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account_b),
     )
     .expect("code-change upsert failed");
 
@@ -1443,7 +1435,7 @@ fn test_prune_account_code_retains_revisited_code() {
         &mut conn,
         &[make_full_state_update(&account_a)],
         block_0,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account_a),
     )
     .expect("block 0 upsert failed");
     // Block RETENTION+1: code B.
@@ -1451,7 +1443,7 @@ fn test_prune_account_code_retains_revisited_code() {
         &mut conn,
         &[make_full_state_update(&account_b)],
         block_code_b,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account_b),
     )
     .expect("block code_b upsert failed");
     // Block RETENTION+2: back to code A.
@@ -1459,7 +1451,7 @@ fn test_prune_account_code_retains_revisited_code() {
         &mut conn,
         &[make_full_state_update(&account_a)],
         block_code_a_again,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account_a),
     )
     .expect("block code_a_again upsert failed");
 

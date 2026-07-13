@@ -46,7 +46,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_standards::account::auth::NetworkAccount;
+use miden_standards::account::auth::{NetworkAccount, NetworkAccountNoteAllowlist};
 
 use crate::COMPONENT;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
@@ -62,6 +62,7 @@ mod delta;
 use delta::{
     AccountStateForInsert,
     PartialAccountState,
+    PrecomputedFullAccountState,
     apply_storage_patch_with_roots,
     select_minimal_account_state_headers,
 };
@@ -1074,6 +1075,83 @@ fn prepare_full_account_update(
     Ok((AccountStateForInsert::FullAccount(account), storage, assets))
 }
 
+fn prepare_precomputed_full_account_update(
+    update: &BlockAccountUpdate,
+    patch: &AccountPatch,
+    precomputed: &PrecomputedPublicAccountState,
+) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
+    let account_id = patch.id();
+    let code = patch.code().cloned().ok_or_else(|| {
+        DatabaseError::DataCorrupted(format!(
+            "full-state patch for account {account_id} is missing account code"
+        ))
+    })?;
+    let nonce = patch.final_nonce().ok_or_else(|| {
+        DatabaseError::DataCorrupted(format!(
+            "full-state patch for account {account_id} is missing final nonce"
+        ))
+    })?;
+
+    let storage_header = apply_storage_patch_with_roots(
+        &AccountStorageHeader::new(Vec::new())?,
+        patch.storage(),
+        &precomputed.storage_map_roots,
+    )?;
+    let account_header = miden_protocol::account::AccountHeader::new(
+        account_id,
+        nonce,
+        precomputed.vault_root,
+        storage_header.to_commitment(),
+        code.commitment(),
+    );
+    if account_header.to_commitment() != update.final_state_commitment() {
+        return Err(DatabaseError::AccountCommitmentsMismatch {
+            calculated: account_header.to_commitment(),
+            expected: update.final_state_commitment(),
+        });
+    }
+
+    let storage = patch
+        .storage()
+        .maps()
+        .flat_map(|(slot_name, map_patch)| {
+            map_patch.entries().into_iter().flat_map(move |entries| {
+                entries
+                    .as_map()
+                    .iter()
+                    .filter(|(_key, value)| **value != Word::empty())
+                    .map(move |(key, value)| (account_id, slot_name.clone(), *key, *value))
+            })
+        })
+        .collect();
+    let assets = patch
+        .vault()
+        .iter()
+        .filter(|(_asset_id, value)| **value != Word::empty())
+        .map(|(asset_id, value)| {
+            Asset::from_id_and_value(*asset_id, *value)
+                .map(|asset| (account_id, *asset_id, Some(asset)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let is_network_account = account_id.is_public()
+        && patch
+            .storage()
+            .maps()
+            .find(|(slot_name, _)| *slot_name == NetworkAccountNoteAllowlist::slot_name())
+            .and_then(|(_slot_name, map_patch)| map_patch.entries())
+            .is_some_and(|entries| !entries.is_empty());
+    let state = PrecomputedFullAccountState {
+        nonce,
+        code,
+        storage_header,
+        vault_root: precomputed.vault_root,
+        is_network_account,
+    };
+
+    Ok((AccountStateForInsert::PrecomputedFullState(state), storage, assets))
+}
+
 /// Prepare partial patch data for account upserts and follow-up storage and vault inserts.
 fn prepare_partial_account_update(
     conn: &mut SqliteConnection,
@@ -1225,11 +1303,20 @@ pub(crate) fn upsert_accounts(
 
             // New account is always a full account, but also comes as an update
             AccountUpdateDetails::Public(patch) if patch.is_full_state() => {
-                let account = Account::try_from(patch)
-                    .expect("Patch to full account always works for full state patches");
-                debug_assert_eq!(account_id, account.id());
-
-                prepare_full_account_update(update, account)?
+                if block_num == BlockNumber::GENESIS {
+                    let account = Account::try_from(patch)
+                        .expect("Patch to full account always works for full state patches");
+                    debug_assert_eq!(account_id, account.id());
+                    prepare_full_account_update(update, account)?
+                } else {
+                    let precomputed =
+                        precomputed_public_states.get(&account_id).ok_or_else(|| {
+                            DatabaseError::DataCorrupted(format!(
+                                "missing precomputed public account state for account {account_id}"
+                            ))
+                        })?;
+                    prepare_precomputed_full_account_update(update, patch, precomputed)?
+                }
             },
 
             // Update of an existing account
@@ -1253,6 +1340,9 @@ pub(crate) fn upsert_accounts(
                 {
                     NetworkAccountType::Network
                 },
+                AccountStateForInsert::PrecomputedFullState(state) if state.is_network_account => {
+                    NetworkAccountType::Network
+                },
                 _ => NetworkAccountType::None,
             },
         };
@@ -1263,6 +1353,17 @@ pub(crate) fn upsert_accounts(
             let code_value = AccountCodeRowInsert {
                 code_commitment: code.commitment().to_bytes(),
                 code: code.to_bytes(),
+            };
+            diesel::insert_into(schema::account_codes::table)
+                .values(&code_value)
+                .on_conflict(schema::account_codes::code_commitment)
+                .do_nothing()
+                .execute(conn)?;
+        }
+        if let AccountStateForInsert::PrecomputedFullState(ref state) = account_state {
+            let code_value = AccountCodeRowInsert {
+                code_commitment: state.code.commitment().to_bytes(),
+                code: state.code.to_bytes(),
             };
             diesel::insert_into(schema::account_codes::table)
                 .values(&code_value)
@@ -1297,6 +1398,16 @@ pub(crate) fn upsert_accounts(
                 created_at_block,
                 account,
             ),
+            AccountStateForInsert::PrecomputedFullState(state) => {
+                AccountRowInsert::new_from_precomputed_full_state(
+                    account_id,
+                    network_account_type,
+                    update.final_state_commitment(),
+                    block_num,
+                    created_at_block,
+                    state,
+                )
+            },
             AccountStateForInsert::PartialState(state) => AccountRowInsert::new_from_partial(
                 account_id,
                 network_account_type,
@@ -1392,6 +1503,28 @@ impl AccountRowInsert {
             code_commitment: Some(account.code().commitment().to_bytes()),
             storage_header: Some(account.storage().to_header().to_bytes()),
             vault_root: Some(account.vault().root().to_bytes()),
+            is_latest: true,
+            created_at_block: created_at_block.to_raw_sql(),
+        }
+    }
+
+    fn new_from_precomputed_full_state(
+        account_id: AccountId,
+        network_account_type: NetworkAccountType,
+        account_commitment: Word,
+        block_num: BlockNumber,
+        created_at_block: BlockNumber,
+        state: &PrecomputedFullAccountState,
+    ) -> Self {
+        Self {
+            account_id: account_id.to_bytes(),
+            network_account_type: network_account_type.to_raw_sql(),
+            block_num: block_num.to_raw_sql(),
+            account_commitment: account_commitment.to_bytes(),
+            code_commitment: Some(state.code.commitment().to_bytes()),
+            nonce: Some(nonce_to_raw_sql(state.nonce)),
+            storage_header: Some(state.storage_header.to_bytes()),
+            vault_root: Some(state.vault_root.to_bytes()),
             is_latest: true,
             created_at_block: created_at_block.to_raw_sql(),
         }

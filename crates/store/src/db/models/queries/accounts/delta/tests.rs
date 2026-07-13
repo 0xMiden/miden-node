@@ -154,7 +154,7 @@ fn insert_public_account(conn: &mut SqliteConnection, block_num: BlockNumber, ac
             AccountUpdateDetails::Public(patch_initial),
         )],
         block_num,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(account),
     )
     .expect("initial upsert failed");
 }
@@ -293,7 +293,7 @@ fn optimized_delta_matches_full_account_method() {
         &mut conn,
         &[account_update_initial],
         block_1,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .expect("Initial upsert failed");
 
@@ -503,7 +503,7 @@ fn optimized_delta_updates_non_empty_vault() {
         &mut conn,
         &[account_update_initial],
         block_1,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .expect("Initial upsert failed");
 
@@ -735,7 +735,7 @@ fn optimized_delta_updates_storage_map_header() {
         &mut conn,
         &[account_update_initial],
         block_1,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .expect("Initial upsert failed");
 
@@ -867,9 +867,9 @@ fn partial_public_upsert_requires_precomputed_state() {
             AccountUpdateDetails::Public(patch_initial),
         )],
         block_1,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
-    .expect("initial full-state upsert should not need precomputed roots");
+    .expect("initial full-state upsert failed");
 
     let mut current_account = select_full_account(&mut conn, account.id()).unwrap();
     let patch = AccountPatch::new(
@@ -938,9 +938,9 @@ fn partial_public_upsert_rejects_bad_precomputed_root() {
             AccountUpdateDetails::Public(patch_initial),
         )],
         block_1,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
-    .expect("initial full-state upsert should not need precomputed roots");
+    .expect("initial full-state upsert failed");
 
     let mut expected_account = select_full_account(&mut conn, account.id()).unwrap();
     let patch = AccountPatch::new(
@@ -1103,7 +1103,7 @@ fn upsert_full_state_delta() {
         &mut conn,
         &[account_update],
         block_num,
-        &PrecomputedPublicAccountStates::new(),
+        &precomputed_states_from_account(&account),
     )
     .expect("Full-state delta upsert failed");
 

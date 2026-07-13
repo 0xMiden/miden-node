@@ -160,6 +160,35 @@ pub fn notes_failed(
     Ok(())
 }
 
+/// Marks notes as permanently unconsumable by pinning `attempt_count` to `max_attempts`.
+///
+/// A note whose own consumption exceeds the per-transaction cycle budget can never be consumed in
+/// any transaction, so retrying it is pointless. Setting `attempt_count` to `max_attempts` takes it
+/// out of the pending set immediately (`available_notes`/`account_has_pending_notes` filter on
+/// `attempt_count < max_attempts`) and makes [`get_note_status`] derive it as `Discarded`, while
+/// `last_error` records why.
+#[expect(clippy::cast_possible_wrap)]
+pub fn discard_notes(
+    conn: &mut SqliteConnection,
+    nullifiers: &[Nullifier],
+    block_num: BlockNumber,
+    max_attempts: usize,
+    reason: &str,
+) -> Result<(), DatabaseError> {
+    let block_num_val = conversions::block_num_to_i64(block_num);
+    for nullifier in nullifiers {
+        let nullifier_bytes = conversions::nullifier_to_bytes(nullifier);
+        diesel::update(schema::notes::table.find(&nullifier_bytes))
+            .set((
+                schema::notes::attempt_count.eq(max_attempts as i32),
+                schema::notes::last_attempt.eq(Some(block_num_val)),
+                schema::notes::last_error.eq(Some(reason.to_string())),
+            ))
+            .execute(conn)?;
+    }
+    Ok(())
+}
+
 /// Returns the status for a note identified by its note ID.
 pub fn get_note_status(
     conn: &mut SqliteConnection,

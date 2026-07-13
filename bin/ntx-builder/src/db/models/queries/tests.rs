@@ -361,3 +361,34 @@ fn notes_failed_increments_attempt_and_records_error() {
     assert_eq!(row.last_attempt, Some(6));
     assert!(row.last_error.is_some());
 }
+
+#[test]
+fn discard_notes_pins_attempts_to_cap_and_drops_from_pending() {
+    let (conn, _dir) = &mut test_conn();
+    let account_id = mock_network_account_id();
+    let note = mock_single_target_note(account_id, 23);
+    insert_network_notes(conn, std::slice::from_ref(&note)).unwrap();
+
+    let nullifier = note.as_note().nullifier();
+    discard_notes(conn, &[nullifier], BlockNumber::from(9), 30, "too big").unwrap();
+
+    // Pinned to the cap, so it is no longer pending or available for selection.
+    let row =
+        get_note_status(conn, &crate::db::models::conv::note_id_to_bytes(&note.as_note().id()))
+            .unwrap()
+            .unwrap();
+    assert_eq!(row.attempt_count, 30);
+    assert_eq!(row.last_attempt, Some(9));
+    assert_eq!(row.last_error.as_deref(), Some("too big"));
+
+    assert!(
+        available_notes(conn, account_id, BlockNumber::from(1000), 30)
+            .unwrap()
+            .is_empty(),
+        "a discarded note must not be selectable",
+    );
+    assert!(
+        !accounts_with_pending_notes(conn, 30).unwrap().contains(&account_id),
+        "an account whose only note was discarded must not count as pending",
+    );
+}

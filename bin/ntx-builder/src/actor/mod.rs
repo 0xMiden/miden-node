@@ -61,6 +61,14 @@ pub enum ActorRequest {
         block_num: BlockNumber,
         ack_tx: tokio::sync::oneshot::Sender<()>,
     },
+    /// One or more notes were proven to exceed the per-tx cycle budget on their own and can never
+    /// be consumed. They should be marked permanently unconsumable (discarded) so they are not
+    /// re-selected. The actor waits for the DB write to be acknowledged before re-selecting notes.
+    NotesDiscarded {
+        nullifiers: Vec<Nullifier>,
+        block_num: BlockNumber,
+        ack_tx: tokio::sync::oneshot::Sender<()>,
+    },
     /// A note script was fetched from the remote RPC service and should be persisted to the local
     /// DB.
     CacheNoteScript { script_root: Word, script: NoteScript },
@@ -551,34 +559,37 @@ impl AccountActor {
             Ok(execute::NtxExecutionResult {
                 tx_id,
                 account_patch,
-                failed_notes: failed,
+                failed_notes,
+                deferred_notes,
+                oversized_notes,
                 fetched_scripts,
             }) => {
-                // Partition failed notes by whether the checker dropped them purely because the
-                // combined per-tx cycle budget was exhausted (`num_cycles().is_some()`). Such notes
-                // are individually consumable, so we leave them untouched so `available_notes`
-                // re-selects them next round, letting a large note land in its own transaction
-                // once its batch-mates have committed.
-                //
-                // Notes with `num_cycles() == None` are genuine consumability failures and are
-                // penalized as usual.
-                let (deferred, genuine) = partition_failed_notes(failed);
-
+                // `filter_notes` has already partitioned the failed notes:
+                // - `deferred_notes` were dropped only because the combined per-tx cycle budget was
+                //   exhausted but are consumable on their own. They are left un-penalized so
+                //   `available_notes` re-selects them next round, letting a large note land in its
+                //   own transaction once its batch-mates commit.
+                // - `oversized_notes` exceed the per-tx cycle budget on their own and can never be
+                //   consumed. They are discarded immediately so they stop being re-selected.
+                // - `failed_notes` are genuine consumability failures and are penalized as usual.
                 tracing::info!(
                     target: LOG_TARGET,
                     %account_id,
                     %tx_id,
-                    num_genuine_failed = genuine.len(),
-                    num_deferred = deferred.len(),
+                    num_genuine_failed = failed_notes.len(),
+                    num_deferred = deferred_notes.len(),
+                    num_oversized = oversized_notes.len(),
                     "network transaction executed",
                 );
                 self.cache_note_scripts(fetched_scripts).await;
 
-                log_deferred_notes(deferred);
+                log_deferred_notes(deferred_notes);
 
-                let failed_notes = log_failed_notes(genuine);
-                    self.mark_notes_failed(&failed_notes, block_num).await;
-                }
+                let failed_notes = log_failed_notes(failed_notes);
+                self.mark_notes_failed(&failed_notes, block_num).await;
+
+                let nullifiers = log_oversized_notes(oversized_notes);
+                self.discard_notes(&nullifiers, block_num).await;
 
                 // A non-empty successful set is guaranteed by `filter_notes` (it returns
                 // `AllNotesFailed` otherwise), so a transaction was always submitted here and
@@ -651,6 +662,11 @@ impl AccountActor {
         failed_notes: &[(Nullifier, NoteError)],
         block_num: BlockNumber,
     ) {
+        // Avoid an empty coordinator round-trip (and DB write-transaction) on the common
+        // no-failures path.
+        if failed_notes.is_empty() {
+            return;
+        }
         let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
         if self
             .request
@@ -667,16 +683,56 @@ impl AccountActor {
         // Wait for the coordinator to confirm the DB write.
         let _ = ack_rx.await;
     }
+
+    /// Sends a request to the coordinator to discard notes (mark them permanently unconsumable) and
+    /// waits for the DB write to complete. Like [`Self::mark_notes_failed`], the acknowledgement
+    /// prevents the actor from re-selecting the notes before the write lands.
+    async fn discard_notes(&self, nullifiers: &[Nullifier], block_num: BlockNumber) {
+        // Avoid an empty coordinator round-trip (and DB write-transaction) on the common
+        // no-oversized-notes path.
+        if nullifiers.is_empty() {
+            return;
+        }
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        if self
+            .request
+            .send(ActorRequest::NotesDiscarded {
+                nullifiers: nullifiers.to_vec(),
+                block_num,
+                ack_tx,
+            })
+            .await
+            .is_err()
+        {
+            return;
+        }
+        // Wait for the coordinator to confirm the DB write.
+        let _ = ack_rx.await;
+    }
 }
 
-/// Splits failed notes into `(deferred, genuine)`.
+/// Logs each note discarded for exceeding the per-tx cycle budget on its own and returns their
+/// nullifiers.
 ///
-/// `deferred` notes were dropped by the consumability checker only because the combined per-tx
-/// cycle budget was exhausted. They are individually consumable and must not be penalized.
-/// `genuine` notes (`num_cycles() == None`) failed consumability for other reasons and are
-/// penalized normally.
-fn partition_failed_notes(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<FailedNote>) {
-    failed.into_iter().partition(|note| note.num_cycles().is_some())
+/// These notes were confirmed (by an isolation re-check in `filter_notes`) to need more than the
+/// entire per-tx cycle budget for themselves, so they can never be consumed and are marked
+/// permanently unconsumable rather than retried.
+fn log_oversized_notes(oversized: Vec<FailedNote>) -> Vec<Nullifier> {
+    oversized
+        .into_iter()
+        .map(|note| {
+            tracing::warn!(
+                target: LOG_TARGET,
+                {
+                    note.id = %note.note().id(),
+                    nullifier = %note.note().nullifier(),
+                    num_cycles = ?note.num_cycles(),
+                },
+                "note discarded: exceeds the per-tx cycle budget on its own and can never be consumed",
+            );
+            note.note().nullifier()
+        })
+        .collect()
 }
 
 /// Logs each note deferred because the combined per-tx cycle budget was exhausted.
@@ -886,37 +942,5 @@ mod tests {
 
         assert_ne!(one.root(), thirty.root(), "distinct deltas must yield distinct scripts");
         assert_ne!(thirty.root(), max.root(), "distinct deltas must yield distinct scripts");
-    }
-
-    /// The success-branch classification must route notes dropped only for the per-tx cycle budget
-    /// (`num_cycles = Some`) to the deferred (un-penalized) set, while genuine consumability
-    /// failures (`num_cycles = None`) stay in the penalized set. A misclassification here would
-    /// either permanently drop consumable notes or stop penalizing real failures.
-    #[test]
-    fn partition_failed_notes_defers_only_cycle_limited_notes() {
-        use miden_tx::TransactionExecutorError;
-
-        use crate::test_utils::mock_single_target_note;
-
-        let account_id = mock_network_account_id();
-        let deferred_note = mock_single_target_note(account_id, 1).into_note();
-        let genuine_note = mock_single_target_note(account_id, 2).into_note();
-        let deferred_id = deferred_note.id();
-        let genuine_id = genuine_note.id();
-
-        let err = || TransactionExecutorError::AccountUpdateCommitment("test error");
-        let failed = vec![
-            // Dropped because the combined cycle budget was exhausted: carries a cycle count.
-            FailedNote::new(deferred_note, err(), Some(1234)),
-            // A genuine consumability failure: no cycle count.
-            FailedNote::new(genuine_note, err(), None),
-        ];
-
-        let (deferred, genuine) = partition_failed_notes(failed);
-
-        assert_eq!(deferred.len(), 1, "exactly the cycle-limited note must be deferred");
-        assert_eq!(deferred[0].note().id(), deferred_id);
-        assert_eq!(genuine.len(), 1, "exactly the genuine failure must be penalized");
-        assert_eq!(genuine[0].note().id(), genuine_id);
     }
 }

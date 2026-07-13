@@ -95,7 +95,6 @@ impl ProofRequestExt for ProofRequest {
         let tx_context = mock_chain
             .build_tx_context(account.id(), &[note_1.id()], &[])
             .unwrap()
-            .disable_debug_mode()
             .build()
             .unwrap();
 
@@ -129,12 +128,11 @@ impl ProofRequestExt for ProofRequest {
         let tx = mock_chain
             .build_tx_context(account.id(), &[note_1.id()], &[])
             .unwrap()
-            .disable_debug_mode()
             .build()
             .unwrap();
 
         let tx = Box::pin(tx.execute()).await.unwrap();
-        let tx = LocalTransactionProver::default().prove(tx.tx_inputs().clone()).await.unwrap();
+        let tx = LocalTransactionProver::default().prove(tx.tx_inputs().clone()).unwrap();
 
         ProposedBatch::new(
             vec![Arc::new(tx)],
@@ -158,7 +156,7 @@ impl Server {
         Self {
             port: 0,
             kind,
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_mins(1),
             capacity: NonZeroUsize::new(10).unwrap(),
         }
     }

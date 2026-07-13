@@ -177,7 +177,7 @@ mod tests {
     fn test_context_on_external_error_type() {
         let result: Result<u8, std::num::TryFromIntError> = u8::try_from(256u16);
         let err = result.context("fee_amount").unwrap_err();
-        assert!(err.to_string().starts_with("fee_amount: "), "expected field prefix, got: {err}",);
+        assert!(err.to_string().starts_with("fee_amount: "), "expected field prefix, got: {err}");
     }
 
     #[test]

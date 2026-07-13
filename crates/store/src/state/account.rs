@@ -154,7 +154,7 @@ impl State {
             return Ok(AccountVaultDetails::LimitExceeded);
         }
 
-        let keys = assets.iter().map(miden_protocol::asset::Asset::vault_key);
+        let keys = assets.iter().map(miden_protocol::asset::Asset::id);
 
         let forest = self.forest.write().await;
 

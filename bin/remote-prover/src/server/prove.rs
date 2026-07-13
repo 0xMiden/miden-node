@@ -1,4 +1,6 @@
 use miden_node_proto::generated as grpc;
+use miden_node_utils::ErrorReport;
+use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 
 use crate::COMPONENT;
@@ -35,12 +37,18 @@ impl grpc::server::remote_prover_api::Prove for ProverService {
         //
         // We need to hold this until our request is processed to ensure that the queue capacity is
         // not exceeded.
-        let _permit = self.acquire_permit()?;
+        let permit = self.acquire_permit()?;
 
         // This mutex is fair and uses FIFO ordering.
         let prover = self.acquire_prover().await;
+        let task_panic_context = prover.task_panic_context();
 
-        prover.prove(request).await
+        spawn_blocking_in_current_span(move || {
+            let _permit = permit;
+            prover.prove(request)
+        })
+        .await
+        .map_err(|e| tonic::Status::internal(e.as_report_context(task_panic_context)))?
     }
 
     fn decode(request: grpc::remote_prover::ProofRequest) -> tonic::Result<Self::Input> {

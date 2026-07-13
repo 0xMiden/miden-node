@@ -34,14 +34,19 @@ use crate::{LOG_TARGET, NoteError};
 /// once at startup and shares the resulting [`TransactionScript`] across all actors.
 ///
 /// ```masm
-/// begin
+/// @transaction_script
+/// pub proc main
 ///     push.{delta} exec.::miden::protocol::tx::update_expiration_block_delta
 /// end
 /// ```
 pub(crate) fn expiration_tx_script(delta: NonZeroU16) -> anyhow::Result<TransactionScript> {
     let delta = delta.get();
     let source = format!(
-        "begin\n    push.{delta} exec.::miden::protocol::tx::update_expiration_block_delta\nend"
+        "\
+@transaction_script
+pub proc main
+    push.{delta} exec.::miden::protocol::tx::update_expiration_block_delta
+end"
     );
     CodeBuilder::new()
         .compile_tx_script(source)
@@ -172,7 +177,7 @@ impl AccountActorContext {
             config: ActorConfig {
                 max_notes_per_tx: NonZeroUsize::new(1).unwrap(),
                 max_note_attempts: 1,
-                idle_timeout: Duration::from_secs(60),
+                idle_timeout: Duration::from_mins(1),
                 max_cycles: 1 << 18,
                 tx_expiration_delta: NonZeroU16::new(30).unwrap(),
                 request_backoff_initial: Duration::from_millis(1),

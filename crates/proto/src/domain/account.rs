@@ -919,7 +919,7 @@ impl TryFrom<proto::primitives::Asset> for Asset {
         let key_word: Word = decode!(decoder, asset.key)?;
         let value_word: Word = decode!(decoder, asset.value)?;
 
-        let asset = Asset::from_key_value_words(key_word, value_word)?;
+        let asset = Asset::from_id_and_value_words(key_word, value_word)?;
         Ok(asset)
     }
 }
@@ -927,7 +927,7 @@ impl TryFrom<proto::primitives::Asset> for Asset {
 impl From<Asset> for proto::primitives::Asset {
     fn from(asset_from: Asset) -> Self {
         proto::primitives::Asset {
-            key: Some(asset_from.to_key_word().into()),
+            key: Some(asset_from.to_id_word().into()),
             value: Some(asset_from.to_value_word().into()),
         }
     }

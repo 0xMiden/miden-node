@@ -19,7 +19,7 @@ doctest = false
 
 [features]
 # Enables utility functions for testing traces created by some other crate's stack.
-rocksdb = ["dep:miden-large-smt-backend-rocksdb"]
+rocksdb = ["dep:miden-crypto", "miden-crypto/rocksdb"]
 testing = ["miden-protocol/testing"]
 
 [dependencies]
@@ -39,7 +39,6 @@ miden-protocol           = { workspace = true }
 opentelemetry            = { workspace = true }
 opentelemetry-otlp       = { default-features = false, features = ["grpc-tonic", "tls-roots", "trace"], version = "0.31" }
 opentelemetry_sdk        = { features = ["rt-tokio", "testing"], version = "0.31" }
-rand                     = { workspace = true }
 reqwest                  = { workspace = true }
 thiserror                = { workspace = true }
 tokio                    = { features = ["macros", "rt", "signal", "time"], workspace = true }
@@ -55,7 +54,7 @@ tracing-subscriber       = { workspace = true }
 url                      = { workspace = true }
 
 # RocksDbConfig is needed due to orphan rules
-miden-large-smt-backend-rocksdb = { optional = true, workspace = true }
+miden-crypto = { optional = true, workspace = true }
 
 [dev-dependencies]
 thiserror = { workspace = true }

@@ -13,7 +13,7 @@ use miden_node_utils::limiter::MAX_RESPONSE_PAYLOAD_BYTES;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader, StorageMapKey};
-use miden_protocol::asset::{Asset, AssetVaultKey};
+use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, SignedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
@@ -110,7 +110,7 @@ impl DerefMut for Db {
 #[derive(Debug, Clone)]
 pub struct AccountVaultValue {
     pub block_num: BlockNumber,
-    pub vault_key: AssetVaultKey,
+    pub vault_key: AssetId,
     /// None if the asset was removed
     pub asset: Option<Asset>,
 }
@@ -121,7 +121,7 @@ impl AccountVaultValue {
         let vault_key = Word::read_from_bytes(&vault_key)?;
         Ok(Self {
             block_num: BlockNumber::from_raw_sql(block_num)?,
-            vault_key: AssetVaultKey::try_from(vault_key)?,
+            vault_key: AssetId::try_from(vault_key)?,
             asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
         })
     }

@@ -1,7 +1,15 @@
 use std::ops::RangeInclusive;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::block::{BlockBody, BlockHeader, BlockNumber, FeeParameters, SignedBlock};
+use miden_protocol::block::{
+    BlockBody,
+    BlockHeader,
+    BlockNumber,
+    BlockSignatures,
+    FeeParameters,
+    SignedBlock,
+    ValidatorKeys,
+};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::utils::serde::Serializable;
 use thiserror::Error;
@@ -40,7 +48,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.tx_commitment().into()),
             tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
-            validator_key: Some(header.validator_key().into()),
+            validator_keys: header.validator_keys().as_keys().iter().map(Into::into).collect(),
             timestamp: header.timestamp(),
             fee_parameters: Some(header.fee_parameters().into()),
         }
@@ -73,7 +81,15 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
         let note_root = decode!(decoder, value.note_root)?;
         let tx_commitment = decode!(decoder, value.tx_commitment)?;
         let tx_kernel_commitment = decode!(decoder, value.tx_kernel_commitment)?;
-        let validator_key = decode!(decoder, value.validator_key)?;
+        let validator_keys = value
+            .validator_keys
+            .into_iter()
+            .map(PublicKey::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .context("validator_keys")?;
+        let validator_keys = ValidatorKeys::new(validator_keys)
+            .map_err(ConversionError::new)
+            .context("validator_keys")?;
         let fee_parameters = decode!(decoder, value.fee_parameters)?;
 
         Ok(BlockHeader::new(
@@ -86,7 +102,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_key,
+            validator_keys,
             fee_parameters,
             value.timestamp,
         ))
@@ -131,7 +147,7 @@ impl From<&SignedBlock> for proto::blockchain::SignedBlock {
         Self {
             header: Some(block.header().into()),
             body: Some(block.body().into()),
-            signature: Some(block.signature().into()),
+            signatures: block.signatures().as_signatures().iter().map(Into::into).collect(),
         }
     }
 }
@@ -156,9 +172,17 @@ impl TryFrom<proto::blockchain::SignedBlock> for SignedBlock {
         let decoder = value.decoder();
         let header = decode!(decoder, value.header)?;
         let body = decode!(decoder, value.body)?;
-        let signature = decode!(decoder, value.signature)?;
+        let signatures = value
+            .signatures
+            .into_iter()
+            .map(Signature::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .context("signatures")?;
+        let signatures = BlockSignatures::new(signatures)
+            .map_err(ConversionError::new)
+            .context("signatures")?;
 
-        Ok(SignedBlock::new_unchecked(header, body, signature))
+        Ok(SignedBlock::new_unchecked(header, body, signatures))
     }
 }
 

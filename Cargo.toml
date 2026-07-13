@@ -30,7 +30,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/node"
-rust-version = "1.96"
+rust-version = "1.96.1"
 version      = "0.16.0-alpha.1"
 
 # Optimize the cryptography for faster tests involving account creation.

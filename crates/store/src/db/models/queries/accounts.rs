@@ -1000,22 +1000,38 @@ pub(crate) fn insert_account_storage_map_value(
     key: StorageMapKey,
     value: Word,
 ) -> Result<usize, DatabaseError> {
+    insert_account_storage_map_value_inner(conn, account_id, block_num, slot_name, key, value, true)
+}
+
+fn insert_account_storage_map_value_inner(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    slot_name: StorageSlotName,
+    key: StorageMapKey,
+    value: Word,
+    invalidate_previous: bool,
+) -> Result<usize, DatabaseError> {
     let account_id = account_id.to_bytes();
     let key = key.to_bytes();
     let value = value.to_bytes();
     let slot_name = slot_name.to_raw_sql();
     let block_num = block_num.to_raw_sql();
 
-    let update_count = diesel::update(schema::account_storage_map_values::table)
-        .filter(
-            schema::account_storage_map_values::account_id
-                .eq(&account_id)
-                .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
-                .and(schema::account_storage_map_values::key.eq(&key))
-                .and(schema::account_storage_map_values::is_latest.eq(true)),
-        )
-        .set(schema::account_storage_map_values::is_latest.eq(false))
-        .execute(conn)?;
+    let update_count = if invalidate_previous {
+        diesel::update(schema::account_storage_map_values::table)
+            .filter(
+                schema::account_storage_map_values::account_id
+                    .eq(&account_id)
+                    .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
+                    .and(schema::account_storage_map_values::key.eq(&key))
+                    .and(schema::account_storage_map_values::is_latest.eq(true)),
+            )
+            .set(schema::account_storage_map_values::is_latest.eq(false))
+            .execute(conn)?
+    } else {
+        0
+    };
 
     let record = AccountStorageMapRowInsert {
         account_id,
@@ -1276,6 +1292,7 @@ pub(crate) fn upsert_accounts(
         // Pull the latest row once. Partial updates consume the state headers below, while every
         // update carries forward creation metadata.
         let existing = select_latest_account_state(conn, account_id)?;
+        let account_is_new = existing.is_none();
 
         let created_at_block = match &existing {
             Some(row) => row.created_at_block()?,
@@ -1418,7 +1435,13 @@ pub(crate) fn upsert_accounts(
 
         // insert pending storage map entries TODO consider batching
         for (acc_id, slot_name, key, value) in pending_storage_inserts {
-            insert_account_storage_map_value(conn, acc_id, block_num, slot_name, key, value)?;
+            if account_is_new {
+                insert_account_storage_map_value_inner(
+                    conn, acc_id, block_num, slot_name, key, value, false,
+                )?;
+            } else {
+                insert_account_storage_map_value(conn, acc_id, block_num, slot_name, key, value)?;
+            }
         }
 
         for (acc_id, vault_key, update) in pending_asset_inserts {

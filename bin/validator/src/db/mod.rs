@@ -1,30 +1,37 @@
 mod migrations;
-mod models;
-mod schema;
 
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
-use diesel::SqliteConnection;
-use diesel::dsl::{count_star, exists};
-use diesel::prelude::*;
-use miden_node_db::{DatabaseError, Db, SqlTypeConvert};
+use miden_node_db::DatabaseError;
+use miden_node_db::sqlite::{Database, ReadTx, WriteTx};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
-use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::utils::serde::Serializable;
 
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
-use crate::db::models::{BlockHeaderRowInsert, ValidatedTransactionRowInsert};
 use crate::tx_validation::ValidatedTransaction;
 use crate::{COMPONENT, LOG_TARGET};
+
+/// SQL statements, kept in dedicated `.sql` files (under `sql/`).
+mod sql {
+    pub(super) const INSERT_TRANSACTION: &str = include_str!("sql/insert_transaction.sql");
+    pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
+    pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
+    pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
+    pub(super) const LOAD_BLOCK_HEADER: &str = include_str!("sql/load_block_header.sql");
+    pub(super) const COUNT_VALIDATED_TRANSACTIONS: &str =
+        include_str!("sql/count_validated_transactions.sql");
+    pub(super) const COUNT_SIGNED_BLOCKS: &str = include_str!("sql/count_signed_blocks.sql");
+}
 
 /// Open a connection to the DB after verifying that it is at the latest schema version.
 #[miden_instrument(
     target = COMPONENT,
     skip_all,
 )]
-pub async fn load(database_filepath: PathBuf) -> Result<Db, DatabaseError> {
+pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -37,7 +44,7 @@ pub async fn load(database_filepath: PathBuf) -> Result<Db, DatabaseError> {
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<Db, DatabaseError> {
+) -> Result<Database, DatabaseError> {
     verify_latest_schema(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -48,7 +55,7 @@ pub async fn load_with_pool_size(
     target = COMPONENT,
     skip_all,
 )]
-pub async fn setup(database_filepath: PathBuf) -> Result<Db, DatabaseError> {
+pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
     setup_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -60,7 +67,7 @@ pub async fn setup(database_filepath: PathBuf) -> Result<Db, DatabaseError> {
 pub async fn setup_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<Db, DatabaseError> {
+) -> Result<Database, DatabaseError> {
     bootstrap_database(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -79,8 +86,8 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError>
 fn open_with_pool_size(
     database_filepath: &Path,
     connection_pool_size: NonZeroUsize,
-) -> Result<Db, DatabaseError> {
-    let db = Db::new_with_pool_size(database_filepath, connection_pool_size)?;
+) -> Result<Database, DatabaseError> {
+    let db = Database::new_with_pool_size(database_filepath, connection_pool_size)?;
     tracing::info!(
         target: LOG_TARGET,
         sqlite= %database_filepath.display(),
@@ -100,75 +107,73 @@ fn open_with_pool_size(
     err,
 )]
 pub(crate) fn insert_transaction(
-    conn: &mut SqliteConnection,
+    tx: &WriteTx<'_>,
     tx_info: &ValidatedTransaction,
 ) -> Result<usize, DatabaseError> {
-    let row = ValidatedTransactionRowInsert::new(tx_info);
-    let count = diesel::insert_into(schema::validated_transactions::table)
-        .values(row)
-        .on_conflict_do_nothing()
-        .execute(conn)?;
-    Ok(count)
+    let id = tx_info.tx_id().to_bytes();
+    let block_num = i64::from(tx_info.block_num().as_u32());
+    let account_id = tx_info.account_id().to_bytes();
+    let account_patch = tx_info.account_patch().to_bytes();
+    let input_notes = tx_info.input_notes().to_bytes();
+    let output_notes = tx_info.output_notes().to_bytes();
+    let initial_account_hash = tx_info.initial_account_hash().to_bytes();
+    let final_account_hash = tx_info.final_account_hash().to_bytes();
+
+    tx.execute(
+        sql::INSERT_TRANSACTION,
+        &[
+            &id,
+            &block_num,
+            &account_id,
+            &account_patch,
+            &input_notes,
+            &output_notes,
+            &initial_account_hash,
+            &final_account_hash,
+        ],
+    )
 }
 
 /// Returns whether a transaction with the given id has already been validated.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT EXISTS(
-///   SELECT 1
-///   FROM validated_transactions
-///   WHERE id = ?
-/// );
-/// ```
 #[miden_instrument(
     target = COMPONENT,
-    skip(conn),
+    skip(tx),
     err,
 )]
 pub(crate) fn transaction_exists(
-    conn: &mut SqliteConnection,
+    tx: &ReadTx<'_>,
     tx_id: TransactionId,
 ) -> Result<bool, DatabaseError> {
-    let exists = diesel::select(exists(
-        schema::validated_transactions::table
-            .filter(schema::validated_transactions::id.eq(tx_id.to_bytes())),
-    ))
-    .get_result::<bool>(conn)?;
+    let exists = tx
+        .query(sql::TRANSACTION_EXISTS, &[&tx_id.to_bytes()], |row| row.get::<i64>(0))?
+        .first()
+        .copied()
+        .unwrap_or(0)
+        != 0;
     Ok(exists)
 }
 
 /// Scans the database for transaction Ids that do not exist.
 ///
 /// If the resulting vector is empty, all supplied transaction ids have been validated in the past.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT EXISTS(
-///   SELECT 1
-///   FROM validated_transactions
-///   WHERE id = ?
-/// );
-/// ```
 #[miden_instrument(
     target = COMPONENT,
-    skip(conn),
+    skip(tx),
     err,
 )]
 pub(crate) fn find_unvalidated_transactions(
-    conn: &mut SqliteConnection,
+    tx: &ReadTx<'_>,
     tx_ids: &[TransactionId],
 ) -> Result<Vec<TransactionId>, DatabaseError> {
     let mut unvalidated_tx_ids = Vec::new();
     for tx_id in tx_ids {
         // Check whether each transaction id exists in the database.
-        let exists = diesel::select(exists(
-            schema::validated_transactions::table
-                .filter(schema::validated_transactions::id.eq(tx_id.to_bytes())),
-        ))
-        .get_result::<bool>(conn)?;
+        let exists = tx
+            .query(sql::TRANSACTION_EXISTS, &[&tx_id.to_bytes()], |row| row.get::<i64>(0))?
+            .first()
+            .copied()
+            .unwrap_or(0)
+            != 0;
         // Record any transaction ids that do not exist.
         if !exists {
             unvalidated_tx_ids.push(*tx_id);
@@ -183,18 +188,13 @@ pub(crate) fn find_unvalidated_transactions(
 /// existing block header if one already exists.
 #[miden_instrument(
     target = COMPONENT,
-    skip(conn, header),
+    skip(tx, header),
     err,
 )]
-pub fn upsert_block_header(
-    conn: &mut SqliteConnection,
-    header: &BlockHeader,
-) -> Result<(), DatabaseError> {
-    let row = BlockHeaderRowInsert {
-        block_num: header.block_num().to_raw_sql(),
-        block_header: header.to_bytes(),
-    };
-    diesel::replace_into(schema::block_headers::table).values(row).execute(conn)?;
+pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(), DatabaseError> {
+    let block_num = i64::from(header.block_num().as_u32());
+    let block_header = header.to_bytes();
+    tx.execute(sql::UPSERT_BLOCK_HEADER, &[&block_num, &block_header])?;
     Ok(())
 }
 
@@ -203,21 +203,14 @@ pub fn upsert_block_header(
 /// Returns `None` if no block headers have been persisted (i.e. bootstrap has not been run).
 #[miden_instrument(
     target = COMPONENT,
-    skip(conn),
+    skip(tx),
     err,
 )]
-pub fn load_chain_tip(conn: &mut SqliteConnection) -> Result<Option<BlockHeader>, DatabaseError> {
-    let row = schema::block_headers::table
-        .order(schema::block_headers::block_num.desc())
-        .select(schema::block_headers::block_header)
-        .first::<Vec<u8>>(conn)
-        .optional()?;
-
-    row.map(|bytes| {
-        BlockHeader::read_from_bytes(&bytes)
-            .map_err(|err| DatabaseError::deserialization("BlockHeader", err))
-    })
-    .transpose()
+pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseError> {
+    Ok(tx
+        .query(sql::LOAD_CHAIN_TIP, &[], |row| row.get::<BlockHeader>(0))?
+        .into_iter()
+        .next())
 }
 
 /// Loads a block header by its block number.
@@ -225,46 +218,47 @@ pub fn load_chain_tip(conn: &mut SqliteConnection) -> Result<Option<BlockHeader>
 /// Returns `None` if no block header exists at the given block number.
 #[miden_instrument(
     target = COMPONENT,
-    skip(conn),
+    skip(tx),
     err,
 )]
 pub fn load_block_header(
-    conn: &mut SqliteConnection,
+    tx: &ReadTx<'_>,
     block_num: BlockNumber,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
-    let row = schema::block_headers::table
-        .filter(schema::block_headers::block_num.eq(block_num.to_raw_sql()))
-        .select(schema::block_headers::block_header)
-        .first::<Vec<u8>>(conn)
-        .optional()?;
-
-    row.map(|bytes| {
-        BlockHeader::read_from_bytes(&bytes)
-            .map_err(|err| DatabaseError::deserialization("BlockHeader", err))
-    })
-    .transpose()
+    Ok(tx
+        .query(sql::LOAD_BLOCK_HEADER, &[&i64::from(block_num.as_u32())], |row| {
+            row.get::<BlockHeader>(0)
+        })?
+        .into_iter()
+        .next())
 }
 
 /// Returns the total number of validated transactions in the database.
 #[miden_instrument(
     target = COMPONENT,
-    skip(conn),
+    skip(tx),
     err,
 )]
-pub fn count_validated_transactions(conn: &mut SqliteConnection) -> Result<i64, DatabaseError> {
-    let count = schema::validated_transactions::table.select(count_star()).first::<i64>(conn)?;
-    Ok(count)
+pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
+    Ok(tx
+        .query(sql::COUNT_VALIDATED_TRANSACTIONS, &[], |row| row.get::<i64>(0))?
+        .into_iter()
+        .next()
+        .unwrap_or(0))
 }
 
 /// Returns the total number of signed blocks in the database.
 #[miden_instrument(
     target = COMPONENT,
-    skip(conn),
+    skip(tx),
     err,
 )]
-pub fn count_signed_blocks(conn: &mut SqliteConnection) -> Result<i64, DatabaseError> {
-    let count = schema::block_headers::table.select(count_star()).first::<i64>(conn)?;
-    Ok(count)
+pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
+    Ok(tx
+        .query(sql::COUNT_SIGNED_BLOCKS, &[], |row| row.get::<i64>(0))?
+        .into_iter()
+        .next()
+        .unwrap_or(0))
 }
 
 #[cfg(test)]
@@ -303,32 +297,28 @@ mod tests {
 
         // Insert a row keyed by `validated_id`. Only the primary key matters for this query, so the
         // remaining columns are filled with placeholder bytes.
-        let row = ValidatedTransactionRowInsert {
-            id: validated_id.to_bytes(),
-            block_num: 0,
-            account_id: vec![],
-            account_patch: vec![],
-            input_notes: vec![],
-            output_notes: vec![],
-            initial_account_hash: vec![],
-            final_account_hash: vec![],
-        };
-        db.transact("insert_row", move |conn| -> Result<usize, DatabaseError> {
-            Ok(diesel::insert_into(schema::validated_transactions::table)
-                .values(row)
-                .execute(conn)?)
+        let id = validated_id.to_bytes();
+        let empty: Vec<u8> = vec![];
+        db.write("insert_row", move |tx| {
+            tx.execute(
+                "INSERT INTO validated_transactions \
+                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
+                  initial_account_hash, final_account_hash) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
+            )
         })
         .await
         .unwrap();
 
         let validated_exists = db
-            .query("transaction_exists", move |conn| transaction_exists(conn, validated_id))
+            .read("transaction_exists", move |tx| transaction_exists(tx, validated_id))
             .await
             .unwrap();
         assert!(validated_exists, "an inserted transaction id should be reported as existing");
 
         let unknown_exists = db
-            .query("transaction_exists", move |conn| transaction_exists(conn, unknown_id))
+            .read("transaction_exists", move |tx| transaction_exists(tx, unknown_id))
             .await
             .unwrap();
         assert!(!unknown_exists, "an unknown transaction id should not be reported as existing");

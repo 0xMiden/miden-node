@@ -3274,7 +3274,9 @@ dependencies = [
  "miden-protocol",
  "rusqlite",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 
@@ -3784,7 +3786,6 @@ dependencies = [
  "aws-sdk-kms",
  "build-rs",
  "clap",
- "diesel",
  "fs-err",
  "hex",
  "miden-node-db",

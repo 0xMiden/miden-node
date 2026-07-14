@@ -18,6 +18,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthNetworkAccount;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::tx_script::ExpirationTransactionScript;
 
 use crate::COMPONENT;
 use crate::counter::create_increment_script;
@@ -68,14 +69,15 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     allowed_scripts.insert(increment_script.root());
 
-    // TODO(https://github.com/0xMiden/protocol/issues/3050): once the ntx-builder re-enables the
-    // expiration tx script, this account must also allowlist that script's root via
-    // `.with_allowed_tx_scripts([..])`, or its network transactions will be rejected by the
-    // tx-script allowlist. This waits on the canonical, frozen expiration script (#3050) so the
-    // root can be pinned here without duplicating the ntx-builder's script/delta.
+    // Allowlist the canonical expiration tx script the ntx-builder attaches to every network
+    // transaction; without this the account's network transactions are rejected by the tx-script
+    // allowlist. The root is delta-independent, so the single canonical root covers any delta the
+    // ntx-builder is configured with.
+    let allowed_tx_scripts = BTreeSet::from_iter([ExpirationTransactionScript::script_root()]);
     let network_account_auth: AccountComponent =
         AuthNetworkAccount::with_allowed_notes(allowed_scripts)
             .expect("list is not empty")
+            .with_allowed_tx_scripts(allowed_tx_scripts)
             .into();
 
     // Create the counter program account

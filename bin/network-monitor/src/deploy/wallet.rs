@@ -10,6 +10,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountComponentCode,
     AccountComponentMetadata,
     AccountType,
     StorageSlot,
@@ -35,6 +36,29 @@ pub static WALLET_COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
         .expect("storage slot name should be valid")
 });
 
+/// Module path under which the wallet's self-counter component is compiled.
+///
+/// The increment transaction script must reference `increment` under this exact path (via a
+/// dynamically-linked copy of [`wallet_counter_component_code`]) so the `call` resolves to the
+/// procedure root registered in the account.
+pub const WALLET_COUNTER_COMPONENT_PATH: &str = "wallet::program";
+
+/// The wallet self-counter component source (bumps [`WALLET_COUNTER_SLOT_NAME`]).
+const WALLET_COUNTER_PROGRAM: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/wallet_counter_program.masm"));
+
+/// Compiles the wallet's self-counter [`AccountComponentCode`].
+///
+/// This is the single source of truth for the component: [`create_wallet_account`] builds the
+/// account from it, and the increment transaction-script builder dynamically links it so
+/// `call.::wallet::program::increment` resolves to the same procedure root the account registered.
+/// Compilation is deterministic, so both sites obtain identical code and roots.
+pub fn wallet_counter_component_code() -> Result<AccountComponentCode> {
+    CodeBuilder::default()
+        .compile_component_code(WALLET_COUNTER_COMPONENT_PATH, WALLET_COUNTER_PROGRAM)
+        .context("failed to compile wallet counter component code")
+}
+
 /// Create a wallet account with `RpoFalcon512` authentication and a self-counter component.
 ///
 /// Returns the created account and the secret key for authentication.
@@ -56,12 +80,7 @@ pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
 
     // The wallet carries its own counter component so it can increment a storage slot in the same
     // transaction that emits the increment note. See `WALLET_COUNTER_SLOT_NAME`.
-    let script = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/assets/wallet_counter_program.masm"
-    ));
-    let component_code =
-        CodeBuilder::default().compile_component_code("wallet::program", script)?;
+    let component_code = wallet_counter_component_code()?;
 
     let counter_slot = StorageSlot::with_value(WALLET_COUNTER_SLOT_NAME.clone(), Word::empty());
     let metadata = AccountComponentMetadata::new("wallet::program");

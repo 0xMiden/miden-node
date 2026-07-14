@@ -1123,10 +1123,8 @@ pub(crate) fn create_increment_script() -> Result<NoteScript> {
 /// complete, non-composable script. Keep it in sync with `miden-standards` on version bumps; the
 /// `wallet_self_increment_tx` test exercises it end-to-end.
 fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> {
-    let wallet_program = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/assets/wallet_counter_program.masm"
-    ));
+    let wallet_component = crate::deploy::wallet::wallet_counter_component_code()
+        .context("failed to compile wallet counter component code")?;
 
     let partial: PartialNote = network_note.clone().into();
     let recipient = partial.recipient_digest();
@@ -1135,44 +1133,53 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
 
     let mut note_section = format!(
         "
+        padw padw push.0.0
         push.{recipient}
         push.{note_type}
         push.{tag}
-        # => [tag, note_type, RECIPIENT, pad(16)]
-        exec.::miden::protocol::output_note::create
-        # => [note_idx, pad(16)]
+        # => [tag, note_type, RECIPIENT, pad(10)]
+        call.::miden::standards::note::note_creator::create_note
+        # => [note_idx, pad(15)]
+        movdn.15 dropw dropw dropw drop drop drop
+        # => [note_idx]
         "
     );
     for attachment in partial.attachments().iter() {
         let scheme = attachment.attachment_scheme().as_u16();
         let commitment = attachment.content().to_commitment();
+        // `add_attachment` consumes `[attachment_scheme, ATTACHMENT_COMMITMENT, note_idx]`, so dup
+        // the note index for it to consume and keep our own copy for the next attachment / drop.
         write!(
             note_section,
             "
         dup
         push.{commitment}
         push.{scheme}
+        # => [attachment_scheme, ATTACHMENT_COMMITMENT, note_idx, note_idx]
         exec.::miden::protocol::output_note::add_attachment
-        # => [note_idx, pad(16)]
+        # => [note_idx]
         "
         )
         .expect("writing to a String cannot fail");
     }
     note_section.push_str("        drop\n");
 
-    let script_src = format!(
-        "use external_contract::wallet_counter
+    // Absolute path to the wallet's registered `increment` account procedure (e.g.
+    // `::wallet::program::increment`), matching the component path the account was built under.
+    let increment_path =
+        format!("::{}::increment", crate::deploy::wallet::WALLET_COUNTER_COMPONENT_PATH);
 
-        @transaction_script
+    let script_src = format!(
+        "@transaction_script
         pub proc main
-            call.wallet_counter::increment
+            call.{increment_path}
 {note_section}
         end"
     );
 
     let mut code_builder = CodeBuilder::new()
-        .with_linked_module("external_contract::wallet_counter", wallet_program)
-        .context("Failed to link wallet counter module")?;
+        .with_dynamically_linked_library(&wallet_component)
+        .context("Failed to dynamically link wallet counter component")?;
 
     // The note's attachments (e.g. the network-account target) are resolved at runtime from the
     // advice map keyed by their commitment, matching `build_send_notes_script`.

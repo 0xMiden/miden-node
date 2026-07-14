@@ -29,8 +29,8 @@ networks, or if the official URLs are not trusted.
   <TabItem value="official" label="Official network">
 
 The genesis block is the chain's trust root and must be signed by the complete validator set, so **one** validator
-operator runs the signing form of `bootstrap` with every validator's KMS key ID (repeat the argument or
-comma-separate the values):
+operator runs the signing form of `bootstrap` with every validator's KMS key ID (repeat the argument or comma-separate
+the values):
 
 ```bash
 miden-validator bootstrap \

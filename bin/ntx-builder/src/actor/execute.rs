@@ -34,7 +34,6 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionId,
     TransactionInputs,
-    TransactionScript,
 };
 use miden_protocol::vm::FutureMaybeSend;
 use miden_standards::note::AccountTargetNetworkNote;
@@ -173,21 +172,9 @@ pub struct NtxContext {
     /// Maximum number of VM execution cycles for network transactions.
     max_cycles: u32,
 
-    /// Pre-compiled transaction script that sets the network tx's on-chain expiration delta. Cloned
-    /// into the [`TransactionArgs`] of the executed transaction.
-    ///
-    /// TEMP: still disabled. The mechanism that allows network accounts to run allowlisted tx
-    /// scripts has landed (<https://github.com/0xMiden/protocol/pull/3028>, resolving #3027), but
-    /// re-enabling here is gated on a canonical, frozen expiration script in `miden-standards`
-    /// (<https://github.com/0xMiden/protocol/issues/3050>). Every network account the ntx-builder
-    /// services must allowlist this script's root, so it has to be a single shared root all account
-    /// creators can pin. Until then, attaching it would get those txs rejected by the new tx-script
-    /// allowlist.
-    #[expect(
-        dead_code,
-        reason = "Disabled until https://github.com/0xMiden/protocol/issues/3050 lands"
-    )]
-    expiration_script: TransactionScript,
+    /// [`TransactionArgs`] shared by every network transaction. Cloned into each executed
+    /// transaction. Currently carries the canonical expiration script and its delta word.
+    tx_args: TransactionArgs,
 
     /// [`ExponentialBuilder`] used to back off retries on transient request failures.
     request_backoff: ExponentialBuilder,
@@ -205,7 +192,7 @@ impl NtxContext {
         script_cache: LruCache<Word, NoteScript>,
         db: Db,
         max_cycles: u32,
-        expiration_script: TransactionScript,
+        tx_args: TransactionArgs,
         request_backoff_initial: Duration,
         request_backoff_max: Duration,
     ) -> Self {
@@ -216,7 +203,7 @@ impl NtxContext {
             script_cache,
             db,
             max_cycles,
-            expiration_script,
+            tx_args,
             request_backoff,
         }
     }
@@ -499,15 +486,10 @@ impl NtxContext {
     ) -> NtxResult<ExecutedTransaction> {
         let executor = self.create_executor(data_store);
 
-        // Attach the pre-compiled expiration script so the submitted tx is rejected on-chain if it
-        // does not land within the configured block delta.
-        //
-        // TEMP: still disabled. Re-enabling is gated on a canonical, frozen expiration script
-        // (https://github.com/0xMiden/protocol/issues/3050) whose root every serviced network
-        // account allowlists; see the `expiration_script` field docs for the full rationale.
-        // let tx_args = TransactionArgs::default().with_tx_script(self.expiration_script.clone());
-
-        let tx_args = TransactionArgs::default();
+        // Attach the canonical expiration script (with its delta args) so the submitted tx is
+        // rejected on-chain if it does not land within the configured block delta. Serviced network
+        // accounts must allowlist this script's root; see the `tx_args` field docs.
+        let tx_args = self.tx_args.clone();
 
         Box::pin(executor.execute_transaction(
             data_store.account.id(),

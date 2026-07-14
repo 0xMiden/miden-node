@@ -205,10 +205,19 @@ impl IncrementService {
     /// [`CounterTrackingService`]); the returned success count is used purely as a best-effort
     /// latency target — on a fresh wallet/counter pair both start at zero and advance together.
     fn handle_increment_success(&mut self, account_patch: &AccountPatch, tx_id: String) -> u64 {
-        self.tx
-            .wallet_account
-            .apply_patch(account_patch)
-            .expect("successful tx should apply patch correctly");
+        if account_patch.is_full_state() {
+            // The wallet is created in-memory and never separately deployed, so its first increment
+            // doubles as the account-creation transaction. That transaction's patch carries the
+            // account code and fully describes the account, so it must be converted into the
+            // account rather than applied as a delta (`apply_patch` rejects full-state patches).
+            self.tx.wallet_account = Account::try_from(account_patch)
+                .expect("full-state patch should convert to a valid account");
+        } else {
+            self.tx
+                .wallet_account
+                .apply_patch(account_patch)
+                .expect("successful tx should apply patch correctly");
+        }
         self.details.success_count += 1;
         self.details.last_tx_id = Some(tx_id);
 

@@ -43,6 +43,14 @@ service Api {
     // TRANSACTION SUBMISSION ENDPOINTS
     // --------------------------------------------------------------------------------------------
 
+    // Returns the shared transaction encryption public key, attested by the signing key of the
+    // validator that served the request.
+    //
+    // The request is forwarded to a validator and the response is passed through unchanged. The
+    // encryption key is shared across the whole validator set, while the attesting signature is
+    // specific to the serving validator.
+    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKey) {}
+
     // Submits proven transaction to the Miden network. Returns the node's current block height.
     rpc SubmitProvenTx(transaction.ProvenTransaction) returns (blockchain.BlockNumber) {}
 

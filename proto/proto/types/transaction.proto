@@ -62,6 +62,41 @@ message TransactionBatch {
   repeated bytes transaction_inputs = 3;
 }
 
+// The shared transaction encryption key, attested by a validator.
+//
+// The public key is shared across the whole validator set, while the attesting signature is
+// specific to the validator that served the request. Verifying the signature against a
+// chain-recognized validator signing key proves the encryption key was vouched for by a
+// legitimate validator.
+message TransactionEncryptionKey {
+  // IES scheme identifier as defined by [miden_protocol::crypto::ies::IesScheme].
+  //
+  // Currently always `1` (X25519 + XChaCha20-Poly1305).
+  uint32 scheme = 1;
+
+  // Opaque identifier of the current encryption key. Changes when the key rotates.
+  fixed32 key_id = 2;
+
+  // Raw public key bytes of the shared encryption key.
+  //
+  // For the X25519 scheme these are the 32 bytes produced by
+  // [miden_protocol::crypto::dsa::eddsa_25519_sha512::PublicKey::to_bytes] (an Ed25519 public
+  // key that miden-crypto converts internally for X25519 key agreement).
+  bytes public_key = 3;
+
+  // The serving validator's signature over the attestation commitment: the Poseidon2 byte-mode
+  // hash of `domain_tag || scheme || key_id || genesis_commitment || public_key`, where
+  // `domain_tag` is the ASCII string `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, scheme and key_id
+  // are bound at their full wire width (4 bytes little-endian each), and the genesis block
+  // commitment ties the attestation to one network. The canonical construction is
+  // `miden_validator::ValidatorEncryptor::attestation_commitment`.
+  //
+  // Encoded using [miden_serde_utils::Serializable] implementation for
+  // [miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature]. Verifiable against the
+  // validator's signing key committed in block headers.
+  bytes signature = 4;
+}
+
 // Represents a transaction ID.
 message TransactionId {
   // The transaction ID.

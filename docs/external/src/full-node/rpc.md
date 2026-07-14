@@ -13,8 +13,10 @@ public RPC capacity.
 
 Read queries are served from the full node's local state. This includes account, block, note, and sync methods.
 
-The network-note debugging endpoint, `GetNetworkNoteStatus`, is the exception: it depends on NTX builder state rather
-than replicated chain state, so full nodes forward it to the configured upstream RPC source.
+Two endpoints are exceptions because they depend on state that is not replicated. The network-note debugging endpoint,
+`GetNetworkNoteStatus`, depends on NTX builder state, so full nodes forward it to the configured upstream RPC source.
+`GetTransactionEncryptionKey` depends on a validator: full nodes with a validator connected forward it there, and full
+nodes without one forward it to the upstream RPC source.
 
 ## Transaction Submission
 

@@ -19,12 +19,13 @@ use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
-use crate::{COMPONENT, ValidatorSigner};
+use crate::{COMPONENT, ValidatorEncryptor, ValidatorSigner};
 
 #[cfg(test)]
 mod tests;
 
 mod block_subscription;
+mod get_transaction_encryption_key;
 mod sign_block;
 mod status;
 mod submit_proven_transaction;
@@ -61,6 +62,10 @@ pub enum ValidatorError {
     BlockBackupFailed(#[source] std::io::Error),
     #[error("expected a single-key validator set, got {actual} keys")]
     UnexpectedValidatorSetSize { actual: usize },
+    #[error("no genesis block header exists")]
+    NoGenesisHeader,
+    #[error("failed to attest the transaction encryption key: {0}")]
+    EncryptionKeyAttestationFailed(String),
 }
 
 // VALIDATOR SERVICE
@@ -71,6 +76,10 @@ pub enum ValidatorError {
 /// Implements the gRPC API for the validator.
 pub(crate) struct ValidatorService {
     signer: ValidatorSigner,
+    encryptor: ValidatorEncryptor,
+    /// Signature by this validator's own signing key over the encryption key attestation
+    /// commitment, computed once at construction.
+    encryption_key_attestation: Signature,
     db: Arc<Database>,
     block_store: BlockStore,
     /// Enforces mutual exclusion between backup block subscriptions and all other RPCs. Regular
@@ -93,6 +102,7 @@ pub(crate) struct ValidatorService {
 impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
+        encryptor: ValidatorEncryptor,
         db: Database,
         block_store: BlockStore,
         initial_chain_tip: u32,
@@ -121,8 +131,23 @@ impl ValidatorService {
             });
         }
 
+        // Both keys are fixed for the process lifetime, so the attestation is computed once. This
+        // also keeps KMS-backed signers to a single signing call.
+        let genesis_commitment = db
+            .read("load_genesis_header", |tx| load_block_header(tx, BlockNumber::GENESIS))
+            .await
+            .map_err(ValidatorError::DatabaseError)?
+            .ok_or(ValidatorError::NoGenesisHeader)?
+            .commitment();
+        let encryption_key_attestation = signer
+            .sign_commitment(encryptor.attestation_commitment(genesis_commitment))
+            .await
+            .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
+
         Ok(Self {
             signer,
+            encryptor,
+            encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
             db: db.into(),
             block_store,

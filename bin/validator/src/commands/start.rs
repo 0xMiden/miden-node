@@ -5,13 +5,14 @@ use std::path::PathBuf;
 use anyhow::Context;
 use miden_node_utils::clap::GrpcOptionsInternal;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_validator::{DataDirectory, ValidatorServer, ValidatorSigner};
+use miden_validator::{DataDirectory, ValidatorEncryptor, ValidatorServer, ValidatorSigner};
 
 // Starts the validator component.
 pub async fn start(
     address: SocketAddr,
     grpc_options: GrpcOptionsInternal,
     signer: ValidatorSigner,
+    encryptor: ValidatorEncryptor,
     data_directory: PathBuf,
     sqlite_connection_pool_size: NonZeroUsize,
     shutdown: CancellationToken,
@@ -22,6 +23,7 @@ pub async fn start(
         address,
         grpc_options,
         signer,
+        encryptor,
         data_directory,
         sqlite_connection_pool_size,
     }

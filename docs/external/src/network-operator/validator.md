@@ -38,4 +38,9 @@ miden-validator start \
 For local development, the validator can use its default insecure development key. Production deployments should
 configure validator signing explicitly, either with a local key or with KMS-backed signing.
 
+In addition to its signing key, every validator holds the shared transaction encryption key, configured with
+`--encryption-key.hex` or `MIDEN_VALIDATOR_ENCRYPTION_KEY`. Unlike the signing key, this value must be identical across
+every validator in the set. Production deployments should source it from a secrets manager. The validator logs a warning
+at startup if the insecure development default is in use.
+
 Use `miden-validator start --help` for the complete current option list.

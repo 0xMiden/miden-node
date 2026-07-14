@@ -27,6 +27,14 @@ service Api {
    // block subscription, the blocks streamed here carry no proofs; they must be commissioned
    // separately as part of recovery.
    rpc BlockSubscription(BlockSubscriptionRequest) returns (stream BlockSubscriptionResponse) {}
+
+   // Returns the shared transaction encryption public key, attested by this validator's own
+   // signing key.
+   //
+   // The encryption key is shared across the whole validator set, so the returned public key is
+   // identical regardless of which validator serves the request. The attesting signature is
+   // specific to this validator.
+   rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKey) {}
 }
 
 // BLOCK SUBSCRIPTION

@@ -25,3 +25,23 @@ The validator ensures that each new block is sequential with the previously sign
 It also checks that the block contains only transactions that it has previously seen and verified.
 
 Once verified, the block is signed and returned to the sender.
+
+## Transaction encryption key
+
+In addition to its per-validator signing key, every validator is provisioned with the _same_
+shared transaction encryption keypair, an Ed25519 key that miden-crypto uses for X25519 key
+agreement in its IES scheme. Clients will use it to encrypt the private transaction inputs they
+submit, so that any validator in the set can decrypt them (submission-path encryption lands in a
+follow-up change).
+
+The `GetTransactionEncryptionKey` endpoint returns the shared public key together with an IES
+scheme identifier, an opaque key ID, and a signature from this validator's own signing key over
+an attestation commitment (the `TransactionEncryptionKey` proto message documents the exact
+payload). The commitment carries a domain tag that separates attestations from block header
+signatures, and the genesis commitment so an attestation cannot replay across networks. The
+signature proves to clients that a chain-recognized validator vouches for the key, so the key can
+be served through an untrusted RPC.
+
+This scheme does not protect the inputs from parties holding the shared secret and has no forward
+secrecy. It is the first phase of the transaction input encryption design: later phases move the
+key material to threshold and TEE-managed setups.

@@ -10,19 +10,25 @@ use miden_node_utils::clap::GrpcOptionsInternal;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::Deserializable;
-use miden_validator::{DataDirectory, ValidatorSigner};
+use miden_validator::{DataDirectory, LOG_TARGET, ValidatorEncryptor, ValidatorSigner};
 
 const ENV_DATA_DIRECTORY: &str = "MIDEN_VALIDATOR_DATA_DIRECTORY";
 const ENV_LISTEN: &str = "MIDEN_VALIDATOR_LISTEN";
 const ENV_KEY: &str = "MIDEN_VALIDATOR_KEY";
 const ENV_KMS_KEY_ID: &str = "MIDEN_VALIDATOR_KMS_KEY_ID";
+const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 
 /// A predefined, insecure validator key for development purposes.
 pub(crate) const INSECURE_KEY_HEX: &str =
     "0101010101010101010101010101010101010101010101010101010101010101";
+
+/// A predefined, insecure shared transaction encryption key for development purposes.
+pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
+    "0202020202020202020202020202020202020202020202020202020202020202";
 
 // VALIDATOR COMMAND
 // ================================================================================================
@@ -116,6 +122,20 @@ pub enum ValidatorCommand {
             group = "key"
         )]
         kms_key_id: Option<String>,
+
+        /// Hex-encoded shared secret of the transaction encryption key.
+        ///
+        /// Unlike the per-validator signing key, this value must be identical across every
+        /// validator in the set.
+        ///
+        /// If not provided, a predefined insecure key is used.
+        #[arg(
+            long = "encryption-key.hex",
+            env = ENV_ENCRYPTION_KEY,
+            value_name = "VALIDATOR_ENCRYPTION_KEY",
+            default_value = INSECURE_ENCRYPTION_KEY_HEX
+        )]
+        encryption_key: String,
     },
 }
 
@@ -154,34 +174,45 @@ impl ValidatorCommand {
                 data_directory,
                 kms_key_id,
                 sqlite_connection_pool_size,
+                encryption_key,
                 ..
             } => {
                 let address = listen;
 
-                if let Some(kms_key_id) = kms_key_id {
-                    let signer = ValidatorSigner::new_kms(kms_key_id).await?;
-                    start::start(
-                        address,
-                        grpc_options,
-                        signer,
-                        data_directory,
-                        sqlite_connection_pool_size,
-                        shutdown,
-                    )
-                    .await
+                // Unlike the signing key, whose insecure default is caught at startup against the
+                // chain's committed validator key, nothing cross-checks the encryption key. Warn
+                // loudly so the default never runs in production unnoticed.
+                if encryption_key == INSECURE_ENCRYPTION_KEY_HEX {
+                    tracing::warn!(
+                        target: LOG_TARGET,
+                        "Using the predefined, insecure transaction encryption key, configure \
+                         --encryption-key.hex for production deployments"
+                    );
+                }
+
+                let encryption_key_bytes = hex::decode(encryption_key)
+                    .context("failed to decode the encryption key hex")?;
+                let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
+                    .context("failed to construct the encryption key")?;
+                let encryptor = ValidatorEncryptor::new_local(encryption_key);
+
+                let signer = if let Some(kms_key_id) = kms_key_id {
+                    ValidatorSigner::new_kms(kms_key_id).await?
                 } else {
                     let signer = SigningKey::read_from_bytes(hex::decode(validator_key)?.as_ref())?;
-                    let signer = ValidatorSigner::new_local(signer);
-                    start::start(
-                        address,
-                        grpc_options,
-                        signer,
-                        data_directory,
-                        sqlite_connection_pool_size,
-                        shutdown,
-                    )
-                    .await
-                }
+                    ValidatorSigner::new_local(signer)
+                };
+
+                start::start(
+                    address,
+                    grpc_options,
+                    signer,
+                    encryptor,
+                    data_directory,
+                    sqlite_connection_pool_size,
+                    shutdown,
+                )
+                .await
             },
         }
     }

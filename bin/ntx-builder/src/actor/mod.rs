@@ -18,8 +18,8 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountPatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteScript, Nullifier};
-use miden_protocol::transaction::{TransactionId, TransactionScript};
-use miden_standards::code_builder::CodeBuilder;
+use miden_protocol::transaction::{TransactionArgs, TransactionId};
+use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_tx::FailedNote;
 use tokio::sync::{Notify, Semaphore, mpsc};
 
@@ -28,28 +28,19 @@ use crate::clients::{RemoteTransactionProver, RpcClient};
 use crate::db::Db;
 use crate::{LOG_TARGET, NoteError};
 
-/// Compiles the standalone transaction script that sets the on-chain expiration of a network
-/// transaction to `delta` blocks. The script is account-independent, so the builder compiles it
-/// once at startup and shares the resulting [`TransactionScript`] across all actors.
+/// Builds the [`TransactionArgs`] shared by every network transaction.
 ///
-/// ```masm
-/// @transaction_script
-/// pub proc main
-///     push.{delta} exec.::miden::protocol::tx::update_expiration_block_delta
-/// end
-/// ```
-pub(crate) fn expiration_tx_script(delta: NonZeroU16) -> anyhow::Result<TransactionScript> {
-    let delta = delta.get();
-    let source = format!(
-        "\
-@transaction_script
-pub proc main
-    push.{delta} exec.::miden::protocol::tx::update_expiration_block_delta
-end"
-    );
-    CodeBuilder::new()
-        .compile_tx_script(source)
-        .context("failed to compile network-tx expiration script")
+/// Currently these attach the canonical [`ExpirationTransactionScript`] for `expiration_delta`
+/// blocks, with the script paired to the `TX_SCRIPT_ARGS` word it reads its delta from.
+///
+/// The script itself is account-independent and its MAST root is identical for every delta (the
+/// delta travels in the args word, not the code), so the builder derives these once at startup and
+/// shares them across all actors. The matching root
+/// ([`ExpirationTransactionScript::script_root`]) is what network accounts must allowlist for these
+/// transactions to be accepted on-chain.
+pub(crate) fn build_tx_args(expiration_delta: NonZeroU16) -> TransactionArgs {
+    let script = ExpirationTransactionScript::new(expiration_delta);
+    TransactionArgs::default().with_tx_script_and_args(script.into(), script.tx_script_args())
 }
 
 // ACTOR REQUESTS
@@ -92,9 +83,12 @@ pub struct State {
     pub chain: Arc<SharedChainState>,
     /// Shared LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
     pub script_cache: LruCache<Word, NoteScript>,
-    /// Pre-compiled transaction script that sets each network tx's on-chain expiration delta.
-    /// Shared into every executed transaction.
-    pub expiration_script: TransactionScript,
+    /// [`TransactionArgs`] used by every network transaction.
+    ///
+    /// These are constant and are therefore prebuilt and cloned for each transaction.
+    ///
+    /// Currently this contains the transaction expiration script.
+    pub tx_args: TransactionArgs,
 }
 
 /// Per-actor configuration knobs.
@@ -153,6 +147,7 @@ impl AccountActorContext {
         );
         let chain_state = Arc::new(SharedChainState::new(block_header, chain_mmr));
         let (request_tx, _request_rx) = mpsc::channel(1);
+        let tx_args = build_tx_args(NonZeroU16::new(30).unwrap());
 
         Self {
             clients: GrpcClients {
@@ -170,8 +165,7 @@ impl AccountActorContext {
                 db: db.clone(),
                 chain: chain_state,
                 script_cache: LruCache::new(NonZeroUsize::new(1).unwrap()),
-                expiration_script: expiration_tx_script(NonZeroU16::new(30).unwrap())
-                    .expect("expiration script should compile"),
+                tx_args,
             },
             config: ActorConfig {
                 max_notes_per_tx: NonZeroUsize::new(1).unwrap(),
@@ -535,7 +529,7 @@ impl AccountActor {
             self.state.script_cache.clone(),
             self.state.db.clone(),
             self.config.max_cycles,
-            self.state.expiration_script.clone(),
+            self.state.tx_args.clone(),
             self.config.request_backoff_initial,
             self.config.request_backoff_max,
         );
@@ -692,8 +686,8 @@ fn log_failed_notes(failed: Vec<FailedNote>) -> Vec<(Nullifier, NoteError)> {
 mod tests {
     use std::num::NonZeroU16;
 
-    use miden_protocol::ONE;
     use miden_protocol::account::{Account, AccountPatch, AccountStoragePatch, AccountVaultPatch};
+    use miden_protocol::{Felt, ONE};
     use tokio::sync::Notify;
 
     use super::*;
@@ -842,18 +836,24 @@ mod tests {
         notifier.abort();
     }
 
-    /// The expiration script must compile for the full valid delta range, and the delta must be
-    /// baked into the script (distinct deltas → distinct script roots), proving the on-chain
-    /// expiration value is actually carried rather than ignored.
+    /// The canonical expiration script carries its delta in `TX_SCRIPT_ARGS`, so every delta shares
+    /// a single script root (the one network accounts allowlist), while the args word encodes the
+    /// delta in its first element.
     #[test]
-    fn expiration_script_compiles_and_encodes_delta() {
-        let one =
-            expiration_tx_script(NonZeroU16::new(1).unwrap()).expect("delta 1 should compile");
-        let thirty =
-            expiration_tx_script(NonZeroU16::new(30).unwrap()).expect("delta 30 should compile");
-        let max = expiration_tx_script(NonZeroU16::MAX).expect("delta u16::MAX should compile");
+    fn expiration_script_shares_root_and_encodes_delta_in_args() {
+        let one = build_tx_args(NonZeroU16::new(1).unwrap());
+        let thirty = build_tx_args(NonZeroU16::new(30).unwrap());
+        let max = build_tx_args(NonZeroU16::MAX);
 
-        assert_ne!(one.root(), thirty.root(), "distinct deltas must yield distinct scripts");
-        assert_ne!(thirty.root(), max.root(), "distinct deltas must yield distinct scripts");
+        // All deltas resolve to the single allowlistable root.
+        let root = ExpirationTransactionScript::script_root();
+        assert_eq!(one.tx_script().unwrap().root(), root);
+        assert_eq!(thirty.tx_script().unwrap().root(), root);
+        assert_eq!(max.tx_script().unwrap().root(), root);
+
+        // The delta rides in the first element of the args word.
+        assert_eq!(one.tx_script_args()[0], Felt::from(1_u16));
+        assert_eq!(thirty.tx_script_args()[0], Felt::from(30_u16));
+        assert_eq!(max.tx_script_args()[0], Felt::from(u16::MAX));
     }
 }

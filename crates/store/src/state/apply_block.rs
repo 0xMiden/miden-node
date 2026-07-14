@@ -1,3 +1,5 @@
+use std::fmt;
+use std::fmt::Display;
 use std::sync::Arc;
 
 use miden_node_proto::domain::proof_request::BlockProofRequest;
@@ -9,7 +11,6 @@ use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::account_tree::AccountMutationSet;
 use miden_protocol::block::nullifier_tree::NullifierMutationSet;
 use miden_protocol::block::{BlockBody, BlockHeader, BlockInputs, BlockNumber, SignedBlock};
-use miden_protocol::crypto::merkle::smt::LargeSmtForestError;
 use miden_protocol::note::{NoteDetails, Nullifier};
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::serde::Serializable;
@@ -18,8 +19,25 @@ use tracing::{Instrument, info_span};
 
 use crate::db::NoteRecord;
 use crate::errors::{ApplyBlockError, ApplyBlockWithProvingInputsError, InvalidBlockError};
-use crate::state::{BlockNotification, State};
+use crate::state::{BlockNotification, InnerState, State};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PostCommitStateComponent {
+    AccountStateForest,
+    NullifierTree,
+    AccountTree,
+}
+
+impl Display for PostCommitStateComponent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AccountStateForest => f.write_str("account-state forest"),
+            Self::NullifierTree => f.write_str("nullifier tree"),
+            Self::AccountTree => f.write_str("account tree"),
+        }
+    }
+}
 
 impl State {
     /// Saves proving inputs for a signed block and applies it to the state.
@@ -77,8 +95,9 @@ impl State {
     ///   use the fresh data.
     /// - the account-state forest and canonical in-memory structures are updated, including the
     ///   latest block pointer, and both locks are released.
-    /// - if the forest update fails after the DB commit, the process aborts. The durable database
-    ///   remains authoritative and the forest is rebuilt during the next startup.
+    /// - if any persistent tree update fails after the DB commit, the process aborts. The durable
+    ///   database remains authoritative, and divergent tree storage must be rebuilt before the node
+    ///   resumes normal processing.
     // TODO: This span is logged in a root span, we should connect it to the parent span.
     #[miden_instrument(
         target = COMPONENT,
@@ -197,18 +216,12 @@ impl State {
 
             // The DB is now committed. Keep both write locks held while advancing the forest and
             // canonical in-memory state so readers cannot observe different block heights.
+            let InnerState { nullifier_tree, blockchain, account_tree } = inner;
             Self::finalize_committed_state(
                 || forest.apply_precomputed_block_update(block_num, account_forest_update),
-                || {
-                    inner.nullifier_tree.apply_mutations(nullifier_tree_update).expect(
-                        "Unreachable: old nullifier tree root must be checked before this step",
-                    );
-                    inner.account_tree.apply_mutations(account_tree_update).expect(
-                        "Unreachable: old account tree root must be checked before this step",
-                    );
-
-                    inner.blockchain.push(block_commitment);
-                },
+                || nullifier_tree.apply_mutations(nullifier_tree_update),
+                || account_tree.apply_mutations(account_tree_update),
+                || blockchain.push(block_commitment),
             );
 
             Ok(())
@@ -227,33 +240,59 @@ impl State {
 
     /// Publishes the forest and canonical in-memory state after the database commit.
     ///
-    /// The forest is advanced first because its persistent backend remains fallible. Canonical
-    /// in-memory state must not advance if that operation fails.
-    fn finalize_committed_state(
-        apply_forest: impl FnOnce() -> Result<(), LargeSmtForestError>,
-        advance_canonical_state: impl FnOnce(),
-    ) {
-        if let Err(error) = apply_forest() {
-            Self::abort_after_committed_forest_failure(&error);
-        }
-
-        advance_canonical_state();
+    /// Each persistent structure is advanced in order. A failure is fatal because SQLite has
+    /// already committed and the block cannot be retried safely.
+    fn finalize_committed_state<ForestError, NullifierError, AccountError>(
+        apply_forest: impl FnOnce() -> Result<(), ForestError>,
+        apply_nullifier_tree: impl FnOnce() -> Result<(), NullifierError>,
+        apply_account_tree: impl FnOnce() -> Result<(), AccountError>,
+        advance_blockchain: impl FnOnce(),
+    ) where
+        ForestError: Display,
+        NullifierError: Display,
+        AccountError: Display,
+    {
+        Self::complete_post_commit_update(
+            PostCommitStateComponent::AccountStateForest,
+            apply_forest(),
+        );
+        Self::complete_post_commit_update(
+            PostCommitStateComponent::NullifierTree,
+            apply_nullifier_tree(),
+        );
+        Self::complete_post_commit_update(
+            PostCommitStateComponent::AccountTree,
+            apply_account_tree(),
+        );
+        advance_blockchain();
     }
 
-    /// Terminates after a forest failure that occurred after the canonical DB commit.
+    fn complete_post_commit_update<E: Display>(
+        component: PostCommitStateComponent,
+        result: Result<(), E>,
+    ) {
+        if let Err(error) = result {
+            Self::abort_after_committed_state_failure(component, &error);
+        }
+    }
+
+    /// Terminates after a persistent state failure that occurred after the canonical DB commit.
     ///
-    /// Returning would expose a committed block with stale forest state. Tests panic so the fatal
-    /// path can be asserted without terminating the test process; production aborts immediately and
-    /// rebuilds the forest from the canonical database on restart.
-    fn abort_after_committed_forest_failure(error: &LargeSmtForestError) -> ! {
+    /// Returning would expose components at different block heights. Tests panic so the fatal path
+    /// can be asserted without terminating the test process; production aborts immediately.
+    fn abort_after_committed_state_failure(
+        component: PostCommitStateComponent,
+        error: &impl Display,
+    ) -> ! {
         tracing::error!(
             target: LOG_TARGET,
+            %component,
             error = %error,
-            "account-state forest update failed after database commit; aborting for rebuild"
+            "persistent state update failed after database commit; aborting"
         );
 
         #[cfg(test)]
-        panic!("account-state forest update failed after database commit: {error}");
+        panic!("{component} update failed after database commit: {error}");
 
         #[cfg(not(test))]
         std::process::abort();
@@ -438,24 +477,90 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::io;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use miden_protocol::crypto::merkle::smt::LargeSmtForestError;
+    use super::{PostCommitStateComponent, State};
 
-    use super::State;
+    fn record_stage(
+        executed: &RefCell<Vec<PostCommitStateComponent>>,
+        stage: PostCommitStateComponent,
+        failing_stage: Option<PostCommitStateComponent>,
+    ) -> Result<(), io::Error> {
+        executed.borrow_mut().push(stage);
+        if failing_stage == Some(stage) {
+            Err(io::Error::other("injected backend failure"))
+        } else {
+            Ok(())
+        }
+    }
 
     #[test]
-    fn injected_post_commit_backend_failure_prevents_canonical_state_advance() {
-        let error = LargeSmtForestError::fatal_from(io::Error::other("injected backend failure"));
-        let canonical_state_advanced = Cell::new(false);
+    fn injected_post_commit_backend_failures_stop_publication() {
+        let components = [
+            PostCommitStateComponent::AccountStateForest,
+            PostCommitStateComponent::NullifierTree,
+            PostCommitStateComponent::AccountTree,
+        ];
 
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            State::finalize_committed_state(|| Err(error), || canonical_state_advanced.set(true));
-        }));
+        for (failing_index, failing_component) in components.into_iter().enumerate() {
+            let executed = RefCell::new(Vec::new());
+            let blockchain_advanced = Cell::new(false);
 
-        assert!(result.is_err(), "a post-commit forest failure must be fatal");
-        assert!(!canonical_state_advanced.get());
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                State::finalize_committed_state(
+                    || {
+                        record_stage(
+                            &executed,
+                            PostCommitStateComponent::AccountStateForest,
+                            Some(failing_component),
+                        )
+                    },
+                    || {
+                        record_stage(
+                            &executed,
+                            PostCommitStateComponent::NullifierTree,
+                            Some(failing_component),
+                        )
+                    },
+                    || {
+                        record_stage(
+                            &executed,
+                            PostCommitStateComponent::AccountTree,
+                            Some(failing_component),
+                        )
+                    },
+                    || blockchain_advanced.set(true),
+                );
+            }));
+
+            assert!(result.is_err(), "a post-commit backend failure must be fatal");
+            assert_eq!(executed.into_inner(), components[..=failing_index]);
+            assert!(!blockchain_advanced.get());
+        }
+    }
+
+    #[test]
+    fn successful_post_commit_updates_advance_all_components_in_order() {
+        let executed = RefCell::new(Vec::new());
+        let blockchain_advanced = Cell::new(false);
+
+        State::finalize_committed_state(
+            || record_stage(&executed, PostCommitStateComponent::AccountStateForest, None),
+            || record_stage(&executed, PostCommitStateComponent::NullifierTree, None),
+            || record_stage(&executed, PostCommitStateComponent::AccountTree, None),
+            || blockchain_advanced.set(true),
+        );
+
+        assert_eq!(
+            executed.into_inner(),
+            [
+                PostCommitStateComponent::AccountStateForest,
+                PostCommitStateComponent::NullifierTree,
+                PostCommitStateComponent::AccountTree,
+            ]
+        );
+        assert!(blockchain_advanced.get());
     }
 }

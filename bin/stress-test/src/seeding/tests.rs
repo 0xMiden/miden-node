@@ -42,6 +42,13 @@ fn account_batches_distribute_public_accounts_across_partial_batches() {
 }
 
 #[test]
+fn oversized_account_updates_are_seeded_at_genesis() {
+    assert!(!account_update_may_exceed_protocol_limit(128, 1));
+    assert!(account_update_may_exceed_protocol_limit(4_096, 1));
+    assert!(account_update_may_exceed_protocol_limit(250_000, 1));
+}
+
+#[test]
 fn public_account_can_be_created_with_large_storage_map() {
     let coin_seed = [1, 2, 3, 4].map(Felt::new_unchecked);
     let mut rng = RandomCoin::new(coin_seed.into());
@@ -191,4 +198,29 @@ async fn seed_store_persists_one_public_account_and_applies_one_map_update() {
             .map(|(_, value)| *value),
         Some(benchmark_storage_map_update_value(0, 0, 1))
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn seed_store_handles_map_larger_than_transaction_account_update_limit() {
+    use miden_node_proto::domain::account::AccountRequest;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_directory = temp_dir.path().join("store");
+    seed_store(data_directory.clone(), 1, 100, 4_096, 1, 1).await;
+
+    let account_ids = fs_err::read_to_string(data_directory.join(ACCOUNTS_FILENAME)).unwrap();
+    let account_ids = account_ids.lines().collect::<Vec<_>>();
+    assert_eq!(account_ids.len(), 1);
+    let account_id = AccountId::from_hex(account_ids[0]).unwrap();
+
+    let state = load_state(data_directory).await;
+    let response = state
+        .get_account(AccountRequest {
+            account_id,
+            block_num: None,
+            details: None,
+        })
+        .await
+        .unwrap();
+    assert_ne!(response.witness.state_commitment(), Word::empty());
 }

@@ -36,7 +36,9 @@ cargo run --release --locked -p miden-node-stress-test -- \
 
 Account creation and account updates each require a preceding note-emission block. The block metrics label these phases
 separately, so `account-update` rows measure the partial public-account updates rather than their setup work. The
-generated account IDs are written to `accounts.txt` in the data directory.
+generated account IDs are written to `accounts.txt` in the data directory. If a full public account state would exceed
+the protocol's transaction account-update size limit, `seed-store` inserts that account at genesis automatically; its
+subsequent partial updates still use normal blocks and appear as `account-update` rows.
 
 ## Benchmark Results
 

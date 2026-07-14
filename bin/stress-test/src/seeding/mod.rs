@@ -55,7 +55,7 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::utils::serde::Serializable;
 use miden_protocol::vm::ExecutionProof;
-use miden_protocol::{Felt, ONE, Word};
+use miden_protocol::{ACCOUNT_UPDATE_MAX_SIZE, Felt, ONE, Word};
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
@@ -79,6 +79,8 @@ mod tests;
 const BATCHES_PER_BLOCK: usize = 16;
 const TRANSACTIONS_PER_BATCH: usize = 16;
 const ACCOUNT_UPDATES_PER_BLOCK: usize = BATCHES_PER_BLOCK * TRANSACTIONS_PER_BATCH - 1;
+const STORAGE_MAP_ENTRY_SERIALIZED_SIZE: u64 = 64;
+const ACCOUNT_UPDATE_SIZE_HEADROOM: u64 = 32 * 1024;
 
 pub const ACCOUNTS_FILENAME: &str = "accounts.txt";
 
@@ -117,6 +119,17 @@ fn plan_account_batches(
         .collect()
 }
 
+fn account_update_may_exceed_protocol_limit(
+    storage_map_entries: u32,
+    vault_entries: usize,
+) -> bool {
+    let estimated_size = u64::from(storage_map_entries) * STORAGE_MAP_ENTRY_SERIALIZED_SIZE
+        + u64::try_from(vault_entries).expect("vault entry count fits into u64")
+            * STORAGE_MAP_ENTRY_SERIALIZED_SIZE
+        + ACCOUNT_UPDATE_SIZE_HEADROOM;
+    estimated_size > u64::from(ACCOUNT_UPDATE_MAX_SIZE)
+}
+
 // SEED STORE
 // ================================================================================================
 
@@ -151,29 +164,72 @@ pub async fn seed_store(
     let _ = fs_err::remove_dir_all(&data_directory);
     fs_err::create_dir_all(&data_directory).expect("created data directory");
 
-    // generate the faucet account and the genesis state
+    // Generate the faucet accounts and genesis state. Public account state which cannot fit into a
+    // transaction account update is inserted at genesis so later partial updates can still exercise
+    // normal block application.
     let benchmark_faucets = create_benchmark_faucets(vault_entries);
     let faucet = benchmark_faucets[0].clone();
     let asset_faucet_ids = benchmark_faucets.iter().map(Account::id).collect::<Vec<_>>();
+    let num_public_accounts = rounded_percentage(num_accounts, public_accounts_percentage);
+    let seed_public_accounts_at_genesis =
+        account_update_may_exceed_protocol_limit(storage_map_entries, vault_entries);
+    let genesis_account_key_pair = if seed_public_accounts_at_genesis {
+        let coin_seed: [u64; 4] = rand::rng().random();
+        let mut rng = RandomCoin::new(coin_seed.map(Felt::new_unchecked).into());
+        Some(SecretKey::with_rng(&mut rng))
+    } else {
+        None
+    };
+    let genesis_benchmark_accounts =
+        genesis_account_key_pair.as_ref().map_or_else(Vec::new, |key| {
+            create_existing_benchmark_accounts(
+                num_public_accounts,
+                key,
+                &asset_faucet_ids,
+                storage_map_entries,
+                vault_entries,
+            )
+        });
+    let mut genesis_accounts = benchmark_faucets;
+    genesis_accounts.extend(genesis_benchmark_accounts);
     let fee_params = FeeParameters::new(faucet.id(), 0);
     let signer = EcdsaSecretKey::new();
-    let genesis_state = GenesisState::new(benchmark_faucets, fee_params, 1, 1, signer.public_key());
-    let genesis_block = genesis_state
-        .clone()
-        .into_block(&signer)
-        .expect("genesis block should be created");
+    let genesis_state = GenesisState::new(genesis_accounts, fee_params, 1, 1, signer.public_key());
+    let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
+    let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 
     let store_state = load_state(data_directory.clone()).await;
+
+    // Recreate the deterministic genesis benchmark accounts after bootstrapping instead of keeping
+    // another copy of their potentially very large maps alive while the genesis block is built.
+    let initial_accounts = genesis_account_key_pair.as_ref().map_or_else(Vec::new, |key| {
+        create_existing_benchmark_accounts(
+            num_public_accounts,
+            key,
+            &asset_faucet_ids,
+            storage_map_entries,
+            vault_entries,
+        )
+    });
+    let account_batches = if seed_public_accounts_at_genesis {
+        plan_account_batches(num_accounts - num_public_accounts, 0, ACCOUNT_UPDATES_PER_BLOCK)
+    } else {
+        plan_account_batches(num_accounts, public_accounts_percentage, ACCOUNT_UPDATES_PER_BLOCK)
+    };
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
     let data_directory =
         miden_node_store::DataDirectory::load(data_directory).expect("data directory should exist");
-    let genesis_header = genesis_state.into_block(&signer).unwrap().into_inner();
     let metrics = Box::pin(generate_blocks(
-        num_accounts,
-        public_accounts_percentage,
+        account_batches,
+        initial_accounts,
+        if seed_public_accounts_at_genesis {
+            u64::try_from(num_public_accounts).expect("public account count fits into u64")
+        } else {
+            0
+        },
         faucet,
         genesis_header,
         &store_state,
@@ -199,10 +255,11 @@ pub async fn seed_store(
 #[expect(clippy::too_many_arguments)]
 #[expect(clippy::too_many_lines)]
 async fn generate_blocks(
-    num_accounts: usize,
-    public_accounts_percentage: u8,
+    account_batches: Vec<AccountBatch>,
+    initial_accounts: Vec<Account>,
+    first_account_index: u64,
     mut faucet: Account,
-    genesis_block: SignedBlock,
+    genesis_header: BlockHeader,
     store_state: &Arc<State>,
     data_directory: DataDirectory,
     accounts_filepath: PathBuf,
@@ -214,14 +271,14 @@ async fn generate_blocks(
 ) -> SeedingMetrics {
     let mut metrics = SeedingMetrics::new(data_directory.database_path());
 
-    let mut account_ids = vec![];
-    let mut account_states: BTreeMap<AccountId, Account> = BTreeMap::new();
+    let mut account_ids = initial_accounts.iter().map(Account::id).collect::<Vec<_>>();
+    let mut account_states = initial_accounts
+        .into_iter()
+        .map(|account| (account.id(), account))
+        .collect::<BTreeMap<_, _>>();
 
     let mut consume_notes_txs: Vec<ProvenTransaction> = vec![];
     let mut pending_consumed_accounts: Vec<Account> = vec![];
-
-    let account_batches =
-        plan_account_batches(num_accounts, public_accounts_percentage, ACCOUNT_UPDATES_PER_BLOCK);
 
     // share random coin seed and key pair for all accounts to avoid key generation overhead
     let coin_seed: [u64; 4] = rand::rng().random();
@@ -231,8 +288,8 @@ async fn generate_blocks(
         SecretKey::with_rng(&mut *rng)
     };
 
-    let mut prev_block_header = genesis_block.header().clone();
-    let mut next_account_index = 0_u64;
+    let mut prev_block_header = genesis_header;
+    let mut next_account_index = first_account_index;
     let mut pending_public_accounts = 0;
 
     for (batch_index, batch) in account_batches.into_iter().enumerate() {
@@ -647,6 +704,34 @@ end",
     }
 
     builder.build().unwrap()
+}
+
+fn create_existing_benchmark_accounts(
+    num_accounts: usize,
+    key_pair: &SecretKey,
+    asset_faucet_ids: &[AccountId],
+    storage_map_entries: u32,
+    vault_entries: usize,
+) -> Vec<Account> {
+    (0..num_accounts)
+        .into_par_iter()
+        .map(|account_index| {
+            let mut account = create_account(
+                key_pair.public_key(),
+                u64::try_from(account_index).expect("account index fits into u64"),
+                AccountType::Public,
+                storage_map_entries,
+            );
+            for faucet_id in asset_faucet_ids.iter().take(vault_entries) {
+                account
+                    .vault_mut()
+                    .add_asset(FungibleAsset::new(*faucet_id, 10).unwrap().into())
+                    .unwrap();
+            }
+            account.increment_nonce(ONE).unwrap();
+            account
+        })
+        .collect()
 }
 
 fn create_benchmark_faucets(vault_entries: usize) -> Vec<Account> {

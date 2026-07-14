@@ -8,8 +8,7 @@ use indexmap::IndexMap;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountFile, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
-use miden_protocol::block::FeeParameters;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use miden_protocol::block::{FeeParameters, ValidatorKeys};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey as RpoSecretKey;
 use miden_protocol::errors::TokenSymbolError;
 use miden_protocol::{Felt, ONE};
@@ -129,7 +128,7 @@ impl GenesisConfig {
     #[expect(clippy::too_many_lines)]
     pub fn into_state(
         self,
-        validator_key: PublicKey,
+        validator_keys: ValidatorKeys,
     ) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
         let GenesisConfig {
             version,
@@ -308,7 +307,7 @@ impl GenesisConfig {
                 accounts: all_accounts,
                 version,
                 timestamp,
-                validator_key,
+                validator_keys,
             },
             AccountSecrets { secrets },
         ))

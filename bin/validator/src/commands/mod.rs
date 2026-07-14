@@ -32,9 +32,17 @@ pub(crate) const INSECURE_KEY_HEX: &str =
 pub enum ValidatorCommand {
     /// Bootstraps the genesis block.
     ///
-    /// Creates accounts from the genesis configuration, builds and signs the genesis block,
-    /// and writes the signed block and account secret files to disk. Also initializes the
-    /// validator's database with the genesis block as the chain tip.
+    /// Creates accounts from the genesis configuration, builds the genesis block, signs it with
+    /// every validator key, and writes the signed block and account secret files to disk. Also
+    /// initializes the validator's database with the genesis block as the chain tip.
+    ///
+    /// The genesis block is the chain's trust root and must be signed by the complete validator
+    /// set committed to by its header, so this command requires signing access to all validator
+    /// keys. Only one validator in the set needs to run this form.
+    ///
+    /// Alternatively, pass `--file` to seed this validator's database from a genesis block that
+    /// another validator has already built and signed, without re-signing it. Use this for every
+    /// validator other than the one that ran the signing form above.
     Bootstrap {
         /// Directory in which to write the genesis block file.
         #[arg(long, value_name = "DIR")]
@@ -54,11 +62,21 @@ pub enum ValidatorCommand {
         )]
         sqlite_connection_pool_size: NonZeroUsize,
         /// Use the given configuration file to construct the genesis state from.
+        ///
+        /// Cannot be used with `--file`.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
         genesis_config_file: Option<PathBuf>,
-        /// Configuration for the Validator key used to sign the genesis block.
+        /// Seed this validator's database from an already-signed genesis block file, instead of
+        /// building and signing a new one.
+        ///
+        /// Cannot be used with `--genesis-config-file` or the validator key arguments.
+        #[arg(long = "file", value_name = "FILE")]
+        genesis_block_file: Option<PathBuf>,
+        /// Configuration for the validator keys used to sign the genesis block.
+        ///
+        /// Ignored when `--file` is used.
         #[command(flatten)]
-        validator_key: ValidatorKey,
+        validator_keys: ValidatorKeyArgs,
     },
 
     /// Applies pending validator database migrations.
@@ -128,7 +146,8 @@ impl ValidatorCommand {
                 data_directory,
                 sqlite_connection_pool_size,
                 genesis_config_file,
-                validator_key,
+                genesis_block_file,
+                validator_keys,
             } => {
                 bootstrap::bootstrap(
                     &genesis_block_directory,
@@ -136,7 +155,8 @@ impl ValidatorCommand {
                     &data_directory,
                     sqlite_connection_pool_size,
                     genesis_config_file.as_ref(),
-                    validator_key,
+                    genesis_block_file.as_ref(),
+                    validator_keys,
                 )
                 .await
             },
@@ -194,43 +214,57 @@ impl ValidatorCommand {
     }
 }
 
-// VALIDATOR KEY
+// VALIDATOR KEY ARGS
 // ================================================================================================
 
-/// Configuration for the Validator key used to sign blocks.
+/// Configuration for the validator keys used to sign the genesis block.
+///
+/// One signer is required for every member of the genesis validator set, so the arguments accept
+/// multiple keys (repeat the argument or comma-separate the values).
 #[derive(clap::Args)]
 #[group(required = false, multiple = false)]
-pub struct ValidatorKey {
-    /// Insecure, hex-encoded validator secret key for development and testing purposes.
+pub struct ValidatorKeyArgs {
+    /// Insecure, hex-encoded validator secret keys for development and testing purposes.
     ///
-    /// If not provided, a predefined key is used.
+    /// If not provided, a single predefined key is used.
     ///
     /// Cannot be used with `key.kms-id`.
     #[arg(
         long = "key.hex",
         env = ENV_KEY,
-        value_name = "VALIDATOR_KEY",
+        value_name = "VALIDATOR_KEYS",
         default_value = INSECURE_KEY_HEX,
+        value_delimiter = ',',
     )]
-    pub validator_key: String,
-    /// Key ID for the KMS key used by validator to sign blocks.
+    pub validator_keys: Vec<String>,
+    /// Key IDs for the KMS keys used by the validators to sign blocks.
     ///
     /// Cannot be used with `key.hex`.
     #[arg(
         long = "key.kms-id",
         env = ENV_KMS_KEY_ID,
-        value_name = "VALIDATOR_KMS_KEY_ID",
+        value_name = "VALIDATOR_KMS_KEY_IDS",
+        value_delimiter = ',',
     )]
-    pub validator_kms_key_id: Option<String>,
+    pub validator_kms_key_ids: Vec<String>,
 }
 
-impl ValidatorKey {
-    pub async fn into_signer(self) -> anyhow::Result<ValidatorSigner> {
-        if let Some(kms_key_id) = self.validator_kms_key_id {
-            Ok(ValidatorSigner::new_kms(kms_key_id).await?)
+impl ValidatorKeyArgs {
+    pub async fn into_signers(self) -> anyhow::Result<Vec<ValidatorSigner>> {
+        if self.validator_kms_key_ids.is_empty() {
+            self.validator_keys
+                .iter()
+                .map(|key| {
+                    let signer = SigningKey::read_from_bytes(hex::decode(key)?.as_ref())?;
+                    Ok(ValidatorSigner::new_local(signer))
+                })
+                .collect()
         } else {
-            let signer = SigningKey::read_from_bytes(hex::decode(self.validator_key)?.as_ref())?;
-            Ok(ValidatorSigner::new_local(signer))
+            let mut signers = Vec::with_capacity(self.validator_kms_key_ids.len());
+            for kms_key_id in self.validator_kms_key_ids {
+                signers.push(ValidatorSigner::new_kms(kms_key_id).await?);
+            }
+            Ok(signers)
         }
     }
 }

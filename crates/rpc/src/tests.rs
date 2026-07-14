@@ -105,10 +105,14 @@ impl TestStore {
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
         let signer = SigningKey::new();
-        let (genesis_state, _) = config.into_state(signer.public_key()).unwrap();
+        let (genesis_state, _) = config
+            .into_state(
+                miden_protocol::block::ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+            )
+            .unwrap();
         let genesis_block = genesis_state
             .clone()
-            .into_block(&signer)
+            .into_block(std::slice::from_ref(&signer))
             .expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
 
@@ -598,7 +602,7 @@ async fn start_source_rpc(ntx_builder: NtxBuilderClient) -> (RpcClient, TestStor
             .connect_lazy::<ValidatorClient>();
         let source_rpc = RpcService::new(
             store_state,
-            RpcMode::sequencer(block_producer, validator),
+            RpcMode::sequencer(block_producer, vec![validator]),
             Some(ntx_builder),
             NonZeroUsize::new(1_000_000).unwrap(),
             None,
@@ -796,7 +800,7 @@ async fn start_rpc_with_options(
         Rpc {
             listener: rpc_listener,
             store: store_state,
-            mode: RpcMode::sequencer(block_producer, validator),
+            mode: RpcMode::sequencer(block_producer, vec![validator]),
             ntx_builder: None,
             grpc_options,
             network_tx_auth: None,

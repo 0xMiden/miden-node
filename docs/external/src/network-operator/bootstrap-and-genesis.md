@@ -28,21 +28,35 @@ networks, or if the official URLs are not trusted.
 <Tabs groupId="network-operator-genesis-source" defaultValue="official">
   <TabItem value="official" label="Official network">
 
-The official validator operator creates and signs the genesis block with the validator's KMS key:
+The genesis block is the chain's trust root and must be signed by the complete validator set, so **one** validator
+operator runs the signing form of `bootstrap` with every validator's KMS key ID (repeat the argument or
+comma-separate the values):
 
 ```bash
 miden-validator bootstrap \
-  --data-directory validator-data \
+  --data-directory validator-1-data \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.kms-id <validator-kms-key-id>
+  --key.kms-id <validator-1-kms-key-id> \
+  --key.kms-id <validator-2-kms-key-id> \
+  --key.kms-id <validator-3-kms-key-id>
 ```
 
 Upload `genesis-data/genesis.dat` so it is served at:
 
 ```text
 https://genesis.<network>.miden.io
+```
+
+Every other validator operator seeds their own database from the same genesis block, without re-signing it:
+
+```bash
+miden-validator bootstrap \
+  --data-directory validator-2-data \
+  --genesis-block-directory genesis-data \
+  --accounts-directory accounts \
+  --file genesis-data/genesis.dat
 ```
 
 Initialize the sequencer's node storage from the hosted genesis block:
@@ -64,20 +78,35 @@ miden-ntx-builder bootstrap \
 For `devnet`, use `--network devnet` instead. The `--network` flag is shorthand for downloading the signed genesis block
 from `https://genesis.<network>.miden.io`.
 
-The same KMS key ID must be used when the official validator operator starts the validator for this network.
+Each validator operator's own KMS key ID must be used when that operator starts their validator for this network.
 
   </TabItem>
   <TabItem value="unofficial" label="Unofficial network">
 
-Create and sign the genesis block with the validator's local key:
+**One** validator operator creates and signs the genesis block with every validator's local key. The genesis block is
+the chain's trust root and must be signed by every member of its validator set, so pass one key per validator (repeat
+the argument or comma-separate the values):
 
 ```bash
 miden-validator bootstrap \
-  --data-directory validator-data \
+  --data-directory validator-1-data \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.hex <validator-key-hex>
+  --key.hex <validator-1-key-hex> \
+  --key.hex <validator-2-key-hex> \
+  --key.hex <validator-3-key-hex>
+```
+
+Distribute `genesis-data/genesis.dat` to the other validator operators, who each seed their own database from it,
+without re-signing it:
+
+```bash
+miden-validator bootstrap \
+  --data-directory validator-2-data \
+  --genesis-block-directory genesis-data \
+  --accounts-directory accounts \
+  --file genesis-data/genesis.dat
 ```
 
 For unofficial networks or pre-publication testing, distribute the signed genesis block file directly and initialize

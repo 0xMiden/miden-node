@@ -33,6 +33,7 @@ use miden_protocol::block::{
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
+    BlockSignatures,
     ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -105,7 +106,8 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         11_u8.into(),
     );
 
-    let dummy_signature = SigningKey::new().sign(block_header.commitment());
+    let dummy_signature =
+        BlockSignatures::new(vec![SigningKey::new().sign(block_header.commitment())]).unwrap();
 
     conn.transaction(|conn| {
         queries::insert_block_header(conn, &block_header, &dummy_signature)?;
@@ -611,7 +613,8 @@ fn db_block_header() {
     );
     // test insertion
 
-    let dummy_signature = SigningKey::new().sign(block_header.commitment());
+    let dummy_signature =
+        BlockSignatures::new(vec![SigningKey::new().sign(block_header.commitment())]).unwrap();
     queries::insert_block_header(conn, &block_header, &dummy_signature).unwrap();
 
     // test fetch unknown block header
@@ -643,7 +646,8 @@ fn db_block_header() {
         21_u8.into(),
     );
 
-    let dummy_signature = SigningKey::new().sign(block_header2.commitment());
+    let dummy_signature =
+        BlockSignatures::new(vec![SigningKey::new().sign(block_header2.commitment())]).unwrap();
     queries::insert_block_header(conn, &block_header2, &dummy_signature).unwrap();
 
     let res = queries::select_block_header_by_block_num(conn, None).unwrap();
@@ -1898,9 +1902,14 @@ async fn genesis_with_account_assets() {
         .unwrap();
 
     let signer = random_secret_key();
-    let genesis_state =
-        GenesisState::new(vec![account], test_fee_params(), 1, 0, signer.public_key());
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_state = GenesisState::new(
+        vec![account],
+        test_fee_params(),
+        1,
+        0,
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+    );
+    let genesis_block = genesis_state.into_block(std::slice::from_ref(&signer)).unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");
@@ -1965,9 +1974,14 @@ async fn genesis_with_account_storage_map() {
         .unwrap();
 
     let signer = random_secret_key();
-    let genesis_state =
-        GenesisState::new(vec![account], test_fee_params(), 1, 0, signer.public_key());
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_state = GenesisState::new(
+        vec![account],
+        test_fee_params(),
+        1,
+        0,
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+    );
+    let genesis_block = genesis_state.into_block(std::slice::from_ref(&signer)).unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");
@@ -2025,9 +2039,14 @@ async fn genesis_with_account_assets_and_storage() {
         .unwrap();
 
     let signer = random_secret_key();
-    let genesis_state =
-        GenesisState::new(vec![account], test_fee_params(), 1, 0, signer.public_key());
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_state = GenesisState::new(
+        vec![account],
+        test_fee_params(),
+        1,
+        0,
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+    );
+    let genesis_block = genesis_state.into_block(std::slice::from_ref(&signer)).unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");
@@ -2126,9 +2145,9 @@ async fn genesis_with_multiple_accounts() {
         test_fee_params(),
         1,
         0,
-        signer.public_key(),
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_block = genesis_state.into_block(std::slice::from_ref(&signer)).unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");
@@ -2324,7 +2343,8 @@ fn db_roundtrip_block_header() {
     );
 
     // Insert
-    let dummy_signature = SigningKey::new().sign(block_header.commitment());
+    let dummy_signature =
+        BlockSignatures::new(vec![SigningKey::new().sign(block_header.commitment())]).unwrap();
     queries::insert_block_header(&mut conn, &block_header, &dummy_signature).unwrap();
 
     // Retrieve

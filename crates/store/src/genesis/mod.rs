@@ -13,7 +13,7 @@ use miden_protocol::block::{
     SignedBlock,
     ValidatorKeys,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks};
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::AccountError;
@@ -32,7 +32,7 @@ pub struct GenesisState {
     pub fee_parameters: FeeParameters,
     pub version: u32,
     pub timestamp: u32,
-    pub validator_key: PublicKey,
+    pub validator_keys: ValidatorKeys,
 }
 
 /// A type-safety wrapper ensuring that genesis block data can only be created from [`GenesisState`]
@@ -50,8 +50,12 @@ impl UnsignedGenesisBlock {
         &self.header
     }
 
-    pub fn into_block(self, signature: Signature) -> anyhow::Result<GenesisBlock> {
-        let signatures = BlockSignatures::new(vec![signature])?;
+    /// Combines the unsigned block with the validator signatures into a [`GenesisBlock`].
+    ///
+    /// The genesis block has no parent, so it acts as the chain's trust root: it must be
+    /// self-signed by the validator set its own header commits to, with the signature at
+    /// position `i` produced by the validator key at index `i`.
+    pub fn into_block(self, signatures: BlockSignatures) -> anyhow::Result<GenesisBlock> {
         signatures
             .verify_against(self.header.commitment(), self.header.validator_keys())
             .context("genesis block signature verification failed")?;
@@ -95,14 +99,14 @@ impl GenesisState {
         fee_parameters: FeeParameters,
         version: u32,
         timestamp: u32,
-        validator_key: PublicKey,
+        validator_keys: ValidatorKeys,
     ) -> Self {
         Self {
             accounts,
             fee_parameters,
             version,
             timestamp,
-            validator_key,
+            validator_keys,
         }
     }
 
@@ -147,7 +151,7 @@ impl GenesisState {
 
         let empty_transactions = OrderedTransactionHeaders::new_unchecked(Vec::new());
 
-        let validator_keys = ValidatorKeys::new(vec![self.validator_key])?;
+        let validator_keys = self.validator_keys;
 
         let header = BlockHeader::new(
             self.version,
@@ -174,10 +178,29 @@ impl GenesisState {
         Ok(UnsignedGenesisBlock { header, body })
     }
 
-    /// Builds and signs the genesis block with a local secret key.
-    pub fn into_block(self, signer: &SigningKey) -> anyhow::Result<GenesisBlock> {
+    /// Builds and signs the genesis block with the local secret keys of all validators.
+    ///
+    /// There must be exactly one signer for every key in the genesis validator set. The
+    /// signatures are ordered to match the canonical order of the validator keys committed to by
+    /// the genesis header.
+    pub fn into_block(self, signers: &[SigningKey]) -> anyhow::Result<GenesisBlock> {
         let unsigned_block = self.into_unsigned_block()?;
-        let signature = signer.sign(unsigned_block.header().commitment());
-        unsigned_block.into_block(signature)
+        let commitment = unsigned_block.header().commitment();
+        let signatures = unsigned_block
+            .header()
+            .validator_keys()
+            .as_keys()
+            .iter()
+            .map(|key| {
+                let signer = signers
+                    .iter()
+                    .find(|signer| &signer.public_key() == key)
+                    .ok_or_else(|| anyhow::anyhow!("missing signer for validator key"))?;
+                Ok(signer.sign(commitment))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let signatures = BlockSignatures::new(signatures)
+            .map_err(|err| anyhow::anyhow!("failed to build genesis signatures: {err}"))?;
+        unsigned_block.into_block(signatures)
     }
 }

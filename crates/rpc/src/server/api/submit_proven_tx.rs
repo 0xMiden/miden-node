@@ -17,7 +17,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tonic::{Request, Status};
 use tracing::debug;
 
-use super::{COMPONENT, RpcMode, RpcService};
+use super::{COMPONENT, RpcMode, RpcService, submit_tx_to_validators};
 use crate::LOG_TARGET;
 
 #[tonic::async_trait]
@@ -120,22 +120,22 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         })??;
 
         match &self.mode {
-            RpcMode::Sequencer { block_producer, validator } => {
-                validator.clone().submit_proven_transaction(request.clone()).await?;
+            RpcMode::Sequencer { block_producer, validators } => {
+                submit_tx_to_validators(validators, &request).await?;
                 block_producer
                     .submit_proven_tx(rebuilt_tx)
                     .await
                     .map(Into::into)
                     .map_err(Into::into)
             },
-            RpcMode::FullNode { source_rpc, validator, sequencer, .. } => {
-                match (validator, sequencer) {
-                    (Some(validator), Some(sequencer)) => {
+            RpcMode::FullNode { source_rpc, validators, sequencer, .. } => {
+                match (validators, sequencer) {
+                    (Some(validators), Some(sequencer)) => {
                         // Pre-authenticated transactions: validate and authenticate locally, then
                         // submit the authenticated transaction to the sequencer's pre-authenticated
                         // API.
                         self.submit_authenticated_to_sequencer(
-                            *validator.clone(),
+                            validators,
                             *sequencer.clone(),
                             request,
                             rebuilt_tx,
@@ -169,12 +169,12 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
 impl RpcService {
     /// Pre-authenticated transaction submission path for a single transaction.
     ///
-    /// Re-executes the transaction via the validator, authenticates it against the local
+    /// Re-executes the transaction via every validator, authenticates it against the local
     /// (replica) store, then submits the authenticated transaction to the sequencer's
     /// pre-authenticated API.
     async fn submit_authenticated_to_sequencer(
         &self,
-        validator: ValidatorClient,
+        validators: &[ValidatorClient],
         sequencer: SequencerClient,
         request: proto::transaction::ProvenTransaction,
         rebuilt_tx: ProvenTransaction,
@@ -188,9 +188,8 @@ impl RpcService {
                 |err| Status::internal(err.as_report_context("failed to authenticate transaction")),
             )?;
 
-        // Submit to validator.
-        let mut validator = validator;
-        validator.submit_proven_transaction(request).await?;
+        // Submit to every validator.
+        submit_tx_to_validators(validators, &request).await?;
 
         // Submit to sequencer.
         let mut sequencer = sequencer;

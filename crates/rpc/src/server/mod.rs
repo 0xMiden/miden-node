@@ -56,11 +56,15 @@ pub(crate) struct NetworkTxAuth(pub(crate) AsciiMetadataValue);
 
 #[derive(Clone, Debug)]
 pub enum RpcMode {
-    /// Sequencer RPC validates submissions locally, re-executes them through the validator, then
+    /// Sequencer RPC validates submissions locally, re-executes them through every validator, then
     /// forwards them to the block producer.
+    ///
+    /// Every validator must observe every transaction: a validator only signs blocks whose
+    /// transactions it has previously validated, so a submission that misses a validator would
+    /// later prevent that validator from signing the block containing it.
     Sequencer {
         block_producer: Box<BlockProducerApi>,
-        validator: Box<ValidatorClient>,
+        validators: Vec<ValidatorClient>,
     },
     /// Full-node RPC.
     ///
@@ -68,35 +72,35 @@ pub enum RpcMode {
     /// configuring this client with any request metadata the source RPC requires).
     ///
     /// When the validator and sequencer clients are set, the full-node will, instead of forwarding,
-    /// re-execute submissions through the validator and authenticate them against its store, then
+    /// re-execute submissions through every validator and authenticate them against its store, then
     /// submit the authenticated result directly to the sequencer's internal API.
     FullNode {
         source_rpc: Box<SourceRpcClient>,
         readiness_threshold: u32,
-        validator: Option<Box<ValidatorClient>>,
+        validators: Option<Vec<ValidatorClient>>,
         sequencer: Option<Box<SequencerClient>>,
     },
 }
 
 impl RpcMode {
-    pub fn sequencer(block_producer: BlockProducerApi, validator: ValidatorClient) -> Self {
+    pub fn sequencer(block_producer: BlockProducerApi, validators: Vec<ValidatorClient>) -> Self {
         Self::Sequencer {
             block_producer: Box::new(block_producer),
-            validator: Box::new(validator),
+            validators,
         }
     }
 
     pub fn full_node(
         source_rpc: SourceRpcClient,
         readiness_threshold: u32,
-        validator: Option<ValidatorClient>,
+        validators: Option<Vec<ValidatorClient>>,
         sequencer: Option<SequencerClient>,
     ) -> Self {
         Self::FullNode {
             source_rpc: Box::new(source_rpc),
             readiness_threshold,
             sequencer: sequencer.map(Box::new),
-            validator: validator.map(Box::new),
+            validators,
         }
     }
 }

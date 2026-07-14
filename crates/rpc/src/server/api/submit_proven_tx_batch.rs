@@ -10,7 +10,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_tx_batch::BatchVerifier;
 use tonic::{Request, Status};
 
-use super::{RpcMode, RpcService};
+use super::{RpcMode, RpcService, submit_batch_to_validators};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -105,24 +105,26 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         verify_batch_proof(proven_batch, &proposed_batch).await?;
 
         match &self.mode {
-            RpcMode::Sequencer { block_producer, validator } => {
-                validator
-                    .clone()
-                    .submit_batch(&proposed_batch, &request.transaction_inputs)
-                    .await?;
+            RpcMode::Sequencer { block_producer, validators } => {
+                submit_batch_to_validators(
+                    validators,
+                    &proposed_batch,
+                    &request.transaction_inputs,
+                )
+                .await?;
                 block_producer
                     .submit_proven_tx_batch(proposed_batch)
                     .await
                     .map(Into::into)
                     .map_err(Into::into)
             },
-            RpcMode::FullNode { source_rpc, validator, sequencer, .. } => {
-                match (validator, sequencer) {
-                    (Some(validator), Some(sequencer)) => {
+            RpcMode::FullNode { source_rpc, validators, sequencer, .. } => {
+                match (validators, sequencer) {
+                    (Some(validators), Some(sequencer)) => {
                         // Pre-authenticated transactions: validate and authenticate locally, then
                         // submit the authenticated batch to the sequencer's pre-authenticated API.
                         self.submit_authenticated_batch_to_sequencer(
-                            *validator.clone(),
+                            validators,
                             *sequencer.clone(),
                             proposed_batch,
                             &request.transaction_inputs,
@@ -156,17 +158,17 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
 impl RpcService {
     /// Pre-authenticated transaction submission path for a batch.
     ///
-    /// Re-executes each transaction via the validator, authenticates each against the
+    /// Re-executes each transaction via every validator, authenticates each against the
     /// local (replica) store, then submits the authenticated batch to the sequencer's
     /// pre-authenticated API.
     async fn submit_authenticated_batch_to_sequencer(
         &self,
-        mut validator: ValidatorClient,
+        validators: &[ValidatorClient],
         mut sequencer: SequencerClient,
         proposed_batch: ProposedBatch,
         transaction_inputs: &[Vec<u8>],
     ) -> tonic::Result<proto::blockchain::BlockNumber> {
-        validator.submit_batch(&proposed_batch, transaction_inputs).await?;
+        submit_batch_to_validators(validators, &proposed_batch, transaction_inputs).await?;
 
         let mut auth_inputs = Vec::with_capacity(proposed_batch.transactions().len());
         for tx in proposed_batch.transactions() {

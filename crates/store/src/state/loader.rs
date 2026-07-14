@@ -798,8 +798,11 @@ mod tests {
 
         db.query("insert corrupted block headers", move |conn| {
             for header in &headers {
-                let signature = signing_key.sign(header.commitment());
-                crate::db::models::queries::insert_block_header(conn, header, &signature)?;
+                let signatures = miden_protocol::block::BlockSignatures::new(vec![
+                    signing_key.sign(header.commitment()),
+                ])
+                .expect("one signature is within bounds");
+                crate::db::models::queries::insert_block_header(conn, header, &signatures)?;
             }
 
             diesel::update(crate::db::schema::block_headers::table)

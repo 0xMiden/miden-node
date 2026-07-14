@@ -3,6 +3,7 @@ use std::path::Path;
 
 use assert_matches::assert_matches;
 use miden_protocol::ONE;
+use miden_protocol::block::ValidatorKeys;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 
@@ -28,7 +29,8 @@ fn parsing_yields_expected_default_values() -> TestResult {
 
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
     let signer = SigningKey::new();
-    let (state, _secrets) = gcfg.into_state(signer.public_key())?;
+    let (state, _secrets) =
+        gcfg.into_state(ValidatorKeys::new(vec![signer.public_key()]).unwrap())?;
     let _ = state;
     // faucets always precede wallet accounts
     let native_faucet = state.accounts[0].clone();
@@ -73,14 +75,15 @@ fn parsing_yields_expected_default_values() -> TestResult {
 async fn genesis_accounts_have_nonce_one() -> TestResult {
     let gcfg = GenesisConfig::default();
     let signer = SigningKey::new();
-    let (state, secrets) = gcfg.into_state(signer.public_key()).unwrap();
+    let (state, secrets) =
+        gcfg.into_state(ValidatorKeys::new(vec![signer.public_key()]).unwrap()).unwrap();
     let mut iter = secrets.as_account_files(&state);
     let AccountFileWithName { account_file: status_quo, .. } = iter.next().unwrap().unwrap();
     assert!(iter.next().is_none());
 
     assert_eq!(status_quo.account.nonce(), ONE);
 
-    let _block = state.into_block(&signer)?;
+    let _block = state.into_block(std::slice::from_ref(&signer))?;
     Ok(())
 }
 
@@ -129,7 +132,8 @@ path = "test_account.mac"
 
     // Convert to state and verify the account is included
     let signer = SigningKey::new();
-    let (state, _secrets) = gcfg.into_state(signer.public_key())?;
+    let (state, _secrets) =
+        gcfg.into_state(ValidatorKeys::new(vec![signer.public_key()]).unwrap())?;
     assert!(state.accounts.iter().any(|a| a.id() == account_id));
 
     Ok(())
@@ -200,7 +204,8 @@ verification_base_fee = 0
 
     // Convert to state and verify the native faucet is included
     let signer = SigningKey::new();
-    let (state, secrets) = gcfg.into_state(signer.public_key())?;
+    let (state, secrets) =
+        gcfg.into_state(ValidatorKeys::new(vec![signer.public_key()]).unwrap())?;
     assert!(state.accounts.iter().any(|a| a.id() == faucet_id));
 
     // No secrets should be generated for file-loaded native faucet
@@ -250,7 +255,7 @@ verification_base_fee = 0
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
 
     // into_state should fail with NativeFaucetNotFungible error when loading the file
-    let result = gcfg.into_state(SigningKey::new().public_key());
+    let result = gcfg.into_state(ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap());
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -283,7 +288,7 @@ path = "does_not_exist.mac"
     let gcfg = GenesisConfig::read_toml_file(&config_path).unwrap();
 
     // into_state should fail with AccountFileRead error when loading the file
-    let result = gcfg.into_state(SigningKey::new().public_key());
+    let result = gcfg.into_state(ValidatorKeys::new(vec![SigningKey::new().public_key()]).unwrap());
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(

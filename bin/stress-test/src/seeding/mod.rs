@@ -37,6 +37,7 @@ use miden_protocol::block::{
     FeeParameters,
     ProposedBlock,
     SignedBlock,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey as EcdsaSecretKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::{PublicKey, SecretKey};
@@ -114,10 +115,16 @@ pub async fn seed_store(
     let asset_faucet_ids = benchmark_faucets.iter().map(Account::id).collect::<Vec<_>>();
     let fee_params = FeeParameters::new(faucet.id(), 0);
     let signer = EcdsaSecretKey::new();
-    let genesis_state = GenesisState::new(benchmark_faucets, fee_params, 1, 1, signer.public_key());
+    let genesis_state = GenesisState::new(
+        benchmark_faucets,
+        fee_params,
+        1,
+        1,
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+    );
     let genesis_block = genesis_state
         .clone()
-        .into_block(&signer)
+        .into_block(std::slice::from_ref(&signer))
         .expect("genesis block should be created");
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 
@@ -127,7 +134,8 @@ pub async fn seed_store(
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
     let data_directory =
         miden_node_store::DataDirectory::load(data_directory).expect("data directory should exist");
-    let genesis_header = genesis_state.into_block(&signer).unwrap().into_inner();
+    let genesis_header =
+        genesis_state.into_block(std::slice::from_ref(&signer)).unwrap().into_inner();
     let metrics = Box::pin(generate_blocks(
         num_accounts,
         public_accounts_percentage,

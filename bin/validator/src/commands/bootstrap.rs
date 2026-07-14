@@ -3,12 +3,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use miden_node_store::BlockStore;
+use miden_node_store::genesis::GenesisBlock;
 use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::fs::ensure_empty_directory;
+use miden_node_utils::genesis::read_signed_genesis_block;
+use miden_protocol::block::{BlockSignatures, ValidatorKeys};
 use miden_protocol::utils::serde::Serializable;
 use miden_validator::{DataDirectory, ValidatorSigner};
 
-use super::ValidatorKey;
+use super::ValidatorKeyArgs;
 
 // Bootstraps the validator component.
 pub async fn bootstrap(
@@ -17,8 +20,24 @@ pub async fn bootstrap(
     data_directory: &Path,
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_config: Option<&PathBuf>,
-    validator_key: ValidatorKey,
+    genesis_block_file: Option<&PathBuf>,
+    validator_keys: ValidatorKeyArgs,
 ) -> anyhow::Result<()> {
+    for directory in [accounts_directory, genesis_block_directory, data_directory] {
+        ensure_empty_directory(directory)?;
+    }
+
+    let dirs = DataDirectory::load_bootstrap(
+        genesis_block_directory.to_path_buf(),
+        accounts_directory.to_path_buf(),
+        data_directory.to_path_buf(),
+    )
+    .context("failed to load bootstrap directories")?;
+
+    if let Some(genesis_block_file) = genesis_block_file {
+        return seed_from_genesis_file(genesis_block_file, dirs, sqlite_connection_pool_size).await;
+    }
+
     let config = genesis_config
         .map(|file_path| {
             GenesisConfig::read_toml_file(file_path).with_context(|| {
@@ -28,29 +47,61 @@ pub async fn bootstrap(
         .transpose()?
         .unwrap_or_default();
 
-    for directory in [accounts_directory, genesis_block_directory, data_directory] {
-        ensure_empty_directory(directory)?;
-    }
-
-    let signer = validator_key.into_signer().await?;
-    let dirs = DataDirectory::load_bootstrap(
-        genesis_block_directory.to_path_buf(),
-        accounts_directory.to_path_buf(),
-        data_directory.to_path_buf(),
-    )
-    .context("failed to load bootstrap directories")?;
-    build_and_write_genesis(config, signer, dirs, sqlite_connection_pool_size).await
+    let signers = validator_keys.into_signers().await?;
+    build_and_write_genesis(config, signers, dirs, sqlite_connection_pool_size).await
 }
 
-/// Builds the genesis state, writes account secret files, signs the genesis block, writes it to
-/// disk, and initializes the validator's database with the genesis block as the chain tip.
-async fn build_and_write_genesis(
-    config: GenesisConfig,
-    signer: ValidatorSigner,
+/// Seeds this validator's database and block store from a genesis block that another validator
+/// has already built and signed, without re-signing it.
+///
+/// Used by every validator other than the one that runs the signing form of `bootstrap`: the
+/// genesis block is the chain's trust root and must be signed once, by the complete validator
+/// set, then distributed to the others.
+async fn seed_from_genesis_file(
+    genesis_block_file: &Path,
     dirs: DataDirectory,
     sqlite_connection_pool_size: NonZeroUsize,
 ) -> anyhow::Result<()> {
-    let (genesis_state, secrets) = config.into_state(signer.public_key())?;
+    let signed_block = read_signed_genesis_block(genesis_block_file)
+        .context("failed to read genesis block file")?;
+    let genesis_block =
+        GenesisBlock::try_from(signed_block).context("genesis block validation failed")?;
+
+    let block_bytes = genesis_block.inner().to_bytes();
+    fs_err::write(dirs.genesis_block_path().expect("bootstrap directories"), block_bytes)
+        .context("failed to write genesis block")?;
+
+    let _ = BlockStore::bootstrap(dirs.block_store_dir(), &genesis_block)?;
+
+    let (genesis_header, ..) = genesis_block.into_inner().into_parts();
+    let db = miden_validator::db::setup_with_pool_size(
+        dirs.database_path(),
+        sqlite_connection_pool_size,
+    )
+    .await
+    .context("failed to initialize validator database during bootstrap")?;
+    db.write("upsert_block_header", move |tx| {
+        miden_validator::db::upsert_block_header(tx, &genesis_header)
+    })
+    .await
+    .context("failed to persist genesis block header as chain tip")?;
+
+    Ok(())
+}
+
+/// Builds the genesis state, writes account secret files, signs the genesis block with every
+/// validator key, writes it to disk, and initializes the validator's database with the genesis
+/// block as the chain tip.
+async fn build_and_write_genesis(
+    config: GenesisConfig,
+    signers: Vec<ValidatorSigner>,
+    dirs: DataDirectory,
+    sqlite_connection_pool_size: NonZeroUsize,
+) -> anyhow::Result<()> {
+    let validator_keys =
+        ValidatorKeys::new(signers.iter().map(ValidatorSigner::public_key).collect())
+            .context("failed to build the genesis validator set")?;
+    let (genesis_state, secrets) = config.into_state(validator_keys)?;
 
     for item in secrets.as_account_files(&genesis_state) {
         let AccountFileWithName { account_file, name } = item?;
@@ -67,12 +118,27 @@ async fn build_and_write_genesis(
     let unsigned_genesis_block = genesis_state
         .into_unsigned_block()
         .context("failed to build the unsigned genesis block")?;
-    let signature = signer
-        .sign(unsigned_genesis_block.header())
-        .await
-        .context("failed to sign the genesis block")?;
+
+    // Sign the genesis block with every validator key, ordering the signatures to match the
+    // canonical order of the validator set committed to by the genesis header.
+    let mut signatures = Vec::with_capacity(signers.len());
+    for key in unsigned_genesis_block.header().validator_keys().as_keys() {
+        let signer = signers
+            .iter()
+            .find(|signer| &signer.public_key() == key)
+            .expect("a signer exists for every validator key by construction");
+        signatures.push(
+            signer
+                .sign(unsigned_genesis_block.header())
+                .await
+                .context("failed to sign the genesis block")?,
+        );
+    }
+    let signatures =
+        BlockSignatures::new(signatures).context("failed to build the genesis block signatures")?;
+
     let genesis_block = unsigned_genesis_block
-        .into_block(signature)
+        .into_block(signatures)
         .context("failed to build the genesis block")?;
 
     let block_bytes = genesis_block.inner().to_bytes();

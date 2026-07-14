@@ -60,7 +60,7 @@ impl SequencerCommand {
 
         let sequencer = Sequencer {
             store: Arc::clone(&state),
-            validator_url: self.external_services.validator_url.clone(),
+            validator_urls: self.external_services.validator_urls.clone(),
             validator_timeout: self.external_services.validator_timeout,
             batch_prover_url: self.block_producer.batch.prover_url,
             block_prover_url: self.block_producer.block_prover.url,
@@ -82,7 +82,7 @@ impl SequencerCommand {
             store: state,
             mode: RpcMode::sequencer(
                 block_producer.clone(),
-                self.external_services.validator_client()?,
+                self.external_services.validator_clients()?,
             ),
             ntx_builder: Some(self.external_services.ntx_builder_client()?),
             grpc_options: runtime.external_grpc_options,
@@ -106,9 +106,18 @@ impl SequencerCommand {
 
 #[derive(clap::Args, Clone, Debug)]
 pub struct SequencerExternalServiceOptions {
-    /// The validator service gRPC URL.
-    #[arg(long = "validator.url", env = "MIDEN_NODE_VALIDATOR_URL", value_name = "URL")]
-    pub validator_url: Url,
+    /// The validator service gRPC URLs.
+    ///
+    /// One URL per validator; repeat the argument or comma-separate the values. Transactions are
+    /// submitted to, and blocks are signed by, every validator.
+    #[arg(
+        long = "validator.url",
+        env = "MIDEN_NODE_VALIDATOR_URL",
+        value_name = "URL",
+        value_delimiter = ',',
+        required = true
+    )]
+    pub validator_urls: Vec<Url>,
 
     /// Request timeout for calls to the validator service.
     ///
@@ -129,14 +138,19 @@ pub struct SequencerExternalServiceOptions {
 }
 
 impl SequencerExternalServiceOptions {
-    fn validator_client(&self) -> anyhow::Result<ValidatorClient> {
-        Ok(Builder::new(self.validator_url.clone())
-            .with_tls()?
-            .with_timeout(self.validator_timeout)
-            .without_metadata_version()
-            .without_metadata_genesis()
-            .with_otel_context_injection()
-            .connect_lazy::<ValidatorClient>())
+    fn validator_clients(&self) -> anyhow::Result<Vec<ValidatorClient>> {
+        self.validator_urls
+            .iter()
+            .map(|url| {
+                Ok(Builder::new(url.clone())
+                    .with_tls()?
+                    .with_timeout(self.validator_timeout)
+                    .without_metadata_version()
+                    .without_metadata_genesis()
+                    .with_otel_context_injection()
+                    .connect_lazy::<ValidatorClient>())
+            })
+            .collect()
     }
 
     fn ntx_builder_client(&self) -> anyhow::Result<NtxBuilderClient> {
@@ -161,21 +175,25 @@ pub struct FullNodeCommand {
     #[command(flatten)]
     pub store: StoreOptions,
 
-    /// The validator service gRPC URL.
+    /// The validator service gRPC URLs.
+    ///
+    /// One URL per validator; repeat the argument or comma-separate the values. Transactions are
+    /// submitted to every validator.
     #[arg(
         long = "validator.url",
         env = "MIDEN_NODE_VALIDATOR_URL",
         value_name = "URL",
+        value_delimiter = ',',
         requires = "sequencer_url"
     )]
-    pub validator_url: Option<Url>,
+    pub validator_urls: Vec<Url>,
 
     /// The sequencer's internal service gRPC URL.
     #[arg(
         long = "sequencer.internal.url",
         env = "MIDEN_NODE_SEQUENCER_INTERNAL_URL",
         value_name = "URL",
-        requires = "validator_url"
+        requires = "validator_urls"
     )]
     pub sequencer_url: Option<Url>,
 }
@@ -184,7 +202,7 @@ impl FullNodeCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         let runtime = self.runtime.runtime_config(&self.store);
         let source_rpc = self.sync.source_rpc_client()?;
-        let validator_client = self.validator_client();
+        let validator_clients = self.validator_clients();
         let sequencer_client = self.sequencer_client();
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
         let state = load_state(&runtime).await?;
@@ -196,7 +214,7 @@ impl FullNodeCommand {
             mode: RpcMode::full_node(
                 source_rpc,
                 self.sync.readiness_threshold,
-                validator_client,
+                validator_clients,
                 sequencer_client,
             ),
             ntx_builder: None,
@@ -222,17 +240,25 @@ impl FullNodeCommand {
         })
     }
 
-    fn validator_client(&self) -> Option<ValidatorClient> {
-        self.validator_url.as_ref().map(|url| {
-            Builder::new(url.clone())
-                .with_tls()
-                .expect("TLS is enabled")
-                .with_timeout(Duration::from_secs(5))
-                .without_metadata_version()
-                .without_metadata_genesis()
-                .with_otel_context_injection()
-                .connect_lazy::<ValidatorClient>()
-        })
+    fn validator_clients(&self) -> Option<Vec<ValidatorClient>> {
+        if self.validator_urls.is_empty() {
+            return None;
+        }
+        let clients = self
+            .validator_urls
+            .iter()
+            .map(|url| {
+                Builder::new(url.clone())
+                    .with_tls()
+                    .expect("TLS is enabled")
+                    .with_timeout(Duration::from_secs(5))
+                    .without_metadata_version()
+                    .without_metadata_genesis()
+                    .with_otel_context_injection()
+                    .connect_lazy::<ValidatorClient>()
+            })
+            .collect();
+        Some(clients)
     }
 }
 

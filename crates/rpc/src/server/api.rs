@@ -200,11 +200,11 @@ impl RpcService {
     ///
     /// Returns the chain tip so callers can reuse it (e.g. in the response's pagination info)
     /// without issuing a second query.
-    async fn range_bounds_check(
+    fn range_bounds_check(
         &self,
         range: &RangeInclusive<BlockNumber>,
     ) -> Result<BlockNumber, Status> {
-        let chain_tip = self.store.chain_tip(Finality::Committed).await;
+        let chain_tip = self.store.chain_tip(Finality::Committed);
         if *range.end() > chain_tip {
             return Err(Status::invalid_argument(format!(
                 "block_to ({}) is greater than chain tip ({chain_tip})",

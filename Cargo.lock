@@ -3365,6 +3365,7 @@ name = "miden-node-store"
 version = "0.16.0-alpha.1"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "assert_matches",
  "build-rs",
  "criterion",

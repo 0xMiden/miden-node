@@ -120,7 +120,7 @@ impl BlockSync {
         err,
     )]
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let block_from = self.state.chain_tip(Finality::Committed).await.child().as_u32();
+        let block_from = self.state.chain_tip(Finality::Committed).child().as_u32();
         info!(target: LOG_TARGET, block_from, "Connecting to upstream RPC for blocks");
 
         let mut client = self.source_rpc.clone();
@@ -143,7 +143,7 @@ impl BlockSync {
                 .context("failed to deserialize block from upstream")?;
             self.state.apply_block(block).await?;
 
-            let local_tip = self.state.chain_tip(Finality::Committed).await;
+            let local_tip = self.state.chain_tip(Finality::Committed);
             self.readiness.update(upstream_tip, local_tip).await;
         }
     }
@@ -185,7 +185,7 @@ impl ProofSync {
 
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
         // Subscribe from next proven tip.
-        let starting_block = self.state.chain_tip(Finality::Proven).await.child();
+        let starting_block = self.state.chain_tip(Finality::Proven).child();
         info!(
             target: LOG_TARGET,
             block_from = %starting_block,

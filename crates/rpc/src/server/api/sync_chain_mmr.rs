@@ -41,9 +41,9 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         let current_client_block_height = BlockNumber::from(request.current_client_block_height);
         let sync_target = match request.finality_level() {
             proto::rpc::FinalityLevel::Committed | proto::rpc::FinalityLevel::Unspecified => {
-                self.store.chain_tip(Finality::Committed).await
+                self.store.chain_tip(Finality::Committed)
             },
-            proto::rpc::FinalityLevel::Proven => self.store.chain_tip(Finality::Proven).await,
+            proto::rpc::FinalityLevel::Proven => self.store.chain_tip(Finality::Proven),
         };
 
         if current_client_block_height > sync_target {

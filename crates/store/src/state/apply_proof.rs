@@ -32,7 +32,7 @@ impl State {
             "out-of-sequence proof: expected block {expected}, got {block_num}",
         );
 
-        let committed_tip = self.chain_tip(Finality::Committed).await;
+        let committed_tip = self.chain_tip(Finality::Committed);
         ensure!(
             block_num <= committed_tip,
             "proof for uncommitted block {block_num} exceeds committed tip {committed_tip}",

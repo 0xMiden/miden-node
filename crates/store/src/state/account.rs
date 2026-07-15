@@ -25,7 +25,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
-use tracing::Instrument;
 
 use super::State;
 use crate::COMPONENT;
@@ -156,11 +155,13 @@ impl State {
 
         let keys = assets.iter().map(miden_protocol::asset::Asset::id);
 
-        let forest = self.forest.write().await;
-
-        forest
-            .vault_key_cache
-            .put_many(keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
+        // The reverse-key caches are shared between the writer and all snapshots, so caching via
+        // the current snapshot's forest is visible everywhere.
+        self.with_forest_read_blocking(|forest| {
+            forest
+                .vault_key_cache
+                .put_many(keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
+        });
 
         Ok(AccountVaultDetails::from_assets(assets))
     }
@@ -183,10 +184,9 @@ impl State {
             .await?;
 
         if let StorageMapEntries::AllEntries(entries) = &details.entries {
-            self.forest
-                .write()
-                .await
-                .cache_storage_map_keys(entries.iter().map(|(raw_key, _)| *raw_key));
+            self.with_forest_read_blocking(|forest| {
+                forest.cache_storage_map_keys(entries.iter().map(|(raw_key, _)| *raw_key));
+            });
         }
 
         Ok(details)
@@ -225,8 +225,7 @@ impl State {
 
         // Validate block exists in the blockchain before querying the database
         {
-            let inner = self.inner.read().instrument(tracing::info_span!("acquire_inner")).await;
-            let latest_block_num = inner.latest_block_num();
+            let latest_block_num = self.snapshot().latest_block_num();
 
             if block_num > latest_block_num {
                 return Err(GetAccountError::UnknownBlock(block_num));

@@ -40,7 +40,6 @@ async fn block_producer_starts_with_store_state() {
         batch_workers: DEFAULT_BATCH_WORKERS,
     }
     .spawn(miden_node_utils::shutdown::CancellationToken::new())
-    .await
     .unwrap();
 
     let status = block_producer.api().status().await;

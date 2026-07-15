@@ -58,7 +58,7 @@ impl proto::server::rpc_api::SyncAccountStorageMaps for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let chain_tip = self.range_bounds_check(&block_range).await?;
+        let chain_tip = self.range_bounds_check(&block_range)?;
         let storage_maps_page = self
             .store
             .sync_account_storage_maps(account_id, block_range)

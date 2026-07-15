@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use miden_crypto::hash::rpo::Rpo256;
 #[cfg(feature = "rocksdb")]
 use miden_crypto::merkle::smt::ForestPersistentBackend;
-use miden_crypto::merkle::smt::{Backend, ForestInMemoryBackend};
+use miden_crypto::merkle::smt::{Backend, BackendReader, ForestInMemoryBackend};
 use miden_node_proto::domain::account::{
     AccountStorageMapDetails,
     AccountVaultDetails,
@@ -69,6 +69,9 @@ pub(crate) type AccountStateForestBackend = ForestPersistentBackend;
 #[cfg(not(feature = "rocksdb"))]
 pub(crate) type AccountStateForestBackend = ForestInMemoryBackend;
 
+/// The read-only snapshot backend for the forest, used by in-memory state snapshots.
+pub(crate) type AccountStateForestBackendReader = <AccountStateForestBackend as Backend>::Reader;
+
 const fn empty_smt_root() -> Word {
     *EmptySubtreeRoots::entry(SMT_DEPTH, 0)
 }
@@ -85,7 +88,7 @@ pub enum AccountStorageMapResult {
 }
 
 /// Container for forest-related state that needs to be updated atomically.
-pub(crate) struct AccountStateForest<B: Backend = ForestInMemoryBackend> {
+pub(crate) struct AccountStateForest<B: BackendReader = ForestInMemoryBackend> {
     /// `LargeSmtForest` for efficient account storage reconstruction. Populated during block import
     /// with storage and vault SMTs.
     forest: LargeSmtForest<B>,
@@ -124,7 +127,7 @@ impl AccountStateForest<ForestInMemoryBackend> {
     }
 }
 
-impl<B: Backend> AccountStateForest<B> {
+impl<B: BackendReader> AccountStateForest<B> {
     pub(crate) fn from_backend(backend: B) -> Result<Self, LargeSmtForestError> {
         Ok(Self {
             forest: LargeSmtForest::new(backend)?,
@@ -195,17 +198,6 @@ impl<B: Backend> AccountStateForest<B> {
             .collect()
     }
 
-    fn cache_hashed_keys_from_patch(&mut self, patch: &AccountPatch) {
-        let raw_keys = patch.storage().maps().flat_map(|(_slot_name, map_patch)| {
-            map_patch.entries().into_iter().flat_map(|e| e.as_map().keys().copied())
-        });
-        self.cache_storage_map_keys(raw_keys);
-
-        let raw_keys = patch.vault().iter().map(|(vault_key, _)| *vault_key);
-        self.vault_key_cache
-            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
-    }
-
     pub(crate) fn cache_storage_map_keys(&self, raw_keys: impl IntoIterator<Item = StorageMapKey>) {
         self.storage_map_key_cache
             .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
@@ -214,30 +206,6 @@ impl<B: Backend> AccountStateForest<B> {
     #[cfg(test)]
     fn clear_storage_map_key_cache(&self) {
         self.storage_map_key_cache.clear();
-    }
-
-    fn apply_forest_updates(
-        &mut self,
-        lineage: LineageId,
-        block_num: BlockNumber,
-        operations: Vec<SmtForestOperation>,
-    ) -> Word {
-        let updates = if operations.is_empty() {
-            SmtUpdateBatch::empty()
-        } else {
-            SmtUpdateBatch::new(operations.into_iter())
-        };
-        let version = block_num.as_u64();
-        let tree = if self.forest.latest_version(lineage).is_some() {
-            self.forest
-                .update_tree(lineage, version, updates)
-                .expect("forest update should succeed")
-        } else {
-            self.forest
-                .add_lineage(lineage, version, updates)
-                .expect("forest update should succeed")
-        };
-        tree.root()
     }
 
     fn map_forest_error(error: LargeSmtForestError) -> MerkleError {
@@ -481,6 +449,72 @@ impl<B: Backend> AccountStateForest<B> {
         )))
     }
 
+    /// Retrieves the most recent vault SMT root for an account. If no vault root is found for the
+    /// account, returns an empty SMT root.
+    pub(crate) fn get_latest_vault_root(&self, account_id: AccountId) -> Word {
+        let lineage = Self::vault_lineage_id(account_id);
+        self.forest.latest_root(lineage).unwrap_or_else(empty_smt_root)
+    }
+
+    /// Retrieves the most recent storage map SMT root for an account slot.
+    pub(crate) fn get_latest_storage_map_root(
+        &self,
+        account_id: AccountId,
+        slot_name: &StorageSlotName,
+    ) -> Word {
+        let lineage = Self::storage_lineage_id(account_id, slot_name);
+        self.forest.latest_root(lineage).unwrap_or_else(empty_smt_root)
+    }
+}
+
+impl<B: Backend> AccountStateForest<B> {
+    /// Returns a read-only snapshot of this forest backed by a reader view of the backend.
+    ///
+    /// The reverse-key caches are shallow clones sharing the same underlying storage, so cache
+    /// entries added by the writer are visible to snapshot readers and vice versa.
+    pub(crate) fn reader(&self) -> Result<AccountStateForest<B::Reader>, LargeSmtForestError> {
+        Ok(AccountStateForest {
+            forest: self.forest.reader()?,
+            storage_map_key_cache: self.storage_map_key_cache.clone(),
+            vault_key_cache: self.vault_key_cache.clone(),
+        })
+    }
+
+    fn cache_hashed_keys_from_patch(&mut self, patch: &AccountPatch) {
+        let raw_keys = patch.storage().maps().flat_map(|(_slot_name, map_patch)| {
+            map_patch.entries().into_iter().flat_map(|e| e.as_map().keys().copied())
+        });
+        self.cache_storage_map_keys(raw_keys);
+
+        let raw_keys = patch.vault().iter().map(|(vault_key, _)| *vault_key);
+        self.vault_key_cache
+            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
+    }
+
+    fn apply_forest_updates(
+        &mut self,
+        lineage: LineageId,
+        block_num: BlockNumber,
+        operations: Vec<SmtForestOperation>,
+    ) -> Word {
+        let updates = if operations.is_empty() {
+            SmtUpdateBatch::empty()
+        } else {
+            SmtUpdateBatch::new(operations.into_iter())
+        };
+        let version = block_num.as_u64();
+        let tree = if self.forest.latest_version(lineage).is_some() {
+            self.forest
+                .update_tree(lineage, version, updates)
+                .expect("forest update should succeed")
+        } else {
+            self.forest
+                .add_lineage(lineage, version, updates)
+                .expect("forest update should succeed")
+        };
+        tree.root()
+    }
+
     // PUBLIC INTERFACE
     // --------------------------------------------------------------------------------------------
 
@@ -553,13 +587,6 @@ impl<B: Backend> AccountStateForest<B> {
 
     // ASSET VAULT DELTA PROCESSING
     // --------------------------------------------------------------------------------------------
-
-    /// Retrieves the most recent vault SMT root for an account. If no vault root is found for the
-    /// account, returns an empty SMT root.
-    pub(crate) fn get_latest_vault_root(&self, account_id: AccountId) -> Word {
-        let lineage = Self::vault_lineage_id(account_id);
-        self.forest.latest_root(lineage).unwrap_or_else(empty_smt_root)
-    }
 
     /// Inserts asset vault data into the forest for the specified account. Assumes that asset vault
     /// for this account does not yet exist in the forest.
@@ -716,16 +743,6 @@ impl<B: Backend> AccountStateForest<B> {
 
     // STORAGE MAP DELTA PROCESSING
     // --------------------------------------------------------------------------------------------
-
-    /// Retrieves the most recent storage map SMT root for an account slot.
-    pub(crate) fn get_latest_storage_map_root(
-        &self,
-        account_id: AccountId,
-        slot_name: &StorageSlotName,
-    ) -> Word {
-        let lineage = Self::storage_lineage_id(account_id, slot_name);
-        self.forest.latest_root(lineage).unwrap_or_else(empty_smt_root)
-    }
 
     /// Updates the forest with storage map changes from a patch.
     ///

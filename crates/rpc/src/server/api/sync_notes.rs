@@ -47,7 +47,7 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let chain_tip = self.range_bounds_check(&block_range).await?;
+        let chain_tip = self.range_bounds_check(&block_range)?;
 
         let (results, last_block_checked) = self
             .store

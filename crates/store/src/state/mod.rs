@@ -8,7 +8,9 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use arc_swap::ArcSwap;
 use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_utils::ErrorReport;
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::formatting::format_array;
 use miden_node_utils::tracing::miden_instrument;
@@ -18,13 +20,17 @@ use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::nullifier_tree::{NullifierTree, NullifierWitness};
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, Blockchain};
 use miden_protocol::crypto::merkle::mmr::{MmrProof, PartialMmr};
-use miden_protocol::crypto::merkle::smt::{LargeSmt, SmtStorage};
+use miden_protocol::crypto::merkle::smt::LargeSmt;
 use miden_protocol::note::{NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::PartialBlockchain;
-use tokio::sync::{Mutex, RwLock, watch};
-use tracing::{Instrument, Span};
+use tokio::sync::watch;
+use tracing::Span;
 
-use crate::account_state_forest::{AccountStateForest, AccountStateForestBackend};
+use crate::account_state_forest::{
+    AccountStateForest,
+    AccountStateForestBackend,
+    AccountStateForestBackendReader,
+};
 use crate::accounts::AccountTreeWithHistory;
 use crate::blocks::BlockStore;
 use crate::db::{Db, NoteRecord, NullifierInfo};
@@ -52,6 +58,7 @@ use loader::{
     NULLIFIER_TREE_STORAGE_DIR,
     TreeStorage,
     TreeStorageLoader,
+    TreeStorageReader,
     load_mmr,
     verify_account_state_forest_consistency,
     verify_tree_consistency,
@@ -67,6 +74,8 @@ mod apply_proof;
 mod bootstrap;
 mod disk_monitor;
 mod sync_state;
+mod writer;
+use writer::{BlockWriter, WriteHandle};
 
 // FINALITY
 // ================================================================================================
@@ -98,17 +107,19 @@ type BlockInputWitnesses = (
     PartialMmr,
 );
 
-/// Container for state that needs to be updated atomically.
-struct InnerState<S>
-where
-    S: SmtStorage,
-{
-    nullifier_tree: NullifierTree<LargeSmt<S>>,
+/// Immutable snapshot of the in-memory tree state published after each committed block.
+///
+/// The trees are backed by read-only snapshot storage ([`TreeStorageReader`] /
+/// [`AccountStateForestBackendReader`]), so any number of readers can access the data concurrently
+/// without holding a lock and without blocking the writer.
+pub(crate) struct InMemoryState {
+    nullifier_tree: NullifierTree<LargeSmt<TreeStorageReader>>,
     blockchain: Blockchain,
-    account_tree: AccountTreeWithHistory<S>,
+    account_tree: AccountTreeWithHistory<TreeStorageReader>,
+    forest: AccountStateForest<AccountStateForestBackendReader>,
 }
 
-impl<S: SmtStorage> InnerState<S> {
+impl InMemoryState {
     /// Returns the latest block number.
     fn latest_block_num(&self) -> BlockNumber {
         self.blockchain
@@ -132,24 +143,22 @@ pub struct State {
     /// The block store which stores full block contents for all blocks.
     block_store: Arc<BlockStore>,
 
-    /// Read-write lock used to prevent writing to a structure while it is being used.
+    /// Atomically swappable pointer to the latest in-memory state snapshot.
     ///
-    /// The lock is writer-preferring, meaning the writer won't be starved.
-    inner: RwLock<InnerState<TreeStorage>>,
+    /// Readers load the snapshot wait-free via [`ArcSwap::load_full`]; the [`BlockWriter`] task
+    /// atomically replaces the pointer after each committed block. Readers holding an old snapshot
+    /// are unaffected by the swap.
+    in_memory: Arc<ArcSwap<InMemoryState>>,
 
-    /// Forest-related state `(SmtForest, storage_map_roots, vault_roots)` with its own lock.
-    forest: RwLock<AccountStateForest<AccountStateForestBackend>>,
-
-    /// To allow readers to access the tree data while an update in being performed, and prevent
-    /// TOCTOU issues, there must be no concurrent writers. This locks to serialize the writers.
-    writer: Mutex<()>,
+    /// Handle for sending block-write requests to the [`BlockWriter`] task.
+    write_handle: WriteHandle,
 
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,
 
     /// Watch sender fired after each block is committed. Replicas subscribe via
     /// `subscribe_committed_tip()` to be woken when new blocks arrive.
-    committed_tip_tx: watch::Sender<BlockNumber>,
+    committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
 
     /// FIFO cache of recent committed blocks for replica subscriptions. When a subscriber needs a
     /// block that has been evicted, it falls back to loading from the block store.
@@ -246,10 +255,6 @@ impl State {
         let forest = forest_backend.load_account_state_forest(&mut db, latest_block_num).await?;
         verify_account_state_forest_consistency(&forest, &mut db).await?;
 
-        let inner = RwLock::new(InnerState { nullifier_tree, blockchain, account_tree });
-
-        let forest = RwLock::new(forest);
-        let writer = Mutex::new(());
         let db = Arc::new(db);
 
         // Initialize the proven tip from the block store.
@@ -260,18 +265,53 @@ impl State {
 
         // Committed-tip watch: fires after each successful apply_block.
         let (committed_tip_tx, _rx) = watch::channel(latest_block_num);
+        let committed_tip_tx = Arc::new(committed_tip_tx);
+
+        let block_cache = BlockCache::new(BLOCK_CACHE_CAPACITY);
+        let proof_cache = ProofCache::new(PROOF_CACHE_CAPACITY);
+
+        // Create the initial snapshot from reader views of the just-loaded trees.
+        let initial_snapshot = Arc::new(InMemoryState {
+            nullifier_tree: nullifier_tree
+                .reader()
+                .map_err(|e| StateInitializationError::NullifierTreeIoError(e.as_report()))?,
+            account_tree: account_tree.reader(),
+            forest: forest
+                .reader()
+                .map_err(|e| StateInitializationError::AccountStateForestIoError(e.as_report()))?,
+            blockchain: blockchain.clone(),
+        });
+        let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
+
+        // Spawn the block writer task. It owns the writable trees and processes write requests
+        // serially, publishing a new snapshot after each committed block. The task exits when all
+        // write handles are dropped.
+        let (write_tx, write_rx) = tokio::sync::mpsc::channel(1);
+        let write_handle = WriteHandle::new(write_tx);
+        let block_writer = BlockWriter {
+            db: Arc::clone(&db),
+            block_store: Arc::clone(&block_store),
+            in_memory: Arc::clone(&in_memory),
+            committed_tip_tx: Arc::clone(&committed_tip_tx),
+            block_cache: block_cache.clone(),
+            rx: write_rx,
+            nullifier_tree,
+            account_tree,
+            blockchain,
+            forest,
+        };
+        tokio::spawn(block_writer.run());
 
         Ok(Self {
             data_directory: data_path.to_path_buf(),
             db,
             block_store,
-            inner,
-            forest,
-            writer,
+            in_memory,
+            write_handle,
             proven_tip,
             committed_tip_tx,
-            block_cache: BlockCache::new(BLOCK_CACHE_CAPACITY),
-            proof_cache: ProofCache::new(PROOF_CACHE_CAPACITY),
+            block_cache,
+            proof_cache,
         })
     }
 
@@ -293,69 +333,42 @@ impl State {
         self.proven_tip.subscribe()
     }
 
-    // HELPER FUNCTIONS TO AVOID BLOCKING CALLS IN ASYNC CONTEXT
+    // SNAPSHOT HELPERS
     // --------------------------------------------------------------------------------------------
 
-    /// Runs a synchronous read-only operation over the inner state on Tokio's blocking path.
+    /// Returns the current in-memory state snapshot (wait-free, no lock required).
+    ///
+    /// The returned snapshot is a frozen view: it is unaffected if the writer publishes a new
+    /// snapshot while it is held.
+    fn snapshot(&self) -> Arc<InMemoryState> {
+        self.in_memory.load_full()
+    }
+
+    /// Runs a synchronous read-only operation over the current in-memory state snapshot on Tokio's
+    /// blocking path.
     ///
     /// The account and nullifier trees may be backed by `RocksDB`, so tree access must not run on
     /// an async worker thread directly. This helper preserves the current tracing span while
-    /// moving the blocking lock acquisition and closure body into `block_in_place`.
-    fn with_inner_read_blocking<R>(&self, f: impl FnOnce(&InnerState<TreeStorage>) -> R) -> R {
+    /// moving the closure body into `block_in_place`.
+    fn with_inner_read_blocking<R>(&self, f: impl FnOnce(&InMemoryState) -> R) -> R {
         let span = Span::current();
         tokio::task::block_in_place(|| {
             span.in_scope(|| {
-                let inner = self.inner.blocking_read();
-                f(&inner)
+                let snapshot = self.snapshot();
+                f(&snapshot)
             })
         })
     }
 
-    /// Runs a synchronous mutable operation over the inner state on Tokio's blocking path.
+    /// Runs a synchronous read-only operation over the account state forest snapshot on Tokio's
+    /// blocking path.
     ///
     /// See [`Self::with_inner_read_blocking`] for why this uses `block_in_place`.
-    fn with_inner_write_blocking<R>(&self, f: impl FnOnce(&mut InnerState<TreeStorage>) -> R) -> R {
-        let span = Span::current();
-        tokio::task::block_in_place(|| {
-            span.in_scope(|| {
-                let mut inner = self.inner.blocking_write();
-                f(&mut inner)
-            })
-        })
-    }
-
-    /// Runs a synchronous read-only operation over the account state forest on Tokio's blocking
-    /// path.
-    ///
-    /// The forest may be backed by `RocksDB`, so accesses to the underlying `LargeSmtForest` must
-    /// not run directly on an async worker thread.
     fn with_forest_read_blocking<R>(
         &self,
-        f: impl FnOnce(&AccountStateForest<AccountStateForestBackend>) -> R,
+        f: impl FnOnce(&AccountStateForest<AccountStateForestBackendReader>) -> R,
     ) -> R {
-        let span = Span::current();
-        tokio::task::block_in_place(|| {
-            span.in_scope(|| {
-                let forest = self.forest.blocking_read();
-                f(&forest)
-            })
-        })
-    }
-
-    /// Runs a synchronous mutable operation over the account state forest on Tokio's blocking path.
-    ///
-    /// See [`Self::with_forest_read_blocking`] for why this uses `block_in_place`.
-    fn with_forest_write_blocking<R>(
-        &self,
-        f: impl FnOnce(&mut AccountStateForest<AccountStateForestBackend>) -> R,
-    ) -> R {
-        let span = Span::current();
-        tokio::task::block_in_place(|| {
-            span.in_scope(|| {
-                let mut forest = self.forest.blocking_write();
-                f(&mut forest)
-            })
-        })
+        self.with_inner_read_blocking(|snapshot| f(&snapshot.forest))
     }
 
     // STATE ACCESSORS
@@ -379,8 +392,7 @@ impl State {
         let block_header = self.db.select_block_header_by_block_num(block_num).await?;
         if let Some(header) = block_header {
             let mmr_proof = if include_mmr_proof {
-                let inner = self.inner.read().await;
-                let mmr_proof = inner.blockchain.open(header.block_num())?;
+                let mmr_proof = self.snapshot().blockchain.open(header.block_num())?;
                 Some(mmr_proof)
             } else {
                 None
@@ -447,12 +459,10 @@ impl State {
         let mut blocks: BTreeSet<BlockNumber> = tx_reference_blocks;
         blocks.extend(note_blocks);
 
-        // Scoped block to automatically drop the read lock guard as soon as we're done. We also
-        // avoid accessing the db in the block as this would delay dropping the guard.
         let (batch_reference_block, partial_mmr) = {
-            let inner_state = self.inner.read().await;
+            let snapshot = self.snapshot();
 
-            let latest_block_num = inner_state.latest_block_num();
+            let latest_block_num = snapshot.latest_block_num();
 
             let highest_block_num =
                 *blocks.last().expect("we should have checked for empty block references");
@@ -475,7 +485,7 @@ impl State {
             //   number *and* latest block num was removed from the set. Therefore only block
             //   numbers smaller than latest block num remain in the set. Therefore all the block
             //   numbers are guaranteed to exist in the chain state at latest block num.
-            let partial_mmr = inner_state
+            let partial_mmr = snapshot
                 .blockchain
                 .partial_mmr_from_blocks(&blocks, latest_block_num)
                 .expect("latest block num should exist and all blocks in set should be < than latest block");
@@ -722,17 +732,13 @@ impl State {
 
     /// Returns the effective chain tip for the given finality level.
     ///
-    /// - [`Finality::Committed`]: returns the latest committed block number (from in-memory MMR).
+    /// - [`Finality::Committed`]: returns the latest committed block number (from the in-memory
+    ///   snapshot).
     /// - [`Finality::Proven`]: returns the latest proven-in-sequence block number (cached via watch
     ///   channel, updated by the proof scheduler).
-    pub async fn chain_tip(&self, finality: Finality) -> BlockNumber {
+    pub fn chain_tip(&self, finality: Finality) -> BlockNumber {
         match finality {
-            Finality::Committed => self
-                .inner
-                .read()
-                .instrument(tracing::info_span!("acquire_inner"))
-                .await
-                .latest_block_num(),
+            Finality::Committed => self.snapshot().latest_block_num(),
             Finality::Proven => self.proven_tip.read(),
         }
     }
@@ -743,7 +749,7 @@ impl State {
         &self,
         block_num: BlockNumber,
     ) -> Result<Option<Vec<u8>>, DatabaseError> {
-        if block_num > self.chain_tip(Finality::Committed).await {
+        if block_num > self.chain_tip(Finality::Committed) {
             return Ok(None);
         }
         if let Some(block) = self.block_cache.get(block_num) {
@@ -758,7 +764,7 @@ impl State {
         &self,
         block_num: BlockNumber,
     ) -> Result<Option<Vec<u8>>, DatabaseError> {
-        if block_num > self.chain_tip(Finality::Proven).await {
+        if block_num > self.chain_tip(Finality::Proven) {
             return Ok(None);
         }
         if let Some(proof) = self.proof_cache.get(block_num) {

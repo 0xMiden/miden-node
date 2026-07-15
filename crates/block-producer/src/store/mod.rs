@@ -206,7 +206,7 @@ pub async fn get_tx_inputs(
         return Err(StoreError::DuplicateAccountIdPrefix(proven_tx.account_id()));
     }
 
-    let current_block_height = state.chain_tip(Finality::Committed).await;
+    let current_block_height = state.chain_tip(Finality::Committed);
     let tx_inputs = TransactionInputs::from_store_inputs(
         proven_tx.account_id(),
         store_inputs,

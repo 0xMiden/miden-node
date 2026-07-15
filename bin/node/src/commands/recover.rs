@@ -81,7 +81,7 @@ async fn recover_from_validator(
             .chain_tip,
     );
 
-    let local_tip = state.chain_tip(Finality::Committed).await;
+    let local_tip = state.chain_tip(Finality::Committed);
     if local_tip >= validator_tip {
         info!(
             target: LOG_TARGET,
@@ -121,7 +121,7 @@ async fn recover_from_validator(
     }
 
     // The stream can end before reaching the tip if the validator restarts or drops the connection.
-    let final_tip = state.chain_tip(Finality::Committed).await;
+    let final_tip = state.chain_tip(Finality::Committed);
     anyhow::ensure!(
         final_tip >= validator_tip,
         "validator block stream ended at block {} before reaching the chain tip {}",

@@ -73,7 +73,6 @@ impl SequencerCommand {
             batch_workers: self.block_producer.batch.workers,
         }
         .spawn(shutdown.clone())
-        .await
         .context("failed to spawn sequencer")?;
         let block_producer = sequencer.api();
 

@@ -102,12 +102,12 @@ pub struct Sequencer {
 
 impl Sequencer {
     /// Spawns the sequencer tasks and returns its in-process API.
-    pub async fn spawn(self, shutdown: CancellationToken) -> Result<SequencerHandle> {
+    pub fn spawn(self, shutdown: CancellationToken) -> Result<SequencerHandle> {
         tracing::info!(target: LOG_TARGET, "Initializing sequencer");
         let store = self.store;
         let validator =
             BlockProducerValidatorClient::new(self.validator_url.clone(), self.validator_timeout)?;
-        let chain_tip = store.chain_tip(Finality::Committed).await;
+        let chain_tip = store.chain_tip(Finality::Committed);
 
         tracing::info!(target: LOG_TARGET, "Sequencer initialized");
 
@@ -174,7 +174,7 @@ impl Sequencer {
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
     /// encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        self.spawn(CancellationToken::new()).await?.wait().await
+        self.spawn(CancellationToken::new())?.wait().await
     }
 }
 

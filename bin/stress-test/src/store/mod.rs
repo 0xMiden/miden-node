@@ -232,7 +232,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
     let store_state = start_store(data_directory).await;
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).await.as_u32();
+    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
 
     // each request will have `ACCOUNTS_PER_SYNC_NOTES` note tags and will be sent with block number
     // 0.
@@ -304,7 +304,7 @@ pub async fn bench_sync_nullifiers(
         .collect();
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).await.as_u32();
+    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
 
     // Get all nullifier prefixes from the store using sync_notes
     let mut nullifier_prefixes: Vec<u32> = vec![];
@@ -438,7 +438,7 @@ pub async fn bench_sync_transactions(
     let store_state = start_store(data_directory).await;
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).await.as_u32();
+    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
 
     // each request will have `accounts_per_request` account ids and will query a range of blocks
     let request = |_| {
@@ -516,7 +516,7 @@ pub async fn sync_transactions(
         .sync_transactions(account_ids, BlockNumber::from(block_from)..=BlockNumber::from(block_to))
         .await
         .unwrap();
-    let chain_tip = state.chain_tip(Finality::Committed).await;
+    let chain_tip = state.chain_tip(Finality::Committed);
     let response = proto::rpc::SyncTransactionsResponse {
         pagination_info: Some(proto::rpc::PaginationInfo {
             chain_tip: chain_tip.as_u32(),
@@ -599,7 +599,7 @@ async fn sync_transactions_paginated(
 pub async fn bench_sync_chain_mmr(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     let store_state = start_store(data_directory).await;
 
-    let chain_tip = store_state.chain_tip(Finality::Committed).await.as_u32();
+    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
 
     let request = |_| {
         let state = Arc::clone(&store_state);
@@ -628,7 +628,7 @@ pub async fn bench_sync_chain_mmr(data_directory: PathBuf, iterations: usize, co
 /// - the response.
 async fn sync_chain_mmr(state: &Arc<State>, current_client_block_height: u32) -> SyncChainMmrRun {
     let start = Instant::now();
-    let chain_tip = state.chain_tip(Finality::Committed).await;
+    let chain_tip = state.chain_tip(Finality::Committed);
     state
         .sync_chain_mmr(BlockNumber::from(current_client_block_height)..=chain_tip)
         .await

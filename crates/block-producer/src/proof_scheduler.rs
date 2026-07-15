@@ -119,7 +119,7 @@ pub(crate) async fn run(
 
     // Next block number to schedule. Initialized from the proven tip's child so we skip
     // already-proven blocks on restart.
-    let mut next_to_prove = state.chain_tip(Finality::Proven).await.child();
+    let mut next_to_prove = state.chain_tip(Finality::Proven).child();
 
     // Completed proofs waiting to be committed in order.
     let mut pending: BTreeMap<BlockNumber, Vec<u8>> = BTreeMap::new();
@@ -145,7 +145,7 @@ pub(crate) async fn run(
 
                 // Drain completed proofs in ascending order so the proven tip advances without
                 // gaps.
-                let mut next = state.chain_tip(Finality::Proven).await.child();
+                let mut next = state.chain_tip(Finality::Proven).child();
                 while let Some(proof_bytes) = pending.remove(&next) {
                     state.apply_proof(next, proof_bytes).await?;
                     next = next.child();

@@ -116,6 +116,10 @@ pub(crate) struct PreparedAccountStateForestBlockUpdate<B: Backend = ForestInMem
     account_patches: Vec<AccountPatch>,
 }
 
+/// Forest lineages updated by each account patch in a prepared block update.
+///
+/// This mapping associates roots from the forest mutation set with account vaults and named
+/// storage-map slots when building the precomputed state passed to SQLite.
 #[derive(Default)]
 struct AccountUpdateForestLineages {
     vault: BTreeMap<AccountId, LineageId>,
@@ -250,6 +254,15 @@ impl<B: Backend> AccountStateForest<B> {
             .collect()
     }
 
+    /// Adds the vault operations from `patch` to a prepared forest update batch.
+    ///
+    /// Full-state patches always create a vault lineage, including for an empty vault. Partial
+    /// patches with no vault changes are skipped. Updated lineages are recorded so their computed
+    /// roots can later be associated with the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a full-state patch targets an existing vault lineage.
     fn add_vault_updates(
         &self,
         batch: &mut SmtForestUpdateBatch,
@@ -275,6 +288,14 @@ impl<B: Backend> AccountStateForest<B> {
         Ok(())
     }
 
+    /// Adds storage-map lineage creation operations for a full-state account patch.
+    ///
+    /// Empty-word entries are omitted from the new map state. Every map lineage is recorded,
+    /// including empty maps, so its computed root can be passed to SQLite.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any storage-map lineage for the account already exists.
     fn add_full_state_storage_updates(
         &self,
         batch: &mut SmtForestUpdateBatch,
@@ -316,6 +337,16 @@ impl<B: Backend> AccountStateForest<B> {
         Ok(())
     }
 
+    /// Adds storage-map operations from a partial account patch to a prepared update batch.
+    ///
+    /// Updates are applied incrementally. A `Create` replaces an existing lineage by first removing
+    /// its current leaves, while a `Remove` only removes the slot from the account storage header and
+    /// leaves its forest lineage available for historical queries. No-op updates are skipped, but an
+    /// empty `Create` still creates a lineage and records its root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the current lineage while preparing a replacement fails.
     fn add_partial_storage_updates(
         &self,
         batch: &mut SmtForestUpdateBatch,
@@ -368,6 +399,15 @@ impl<B: Backend> AccountStateForest<B> {
         Ok(())
     }
 
+    /// Builds the forest update batch and lineage lookup for a collection of account patches.
+    ///
+    /// This method does not mutate the forest. The returned lineage lookup identifies the vault and
+    /// storage-map roots that must be extracted after the batch mutations are computed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a full-state patch targets an existing lineage or a partial storage-map
+    /// replacement cannot be prepared.
     fn prepare_block_update_batch(
         &self,
         account_patches: &[AccountPatch],
@@ -388,6 +428,15 @@ impl<B: Backend> AccountStateForest<B> {
         Ok((batch, lineages))
     }
 
+    /// Associates roots from a computed forest mutation set with their public accounts.
+    ///
+    /// Each result contains the account's final vault root and roots only for storage maps mutated
+    /// by the corresponding patch. An unchanged vault uses its current forest root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the mutation set is missing a root for a lineage recorded while building
+    /// the update batch.
     fn precomputed_account_states_from_mutations<B2: Backend>(
         &self,
         account_patches: &[AccountPatch],
@@ -724,6 +773,14 @@ impl<B: Backend> AccountStateForest<B> {
         })
     }
 
+    /// Applies a snapshot-bound forest mutation set and updates the raw-key caches.
+    ///
+    /// Cache entries are added only after the forest mutation succeeds. This helper does not prune
+    /// forest history; callers that apply canonical blocks are responsible for pruning afterward.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the forest rejects or cannot persist the prepared mutation set.
     fn apply_precomputed_update(
         &mut self,
         block_num: BlockNumber,
@@ -792,6 +849,9 @@ impl<B: Backend> AccountStateForest<B> {
     ///
     /// Callers must ensure that every patch belongs to an account that is not already present in the
     /// forest. Rebuild pages may share a version because their account lineages are disjoint.
+    ///
+    /// Currently used from the loader where we're loading account states from SQLite to the account
+    /// state forest.
     pub(crate) fn apply_rebuild_updates(
         &mut self,
         block_num: BlockNumber,

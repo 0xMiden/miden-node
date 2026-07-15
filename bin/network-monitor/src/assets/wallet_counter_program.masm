@@ -1,9 +1,9 @@
-# Wallet self-counter component for the network monitor.
+# Wallet self-counter + note-creation component for the network monitor.
 #
-# The wallet increments this counter in the same transaction that emits an increment note to the
-# counter account, so the slot is an on-chain, atomically-committed count of *committed* increment
-# requests (the authoritative `expected` value). Unlike the counter contract, no note-sender
-# authorization is needed: the wallet increments its own storage from its own (signed) transaction.
+# A single account procedure atomically (a) creates the increment network note and (b) bumps the
+# wallet's own counter slot. Because both effects happen in one account procedure, a transaction can
+# never do one without the other, so the emitted note and the authoritative `expected` counter can
+# never diverge.
 #
 # Storage layout:
 # - COUNTER_SLOT: counter value (u64)
@@ -11,24 +11,35 @@
 use miden::core::sys
 use miden::protocol::active_account
 use miden::protocol::native_account
+use miden::protocol::output_note
 
 const COUNTER_SLOT = word("miden::monitor::wallet_contract::counter")
 
-# Increment the wallet's own counter slot.
-# => []
+# Create the increment network note and bump the wallet's own counter slot, atomically.
+#
+# Inputs:  [tag, note_type, RECIPIENT, pad(10)]
+# Outputs: [note_idx, pad(15)]
+#
+# Invocation: call
 @account_procedure
-pub proc increment
+pub proc increment_and_create_note
+    # Create the output note. `output_note::create` is only callable from the account context, so it
+    # must run here inside an account procedure.
+    exec.output_note::create
+    # => [note_idx, pad(15)]
+
+    # Bump the wallet's own counter slot. These ops are self-contained and leave note_idx on top.
     push.COUNTER_SLOT[0..2] exec.active_account::get_item
-    # => [count, 0, 0, 0]
+    # => [count, 0, 0, 0, note_idx, pad(...)]
 
     push.1 add
-    # => [count+1, 0, 0, 0]
+    # => [count+1, 0, 0, 0, note_idx, pad(...)]
 
     push.COUNTER_SLOT[0..2] exec.native_account::set_item
-    # => [OLD_VALUE]
+    # => [OLD_VALUE, note_idx, pad(...)]
 
     dropw
-    # => []
+    # => [note_idx, pad(15)]
 end
 
 # Read the wallet's own counter slot (no auth required).

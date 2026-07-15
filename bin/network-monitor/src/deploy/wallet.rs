@@ -18,7 +18,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_standards::account::auth::{Approver, AuthSingleSig};
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -78,8 +77,8 @@ pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
     .into();
     let init_seed: [u8; 32] = rng.random();
 
-    // The wallet carries its own counter component so it can increment a storage slot in the same
-    // transaction that emits the increment note. See `WALLET_COUNTER_SLOT_NAME`.
+    // The wallet carries a single custom component that both bumps its counter slot and creates the
+    // increment note in one account procedure (see `wallet_counter_program.masm`).
     let component_code = wallet_counter_component_code()?;
 
     let counter_slot = StorageSlot::with_value(WALLET_COUNTER_SLOT_NAME.clone(), Word::empty());
@@ -89,7 +88,6 @@ pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::Public)
         .with_auth_component(auth_component)
-        .with_component(BasicWallet)
         .with_component(counter_component)
         .build()
         .context("failed to build wallet account")?;

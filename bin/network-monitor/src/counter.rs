@@ -1114,14 +1114,14 @@ pub(crate) fn create_increment_script() -> Result<NoteScript> {
 
 /// Build the transaction script for one increment.
 ///
-/// The script does two things atomically in the wallet's transaction:
-/// 1. `call`s the wallet's own `increment` procedure, bumping the wallet's on-chain counter slot
-/// 2. Emits the network note that targets the counter account (the `observed` value).
+/// The whole transaction is a single `call` into the wallet's `increment_and_create_note` account
+/// procedure, which atomically (1) creates the network note targeting the counter account (the
+/// `observed` value) and (2) bumps the wallet's own on-chain counter slot (the authoritative
+/// `expected` value).
 ///
-/// The note-emission section mirrors `miden_standards`' `build_send_notes_script` for an
-/// asset-less note with attachments; it is not reused directly because that builder produces a
-/// complete, non-composable script. Keep it in sync with `miden-standards` on version bumps; the
-/// `wallet_self_increment_tx` test exercises it end-to-end.
+/// The note attachments (the `NetworkAccountTarget`) are added afterwards with
+/// `output_note::add_attachment`, which is not account-restricted, mirroring `miden_standards`'
+/// `SendNotesTransactionScript`. The `wallet_self_increment_tx` test exercises this end-to-end.
 fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> {
     let wallet_component = crate::deploy::wallet::wallet_counter_component_code()
         .context("failed to compile wallet counter component code")?;
@@ -1131,6 +1131,17 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
     let note_type = Felt::from(partial.metadata().note_type());
     let tag = Felt::from(partial.metadata().tag());
 
+    // The wallet's own account procedure creates the note *and* bumps the counter atomically, so
+    // the whole transaction is a single `call` into the wallet component.
+    // `increment_and_create_note` shares `create_note`'s stack contract: it consumes `[tag,
+    // note_type, RECIPIENT, pad(10)]` and returns `[note_idx, pad(15)]`. We build the padded input
+    // explicitly and reduce the trailing pads back to `[note_idx]`, otherwise the extra pads
+    // survive on the overflow stack and `main` returns with the wrong depth ("stack depth must be
+    // 16, but was 21").
+    let increment_and_create_note = format!(
+        "::{}::increment_and_create_note",
+        crate::deploy::wallet::WALLET_COUNTER_COMPONENT_PATH
+    );
     let mut note_section = format!(
         "
         padw padw push.0.0
@@ -1138,7 +1149,7 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
         push.{note_type}
         push.{tag}
         # => [tag, note_type, RECIPIENT, pad(10)]
-        call.::miden::standards::note::note_creator::create_note
+        call.{increment_and_create_note}
         # => [note_idx, pad(15)]
         movdn.15 dropw dropw dropw drop drop drop
         # => [note_idx]
@@ -1164,15 +1175,9 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
     }
     note_section.push_str("        drop\n");
 
-    // Absolute path to the wallet's registered `increment` account procedure (e.g.
-    // `::wallet::program::increment`), matching the component path the account was built under.
-    let increment_path =
-        format!("::{}::increment", crate::deploy::wallet::WALLET_COUNTER_COMPONENT_PATH);
-
     let script_src = format!(
         "@transaction_script
         pub proc main
-            call.{increment_path}
 {note_section}
         end"
     );

@@ -6,6 +6,7 @@
 //! wait-free readers.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
@@ -26,7 +27,7 @@ use crate::blocks::BlockStore;
 use crate::db::{Db, NoteRecord};
 use crate::errors::{ApplyBlockError, InvalidBlockError};
 use crate::state::loader::TreeStorage;
-use crate::state::{BlockCache, BlockNotification, InMemoryState, State};
+use crate::state::{BlockCache, BlockNotification, InMemoryState, SnapshotGuard, State};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
 // WRITE REQUEST
@@ -105,6 +106,8 @@ pub(super) struct BlockWriter {
     pub blockchain: Blockchain,
     /// The mutable account state forest owned by this writer.
     pub forest: AccountStateForest<AccountStateForestBackend>,
+    /// Shared counter of live snapshot generations, for observability.
+    pub snapshots_live: Arc<AtomicUsize>,
 }
 
 impl BlockWriter {
@@ -212,12 +215,15 @@ impl BlockWriter {
                 account_tree: self.account_tree.reader(),
                 blockchain: self.blockchain.clone(),
                 forest: self.forest.reader().expect("forest snapshot creation should not fail"),
+                _guard: SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
             })
         });
 
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
         // see the updated state. Readers holding the old snapshot continue unaffected.
         self.in_memory.store(snapshot);
+        let snapshots_live = self.snapshots_live.load(Ordering::Relaxed) as u64;
+        miden_span_record!(snapshots.live = snapshots_live);
 
         // Push to cache and notify replica subscribers.
         self.block_cache

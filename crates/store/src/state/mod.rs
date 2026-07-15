@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 
 use arc_swap::ArcSwap;
 use miden_node_proto::domain::batch::BatchInputs;
@@ -107,6 +109,44 @@ type BlockInputWitnesses = (
     PartialMmr,
 );
 
+/// RAII member of [`InMemoryState`] that tracks the number of live snapshot generations.
+///
+/// [`InMemoryState`] is dropped exactly when the last [`Arc`] reference to it is released, so the
+/// shared counter reports how many distinct snapshot generations are currently pinned by readers.
+/// A sustained count above 1-2 means slow readers are holding old generations alive, which also
+/// pins the corresponding `RocksDB` snapshots and blocks compaction.
+pub(crate) struct SnapshotGuard {
+    live: Arc<AtomicUsize>,
+    created_at: Instant,
+    block_num: BlockNumber,
+}
+
+impl SnapshotGuard {
+    pub(super) fn new(live: Arc<AtomicUsize>, block_num: BlockNumber) -> Self {
+        live.fetch_add(1, Ordering::Relaxed);
+        Self {
+            live,
+            created_at: Instant::now(),
+            block_num,
+        }
+    }
+}
+
+impl Drop for SnapshotGuard {
+    fn drop(&mut self) {
+        let remaining = self.live.fetch_sub(1, Ordering::Relaxed) - 1;
+        let lifetime_ms = u64::try_from(self.created_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let block_num = self.block_num.as_u32();
+        tracing::debug!(
+            target: COMPONENT,
+            block_num,
+            snapshot.lifetime_ms = lifetime_ms,
+            snapshots.live = remaining,
+            "state snapshot released",
+        );
+    }
+}
+
 /// Immutable snapshot of the in-memory tree state published after each committed block.
 ///
 /// The trees are backed by read-only snapshot storage ([`TreeStorageReader`] /
@@ -117,6 +157,8 @@ pub(crate) struct InMemoryState {
     blockchain: Blockchain,
     account_tree: AccountTreeWithHistory<TreeStorageReader>,
     forest: AccountStateForest<AccountStateForestBackendReader>,
+    /// Keeps the live-snapshot count accurate; see [`SnapshotGuard`].
+    _guard: SnapshotGuard,
 }
 
 impl InMemoryState {
@@ -270,6 +312,9 @@ impl State {
         let block_cache = BlockCache::new(BLOCK_CACHE_CAPACITY);
         let proof_cache = ProofCache::new(PROOF_CACHE_CAPACITY);
 
+        // Shared counter of live snapshot generations, for observability.
+        let snapshots_live = Arc::new(AtomicUsize::new(0));
+
         // Create the initial snapshot from reader views of the just-loaded trees.
         let initial_snapshot = Arc::new(InMemoryState {
             nullifier_tree: nullifier_tree
@@ -280,6 +325,7 @@ impl State {
                 .reader()
                 .map_err(|e| StateInitializationError::AccountStateForestIoError(e.as_report()))?,
             blockchain: blockchain.clone(),
+            _guard: SnapshotGuard::new(Arc::clone(&snapshots_live), latest_block_num),
         });
         let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
 
@@ -299,6 +345,7 @@ impl State {
             account_tree,
             blockchain,
             forest,
+            snapshots_live,
         };
         tokio::spawn(block_writer.run());
 

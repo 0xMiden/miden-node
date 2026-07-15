@@ -984,14 +984,18 @@ pub(crate) fn insert_account_vault_asset(
     })
 }
 
-/// Insert an account storage map value into the DB using the given [`SqliteConnection`].
+/// Inserts a versioned account storage-map value using the given [`SqliteConnection`].
 ///
-/// Sets `is_latest=true` for the new row and updates any existing
-/// row with the same `(account_id, slot_index, key)` tuple to `is_latest=false`.
+/// The new row is marked as latest, and any previous latest row for the same
+/// `(account_id, slot_name, key)` tuple is invalidated first.
 ///
 /// # Returns
 ///
-/// The number of affected rows.
+/// The total number of inserted and invalidated rows.
+///
+/// # Errors
+///
+/// Returns an error if the previous row cannot be invalidated or the new row cannot be inserted.
 pub(crate) fn insert_account_storage_map_value(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -1003,6 +1007,18 @@ pub(crate) fn insert_account_storage_map_value(
     insert_account_storage_map_value_inner(conn, account_id, block_num, slot_name, key, value, true)
 }
 
+/// Inserts a versioned account storage-map value with optional previous-row invalidation.
+///
+/// `invalidate_previous` may be disabled when inserting state for a new account, for which no
+/// previous latest row can exist. The inserted row is always marked as latest.
+///
+/// # Returns
+///
+/// The total number of inserted and invalidated rows.
+///
+/// # Errors
+///
+/// Returns an error if the requested invalidation or insertion fails.
 fn insert_account_storage_map_value_inner(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -1091,6 +1107,18 @@ fn prepare_full_account_update(
     Ok((AccountStateForInsert::FullAccount(account), storage, assets))
 }
 
+/// Prepares a full public-account insertion using roots computed by the account-state forest.
+///
+/// This avoids reconstructing the account's vault and storage maps in SQLite. The returned state
+/// contains the account-row fields, while storage-map entries and vault assets are returned
+/// separately for insertion after the account row has satisfied their foreign-key dependency.
+/// Empty-word map entries and assets are omitted from the pending inserts.
+///
+/// # Errors
+///
+/// Returns an error if the full-state patch is missing its code or nonce, a required precomputed
+/// storage root is absent, an asset is invalid, or the reconstructed account header does not match
+/// the update's final state commitment.
 fn prepare_precomputed_full_account_update(
     update: &BlockAccountUpdate,
     patch: &AccountPatch,
@@ -1168,7 +1196,17 @@ fn prepare_precomputed_full_account_update(
     Ok((AccountStateForInsert::PrecomputedFullState(state), storage, assets))
 }
 
-/// Prepare partial patch data for account upserts and follow-up storage and vault inserts.
+/// Prepares a partial public-account update using the latest row and precomputed forest roots.
+///
+/// Unchanged header fields are carried forward from `existing`. The returned partial state is used
+/// for the next account row, while storage-map values and vault asset updates are returned
+/// separately for insertion after that row. Empty vault values are represented as removals.
+///
+/// # Errors
+///
+/// Returns an error if the existing row is invalid, a required precomputed storage root is absent,
+/// a patched asset is invalid, or the reconstructed account header does not match the update's
+/// final state commitment.
 fn prepare_partial_account_update(
     update: &BlockAccountUpdate,
     account_id: AccountId,

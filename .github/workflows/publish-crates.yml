@@ -27,7 +27,7 @@ jobs:
     name: Cargo publish release
     runs-on: warp-ubuntu-latest-x64-8x
     if: ${{ github.repository_owner == '0xMiden' }}
-    environment: publish-crates
+    environment: release
     steps:
       - name: Validate release tag
         run: |

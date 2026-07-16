@@ -35,10 +35,14 @@ impl grpc::server::ntx_builder_api::GetNetworkNoteStatus for NtxBuilderRpcServer
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        let row = self.db.get_note_status(note_id).await.map_err(|err| {
-            tracing::error!(target: LOG_TARGET, error = %err, "Failed to query note status from DB");
-            tonic::Status::internal("database error")
-        })?;
+        let row = self
+            .db
+            .read("get_note_status", move |tx| crate::db::queries::get_note_status(tx, note_id))
+            .await
+            .map_err(|err| {
+                tracing::error!(target: LOG_TARGET, error = %err, "Failed to query note status from DB");
+                tonic::Status::internal("database error")
+            })?;
 
         let Some(row) = row else {
             return Err(tonic::Status::not_found("note not found in ntx-builder database"));

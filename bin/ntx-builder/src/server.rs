@@ -1,4 +1,5 @@
 use anyhow::Context;
+use miden_node_db::sqlite::Database;
 use miden_node_proto::server::ntx_builder_api;
 use miden_node_proto_build::ntx_builder_api_descriptor;
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
@@ -10,7 +11,6 @@ use tonic_reflection::server;
 use tower_http::trace::TraceLayer;
 
 use crate::COMPONENT;
-use crate::db::Db;
 
 mod get_network_note_status;
 
@@ -22,12 +22,12 @@ mod get_network_note_status;
 /// Exposes endpoints for querying network note status, useful for debugging
 /// network notes that fail to be consumed.
 pub struct NtxBuilderRpcServer {
-    db: Db,
+    db: Database,
     max_note_attempts: usize,
 }
 
 impl NtxBuilderRpcServer {
-    pub fn new(db: Db, max_note_attempts: usize) -> Self {
+    pub fn new(db: Database, max_note_attempts: usize) -> Self {
         Self { db, max_note_attempts }
     }
 

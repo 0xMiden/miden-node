@@ -21,10 +21,8 @@ doctest = false
 anyhow                 = { workspace = true }
 backon                 = { workspace = true }
 clap                   = { features = ["env", "string"], workspace = true }
-diesel                 = { features = ["numeric", "sqlite"], workspace = true }
 futures                = { workspace = true }
 humantime              = { workspace = true }
-libsqlite3-sys         = { workspace = true }
 miden-node-db          = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }

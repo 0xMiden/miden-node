@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use backon::ExponentialBuilder;
+use miden_node_db::sqlite::Database;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::retry::{self, Retryable};
@@ -56,7 +57,7 @@ use tracing::Instrument;
 
 use crate::actor::candidate::TransactionCandidate;
 use crate::clients::{RemoteTransactionProver, RpcClient, RpcError};
-use crate::db::Db;
+use crate::db::queries;
 use crate::{COMPONENT, LOG_TARGET};
 
 #[derive(Debug, thiserror::Error)]
@@ -167,7 +168,7 @@ pub struct NtxContext {
     script_cache: LruCache<Word, NoteScript>,
 
     /// Local database for persistent note script caching.
-    db: Db,
+    db: Database,
 
     /// Maximum number of VM execution cycles for network transactions.
     max_cycles: u32,
@@ -190,7 +191,7 @@ impl NtxContext {
         prover: RemoteTransactionProver,
         rpc: RpcClient,
         script_cache: LruCache<Word, NoteScript>,
-        db: Db,
+        db: Database,
         max_cycles: u32,
         tx_args: TransactionArgs,
         request_backoff_initial: Duration,
@@ -575,7 +576,7 @@ struct NtxDataStore {
     /// LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
     script_cache: LruCache<Word, NoteScript>,
     /// Local database for persistent note script.
-    db: Db,
+    db: Database,
     /// Scripts fetched from the remote RPC service during execution, to be persisted by the
     /// coordinator.
     fetched_scripts: Arc<Mutex<Vec<(Word, NoteScript)>>>,
@@ -613,7 +614,7 @@ impl NtxDataStore {
         chain_mmr: Arc<PartialBlockchain>,
         rpc: RpcClient,
         script_cache: LruCache<Word, NoteScript>,
-        db: Db,
+        db: Database,
         request_backoff: ExponentialBuilder,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
@@ -818,9 +819,17 @@ impl DataStore for NtxDataStore {
             }
 
             // 2. Local DB.
-            if let Some(script) = self.db.lookup_note_script(script_root).await.map_err(|err| {
-                DataStoreError::other_with_source("failed to look up note script in local DB", err)
-            })? {
+            if let Some(script) = self
+                .db
+                .read("lookup_note_script", move |tx| queries::lookup_note_script(tx, &script_root))
+                .await
+                .map_err(|err| {
+                    DataStoreError::other_with_source(
+                        "failed to look up note script in local DB",
+                        err,
+                    )
+                })?
+            {
                 self.script_cache.put(script_root, script.clone());
                 return Ok(Some(script));
             }

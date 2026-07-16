@@ -7,7 +7,7 @@ use anyhow::Context;
 use builder::BlockStream;
 use chain_state::SharedChainState;
 use clients::{RemoteTransactionProver, RpcClient};
-use db::Db;
+use miden_node_db::sqlite::Database;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
@@ -48,12 +48,12 @@ pub use builder::NetworkTransactionBuilder;
 /// bootstrapped.
 pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> anyhow::Result<()> {
     validate_genesis_block(genesis).context("genesis block validation failed")?;
-    db::Db::bootstrap(database_filepath, genesis).await
+    db::bootstrap(database_filepath, genesis).await
 }
 
 /// Applies pending migrations to the ntx-builder database at `database_filepath`.
 pub fn migrate(database_filepath: impl AsRef<Path>) -> anyhow::Result<()> {
-    db::Db::migrate(database_filepath).context("failed to apply ntx-builder database migrations")
+    db::migrate(database_filepath).context("failed to apply ntx-builder database migrations")
 }
 
 fn validate_genesis_block(block: &SignedBlock) -> anyhow::Result<()> {
@@ -369,26 +369,24 @@ impl NtxBuilderConfig {
         self,
         shutdown: CancellationToken,
     ) -> anyhow::Result<NetworkTransactionBuilder> {
-        // The event loop pins one connection for itself (so block application is never starved by
-        // the account actors), leaving the rest of the pool for actors and the gRPC server. That
-        // requires at least two connections.
-        anyhow::ensure!(
-            self.sqlite_connection_pool_size.get() >= 2,
-            "sqlite connection pool size must be at least 2 (the event loop pins one connection)",
-        );
-
-        // Set up the database (bootstrap + connection pool).
-        let db = Db::load_with_pool_size(
+        // Set up the database connection pool. Writes are serialized by the framework's single
+        // dedicated writer connection, so block application never contends with the account actors
+        // (which only read) for the shared reader pool.
+        let db = db::load_with_pool_size(
             self.database_filepath.clone(),
             self.sqlite_connection_pool_size,
         )
         .await?;
 
         // Get the genesis commitment to send in the accept header
-        let genesis_commitment = db.get_genesis_commitment().await.context(
-            "failed to read genesis commitment; \
-             run `miden-ntx-builder bootstrap` first",
-        )?;
+        let genesis_commitment = db
+            .read("select_genesis_commitment", db::queries::select_genesis_commitment)
+            .await
+            .context("failed to read genesis commitment")?
+            .context(
+                "ntx-builder database has not been bootstrapped; \
+                 run `miden-ntx-builder bootstrap` first",
+            )?;
 
         let rpc = match self.rpc_auth_header.clone() {
             Some(rpc_auth_header_value) => RpcClient::new_with_auth(
@@ -409,8 +407,11 @@ impl NtxBuilderConfig {
         // The database is bootstrapped with the genesis block before startup (see
         // `miden-ntx-builder bootstrap`), so a persisted chain state is always present. Load it and
         // resume the subscription from the block after the last applied one.
-        let (last_applied_block, header, mmr) =
-            db.get_chain_state().await.context("failed to read chain state")?.context(
+        let (last_applied_block, header, mmr) = db
+            .read("select_chain_state", db::queries::select_chain_state)
+            .await
+            .context("failed to read chain state")?
+            .context(
                 "ntx-builder database has not been bootstrapped; \
                  run `miden-ntx-builder bootstrap` first",
             )?;
@@ -451,7 +452,7 @@ impl NtxBuilderConfig {
     fn build_coordinator(
         &self,
         rpc: RpcClient,
-        db: Db,
+        db: Database,
         chain: Arc<SharedChainState>,
         shutdown: CancellationToken,
     ) -> anyhow::Result<(Coordinator, mpsc::Receiver<actor::ActorRequest>)> {

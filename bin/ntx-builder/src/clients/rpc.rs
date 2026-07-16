@@ -1,5 +1,5 @@
-use std::collections::BTreeSet;
 use miden_node_utils::tracing::miden_instrument;
+use std::collections::BTreeSet;
 
 use std::time::Duration;
 

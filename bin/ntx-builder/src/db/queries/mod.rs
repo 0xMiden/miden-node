@@ -1,17 +1,24 @@
 //! Database query functions for the NTX builder.
+//!
+//! Each function takes a [`ReadTx`](miden_node_db::sqlite::ReadTx) or
+//! [`WriteTx`](miden_node_db::sqlite::WriteTx) and is driven from a call site through
+//! [`Database::read`](miden_node_db::sqlite::Database::read) /
+//! [`Database::write`](miden_node_db::sqlite::Database::write).
 
 use std::collections::HashMap;
 
-use diesel::prelude::*;
 use miden_node_db::DatabaseError;
+use miden_node_db::sqlite::WriteTx;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::transaction::TransactionId;
 
-use super::account_effect::NetworkAccountEffect;
 use crate::committed_block::CommittedBlockEffects;
+use crate::db::queries::account_effect::NetworkAccountEffect;
+
+pub(crate) mod account_effect;
 
 mod accounts;
 pub use accounts::*;
@@ -27,6 +34,22 @@ pub use notes::*;
 
 #[cfg(test)]
 mod tests;
+
+// BLOCK NUMBER CODEC
+// ================================================================================================
+
+/// Serializes a [`BlockNumber`] to the `i64` used by the `block_num`/`committed_at`/`last_attempt`
+/// columns.
+pub(crate) fn block_num_to_i64(block_num: BlockNumber) -> i64 {
+    i64::from(block_num.as_u32())
+}
+
+/// Deserializes a `block_num`/`committed_at`/`last_attempt` column value back into a
+/// [`BlockNumber`].
+#[expect(clippy::cast_sign_loss)]
+pub(crate) fn block_num_from_i64(val: i64) -> BlockNumber {
+    BlockNumber::from(val as u32)
+}
 
 // COMMITTED BLOCK APPLICATION
 // ================================================================================================
@@ -45,7 +68,7 @@ mod tests;
 /// The account upserts apply each block's network-account effects to the local store so the actor's
 /// `account_last_tx` landing check and post-expiry reload see the authoritative committed state.
 pub fn apply_committed_block(
-    conn: &mut SqliteConnection,
+    tx: &WriteTx<'_>,
     effects: &CommittedBlockEffects,
     chain_mmr: &PartialMmr,
 ) -> Result<(), DatabaseError> {
@@ -72,26 +95,26 @@ pub fn apply_committed_block(
         });
         match effect {
             NetworkAccountEffect::Created(account) => {
-                upsert_account(conn, *account_id, &account, last_tx_id)?;
+                upsert_account(tx, *account_id, &account, last_tx_id)?;
             },
             NetworkAccountEffect::Updated(patch) => {
                 // If the account is not already tracked locally, skip it.
-                let Some(mut current) = get_account(conn, *account_id)? else {
+                let Some(mut current) = get_account(tx, *account_id)? else {
                     continue;
                 };
                 current
                     .apply_patch(&patch)
                     .expect("network account patch should apply since the block was committed");
-                upsert_account(conn, *account_id, &current, last_tx_id)?;
+                upsert_account(tx, *account_id, &current, last_tx_id)?;
             },
         }
     }
 
-    insert_network_notes(conn, &effects.network_notes)?;
+    insert_network_notes(tx, &effects.network_notes)?;
 
-    mark_notes_consumed(conn, &effects.nullifiers, effects.header.block_num())?;
+    mark_notes_consumed(tx, &effects.nullifiers, effects.header.block_num())?;
 
-    update_chain_state_tip(conn, effects.header.block_num(), &effects.header, chain_mmr)?;
+    update_chain_state_tip(tx, effects.header.block_num(), &effects.header, chain_mmr)?;
 
     Ok(())
 }

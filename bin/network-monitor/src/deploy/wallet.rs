@@ -10,6 +10,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountComponentCode,
     AccountComponentMetadata,
     AccountType,
     StorageSlot,
@@ -17,7 +18,6 @@ use miden_protocol::account::{
 };
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_standards::account::auth::{Approver, AuthSingleSig};
-use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -34,6 +34,29 @@ pub static WALLET_COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
     StorageSlotName::new("miden::monitor::wallet_contract::counter")
         .expect("storage slot name should be valid")
 });
+
+/// Module path under which the wallet's self-counter component is compiled.
+///
+/// The increment transaction script must reference `increment` under this exact path (via a
+/// dynamically-linked copy of [`wallet_counter_component_code`]) so the `call` resolves to the
+/// procedure root registered in the account.
+pub const WALLET_COUNTER_COMPONENT_PATH: &str = "wallet::program";
+
+/// The wallet self-counter component source (bumps [`WALLET_COUNTER_SLOT_NAME`]).
+const WALLET_COUNTER_PROGRAM: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/wallet_counter_program.masm"));
+
+/// Compiles the wallet's self-counter [`AccountComponentCode`].
+///
+/// This is the single source of truth for the component: [`create_wallet_account`] builds the
+/// account from it, and the increment transaction-script builder dynamically links it so
+/// `call.::wallet::program::increment` resolves to the same procedure root the account registered.
+/// Compilation is deterministic, so both sites obtain identical code and roots.
+pub fn wallet_counter_component_code() -> Result<AccountComponentCode> {
+    CodeBuilder::default()
+        .compile_component_code(WALLET_COUNTER_COMPONENT_PATH, WALLET_COUNTER_PROGRAM)
+        .context("failed to compile wallet counter component code")
+}
 
 /// Create a wallet account with `RpoFalcon512` authentication and a self-counter component.
 ///
@@ -54,14 +77,9 @@ pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
     .into();
     let init_seed: [u8; 32] = rng.random();
 
-    // The wallet carries its own counter component so it can increment a storage slot in the same
-    // transaction that emits the increment note. See `WALLET_COUNTER_SLOT_NAME`.
-    let script = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/assets/wallet_counter_program.masm"
-    ));
-    let component_code =
-        CodeBuilder::default().compile_component_code("wallet::program", script)?;
+    // The wallet carries a single custom component that both bumps its counter slot and creates the
+    // increment note in one account procedure (see `wallet_counter_program.masm`).
+    let component_code = wallet_counter_component_code()?;
 
     let counter_slot = StorageSlot::with_value(WALLET_COUNTER_SLOT_NAME.clone(), Word::empty());
     let metadata = AccountComponentMetadata::new("wallet::program");
@@ -70,7 +88,6 @@ pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::Public)
         .with_auth_component(auth_component)
-        .with_component(BasicWallet)
         .with_component(counter_component)
         .build()
         .context("failed to build wallet account")?;

@@ -13,30 +13,24 @@ use miden_validator::{DataDirectory, ValidatorSigner};
 
 use super::ValidatorKeyArgs;
 
-// Bootstraps the validator component.
-pub async fn bootstrap(
+/// Runs the signing form of `bootstrap`: the genesis signing ceremony, run once with every
+/// validator key.
+///
+/// Builds the genesis state from the given configuration — or from [`GenesisConfig::default`]
+/// when `None`, as in local development where the built-in single-validator configuration
+/// suffices — writes the account secret files, signs the genesis block with every validator
+/// key, and persists the block as the chain tip.
+///
+/// Every other validator seeds from this ceremony's output via [`bootstrap_from_file`].
+pub async fn bootstrap_sign(
     genesis_block_directory: &Path,
     accounts_directory: &Path,
     data_directory: &Path,
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_config: Option<&PathBuf>,
-    genesis_block_file: Option<&PathBuf>,
     validator_keys: ValidatorKeyArgs,
 ) -> anyhow::Result<()> {
-    for directory in [accounts_directory, genesis_block_directory, data_directory] {
-        ensure_empty_directory(directory)?;
-    }
-
-    let dirs = DataDirectory::load_bootstrap(
-        genesis_block_directory.to_path_buf(),
-        accounts_directory.to_path_buf(),
-        data_directory.to_path_buf(),
-    )
-    .context("failed to load bootstrap directories")?;
-
-    if let Some(genesis_block_file) = genesis_block_file {
-        return seed_from_genesis_file(genesis_block_file, dirs, sqlite_connection_pool_size).await;
-    }
+    let dirs = load_bootstrap_dirs(genesis_block_directory, accounts_directory, data_directory)?;
 
     let config = genesis_config
         .map(|file_path| {
@@ -48,60 +42,11 @@ pub async fn bootstrap(
         .unwrap_or_default();
 
     let signers = validator_keys.into_signers().await?;
-    build_and_write_genesis(config, signers, dirs, sqlite_connection_pool_size).await
-}
 
-/// Seeds this validator's database and block store from a genesis block that another validator
-/// has already built and signed, without re-signing it.
-///
-/// Used by every validator other than the one that runs the signing form of `bootstrap`: the
-/// genesis block is the chain's trust root and must be signed once, by the complete validator
-/// set, then distributed to the others.
-async fn seed_from_genesis_file(
-    genesis_block_file: &Path,
-    dirs: DataDirectory,
-    sqlite_connection_pool_size: NonZeroUsize,
-) -> anyhow::Result<()> {
-    let signed_block = read_signed_genesis_block(genesis_block_file)
-        .context("failed to read genesis block file")?;
-    let genesis_block =
-        GenesisBlock::try_from(signed_block).context("genesis block validation failed")?;
-
-    let block_bytes = genesis_block.inner().to_bytes();
-    fs_err::write(dirs.genesis_block_path().expect("bootstrap directories"), block_bytes)
-        .context("failed to write genesis block")?;
-
-    let _ = BlockStore::bootstrap(dirs.block_store_dir(), &genesis_block)?;
-
-    let (genesis_header, ..) = genesis_block.into_inner().into_parts();
-    let db = miden_validator::db::setup_with_pool_size(
-        dirs.database_path(),
-        sqlite_connection_pool_size,
-    )
-    .await
-    .context("failed to initialize validator database during bootstrap")?;
-    db.write("upsert_block_header", move |tx| {
-        miden_validator::db::upsert_block_header(tx, &genesis_header)
-    })
-    .await
-    .context("failed to persist genesis block header as chain tip")?;
-
-    Ok(())
-}
-
-/// Builds the genesis state, writes account secret files, signs the genesis block with every
-/// validator key, writes it to disk, and initializes the validator's database with the genesis
-/// block as the chain tip.
-async fn build_and_write_genesis(
-    config: GenesisConfig,
-    signers: Vec<ValidatorSigner>,
-    dirs: DataDirectory,
-    sqlite_connection_pool_size: NonZeroUsize,
-) -> anyhow::Result<()> {
-    let validator_keys =
+    let genesis_validator_keys =
         ValidatorKeys::new(signers.iter().map(ValidatorSigner::public_key).collect())
             .context("failed to build the genesis validator set")?;
-    let (genesis_state, secrets) = config.into_state(validator_keys)?;
+    let (genesis_state, secrets) = config.into_state(genesis_validator_keys)?;
 
     for item in secrets.as_account_files(&genesis_state) {
         let AccountFileWithName { account_file, name } = item?;
@@ -141,6 +86,58 @@ async fn build_and_write_genesis(
         .into_block(signatures)
         .context("failed to build the genesis block")?;
 
+    persist_genesis(genesis_block, dirs, sqlite_connection_pool_size).await
+}
+
+/// Runs the seeding form of `bootstrap`: initializes this validator from the genesis block
+/// produced by the signing ceremony ([`bootstrap_sign`]), without re-signing it.
+///
+/// The genesis block is the chain's trust root and carries one signature per key in the
+/// validator set committed to by its header — every validator's key, including this one's,
+/// signed it during the ceremony. This form verifies the complete signature set (via
+/// [`GenesisBlock::try_from`]) and persists the block as the chain tip.
+pub async fn bootstrap_from_file(
+    genesis_block_directory: &Path,
+    accounts_directory: &Path,
+    data_directory: &Path,
+    sqlite_connection_pool_size: NonZeroUsize,
+    genesis_block_file: &Path,
+) -> anyhow::Result<()> {
+    let dirs = load_bootstrap_dirs(genesis_block_directory, accounts_directory, data_directory)?;
+
+    let signed_block = read_signed_genesis_block(genesis_block_file)
+        .context("failed to read genesis block file")?;
+    let genesis_block =
+        GenesisBlock::try_from(signed_block).context("genesis block validation failed")?;
+
+    persist_genesis(genesis_block, dirs, sqlite_connection_pool_size).await
+}
+
+/// Empties the bootstrap directories and loads them as a [`DataDirectory`].
+fn load_bootstrap_dirs(
+    genesis_block_directory: &Path,
+    accounts_directory: &Path,
+    data_directory: &Path,
+) -> anyhow::Result<DataDirectory> {
+    for directory in [accounts_directory, genesis_block_directory, data_directory] {
+        ensure_empty_directory(directory)?;
+    }
+
+    DataDirectory::load_bootstrap(
+        genesis_block_directory.to_path_buf(),
+        accounts_directory.to_path_buf(),
+        data_directory.to_path_buf(),
+    )
+    .context("failed to load bootstrap directories")
+}
+
+/// Writes the genesis block file, bootstraps the block store, and initializes the validator's
+/// database with the genesis block as the chain tip.
+async fn persist_genesis(
+    genesis_block: GenesisBlock,
+    dirs: DataDirectory,
+    sqlite_connection_pool_size: NonZeroUsize,
+) -> anyhow::Result<()> {
     let block_bytes = genesis_block.inner().to_bytes();
     fs_err::write(dirs.genesis_block_path().expect("bootstrap directories"), block_bytes)
         .context("failed to write genesis block")?;

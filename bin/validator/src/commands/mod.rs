@@ -40,9 +40,10 @@ pub enum ValidatorCommand {
     /// set committed to by its header, so this command requires signing access to all validator
     /// keys. Only one validator in the set needs to run this form.
     ///
-    /// Alternatively, pass `--file` to seed this validator's database from a genesis block that
-    /// another validator has already built and signed, without re-signing it. Use this for every
-    /// validator other than the one that ran the signing form above.
+    /// Alternatively, pass `--file` to seed this validator's database from the genesis block
+    /// produced by the signing form above. The block must carry a valid signature from every
+    /// key in its committed validator set — including this validator's — and is verified, not
+    /// re-signed. Use this for every validator other than the one that ran the signing form.
     Bootstrap {
         /// Directory in which to write the genesis block file.
         #[arg(long, value_name = "DIR")]
@@ -69,8 +70,8 @@ pub enum ValidatorCommand {
         /// Seed this validator's database from an already-signed genesis block file, instead of
         /// building and signing a new one.
         ///
-        /// Cannot be used with `--genesis-config-file` or the validator key arguments.
-        #[arg(long = "file", value_name = "FILE")]
+        /// Cannot be used with `--genesis-config-file`; the validator key arguments are ignored.
+        #[arg(long = "file", value_name = "FILE", conflicts_with = "genesis_config_file")]
         genesis_block_file: Option<PathBuf>,
         /// Configuration for the validator keys used to sign the genesis block.
         ///
@@ -149,16 +150,26 @@ impl ValidatorCommand {
                 genesis_block_file,
                 validator_keys,
             } => {
-                bootstrap::bootstrap(
-                    &genesis_block_directory,
-                    &accounts_directory,
-                    &data_directory,
-                    sqlite_connection_pool_size,
-                    genesis_config_file.as_ref(),
-                    genesis_block_file.as_ref(),
-                    validator_keys,
-                )
-                .await
+                if let Some(genesis_block_file) = genesis_block_file {
+                    bootstrap::bootstrap_from_file(
+                        &genesis_block_directory,
+                        &accounts_directory,
+                        &data_directory,
+                        sqlite_connection_pool_size,
+                        &genesis_block_file,
+                    )
+                    .await
+                } else {
+                    bootstrap::bootstrap_sign(
+                        &genesis_block_directory,
+                        &accounts_directory,
+                        &data_directory,
+                        sqlite_connection_pool_size,
+                        genesis_config_file.as_ref(),
+                        validator_keys,
+                    )
+                    .await
+                }
             },
             Self::Migrate { data_directory } => {
                 let data_dir = DataDirectory::load_server(data_directory)

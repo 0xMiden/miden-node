@@ -199,8 +199,21 @@ local-network-logs: ## Follows logs for the local development network
 .PHONY: docker-build
 docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover docker-build-monitor ## Builds all Docker images
 
+.PHONY: docker-build-mtimes
+docker-build-mtimes:
+	@( \
+		file_mtime() { stat -c %Y "$$1" 2>/dev/null || stat -f %m "$$1"; }; \
+		{ git diff --name-only HEAD --; git ls-files --others --exclude-standard; } | \
+			sort -u | \
+			while IFS= read -r file; do \
+				[ -f "$$file" ] && printf '%s\t%s\n' "$$(file_mtime "$$file")" "$$file"; \
+			done; \
+		git log --format='%ct' --name-only --no-renames | \
+			awk '/^[0-9]+$$/ { ts = $$1; next } NF { print ts"\t" $$0 }'; \
+	) | awk -F '\t' '!seen[$$2]++' > docker-file-mtimes.tsv
+
 .PHONY: docker-build-node
-docker-build-node: ## Builds the Miden node using Docker
+docker-build-node: docker-build-mtimes ## Builds the Miden node using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
@@ -213,7 +226,7 @@ docker-build-node: ## Builds the Miden node using Docker
                  -t miden-node .
 
 .PHONY: docker-build-validator
-docker-build-validator: ## Builds the Miden validator using Docker
+docker-build-validator: docker-build-mtimes ## Builds the Miden validator using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
@@ -226,7 +239,7 @@ docker-build-validator: ## Builds the Miden validator using Docker
                  -t miden-validator .
 
 .PHONY: docker-build-ntx-builder
-docker-build-ntx-builder: ## Builds the Miden network transaction builder using Docker
+docker-build-ntx-builder: docker-build-mtimes ## Builds the Miden network transaction builder using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
@@ -239,7 +252,7 @@ docker-build-ntx-builder: ## Builds the Miden network transaction builder using 
                  -t miden-ntx-builder .
 
 .PHONY: docker-build-monitor
-docker-build-monitor: ## Builds the network monitor using Docker
+docker-build-monitor: docker-build-mtimes ## Builds the network monitor using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
@@ -252,7 +265,7 @@ docker-build-monitor: ## Builds the network monitor using Docker
                  -t miden-network-monitor .
 
 .PHONY: docker-build-remote-prover
-docker-build-remote-prover: ## Builds the remote prover using Docker
+docker-build-remote-prover: docker-build-mtimes ## Builds the remote prover using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \

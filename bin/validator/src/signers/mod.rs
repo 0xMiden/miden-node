@@ -2,7 +2,6 @@ mod kms;
 pub use kms::KmsSigner;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_protocol::Word;
-use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::{
     KeyExchangeKey,
@@ -41,11 +40,6 @@ impl ValidatorSigner {
             Self::Kms(signer) => signer.public_key(),
             Self::Local(signer) => signer.public_key(),
         }
-    }
-
-    /// Signs a block header using the configured signer.
-    pub async fn sign(&self, header: &BlockHeader) -> anyhow::Result<Signature> {
-        self.sign_commitment(header.commitment()).await
     }
 
     /// Signs a commitment using the configured signer.
@@ -90,6 +84,11 @@ impl ValidatorEncryptor {
         Self::Local(secret_key)
     }
 
+    /// Returns the wire representation of [`Self::SCHEME`].
+    pub fn scheme_id() -> u32 {
+        u32::from(u8::from(Self::SCHEME))
+    }
+
     /// Returns the public key of the shared encryption key.
     pub fn public_key(&self) -> EncryptionPublicKey {
         match self {
@@ -117,9 +116,26 @@ impl ValidatorEncryptor {
     /// payload. Including the genesis commitment ties the attestation to one chain, so it cannot
     /// be replayed on another network whose validator reuses the same signing key.
     pub fn attestation_commitment(&self, genesis_commitment: Word) -> Word {
-        let scheme = u32::from(u8::from(Self::SCHEME));
+        Self::attestation_commitment_of(
+            Self::scheme_id(),
+            self.key_id(),
+            genesis_commitment,
+            &self.public_key().to_bytes(),
+        )
+    }
+
+    /// Computes the attestation commitment over explicit wire-format fields.
+    ///
+    /// This is the single definition of the attestation payload. Verifiers (and tests) recompute
+    /// the commitment from response fields through this function, so any change to the payload
+    /// layout applies to both sides.
+    pub fn attestation_commitment_of(
+        scheme: u32,
+        key_id: u32,
+        genesis_commitment: Word,
+        public_key: &[u8],
+    ) -> Word {
         let genesis_commitment = genesis_commitment.to_bytes();
-        let public_key = self.public_key().to_bytes();
         let mut payload = Vec::with_capacity(
             Self::ATTESTATION_DOMAIN.len()
                 + 2 * size_of::<u32>()
@@ -128,9 +144,9 @@ impl ValidatorEncryptor {
         );
         payload.extend_from_slice(Self::ATTESTATION_DOMAIN);
         payload.extend_from_slice(&scheme.to_le_bytes());
-        payload.extend_from_slice(&self.key_id().to_le_bytes());
+        payload.extend_from_slice(&key_id.to_le_bytes());
         payload.extend_from_slice(&genesis_commitment);
-        payload.extend_from_slice(&public_key);
+        payload.extend_from_slice(public_key);
         miden_protocol::Hasher::hash(&payload)
     }
 

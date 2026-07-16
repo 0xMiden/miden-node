@@ -4,12 +4,12 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::validator_api;
 use miden_node_store::{BlockStore, GenesisState};
 use miden_node_utils::fee::test_fee_params;
+use miden_protocol::Word;
 use miden_protocol::block::{BlockHeader, BlockInputs, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{Signature, SigningKey};
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::PartialBlockchain;
-use miden_protocol::{Hasher, Word};
 use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::{ValidatorError, ValidatorService};
@@ -718,28 +718,6 @@ async fn requests_run_concurrently() {
 // TRANSACTION ENCRYPTION KEY
 // ================================================================================================
 
-/// Recomputes the attestation commitment from response fields and the chain's genesis commitment.
-fn attestation_commitment_of(
-    scheme: u32,
-    key_id: u32,
-    genesis_commitment: Word,
-    public_key: &[u8],
-) -> Word {
-    let genesis_commitment = genesis_commitment.to_bytes();
-    let mut payload = Vec::with_capacity(
-        ValidatorEncryptor::ATTESTATION_DOMAIN.len()
-            + 2 * size_of::<u32>()
-            + genesis_commitment.len()
-            + public_key.len(),
-    );
-    payload.extend_from_slice(ValidatorEncryptor::ATTESTATION_DOMAIN);
-    payload.extend_from_slice(&scheme.to_le_bytes());
-    payload.extend_from_slice(&key_id.to_le_bytes());
-    payload.extend_from_slice(&genesis_commitment);
-    payload.extend_from_slice(public_key);
-    Hasher::hash(&payload)
-}
-
 /// The endpoint returns the shared encryption key attested by this validator's own signing key. The
 /// signature verifies over a commitment recomputed from the response fields and the chain's genesis
 /// commitment, so a client needs nothing beyond the response and the chain data it already trusts.
@@ -751,12 +729,16 @@ async fn transaction_encryption_key_is_attested() {
     let response = tv.call_get_transaction_encryption_key().await;
 
     let encryptor = test_encryptor();
-    assert_eq!(response.scheme, u32::from(u8::from(ValidatorEncryptor::SCHEME)));
+    assert_eq!(response.scheme, ValidatorEncryptor::scheme_id());
     assert_eq!(response.key_id, encryptor.key_id());
     assert_eq!(response.public_key, encryptor.public_key().to_bytes());
 
-    let commitment =
-        attestation_commitment_of(response.scheme, response.key_id, genesis, &response.public_key);
+    let commitment = ValidatorEncryptor::attestation_commitment_of(
+        response.scheme,
+        response.key_id,
+        genesis,
+        &response.public_key,
+    );
     assert_eq!(commitment, encryptor.attestation_commitment(genesis));
 
     let signature =
@@ -801,20 +783,25 @@ async fn tampered_attestation_fails_verification() {
     let tampered_genesis = Word::try_from([9u64, 9, 9, 9]).unwrap();
 
     let tampered_commitments = [
-        attestation_commitment_of(
+        ValidatorEncryptor::attestation_commitment_of(
             response.scheme + 1,
             response.key_id,
             genesis,
             &response.public_key,
         ),
-        attestation_commitment_of(
+        ValidatorEncryptor::attestation_commitment_of(
             response.scheme,
             response.key_id.wrapping_add(1),
             genesis,
             &response.public_key,
         ),
-        attestation_commitment_of(response.scheme, response.key_id, genesis, &tampered_public_key),
-        attestation_commitment_of(
+        ValidatorEncryptor::attestation_commitment_of(
+            response.scheme,
+            response.key_id,
+            genesis,
+            &tampered_public_key,
+        ),
+        ValidatorEncryptor::attestation_commitment_of(
             response.scheme,
             response.key_id,
             tampered_genesis,

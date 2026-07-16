@@ -279,7 +279,7 @@ impl ValidatorService {
     )]
     async fn sign_header(&self, header: &BlockHeader) -> Result<Signature, ValidatorError> {
         self.signer
-            .sign(header)
+            .sign_commitment(header.commitment())
             .await
             .map_err(|err| ValidatorError::BlockSigningFailed(err.to_string()))
     }

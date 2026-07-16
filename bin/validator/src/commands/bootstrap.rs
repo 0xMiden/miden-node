@@ -68,7 +68,7 @@ async fn build_and_write_genesis(
         .into_unsigned_block()
         .context("failed to build the unsigned genesis block")?;
     let signature = signer
-        .sign(unsigned_genesis_block.header())
+        .sign_commitment(unsigned_genesis_block.header().commitment())
         .await
         .context("failed to sign the genesis block")?;
     let genesis_block = unsigned_genesis_block

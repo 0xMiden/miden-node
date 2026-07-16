@@ -3,8 +3,6 @@
 ## Unreleased
 
 - [BREAKING] Updated `miden-protocol` dependencies to use the `next` branch (v0.16). Block and transaction account updates now use the absolute `AccountPatch` representation instead of the relative `AccountDelta`, and the `miden-tx-batch-prover` crate was renamed to `miden-tx-batch` ([#2282](https://github.com/0xMiden/node/pull/2282)).
-- Added the `GetTransactionEncryptionKey` endpoint to the validator and RPC APIs, returning the shared transaction encryption key attested by the serving validator's signing key. The shared secret is configured on the validator via `--encryption-key.hex`. `MIDEN_VALIDATOR_ENCRYPTION_KEY` and must be identical across the validator set ([#2319](https://github.com/0xMiden/node/issues/2319)).
-
 ## v0.15.0 (2026-06-10)
 
 - Fixed the store dropping a fungible asset's callback flag when applying partial account deltas ([#2222](https://github.com/0xMiden/node/pull/2222)).

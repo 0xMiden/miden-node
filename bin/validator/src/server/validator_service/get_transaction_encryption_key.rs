@@ -33,7 +33,7 @@ impl grpc::server::validator_api::GetTransactionEncryptionKey for ValidatorServi
         // Built entirely from state fixed at construction, so the endpoint stays available while a
         // backup subscription holds the serve lock.
         Ok(grpc::transaction::TransactionEncryptionKey {
-            scheme: u32::from(u8::from(ValidatorEncryptor::SCHEME)),
+            scheme: ValidatorEncryptor::scheme_id(),
             key_id: self.encryptor.key_id(),
             public_key: self.encryptor.public_key().to_bytes(),
             signature: self.encryption_key_attestation.to_bytes(),

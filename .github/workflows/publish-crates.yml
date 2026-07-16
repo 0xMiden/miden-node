@@ -2,6 +2,7 @@ name: Publish crates
 
 permissions:
   contents: read
+  id-token: write
 
 on:
   release:
@@ -26,7 +27,7 @@ jobs:
     name: Cargo publish release
     runs-on: warp-ubuntu-latest-x64-8x
     if: ${{ github.repository_owner == '0xMiden' }}
-    environment: publish-crates
+    environment: release
     steps:
       - name: Validate release tag
         run: |
@@ -61,9 +62,13 @@ jobs:
       - name: Rustup
         run: rustup toolchain install --no-self-update
 
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+
       - name: Publish unpublished crates
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           set -euo pipefail
 

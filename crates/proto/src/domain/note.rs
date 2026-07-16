@@ -139,10 +139,10 @@ impl TryFrom<proto::note::NetworkNote> for AccountTargetNetworkNote {
     type Error = ConversionError;
 
     fn try_from(value: proto::note::NetworkNote) -> Result<Self, Self::Error> {
-        let decoder = value.decoder();
         let proto::note::NetworkNote { metadata, details, attachments } = value;
 
-        let metadata = decode!(decoder, metadata)?;
+        let metadata = metadata
+            .ok_or(ConversionError::missing_field::<proto::note::NetworkNote>("metadata"))?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
 
         let note_details = NoteDetails::decode_bytes(&details, "NoteDetails")?;
@@ -158,13 +158,14 @@ impl TryFrom<proto::note::Note> for Note {
     type Error = ConversionError;
 
     fn try_from(proto_note: proto::note::Note) -> Result<Self, Self::Error> {
-        let decoder = proto_note.decoder();
         let proto::note::Note { metadata, details, attachments } = proto_note;
 
-        let metadata = decode!(decoder, metadata)?;
+        let metadata =
+            metadata.ok_or(ConversionError::missing_field::<proto::note::Note>("metadata"))?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
 
-        let details: Vec<u8> = decode!(decoder, details)?;
+        let details =
+            details.ok_or(ConversionError::missing_field::<proto::note::Note>("details"))?;
         let note_details = NoteDetails::decode_bytes(&details, "NoteDetails")?;
         let (assets, recipient) = note_details.into_parts();
         let attachments = decode_attachments(&attachments)?;
@@ -186,8 +187,11 @@ impl TryFrom<proto::note::NoteId> for Word {
     type Error = ConversionError;
 
     fn try_from(note_id: proto::note::NoteId) -> Result<Self, Self::Error> {
-        let decoder = note_id.decoder();
-        decode!(decoder, note_id.id)
+        note_id
+            .id
+            .as_ref()
+            .ok_or(ConversionError::missing_field::<proto::note::NoteId>("id"))?
+            .try_into()
     }
 }
 
@@ -214,10 +218,29 @@ impl TryFrom<&proto::note::NoteInclusionInBlockProof> for (NoteId, NoteInclusion
     fn try_from(
         proof: &proto::note::NoteInclusionInBlockProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
-        let decoder = proof.decoder();
-        let inclusion_path: SparseMerklePath =
-            decoder.decode_field("inclusion_path", proof.inclusion_path.clone())?;
-        let note_id: Word = decode!(decoder, proof.note_id)?;
+        let inclusion_path = SparseMerklePath::try_from(
+            proof
+                .inclusion_path
+                .as_ref()
+                .ok_or(ConversionError::missing_field::<proto::note::NoteInclusionInBlockProof>(
+                    "inclusion_path",
+                ))?
+                .clone(),
+        )
+        .context("inclusion_path")?;
+
+        let note_id = Word::try_from(
+            proof
+                .note_id
+                .as_ref()
+                .ok_or(ConversionError::missing_field::<proto::note::NoteInclusionInBlockProof>(
+                    "note_id",
+                ))?
+                .id
+                .as_ref()
+                .ok_or(ConversionError::missing_field::<proto::note::NoteId>("id"))?,
+        )
+        .context("note_id")?;
 
         Ok((
             NoteId::from_raw(note_id),

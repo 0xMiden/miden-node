@@ -538,7 +538,6 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
             MapEntriesWithProofs,
         };
 
-        let decoder = value.decoder();
         let proto::rpc::account_storage_details::AccountStorageMapDetails {
             slot_name,
             too_many_entries,
@@ -550,8 +549,13 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
         let entries = if too_many_entries {
             StorageMapEntries::LimitExceeded
         } else {
-            match decode!(decoder, entries)? {
-                ProtoEntries::AllEntries(AllMapEntries { entries }) => {
+            match entries {
+                None => {
+                    return Err(ConversionError::missing_field::<
+                        proto::rpc::account_storage_details::AccountStorageMapDetails,
+                    >("entries"));
+                },
+                Some(ProtoEntries::AllEntries(AllMapEntries { entries })) => {
                     let entries = entries
                         .into_iter()
                         .map(|entry| {
@@ -564,7 +568,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
                         .context("entries")?;
                     StorageMapEntries::AllEntries(entries)
                 },
-                ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries }) => {
+                Some(ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries })) => {
                     let proofs = entries
                         .into_iter()
                         .map(|entry| {
@@ -725,7 +729,9 @@ impl TryFrom<proto::rpc::AccountResponse> for AccountResponse {
         let decoder = value.decoder();
         let proto::rpc::AccountResponse { block_num, witness, details } = value;
 
-        let block_num = decode!(decoder, block_num)?;
+        let block_num = block_num
+            .ok_or(ConversionError::missing_field::<proto::rpc::AccountResponse>("block_num"))?
+            .into();
 
         let witness = decode!(decoder, witness)?;
 

@@ -200,8 +200,5 @@ impl_from_for_conversion_error!(
     miden_protocol::crypto::merkle::smt::SmtProofError,
     miden_standards::note::NetworkAccountTargetError,
     std::num::TryFromIntError,
-    // Lets `GrpcStructDecoder::decode_field` extract required fields whose proto type is already
-    // the target type (reflexive `TryInto`, which cannot fail).
-    std::convert::Infallible,
     DeserializationError,
 );

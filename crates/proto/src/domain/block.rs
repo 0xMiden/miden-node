@@ -1,5 +1,6 @@
 use std::ops::RangeInclusive;
 
+use miden_protocol::account::AccountId;
 use miden_protocol::block::{
     BlockBody,
     BlockHeader,
@@ -235,9 +236,15 @@ impl From<&Signature> for proto::blockchain::BlockSignature {
 impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
     type Error = ConversionError;
     fn try_from(fee_params: proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
-        let decoder = fee_params.decoder();
-        let native_asset_id = decode!(decoder, fee_params.native_asset_id)?;
-        Ok(FeeParameters::new(native_asset_id, fee_params.verification_base_fee))
+        let native_asset_id = fee_params
+            .native_asset_id
+            .map(AccountId::try_from)
+            .ok_or(ConversionError::missing_field::<proto::blockchain::FeeParameters>(
+                "native_asset_id",
+            ))?
+            .context("native_asset_id")?;
+        let fee_params = FeeParameters::new(native_asset_id, fee_params.verification_base_fee);
+        Ok(fee_params)
     }
 }
 

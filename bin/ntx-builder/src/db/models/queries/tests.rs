@@ -429,6 +429,7 @@ fn discard_notes_pins_attempts_to_cap_and_drops_from_pending() {
     assert!(
         available_notes(conn, account_id, BlockNumber::from(1000), 30)
             .unwrap()
+            .eligible
             .is_empty(),
         "a discarded note must not be selectable",
     );

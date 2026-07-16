@@ -37,6 +37,7 @@ impl RpcOptions {
         GrpcOptionsExternal {
             request_timeout: self.grpc.timeout,
             max_connection_age: self.grpc.max_connection_age,
+            max_connection_age_grace: self.grpc.max_connection_age_grace,
             burst_size: self.rate_limit.burst_size,
             replenish_n_per_second_per_ip: self.rate_limit.replenish_per_second,
             max_concurrent_connections: self.rate_limit.max_concurrent_connections,
@@ -78,6 +79,17 @@ pub struct GrpcOptions {
         help_heading = super::section::RPC_CONFIGURATION_HELP_HEADING
     )]
     pub max_connection_age: Duration,
+
+    /// Grace period for an RPC connection to shut down after reaching its maximum age.
+    #[arg(
+        long = "rpc.grpc.max-connection-age-grace",
+        env = "MIDEN_NODE_RPC_GRPC_MAX_CONNECTION_AGE_GRACE",
+        default_value = duration_to_human_readable_string(Duration::from_secs(10)),
+        value_parser = humantime::parse_duration,
+        value_name = "DURATION",
+        help_heading = super::section::RPC_CONFIGURATION_HELP_HEADING
+    )]
+    pub max_connection_age_grace: Duration,
 }
 
 #[derive(clap::Args, Clone, Debug)]

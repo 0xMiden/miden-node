@@ -11,6 +11,7 @@ pub use rocksdb::*;
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const TEST_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_MAX_CONNECTION_AGE: Duration = Duration::from_mins(30);
+const DEFAULT_MAX_CONNECTION_AGE_GRACE: Duration = Duration::from_secs(10);
 const DEFAULT_REPLENISH_N_PER_SECOND_PER_IP: NonZeroU64 = NonZeroU64::new(16).unwrap();
 const DEFAULT_BURST_SIZE: NonZeroU32 = NonZeroU32::new(128).unwrap();
 const DEFAULT_MAX_CONCURRENT_CONNECTIONS: u64 = 1_000;
@@ -80,6 +81,16 @@ pub struct GrpcOptionsExternal {
     )]
     pub max_connection_age: Duration,
 
+    /// Maximum duration for a connection to shut down gracefully after reaching the maximum age
+    /// before the server forcefully closes it.
+    #[arg(
+        long = "grpc.max_connection_age_grace",
+        default_value = duration_to_human_readable_string(DEFAULT_MAX_CONNECTION_AGE_GRACE),
+        value_parser = humantime::parse_duration,
+        value_name = "MAX_CONNECTION_AGE_GRACE"
+    )]
+    pub max_connection_age_grace: Duration,
+
     /// Number of connections to be served before the "API tokens" need to be replenished per IP
     /// address.
     #[arg(
@@ -111,6 +122,7 @@ impl Default for GrpcOptionsExternal {
         Self {
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             max_connection_age: DEFAULT_MAX_CONNECTION_AGE,
+            max_connection_age_grace: DEFAULT_MAX_CONNECTION_AGE_GRACE,
             burst_size: DEFAULT_BURST_SIZE,
             replenish_n_per_second_per_ip: DEFAULT_REPLENISH_N_PER_SECOND_PER_IP,
             max_concurrent_connections: DEFAULT_MAX_CONCURRENT_CONNECTIONS,
@@ -131,6 +143,7 @@ impl GrpcOptionsExternal {
         Self {
             request_timeout: Duration::from_hours(24),
             max_connection_age: Duration::from_hours(24),
+            max_connection_age_grace: DEFAULT_MAX_CONNECTION_AGE_GRACE,
             burst_size: NonZeroU32::new(100_000).unwrap(),
             replenish_n_per_second_per_ip: NonZeroU64::new(100_000).unwrap(),
             max_concurrent_connections: u64::MAX,

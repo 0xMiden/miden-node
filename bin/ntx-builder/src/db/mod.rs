@@ -387,6 +387,22 @@ impl LoopDb {
             .await
     }
 
+    /// Marks notes as permanently unconsumable (see [`Db::discard_notes`]) on the pinned
+    /// connection.
+    pub async fn discard_notes(
+        &self,
+        nullifiers: Vec<Nullifier>,
+        block_num: BlockNumber,
+        max_attempts: usize,
+        reason: String,
+    ) -> Result<()> {
+        self.conn
+            .transact("discard_notes", move |conn| {
+                queries::discard_notes(conn, &nullifiers, block_num, max_attempts, &reason)
+            })
+            .await
+    }
+
     /// Persists a note script to the local cache (see [`Db::insert_note_script`]) on the pinned
     /// connection.
     pub async fn insert_note_script(&self, script_root: Word, script: &NoteScript) -> Result<()> {

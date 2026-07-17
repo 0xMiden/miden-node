@@ -179,6 +179,7 @@ impl Rpc {
         let rpc = tonic::transport::Server::builder()
             .accept_http1(true)
             .max_connection_age(self.grpc_options.max_connection_age)
+            .max_connection_age_grace(self.grpc_options.max_connection_age_grace)
             .timeout(self.grpc_options.request_timeout)
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(

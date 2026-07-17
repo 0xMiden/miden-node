@@ -279,6 +279,51 @@ async fn rpc_rate_limits_per_ip() {
 }
 
 #[tokio::test]
+async fn rpc_connection_timeout_grace_does_not_panic() {
+    let tonic_timeout_panics = Arc::new(AtomicUsize::new(0));
+    let tonic_timeout_panics_hook = Arc::clone(&tonic_timeout_panics);
+    let default_panic_hook = std::panic::take_hook();
+
+    std::panic::set_hook(Box::new(move |info| {
+        let panic_payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str));
+
+        if panic_payload
+            .is_some_and(|payload| payload.contains("async fn resumed after completion"))
+        {
+            tonic_timeout_panics_hook.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+
+    let grpc_options = GrpcOptionsExternal {
+        max_connection_age: Duration::from_millis(20),
+        max_connection_age_grace: Duration::from_millis(20),
+        ..GrpcOptionsExternal::test()
+    };
+    let (mut rpc_client, rpc_addr, _store) = start_rpc_with_options(grpc_options).await;
+
+    let initial_response = send_request(&mut rpc_client).await;
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let url = Url::parse(&format!("http://{rpc_addr}")).unwrap();
+    let mut fresh_rpc_client = connect_rpc(url, None).await;
+    let fresh_response = send_request(&mut fresh_rpc_client).await;
+
+    std::panic::set_hook(default_panic_hook);
+    initial_response.expect("initial RPC request should succeed");
+    fresh_response
+        .expect("RPC server should keep serving fresh connections after timing out an old one");
+    assert_eq!(
+        tonic_timeout_panics.load(Ordering::SeqCst),
+        0,
+        "tonic connection timeout should not panic after max_connection_age"
+    );
+}
+
+#[tokio::test]
 async fn rpc_server_accepts_requests_with_accept_header() {
     // Start the RPC.
     let (mut rpc_client, _, _store) = start_rpc().await;

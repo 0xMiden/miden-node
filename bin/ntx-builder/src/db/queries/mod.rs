@@ -5,12 +5,9 @@
 //! [`Database::read`](miden_node_db::sqlite::Database::read) /
 //! [`Database::write`](miden_node_db::sqlite::Database::write).
 
-use std::collections::HashMap;
-
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::WriteTx;
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::transaction::TransactionId;
@@ -23,14 +20,22 @@ pub(crate) mod account_effect;
 mod account_exists;
 pub use account_exists::account_exists;
 
+mod account_has_pending_notes;
+pub use account_has_pending_notes::account_has_pending_notes;
+
+// The committed-transaction landing check reads `last_committed_tx` from the `AccountView` the
+// coordinator pushes, so this read accessor is only used by tests to verify that `upsert_account`
+// persists `accounts.last_tx_id` correctly.
+#[cfg(test)]
 mod account_last_tx;
+#[cfg(test)]
 pub use account_last_tx::account_last_tx;
 
 mod accounts_with_pending_notes;
 pub use accounts_with_pending_notes::accounts_with_pending_notes;
 
 mod available_notes;
-pub use available_notes::{available_notes, has_available_notes};
+pub use available_notes::{AvailableNotes, available_notes};
 
 mod discard_notes;
 pub use discard_notes::discard_notes;
@@ -88,19 +93,26 @@ mod tests;
 /// - Updates the singleton `chain_state` row's tip with the new block header and the
 ///   post-application chain MMR.
 ///
-/// The account upserts apply each block's network-account effects to the local store so the actor's
-/// `account_last_tx` landing check and post-expiry reload see the authoritative committed state.
+/// The account upserts apply each block's network-account effects to the local store so an actor's
+/// post-expiry reload sees the authoritative committed state. The recorded `accounts.last_tx_id` and
+/// the `last_committed_tx` the coordinator pushes to actors both derive from the block's
+/// `account_transactions`, so they agree on which transaction last touched each account.
 pub fn apply_committed_block(
     tx: &WriteTx<'_>,
     effects: &CommittedBlockEffects,
     chain_mmr: &PartialMmr,
 ) -> Result<(), DatabaseError> {
-    // The latest transaction in this block per account. For block-producer output every committed
-    // account update originates from a transaction in the same block, so each upserted account has
-    // an entry here. Collecting into a map keeps the last transaction per account (block order is
-    // preserved). The genesis block is the sole exception: it commits account state directly with
-    // no transactions, so genesis accounts fall back to the zero sentinel below.
-    let last_tx: HashMap<AccountId, _> = effects.account_transactions.iter().copied().collect();
+    // The latest transaction in this block per account, from the same source the coordinator uses
+    // for each `AccountView`'s `last_committed_tx`, so the persisted `accounts.last_tx_id` and the
+    // pushed landing state agree. For block-producer output every committed account update
+    // originates from a transaction in the same block, so each upserted account has an entry here.
+    // The genesis block is the sole exception: it commits account state directly with no
+    // transactions, so genesis accounts fall back to the zero sentinel below.
+    //
+    // `accounts.last_tx_id` is persisted but no longer read by landing detection, which now compares
+    // against the in-memory `AccountView`. The column is retained as the committed-state record and
+    // is exercised only by the `account_last_tx` test accessor (see `queries::accounts`).
+    let last_tx = effects.latest_tx_per_account();
     let is_genesis = effects.header.block_num() == BlockNumber::GENESIS;
 
     for (account_id, details) in &effects.network_account_updates {

@@ -7083,6 +7083,7 @@ dependencies = [
  "anyhow",
  "clap",
  "fs-err",
+ "semver 1.0.28",
  "serde",
  "toml",
  "tree-sitter",

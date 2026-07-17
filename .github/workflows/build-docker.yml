@@ -40,10 +40,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          # Full history is needed so the file-mtimes step below can find each
-          # tracked file's actual last-commit timestamp, not just the ones
-          # touched by the tip commit.
-          fetch-depth: 0
 
       - name: Prepare image metadata
         id: metadata
@@ -51,21 +47,6 @@ jobs:
           echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "version=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Generate deterministic file mtimes
-        run: |
-          # Cargo's fingerprinting for path/workspace crates is mtime-based,
-          # but BuildKit normalises every COPY'd file in the Docker build to
-          # the same timestamp regardless of content. Restoring each file's
-          # real last-commit time here lets Cargo (inside the Dockerfile)
-          # correctly tell "actually changed since the cached build" apart
-          # from "unchanged", instead of reusing a stale, incompatible .rlib
-          # from a different commit that happens to share the /app/target
-          # BuildKit cache mount.
-          git log --format='%ct' --name-only --no-renames | awk '
-            /^[0-9]+$/ { ts = $1; next }
-            NF && !seen[$0]++ { print ts"\t"$0 }
-          ' > docker-file-mtimes.tsv
 
       - name: Build
         uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9

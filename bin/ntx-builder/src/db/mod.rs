@@ -10,7 +10,9 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::note::{NoteId, NoteScript, Nullifier};
+#[cfg(test)]
 use miden_protocol::transaction::TransactionId;
+#[cfg(test)]
 use miden_standards::note::AccountTargetNetworkNote;
 use tracing::info;
 
@@ -83,25 +85,30 @@ impl NtxDb {
             .await
     }
 
-    pub(crate) async fn has_available_notes(
+    /// Returns `true` if the account has any pending (unconsumed, within attempt budget) note. Used
+    /// by the coordinator to decide whether to respawn an actor that just idle-timed-out, without
+    /// loading or deserializing the notes themselves.
+    pub(crate) async fn account_has_pending_notes(
         &self,
         account_id: AccountId,
-        block_num: BlockNumber,
-        max_note_attempts: usize,
+        max_attempts: usize,
     ) -> Result<bool, DatabaseError> {
         self.db
-            .read("has_available_notes", move |tx| {
-                queries::has_available_notes(tx, account_id, block_num, max_note_attempts)
+            .read("account_has_pending_notes", move |tx| {
+                queries::account_has_pending_notes(tx, account_id, max_attempts)
             })
             .await
     }
 
+    /// Returns the notes currently available for consumption by the given account, along with the
+    /// earliest block at which a currently-ineligible note becomes eligible (see
+    /// [`queries::AvailableNotes`]).
     pub(crate) async fn available_notes(
         &self,
         account_id: AccountId,
         block_num: BlockNumber,
         max_note_attempts: usize,
-    ) -> Result<Vec<AccountTargetNetworkNote>, DatabaseError> {
+    ) -> Result<queries::AvailableNotes, DatabaseError> {
         self.db
             .read("available_notes", move |tx| {
                 queries::available_notes(tx, account_id, block_num, max_note_attempts)
@@ -176,6 +183,10 @@ impl NtxDb {
             .await
     }
 
+    /// The committed-transaction landing check reads `last_committed_tx` from the `AccountView` the
+    /// coordinator pushes, so this read accessor is only used by tests to verify that
+    /// `upsert_account` persists `accounts.last_tx_id` correctly.
+    #[cfg(test)]
     pub(crate) async fn account_last_tx(
         &self,
         account_id: AccountId,

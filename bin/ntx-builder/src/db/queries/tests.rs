@@ -108,7 +108,14 @@ async fn available_notes_excludes_consumed_notes() {
     let note = mock_single_target_note(account_id, 21);
     db.insert_network_notes(vec![note.clone()]).await.unwrap();
 
-    assert_eq!(db.available_notes(account_id, BlockNumber::from(1), 30).await.unwrap().len(), 1);
+    assert_eq!(
+        db.available_notes(account_id, BlockNumber::from(1), 30)
+            .await
+            .unwrap()
+            .eligible
+            .len(),
+        1
+    );
 
     db.mark_notes_consumed(vec![note.as_note().nullifier()], BlockNumber::from(7))
         .await
@@ -118,6 +125,7 @@ async fn available_notes_excludes_consumed_notes() {
         db.available_notes(account_id, BlockNumber::from(1000), 30)
             .await
             .unwrap()
+            .eligible
             .is_empty()
     );
 }
@@ -133,7 +141,7 @@ async fn available_notes_returns_unconsumed_under_attempt_cap() {
     db.insert_network_notes(vec![note]).await.unwrap();
 
     let available = db.available_notes(account_id, BlockNumber::from(1), 30).await.unwrap();
-    assert_eq!(available.len(), 1);
+    assert_eq!(available.eligible.len(), 1);
 }
 
 #[tokio::test]
@@ -152,7 +160,10 @@ async fn available_notes_excludes_attempts_at_cap() {
     }
 
     let available = db.available_notes(account_id, BlockNumber::from(1000), 30).await.unwrap();
-    assert!(available.is_empty(), "notes at the attempt cap should not be available");
+    assert!(
+        available.eligible.is_empty(),
+        "notes at the attempt cap should not be available"
+    );
 }
 
 // CHAIN STATE
@@ -382,6 +393,7 @@ async fn discard_notes_pins_attempts_to_cap_and_drops_from_pending() {
         db.available_notes(account_id, BlockNumber::from(1000), 30)
             .await
             .unwrap()
+            .eligible
             .is_empty(),
         "a discarded note must not be selectable",
     );

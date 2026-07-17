@@ -3,6 +3,7 @@ mod start;
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
@@ -12,7 +13,13 @@ use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::Deserializable;
-use miden_validator::{DataDirectory, LOG_TARGET, ValidatorEncryptor, ValidatorSigner};
+use miden_validator::{
+    DataDirectory,
+    LOG_TARGET,
+    LocalX25519TransactionInputDecryptor,
+    TransactionInputDecryptor,
+    ValidatorSigner,
+};
 
 const ENV_DATA_DIRECTORY: &str = "MIDEN_VALIDATOR_DATA_DIRECTORY";
 const ENV_LISTEN: &str = "MIDEN_VALIDATOR_LISTEN";
@@ -194,7 +201,8 @@ impl ValidatorCommand {
                     .context("failed to decode the encryption key hex")?;
                 let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
                     .context("failed to construct the encryption key")?;
-                let encryptor = ValidatorEncryptor::new_local(encryption_key);
+                let decryptor: Arc<dyn TransactionInputDecryptor> =
+                    Arc::new(LocalX25519TransactionInputDecryptor::new(encryption_key));
 
                 let signer = if let Some(kms_key_id) = kms_key_id {
                     ValidatorSigner::new_kms(kms_key_id).await?
@@ -207,7 +215,7 @@ impl ValidatorCommand {
                     address,
                     grpc_options,
                     signer,
-                    encryptor,
+                    decryptor,
                     data_directory,
                     sqlite_connection_pool_size,
                     shutdown,

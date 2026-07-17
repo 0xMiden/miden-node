@@ -14,7 +14,8 @@ use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::{ValidatorError, ValidatorService};
 use crate::db::{load_chain_tip, setup, upsert_block_header};
-use crate::{ValidatorEncryptor, ValidatorSigner};
+use crate::signers::attestation_commitment;
+use crate::{LocalX25519TransactionInputDecryptor, TransactionInputDecryptor, ValidatorSigner};
 
 // TEST HELPERS
 // ================================================================================================
@@ -22,12 +23,12 @@ use crate::{ValidatorEncryptor, ValidatorSigner};
 /// The shared transaction encryption secret provisioned to every test validator.
 const TEST_ENCRYPTION_SECRET: [u8; 32] = [3u8; 32];
 
-/// Creates a [`ValidatorEncryptor`] from the shared test secret, modelling the identically
-/// provisioned encryption key of a validator in the set.
-fn test_encryptor() -> ValidatorEncryptor {
+/// Creates a [`LocalX25519TransactionInputDecryptor`] from the shared test secret, modelling the
+/// identically provisioned encryption key of a validator in the set.
+fn test_decryptor() -> LocalX25519TransactionInputDecryptor {
     let key = KeyExchangeKey::read_from_bytes(&TEST_ENCRYPTION_SECRET)
         .expect("test secret should be a valid key exchange key");
-    ValidatorEncryptor::new_local(key)
+    LocalX25519TransactionInputDecryptor::new(key)
 }
 
 /// Test harness that wraps a [`Validator`] and tracks the chain MMR state needed to construct valid
@@ -50,9 +51,17 @@ impl TestValidator {
         let (temp_dir, db, block_store, genesis_header) = setup_db_with_genesis(&key).await;
 
         Self {
-            server: ValidatorService::new(signer, test_encryptor(), db, block_store, 0, 0, 0)
-                .await
-                .unwrap(),
+            server: ValidatorService::new(
+                signer,
+                std::sync::Arc::new(test_decryptor()),
+                db,
+                block_store,
+                0,
+                0,
+                0,
+            )
+            .await
+            .unwrap(),
             chain: PartialBlockchain::default(),
             chain_tip: genesis_header,
             _temp_dir: temp_dir,
@@ -206,8 +215,16 @@ async fn signing_key_mismatch_rejected() {
         "test requires a signing key that differs from the genesis validator key",
     );
 
-    let result =
-        ValidatorService::new(rogue_signer, test_encryptor(), db, block_store, 0, 0, 0).await;
+    let result = ValidatorService::new(
+        rogue_signer,
+        std::sync::Arc::new(test_decryptor()),
+        db,
+        block_store,
+        0,
+        0,
+        0,
+    )
+    .await;
     assert!(
         matches!(result, Err(ValidatorError::ValidatorKeyMismatch { .. })),
         "expected ValidatorKeyMismatch error",
@@ -728,18 +745,14 @@ async fn transaction_encryption_key_is_attested() {
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
 
-    let encryptor = test_encryptor();
-    assert_eq!(response.scheme, ValidatorEncryptor::scheme_id());
-    assert_eq!(response.key_id, encryptor.key_id());
-    assert_eq!(response.public_key, encryptor.public_key().to_bytes());
+    let info = test_decryptor().encryption_key().await.expect("key info should be available");
+    assert_eq!(response.scheme, info.scheme);
+    assert_eq!(response.key_id, info.key_id);
+    assert_eq!(response.public_key, info.public_key);
 
-    let commitment = ValidatorEncryptor::attestation_commitment_of(
-        response.scheme,
-        response.key_id,
-        genesis,
-        &response.public_key,
-    );
-    assert_eq!(commitment, encryptor.attestation_commitment(genesis));
+    let commitment =
+        attestation_commitment(response.scheme, &response.key_id, genesis, &response.public_key);
+    assert_eq!(commitment, info.attestation_commitment(genesis));
 
     let signature =
         Signature::read_from_bytes(&response.signature).expect("signature should deserialize");
@@ -780,30 +793,32 @@ async fn tampered_attestation_fails_verification() {
 
     let mut tampered_public_key = response.public_key.clone();
     tampered_public_key[0] ^= 0x01;
+    let mut tampered_key_id = response.key_id.clone();
+    tampered_key_id[0] ^= 0x01;
+    // Moving a byte across the key id and public key boundary must also change the payload, which
+    // the length prefixes in the transcript guarantee.
+    let mut extended_key_id = response.key_id.clone();
+    extended_key_id.push(response.public_key[0]);
     let tampered_genesis = Word::try_from([9u64, 9, 9, 9]).unwrap();
 
     let tampered_commitments = [
-        ValidatorEncryptor::attestation_commitment_of(
+        attestation_commitment(
             response.scheme + 1,
-            response.key_id,
+            &response.key_id,
             genesis,
             &response.public_key,
         ),
-        ValidatorEncryptor::attestation_commitment_of(
+        attestation_commitment(response.scheme, &tampered_key_id, genesis, &response.public_key),
+        attestation_commitment(
             response.scheme,
-            response.key_id.wrapping_add(1),
+            &extended_key_id,
             genesis,
-            &response.public_key,
+            &response.public_key[1..],
         ),
-        ValidatorEncryptor::attestation_commitment_of(
+        attestation_commitment(response.scheme, &response.key_id, genesis, &tampered_public_key),
+        attestation_commitment(
             response.scheme,
-            response.key_id,
-            genesis,
-            &tampered_public_key,
-        ),
-        ValidatorEncryptor::attestation_commitment_of(
-            response.scheme,
-            response.key_id,
+            &response.key_id,
             tampered_genesis,
             &response.public_key,
         ),
@@ -838,16 +853,19 @@ async fn response_key_seals_for_the_validator_set() {
         .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
         .unwrap();
 
-    let opened = test_encryptor()
-        .unseal_bytes_with_associated_data(sealed.clone(), associated_data)
+    let sealed = sealed.to_bytes();
+    let opened = test_decryptor()
+        .decrypt_transaction_inputs(&sealed, associated_data)
+        .await
         .unwrap();
     assert_eq!(opened.as_slice(), plaintext);
 
     assert!(
-        test_encryptor()
-            .unseal_bytes_with_associated_data(sealed, b"other associated data")
+        test_decryptor()
+            .decrypt_transaction_inputs(&sealed, b"other associated data")
+            .await
             .is_err(),
-        "unsealing must fail under mismatched associated data",
+        "decryption must fail under mismatched associated data",
     );
 }
 

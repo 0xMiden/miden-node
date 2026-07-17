@@ -43,7 +43,9 @@ the whole validator set, while the attesting signature is specific to the servin
 signature against a validator signing key they already trust from the chain and reconstruct the encryption key with
 miden-crypto. The exact attestation payload is documented on the `TransactionEncryptionKey` proto message. Note that
 this scheme does not hide transaction inputs from holders of the shared encryption secret (currently the network
-operator and every validator) and provides no forward secrecy.
+operator and every validator) and provides no forward secrecy. The attestation proves which validator vouched for the
+key but does not prove freshness: after a key rotation, a replayed older signed key still verifies until a chain or
+epoch rule for freshness exists.
 
 Write requests must identify the target network with the `genesis` parameter in the `Accept` header:
 

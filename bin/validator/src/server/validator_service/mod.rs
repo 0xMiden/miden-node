@@ -19,7 +19,8 @@ use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
-use crate::{COMPONENT, ValidatorEncryptor, ValidatorSigner};
+use crate::signers::TransactionEncryptionKeyInfo;
+use crate::{COMPONENT, TransactionInputDecryptor, ValidatorSigner};
 
 #[cfg(test)]
 mod tests;
@@ -76,7 +77,11 @@ pub enum ValidatorError {
 /// Implements the gRPC API for the validator.
 pub(crate) struct ValidatorService {
     signer: ValidatorSigner,
-    encryptor: ValidatorEncryptor,
+    /// Decryptor for transaction inputs sealed against the shared encryption key.
+    #[expect(dead_code, reason = "used by the submit path in a follow-up PR")]
+    decryptor: Arc<dyn TransactionInputDecryptor>,
+    /// Public metadata of the shared encryption key, fetched once at construction.
+    encryption_key_info: TransactionEncryptionKeyInfo,
     /// Signature by this validator's own signing key over the encryption key attestation
     /// commitment, computed once at construction.
     encryption_key_attestation: Signature,
@@ -102,7 +107,7 @@ pub(crate) struct ValidatorService {
 impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
-        encryptor: ValidatorEncryptor,
+        decryptor: Arc<dyn TransactionInputDecryptor>,
         db: Database,
         block_store: BlockStore,
         initial_chain_tip: u32,
@@ -139,14 +144,19 @@ impl ValidatorService {
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoGenesisHeader)?
             .commitment();
+        let encryption_key_info = decryptor
+            .encryption_key()
+            .await
+            .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
         let encryption_key_attestation = signer
-            .sign_commitment(encryptor.attestation_commitment(genesis_commitment))
+            .sign_commitment(encryption_key_info.attestation_commitment(genesis_commitment))
             .await
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
 
         Ok(Self {
             signer,
-            encryptor,
+            decryptor,
+            encryption_key_info,
             encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
             db: db.into(),

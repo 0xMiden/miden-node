@@ -75,7 +75,7 @@ message TransactionEncryptionKey {
   uint32 scheme = 1;
 
   // Opaque identifier of the current encryption key. Changes when the key rotates.
-  fixed32 key_id = 2;
+  bytes key_id = 2;
 
   // Raw public key bytes of the shared encryption key.
   //
@@ -85,16 +85,20 @@ message TransactionEncryptionKey {
   bytes public_key = 3;
 
   // The serving validator's signature over the attestation commitment: the Poseidon2 byte-mode
-  // hash of `domain_tag || scheme || key_id || genesis_commitment || public_key`, where
-  // `domain_tag` is the ASCII string `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, scheme and key_id
-  // are bound at their full wire width (4 bytes little-endian each), and the genesis block
-  // commitment ties the attestation to one network. The canonical construction is
-  // `miden_validator::ValidatorEncryptor::attestation_commitment`.
+  // hash of `domain_tag || scheme || len(key_id) || key_id || genesis_commitment ||
+  // len(public_key) || public_key`, where `domain_tag` is the ASCII string
+  // `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, the scheme and the length prefixes are encoded as
+  // 4 bytes little-endian, and the genesis block commitment ties the attestation to one network.
+  // The canonical construction is `miden_validator::attestation_commitment`.
   //
   // Encoded using [miden_serde_utils::Serializable] implementation for
   // [miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature]. Verifiable against the
   // validator's signing key committed in block headers.
   bytes signature = 4;
+
+  // Reserved for future attestation evidence beyond the validator signature, e.g. a TEE quote,
+  // signature chain, compose hash, app measurement, epoch, or accepted measurement set.
+  reserved 5 to 9;
 }
 
 // Represents a transaction ID.

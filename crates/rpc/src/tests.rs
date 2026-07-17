@@ -798,7 +798,7 @@ async fn start_validator(
 fn test_encryption_key() -> proto::transaction::TransactionEncryptionKey {
     proto::transaction::TransactionEncryptionKey {
         scheme: 1,
-        key_id: 0xDEAD_BEEF,
+        key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
         public_key: vec![7; 32],
         signature: vec![9; 65],
     }

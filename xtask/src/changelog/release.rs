@@ -1,4 +1,5 @@
-use std::{env, process::Command};
+use std::env;
+use std::process::Command;
 
 use anyhow::{Context, Result, bail, ensure};
 use semver::Version;
@@ -99,10 +100,7 @@ impl ReleaseTag {
             bail!("release tags must look like v1.2.3 or v1.2.3-rc.1");
         };
 
-        ensure!(
-            version.build.is_empty(),
-            "release tags must look like v1.2.3 or v1.2.3-rc.1"
-        );
+        ensure!(version.build.is_empty(), "release tags must look like v1.2.3 or v1.2.3-rc.1");
 
         Ok(Self { version })
     }
@@ -120,10 +118,7 @@ fn previous_release_tag(release: &ReleaseTag, release_commit: &str) -> Result<St
     } else {
         "release"
     };
-    bail!(
-        "could not find a previous {release_kind} tag before v{}",
-        release.version
-    );
+    bail!("could not find a previous {release_kind} tag before v{}", release.version);
 }
 
 fn latest_stable_tag(release_commit: &str) -> Result<String> {
@@ -157,9 +152,7 @@ fn release_tags_merged_into(commit: &str) -> Result<Vec<(String, Version)>> {
         .map(str::trim)
         .filter(|tag| !tag.is_empty())
         .filter_map(|tag| {
-            ReleaseTag::parse(tag)
-                .ok()
-                .map(|release| (tag.to_owned(), release.version))
+            ReleaseTag::parse(tag).ok().map(|release| (tag.to_owned(), release.version))
         })
         .collect())
 }
@@ -380,10 +373,7 @@ mod tests {
         let release = ReleaseTag::parse("v1.2.0-rc.1").unwrap();
         let tags = release_tags(&["v1.1.0", "v1.2.0-alpha.1", "v1.2.0-rc.0", "v1.2.0-rc.1"]);
 
-        assert_eq!(
-            previous_release_tag_from(&release, &tags),
-            Some("v1.2.0-rc.0")
-        );
+        assert_eq!(previous_release_tag_from(&release, &tags), Some("v1.2.0-rc.0"));
     }
 
     #[test]
@@ -399,10 +389,7 @@ mod tests {
         let release = ReleaseTag::parse("v1.2.0-alpha.2").unwrap();
         let tags = release_tags(&["v1.1.0", "v1.2.0-alpha.1", "v1.2.0-alpha.2"]);
 
-        assert_eq!(
-            previous_release_tag_from(&release, &tags),
-            Some("v1.2.0-alpha.1")
-        );
+        assert_eq!(previous_release_tag_from(&release, &tags), Some("v1.2.0-alpha.1"));
     }
 
     #[test]

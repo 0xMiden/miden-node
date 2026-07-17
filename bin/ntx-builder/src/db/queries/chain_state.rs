@@ -1,12 +1,11 @@
 //! Chain state queries.
 
-use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{ReadTx, WriteTx};
+use miden_node_db::{DatabaseError, SqlTypeConvert};
 use miden_protocol::Word;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 
-use crate::db::queries::{block_num_from_i64, block_num_to_i64};
 use crate::db::sql;
 
 /// Updates the tip columns (block number, header, and partial chain MMR) of the singleton chain
@@ -18,10 +17,7 @@ pub fn update_chain_state_tip(
     block_header: &BlockHeader,
     chain_mmr: &PartialMmr,
 ) -> Result<(), DatabaseError> {
-    tx.execute(
-        sql::UPDATE_CHAIN_STATE_TIP,
-        &[&block_num_to_i64(block_num), block_header, chain_mmr],
-    )?;
+    tx.execute(sql::UPDATE_CHAIN_STATE_TIP, &[&block_num.to_raw_sql(), block_header, chain_mmr])?;
     Ok(())
 }
 
@@ -42,7 +38,7 @@ pub fn insert_genesis_chain_state(
     tx.execute(
         sql::INSERT_GENESIS_CHAIN_STATE,
         &[
-            &block_num_to_i64(genesis_block_header.block_num()),
+            &genesis_block_header.block_num().to_raw_sql(),
             genesis_block_header,
             &PartialMmr::default(),
             genesis_commitment,
@@ -68,7 +64,7 @@ pub fn select_chain_state(
     Ok(tx
         .query(sql::SELECT_CHAIN_STATE, &[], |row| {
             Ok((
-                block_num_from_i64(row.get::<i64>(0)?),
+                BlockNumber::from_raw_sql(row.get::<i64>(0)?)?,
                 row.get::<BlockHeader>(1)?,
                 row.get::<PartialMmr>(2)?,
             ))

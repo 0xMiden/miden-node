@@ -1,7 +1,7 @@
 //! Note-related queries.
 
-use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{ReadTx, WriteTx};
+use miden_node_db::{DatabaseError, SqlTypeConvert};
 use miden_node_utils::ErrorReport;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
@@ -9,7 +9,6 @@ use miden_protocol::note::{Note, NoteId, Nullifier};
 use miden_standards::note::AccountTargetNetworkNote;
 
 use crate::NoteError;
-use crate::db::queries::{block_num_from_i64, block_num_to_i64};
 use crate::db::sql;
 
 /// Row returned by [`get_note_status`].
@@ -49,7 +48,7 @@ pub fn mark_notes_consumed(
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<(), DatabaseError> {
-    let block_num_val = block_num_to_i64(block_num);
+    let block_num_val = block_num.to_raw_sql();
     for nullifier in nullifiers {
         tx.execute(sql::MARK_NOTE_CONSUMED, &[nullifier, &block_num_val])?;
     }
@@ -85,7 +84,7 @@ pub fn available_notes(
     for (note, attempt_count, last_attempt) in rows {
         #[expect(clippy::cast_sign_loss)]
         let attempt_count = attempt_count as usize;
-        let last_attempt = last_attempt.map(block_num_from_i64);
+        let last_attempt = last_attempt.map(BlockNumber::from_raw_sql).transpose()?;
         let note = AccountTargetNetworkNote::new(note).map_err(|source| {
             DatabaseError::deserialization("failed to convert to network note", source)
         })?;
@@ -106,7 +105,7 @@ pub fn notes_failed(
     failed_notes: &[(Nullifier, NoteError)],
     block_num: BlockNumber,
 ) -> Result<(), DatabaseError> {
-    let block_num_val = block_num_to_i64(block_num);
+    let block_num_val = block_num.to_raw_sql();
 
     for (nullifier, error) in failed_notes {
         let error_report = error.as_report();
@@ -130,7 +129,7 @@ pub fn discard_notes(
     max_attempts: usize,
     reason: &str,
 ) -> Result<(), DatabaseError> {
-    let block_num_val = block_num_to_i64(block_num);
+    let block_num_val = block_num.to_raw_sql();
     let reason = reason.to_string();
     for nullifier in nullifiers {
         tx.execute(

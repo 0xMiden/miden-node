@@ -35,22 +35,6 @@ pub use notes::*;
 #[cfg(test)]
 mod tests;
 
-// BLOCK NUMBER CODEC
-// ================================================================================================
-
-/// Serializes a [`BlockNumber`] to the `i64` used by the `block_num`/`committed_at`/`last_attempt`
-/// columns.
-pub(crate) fn block_num_to_i64(block_num: BlockNumber) -> i64 {
-    i64::from(block_num.as_u32())
-}
-
-/// Deserializes a `block_num`/`committed_at`/`last_attempt` column value back into a
-/// [`BlockNumber`].
-#[expect(clippy::cast_sign_loss)]
-pub(crate) fn block_num_from_i64(val: i64) -> BlockNumber {
-    BlockNumber::from(val as u32)
-}
-
 // COMMITTED BLOCK APPLICATION
 // ================================================================================================
 

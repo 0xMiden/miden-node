@@ -193,7 +193,7 @@ impl Coordinator {
             .actor_context
             .state
             .db
-            .read("account_exists", move |tx| crate::db::queries::account_exists(tx, account_id))
+            .account_exists(account_id)
             .await
             .context("failed to check for committed account state")?;
 
@@ -334,14 +334,9 @@ mod tests {
     /// Seeds a committed row for `account_id` so the coordinator's spawn check sees the account.
     async fn seed_committed_account(coordinator: &Coordinator, account_id: AccountId) {
         let db = coordinator.actor_context.state.db.clone();
-        crate::db::upsert_account_for_test(
-            &db,
-            account_id,
-            mock_account(account_id),
-            mock_transaction_id(0),
-        )
-        .await
-        .unwrap();
+        db.upsert_account_for_test(account_id, mock_account(account_id), mock_transaction_id(0))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -398,7 +393,7 @@ mod tests {
         // The creation commits in a later block; the builder persists the block's effects to the DB
         // before handing them to the coordinator.
         let db = coordinator.actor_context.state.db.clone();
-        crate::db::upsert_account_for_test(&db, account_id, account, mock_transaction_id(0))
+        db.upsert_account_for_test(account_id, account, mock_transaction_id(0))
             .await
             .unwrap();
         let effects = CommittedBlockEffects {

@@ -20,17 +20,56 @@ use crate::db::queries::account_effect::NetworkAccountEffect;
 
 pub(crate) mod account_effect;
 
-mod accounts;
-pub use accounts::*;
+mod account_exists;
+pub use account_exists::account_exists;
 
-mod chain_state;
-pub use chain_state::*;
+mod account_last_tx;
+pub use account_last_tx::account_last_tx;
 
-mod note_scripts;
-pub use note_scripts::*;
+mod accounts_with_pending_notes;
+pub use accounts_with_pending_notes::accounts_with_pending_notes;
 
-mod notes;
-pub use notes::*;
+mod available_notes;
+pub use available_notes::{available_notes, has_available_notes};
+
+mod discard_notes;
+pub use discard_notes::discard_notes;
+
+mod get_account;
+pub use get_account::get_account;
+
+mod get_note_status;
+pub use get_note_status::{NoteStatusRow, get_note_status};
+
+mod insert_genesis_chain_state;
+pub use insert_genesis_chain_state::insert_genesis_chain_state;
+
+mod insert_network_notes;
+pub use insert_network_notes::insert_network_notes;
+
+mod insert_note_scripts;
+pub use insert_note_scripts::insert_note_script;
+
+mod lookup_note_script;
+pub use lookup_note_script::lookup_note_script;
+
+mod mark_notes_consumed;
+pub use mark_notes_consumed::mark_notes_consumed;
+
+mod notes_failed;
+pub use notes_failed::notes_failed;
+
+mod select_chain_state;
+pub use select_chain_state::select_chain_state;
+
+mod select_genesis_commitment;
+pub use select_genesis_commitment::select_genesis_commitment;
+
+mod update_chain_state_tip;
+pub use update_chain_state_tip::update_chain_state_tip;
+
+mod upsert_account;
+pub use upsert_account::upsert_account;
 
 #[cfg(test)]
 mod tests;

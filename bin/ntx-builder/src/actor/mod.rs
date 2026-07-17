@@ -10,7 +10,6 @@ use allowlist::{NoteScriptNotAllowlisted, partition_by_allowlist};
 use anyhow::Context;
 use candidate::TransactionCandidate;
 use futures::FutureExt;
-use miden_node_db::sqlite::Database;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
@@ -26,7 +25,7 @@ use tokio::sync::{Notify, Semaphore, mpsc};
 
 use crate::chain_state::{ChainState, SharedChainState};
 use crate::clients::{RemoteTransactionProver, RpcClient};
-use crate::db::queries;
+use crate::db::NtxDb;
 use crate::{LOG_TARGET, NoteError};
 
 /// Builds the [`TransactionArgs`] shared by every network transaction.
@@ -87,7 +86,7 @@ pub struct GrpcClients {
 #[derive(Clone)]
 pub struct State {
     /// Local database for account state, notes, and transaction tracking.
-    pub db: Database,
+    pub db: NtxDb,
     /// The latest chain state. A single chain state is shared among all actors.
     pub chain: Arc<SharedChainState>,
     /// Shared LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
@@ -141,7 +140,7 @@ impl AccountActorContext {
     ///
     /// The URLs are fake and actors spawned with this context will fail on their first gRPC call,
     /// but this is sufficient for testing coordinator logic (registry, deactivation, etc.).
-    pub fn test(db: &Database) -> Self {
+    pub fn test(db: &NtxDb) -> Self {
         use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
         use url::Url;
 
@@ -305,8 +304,7 @@ impl AccountActor {
         // for accounts whose creation has been committed, so the account must exist.
         let mut account = self
             .state
-            .db
-            .read("get_account", move |tx| queries::get_account(tx, account_id))
+            .db.get_account(account_id)
             .await
             .context("failed to load committed account")?
             .context("no committed state for the account; the coordinator must only spawn actors for committed accounts")?;
@@ -317,9 +315,7 @@ impl AccountActor {
         let has_notes = self
             .state
             .db
-            .read("has_available_notes", move |tx| {
-                queries::has_available_notes(tx, account_id, block_num, max_note_attempts)
-            })
+            .has_available_notes(account_id, block_num, max_note_attempts)
             .await
             .context("failed to check for available notes")?;
         let mut mode = if has_notes {
@@ -416,7 +412,7 @@ impl AccountActor {
         let landed = self
             .state
             .db
-            .read("account_last_tx", move |tx| queries::account_last_tx(tx, account_id))
+            .account_last_tx(account_id)
             .await
             .context("failed to check submitted tx landing")?
             == Some(submitted_tx_id);
@@ -451,7 +447,7 @@ impl AccountActor {
             if let Some(latest) = self
                 .state
                 .db
-                .read("get_account", move |tx| queries::get_account(tx, account_id))
+                .get_account(account_id)
                 .await
                 .context("failed to reload account after submission expiry")?
             {
@@ -481,9 +477,7 @@ impl AccountActor {
         let notes = self
             .state
             .db
-            .read("available_notes", move |tx| {
-                queries::available_notes(tx, account_id, block_num, max_note_attempts)
-            })
+            .available_notes(account_id, block_num, max_note_attempts)
             .await
             .context("failed to query DB for available notes")?;
 
@@ -806,7 +800,7 @@ mod tests {
     }
 
     /// Builds an actor wired to `db` for the given account, plus the in-memory account to drive.
-    fn test_actor(db: &Database, account: &Account) -> AccountActor {
+    fn test_actor(db: &NtxDb, account: &Account) -> AccountActor {
         let ctx = AccountActorContext::test(db);
         AccountActor::new(account.id(), &ctx, Arc::new(Notify::new()))
     }
@@ -821,7 +815,7 @@ mod tests {
         let submitted = mock_transaction_id(7);
 
         // Seed the committed row so the landing check sees our submission as the latest tx.
-        crate::db::upsert_account_for_test(&db, account_id, account.clone(), submitted)
+        db.upsert_account_for_test(account_id, account.clone(), submitted)
             .await
             .unwrap();
 
@@ -903,14 +897,9 @@ mod tests {
 
         // Seed the committed account but no notes, so the actor starts and stays in NoViableNotes:
         // every wake re-checks the DB, finds nothing, and returns to the idle state.
-        crate::db::upsert_account_for_test(
-            &db,
-            account_id,
-            account.clone(),
-            mock_transaction_id(1),
-        )
-        .await
-        .unwrap();
+        db.upsert_account_for_test(account_id, account.clone(), mock_transaction_id(1))
+            .await
+            .unwrap();
 
         let mut ctx = AccountActorContext::test(&db);
         // Short idle timeout keeps the test fast.

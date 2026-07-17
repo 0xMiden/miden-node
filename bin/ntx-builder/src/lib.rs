@@ -7,7 +7,6 @@ use anyhow::Context;
 use builder::BlockStream;
 use chain_state::SharedChainState;
 use clients::{RemoteTransactionProver, RpcClient};
-use miden_node_db::sqlite::Database;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
@@ -18,6 +17,7 @@ use url::Url;
 
 use crate::actor::{AccountActorContext, ActorConfig, GrpcClients, State};
 use crate::coordinator::Coordinator;
+use crate::db::NtxDb;
 
 pub(crate) type NoteError = Arc<dyn ErrorReport + Send + Sync>;
 
@@ -380,7 +380,7 @@ impl NtxBuilderConfig {
 
         // Get the genesis commitment to send in the accept header
         let genesis_commitment = db
-            .read("select_genesis_commitment", db::queries::select_genesis_commitment)
+            .select_genesis_commitment()
             .await
             .context("failed to read genesis commitment")?
             .context(
@@ -407,11 +407,8 @@ impl NtxBuilderConfig {
         // The database is bootstrapped with the genesis block before startup (see
         // `miden-ntx-builder bootstrap`), so a persisted chain state is always present. Load it and
         // resume the subscription from the block after the last applied one.
-        let (last_applied_block, header, mmr) = db
-            .read("select_chain_state", db::queries::select_chain_state)
-            .await
-            .context("failed to read chain state")?
-            .context(
+        let (last_applied_block, header, mmr) =
+            db.select_chain_state().await.context("failed to read chain state")?.context(
                 "ntx-builder database has not been bootstrapped; \
                  run `miden-ntx-builder bootstrap` first",
             )?;
@@ -452,7 +449,7 @@ impl NtxBuilderConfig {
     fn build_coordinator(
         &self,
         rpc: RpcClient,
-        db: Database,
+        db: NtxDb,
         chain: Arc<SharedChainState>,
         shutdown: CancellationToken,
     ) -> anyhow::Result<(Coordinator, mpsc::Receiver<actor::ActorRequest>)> {

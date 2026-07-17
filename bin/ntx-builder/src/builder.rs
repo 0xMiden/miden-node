@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use futures::Stream;
-use miden_node_db::sqlite::Database;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::miden_instrument;
@@ -17,7 +16,7 @@ use crate::chain_state::SharedChainState;
 use crate::clients::RpcError;
 use crate::committed_block::CommittedBlockEffects;
 use crate::coordinator::Coordinator;
-use crate::db::queries;
+use crate::db::NtxDb;
 use crate::server::NtxBuilderRpcServer;
 use crate::{LOG_TARGET, NtxBuilderConfig};
 
@@ -58,7 +57,7 @@ pub struct NetworkTransactionBuilder {
     /// Configuration for the builder.
     config: NtxBuilderConfig,
     /// Database for persistent state.
-    db: Database,
+    db: NtxDb,
     /// Stream of committed blocks from the node RPC service.
     block_stream: BlockStream,
     /// Highest block number applied to the DB so far.
@@ -78,7 +77,7 @@ pub struct NetworkTransactionBuilder {
 impl NetworkTransactionBuilder {
     pub(crate) fn new(
         config: NtxBuilderConfig,
-        db: Database,
+        db: NtxDb,
         block_stream: BlockStream,
         last_applied_block: BlockNumber,
         chain: Arc<SharedChainState>,
@@ -154,9 +153,7 @@ impl NetworkTransactionBuilder {
         let max_note_attempts = self.config.max_note_attempts;
         let pending_accounts = self
             .db
-            .read("accounts_with_pending_notes", move |tx| {
-                queries::accounts_with_pending_notes(tx, max_note_attempts)
-            })
+            .accounts_with_pending_notes(max_note_attempts)
             .await
             .context("failed to load accounts with pending notes at catch-up")?;
         tracing::info!(
@@ -265,9 +262,7 @@ impl NetworkTransactionBuilder {
 
         let effects_for_db = effects.clone();
         self.db
-            .write("apply_committed_block", move |tx| {
-                queries::apply_committed_block(tx, &effects_for_db, &next_mmr)
-            })
+            .apply_committed_block(effects_for_db, next_mmr)
             .await
             .context("failed to apply committed block to DB")?;
 
@@ -277,45 +272,30 @@ impl NetworkTransactionBuilder {
     }
 }
 
-/// Reason recorded in a note's `last_error` when it is discarded for exceeding the per-tx cycle
-/// budget on its own.
-const OVERSIZED_NOTE_DISCARD_REASON: &str =
-    "note consumption exceeds the per-transaction cycle budget; it can never be consumed";
-
 /// Handles a single actor request then acknowledges the actor. All writes go through the
 /// framework's single writer connection, so the actors' reads cannot starve them.
 async fn handle_actor_request(
-    db: &Database,
+    db: &NtxDb,
     request: ActorRequest,
     max_note_attempts: usize,
 ) -> anyhow::Result<()> {
     match request {
         ActorRequest::NotesFailed { failed_notes, block_num, ack_tx } => {
-            db.write("notes_failed", move |tx| queries::notes_failed(tx, &failed_notes, block_num))
+            db.notes_failed(failed_notes, block_num)
                 .await
                 .context("failed to persist note failure")?;
             let _ = ack_tx.send(());
         },
         ActorRequest::NotesDiscarded { nullifiers, block_num, ack_tx } => {
-            db.write("discard_notes", move |tx| {
-                queries::discard_notes(
-                    tx,
-                    &nullifiers,
-                    block_num,
-                    max_note_attempts,
-                    OVERSIZED_NOTE_DISCARD_REASON,
-                )
-            })
-            .await
-            .context("failed to persist note discard")?;
+            db.discard_notes(nullifiers, block_num, max_note_attempts)
+                .await
+                .context("failed to persist note discard")?;
             let _ = ack_tx.send(());
         },
         ActorRequest::CacheNoteScript { script_root, script } => {
-            db.write("insert_note_script", move |tx| {
-                queries::insert_note_script(tx, &script_root, &script)
-            })
-            .await
-            .context("failed to cache note script")?;
+            db.insert_note_scripts(script_root, script)
+                .await
+                .context("failed to cache note script")?;
         },
     }
     Ok(())

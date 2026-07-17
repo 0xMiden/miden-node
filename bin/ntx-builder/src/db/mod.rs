@@ -5,40 +5,203 @@ use anyhow::Context;
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::Database;
 use miden_node_utils::tracing::miden_instrument;
-use miden_protocol::block::SignedBlock;
+use miden_protocol::Word;
+use miden_protocol::account::{Account, AccountId};
+use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
+use miden_protocol::note::{NoteId, NoteScript, Nullifier};
+use miden_protocol::transaction::TransactionId;
+use miden_standards::note::AccountTargetNetworkNote;
 use tracing::info;
 
-use crate::COMPONENT;
 use crate::committed_block::CommittedBlockEffects;
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
+use crate::db::queries::NoteStatusRow;
+use crate::{COMPONENT, NoteError, db};
 
 pub(crate) mod queries;
 
 mod migrations;
 
-/// SQL statements, kept in dedicated `.sql` files (under `sql/`).
-pub(crate) mod sql {
-    pub(crate) const UPSERT_ACCOUNT: &str = include_str!("sql/upsert_account.sql");
-    pub(crate) const ACCOUNT_LAST_TX: &str = include_str!("sql/account_last_tx.sql");
-    pub(crate) const ACCOUNT_EXISTS: &str = include_str!("sql/account_exists.sql");
-    pub(crate) const GET_ACCOUNT: &str = include_str!("sql/get_account.sql");
-    pub(crate) const UPDATE_CHAIN_STATE_TIP: &str = include_str!("sql/update_chain_state_tip.sql");
-    pub(crate) const INSERT_GENESIS_CHAIN_STATE: &str =
-        include_str!("sql/insert_genesis_chain_state.sql");
-    pub(crate) const SELECT_GENESIS_COMMITMENT: &str =
-        include_str!("sql/select_genesis_commitment.sql");
-    pub(crate) const SELECT_CHAIN_STATE: &str = include_str!("sql/select_chain_state.sql");
-    pub(crate) const LOOKUP_NOTE_SCRIPT: &str = include_str!("sql/lookup_note_script.sql");
-    pub(crate) const INSERT_NOTE_SCRIPT: &str = include_str!("sql/insert_note_script.sql");
-    pub(crate) const INSERT_NETWORK_NOTE: &str = include_str!("sql/insert_network_note.sql");
-    pub(crate) const MARK_NOTE_CONSUMED: &str = include_str!("sql/mark_note_consumed.sql");
-    pub(crate) const AVAILABLE_NOTES: &str = include_str!("sql/available_notes.sql");
-    pub(crate) const NOTE_FAILED: &str = include_str!("sql/note_failed.sql");
-    pub(crate) const DISCARD_NOTE: &str = include_str!("sql/discard_note.sql");
-    pub(crate) const GET_NOTE_STATUS: &str = include_str!("sql/get_note_status.sql");
-    pub(crate) const ACCOUNTS_WITH_PENDING_NOTES: &str =
-        include_str!("sql/accounts_with_pending_notes.sql");
+/// Reason recorded in a note's `last_error` when it is discarded for exceeding the per-tx cycle
+/// budget on its own.
+pub(crate) const OVERSIZED_NOTE_DISCARD_REASON: &str =
+    "note consumption exceeds the per-transaction cycle budget; it can never be consumed";
+
+// NTX BUILDER DATABASE
+// ================================================================================================
+
+/// Wrapper of the miden-node-db database.
+#[derive(Clone)]
+pub(crate) struct NtxDb {
+    db: Database,
+}
+
+impl NtxDb {
+    fn new(db: Database) -> Self {
+        Self { db }
+    }
+}
+
+impl NtxDb {
+    pub(crate) async fn insert_genesis_chain_state(
+        &self,
+        genesis_header: BlockHeader,
+        genesis_commitment: Word,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("insert_genesis_chain_state", move |tx| {
+                queries::insert_genesis_chain_state(tx, &genesis_header, &genesis_commitment)
+            })
+            .await
+    }
+
+    pub(crate) async fn apply_committed_block(
+        &self,
+        effects: CommittedBlockEffects,
+        chain_mmr: PartialMmr,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("apply_committed_block", move |tx| {
+                queries::apply_committed_block(tx, &effects, &chain_mmr)
+            })
+            .await
+    }
+
+    pub(crate) async fn select_genesis_commitment(&self) -> Result<Option<Word>, DatabaseError> {
+        self.db
+            .read("select_genesis_commitment", db::queries::select_genesis_commitment)
+            .await
+    }
+
+    pub(crate) async fn get_account(
+        &self,
+        account_id: AccountId,
+    ) -> Result<Option<Account>, DatabaseError> {
+        self.db
+            .read("get_account", move |tx| queries::get_account(tx, account_id))
+            .await
+    }
+
+    pub(crate) async fn has_available_notes(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        max_note_attempts: usize,
+    ) -> Result<bool, DatabaseError> {
+        self.db
+            .read("has_available_notes", move |tx| {
+                queries::has_available_notes(tx, account_id, block_num, max_note_attempts)
+            })
+            .await
+    }
+
+    pub(crate) async fn available_notes(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        max_note_attempts: usize,
+    ) -> Result<Vec<AccountTargetNetworkNote>, DatabaseError> {
+        self.db
+            .read("available_notes", move |tx| {
+                queries::available_notes(tx, account_id, block_num, max_note_attempts)
+            })
+            .await
+    }
+
+    pub(crate) async fn select_chain_state(
+        &self,
+    ) -> Result<Option<(BlockNumber, BlockHeader, PartialMmr)>, DatabaseError> {
+        self.db.read("select_chain_state", queries::select_chain_state).await
+    }
+
+    pub(crate) async fn account_exists(
+        &self,
+        account_id: AccountId,
+    ) -> Result<bool, DatabaseError> {
+        self.db
+            .read("account_exists", move |tx| db::queries::account_exists(tx, account_id))
+            .await
+    }
+
+    pub(crate) async fn accounts_with_pending_notes(
+        &self,
+        max_note_attempts: usize,
+    ) -> Result<Vec<AccountId>, DatabaseError> {
+        self.db
+            .read("accounts_with_pending_notes", move |tx| {
+                queries::accounts_with_pending_notes(tx, max_note_attempts)
+            })
+            .await
+    }
+
+    pub(crate) async fn notes_failed(
+        &self,
+        failed_notes: Vec<(Nullifier, NoteError)>,
+        block_num: BlockNumber,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("notes_failed", move |tx| queries::notes_failed(tx, &failed_notes, block_num))
+            .await
+    }
+
+    pub(crate) async fn discard_notes(
+        &self,
+        nullifiers: Vec<Nullifier>,
+        block_num: BlockNumber,
+        max_attempts: usize,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("discard_notes", move |tx| {
+                queries::discard_notes(
+                    tx,
+                    &nullifiers,
+                    block_num,
+                    max_attempts,
+                    OVERSIZED_NOTE_DISCARD_REASON,
+                )
+            })
+            .await
+    }
+
+    pub(crate) async fn insert_note_scripts(
+        &self,
+        script_root: Word,
+        script: NoteScript,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("insert_note_script", move |tx| {
+                queries::insert_note_script(tx, &script_root, &script)
+            })
+            .await
+    }
+
+    pub(crate) async fn account_last_tx(
+        &self,
+        account_id: AccountId,
+    ) -> Result<Option<TransactionId>, DatabaseError> {
+        self.db
+            .read("account_last_tx", move |tx| queries::account_last_tx(tx, account_id))
+            .await
+    }
+
+    pub(crate) async fn lookup_note_script(
+        &self,
+        script_root: Word,
+    ) -> Result<Option<NoteScript>, DatabaseError> {
+        self.db
+            .read("lookup_note_script", move |tx| queries::lookup_note_script(tx, &script_root))
+            .await
+    }
+
+    pub(crate) async fn get_note_status(
+        &self,
+        note_id: NoteId,
+    ) -> Result<Option<NoteStatusRow>, DatabaseError> {
+        self.db
+            .read("get_note_status", move |tx| crate::db::queries::get_note_status(tx, note_id))
+            .await
+    }
 }
 
 // LIFECYCLE
@@ -52,7 +215,7 @@ pub(crate) mod sql {
     fields(path=%database_filepath.display()),
     err,
 )]
-pub async fn load(database_filepath: PathBuf) -> anyhow::Result<Database> {
+pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDb> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -68,7 +231,7 @@ pub async fn load(database_filepath: PathBuf) -> anyhow::Result<Database> {
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> anyhow::Result<Database> {
+) -> anyhow::Result<NtxDb> {
     verify_latest_schema(&database_filepath).context("failed to verify database schema")?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -84,7 +247,7 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError>
 fn open_with_pool_size(
     database_filepath: &Path,
     connection_pool_size: NonZeroUsize,
-) -> anyhow::Result<Database> {
+) -> anyhow::Result<NtxDb> {
     let db = Database::new_with_pool_size(database_filepath, connection_pool_size)
         .context("failed to build connection pool")?;
 
@@ -95,7 +258,7 @@ fn open_with_pool_size(
         "Connected to the database"
     );
 
-    Ok(db)
+    Ok(NtxDb::new(db))
 }
 
 /// Creates and initializes the database, then seeds it with the signed genesis block.
@@ -121,18 +284,14 @@ pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> any
     let genesis_commitment = genesis.header().commitment();
     let genesis_header = genesis.header().clone();
 
-    db.write("insert_genesis_chain_state", move |tx| {
-        queries::insert_genesis_chain_state(tx, &genesis_header, &genesis_commitment)
-    })
-    .await
-    .context("failed to seed genesis chain state")?;
+    db.insert_genesis_chain_state(genesis_header, genesis_commitment)
+        .await
+        .context("failed to seed genesis chain state")?;
 
     let effects = CommittedBlockEffects::from_signed_block(genesis);
-    db.write("apply_committed_block", move |tx| {
-        queries::apply_committed_block(tx, &effects, &PartialMmr::default())
-    })
-    .await
-    .context("failed to insert genesis block")?;
+    db.apply_committed_block(effects, PartialMmr::default())
+        .await
+        .context("failed to insert genesis block")?;
 
     Ok(())
 }
@@ -142,7 +301,7 @@ pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> any
 
 /// Creates a schema-migrated (but un-seeded) database backed by a temp file for testing.
 #[cfg(test)]
-pub(crate) async fn test_setup() -> (Database, tempfile::TempDir) {
+pub(crate) async fn test_setup() -> (NtxDb, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("failed to create temp directory");
     let db_path = dir.path().join("test.sqlite3");
     bootstrap_database(&db_path).expect("database should bootstrap");
@@ -150,19 +309,102 @@ pub(crate) async fn test_setup() -> (Database, tempfile::TempDir) {
     (db, dir)
 }
 
-/// Seeds a committed account row (and its `last_tx_id`) for tests that exercise the actor's landing
-/// detection without driving a full committed block.
+/// Test-only query helpers.
+///
+/// These wrap queries that have no production [`NtxDb`] method (raw row counts, and the individual
+/// writes that production code only ever performs as part of [`NtxDb::apply_committed_block`]), so
+/// that tests still reach the database exclusively through the wrapper rather than the raw
+/// [`Database`]. Production queries that already have a method are exercised through those directly.
 #[cfg(test)]
-pub(crate) async fn upsert_account_for_test(
-    db: &Database,
-    account_id: miden_protocol::account::AccountId,
-    account: miden_protocol::account::Account,
-    last_tx_id: miden_protocol::transaction::TransactionId,
-) -> Result<(), DatabaseError> {
-    db.write("test_upsert_account", move |tx| {
-        queries::upsert_account(tx, account_id, &account, last_tx_id)
-    })
-    .await
+impl NtxDb {
+    /// Seeds a committed account row (and its `last_tx_id`) for tests that exercise the actor's
+    /// landing detection without driving a full committed block.
+    pub(crate) async fn upsert_account_for_test(
+        &self,
+        account_id: AccountId,
+        account: Account,
+        last_tx_id: TransactionId,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("test_upsert_account", move |tx| {
+                queries::upsert_account(tx, account_id, &account, last_tx_id)
+            })
+            .await
+    }
+
+    /// Counts the rows returned by a `SELECT COUNT(*)` statement.
+    pub(crate) async fn count(&self, sql: &'static str) -> i64 {
+        self.db
+            .read("count", move |tx| {
+                let n =
+                    tx.query(sql, &[], |row| row.get::<i64>(0))?.into_iter().next().unwrap_or(0);
+                Ok::<i64, DatabaseError>(n)
+            })
+            .await
+            .unwrap()
+    }
+
+    pub(crate) async fn count_notes(&self) -> i64 {
+        self.count("SELECT COUNT(*) FROM notes").await
+    }
+
+    pub(crate) async fn count_accounts(&self) -> i64 {
+        self.count("SELECT COUNT(*) FROM accounts").await
+    }
+
+    pub(crate) async fn count_chain_state(&self) -> i64 {
+        self.count("SELECT COUNT(*) FROM chain_state").await
+    }
+
+    pub(crate) async fn insert_network_notes(
+        &self,
+        notes: Vec<AccountTargetNetworkNote>,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("insert_network_notes", move |tx| queries::insert_network_notes(tx, &notes))
+            .await
+    }
+
+    pub(crate) async fn mark_notes_consumed(
+        &self,
+        nullifiers: Vec<Nullifier>,
+        block_num: BlockNumber,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("mark_notes_consumed", move |tx| {
+                queries::mark_notes_consumed(tx, &nullifiers, block_num)
+            })
+            .await
+    }
+
+    pub(crate) async fn update_chain_state_tip(
+        &self,
+        block_header: BlockHeader,
+        chain_mmr: PartialMmr,
+    ) -> Result<(), DatabaseError> {
+        let block_num = block_header.block_num();
+        self.db
+            .write("update_chain_state_tip", move |tx| {
+                queries::update_chain_state_tip(tx, block_num, &block_header, &chain_mmr)
+            })
+            .await
+    }
+
+    /// Discards notes with an explicit reason, unlike [`NtxDb::discard_notes`] which always records
+    /// [`OVERSIZED_NOTE_DISCARD_REASON`].
+    pub(crate) async fn discard_notes_with_reason(
+        &self,
+        nullifiers: Vec<Nullifier>,
+        block_num: BlockNumber,
+        max_attempts: usize,
+        reason: String,
+    ) -> Result<(), DatabaseError> {
+        self.db
+            .write("discard_notes", move |tx| {
+                queries::discard_notes(tx, &nullifiers, block_num, max_attempts, &reason)
+            })
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -170,7 +412,6 @@ mod tests {
     use miden_protocol::block::BlockNumber;
 
     use super::*;
-    use crate::db::queries;
     use crate::test_utils::{mock_genesis_block, mock_genesis_block_with_network_account};
 
     #[tokio::test]
@@ -184,10 +425,7 @@ mod tests {
             .expect("bootstrap should succeed with a network account in genesis");
 
         let db = load(db_path).await.expect("load should open the bootstrapped database");
-        let account = db
-            .read("get_account", move |tx| queries::get_account(tx, account_id))
-            .await
-            .expect("query should succeed");
+        let account = db.get_account(account_id).await.expect("query should succeed");
         assert!(account.is_some(), "genesis network account should be committed after bootstrap");
     }
 
@@ -202,7 +440,7 @@ mod tests {
 
         let db = load(db_path).await.expect("load should open the bootstrapped database");
         let (block_num, ..) = db
-            .read("select_chain_state", queries::select_chain_state)
+            .select_chain_state()
             .await
             .expect("query should succeed")
             .expect("chain state should be present after bootstrap");

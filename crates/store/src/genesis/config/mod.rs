@@ -9,8 +9,10 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountFile, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::block::{FeeParameters, ValidatorKeys};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey as RpoSecretKey;
 use miden_protocol::errors::TokenSymbolError;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::{Felt, ONE};
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
@@ -72,6 +74,13 @@ pub struct GenesisConfig {
     fungible_faucet: Vec<FungibleFaucetConfig>,
     #[serde(default)]
     account: Vec<GenericAccountConfig>,
+    /// Hex-encoded public keys of the genesis validator set, committed to by the genesis header.
+    ///
+    /// If unspecified, the set contains only the bootstrapping validator's key. When specified,
+    /// the set must include the bootstrapping validator's public key, since the genesis block is
+    /// signed by that key and verified against the committed set.
+    #[serde(default)]
+    validators: Vec<String>,
     #[serde(skip)]
     config_dir: PathBuf,
 }
@@ -92,6 +101,7 @@ impl Default for GenesisConfig {
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
             account: vec![],
+            validators: vec![],
             config_dir: PathBuf::from("."),
         }
     }
@@ -124,11 +134,16 @@ impl GenesisConfig {
 
     /// Convert the in memory representation into the new genesis state
     ///
+    /// The genesis validator set is taken from the configured `validators` public keys; when
+    /// none are configured it contains only `signer_key`. `signer_key` is the public key of the
+    /// bootstrapping validator, which signs the genesis block, and so must be a member of the
+    /// configured set.
+    ///
     /// Also returns the set of secrets for the generated accounts.
     #[expect(clippy::too_many_lines)]
     pub fn into_state(
         self,
-        validator_keys: ValidatorKeys,
+        signer_key: PublicKey,
     ) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
         let GenesisConfig {
             version,
@@ -138,8 +153,40 @@ impl GenesisConfig {
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
             account: account_entries,
+            validators,
             config_dir,
         } = self;
+
+        // Build the genesis validator set committed to by the genesis header. When the config
+        // does not list validators, the set is just the bootstrapping validator's key.
+        let keys = if validators.is_empty() {
+            vec![signer_key]
+        } else {
+            // Decode the configured hex-encoded public keys.
+            let keys = validators
+                .iter()
+                .map(|key| {
+                    hex::decode(key)
+                        .map_err(|err| (key, err.to_string()))
+                        .and_then(|bytes| {
+                            PublicKey::read_from_bytes(&bytes).map_err(|err| (key, err.to_string()))
+                        })
+                        .map_err(|(key, message)| GenesisConfigError::InvalidValidatorKey {
+                            key: key.clone(),
+                            message,
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            // The genesis block is signed by `signer_key` and verified against the committed
+            // set, so a configured set that omits the signer could never produce a valid genesis
+            // block. Reject it here to fail fast with a clearer error than the downstream
+            // signature verification failure.
+            if !keys.contains(&signer_key) {
+                return Err(GenesisConfigError::SignerNotInValidatorSet);
+            }
+            keys
+        };
+        let validator_keys = ValidatorKeys::new(keys)?;
 
         // Load account files from disk
         let file_loaded_accounts = account_entries

@@ -37,8 +37,19 @@ operator:
 miden-validator pubkey --key.kms-id <validator-N-kms-key-id>
 ```
 
-**One** validator operator then runs the signing form of `bootstrap` with their own KMS key ID and the other validators'
-public keys (repeat the argument or comma-separate the values):
+The full validator set — including the bootstrapping validator's own public key — is part of the genesis
+configuration, as a top-level `validators` list in `genesis.toml`. If `validators` is omitted, the set defaults to the
+bootstrapping validator's key alone (a single-validator network).
+
+```toml
+validators = [
+  "<validator-1-public-key-hex>",
+  "<validator-2-public-key-hex>",
+  "<validator-3-public-key-hex>",
+]
+```
+
+**One** validator operator then runs the signing form of `bootstrap` with their own KMS key ID:
 
 ```bash
 miden-validator bootstrap \
@@ -46,9 +57,7 @@ miden-validator bootstrap \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.kms-id <validator-1-kms-key-id> \
-  --validator.pubkey <validator-2-public-key-hex> \
-  --validator.pubkey <validator-3-public-key-hex>
+  --key.kms-id <validator-1-kms-key-id>
 ```
 
 Upload `genesis-data/genesis.dat` so it is served at:
@@ -92,9 +101,19 @@ Each validator operator's own KMS key ID must be used when that operator starts 
   <TabItem value="unofficial" label="Unofficial network">
 
 **One** validator operator creates and signs the genesis block with their own local key. The genesis header commits to
-the full validator set, so the other validators' public keys are passed alongside (repeat the argument or comma-separate
-the values); their secret keys are not needed. Each of the other operators prints their public key with
-`miden-validator pubkey --key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator:
+the full validator set, taken from the top-level `validators` list in `genesis.toml`; the other validators' secret
+keys are not needed. Each of the other operators prints their public key with
+`miden-validator pubkey --key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator, who lists it in
+the genesis configuration alongside their own. If `validators` is omitted, the set defaults to the bootstrapping
+validator's key alone (a single-validator network).
+
+```toml
+validators = [
+  "<validator-1-public-key-hex>",
+  "<validator-2-public-key-hex>",
+  "<validator-3-public-key-hex>",
+]
+```
 
 ```bash
 miden-validator bootstrap \
@@ -102,9 +121,7 @@ miden-validator bootstrap \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.hex <validator-1-key-hex> \
-  --validator.pubkey <validator-2-public-key-hex> \
-  --validator.pubkey <validator-3-public-key-hex>
+  --key.hex <validator-1-key-hex>
 ```
 
 Distribute `genesis-data/genesis.dat` to the other validator operators, who each seed their own database from it,

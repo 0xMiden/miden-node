@@ -1,6 +1,10 @@
 timestamp = 1717344256
 version   = 1
 
+# Hex-encoded public keys of the genesis validator set (see `miden-validator pubkey`).
+# When omitted, the set defaults to the bootstrapping validator's key alone.
+# validators = ["<validator-1-public-key-hex>", "<validator-2-public-key-hex>"]
+
 [fee_parameters]
 verification_base_fee = 0
 

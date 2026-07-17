@@ -127,18 +127,28 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
     KMS_BOOTSTRAP_ARGS=()
     if [[ -n "$KMS_KEY_ID" ]]; then
         KMS_BOOTSTRAP_ARGS+=(--key.kms-id "$KMS_KEY_ID")
+        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.kms-id "$KMS_KEY_ID")
         VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.kms-id "$KMS_KEY_ID_2")
     else
         KMS_BOOTSTRAP_ARGS+=(--key.hex "$VALIDATOR_1_KEY_HEX")
+        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.hex "$VALIDATOR_1_KEY_HEX")
         VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.hex "$VALIDATOR_2_KEY_HEX")
     fi
+
+    # The validator set is part of the genesis config. Prepend the top-level `validators` key to
+    # the sample config (top-level keys must precede its table sections). The sample references no
+    # account files, so resolving relative paths against /tmp is safe.
+    BOOTSTRAP_GENESIS_CONFIG="/tmp/genesis-config.toml"
+    {
+        printf 'validators = ["%s", "%s"]\n' "$VALIDATOR_1_PUBKEY" "$VALIDATOR_2_PUBKEY"
+        cat "$GENESIS_CONFIG"
+    } > "$BOOTSTRAP_GENESIS_CONFIG"
 
     "$VALIDATOR_BINARY" bootstrap \
         --data-directory "$VALIDATOR_1_DIR" \
         --genesis-block-directory "$VALIDATOR_1_DIR" \
         --accounts-directory "$ACCOUNTS_DIR" \
-        --genesis-config-file "$GENESIS_CONFIG" \
-        --validator.pubkey "$VALIDATOR_2_PUBKEY" \
+        --genesis-config-file "$BOOTSTRAP_GENESIS_CONFIG" \
         "${KMS_BOOTSTRAP_ARGS[@]}"
 
     echo "Bootstrapping validator 2 (seeds from validator 1's signed genesis, no re-signing)..."

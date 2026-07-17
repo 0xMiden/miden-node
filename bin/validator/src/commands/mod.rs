@@ -9,7 +9,7 @@ use clap::Parser;
 use miden_node_utils::clap::GrpcOptionsInternal;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_validator::{DataDirectory, ValidatorSigner};
 
@@ -18,7 +18,6 @@ const ENV_LISTEN: &str = "MIDEN_VALIDATOR_LISTEN";
 const ENV_KEY: &str = "MIDEN_VALIDATOR_KEY";
 const ENV_KMS_KEY_ID: &str = "MIDEN_VALIDATOR_KMS_KEY_ID";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
-const ENV_GENESIS_VALIDATOR_PUBKEYS: &str = "MIDEN_VALIDATOR_GENESIS_VALIDATOR_PUBKEYS";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 
 /// A predefined, insecure validator key for development purposes.
@@ -38,10 +37,10 @@ pub enum ValidatorCommand {
     /// initializes the validator's database with the genesis block as the chain tip.
     ///
     /// The genesis block is the chain's trust root: its header commits to the full validator set
-    /// (this validator's key plus the public keys passed via `--validator.pubkey`), but only the
-    /// bootstrapping validator signs it. The full set is required to sign from the next block
-    /// onwards. Only one validator in the set runs this form, and it only needs signing access
-    /// to its own key.
+    /// — the `validators` public keys in the genesis configuration, defaulting to this
+    /// validator's key alone — but only the bootstrapping validator signs it. The full set is
+    /// required to sign from the next block onwards. Only one validator in the set runs this
+    /// form, and it only needs signing access to its own key.
     ///
     /// Alternatively, pass `--file` to seed this validator's database from the genesis block
     /// produced by the signing form above. The block must carry a valid signature from a key in
@@ -81,28 +80,13 @@ pub enum ValidatorCommand {
         /// Ignored when `--file` is used.
         #[command(flatten)]
         validator_keys: ValidatorKeyArgs,
-        /// Hex-encoded public keys of the other genesis validators (repeat the argument or
-        /// comma-separate the values).
-        ///
-        /// These keys are committed to by the genesis header alongside this validator's key, so
-        /// their signatures are required on every block after genesis. They do not sign the
-        /// genesis block itself.
-        ///
-        /// Ignored when `--file` is used.
-        #[arg(
-            long = "validator.pubkey",
-            env = ENV_GENESIS_VALIDATOR_PUBKEYS,
-            value_name = "VALIDATOR_PUBLIC_KEYS",
-            value_delimiter = ','
-        )]
-        genesis_validator_public_keys: Vec<String>,
     },
 
     /// Prints the hex-encoded public key for the configured validator key.
     ///
-    /// Every validator other than the one bootstrapping the genesis block runs this and passes
+    /// Every validator other than the one bootstrapping the genesis block runs this and sends
     /// the printed key to the bootstrapping validator, which commits it to the genesis header
-    /// via `bootstrap --validator.pubkey`.
+    /// via the `validators` list in the genesis configuration.
     Pubkey {
         #[command(flatten)]
         validator_keys: ValidatorKeyArgs,
@@ -177,7 +161,6 @@ impl ValidatorCommand {
                 genesis_config_file,
                 genesis_block_file,
                 validator_keys,
-                genesis_validator_public_keys,
             } => {
                 if let Some(genesis_block_file) = genesis_block_file {
                     bootstrap::bootstrap_from_file(
@@ -189,15 +172,6 @@ impl ValidatorCommand {
                     )
                     .await
                 } else {
-                    let other_validator_keys = genesis_validator_public_keys
-                        .iter()
-                        .map(|key| {
-                            let bytes = hex::decode(key)
-                                .context("failed to hex-decode validator public key")?;
-                            PublicKey::read_from_bytes(&bytes)
-                                .context("failed to parse validator public key")
-                        })
-                        .collect::<anyhow::Result<Vec<_>>>()?;
                     bootstrap::bootstrap_sign(
                         &genesis_block_directory,
                         &accounts_directory,
@@ -205,7 +179,6 @@ impl ValidatorCommand {
                         sqlite_connection_pool_size,
                         genesis_config_file.as_ref(),
                         validator_keys,
-                        other_validator_keys,
                     )
                     .await
                 }

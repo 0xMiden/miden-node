@@ -105,11 +105,7 @@ impl TestStore {
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
         let signer = SigningKey::new();
-        let (genesis_state, _) = config
-            .into_state(
-                miden_protocol::block::ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
-            )
-            .unwrap();
+        let (genesis_state, _) = config.into_state(signer.public_key()).unwrap();
         let genesis_block = genesis_state
             .clone()
             .into_block(&signer)

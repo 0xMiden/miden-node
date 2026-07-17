@@ -7,8 +7,7 @@ use miden_node_store::genesis::GenesisBlock;
 use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::read_signed_genesis_block;
-use miden_protocol::block::{BlockSignatures, ValidatorKeys};
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use miden_protocol::block::BlockSignatures;
 use miden_protocol::utils::serde::Serializable;
 use miden_validator::DataDirectory;
 
@@ -22,10 +21,10 @@ use super::ValidatorKeyArgs;
 /// suffices — writes the account secret files, signs the genesis block with this validator's
 /// key, and persists the block as the chain tip.
 ///
-/// The genesis header commits to the full validator set: this validator's key plus
-/// `other_validator_keys`. Only this validator signs the genesis block; the full set is
-/// required to sign from the next block onwards, so bootstrapping does not need signing access
-/// to the other validators' keys.
+/// The genesis header commits to the full validator set, taken from the `validators` public
+/// keys in the genesis configuration (defaulting to this validator's key alone). Only this
+/// validator signs the genesis block; the full set is required to sign from the next block
+/// onwards, so bootstrapping does not need signing access to the other validators' keys.
 ///
 /// Every other validator seeds from this form's output via [`bootstrap_from_file`].
 pub async fn bootstrap_sign(
@@ -35,7 +34,6 @@ pub async fn bootstrap_sign(
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_config: Option<&PathBuf>,
     validator_keys: ValidatorKeyArgs,
-    other_validator_keys: Vec<PublicKey>,
 ) -> anyhow::Result<()> {
     let dirs = load_bootstrap_dirs(genesis_block_directory, accounts_directory, data_directory)?;
 
@@ -49,12 +47,7 @@ pub async fn bootstrap_sign(
         .unwrap_or_default();
 
     let signer = validator_keys.into_signer().await?;
-
-    let mut keys = other_validator_keys;
-    keys.push(signer.public_key());
-    let genesis_validator_keys =
-        ValidatorKeys::new(keys).context("failed to build the genesis validator set")?;
-    let (genesis_state, secrets) = config.into_state(genesis_validator_keys)?;
+    let (genesis_state, secrets) = config.into_state(signer.public_key())?;
 
     for item in secrets.as_account_files(&genesis_state) {
         let AccountFileWithName { account_file, name } = item?;

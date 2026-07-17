@@ -111,9 +111,8 @@ impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
     type Error = ConversionError;
 
     fn try_from(value: proto::primitives::SmtLeaf) -> Result<Self, Self::Error> {
-        let leaf = value
-            .leaf
-            .ok_or(ConversionError::missing_field::<proto::primitives::SmtLeaf>("leaf"))?;
+        let decoder = value.decoder();
+        let leaf = decode!(decoder, value.leaf)?;
 
         match leaf {
             proto::primitives::smt_leaf::Leaf::EmptyLeafIndex(leaf_index) => {

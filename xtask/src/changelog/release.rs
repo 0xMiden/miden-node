@@ -1,7 +1,8 @@
+use std::env;
 use std::process::Command;
-use std::{env, fmt};
 
 use anyhow::{Context, Result, bail, ensure};
+use semver::Version;
 
 use super::pr::{self, ChangelogDocument};
 use super::{InvalidChangelogEntry, ReleaseNoteEntry};
@@ -31,11 +32,11 @@ pub(super) fn release_changelog_entries(release_tag: &str) -> Result<ChangelogEn
         "release tag {release_tag} did not resolve to a commit"
     );
 
-    let previous_stable_tag = previous_stable_tag(release.version, release_commit)?;
-    let commits = commits_since_tag(&previous_stable_tag, &format!("refs/tags/{release_tag}"))?;
+    let previous_release_tag = previous_release_tag(&release, release_commit)?;
+    let commits = commits_since_tag(&previous_release_tag, &format!("refs/tags/{release_tag}"))?;
     ensure!(
         !commits.is_empty(),
-        "release range refs/tags/{previous_stable_tag}..refs/tags/{release_tag} contains no commits"
+        "release range refs/tags/{previous_release_tag}..refs/tags/{release_tag} contains no commits"
     );
     let repo = github_repo()?;
     let pull_requests = pull_requests_for_commits(&repo, &commits, MissingPullRequest::Error)?;
@@ -75,14 +76,7 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
 
 #[derive(Debug)]
 struct ReleaseTag {
-    version: StableVersion,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct StableVersion {
-    major: u64,
-    minor: u64,
-    patch: u64,
+    version: Version,
 }
 
 #[derive(Clone, Copy)]
@@ -102,83 +96,63 @@ impl ReleaseTag {
             bail!("release tags must look like v1.2.3 or v1.2.3-rc.1");
         };
 
-        let (version, prerelease) = match version.split_once('-') {
-            Some((version, prerelease)) => (version, Some(prerelease)),
-            None => (version, None),
-        };
-
-        ensure!(
-            prerelease.is_none_or(|prerelease| !prerelease.is_empty()),
-            "release tags must look like v1.2.3 or v1.2.3-rc.1"
-        );
-
-        let Some(version) = StableVersion::parse(version) else {
+        let Ok(version) = Version::parse(version) else {
             bail!("release tags must look like v1.2.3 or v1.2.3-rc.1");
         };
+
+        ensure!(version.build.is_empty(), "release tags must look like v1.2.3 or v1.2.3-rc.1");
 
         Ok(Self { version })
     }
 }
 
-impl StableVersion {
-    fn parse(source: &str) -> Option<Self> {
-        let mut parts = source.split('.');
-        let major = parts.next()?.parse().ok()?;
-        let minor = parts.next()?.parse().ok()?;
-        let patch = parts.next()?.parse().ok()?;
+fn previous_release_tag(release: &ReleaseTag, release_commit: &str) -> Result<String> {
+    let tags = release_tags_merged_into(release_commit)?;
 
-        if parts.next().is_some() {
-            return None;
-        }
-
-        Some(Self { major, minor, patch })
+    if let Some(tag) = previous_release_tag_from(release, &tags) {
+        return Ok(tag.to_owned());
     }
 
-    fn parse_stable_tag(tag: &str) -> Option<Self> {
-        let version = tag.strip_prefix('v')?;
-
-        if version.contains('-') {
-            return None;
-        }
-
-        Self::parse(version)
-    }
-}
-
-impl fmt::Display for StableVersion {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}.{}.{}", self.major, self.minor, self.patch)
-    }
-}
-
-fn previous_stable_tag(before: StableVersion, release_commit: &str) -> Result<String> {
-    for (tag, version) in stable_tags_merged_into(release_commit)? {
-        if version < before {
-            return Ok(tag.clone());
-        }
-    }
-
-    bail!("could not find a previous stable release tag before v{before}");
+    let release_kind = if release.version.pre.is_empty() {
+        "stable release"
+    } else {
+        "release"
+    };
+    bail!("could not find a previous {release_kind} tag before v{}", release.version);
 }
 
 fn latest_stable_tag(release_commit: &str) -> Result<String> {
-    stable_tags_merged_into(release_commit)?
+    release_tags_merged_into(release_commit)?
         .into_iter()
+        .filter(|(_tag, version)| version.pre.is_empty())
+        .max_by(|(_tag_a, version_a), (_tag_b, version_b)| version_a.cmp(version_b))
         .map(|(tag, _version)| tag)
-        .next()
         .context("could not find a stable release tag reachable from HEAD")
 }
 
-fn stable_tags_merged_into(commit: &str) -> Result<Vec<(String, StableVersion)>> {
+fn previous_release_tag_from<'a>(
+    release: &ReleaseTag,
+    tags: &'a [(String, Version)],
+) -> Option<&'a str> {
+    let stable_only = release.version.pre.is_empty();
+
+    tags.iter()
+        .filter(|(_tag, version)| version < &release.version)
+        .filter(|(_tag, version)| !stable_only || version.pre.is_empty())
+        .max_by(|(_tag_a, version_a), (_tag_b, version_b)| version_a.cmp(version_b))
+        .map(|(tag, _version)| tag.as_str())
+}
+
+fn release_tags_merged_into(commit: &str) -> Result<Vec<(String, Version)>> {
     let tags = git_output(&["tag", "--merged", commit, "--list", "v*", "--sort=-v:refname"])
-        .context("listing stable release tags")?;
+        .context("listing release tags")?;
 
     Ok(tags
         .lines()
         .map(str::trim)
         .filter(|tag| !tag.is_empty())
         .filter_map(|tag| {
-            StableVersion::parse_stable_tag(tag).map(|version| (tag.to_owned(), version))
+            ReleaseTag::parse(tag).ok().map(|release| (tag.to_owned(), release.version))
         })
         .collect())
 }
@@ -388,4 +362,50 @@ fn gh_api_output(command: &mut Command) -> Result<Option<String>> {
 
 fn normalize_description(description: &str) -> String {
     description.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ReleaseTag, previous_release_tag_from};
+
+    #[test]
+    fn prerelease_uses_previous_prerelease() {
+        let release = ReleaseTag::parse("v1.2.0-rc.1").unwrap();
+        let tags = release_tags(&["v1.1.0", "v1.2.0-alpha.1", "v1.2.0-rc.0", "v1.2.0-rc.1"]);
+
+        assert_eq!(previous_release_tag_from(&release, &tags), Some("v1.2.0-rc.0"));
+    }
+
+    #[test]
+    fn first_prerelease_uses_previous_stable_release() {
+        let release = ReleaseTag::parse("v1.2.0-rc.0").unwrap();
+        let tags = release_tags(&["v1.0.0", "v1.1.0", "v1.2.0-rc.0"]);
+
+        assert_eq!(previous_release_tag_from(&release, &tags), Some("v1.1.0"));
+    }
+
+    #[test]
+    fn alpha_release_uses_previous_alpha_release() {
+        let release = ReleaseTag::parse("v1.2.0-alpha.2").unwrap();
+        let tags = release_tags(&["v1.1.0", "v1.2.0-alpha.1", "v1.2.0-alpha.2"]);
+
+        assert_eq!(previous_release_tag_from(&release, &tags), Some("v1.2.0-alpha.1"));
+    }
+
+    #[test]
+    fn stable_release_uses_previous_stable_release() {
+        let release = ReleaseTag::parse("v1.2.0").unwrap();
+        let tags = release_tags(&["v1.1.0", "v1.2.0-rc.0", "v1.2.0-rc.1", "v1.2.0"]);
+
+        assert_eq!(previous_release_tag_from(&release, &tags), Some("v1.1.0"));
+    }
+
+    fn release_tags(tags: &[&str]) -> Vec<(String, semver::Version)> {
+        tags.iter()
+            .map(|tag| {
+                let release = ReleaseTag::parse(tag).unwrap();
+                ((*tag).to_owned(), release.version)
+            })
+            .collect()
+    }
 }

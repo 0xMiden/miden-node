@@ -9,9 +9,10 @@ import Tabs from "@theme/Tabs"; import TabItem from "@theme/TabItem";
 
 # Bootstrap and Genesis
 
-A signed genesis block is the trust anchor for every service that joins a network. The network's validator is
-responsible for creating and signing this block. On official networks, the validator is operated by a separate entity
-from the network operator.
+A signed genesis block is the trust anchor for every service that joins a network. One of the network's validators is
+responsible for creating and signing this block. Its header commits to the full validator set, but only the
+bootstrapping validator signs it; the full set must sign every block after genesis. On official networks, the validators
+are operated by separate entities from the network operator.
 
 This signed block is subsequently made available for official networks at
 
@@ -28,9 +29,16 @@ networks, or if the official URLs are not trusted.
 <Tabs groupId="network-operator-genesis-source" defaultValue="official">
   <TabItem value="official" label="Official network">
 
-The genesis block is the chain's trust root and must be signed by the complete validator set, so **one** validator
-operator runs the signing form of `bootstrap` with every validator's KMS key ID (repeat the argument or comma-separate
-the values):
+The genesis block is the chain's trust root: its header commits to the full validator set, but only the bootstrapping
+validator signs it. Every other validator operator first prints their public key and sends it to the bootstrapping
+operator:
+
+```bash
+miden-validator pubkey --key.kms-id <validator-N-kms-key-id>
+```
+
+**One** validator operator then runs the signing form of `bootstrap` with their own KMS key ID and the other validators'
+public keys (repeat the argument or comma-separate the values):
 
 ```bash
 miden-validator bootstrap \
@@ -39,8 +47,8 @@ miden-validator bootstrap \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
   --key.kms-id <validator-1-kms-key-id> \
-  --key.kms-id <validator-2-kms-key-id> \
-  --key.kms-id <validator-3-kms-key-id>
+  --validator.pubkey <validator-2-public-key-hex> \
+  --validator.pubkey <validator-3-public-key-hex>
 ```
 
 Upload `genesis-data/genesis.dat` so it is served at:
@@ -83,9 +91,10 @@ Each validator operator's own KMS key ID must be used when that operator starts 
   </TabItem>
   <TabItem value="unofficial" label="Unofficial network">
 
-**One** validator operator creates and signs the genesis block with every validator's local key. The genesis block is
-the chain's trust root and must be signed by every member of its validator set, so pass one key per validator (repeat
-the argument or comma-separate the values):
+**One** validator operator creates and signs the genesis block with their own local key. The genesis header commits to
+the full validator set, so the other validators' public keys are passed alongside (repeat the argument or comma-separate
+the values); their secret keys are not needed. Each of the other operators prints their public key with
+`miden-validator pubkey --key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator:
 
 ```bash
 miden-validator bootstrap \
@@ -94,8 +103,8 @@ miden-validator bootstrap \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
   --key.hex <validator-1-key-hex> \
-  --key.hex <validator-2-key-hex> \
-  --key.hex <validator-3-key-hex>
+  --validator.pubkey <validator-2-public-key-hex> \
+  --validator.pubkey <validator-3-public-key-hex>
 ```
 
 Distribute `genesis-data/genesis.dat` to the other validator operators, who each seed their own database from it,

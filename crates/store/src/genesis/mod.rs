@@ -1,4 +1,5 @@
 use anyhow::Context;
+use miden_node_utils::genesis::verify_genesis_signatures;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountPatch, AccountUpdateDetails};
 use miden_protocol::block::account_tree::{AccountIdKey, AccountTree};
@@ -50,14 +51,14 @@ impl UnsignedGenesisBlock {
         &self.header
     }
 
-    /// Combines the unsigned block with the validator signatures into a [`GenesisBlock`].
+    /// Combines the unsigned block with the bootstrapper's signature into a [`GenesisBlock`].
     ///
-    /// The genesis block has no parent, so it acts as the chain's trust root: it must be
-    /// self-signed by the validator set its own header commits to, with the signature at
-    /// position `i` produced by the validator key at index `i`.
+    /// The genesis block has no parent, so it acts as the chain's trust root: it carries exactly
+    /// one signature, produced by the bootstrapping validator, which must verify against a key in
+    /// the validator set committed to by its own header. The full committed set is only required
+    /// to sign from the next block onwards, so bootstrapping needs a single validator key.
     pub fn into_block(self, signatures: BlockSignatures) -> anyhow::Result<GenesisBlock> {
-        signatures
-            .verify_against(self.header.commitment(), self.header.validator_keys())
+        verify_genesis_signatures(&self.header, &signatures)
             .context("genesis block signature verification failed")?;
 
         Ok(GenesisBlock(SignedBlock::new(self.header, self.body, signatures)?))
@@ -84,9 +85,7 @@ impl TryFrom<SignedBlock> for GenesisBlock {
             block.header().block_num(),
         );
 
-        block
-            .signatures()
-            .verify_against(block.header().commitment(), block.header().validator_keys())
+        verify_genesis_signatures(block.header(), block.signatures())
             .context("genesis block signature verification failed")?;
 
         Ok(Self(block))
@@ -178,28 +177,23 @@ impl GenesisState {
         Ok(UnsignedGenesisBlock { header, body })
     }
 
-    /// Builds and signs the genesis block with the local secret keys of all validators.
+    /// Builds and signs the genesis block with the local secret key of the bootstrapping
+    /// validator.
     ///
-    /// There must be exactly one signer for every key in the genesis validator set. The
-    /// signatures are ordered to match the canonical order of the validator keys committed to by
-    /// the genesis header.
-    pub fn into_block(self, signers: &[SigningKey]) -> anyhow::Result<GenesisBlock> {
+    /// The signer's public key must be a member of the genesis validator set. The remaining
+    /// validators do not sign genesis; their signatures are required from the next block onwards.
+    pub fn into_block(self, signer: &SigningKey) -> anyhow::Result<GenesisBlock> {
         let unsigned_block = self.into_unsigned_block()?;
-        let commitment = unsigned_block.header().commitment();
-        let signatures = unsigned_block
-            .header()
-            .validator_keys()
-            .as_keys()
-            .iter()
-            .map(|key| {
-                let signer = signers
-                    .iter()
-                    .find(|signer| &signer.public_key() == key)
-                    .ok_or_else(|| anyhow::anyhow!("missing signer for validator key"))?;
-                Ok(signer.sign(commitment))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let signatures = BlockSignatures::new(signatures)
+        anyhow::ensure!(
+            unsigned_block
+                .header()
+                .validator_keys()
+                .as_keys()
+                .contains(&signer.public_key()),
+            "the genesis signer's public key is not in the genesis validator set",
+        );
+        let signature = signer.sign(unsigned_block.header().commitment());
+        let signatures = BlockSignatures::new(vec![signature])
             .map_err(|err| anyhow::anyhow!("failed to build genesis signatures: {err}"))?;
         unsigned_block.into_block(signatures)
     }

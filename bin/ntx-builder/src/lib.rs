@@ -63,9 +63,7 @@ fn validate_genesis_block(block: &SignedBlock) -> anyhow::Result<()> {
         block.header().block_num(),
     );
 
-    block
-        .signatures()
-        .verify_against(block.header().commitment(), block.header().validator_keys())
+    miden_node_utils::genesis::verify_genesis_signatures(block.header(), block.signatures())
         .context("genesis block signature verification failed")?;
 
     Ok(())

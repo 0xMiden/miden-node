@@ -8,20 +8,26 @@ use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::read_signed_genesis_block;
 use miden_protocol::block::{BlockSignatures, ValidatorKeys};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::utils::serde::Serializable;
-use miden_validator::{DataDirectory, ValidatorSigner};
+use miden_validator::DataDirectory;
 
 use super::ValidatorKeyArgs;
 
-/// Runs the signing form of `bootstrap`: the genesis signing ceremony, run once with every
-/// validator key.
+/// Runs the signing form of `bootstrap`: builds and signs the genesis block with this
+/// validator's key.
 ///
 /// Builds the genesis state from the given configuration — or from [`GenesisConfig::default`]
 /// when `None`, as in local development where the built-in single-validator configuration
-/// suffices — writes the account secret files, signs the genesis block with every validator
+/// suffices — writes the account secret files, signs the genesis block with this validator's
 /// key, and persists the block as the chain tip.
 ///
-/// Every other validator seeds from this ceremony's output via [`bootstrap_from_file`].
+/// The genesis header commits to the full validator set: this validator's key plus
+/// `other_validator_keys`. Only this validator signs the genesis block; the full set is
+/// required to sign from the next block onwards, so bootstrapping does not need signing access
+/// to the other validators' keys.
+///
+/// Every other validator seeds from this form's output via [`bootstrap_from_file`].
 pub async fn bootstrap_sign(
     genesis_block_directory: &Path,
     accounts_directory: &Path,
@@ -29,6 +35,7 @@ pub async fn bootstrap_sign(
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_config: Option<&PathBuf>,
     validator_keys: ValidatorKeyArgs,
+    other_validator_keys: Vec<PublicKey>,
 ) -> anyhow::Result<()> {
     let dirs = load_bootstrap_dirs(genesis_block_directory, accounts_directory, data_directory)?;
 
@@ -41,11 +48,12 @@ pub async fn bootstrap_sign(
         .transpose()?
         .unwrap_or_default();
 
-    let signers = validator_keys.into_signers().await?;
+    let signer = validator_keys.into_signer().await?;
 
+    let mut keys = other_validator_keys;
+    keys.push(signer.public_key());
     let genesis_validator_keys =
-        ValidatorKeys::new(signers.iter().map(ValidatorSigner::public_key).collect())
-            .context("failed to build the genesis validator set")?;
+        ValidatorKeys::new(keys).context("failed to build the genesis validator set")?;
     let (genesis_state, secrets) = config.into_state(genesis_validator_keys)?;
 
     for item in secrets.as_account_files(&genesis_state) {
@@ -64,23 +72,14 @@ pub async fn bootstrap_sign(
         .into_unsigned_block()
         .context("failed to build the unsigned genesis block")?;
 
-    // Sign the genesis block with every validator key, ordering the signatures to match the
-    // canonical order of the validator set committed to by the genesis header.
-    let mut signatures = Vec::with_capacity(signers.len());
-    for key in unsigned_genesis_block.header().validator_keys().as_keys() {
-        let signer = signers
-            .iter()
-            .find(|signer| &signer.public_key() == key)
-            .expect("a signer exists for every validator key by construction");
-        signatures.push(
-            signer
-                .sign(unsigned_genesis_block.header())
-                .await
-                .context("failed to sign the genesis block")?,
-        );
-    }
-    let signatures =
-        BlockSignatures::new(signatures).context("failed to build the genesis block signatures")?;
+    // Sign the genesis block with this validator's key only. The other validators' keys are
+    // committed to by the genesis header and must sign from the next block onwards.
+    let signature = signer
+        .sign(unsigned_genesis_block.header())
+        .await
+        .context("failed to sign the genesis block")?;
+    let signatures = BlockSignatures::new(vec![signature])
+        .context("failed to build the genesis block signatures")?;
 
     let genesis_block = unsigned_genesis_block
         .into_block(signatures)
@@ -90,12 +89,12 @@ pub async fn bootstrap_sign(
 }
 
 /// Runs the seeding form of `bootstrap`: initializes this validator from the genesis block
-/// produced by the signing ceremony ([`bootstrap_sign`]), without re-signing it.
+/// produced by the signing form ([`bootstrap_sign`]), without re-signing it.
 ///
-/// The genesis block is the chain's trust root and carries one signature per key in the
-/// validator set committed to by its header — every validator's key, including this one's,
-/// signed it during the ceremony. This form verifies the complete signature set (via
-/// [`GenesisBlock::try_from`]) and persists the block as the chain tip.
+/// The genesis block is the chain's trust root and carries a single signature from the
+/// bootstrapping validator, verified against the validator set committed to by its header
+/// (via [`GenesisBlock::try_from`]). This form verifies the block and persists it as the
+/// chain tip.
 pub async fn bootstrap_from_file(
     genesis_block_directory: &Path,
     accounts_directory: &Path,

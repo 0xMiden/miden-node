@@ -83,7 +83,7 @@ async fn genesis_accounts_have_nonce_one() -> TestResult {
 
     assert_eq!(status_quo.account.nonce(), ONE);
 
-    let _block = state.into_block(std::slice::from_ref(&signer))?;
+    let _block = state.into_block(&signer)?;
     Ok(())
 }
 

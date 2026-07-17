@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::Path;
 
 use anyhow::Context;
-use miden_protocol::block::SignedBlock;
+use miden_protocol::block::{BlockHeader, BlockSignatures, SignedBlock};
 use miden_protocol::utils::serde::Deserializable;
 
 /// Official Miden networks with a hosted genesis block.
@@ -55,4 +55,32 @@ pub async fn fetch_signed_genesis_block(network: OfficialNetwork) -> anyhow::Res
 
 fn deserialize_signed_genesis_block(bytes: &[u8]) -> anyhow::Result<SignedBlock> {
     SignedBlock::read_from_bytes(bytes).context("failed to deserialize genesis block")
+}
+
+/// Verifies the signatures of a genesis block against its own header.
+///
+/// The genesis block has no parent, so it acts as the chain's trust root: it carries exactly one
+/// signature, produced by the bootstrapping validator, which must verify against a key in the
+/// validator set committed to by its own header. The full committed set is only required to sign
+/// from the next block onwards, so bootstrapping needs a single validator key.
+pub fn verify_genesis_signatures(
+    header: &BlockHeader,
+    signatures: &BlockSignatures,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        signatures.len() == 1,
+        "genesis block must carry exactly one bootstrapper signature, got {}",
+        signatures.len(),
+    );
+    let signature = &signatures.as_signatures()[0];
+    let commitment = header.commitment();
+    anyhow::ensure!(
+        header
+            .validator_keys()
+            .as_keys()
+            .iter()
+            .any(|key| signature.verify(commitment, key)),
+        "genesis block signature does not verify against any key in the committed validator set",
+    );
+    Ok(())
 }

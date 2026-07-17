@@ -14,8 +14,9 @@ NODE_BINARY="${MIDEN_NODE_BIN:-./target/debug/miden-node}"
 VALIDATOR_BINARY="${MIDEN_VALIDATOR_BIN:-./target/debug/miden-validator}"
 NTX_BUILDER_BINARY="${MIDEN_NTX_BUILDER_BIN:-./target/debug/miden-ntx-builder}"
 REMOTE_PROVER_BINARY="${MIDEN_REMOTE_PROVER_BIN:-./target/debug/miden-remote-prover}"
-# Runs two validators, hard-coded for local development. Genesis is signed by both, and the
-# sequencer fans block signing and transaction submission out to both.
+# Runs two validators, hard-coded for local development. Genesis commits both validators' keys
+# but is signed by validator 1 only; both must sign every block after genesis, and the sequencer
+# fans block signing and transaction submission out to both.
 KMS_KEY_ID="${KMS_KEY_ID:-}"
 KMS_KEY_ID_2="${KMS_KEY_ID_2:-}"
 if [[ -n "$KMS_KEY_ID" || -n "$KMS_KEY_ID_2" ]]; then
@@ -52,10 +53,12 @@ PIDS=()
 
 cleanup() {
     echo "Shutting down..."
-    for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
-    done
-    wait "${PIDS[@]}" 2>/dev/null || true
+    if ((${#PIDS[@]})); then
+        for pid in "${PIDS[@]}"; do
+            kill "$pid" 2>/dev/null || true
+        done
+        wait "${PIDS[@]}" 2>/dev/null || true
+    fi
     echo "All components stopped."
 }
 trap cleanup EXIT INT TERM
@@ -120,12 +123,14 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
     rm -rf "$VALIDATOR_1_DIR" "$VALIDATOR_2_DIR" "$VALIDATOR_2_ACCOUNTS_DIR" "$ACCOUNTS_DIR" \
         "$NODE_DIR" "$FULL_NODE_1_DIR" "$FULL_NODE_2_DIR" "$NTX_BUILDER_DIR"
 
-    echo "Bootstrapping validator 1 (builds and signs genesis with both validators' keys)..."
+    echo "Bootstrapping validator 1 (signs genesis; validator 2's public key is committed, not signed with)..."
     KMS_BOOTSTRAP_ARGS=()
     if [[ -n "$KMS_KEY_ID" ]]; then
-        KMS_BOOTSTRAP_ARGS+=(--key.kms-id "$KMS_KEY_ID,$KMS_KEY_ID_2")
+        KMS_BOOTSTRAP_ARGS+=(--key.kms-id "$KMS_KEY_ID")
+        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.kms-id "$KMS_KEY_ID_2")
     else
-        KMS_BOOTSTRAP_ARGS+=(--key.hex "$VALIDATOR_1_KEY_HEX,$VALIDATOR_2_KEY_HEX")
+        KMS_BOOTSTRAP_ARGS+=(--key.hex "$VALIDATOR_1_KEY_HEX")
+        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.hex "$VALIDATOR_2_KEY_HEX")
     fi
 
     "$VALIDATOR_BINARY" bootstrap \
@@ -133,6 +138,7 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
         --genesis-block-directory "$VALIDATOR_1_DIR" \
         --accounts-directory "$ACCOUNTS_DIR" \
         --genesis-config-file "$GENESIS_CONFIG" \
+        --validator.pubkey "$VALIDATOR_2_PUBKEY" \
         "${KMS_BOOTSTRAP_ARGS[@]}"
 
     echo "Bootstrapping validator 2 (seeds from validator 1's signed genesis, no re-signing)..."

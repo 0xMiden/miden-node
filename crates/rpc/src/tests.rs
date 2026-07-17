@@ -112,7 +112,7 @@ impl TestStore {
             .unwrap();
         let genesis_block = genesis_state
             .clone()
-            .into_block(std::slice::from_ref(&signer))
+            .into_block(&signer)
             .expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
 

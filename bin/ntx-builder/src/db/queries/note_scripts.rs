@@ -14,8 +14,8 @@ pub fn lookup_note_script(
 ) -> Result<Option<NoteScript>, DatabaseError> {
     Ok(tx
         .query(sql::LOOKUP_NOTE_SCRIPT, &[script_root], |row| row.get::<NoteScript>(0))?
-        .into_iter()
-        .next())
+        .first()
+        .cloned())
 }
 
 /// Inserts a note script (idempotent via INSERT OR IGNORE).

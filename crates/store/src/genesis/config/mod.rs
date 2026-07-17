@@ -157,8 +157,8 @@ impl GenesisConfig {
             config_dir,
         } = self;
 
-        // Build the genesis validator set committed to by the genesis header. When the config
-        // does not list validators, the set is just the bootstrapping validator's key.
+        // Build the genesis validator set committed to by the genesis header. When the config does
+        // not list validators, the set is just the bootstrapping validator's key.
         let keys = if validators.is_empty() {
             vec![signer_key]
         } else {
@@ -177,10 +177,10 @@ impl GenesisConfig {
                         })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            // The genesis block is signed by `signer_key` and verified against the committed
-            // set, so a configured set that omits the signer could never produce a valid genesis
-            // block. Reject it here to fail fast with a clearer error than the downstream
-            // signature verification failure.
+            // The genesis block is signed by `signer_key` and verified against the committed set,
+            // so a configured set that omits the signer could never produce a valid genesis block.
+            // Reject it here to fail fast with a clearer error than the downstream signature
+            // verification failure.
             if !keys.contains(&signer_key) {
                 return Err(GenesisConfigError::SignerNotInValidatorSet);
             }

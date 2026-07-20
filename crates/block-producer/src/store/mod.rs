@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
 
 use itertools::Itertools;
+use miden_node_proto::decode;
+use miden_node_proto::decode::GrpcDecodeExt;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::sequencer;
 use miden_node_store::state::{Finality, State, TransactionInputs as StoreTransactionInputs};
@@ -97,10 +99,8 @@ impl TryFrom<sequencer::AuthInputs> for TransactionInputs {
     type Error = ConversionError;
 
     fn try_from(value: sequencer::AuthInputs) -> Result<Self, Self::Error> {
-        let account_id = value
-            .account_id
-            .ok_or_else(|| ConversionError::missing_field::<sequencer::AuthInputs>("account_id"))?
-            .try_into()?;
+        let decoder = value.decoder();
+        let account_id = decode!(decoder, value.account_id)?;
 
         let account_commitment = value.account_commitment.map(Word::try_from).transpose()?;
 
@@ -108,12 +108,8 @@ impl TryFrom<sequencer::AuthInputs> for TransactionInputs {
             .nullifiers
             .into_iter()
             .map(|record| {
-                let nullifier = record
-                    .nullifier
-                    .ok_or_else(|| {
-                        ConversionError::missing_field::<sequencer::NullifierRecord>("nullifier")
-                    })?
-                    .try_into()?;
+                let decoder = record.decoder();
+                let nullifier = decode!(decoder, record.nullifier)?;
                 Ok((nullifier, NonZeroU32::new(record.block_num)))
             })
             .collect::<Result<_, ConversionError>>()?;

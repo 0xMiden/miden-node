@@ -271,13 +271,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Generate deterministic file mtimes
-        run: |
-          git log --format='%ct' --name-only --no-renames | awk '
-            /^[0-9]+$/ { ts = $1; next }
-            NF && !seen[$0]++ { print ts"\t"$0 }
-          ' > docker-file-mtimes.tsv
-
       - name: Build Docker image
         uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
         with:
@@ -331,13 +324,6 @@ jobs:
           ref: ${{ needs.preflight.outputs.tag }}
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Generate deterministic file mtimes
-        run: |
-          git log --format='%ct' --name-only --no-renames | awk '
-            /^[0-9]+$/ { ts = $1; next }
-            NF && !seen[$0]++ { print ts"\t"$0 }
-          ' > docker-file-mtimes.tsv
 
       - name: Ensure GitHub release still does not exist
         env:

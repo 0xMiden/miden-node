@@ -66,19 +66,16 @@ RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/us
     cargo chef cook --release --recipe-path recipe.json --bin ${BIN}
 # Build application
 COPY . .
-# BuildKit normalises every COPY'd file to the same timestamp regardless of
-# its actual content, so when the /app/target cache mount above is reused by
-# a later build of a different commit, Cargo's mtime-based fingerprinting for
-# path/workspace crates (e.g. miden-node-proto) can see "no change" and skip
-# recompiling them, silently linking a stale .rlib built against an older,
-# incompatible code. docker-file-mtimes.tsv (generated from `git
-# log` in the build-docker workflow) restores each file's real last-commit
-# timestamp, so only files that genuinely changed since the cached build
-# look newer to Cargo.
-RUN while read -r ts path; do \
-        [ -e "$path" ] && touch -d "@$ts" "$path" || true; \
-    done < docker-file-mtimes.tsv && \
-    rm -f docker-file-mtimes.tsv
+# Cargo's fingerprinting for workspace path crates is mtime-based: a crate is
+# rebuilt only if a source file is newer than the cached artifact. The
+# /app/target cache mount above is shared across branches and PRs on the
+# persistent builder, so its artifacts may come from source that differs from
+# this build context, and any source mtime older than those artifacts (local
+# checkouts, git-derived timestamps) makes Cargo silently link a stale,
+# incompatible .rlib. Touch all sources to the current time so every
+# workspace crate is always rebuilt; external dependencies are unaffected
+# (they are fingerprinted by checksum and stay cached via `cargo chef cook`).
+RUN find . -exec touch {} +
 RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \

@@ -126,11 +126,29 @@ pub struct NtxExecutionResult {
     /// The account patch the transaction produced, applied to the actor's in-memory account once
     /// the transaction lands.
     pub account_patch: AccountPatch,
-    /// Notes that failed during consumability filtering.
+    /// Notes that failed consumability filtering for a genuine reason (not a cycle-budget drop).
+    /// Their attempt counters should be incremented.
     pub failed_notes: Vec<FailedNote>,
+    /// Notes dropped by the checker only because the combined per-tx cycle budget was exhausted,
+    /// yet proven consumable on their own. They are intentionally left un-penalized so
+    /// `available_notes` re-selects them next round, letting a large note land in its own
+    /// transaction once its batch-mates have committed.
+    pub deferred_notes: Vec<FailedNote>,
+    /// Notes whose own consumption exceeds the per-tx cycle budget. They can never be consumed in
+    /// any transaction and should be discarded immediately.
+    pub oversized_notes: Vec<FailedNote>,
     /// Note scripts fetched from the remote RPC service that should be persisted to the local DB
     /// cache.
     pub fetched_scripts: Vec<(Word, NoteScript)>,
+}
+
+/// The outcome of consumability filtering: the executable set plus the failed notes partitioned by
+/// how the actor should treat them. See [`NtxExecutionResult`] for the meaning of each bucket.
+struct FilteredNotes {
+    successful: InputNotes<InputNote>,
+    failed: Vec<FailedNote>,
+    deferred: Vec<FailedNote>,
+    oversized: Vec<FailedNote>,
 }
 
 // NETWORK TRANSACTION CONTEXT
@@ -270,7 +288,7 @@ impl NtxContext {
                 let handle = tokio::runtime::Handle::current();
                 let span = tracing::Span::current();
 
-                let (executed_tx, failed_notes, scripts_to_cache) =
+                let (executed_tx, failed_notes, deferred_notes, oversized_notes, scripts_to_cache) =
                     spawn_blocking_in_current_span(move || {
                         let data_store = NtxDataStore::new(
                             account,
@@ -283,12 +301,18 @@ impl NtxContext {
                         );
                         handle.block_on(
                             async {
-                                let (successful_notes, failed_notes) =
+                                let FilteredNotes { successful, failed, deferred, oversized } =
                                     ctx.filter_notes(&data_store, notes).await?;
                                 let executed_tx =
-                                    Box::pin(ctx.execute(&data_store, successful_notes)).await?;
+                                    Box::pin(ctx.execute(&data_store, successful)).await?;
                                 let scripts_to_cache = data_store.take_fetched_scripts();
-                                Ok::<_, NtxError>((executed_tx, failed_notes, scripts_to_cache))
+                                Ok::<_, NtxError>((
+                                    executed_tx,
+                                    failed,
+                                    deferred,
+                                    oversized,
+                                    scripts_to_cache,
+                                ))
                             }
                             .instrument(span),
                         )
@@ -310,6 +334,8 @@ impl NtxContext {
                     tx_id: proven_tx.id(),
                     account_patch,
                     failed_notes,
+                    deferred_notes,
+                    oversized_notes,
                     fetched_scripts: scripts_to_cache,
                 })
             })
@@ -347,7 +373,7 @@ impl NtxContext {
         &self,
         data_store: &NtxDataStore,
         notes: Vec<Note>,
-    ) -> NtxResult<(InputNotes<InputNote>, Vec<FailedNote>)> {
+    ) -> NtxResult<FilteredNotes> {
         let executor = self.create_executor(data_store);
         let checker = NoteConsumptionChecker::new(&executor);
 
@@ -384,9 +410,65 @@ impl NtxContext {
                     return Err(NtxError::AllNotesFailed(failed));
                 }
 
-                Ok((successful, failed))
+                let (cycle_limited, failed) = partition_cycle_limited(failed);
+                let (deferred, oversized) =
+                    self.classify_cycle_limited(data_store, cycle_limited).await;
+
+                Ok(FilteredNotes { successful, failed, deferred, oversized })
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
+        }
+    }
+
+    /// Splits cycle-limited failed notes into `(deferred, oversized)` by re-checking each one on
+    /// its own.
+    async fn classify_cycle_limited(
+        &self,
+        data_store: &NtxDataStore,
+        cycle_limited: Vec<FailedNote>,
+    ) -> (Vec<FailedNote>, Vec<FailedNote>) {
+        let mut deferred = Vec::new();
+        let mut oversized = Vec::new();
+        for failed in cycle_limited {
+            if self.note_exceeds_budget_alone(data_store, failed.note()).await {
+                oversized.push(failed);
+            } else {
+                deferred.push(failed);
+            }
+        }
+        (deferred, oversized)
+    }
+
+    /// Returns `true` if the note trips the cycle limit even as a single-note transaction, i.e. its
+    /// own consumption exceeds the per-tx cycle budget and it can never be consumed.
+    async fn note_exceeds_budget_alone(&self, data_store: &NtxDataStore, note: &Note) -> bool {
+        let executor = self.create_executor(data_store);
+        let checker = NoteConsumptionChecker::new(&executor);
+
+        match Box::pin(checker.check_notes_consumability(
+            data_store.account.id(),
+            data_store.reference_block.block_num(),
+            vec![note.clone()],
+            TransactionArgs::default(),
+        ))
+        .await
+        {
+            Ok(info) => {
+                let (successful, failed) = info.into_parts();
+                // Alone and still cycle-limited: the note needs ~the entire budget for itself.
+                successful.is_empty() && failed.iter().any(|f| f.num_cycles().is_some())
+            },
+            Err(err) => {
+                tracing::warn!(
+                    target: LOG_TARGET,
+                    {
+                        note.id = %note.id(),
+                        err = %err.as_report(),
+                    },
+                    "isolation re-check for a cycle-limited note failed; treating it as deferrable",
+                );
+                false
+            },
         }
     }
 
@@ -464,6 +546,11 @@ impl NtxContext {
             .await
             .map_err(NtxError::Submission)
     }
+}
+
+/// Splits failed notes into `(cycle_limited, genuine)`.
+fn partition_cycle_limited(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<FailedNote>) {
+    failed.into_iter().partition(|note| note.num_cycles().is_some())
 }
 
 // NETWORK TRANSACTION DATA STORE
@@ -776,9 +863,38 @@ impl MastForestStore for NtxDataStore {
 
 #[cfg(test)]
 mod tests {
-    use miden_tx::TransactionProverError;
+    use miden_tx::{FailedNote, TransactionExecutorError, TransactionProverError};
 
-    use super::{RpcError, is_transient_rpc_error, is_transient_status};
+    use super::{RpcError, is_transient_rpc_error, is_transient_status, partition_cycle_limited};
+    use crate::test_utils::{mock_network_account_id, mock_single_target_note};
+
+    /// `partition_cycle_limited` must route notes carrying a cycle count (`num_cycles = Some`) into
+    /// the cycle-limited bucket (which is then isolation-re-checked) and notes without one
+    /// (`num_cycles = None`) into the genuine-failure bucket. A misclassification here would either
+    /// skip the oversized re-check for a note that needs it or wrongly re-check a genuine failure.
+    #[test]
+    fn partition_cycle_limited_splits_on_cycle_count() {
+        let account_id = mock_network_account_id();
+        let cycle_limited_note = mock_single_target_note(account_id, 1).into_note();
+        let genuine_note = mock_single_target_note(account_id, 2).into_note();
+        let cycle_limited_id = cycle_limited_note.id();
+        let genuine_id = genuine_note.id();
+
+        let err = || TransactionExecutorError::AccountUpdateCommitment("test error");
+        let failed = vec![
+            // Dropped because a per-tx cycle budget was exhausted: carries a cycle count.
+            FailedNote::new(cycle_limited_note, err(), Some(1234)),
+            // A genuine consumability failure: no cycle count.
+            FailedNote::new(genuine_note, err(), None),
+        ];
+
+        let (cycle_limited, genuine) = partition_cycle_limited(failed);
+
+        assert_eq!(cycle_limited.len(), 1, "exactly the cycle-limited note must be re-checked");
+        assert_eq!(cycle_limited[0].note().id(), cycle_limited_id);
+        assert_eq!(genuine.len(), 1, "exactly the genuine failure must be penalized directly");
+        assert_eq!(genuine[0].note().id(), genuine_id);
+    }
 
     #[test]
     fn transient_status_classifies_transport_codes() {

@@ -58,6 +58,14 @@ const PROOF_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(512).unwrap();
 /// indicates a slow or leaked reader pinning a `RocksDB` snapshot (see [`SnapshotGuard`]).
 const SNAPSHOT_LIFETIME_WARN_THRESHOLD: Duration = Duration::from_secs(10);
 
+/// Number of live snapshot generations above which the [`BlockWriter`] logs a warning after
+/// publishing a new snapshot.
+///
+/// Steady state is 1-2 generations: the just-published snapshot plus predecessors briefly pinned
+/// by in-flight requests. A sustained higher count means slow or leaked readers are holding old
+/// generations alive (see [`SnapshotGuard`]).
+const SNAPSHOTS_LIVE_WARN_THRESHOLD: u64 = 4;
+
 mod loader;
 use loader::{
     ACCOUNT_STATE_FOREST_STORAGE_DIR,

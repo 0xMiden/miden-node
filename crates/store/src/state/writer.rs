@@ -27,7 +27,14 @@ use crate::blocks::BlockStore;
 use crate::db::{Db, NoteRecord};
 use crate::errors::{ApplyBlockError, InvalidBlockError};
 use crate::state::loader::TreeStorage;
-use crate::state::{BlockCache, BlockNotification, InMemoryState, SnapshotGuard, State};
+use crate::state::{
+    BlockCache,
+    BlockNotification,
+    InMemoryState,
+    SNAPSHOTS_LIVE_WARN_THRESHOLD,
+    SnapshotGuard,
+    State,
+};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
 // WRITE REQUEST
@@ -224,6 +231,14 @@ impl BlockWriter {
         self.in_memory.store(snapshot);
         let snapshots_live = self.snapshots_live.load(Ordering::Relaxed) as u64;
         miden_span_record!(snapshots.live = snapshots_live);
+        if snapshots_live > SNAPSHOTS_LIVE_WARN_THRESHOLD {
+            tracing::warn!(
+                target: COMPONENT,
+                block_num = block_num.as_u32(),
+                snapshots.live = snapshots_live,
+                "too many live state snapshots; slow readers are pinning old generations",
+            );
+        }
 
         // Push to cache and notify replica subscribers.
         self.block_cache

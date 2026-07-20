@@ -376,12 +376,25 @@ impl<State> Builder<State> {
     }
 }
 
+/// Client HTTP/2 keepalive interval.
+const HTTP2_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(20);
+/// Client HTTP/2 keepalive: how long to wait for a PING ack before considering the connection dead.
+const HTTP2_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
+/// OS-level TCP keepalive backstop for direct (non-proxied) connections.
+const TCP_KEEPALIVE: Duration = Duration::from_secs(30);
+
 impl Builder<WantsTls> {
     /// Create a new strict builder from a gRPC endpoint URL such as `http://localhost:8080` or
     /// `https://api.example.com:443`.
     pub fn new(url: Url) -> Builder<WantsTls> {
         let endpoint = Endpoint::from_shared(String::from(url))
-            .expect("Url type always results in valid endpoint");
+            .expect("Url type always results in valid endpoint")
+            // Detect silently dropped connections so long-lived streams can't hang forever; see the
+            // keepalive constants above.
+            .http2_keep_alive_interval(HTTP2_KEEPALIVE_INTERVAL)
+            .keep_alive_timeout(HTTP2_KEEPALIVE_TIMEOUT)
+            .keep_alive_while_idle(true)
+            .tcp_keepalive(Some(TCP_KEEPALIVE));
 
         Builder {
             endpoint,

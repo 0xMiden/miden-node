@@ -51,6 +51,14 @@ type BlockSubscriptionItem = Result<(SignedBlock, BlockNumber), RpcError>;
 /// exponentially inside [`RpcClient::block_subscription_with_retry`].
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
+/// Maximum time to wait for the next committed block before treating the subscription as stalled
+/// and forcing a reconnect.
+///
+/// This is a defensive backstop for a silently dropped connection that never surfaces an error on
+/// its own (client HTTP/2 keepalive is the primary, faster detector). It must be comfortably larger
+/// than the node's block interval so a legitimately quiet chain is not mistaken for a stall.
+const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// Thin wrapper around the node RPC gRPC service that the ntx-builder uses to consume the
 /// committed-block subscription stream.
 #[derive(Clone, Debug)]
@@ -176,7 +184,13 @@ impl RpcClient {
                     let stream = match &mut inner {
                         Some(stream) => stream,
                         None => match client.block_subscription_with_retry(next_from).await {
-                            Ok(stream) => inner.insert(stream),
+                            Ok(stream) => {
+                                tracing::info!(
+                                    target: COMPONENT, %next_from,
+                                    "block subscription connected",
+                                );
+                                inner.insert(stream)
+                            },
                             Err(err) => {
                                 tracing::warn!(
                                     target: COMPONENT, err = %err.as_report(), %next_from,
@@ -188,18 +202,26 @@ impl RpcClient {
                         },
                     };
 
-                    match stream.next().await {
-                        Some(Ok((block, committed_tip))) => {
+                    // A silently dropped connection can leave `stream.next()` pending forever with
+                    // no error, so bound the wait: if no block arrives within `STALL_TIMEOUT`,
+                    // treat the subscription as stalled and reconnect.
+                    match tokio::time::timeout(STALL_TIMEOUT, stream.next()).await {
+                        Ok(Some(Ok((block, committed_tip)))) => {
                             next_from = block.header().block_num().child();
                             return Some((Ok((block, committed_tip)), (client, next_from, inner)));
                         },
-                        Some(Err(err)) => tracing::warn!(
+                        Ok(Some(Err(err))) => tracing::warn!(
                             target: COMPONENT, err = %err.as_report(), %next_from,
                             "block subscription failed, reconnecting",
                         ),
-                        None => tracing::warn!(
+                        Ok(None) => tracing::warn!(
                             target: COMPONENT, %next_from,
                             "block subscription closed by node, reconnecting",
+                        ),
+                        Err(_elapsed) => tracing::warn!(
+                            target: COMPONENT, %next_from,
+                            stall_timeout_s = STALL_TIMEOUT.as_secs(),
+                            "no block received within stall timeout; treating subscription as stalled, reconnecting",
                         ),
                     }
 

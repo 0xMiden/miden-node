@@ -64,6 +64,7 @@ mod account;
 
 mod apply_block;
 mod apply_proof;
+mod block_lifecycle;
 mod bootstrap;
 mod disk_monitor;
 mod sync_state;

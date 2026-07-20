@@ -9,6 +9,7 @@ help:
 WARNINGS=RUSTDOCFLAGS="-D warnings"
 STRESS_TEST_DATA_DIR ?= stress-test-store-$(shell date +%Y%m%d-%H%M%S)
 COMPOSE_FILES = -f docker-compose.yml -f compose/telemetry.yml -f compose/monitor.yml
+DOCKER_COMMAND ?= docker
 DOCKER_PLATFORM ?=
 DOCKER_PLATFORM_ARG = $(if $(DOCKER_PLATFORM),--platform $(DOCKER_PLATFORM),)
 DOCKER_VERSION ?= $(shell awk -F '"' '/^version[[:space:]]*=/ { print $$2; exit }' Cargo.toml)
@@ -181,19 +182,19 @@ local-network-build: docker-build ## Builds Docker images used by the local deve
 
 .PHONY: local-network-up
 local-network-up: ## Starts the local development network
-	docker compose $(COMPOSE_FILES) up -d
+	$(DOCKER_COMMAND) compose $(COMPOSE_FILES) up -d
 
 .PHONY: local-network-down
 local-network-down: ## Stops the local development network, preserving volumes
-	docker compose $(COMPOSE_FILES) down --remove-orphans
+	$(DOCKER_COMMAND) compose $(COMPOSE_FILES) down --remove-orphans
 
 .PHONY: local-network-delete
 local-network-delete: ## Stops the local development network and deletes volumes
-	docker compose $(COMPOSE_FILES) down -v --remove-orphans
+	$(DOCKER_COMMAND) compose $(COMPOSE_FILES) down -v --remove-orphans
 
 .PHONY: local-network-logs
 local-network-logs: ## Follows logs for the local development network
-	docker compose $(COMPOSE_FILES) logs -f
+	$(DOCKER_COMMAND) compose $(COMPOSE_FILES) logs -f
 
 .PHONY: docker-build
 docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover docker-build-monitor ## Builds all Docker images
@@ -203,7 +204,7 @@ docker-build-node: ## Builds the Miden node using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	docker build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
@@ -216,7 +217,7 @@ docker-build-validator: ## Builds the Miden validator using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	docker build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
@@ -229,7 +230,7 @@ docker-build-ntx-builder: ## Builds the Miden network transaction builder using 
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	docker build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
@@ -242,7 +243,7 @@ docker-build-monitor: ## Builds the network monitor using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	docker build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
@@ -255,7 +256,7 @@ docker-build-remote-prover: ## Builds the remote prover using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	docker build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \

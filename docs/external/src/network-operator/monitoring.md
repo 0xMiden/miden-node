@@ -8,6 +8,9 @@ sidebar_position: 8
 Network operators can use `miden-network-monitor` and OpenTelemetry tracing to observe network health, RPC freshness,
 validator status, prover status, and related infrastructure.
 
+See [Logging](/logging) for stdout filtering, filter precedence, user-facing targets, and separate OpenTelemetry filter
+configuration.
+
 ## Network Monitor
 
 `miden-network-monitor` is an observer and test client. It is not required for block production. Depending on

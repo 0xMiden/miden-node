@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use itertools::Itertools;
 use miden_protocol::transaction::{InputNoteCommitment, InputNotes, OutputNotes};
+use url::Url;
 
 pub fn format_opt<T: Display>(opt: Option<&T>) -> String {
     opt.map_or("None".to_owned(), ToString::to_string)
@@ -39,6 +40,16 @@ pub fn format_array(list: impl IntoIterator<Item = impl Display>) -> String {
     }
 }
 
+/// Formats a service endpoint without credentials, query parameters, or fragments.
+pub fn format_endpoint(endpoint: &Url) -> String {
+    let mut endpoint = endpoint.clone();
+    let _ = endpoint.set_username("");
+    let _ = endpoint.set_password(None);
+    endpoint.set_query(None);
+    endpoint.set_fragment(None);
+    endpoint.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use miden_protocol::Word;
@@ -54,8 +65,9 @@ mod tests {
         PartialNoteMetadata,
     };
     use miden_protocol::transaction::{InputNoteCommitment, InputNotes};
+    use url::Url;
 
-    use super::format_input_notes;
+    use super::{format_endpoint, format_input_notes};
 
     #[test]
     fn input_notes_are_labeled() {
@@ -83,5 +95,13 @@ mod tests {
                 header.id().to_hex(),
             ),
         );
+    }
+
+    #[test]
+    fn endpoint_formatting_redacts_sensitive_parts() {
+        let endpoint =
+            Url::parse("https://user:secret@example.com:443/grpc?token=secret#fragment").unwrap();
+
+        assert_eq!(format_endpoint(&endpoint), "https://example.com/grpc");
     }
 }

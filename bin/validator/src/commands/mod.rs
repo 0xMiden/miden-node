@@ -207,6 +207,18 @@ impl ValidatorCommand {
                 ..
             } => {
                 let address = listen;
+                tracing::info!(
+                    target: miden_validator::LOG_TARGET,
+                    {
+                        service.name = "miden-validator",
+                        service.version = env!("CARGO_PKG_VERSION"),
+                        validator.listen = %address,
+                        data.directory = %data_directory.display(),
+                        validator.signer = if kms_key_id.is_some() { "kms" } else { "local" },
+                        sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
+                    },
+                    "Starting validator",
+                );
 
                 let encryption_key_bytes = if let Some(ciphertext) = encryption_key_kms_ciphertext {
                     let ciphertext =

@@ -9,7 +9,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;
 use tower_http::trace::TraceLayer;
 
-use crate::COMPONENT;
+use crate::LOG_TARGET;
 use crate::db::Db;
 
 mod get_network_note_status;
@@ -43,10 +43,16 @@ impl NtxBuilderRpcServer {
             .build_v1()
             .context("failed to build reflection service")?;
 
+        let endpoint =
+            listener.local_addr().context("failed to read NTX builder listen address")?;
         tracing::info!(
-            target: COMPONENT,
-            endpoint = ?listener.local_addr(),
-            "NTX builder gRPC server initialized",
+            target: LOG_TARGET,
+            {
+                service.name = "miden-ntx-builder",
+                service.version = env!("CARGO_PKG_VERSION"),
+                ntx_builder.listen = %endpoint,
+            },
+            "NTX builder ready",
         );
 
         tonic::transport::Server::builder()

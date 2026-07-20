@@ -14,8 +14,8 @@ use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::{ValidatorError, ValidatorService};
 use crate::db::{load_chain_tip, setup, upsert_block_header};
-use crate::signers::attestation_commitment;
-use crate::{LocalX25519TransactionInputDecryptor, TransactionInputDecryptor, ValidatorSigner};
+use crate::signers::{NextEncryptionKeyInfo, attestation_commitment};
+use crate::{LocalX25519TransactionInputDecrypter, TransactionInputDecrypter, ValidatorSigner};
 
 // TEST HELPERS
 // ================================================================================================
@@ -23,12 +23,12 @@ use crate::{LocalX25519TransactionInputDecryptor, TransactionInputDecryptor, Val
 /// The shared transaction encryption secret provisioned to every test validator.
 const TEST_ENCRYPTION_SECRET: [u8; 32] = [3u8; 32];
 
-/// Creates a [`LocalX25519TransactionInputDecryptor`] from the shared test secret, modelling the
+/// Creates a [`LocalX25519TransactionInputDecrypter`] from the shared test secret, modelling the
 /// identically provisioned encryption key of a validator in the set.
-fn test_decryptor() -> LocalX25519TransactionInputDecryptor {
+fn test_decrypter() -> LocalX25519TransactionInputDecrypter {
     let key = KeyExchangeKey::read_from_bytes(&TEST_ENCRYPTION_SECRET)
         .expect("test secret should be a valid key exchange key");
-    LocalX25519TransactionInputDecryptor::new(key)
+    LocalX25519TransactionInputDecrypter::new(key)
 }
 
 /// Test harness that wraps a [`Validator`] and tracks the chain MMR state needed to construct valid
@@ -53,7 +53,7 @@ impl TestValidator {
         Self {
             server: ValidatorService::new(
                 signer,
-                std::sync::Arc::new(test_decryptor()),
+                std::sync::Arc::new(test_decrypter()),
                 db,
                 block_store,
                 0,
@@ -217,7 +217,7 @@ async fn signing_key_mismatch_rejected() {
 
     let result = ValidatorService::new(
         rogue_signer,
-        std::sync::Arc::new(test_decryptor()),
+        std::sync::Arc::new(test_decrypter()),
         db,
         block_store,
         0,
@@ -745,17 +745,26 @@ async fn transaction_encryption_key_is_attested() {
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
 
-    let info = test_decryptor().encryption_key().await.expect("key info should be available");
-    assert_eq!(response.scheme, info.scheme);
+    let info = test_decrypter().encryption_key().await.expect("key info should be available");
+    let scheme = u32::try_from(response.scheme).expect("scheme must be non-negative");
+    assert_eq!(scheme, info.scheme);
     assert_eq!(response.key_id, info.key_id);
     assert_eq!(response.public_key, info.public_key);
 
     let commitment =
-        attestation_commitment(response.scheme, &response.key_id, genesis, &response.public_key);
+        attestation_commitment(scheme, &response.key_id, genesis, &response.public_key, None);
     assert_eq!(commitment, info.attestation_commitment(genesis));
 
+    let [attestation] = response.attestations.as_slice() else {
+        panic!("response must carry exactly the serving validator's attestation");
+    };
+    assert_eq!(
+        attestation.validator_public_key,
+        tv.server.signer.public_key().to_bytes(),
+        "attestation must identify the serving validator",
+    );
     let signature =
-        Signature::read_from_bytes(&response.signature).expect("signature should deserialize");
+        Signature::read_from_bytes(&attestation.signature).expect("signature should deserialize");
     assert!(
         signature.verify(commitment, &tv.server.signer.public_key()),
         "attestation must verify against this validator's signing key",
@@ -776,7 +785,7 @@ async fn shared_key_is_attested_per_validator() {
     assert_eq!(response_a.key_id, response_b.key_id);
     assert_eq!(response_a.public_key, response_b.public_key);
     assert_ne!(
-        response_a.signature, response_b.signature,
+        response_a.attestations[0].signature, response_b.attestations[0].signature,
         "each validator must attest with its own signing key",
     );
 }
@@ -788,8 +797,9 @@ async fn tampered_attestation_fails_verification() {
     let tv = TestValidator::new().await;
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
-    let signature = Signature::read_from_bytes(&response.signature).unwrap();
+    let signature = Signature::read_from_bytes(&response.attestations[0].signature).unwrap();
     let signing_key = tv.server.signer.public_key();
+    let scheme = u32::try_from(response.scheme).expect("scheme must be non-negative");
 
     let mut tampered_public_key = response.public_key.clone();
     tampered_public_key[0] ^= 0x01;
@@ -800,27 +810,33 @@ async fn tampered_attestation_fails_verification() {
     let mut extended_key_id = response.key_id.clone();
     extended_key_id.push(response.public_key[0]);
     let tampered_genesis = Word::try_from([9u64, 9, 9, 9]).unwrap();
+    // Injecting a scheduled rotation into a response attested without one must also break the
+    // signature.
+    let injected_next_key = NextEncryptionKeyInfo {
+        scheme,
+        key_id: response.key_id.clone(),
+        public_key: response.public_key.clone(),
+        rotation_block_num: 100,
+    };
 
     let tampered_commitments = [
+        attestation_commitment(scheme + 1, &response.key_id, genesis, &response.public_key, None),
+        attestation_commitment(scheme, &tampered_key_id, genesis, &response.public_key, None),
+        attestation_commitment(scheme, &extended_key_id, genesis, &response.public_key[1..], None),
+        attestation_commitment(scheme, &response.key_id, genesis, &tampered_public_key, None),
         attestation_commitment(
-            response.scheme + 1,
-            &response.key_id,
-            genesis,
-            &response.public_key,
-        ),
-        attestation_commitment(response.scheme, &tampered_key_id, genesis, &response.public_key),
-        attestation_commitment(
-            response.scheme,
-            &extended_key_id,
-            genesis,
-            &response.public_key[1..],
-        ),
-        attestation_commitment(response.scheme, &response.key_id, genesis, &tampered_public_key),
-        attestation_commitment(
-            response.scheme,
+            scheme,
             &response.key_id,
             tampered_genesis,
             &response.public_key,
+            None,
+        ),
+        attestation_commitment(
+            scheme,
+            &response.key_id,
+            genesis,
+            &response.public_key,
+            Some(&injected_next_key),
         ),
     ];
     for commitment in tampered_commitments {
@@ -854,14 +870,14 @@ async fn response_key_seals_for_the_validator_set() {
         .unwrap();
 
     let sealed = sealed.to_bytes();
-    let opened = test_decryptor()
+    let opened = test_decrypter()
         .decrypt_transaction_inputs(&sealed, associated_data)
         .await
         .unwrap();
     assert_eq!(opened.as_slice(), plaintext);
 
     assert!(
-        test_decryptor()
+        test_decrypter()
             .decrypt_transaction_inputs(&sealed, b"other associated data")
             .await
             .is_err(),

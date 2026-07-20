@@ -60,7 +60,7 @@ impl ValidatorSigner {
     }
 }
 
-// TRANSACTION INPUT DECRYPTOR
+// TRANSACTION INPUT DECRYPTER
 // =================================================================================================
 
 /// Domain tag prefixed to the attestation payload, separating key attestations from block header
@@ -76,10 +76,10 @@ pub const ATTESTATION_DOMAIN: &[u8] = b"MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1";
 ///
 /// The interface deliberately does not assume that secret key bytes exist in the validator
 /// process: an implementation may hold a local secret (see
-/// [`LocalX25519TransactionInputDecryptor`]) or delegate decryption to an external system such as
+/// [`LocalX25519TransactionInputDecrypter`]) or delegate decryption to an external system such as
 /// a TEE that only exposes a decrypt operation.
 #[tonic::async_trait]
-pub trait TransactionInputDecryptor: Send + Sync {
+pub trait TransactionInputDecrypter: Send + Sync {
     /// Returns the public metadata of the current encryption key.
     async fn encryption_key(&self) -> anyhow::Result<TransactionEncryptionKeyInfo>;
 
@@ -104,12 +104,35 @@ pub struct TransactionEncryptionKeyInfo {
     pub key_id: Vec<u8>,
     /// Raw public key bytes of the shared encryption key.
     pub public_key: Vec<u8>,
+    /// The next encryption key when a rotation is scheduled. Not populated yet; key rotation is not
+    /// implemented.
+    pub next_key: Option<NextEncryptionKeyInfo>,
+}
+
+/// Public metadata of the next transaction encryption key, announced ahead of a scheduled rotation,
+/// in wire format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NextEncryptionKeyInfo {
+    /// Wire identifier of the next key's encryption scheme.
+    pub scheme: u32,
+    /// Opaque identifier of the next encryption key.
+    pub key_id: Vec<u8>,
+    /// Raw public key bytes of the next encryption key.
+    pub public_key: Vec<u8>,
+    /// Block number at which the next key replaces the current one.
+    pub rotation_block_num: u32,
 }
 
 impl TransactionEncryptionKeyInfo {
     /// Returns the commitment signed by a validator to attest the encryption key.
     pub fn attestation_commitment(&self, genesis_commitment: Word) -> Word {
-        attestation_commitment(self.scheme, &self.key_id, genesis_commitment, &self.public_key)
+        attestation_commitment(
+            self.scheme,
+            &self.key_id,
+            genesis_commitment,
+            &self.public_key,
+            self.next_key.as_ref(),
+        )
     }
 }
 
@@ -120,52 +143,77 @@ impl TransactionEncryptionKeyInfo {
 /// applies to both sides.
 ///
 /// Computed as the Poseidon2 hash of `ATTESTATION_DOMAIN || scheme || len(key_id) || key_id ||
-/// genesis_commitment || len(public_key) || public_key`, binding every field of the attested
-/// response to the signature. The scheme and the length prefixes are encoded as 4 bytes
-/// little-endian, and the length prefixes on the variable-width fields ensure no two field
-/// combinations map to the same payload. Including the genesis commitment ties the attestation to
-/// one chain, so it cannot be replayed on another network whose validator reuses the same signing
-/// key.
+/// genesis_commitment || len(public_key) || public_key || next_key_transcript`, binding every
+/// field of the attested response to the signature. The scheme, the rotation block number, and
+/// the length prefixes are encoded as 4 bytes little-endian, and the length prefixes on the
+/// variable-width fields ensure no two field combinations map to the same payload. Including the
+/// genesis commitment ties the attestation to one chain, so it cannot be replayed on another
+/// network whose validator reuses the same signing key.
+///
+/// `next_key_transcript` is a single `0` byte when no rotation is scheduled, or `1` followed by
+/// the next key's `scheme || len(key_id) || key_id || len(public_key) || public_key ||
+/// rotation_block_num` otherwise, so a scheduled rotation cannot be stripped from or injected
+/// into an attested response.
 pub fn attestation_commitment(
     scheme: u32,
     key_id: &[u8],
     genesis_commitment: Word,
     public_key: &[u8],
+    next_key: Option<&NextEncryptionKeyInfo>,
 ) -> Word {
     let genesis_commitment = genesis_commitment.to_bytes();
-    let key_id_len = u32::try_from(key_id.len())
-        .expect("key id length must fit in u32")
-        .to_le_bytes();
-    let public_key_len = u32::try_from(public_key.len())
-        .expect("public key length must fit in u32")
-        .to_le_bytes();
+    let next_key_size = next_key
+        .map(|next| 3 * size_of::<u32>() + next.key_id.len() + next.public_key.len())
+        .unwrap_or_default();
     let mut payload = Vec::with_capacity(
         ATTESTATION_DOMAIN.len()
             + 3 * size_of::<u32>()
             + key_id.len()
             + genesis_commitment.len()
-            + public_key.len(),
+            + public_key.len()
+            + 1
+            + next_key_size,
     );
     payload.extend_from_slice(ATTESTATION_DOMAIN);
     payload.extend_from_slice(&scheme.to_le_bytes());
-    payload.extend_from_slice(&key_id_len);
-    payload.extend_from_slice(key_id);
+    extend_with_length_prefixed(&mut payload, key_id, "key id");
     payload.extend_from_slice(&genesis_commitment);
-    payload.extend_from_slice(&public_key_len);
-    payload.extend_from_slice(public_key);
+    extend_with_length_prefixed(&mut payload, public_key, "public key");
+    match next_key {
+        None => payload.push(0),
+        Some(next) => {
+            payload.push(1);
+            payload.extend_from_slice(&next.scheme.to_le_bytes());
+            extend_with_length_prefixed(&mut payload, &next.key_id, "next key id");
+            extend_with_length_prefixed(&mut payload, &next.public_key, "next public key");
+            payload.extend_from_slice(&next.rotation_block_num.to_le_bytes());
+        },
+    }
     miden_protocol::Hasher::hash(&payload)
 }
 
-/// [`TransactionInputDecryptor`] backed by a locally provisioned X25519 shared secret.
-pub struct LocalX25519TransactionInputDecryptor {
+/// Appends a field to the attestation payload prefixed with its length as 4 bytes little-endian.
+///
+/// The length prefixes on variable-width fields keep the transcript injective: no two field
+/// combinations map to the same payload.
+fn extend_with_length_prefixed(payload: &mut Vec<u8>, field: &[u8], name: &str) {
+    let len = u32::try_from(field.len())
+        .unwrap_or_else(|_| panic!("{name} length must fit in u32"))
+        .to_le_bytes();
+    payload.extend_from_slice(&len);
+    payload.extend_from_slice(field);
+}
+
+/// [`TransactionInputDecrypter`] backed by a locally provisioned X25519 shared secret.
+pub struct LocalX25519TransactionInputDecrypter {
     secret_key: KeyExchangeKey,
 }
 
-impl LocalX25519TransactionInputDecryptor {
+impl LocalX25519TransactionInputDecrypter {
     /// The IES scheme used for transaction input encryption.
     pub const SCHEME: IesScheme = IesScheme::X25519XChaCha20Poly1305;
 
-    /// Constructs a decryptor from a locally provisioned shared secret.
+    /// Constructs a decrypter from a locally provisioned shared secret.
     pub fn new(secret_key: KeyExchangeKey) -> Self {
         Self { secret_key }
     }
@@ -194,12 +242,13 @@ impl LocalX25519TransactionInputDecryptor {
 }
 
 #[tonic::async_trait]
-impl TransactionInputDecryptor for LocalX25519TransactionInputDecryptor {
+impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
     async fn encryption_key(&self) -> anyhow::Result<TransactionEncryptionKeyInfo> {
         Ok(TransactionEncryptionKeyInfo {
             scheme: Self::scheme_id(),
             key_id: self.key_id(),
             public_key: self.public_key().to_bytes(),
+            next_key: None,
         })
     }
 
@@ -218,6 +267,9 @@ impl TransactionInputDecryptor for LocalX25519TransactionInputDecryptor {
     }
 }
 
+// TESTS
+// =================================================================================================
+
 #[cfg(test)]
 mod tests {
     use miden_protocol::utils::serde::Deserializable;
@@ -225,8 +277,8 @@ mod tests {
 
     use super::*;
 
-    fn decryptor_from(secret: &[u8; 32]) -> LocalX25519TransactionInputDecryptor {
-        LocalX25519TransactionInputDecryptor::new(KeyExchangeKey::read_from_bytes(secret).unwrap())
+    fn decrypter_from(secret: &[u8; 32]) -> LocalX25519TransactionInputDecrypter {
+        LocalX25519TransactionInputDecrypter::new(KeyExchangeKey::read_from_bytes(secret).unwrap())
     }
 
     /// Loading the same shared secret must yield the same key metadata and attestation commitment
@@ -234,8 +286,8 @@ mod tests {
     #[tokio::test]
     async fn same_secret_yields_same_public_material() {
         let genesis = Word::try_from([1u64, 2, 3, 4]).unwrap();
-        let info_a = decryptor_from(&[7u8; 32]).encryption_key().await.unwrap();
-        let info_b = decryptor_from(&[7u8; 32]).encryption_key().await.unwrap();
+        let info_a = decrypter_from(&[7u8; 32]).encryption_key().await.unwrap();
+        let info_b = decrypter_from(&[7u8; 32]).encryption_key().await.unwrap();
 
         assert_eq!(info_a, info_b);
         assert_eq!(info_a.attestation_commitment(genesis), info_b.attestation_commitment(genesis));
@@ -245,8 +297,8 @@ mod tests {
     #[tokio::test]
     async fn different_secrets_yield_different_public_material() {
         let genesis = Word::try_from([1u64, 2, 3, 4]).unwrap();
-        let info_a = decryptor_from(&[7u8; 32]).encryption_key().await.unwrap();
-        let info_b = decryptor_from(&[8u8; 32]).encryption_key().await.unwrap();
+        let info_a = decrypter_from(&[7u8; 32]).encryption_key().await.unwrap();
+        let info_b = decrypter_from(&[8u8; 32]).encryption_key().await.unwrap();
 
         assert_eq!(info_a.scheme, info_b.scheme);
         assert_ne!(info_a.public_key, info_b.public_key);
@@ -254,38 +306,38 @@ mod tests {
         assert_ne!(info_a.attestation_commitment(genesis), info_b.attestation_commitment(genesis));
     }
 
-    /// A message sealed against the decryptor's sealing key must decrypt to the original plaintext,
+    /// A message sealed against the decrypter's sealing key must decrypt to the original plaintext,
     /// and decryption must reject a mismatched associated data or a mismatched key.
     #[tokio::test]
     async fn seal_decrypt_roundtrip() {
         let mut rng = rng();
-        let decryptor = decryptor_from(&[7u8; 32]);
+        let decrypter = decrypter_from(&[7u8; 32]);
         let plaintext = b"transaction inputs";
         let associated_data = b"scheme|key_id|chain|tx";
 
-        let sealed = decryptor
+        let sealed = decrypter
             .sealing_key()
             .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
             .unwrap()
             .to_bytes();
-        let opened = decryptor.decrypt_transaction_inputs(&sealed, associated_data).await.unwrap();
+        let opened = decrypter.decrypt_transaction_inputs(&sealed, associated_data).await.unwrap();
         assert_eq!(opened.as_slice(), plaintext);
 
         // Mismatched associated data must fail authentication.
         assert!(
-            decryptor
+            decrypter
                 .decrypt_transaction_inputs(&sealed, b"wrong associated data")
                 .await
                 .is_err()
         );
 
         // A different shared secret must fail to decrypt.
-        let other = decryptor_from(&[8u8; 32]);
+        let other = decrypter_from(&[8u8; 32]);
         assert!(other.decrypt_transaction_inputs(&sealed, associated_data).await.is_err());
 
         // Garbage ciphertext must fail to deserialize.
         assert!(
-            decryptor
+            decrypter
                 .decrypt_transaction_inputs(b"not a sealed message", associated_data)
                 .await
                 .is_err()

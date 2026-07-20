@@ -36,7 +36,7 @@ miden-validator bootstrap \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.kms-id <validator-kms-key-id>
+  --signing-key.kms-id <validator-kms-key-id>
 ```
 
 Upload `genesis-data/genesis.dat` so it is served at:
@@ -77,7 +77,7 @@ miden-validator bootstrap \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.hex <validator-key-hex>
+  --signing-key.hex <validator-signing-key-hex>
 ```
 
 For unofficial networks or pre-publication testing, distribute the signed genesis block file directly and initialize

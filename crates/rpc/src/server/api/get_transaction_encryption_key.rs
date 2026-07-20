@@ -40,6 +40,8 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
         }
 
         match &self.mode {
+            // A full node configured with a validator connection asks it directly, same as the
+            // sequencer.
             RpcMode::Sequencer { validator, .. }
             | RpcMode::FullNode { validator: Some(validator), .. } => validator
                 .as_ref()
@@ -47,6 +49,8 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
                 .get_transaction_encryption_key(forwarded_request)
                 .await
                 .map(tonic::Response::into_inner),
+            // A full node without a validator connection relays the request to its upstream RPC,
+            // which forwards it towards a validator in turn.
             RpcMode::FullNode { source_rpc, validator: None, .. } => source_rpc
                 .as_ref()
                 .clone()

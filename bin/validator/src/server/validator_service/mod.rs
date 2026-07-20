@@ -20,7 +20,7 @@ use tokio::sync::{Semaphore, watch};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
 use crate::signers::TransactionEncryptionKeyInfo;
-use crate::{COMPONENT, TransactionInputDecryptor, ValidatorSigner};
+use crate::{COMPONENT, TransactionInputDecrypter, ValidatorSigner};
 
 #[cfg(test)]
 mod tests;
@@ -77,9 +77,9 @@ pub enum ValidatorError {
 /// Implements the gRPC API for the validator.
 pub(crate) struct ValidatorService {
     signer: ValidatorSigner,
-    /// Decryptor for transaction inputs sealed against the shared encryption key.
+    /// Decrypter for transaction inputs sealed against the shared encryption key.
     #[expect(dead_code, reason = "used by the submit path in a follow-up PR")]
-    decryptor: Arc<dyn TransactionInputDecryptor>,
+    decrypter: Arc<dyn TransactionInputDecrypter>,
     /// Public metadata of the shared encryption key, fetched once at construction.
     encryption_key_info: TransactionEncryptionKeyInfo,
     /// Signature by this validator's own signing key over the encryption key attestation
@@ -107,7 +107,7 @@ pub(crate) struct ValidatorService {
 impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
-        decryptor: Arc<dyn TransactionInputDecryptor>,
+        decrypter: Arc<dyn TransactionInputDecrypter>,
         db: Database,
         block_store: BlockStore,
         initial_chain_tip: u32,
@@ -144,7 +144,7 @@ impl ValidatorService {
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoGenesisHeader)?
             .commitment();
-        let encryption_key_info = decryptor
+        let encryption_key_info = decrypter
             .encryption_key()
             .await
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
@@ -155,7 +155,7 @@ impl ValidatorService {
 
         Ok(Self {
             signer,
-            decryptor,
+            decrypter,
             encryption_key_info,
             encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),

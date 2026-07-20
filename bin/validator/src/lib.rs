@@ -8,9 +8,9 @@ pub use data_directory::DataDirectory;
 pub use server::ValidatorServer;
 pub use signers::{
     KmsSigner,
-    LocalX25519TransactionInputDecryptor,
+    LocalX25519TransactionInputDecrypter,
     TransactionEncryptionKeyInfo,
-    TransactionInputDecryptor,
+    TransactionInputDecrypter,
     ValidatorSigner,
     attestation_commitment,
 };

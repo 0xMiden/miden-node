@@ -31,13 +31,12 @@ Once verified, the block is signed and returned to the sender.
 In addition to its per-validator signing key, every validator is provisioned with the _same_
 shared transaction encryption keypair, an Ed25519 key that miden-crypto uses for X25519 key
 agreement in its IES scheme. Clients will use it to encrypt the private transaction inputs they
-submit, so that any validator in the set can decrypt them (submission-path encryption lands in a
-follow-up change).
+submit, so that any validator in the set can decrypt them.
 
 The `GetTransactionEncryptionKey` endpoint returns the shared public key together with an IES
-scheme identifier, an opaque key ID, and a signature from this validator's own signing key over
-an attestation commitment (the `TransactionEncryptionKey` proto message documents the exact
-payload). The commitment carries a domain tag that separates attestations from block header
+scheme identifier, an opaque key ID, and a list of validator attestations, currently holding one
+signature from this validator's own signing key over an attestation commitment (the
+`TransactionEncryptionKey` proto message documents the exact payload). The commitment carries a domain tag that separates attestations from block header
 signatures, and the genesis commitment so an attestation cannot replay across networks. The
 signature proves to clients that a chain-recognized validator vouches for the key, so the key can
 be served through an untrusted RPC.

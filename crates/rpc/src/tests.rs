@@ -797,10 +797,19 @@ async fn start_validator(
 /// survive the passthrough unchanged.
 fn test_encryption_key() -> proto::transaction::TransactionEncryptionKey {
     proto::transaction::TransactionEncryptionKey {
-        scheme: 1,
+        scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
         key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
         public_key: vec![7; 32],
-        signature: vec![9; 65],
+        attestations: vec![proto::transaction::ValidatorKeyAttestation {
+            validator_public_key: vec![8; 33],
+            signature: vec![9; 65],
+        }],
+        next_key: Some(proto::transaction::NextTransactionEncryptionKey {
+            scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
+            key_id: vec![0xFE, 0xED],
+            public_key: vec![6; 32],
+            rotation_block_num: 42,
+        }),
     }
 }
 

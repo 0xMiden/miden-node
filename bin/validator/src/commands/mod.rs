@@ -16,21 +16,21 @@ use miden_protocol::utils::serde::Deserializable;
 use miden_validator::{
     DataDirectory,
     LOG_TARGET,
-    LocalX25519TransactionInputDecryptor,
-    TransactionInputDecryptor,
+    LocalX25519TransactionInputDecrypter,
+    TransactionInputDecrypter,
     ValidatorSigner,
 };
 
 const ENV_DATA_DIRECTORY: &str = "MIDEN_VALIDATOR_DATA_DIRECTORY";
 const ENV_LISTEN: &str = "MIDEN_VALIDATOR_LISTEN";
-const ENV_KEY: &str = "MIDEN_VALIDATOR_KEY";
-const ENV_KMS_KEY_ID: &str = "MIDEN_VALIDATOR_KMS_KEY_ID";
+const ENV_SIGNING_KEY: &str = "MIDEN_VALIDATOR_SIGNING_KEY";
+const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 
-/// A predefined, insecure validator key for development purposes.
-pub(crate) const INSECURE_KEY_HEX: &str =
+/// A predefined, insecure validator signing key for development purposes.
+pub(crate) const INSECURE_SIGNING_KEY_HEX: &str =
     "0101010101010101010101010101010101010101010101010101010101010101";
 
 /// A predefined, insecure shared transaction encryption key for development purposes.
@@ -69,9 +69,9 @@ pub enum ValidatorCommand {
         /// Use the given configuration file to construct the genesis state from.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
         genesis_config_file: Option<PathBuf>,
-        /// Configuration for the Validator key used to sign the genesis block.
+        /// Configuration for the validator signing key used to sign the genesis block.
         #[command(flatten)]
-        validator_key: ValidatorKey,
+        signing_key: ValidatorSigningKey,
     },
 
     /// Applies pending validator database migrations.
@@ -109,26 +109,26 @@ pub enum ValidatorCommand {
         ///
         /// If not provided, a predefined key is used.
         ///
-        /// Cannot be used with `key.kms-id`.
+        /// Cannot be used with `signing-key.kms-id`.
         #[arg(
-            long = "key.hex",
-            env = ENV_KEY,
-            value_name = "VALIDATOR_KEY",
-            default_value = INSECURE_KEY_HEX,
-            group = "key"
+            long = "signing-key.hex",
+            env = ENV_SIGNING_KEY,
+            value_name = "VALIDATOR_SIGNING_KEY",
+            default_value = INSECURE_SIGNING_KEY_HEX,
+            group = "signing_key"
         )]
-        validator_key: String,
+        signing_key: String,
 
         /// Key ID for the KMS key used by validator to sign blocks.
         ///
-        /// Cannot be used with `key.hex`.
+        /// Cannot be used with `signing-key.hex`.
         #[arg(
-            long = "key.kms-id",
-            env = ENV_KMS_KEY_ID,
-            value_name = "VALIDATOR_KMS_KEY_ID",
-            group = "key"
+            long = "signing-key.kms-id",
+            env = ENV_SIGNING_KEY_KMS_ID,
+            value_name = "VALIDATOR_SIGNING_KEY_KMS_ID",
+            group = "signing_key"
         )]
-        kms_key_id: Option<String>,
+        signing_key_kms_id: Option<String>,
 
         /// Hex-encoded shared secret of the transaction encryption key.
         ///
@@ -155,7 +155,7 @@ impl ValidatorCommand {
                 data_directory,
                 sqlite_connection_pool_size,
                 genesis_config_file,
-                validator_key,
+                signing_key,
             } => {
                 bootstrap::bootstrap(
                     &genesis_block_directory,
@@ -163,7 +163,7 @@ impl ValidatorCommand {
                     &data_directory,
                     sqlite_connection_pool_size,
                     genesis_config_file.as_ref(),
-                    validator_key,
+                    signing_key,
                 )
                 .await
             },
@@ -177,9 +177,9 @@ impl ValidatorCommand {
             Self::Start {
                 listen,
                 grpc_options,
-                validator_key,
+                signing_key,
                 data_directory,
-                kms_key_id,
+                signing_key_kms_id,
                 sqlite_connection_pool_size,
                 encryption_key,
                 ..
@@ -201,13 +201,13 @@ impl ValidatorCommand {
                     .context("failed to decode the encryption key hex")?;
                 let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
                     .context("failed to construct the encryption key")?;
-                let decryptor: Arc<dyn TransactionInputDecryptor> =
-                    Arc::new(LocalX25519TransactionInputDecryptor::new(encryption_key));
+                let decrypter: Arc<dyn TransactionInputDecrypter> =
+                    Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key));
 
-                let signer = if let Some(kms_key_id) = kms_key_id {
+                let signer = if let Some(kms_key_id) = signing_key_kms_id {
                     ValidatorSigner::new_kms(kms_key_id).await?
                 } else {
-                    let signer = SigningKey::read_from_bytes(hex::decode(validator_key)?.as_ref())?;
+                    let signer = SigningKey::read_from_bytes(hex::decode(signing_key)?.as_ref())?;
                     ValidatorSigner::new_local(signer)
                 };
 
@@ -215,7 +215,7 @@ impl ValidatorCommand {
                     address,
                     grpc_options,
                     signer,
-                    decryptor,
+                    decrypter,
                     data_directory,
                     sqlite_connection_pool_size,
                     shutdown,
@@ -233,42 +233,42 @@ impl ValidatorCommand {
     }
 }
 
-// VALIDATOR KEY
+// VALIDATOR SIGNING KEY
 // ================================================================================================
 
-/// Configuration for the Validator key used to sign blocks.
+/// Configuration for the validator signing key used to sign blocks.
 #[derive(clap::Args)]
 #[group(required = false, multiple = false)]
-pub struct ValidatorKey {
+pub struct ValidatorSigningKey {
     /// Insecure, hex-encoded validator secret key for development and testing purposes.
     ///
     /// If not provided, a predefined key is used.
     ///
-    /// Cannot be used with `key.kms-id`.
+    /// Cannot be used with `signing-key.kms-id`.
     #[arg(
-        long = "key.hex",
-        env = ENV_KEY,
-        value_name = "VALIDATOR_KEY",
-        default_value = INSECURE_KEY_HEX,
+        long = "signing-key.hex",
+        env = ENV_SIGNING_KEY,
+        value_name = "VALIDATOR_SIGNING_KEY",
+        default_value = INSECURE_SIGNING_KEY_HEX,
     )]
-    pub validator_key: String,
+    pub signing_key: String,
     /// Key ID for the KMS key used by validator to sign blocks.
     ///
-    /// Cannot be used with `key.hex`.
+    /// Cannot be used with `signing-key.hex`.
     #[arg(
-        long = "key.kms-id",
-        env = ENV_KMS_KEY_ID,
-        value_name = "VALIDATOR_KMS_KEY_ID",
+        long = "signing-key.kms-id",
+        env = ENV_SIGNING_KEY_KMS_ID,
+        value_name = "VALIDATOR_SIGNING_KEY_KMS_ID",
     )]
-    pub validator_kms_key_id: Option<String>,
+    pub signing_key_kms_id: Option<String>,
 }
 
-impl ValidatorKey {
+impl ValidatorSigningKey {
     pub async fn into_signer(self) -> anyhow::Result<ValidatorSigner> {
-        if let Some(kms_key_id) = self.validator_kms_key_id {
+        if let Some(kms_key_id) = self.signing_key_kms_id {
             Ok(ValidatorSigner::new_kms(kms_key_id).await?)
         } else {
-            let signer = SigningKey::read_from_bytes(hex::decode(self.validator_key)?.as_ref())?;
+            let signer = SigningKey::read_from_bytes(hex::decode(self.signing_key)?.as_ref())?;
             Ok(ValidatorSigner::new_local(signer))
         }
     }

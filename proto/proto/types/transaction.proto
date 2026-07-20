@@ -62,17 +62,61 @@ message TransactionBatch {
   repeated bytes transaction_inputs = 3;
 }
 
-// The shared transaction encryption key, attested by a validator.
+// IES scheme used for transaction input encryption.
 //
-// The public key is shared across the whole validator set, while the attesting signature is
-// specific to the validator that served the request. Verifying the signature against a
-// chain-recognized validator signing key proves the encryption key was vouched for by a
-// legitimate validator.
+// Non-zero values match the discriminants of [miden_protocol::crypto::ies::IesScheme]. New
+// schemes are added here as the node starts supporting them.
+enum IesScheme {
+  IES_SCHEME_UNSPECIFIED = 0;
+  IES_SCHEME_X25519_XCHACHA20_POLY1305 = 1;
+}
+
+// A single validator's attestation of the transaction encryption key.
+message ValidatorKeyAttestation {
+  // Public key of the attesting validator, encoded using the [miden_serde_utils::Serializable]
+  // implementation for [miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey]. Must match a
+  // validator signing key committed in block headers to be trusted.
+  bytes validator_public_key = 1;
+
+  // The validator's signature over the attestation commitment: the Poseidon2 byte-mode hash of
+  // `domain_tag || scheme || len(key_id) || key_id || genesis_commitment || len(public_key) ||
+  // public_key || next_key_transcript`, where `domain_tag` is the ASCII string
+  // `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, the scheme, the rotation block number, and the
+  // length prefixes are encoded as 4 bytes little-endian, and the genesis block commitment ties
+  // the attestation to one network.
+  // `next_key_transcript` is a single `0` byte when no rotation is scheduled, or `1` followed by
+  // the next key's `scheme || len(key_id) || key_id || len(public_key) || public_key ||
+  // rotation_block_num` otherwise, binding any scheduled rotation to the signature. The canonical
+  // construction is `miden_validator::attestation_commitment`.
+  bytes signature = 2;
+}
+
+// The next transaction encryption key, announced ahead of a scheduled key rotation.
+message NextTransactionEncryptionKey {
+  // IES scheme the next encryption key belongs to.
+  IesScheme scheme = 1;
+
+  // Opaque identifier of the next encryption key.
+  bytes key_id = 2;
+
+  // Raw public key bytes of the next encryption key, in the same encoding as
+  // `TransactionEncryptionKey.public_key`.
+  bytes public_key = 3;
+
+  // Block number at which the next key replaces the current one.
+  fixed32 rotation_block_num = 4;
+}
+
+// The shared transaction encryption key, attested by validators.
+//
+// The public key is shared across the whole validator set, while each attesting signature is
+// specific to one validator. Verifying an attestation against a chain-recognized validator
+// signing key proves the encryption key was vouched for by a legitimate validator.
 message TransactionEncryptionKey {
-  // IES scheme identifier as defined by [miden_protocol::crypto::ies::IesScheme].
+  // IES scheme the encryption key belongs to.
   //
-  // Currently always `1` (X25519 + XChaCha20-Poly1305).
-  uint32 scheme = 1;
+  // Currently always `IES_SCHEME_X25519_XCHACHA20_POLY1305`.
+  IesScheme scheme = 1;
 
   // Opaque identifier of the current encryption key. Changes when the key rotates.
   bytes key_id = 2;
@@ -84,21 +128,23 @@ message TransactionEncryptionKey {
   // key that miden-crypto converts internally for X25519 key agreement).
   bytes public_key = 3;
 
-  // The serving validator's signature over the attestation commitment: the Poseidon2 byte-mode
-  // hash of `domain_tag || scheme || len(key_id) || key_id || genesis_commitment ||
-  // len(public_key) || public_key`, where `domain_tag` is the ASCII string
-  // `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, the scheme and the length prefixes are encoded as
-  // 4 bytes little-endian, and the genesis block commitment ties the attestation to one network.
-  // The canonical construction is `miden_validator::attestation_commitment`.
+  // Validator attestations of this key (and of `next_key` when set).
   //
-  // Encoded using [miden_serde_utils::Serializable] implementation for
-  // [miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature]. Verifiable against the
-  // validator's signing key committed in block headers.
-  bytes signature = 4;
+  // Currently contains a single attestation from the validator that served the request.
+  // Collecting attestations from the whole validator set requires validator intercommunication
+  // and is planned as a follow-up; the wire format already accommodates it.
+  repeated ValidatorKeyAttestation attestations = 4;
 
-  // Reserved for future attestation evidence beyond the validator signature, e.g. a TEE quote,
+  // Set when a key rotation is scheduled: the key that replaces the current one, and the block
+  // number at which it takes effect. Covered by the attestation commitment, so it cannot be
+  // stripped or altered without invalidating the signatures.
+  //
+  // Never set currently; key rotation is not implemented yet.
+  optional NextTransactionEncryptionKey next_key = 5;
+
+  // Reserved for future attestation evidence beyond the validator signatures, e.g. a TEE quote,
   // signature chain, compose hash, app measurement, epoch, or accepted measurement set.
-  reserved 5 to 9;
+  reserved 6 to 9;
 }
 
 // Represents a transaction ID.

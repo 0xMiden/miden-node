@@ -166,8 +166,8 @@ impl BlockWriter {
                 Ok::<_, ApplyBlockError>((notes, nullifier_tree_update, account_tree_update))
             })?;
 
-        // Extract public account updates with patches before the block is moved into the DB
-        // commit. Private accounts are filtered out since they don't expose their state changes.
+        // Extract public account updates with patches before the block is moved into the DB commit.
+        // Private accounts are filtered out since they don't expose their state changes.
         let account_patches =
             Vec::from_iter(body.updated_accounts().iter().filter_map(
                 |update| match update.details() {

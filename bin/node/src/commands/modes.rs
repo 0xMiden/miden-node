@@ -14,6 +14,7 @@ use miden_node_proto::clients::{
 use miden_node_rpc::{Rpc, RpcMode, SequencerInternal};
 use miden_node_store::State;
 use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
+use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use tokio::net::TcpListener;
@@ -52,6 +53,7 @@ pub struct SequencerCommand {
 
 impl SequencerCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
+        self.log_starting();
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
@@ -101,6 +103,29 @@ impl SequencerCommand {
         }
 
         tasks.join_next_or_cancelled(shutdown).await
+    }
+
+    fn log_starting(&self) {
+        tracing::info!(
+            target: crate::LOG_TARGET,
+            {
+                service.name = "miden-node",
+                service.version = env!("CARGO_PKG_VERSION"),
+                node.role = "sequencer",
+                rpc.listen = %self.runtime.rpc.listen,
+                internal.listen = %self.internal.map_or_else(
+                    || "disabled".to_owned(),
+                    |address| address.to_string(),
+                ),
+                data.directory = %self.runtime.data_directory.display(),
+                validator.endpoint = %format_endpoint(&self.external_services.validator_url),
+                ntx_builder.endpoint = %format_endpoint(&self.external_services.ntx_builder_url),
+                block.interval = %humantime::Duration::from(self.block_producer.block.interval),
+                batch.interval = %humantime::Duration::from(self.block_producer.batch.interval),
+                store.sqlite.connection_pool_size = self.store.sqlite.connection_pool_size.get(),
+            },
+            "Starting node",
+        );
     }
 }
 
@@ -182,6 +207,7 @@ pub struct FullNodeCommand {
 
 impl FullNodeCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
+        self.log_starting();
         let runtime = self.runtime.runtime_config(&self.store);
         let source_rpc = self.sync.source_rpc_client()?;
         let validator_client = self.validator_client();
@@ -207,6 +233,31 @@ impl FullNodeCommand {
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
 
         tasks.join_next_or_cancelled(shutdown).await
+    }
+
+    fn log_starting(&self) {
+        tracing::info!(
+            target: crate::LOG_TARGET,
+            {
+                service.name = "miden-node",
+                service.version = env!("CARGO_PKG_VERSION"),
+                node.role = "full",
+                rpc.listen = %self.runtime.rpc.listen,
+                data.directory = %self.runtime.data_directory.display(),
+                sync.block_source.endpoint = %format_endpoint(&self.sync.block_source_url),
+                sync.ready_threshold = self.sync.readiness_threshold,
+                validator.endpoint = %self.validator_url.as_ref().map_or_else(
+                    || "disabled".to_owned(),
+                    format_endpoint,
+                ),
+                sequencer.endpoint = %self.sequencer_url.as_ref().map_or_else(
+                    || "disabled".to_owned(),
+                    format_endpoint,
+                ),
+                store.sqlite.connection_pool_size = self.store.sqlite.connection_pool_size.get(),
+            },
+            "Starting node",
+        );
     }
 
     fn sequencer_client(&self) -> Option<SequencerClient> {

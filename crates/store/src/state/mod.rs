@@ -8,7 +8,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use miden_node_proto::domain::batch::BatchInputs;
@@ -51,6 +51,12 @@ const BLOCK_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(512).unwrap();
 
 /// Number of recent block proofs held in the in-memory cache for replica subscriptions.
 const PROOF_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(512).unwrap();
+
+/// Snapshot lifetime above which [`SnapshotGuard`] logs a warning on release.
+///
+/// Readers are expected to be request-scoped, so a snapshot outliving several block intervals
+/// indicates a slow or leaked reader pinning a `RocksDB` snapshot (see [`SnapshotGuard`]).
+const SNAPSHOT_LIFETIME_WARN_THRESHOLD: Duration = Duration::from_secs(10);
 
 mod loader;
 use loader::{
@@ -113,8 +119,13 @@ type BlockInputWitnesses = (
 ///
 /// [`InMemoryState`] is dropped exactly when the last [`Arc`] reference to it is released, so the
 /// shared counter reports how many distinct snapshot generations are currently pinned by readers.
-/// A sustained count above 1-2 means slow readers are holding old generations alive, which also
-/// pins the corresponding `RocksDB` snapshots and blocks compaction.
+/// A sustained count above 1-2 means slow readers are holding old generations alive. Each
+/// generation pins a `RocksDB` snapshot, which delays garbage collection of superseded key
+/// versions during compaction (compaction itself keeps running); the retained garbage grows with
+/// write churn for as long as the snapshot is held and is reclaimed once it is released.
+///
+/// Readers are expected to be request-scoped, so snapshot lifetimes should be well under a block
+/// interval. A lifetime exceeding [`SNAPSHOT_LIFETIME_WARN_THRESHOLD`] is logged at warn level.
 pub(crate) struct SnapshotGuard {
     live: Arc<AtomicUsize>,
     created_at: Instant,
@@ -135,15 +146,26 @@ impl SnapshotGuard {
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
         let remaining = self.live.fetch_sub(1, Ordering::Relaxed) - 1;
-        let lifetime_ms = u64::try_from(self.created_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let lifetime = self.created_at.elapsed();
+        let lifetime_ms = u64::try_from(lifetime.as_millis()).unwrap_or(u64::MAX);
         let block_num = self.block_num.as_u32();
-        tracing::debug!(
-            target: COMPONENT,
-            block_num,
-            snapshot.lifetime_ms = lifetime_ms,
-            snapshots.live = remaining,
-            "state snapshot released",
-        );
+        if lifetime > SNAPSHOT_LIFETIME_WARN_THRESHOLD {
+            tracing::warn!(
+                target: COMPONENT,
+                block_num,
+                snapshot.lifetime_ms = lifetime_ms,
+                snapshots.live = remaining,
+                "state snapshot held for excessive time",
+            );
+        } else {
+            tracing::debug!(
+                target: COMPONENT,
+                block_num,
+                snapshot.lifetime_ms = lifetime_ms,
+                snapshots.live = remaining,
+                "state snapshot released",
+            );
+        }
     }
 }
 

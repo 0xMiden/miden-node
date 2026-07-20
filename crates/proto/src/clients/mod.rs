@@ -151,6 +151,26 @@ mod tests {
             Some("application/vnd.miden; version=9.9, genesis=0xabcd"),
         );
     }
+
+    #[tokio::test]
+    async fn connection_monitor_stops_when_cancelled() {
+        let builder = Builder::new(Url::parse("http://127.0.0.1:1").unwrap())
+            .without_tls()
+            .without_timeout()
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .without_auth_header()
+            .without_otel_context_injection();
+        let shutdown = miden_node_utils::shutdown::CancellationToken::new();
+        shutdown.cancel();
+
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            builder.monitor::<RpcClient>("test-dependency", shutdown),
+        )
+        .await
+        .expect("cancelled monitor should return promptly");
+    }
 }
 
 // TYPE ALIASES TO AID LEGIBILITY
@@ -342,6 +362,7 @@ impl GrpcClient for SequencerClient {
 #[derive(Clone, Debug)]
 pub struct Builder<State> {
     endpoint: Endpoint,
+    endpoint_url: Url,
     metadata_version: Option<String>,
     metadata_genesis: Option<String>,
     metadata_auth_header_value: Option<AsciiMetadataValue>,
@@ -367,6 +388,7 @@ impl<State> Builder<State> {
     fn next_state<Next>(self) -> Builder<Next> {
         Builder {
             endpoint: self.endpoint,
+            endpoint_url: self.endpoint_url,
             metadata_version: self.metadata_version,
             metadata_genesis: self.metadata_genesis,
             metadata_auth_header_value: self.metadata_auth_header_value,
@@ -387,7 +409,7 @@ impl Builder<WantsTls> {
     /// Create a new strict builder from a gRPC endpoint URL such as `http://localhost:8080` or
     /// `https://api.example.com:443`.
     pub fn new(url: Url) -> Builder<WantsTls> {
-        let endpoint = Endpoint::from_shared(String::from(url))
+        let endpoint = Endpoint::from_shared(String::from(url.clone()))
             .expect("Url type always results in valid endpoint")
             // Detect silently dropped connections so long-lived streams can't hang forever; see the
             // keepalive constants above.
@@ -398,6 +420,7 @@ impl Builder<WantsTls> {
 
         Builder {
             endpoint,
+            endpoint_url: url,
             metadata_version: None,
             metadata_genesis: None,
             metadata_auth_header_value: None,
@@ -509,6 +532,88 @@ impl Builder<WantsConnection> {
     {
         let channel = self.endpoint.connect_lazy();
         self.connect_with_channel::<T>(channel)
+    }
+
+    /// Monitors whether the configured endpoint can establish a transport connection.
+    ///
+    /// The monitor is non-blocking with respect to service startup. It warns on the first failed
+    /// attempt, retries with capped exponential backoff, and reports when the dependency becomes
+    /// reachable. Once connected it waits for shutdown instead of creating duplicate connections.
+    pub async fn monitor<T>(
+        self,
+        dependency_name: &'static str,
+        shutdown: miden_node_utils::shutdown::CancellationToken,
+    ) where
+        T: GrpcClient + Send + 'static,
+    {
+        const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+        const RETRY_MIN: Duration = Duration::from_secs(1);
+        const RETRY_MAX: Duration = Duration::from_secs(30);
+
+        use miden_node_utils::retry::BackoffBuilder;
+
+        let endpoint = miden_node_utils::formatting::format_endpoint(&self.endpoint_url);
+        let mut backoff = miden_node_utils::retry::exponential(RETRY_MIN, RETRY_MAX).build();
+        let mut first_failure = true;
+
+        loop {
+            let attempt = tokio::time::timeout(CONNECT_TIMEOUT, self.clone().connect::<T>());
+            let result = tokio::select! {
+                () = shutdown.cancelled() => return,
+                result = attempt => result,
+            };
+
+            match result {
+                Ok(Ok(_client)) => {
+                    tracing::info!(
+                        dependency.name = dependency_name,
+                        dependency.endpoint = %endpoint,
+                        "Configured service reachable",
+                    );
+                    shutdown.cancelled().await;
+                    return;
+                },
+                Ok(Err(err)) if first_failure => {
+                    tracing::warn!(
+                        dependency.name = dependency_name,
+                        dependency.endpoint = %endpoint,
+                        %err,
+                        "Configured service unreachable",
+                    );
+                },
+                Err(_elapsed) if first_failure => {
+                    tracing::warn!(
+                        dependency.name = dependency_name,
+                        dependency.endpoint = %endpoint,
+                        timeout = ?CONNECT_TIMEOUT,
+                        "Configured service connection timed out",
+                    );
+                },
+                Ok(Err(err)) => {
+                    tracing::debug!(
+                        dependency.name = dependency_name,
+                        dependency.endpoint = %endpoint,
+                        %err,
+                        "Configured service still unreachable",
+                    );
+                },
+                Err(_elapsed) => {
+                    tracing::debug!(
+                        dependency.name = dependency_name,
+                        dependency.endpoint = %endpoint,
+                        timeout = ?CONNECT_TIMEOUT,
+                        "Configured service connection still timing out",
+                    );
+                },
+            }
+            first_failure = false;
+
+            let retry_delay = backoff.next().unwrap_or(RETRY_MAX);
+            tokio::select! {
+                () = shutdown.cancelled() => return,
+                () = tokio::time::sleep(retry_delay) => {},
+            }
+        }
     }
 
     fn connect_with_channel<T>(self, channel: Channel) -> T

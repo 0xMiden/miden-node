@@ -139,7 +139,7 @@ async fn build_and_write_genesis(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::INSECURE_KEY_HEX;
+    use crate::commands::INSECURE_SIGNING_KEY_HEX;
 
     #[tokio::test]
     async fn bootstrap_writes_all_outputs_before_returning_success() {
@@ -147,9 +147,9 @@ mod tests {
         let genesis_directory = root.path().join("genesis");
         let accounts_directory = root.path().join("accounts");
         let data_directory = root.path().join("data");
-        let validator_key = ValidatorKey {
-            validator_key: INSECURE_KEY_HEX.to_owned(),
-            validator_kms_key_id: None,
+        let validator_key = ValidatorSigningKey {
+            signing_key: INSECURE_SIGNING_KEY_HEX.to_owned(),
+            signing_key_kms_id: None,
         };
 
         bootstrap(

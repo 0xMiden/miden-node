@@ -214,7 +214,7 @@ impl ValidatorCommand {
                         service.version = env!("CARGO_PKG_VERSION"),
                         validator.listen = %address,
                         data.directory = %data_directory.display(),
-                        validator.signer = if kms_key_id.is_some() { "kms" } else { "local" },
+                        validator.signer = if signing_key_kms_id.is_some() { "kms" } else { "local" },
                         sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
                     },
                     "Starting validator",

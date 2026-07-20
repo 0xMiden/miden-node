@@ -1,4 +1,3 @@
-use std::fmt;
 use std::fmt::Display;
 use std::sync::Arc;
 
@@ -21,23 +20,6 @@ use crate::db::NoteRecord;
 use crate::errors::{ApplyBlockError, ApplyBlockWithProvingInputsError, InvalidBlockError};
 use crate::state::{BlockNotification, InnerState, State};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PostCommitStateComponent {
-    AccountStateForest,
-    NullifierTree,
-    AccountTree,
-}
-
-impl Display for PostCommitStateComponent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AccountStateForest => f.write_str("account-state forest"),
-            Self::NullifierTree => f.write_str("nullifier tree"),
-            Self::AccountTree => f.write_str("account tree"),
-        }
-    }
-}
 
 impl State {
     /// Saves proving inputs for a signed block and applies it to the state.
@@ -217,12 +199,18 @@ impl State {
             // The DB is now committed. Keep both write locks held while advancing the forest and
             // canonical in-memory state so readers cannot observe different block heights.
             let InnerState { nullifier_tree, blockchain, account_tree } = inner;
-            Self::finalize_committed_state(
-                || forest.apply_precomputed_block_update(block_num, account_forest_update),
-                || nullifier_tree.apply_mutations(nullifier_tree_update),
-                || account_tree.apply_mutations(account_tree_update),
-                || blockchain.push(block_commitment),
-            );
+            forest
+                .apply_precomputed_block_update(block_num, account_forest_update)
+                .unwrap_or_else(|error| {
+                    Self::abort_after_post_commit_failure("account-state forest", &error)
+                });
+            nullifier_tree.apply_mutations(nullifier_tree_update).unwrap_or_else(|error| {
+                Self::abort_after_post_commit_failure("nullifier tree", &error)
+            });
+            account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
+                Self::abort_after_post_commit_failure("account tree", &error)
+            });
+            blockchain.push(block_commitment);
 
             Ok(())
         })?;
@@ -238,55 +226,14 @@ impl State {
         Ok(())
     }
 
-    /// Publishes the forest and canonical in-memory state after the database commit.
-    ///
-    /// Each persistent structure is advanced in order. A failure is fatal because SQLite has
-    /// already committed and the block cannot be retried safely.
-    fn finalize_committed_state<ForestError, NullifierError, AccountError>(
-        apply_forest: impl FnOnce() -> Result<(), ForestError>,
-        apply_nullifier_tree: impl FnOnce() -> Result<(), NullifierError>,
-        apply_account_tree: impl FnOnce() -> Result<(), AccountError>,
-        advance_blockchain: impl FnOnce(),
-    ) where
-        ForestError: Display,
-        NullifierError: Display,
-        AccountError: Display,
-    {
-        Self::complete_post_commit_update(
-            PostCommitStateComponent::AccountStateForest,
-            apply_forest(),
-        );
-        Self::complete_post_commit_update(
-            PostCommitStateComponent::NullifierTree,
-            apply_nullifier_tree(),
-        );
-        Self::complete_post_commit_update(
-            PostCommitStateComponent::AccountTree,
-            apply_account_tree(),
-        );
-        advance_blockchain();
-    }
-
-    fn complete_post_commit_update<E: Display>(
-        component: PostCommitStateComponent,
-        result: Result<(), E>,
-    ) {
-        if let Err(error) = result {
-            Self::abort_after_committed_state_failure(component, &error);
-        }
-    }
-
     /// Terminates after a persistent state failure that occurred after the canonical DB commit.
     ///
     /// Returning would expose components at different block heights. Tests panic so the fatal path
     /// can be asserted without terminating the test process; production aborts immediately.
-    fn abort_after_committed_state_failure(
-        component: PostCommitStateComponent,
-        error: &impl Display,
-    ) -> ! {
+    fn abort_after_post_commit_failure(component: &str, error: &impl Display) -> ! {
         tracing::error!(
             target: LOG_TARGET,
-            %component,
+            component,
             error = %error,
             "persistent state update failed after database commit; aborting"
         );
@@ -472,95 +419,5 @@ impl State {
             .collect::<Result<Vec<_>, InvalidBlockError>>()?;
 
         Ok(notes)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::cell::{Cell, RefCell};
-    use std::io;
-    use std::panic::{AssertUnwindSafe, catch_unwind};
-
-    use super::{PostCommitStateComponent, State};
-
-    fn record_stage(
-        executed: &RefCell<Vec<PostCommitStateComponent>>,
-        stage: PostCommitStateComponent,
-        failing_stage: Option<PostCommitStateComponent>,
-    ) -> Result<(), io::Error> {
-        executed.borrow_mut().push(stage);
-        if failing_stage == Some(stage) {
-            Err(io::Error::other("injected backend failure"))
-        } else {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn injected_post_commit_backend_failures_stop_publication() {
-        let components = [
-            PostCommitStateComponent::AccountStateForest,
-            PostCommitStateComponent::NullifierTree,
-            PostCommitStateComponent::AccountTree,
-        ];
-
-        for (failing_index, failing_component) in components.into_iter().enumerate() {
-            let executed = RefCell::new(Vec::new());
-            let blockchain_advanced = Cell::new(false);
-
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                State::finalize_committed_state(
-                    || {
-                        record_stage(
-                            &executed,
-                            PostCommitStateComponent::AccountStateForest,
-                            Some(failing_component),
-                        )
-                    },
-                    || {
-                        record_stage(
-                            &executed,
-                            PostCommitStateComponent::NullifierTree,
-                            Some(failing_component),
-                        )
-                    },
-                    || {
-                        record_stage(
-                            &executed,
-                            PostCommitStateComponent::AccountTree,
-                            Some(failing_component),
-                        )
-                    },
-                    || blockchain_advanced.set(true),
-                );
-            }));
-
-            assert!(result.is_err(), "a post-commit backend failure must be fatal");
-            assert_eq!(executed.into_inner(), components[..=failing_index]);
-            assert!(!blockchain_advanced.get());
-        }
-    }
-
-    #[test]
-    fn successful_post_commit_updates_advance_all_components_in_order() {
-        let executed = RefCell::new(Vec::new());
-        let blockchain_advanced = Cell::new(false);
-
-        State::finalize_committed_state(
-            || record_stage(&executed, PostCommitStateComponent::AccountStateForest, None),
-            || record_stage(&executed, PostCommitStateComponent::NullifierTree, None),
-            || record_stage(&executed, PostCommitStateComponent::AccountTree, None),
-            || blockchain_advanced.set(true),
-        );
-
-        assert_eq!(
-            executed.into_inner(),
-            [
-                PostCommitStateComponent::AccountStateForest,
-                PostCommitStateComponent::NullifierTree,
-                PostCommitStateComponent::AccountTree,
-            ]
-        );
-        assert!(blockchain_advanced.get());
     }
 }

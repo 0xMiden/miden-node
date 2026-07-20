@@ -202,7 +202,7 @@ impl NetworkTransactionBuilder {
                     let Some(request) = request else {
                         anyhow::bail!("actor request channel closed unexpectedly");
                     };
-                    handle_actor_request(&loop_db, request).await?;
+                    handle_actor_request(&loop_db, request, self.config.max_note_attempts).await?;
                 },
                 SteadyStateAction::Respawn(respawn) => {
                     if let Some(account_id) = respawn {
@@ -282,15 +282,36 @@ impl NetworkTransactionBuilder {
     }
 }
 
+/// Reason recorded in a note's `last_error` when it is discarded for exceeding the per-tx cycle
+/// budget on its own.
+const OVERSIZED_NOTE_DISCARD_REASON: &str =
+    "note consumption exceeds the per-transaction cycle budget; it can never be consumed";
+
 /// Handles a single actor request then acknowledges the actor. Runs on the pinned loop connection
 /// so the actors' shared pool cannot starve these writes.
-async fn handle_actor_request(loop_db: &LoopDb, request: ActorRequest) -> anyhow::Result<()> {
+async fn handle_actor_request(
+    loop_db: &LoopDb,
+    request: ActorRequest,
+    max_note_attempts: usize,
+) -> anyhow::Result<()> {
     match request {
         ActorRequest::NotesFailed { failed_notes, block_num, ack_tx } => {
             loop_db
                 .notes_failed(failed_notes, block_num)
                 .await
                 .context("failed to persist note failure")?;
+            let _ = ack_tx.send(());
+        },
+        ActorRequest::NotesDiscarded { nullifiers, block_num, ack_tx } => {
+            loop_db
+                .discard_notes(
+                    nullifiers,
+                    block_num,
+                    max_note_attempts,
+                    OVERSIZED_NOTE_DISCARD_REASON.to_string(),
+                )
+                .await
+                .context("failed to persist note discard")?;
             let _ = ack_tx.send(());
         },
         ActorRequest::CacheNoteScript { script_root, script } => {

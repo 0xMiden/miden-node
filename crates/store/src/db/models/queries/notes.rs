@@ -221,7 +221,8 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
-/// Select the subset of note commitments that already exist in the notes table
+/// Select the subset of note commitments that already exist in the notes table and were
+/// committed at or before `up_to_block`.
 ///
 /// # Raw SQL
 ///
@@ -229,11 +230,12 @@ pub(crate) fn select_notes_by_id(
 /// SELECT
 ///     notes.note_commitment
 /// FROM notes
-/// WHERE note_commitment IN (?1)
+/// WHERE note_commitment IN (?1) AND committed_at <= ?2
 /// ```
 pub(crate) fn select_existing_note_commitments(
     conn: &mut SqliteConnection,
     note_commitments: &[Word],
+    up_to_block: BlockNumber,
 ) -> Result<HashSet<Word>, DatabaseError> {
     QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
 
@@ -241,6 +243,7 @@ pub(crate) fn select_existing_note_commitments(
 
     let raw_commitments = SelectDsl::select(schema::notes::table, schema::notes::note_id)
         .filter(schema::notes::note_id.eq_any(&note_commitments))
+        .filter(schema::notes::committed_at.le(up_to_block.to_raw_sql()))
         .load::<Vec<u8>>(conn)?;
 
     let commitments = raw_commitments

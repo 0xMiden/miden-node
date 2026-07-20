@@ -530,7 +530,8 @@ impl Db {
         .await
     }
 
-    /// Returns all note commitments from the DB that match the provided ones.
+    /// Returns all note commitments from the DB that match the provided ones and were committed
+    /// at or before `up_to_block`.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
@@ -540,9 +541,14 @@ impl Db {
     pub async fn select_existing_note_commitments(
         &self,
         note_commitments: Vec<Word>,
+        up_to_block: BlockNumber,
     ) -> Result<HashSet<Word>> {
         self.transact("note by commitment", move |conn| {
-            queries::select_existing_note_commitments(conn, note_commitments.as_slice())
+            queries::select_existing_note_commitments(
+                conn,
+                note_commitments.as_slice(),
+                up_to_block,
+            )
         })
         .await
     }

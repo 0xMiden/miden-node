@@ -530,8 +530,8 @@ impl Db {
         .await
     }
 
-    /// Returns all note commitments from the DB that match the provided ones and were committed
-    /// at or before `up_to_block`.
+    /// Returns all note commitments from the DB that match the provided ones and were committed at
+    /// or before `up_to_block`.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,

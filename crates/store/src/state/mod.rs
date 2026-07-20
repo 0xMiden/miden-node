@@ -466,9 +466,9 @@ impl State {
         block_num: Option<BlockNumber>,
         include_mmr_proof: bool,
     ) -> Result<(Option<BlockHeader>, Option<MmrProof>), GetBlockHeaderError> {
-        // Resolve "latest" against the in-memory snapshot rather than the DB: mid-apply, the DB
-        // may already contain a block that the snapshot's blockchain cannot prove yet. Scoping the
-        // DB query by the snapshot's tip keeps the header and MMR proof consistent.
+        // Resolve "latest" against the in-memory snapshot rather than the DB: mid-apply, the DB may
+        // already contain a block that the snapshot's blockchain cannot prove yet. Scoping the DB
+        // query by the snapshot's tip keeps the header and MMR proof consistent.
         let snapshot = self.snapshot();
         let latest_block_num = snapshot.latest_block_num();
         let block_num = block_num.unwrap_or(latest_block_num);

@@ -76,9 +76,17 @@ COPY . .
 # workspace crate is always rebuilt; external dependencies are unaffected
 # (they are fingerprinted by checksum and stay cached via `cargo chef cook`).
 RUN find . -exec touch {} +
+# Diagnostics for stale-cache debugging: dump the current time and the mtimes
+# of cached fingerprints and sources so "artifact newer than touched sources"
+# anomalies (e.g. written by a concurrent build after our touch step) are
+# visible in CI logs, and have Cargo log its per-unit fresh/dirty verdicts.
 RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
+    date --iso-8601=seconds && \
+    (ls -la --time-style=full-iso /app/target/release/.fingerprint/ | grep miden-node-utils || true) && \
+    ls -la --time-style=full-iso /app/crates/utils/src/ && \
+    CARGO_LOG=cargo::core::compiler::fingerprint=info \
     cargo build --release --locked --bin ${BIN} && \
     mkdir -p /app/bin && \
     cp /app/target/release/${BIN} /app/bin/${BIN}

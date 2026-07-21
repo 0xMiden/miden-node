@@ -3784,6 +3784,7 @@ dependencies = [
  "anyhow",
  "aws-config",
  "aws-sdk-kms",
+ "base64",
  "build-rs",
  "clap",
  "fs-err",

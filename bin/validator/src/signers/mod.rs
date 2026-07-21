@@ -1,5 +1,5 @@
 mod kms;
-pub use kms::KmsSigner;
+pub use kms::{KmsSigner, decrypt_key_material};
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_protocol::Word;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
@@ -150,10 +150,11 @@ impl TransactionEncryptionKeyInfo {
 /// genesis commitment ties the attestation to one chain, so it cannot be replayed on another
 /// network whose validator reuses the same signing key.
 ///
-/// `next_key_transcript` is a single `0` byte when no rotation is scheduled, or `1` followed by
-/// the next key's `scheme || len(key_id) || key_id || len(public_key) || public_key ||
-/// rotation_block_num` otherwise, so a scheduled rotation cannot be stripped from or injected
-/// into an attested response.
+/// `next_key_transcript` is empty when no rotation is scheduled, or the next key's `scheme ||
+/// len(key_id) || key_id || len(public_key) || public_key || rotation_block_num` otherwise. All
+/// fields ahead of it are fixed-width or length-prefixed, so the transcript's presence and
+/// content are unambiguous and a scheduled rotation cannot be stripped from or injected into an
+/// attested response.
 pub fn attestation_commitment(
     scheme: u32,
     key_id: &[u8],
@@ -171,7 +172,6 @@ pub fn attestation_commitment(
             + key_id.len()
             + genesis_commitment.len()
             + public_key.len()
-            + 1
             + next_key_size,
     );
     payload.extend_from_slice(ATTESTATION_DOMAIN);
@@ -179,15 +179,11 @@ pub fn attestation_commitment(
     extend_with_length_prefixed(&mut payload, key_id, "key id");
     payload.extend_from_slice(&genesis_commitment);
     extend_with_length_prefixed(&mut payload, public_key, "public key");
-    match next_key {
-        None => payload.push(0),
-        Some(next) => {
-            payload.push(1);
-            payload.extend_from_slice(&next.scheme.to_le_bytes());
-            extend_with_length_prefixed(&mut payload, &next.key_id, "next key id");
-            extend_with_length_prefixed(&mut payload, &next.public_key, "next public key");
-            payload.extend_from_slice(&next.rotation_block_num.to_le_bytes());
-        },
+    if let Some(next) = next_key {
+        payload.extend_from_slice(&next.scheme.to_le_bytes());
+        extend_with_length_prefixed(&mut payload, &next.key_id, "next key id");
+        extend_with_length_prefixed(&mut payload, &next.public_key, "next public key");
+        payload.extend_from_slice(&next.rotation_block_num.to_le_bytes());
     }
     miden_protocol::Hasher::hash(&payload)
 }

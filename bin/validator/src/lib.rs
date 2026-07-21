@@ -13,6 +13,7 @@ pub use signers::{
     TransactionInputDecrypter,
     ValidatorSigner,
     attestation_commitment,
+    decrypt_key_material,
 };
 
 // CONSTANTS

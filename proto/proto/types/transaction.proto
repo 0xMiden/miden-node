@@ -84,10 +84,10 @@ message ValidatorKeyAttestation {
   // `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, the scheme, the rotation block number, and the
   // length prefixes are encoded as 4 bytes little-endian, and the genesis block commitment ties
   // the attestation to one network.
-  // `next_key_transcript` is a single `0` byte when no rotation is scheduled, or `1` followed by
-  // the next key's `scheme || len(key_id) || key_id || len(public_key) || public_key ||
-  // rotation_block_num` otherwise, binding any scheduled rotation to the signature. The canonical
-  // construction is `miden_validator::attestation_commitment`.
+  // `next_key_transcript` is empty when no rotation is scheduled, or the next key's `scheme ||
+  // len(key_id) || key_id || len(public_key) || public_key || rotation_block_num` otherwise,
+  // binding any scheduled rotation to the signature. The canonical construction is
+  // `miden_validator::attestation_commitment`.
   bytes signature = 2;
 }
 

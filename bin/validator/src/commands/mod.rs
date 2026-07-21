@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
+use base64::Engine;
 use clap::Parser;
 use miden_node_utils::clap::GrpcOptionsInternal;
 use miden_node_utils::logging::OpenTelemetry;
@@ -26,6 +27,7 @@ const ENV_LISTEN: &str = "MIDEN_VALIDATOR_LISTEN";
 const ENV_SIGNING_KEY: &str = "MIDEN_VALIDATOR_SIGNING_KEY";
 const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
+const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 
@@ -115,7 +117,7 @@ pub enum ValidatorCommand {
             env = ENV_SIGNING_KEY,
             value_name = "VALIDATOR_SIGNING_KEY",
             default_value = INSECURE_SIGNING_KEY_HEX,
-            group = "signing_key"
+            group = "signing_key_source"
         )]
         signing_key: String,
 
@@ -126,7 +128,7 @@ pub enum ValidatorCommand {
             long = "signing-key.kms-id",
             env = ENV_SIGNING_KEY_KMS_ID,
             value_name = "VALIDATOR_SIGNING_KEY_KMS_ID",
-            group = "signing_key"
+            group = "signing_key_source"
         )]
         signing_key_kms_id: Option<String>,
 
@@ -136,13 +138,32 @@ pub enum ValidatorCommand {
         /// validator in the set.
         ///
         /// If not provided, a predefined insecure key is used.
+        ///
+        /// Cannot be used with `encryption-key.kms-ciphertext`.
         #[arg(
             long = "encryption-key.hex",
             env = ENV_ENCRYPTION_KEY,
             value_name = "VALIDATOR_ENCRYPTION_KEY",
-            default_value = INSECURE_ENCRYPTION_KEY_HEX
+            default_value = INSECURE_ENCRYPTION_KEY_HEX,
+            group = "encryption_key_source"
         )]
         encryption_key: String,
+
+        /// Base64-encoded KMS ciphertext of the shared transaction encryption key, as returned
+        /// by `kms:Encrypt`.
+        ///
+        /// The wrapped key material is recovered at startup with `kms:Decrypt`. The ciphertext
+        /// must have been produced by `kms:Encrypt` under a symmetric KMS key, whose ID is
+        /// embedded in the ciphertext blob.
+        ///
+        /// Cannot be used with `encryption-key.hex`.
+        #[arg(
+            long = "encryption-key.kms-ciphertext",
+            env = ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT,
+            value_name = "VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT",
+            group = "encryption_key_source"
+        )]
+        encryption_key_kms_ciphertext: Option<String>,
     },
 }
 
@@ -182,23 +203,35 @@ impl ValidatorCommand {
                 signing_key_kms_id,
                 sqlite_connection_pool_size,
                 encryption_key,
+                encryption_key_kms_ciphertext,
                 ..
             } => {
                 let address = listen;
 
-                // Unlike the signing key, whose insecure default is caught at startup against the
-                // chain's committed validator key, nothing cross-checks the encryption key. Warn
-                // loudly so the default never runs in production unnoticed.
-                if encryption_key == INSECURE_ENCRYPTION_KEY_HEX {
-                    tracing::warn!(
-                        target: LOG_TARGET,
-                        "Using the predefined, insecure transaction encryption key, configure \
-                         --encryption-key.hex for production deployments"
-                    );
-                }
+                let encryption_key_bytes = if let Some(ciphertext) = encryption_key_kms_ciphertext {
+                    let ciphertext =
+                        base64::engine::general_purpose::STANDARD
+                            .decode(ciphertext)
+                            .context("failed to decode the encryption key KMS ciphertext base64")?;
+                    miden_validator::decrypt_key_material(ciphertext)
+                        .await
+                        .context("failed to decrypt the encryption key with KMS")?
+                } else {
+                    // Unlike the signing key, whose insecure default is caught at startup against
+                    // the chain's committed validator key, nothing cross-checks the encryption key.
+                    // Warn loudly so the default never runs in production unnoticed.
+                    if encryption_key == INSECURE_ENCRYPTION_KEY_HEX {
+                        tracing::warn!(
+                            target: LOG_TARGET,
+                            "Using the predefined, insecure transaction encryption key, configure \
+                             --encryption-key.hex or --encryption-key.kms-ciphertext for \
+                             production deployments"
+                        );
+                    }
 
-                let encryption_key_bytes = hex::decode(encryption_key)
-                    .context("failed to decode the encryption key hex")?;
+                    hex::decode(encryption_key)
+                        .context("failed to decode the encryption key hex")?
+                };
                 let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
                     .context("failed to construct the encryption key")?;
                 let decrypter: Arc<dyn TransactionInputDecrypter> =
@@ -271,5 +304,67 @@ impl ValidatorSigningKey {
             let signer = SigningKey::read_from_bytes(hex::decode(self.signing_key)?.as_ref())?;
             Ok(ValidatorSigner::new_local(signer))
         }
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE_START_ARGS: [&str; 6] = [
+        "miden-validator",
+        "start",
+        "--listen",
+        "127.0.0.1:50101",
+        "--data-directory",
+        "/tmp/validator-data",
+    ];
+
+    fn parse_start(extra: &[&str]) -> Result<ValidatorCommand, clap::Error> {
+        ValidatorCommand::try_parse_from(
+            BASE_START_ARGS.iter().copied().chain(extra.iter().copied()),
+        )
+    }
+
+    #[test]
+    fn encryption_key_defaults_to_insecure_hex() {
+        let command = parse_start(&[]).expect("start without encryption options must parse");
+        let ValidatorCommand::Start {
+            encryption_key,
+            encryption_key_kms_ciphertext,
+            ..
+        } = command
+        else {
+            panic!("expected the start command");
+        };
+        assert_eq!(encryption_key, INSECURE_ENCRYPTION_KEY_HEX);
+        assert_eq!(encryption_key_kms_ciphertext, None);
+    }
+
+    #[test]
+    fn encryption_key_kms_ciphertext_parses_alone() {
+        let command = parse_start(&["--encryption-key.kms-ciphertext", "deadbeef"])
+            .expect("KMS ciphertext without a hex key must parse");
+        let ValidatorCommand::Start { encryption_key_kms_ciphertext, .. } = command else {
+            panic!("expected the start command");
+        };
+        assert_eq!(encryption_key_kms_ciphertext.as_deref(), Some("deadbeef"));
+    }
+
+    #[test]
+    fn encryption_key_hex_and_kms_ciphertext_conflict() {
+        let result = parse_start(&[
+            "--encryption-key.hex",
+            INSECURE_ENCRYPTION_KEY_HEX,
+            "--encryption-key.kms-ciphertext",
+            "deadbeef",
+        ]);
+        let Err(error) = result else {
+            panic!("hex key and KMS ciphertext together must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 }

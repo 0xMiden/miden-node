@@ -21,6 +21,7 @@ doctest = false
 anyhow                 = { workspace = true }
 aws-config             = { version = "1.8.14" }
 aws-sdk-kms            = { version = "1.100" }
+base64                 = { version = "0.22" }
 clap                   = { features = ["env", "string"], workspace = true }
 fs-err                 = { workspace = true }
 hex                    = { workspace = true }

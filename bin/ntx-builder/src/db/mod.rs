@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::Database;
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
@@ -33,45 +33,19 @@ pub(crate) const OVERSIZED_NOTE_DISCARD_REASON: &str =
 // NTX BUILDER DATABASE
 // ================================================================================================
 
-/// Wrapper of the miden-node-db database.
+/// Read-only handle to the ntx-builder database.
+///
+/// Wraps the framework [`DbReader`] and exposes every read query as a method. Cloneable, and handed
+/// to read-only components (the gRPC server, the coordinator, and actors); it has no write methods,
+/// so those components cannot mutate the database.
 #[derive(Clone)]
-pub(crate) struct NtxDb {
-    db: Database,
+pub(crate) struct NtxDbReader {
+    reader: DbReader,
 }
 
-impl NtxDb {
-    fn new(db: Database) -> Self {
-        Self { db }
-    }
-}
-
-impl NtxDb {
-    pub(crate) async fn insert_genesis_chain_state(
-        &self,
-        genesis_header: BlockHeader,
-        genesis_commitment: Word,
-    ) -> Result<(), DatabaseError> {
-        self.db
-            .write("insert_genesis_chain_state", move |tx| {
-                queries::insert_genesis_chain_state(tx, &genesis_header, &genesis_commitment)
-            })
-            .await
-    }
-
-    pub(crate) async fn apply_committed_block(
-        &self,
-        effects: CommittedBlockEffects,
-        chain_mmr: PartialMmr,
-    ) -> Result<(), DatabaseError> {
-        self.db
-            .write("apply_committed_block", move |tx| {
-                queries::apply_committed_block(tx, &effects, &chain_mmr)
-            })
-            .await
-    }
-
+impl NtxDbReader {
     pub(crate) async fn select_genesis_commitment(&self) -> Result<Option<Word>, DatabaseError> {
-        self.db
+        self.reader
             .read("select_genesis_commitment", db::queries::select_genesis_commitment)
             .await
     }
@@ -80,7 +54,7 @@ impl NtxDb {
         &self,
         account_id: AccountId,
     ) -> Result<Option<Account>, DatabaseError> {
-        self.db
+        self.reader
             .read("get_account", move |tx| queries::get_account(tx, account_id))
             .await
     }
@@ -93,7 +67,7 @@ impl NtxDb {
         account_id: AccountId,
         max_attempts: usize,
     ) -> Result<bool, DatabaseError> {
-        self.db
+        self.reader
             .read("account_has_pending_notes", move |tx| {
                 queries::account_has_pending_notes(tx, account_id, max_attempts)
             })
@@ -109,7 +83,7 @@ impl NtxDb {
         block_num: BlockNumber,
         max_note_attempts: usize,
     ) -> Result<queries::AvailableNotes, DatabaseError> {
-        self.db
+        self.reader
             .read("available_notes", move |tx| {
                 queries::available_notes(tx, account_id, block_num, max_note_attempts)
             })
@@ -119,14 +93,14 @@ impl NtxDb {
     pub(crate) async fn select_chain_state(
         &self,
     ) -> Result<Option<(BlockNumber, BlockHeader, PartialMmr)>, DatabaseError> {
-        self.db.read("select_chain_state", queries::select_chain_state).await
+        self.reader.read("select_chain_state", queries::select_chain_state).await
     }
 
     pub(crate) async fn account_exists(
         &self,
         account_id: AccountId,
     ) -> Result<bool, DatabaseError> {
-        self.db
+        self.reader
             .read("account_exists", move |tx| db::queries::account_exists(tx, account_id))
             .await
     }
@@ -135,9 +109,90 @@ impl NtxDb {
         &self,
         max_note_attempts: usize,
     ) -> Result<Vec<AccountId>, DatabaseError> {
-        self.db
+        self.reader
             .read("accounts_with_pending_notes", move |tx| {
                 queries::accounts_with_pending_notes(tx, max_note_attempts)
+            })
+            .await
+    }
+
+    /// The committed-transaction landing check reads `last_committed_tx` from the `AccountView` the
+    /// coordinator pushes, so this read accessor is only used by tests to verify that
+    /// `upsert_account` persists `accounts.last_tx_id` correctly.
+    #[cfg(test)]
+    pub(crate) async fn account_last_tx(
+        &self,
+        account_id: AccountId,
+    ) -> Result<Option<TransactionId>, DatabaseError> {
+        self.reader
+            .read("account_last_tx", move |tx| queries::account_last_tx(tx, account_id))
+            .await
+    }
+
+    pub(crate) async fn lookup_note_script(
+        &self,
+        script_root: Word,
+    ) -> Result<Option<NoteScript>, DatabaseError> {
+        self.reader
+            .read("lookup_note_script", move |tx| queries::lookup_note_script(tx, &script_root))
+            .await
+    }
+
+    pub(crate) async fn get_note_status(
+        &self,
+        note_id: NoteId,
+    ) -> Result<Option<NoteStatusRow>, DatabaseError> {
+        self.reader
+            .read("get_note_status", move |tx| crate::db::queries::get_note_status(tx, note_id))
+            .await
+    }
+}
+
+/// Write handle to the ntx-builder database.
+///
+/// Wraps the framework [`DbWriter`] and additionally holds an [`NtxDbReader`], so it exposes the
+/// write queries directly and every read query through `Deref`. **Not `Clone`**: only the
+/// committed-block event loop (see [`crate::builder`]) owns it, so writes have a single owner
+/// matching SQLite's single-writer model.
+pub(crate) struct NtxDbWriter {
+    writer: DbWriter,
+    reader: NtxDbReader,
+}
+
+impl std::ops::Deref for NtxDbWriter {
+    type Target = NtxDbReader;
+
+    fn deref(&self) -> &Self::Target {
+        &self.reader
+    }
+}
+
+impl NtxDbWriter {
+    /// Returns a cloneable read-only handle to the same database.
+    pub(crate) fn reader(&self) -> NtxDbReader {
+        self.reader.clone()
+    }
+
+    pub(crate) async fn insert_genesis_chain_state(
+        &self,
+        genesis_header: BlockHeader,
+        genesis_commitment: Word,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("insert_genesis_chain_state", move |tx| {
+                queries::insert_genesis_chain_state(tx, &genesis_header, &genesis_commitment)
+            })
+            .await
+    }
+
+    pub(crate) async fn apply_committed_block(
+        &self,
+        effects: CommittedBlockEffects,
+        chain_mmr: PartialMmr,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("apply_committed_block", move |tx| {
+                queries::apply_committed_block(tx, &effects, &chain_mmr)
             })
             .await
     }
@@ -147,7 +202,7 @@ impl NtxDb {
         failed_notes: Vec<(Nullifier, NoteError)>,
         block_num: BlockNumber,
     ) -> Result<(), DatabaseError> {
-        self.db
+        self.writer
             .write("notes_failed", move |tx| queries::notes_failed(tx, &failed_notes, block_num))
             .await
     }
@@ -158,7 +213,7 @@ impl NtxDb {
         block_num: BlockNumber,
         max_attempts: usize,
     ) -> Result<(), DatabaseError> {
-        self.db
+        self.writer
             .write("discard_notes", move |tx| {
                 queries::discard_notes(
                     tx,
@@ -176,41 +231,10 @@ impl NtxDb {
         script_root: Word,
         script: NoteScript,
     ) -> Result<(), DatabaseError> {
-        self.db
+        self.writer
             .write("insert_note_script", move |tx| {
                 queries::insert_note_script(tx, &script_root, &script)
             })
-            .await
-    }
-
-    /// The committed-transaction landing check reads `last_committed_tx` from the `AccountView` the
-    /// coordinator pushes, so this read accessor is only used by tests to verify that
-    /// `upsert_account` persists `accounts.last_tx_id` correctly.
-    #[cfg(test)]
-    pub(crate) async fn account_last_tx(
-        &self,
-        account_id: AccountId,
-    ) -> Result<Option<TransactionId>, DatabaseError> {
-        self.db
-            .read("account_last_tx", move |tx| queries::account_last_tx(tx, account_id))
-            .await
-    }
-
-    pub(crate) async fn lookup_note_script(
-        &self,
-        script_root: Word,
-    ) -> Result<Option<NoteScript>, DatabaseError> {
-        self.db
-            .read("lookup_note_script", move |tx| queries::lookup_note_script(tx, &script_root))
-            .await
-    }
-
-    pub(crate) async fn get_note_status(
-        &self,
-        note_id: NoteId,
-    ) -> Result<Option<NoteStatusRow>, DatabaseError> {
-        self.db
-            .read("get_note_status", move |tx| crate::db::queries::get_note_status(tx, note_id))
             .await
     }
 }
@@ -226,7 +250,7 @@ impl NtxDb {
     fields(path=%database_filepath.display()),
     err,
 )]
-pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDb> {
+pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDbWriter> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -242,7 +266,7 @@ pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDb> {
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> anyhow::Result<NtxDb> {
+) -> anyhow::Result<NtxDbWriter> {
     verify_latest_schema(&database_filepath).context("failed to verify database schema")?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -258,9 +282,10 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError>
 fn open_with_pool_size(
     database_filepath: &Path,
     connection_pool_size: NonZeroUsize,
-) -> anyhow::Result<NtxDb> {
-    let db = Database::new_with_pool_size(database_filepath, connection_pool_size)
-        .context("failed to build connection pool")?;
+) -> anyhow::Result<NtxDbWriter> {
+    let (writer, reader) =
+        miden_node_db::sqlite::open_with_pool_size(database_filepath, connection_pool_size)
+            .context("failed to build connection pool")?;
 
     info!(
         target: COMPONENT,
@@ -269,7 +294,7 @@ fn open_with_pool_size(
         "Connected to the database"
     );
 
-    Ok(NtxDb::new(db))
+    Ok(NtxDbWriter { writer, reader: NtxDbReader { reader } })
 }
 
 /// Creates and initializes the database, then seeds it with the signed genesis block.
@@ -311,8 +336,11 @@ pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> any
 // ================================================================================================
 
 /// Creates a schema-migrated (but un-seeded) database backed by a temp file for testing.
+///
+/// Returns the [`NtxDbWriter`]; tests read through its `Deref` to [`NtxDbReader`] and write
+/// directly, and pass `writer.reader()` into components that take a read-only handle.
 #[cfg(test)]
-pub(crate) async fn test_setup() -> (NtxDb, tempfile::TempDir) {
+pub(crate) async fn test_setup() -> (NtxDbWriter, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("failed to create temp directory");
     let db_path = dir.path().join("test.sqlite3");
     bootstrap_database(&db_path).expect("database should bootstrap");
@@ -320,32 +348,13 @@ pub(crate) async fn test_setup() -> (NtxDb, tempfile::TempDir) {
     (db, dir)
 }
 
-/// Test-only query helpers.
-///
-/// These wrap queries that have no production [`NtxDb`] method (raw row counts, and the individual
-/// writes that production code only ever performs as part of [`NtxDb::apply_committed_block`]), so
-/// that tests still reach the database exclusively through the wrapper rather than the raw
-/// [`Database`]. Production queries that already have a method are exercised through those directly.
+/// Test-only read helpers (raw row counts) — reads, so they live on the reader handle and are
+/// reachable from an [`NtxDbWriter`] through `Deref`.
 #[cfg(test)]
-impl NtxDb {
-    /// Seeds a committed account row (and its `last_tx_id`) for tests that exercise the actor's
-    /// landing detection without driving a full committed block.
-    pub(crate) async fn upsert_account_for_test(
-        &self,
-        account_id: AccountId,
-        account: Account,
-        last_tx_id: TransactionId,
-    ) -> Result<(), DatabaseError> {
-        self.db
-            .write("test_upsert_account", move |tx| {
-                queries::upsert_account(tx, account_id, &account, last_tx_id)
-            })
-            .await
-    }
-
+impl NtxDbReader {
     /// Counts the rows returned by a `SELECT COUNT(*)` statement.
     pub(crate) async fn count(&self, sql: &'static str) -> i64 {
-        self.db
+        self.reader
             .read("count", move |tx| {
                 let n =
                     tx.query(sql, &[], |row| row.get::<i64>(0))?.into_iter().next().unwrap_or(0);
@@ -366,12 +375,35 @@ impl NtxDb {
     pub(crate) async fn count_chain_state(&self) -> i64 {
         self.count("SELECT COUNT(*) FROM chain_state").await
     }
+}
+
+/// Test-only write helpers.
+///
+/// These wrap writes that have no production [`NtxDbWriter`] method (the individual writes that
+/// production code only ever performs as part of [`NtxDbWriter::apply_committed_block`]), so tests
+/// still reach the database exclusively through the wrapper.
+#[cfg(test)]
+impl NtxDbWriter {
+    /// Seeds a committed account row (and its `last_tx_id`) for tests that exercise the actor's
+    /// landing detection without driving a full committed block.
+    pub(crate) async fn upsert_account_for_test(
+        &self,
+        account_id: AccountId,
+        account: Account,
+        last_tx_id: TransactionId,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("test_upsert_account", move |tx| {
+                queries::upsert_account(tx, account_id, &account, last_tx_id)
+            })
+            .await
+    }
 
     pub(crate) async fn insert_network_notes(
         &self,
         notes: Vec<AccountTargetNetworkNote>,
     ) -> Result<(), DatabaseError> {
-        self.db
+        self.writer
             .write("insert_network_notes", move |tx| queries::insert_network_notes(tx, &notes))
             .await
     }
@@ -381,7 +413,7 @@ impl NtxDb {
         nullifiers: Vec<Nullifier>,
         block_num: BlockNumber,
     ) -> Result<(), DatabaseError> {
-        self.db
+        self.writer
             .write("mark_notes_consumed", move |tx| {
                 queries::mark_notes_consumed(tx, &nullifiers, block_num)
             })
@@ -394,15 +426,15 @@ impl NtxDb {
         chain_mmr: PartialMmr,
     ) -> Result<(), DatabaseError> {
         let block_num = block_header.block_num();
-        self.db
+        self.writer
             .write("update_chain_state_tip", move |tx| {
                 queries::update_chain_state_tip(tx, block_num, &block_header, &chain_mmr)
             })
             .await
     }
 
-    /// Discards notes with an explicit reason, unlike [`NtxDb::discard_notes`] which always records
-    /// [`OVERSIZED_NOTE_DISCARD_REASON`].
+    /// Discards notes with an explicit reason, unlike [`NtxDbWriter::discard_notes`] which always
+    /// records [`OVERSIZED_NOTE_DISCARD_REASON`].
     pub(crate) async fn discard_notes_with_reason(
         &self,
         nullifiers: Vec<Nullifier>,
@@ -410,7 +442,7 @@ impl NtxDb {
         max_attempts: usize,
         reason: String,
     ) -> Result<(), DatabaseError> {
-        self.db
+        self.writer
             .write("discard_notes", move |tx| {
                 queries::discard_notes(tx, &nullifiers, block_num, max_attempts, &reason)
             })

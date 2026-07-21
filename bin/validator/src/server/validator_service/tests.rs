@@ -35,10 +35,13 @@ impl TestValidator {
     async fn new() -> Self {
         let key = random_secret_key();
         let signer = ValidatorSigner::new_local(key.clone());
-        let (temp_dir, db, block_store, genesis_header) = setup_db_with_genesis(&key).await;
+        let (temp_dir, writer, reader, block_store, genesis_header) =
+            setup_db_with_genesis(&key).await;
 
         Self {
-            server: ValidatorService::new(signer, db, block_store, 0, 0, 0).await.unwrap(),
+            server: ValidatorService::new(signer, writer, reader, block_store, 0, 0, 0)
+                .await
+                .unwrap(),
             chain: PartialBlockchain::default(),
             chain_tip: genesis_header,
             _temp_dir: temp_dir,
@@ -106,7 +109,7 @@ impl TestValidator {
     /// Loads the current chain tip from the validator's database.
     async fn load_chain_tip(&self) -> BlockHeader {
         self.server
-            .db
+            .reader
             .read("load_chain_tip", load_chain_tip)
             .await
             .unwrap()
@@ -130,24 +133,31 @@ impl TestValidator {
 /// of `key`. Returns the database handle and the genesis block header.
 async fn setup_db_with_genesis(
     key: &SigningKey,
-) -> (tempfile::TempDir, miden_node_db::sqlite::Database, BlockStore, BlockHeader) {
+) -> (
+    tempfile::TempDir,
+    miden_node_db::sqlite::DbWriter,
+    miden_node_db::sqlite::DbReader,
+    BlockStore,
+    BlockHeader,
+) {
     let genesis_state = GenesisState::new(vec![], test_fee_params(), 1, 0, key.public_key());
     let genesis_block = genesis_state.into_block(key).unwrap();
     let genesis_header = genesis_block.inner().header().clone();
 
     let dir = tempfile::tempdir().unwrap();
-    let db = setup(dir.path().join("validator.sqlite3")).await.unwrap();
+    let (writer, reader) = setup(dir.path().join("validator.sqlite3")).await.unwrap();
     let block_store =
         BlockStore::bootstrap(dir.path().join("blocks").clone(), &genesis_block).unwrap();
 
-    db.write("upsert_genesis", {
-        let h = genesis_header.clone();
-        move |tx| upsert_block_header(tx, &h)
-    })
-    .await
-    .unwrap();
+    writer
+        .write("upsert_genesis", {
+            let h = genesis_header.clone();
+            move |tx| upsert_block_header(tx, &h)
+        })
+        .await
+        .unwrap();
 
-    (dir, db, block_store, genesis_header)
+    (dir, writer, reader, block_store, genesis_header)
 }
 
 /// Builds an empty [`ProposedBlock`] that extends the given parent block header using the provided
@@ -173,7 +183,8 @@ fn empty_block(parent_header: &BlockHeader, chain: &PartialBlockchain) -> Propos
 async fn signing_key_mismatch_rejected() {
     // Seed a database whose genesis designates `genesis_key` as the validator key.
     let genesis_key = random_secret_key();
-    let (_temp_dir, db, block_store, genesis_header) = setup_db_with_genesis(&genesis_key).await;
+    let (_temp_dir, writer, reader, block_store, genesis_header) =
+        setup_db_with_genesis(&genesis_key).await;
 
     // Start a validator with a different key, modelling a validator configured with the wrong key.
     let rogue_signer = ValidatorSigner::new_local(random_secret_key());
@@ -183,7 +194,7 @@ async fn signing_key_mismatch_rejected() {
         "test requires a signing key that differs from the genesis validator key",
     );
 
-    let result = ValidatorService::new(rogue_signer, db, block_store, 0, 0, 0).await;
+    let result = ValidatorService::new(rogue_signer, writer, reader, block_store, 0, 0, 0).await;
     assert!(
         matches!(result, Err(ValidatorError::ValidatorKeyMismatch { .. })),
         "expected ValidatorKeyMismatch error",

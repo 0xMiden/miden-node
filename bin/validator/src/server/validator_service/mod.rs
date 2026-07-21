@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::Database;
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::block::{
@@ -71,7 +71,11 @@ pub enum ValidatorError {
 /// Implements the gRPC API for the validator.
 pub(crate) struct ValidatorService {
     signer: ValidatorSigner,
-    db: Arc<Database>,
+    /// Read-only handle, cloned freely for concurrent read queries.
+    reader: DbReader,
+    /// Write handle, shared behind an `Arc` because this service is itself shared across concurrent
+    /// gRPC handlers; writes still serialize on the single writer connection.
+    writer: Arc<DbWriter>,
     block_store: BlockStore,
     /// Enforces mutual exclusion between backup block subscriptions and all other RPCs. Regular
     /// RPCs take the read side (any number may run concurrently); a backup subscription takes the
@@ -93,7 +97,8 @@ pub(crate) struct ValidatorService {
 impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
-        db: Database,
+        writer: DbWriter,
+        reader: DbReader,
         block_store: BlockStore,
         initial_chain_tip: u32,
         initial_tx_count: u64,
@@ -102,7 +107,7 @@ impl ValidatorService {
         // The validator key is fixed at genesis and carried forward unchanged by every block, so
         // the signing key must match the chain's validator key for this validator's lifetime.
         // Reject a misconfigured key here.
-        let chain_tip = db
+        let chain_tip = reader
             .read("load_chain_tip", load_chain_tip)
             .await
             .map_err(ValidatorError::DatabaseError)?
@@ -124,7 +129,8 @@ impl ValidatorService {
         Ok(Self {
             signer,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
-            db: db.into(),
+            reader,
+            writer: Arc::new(writer),
             block_store,
             sign_block_semaphore: Semaphore::new(1),
             committed_tip: watch::Sender::new(BlockNumber::from(initial_chain_tip)),
@@ -157,7 +163,7 @@ impl ValidatorService {
         let proposed_tx_ids =
             proposed_block.transactions().map(TransactionHeader::id).collect::<Vec<_>>();
         let unvalidated_txs = self
-            .db
+            .reader
             .read("find_unvalidated_transactions", move |tx| {
                 find_unvalidated_transactions(tx, &proposed_tx_ids)
             })
@@ -185,7 +191,7 @@ impl ValidatorService {
             // The genesis block cannot be replaced (genesis block has no parent).
             let prev_block_num =
                 chain_tip.block_num().parent().ok_or(ValidatorError::NoPrevBlockHeader)?;
-            self.db
+            self.reader
                 .read("load_block_header", move |tx| load_block_header(tx, prev_block_num))
                 .await
                 .map_err(ValidatorError::DatabaseError)?

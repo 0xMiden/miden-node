@@ -50,7 +50,7 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
 
         // Load the current chain tip from the database.
         let chain_tip = self
-            .db
+            .reader
             .read("load_chain_tip", load_chain_tip)
             .await
             .map_err(|err| {
@@ -73,7 +73,7 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
 
         // Persist the validated block header.
         let new_block_num = header.block_num().as_u32();
-        self.db
+        self.writer
             .write("upsert_block_header", move |tx| upsert_block_header(tx, &header))
             .await
             .map_err(|err| {

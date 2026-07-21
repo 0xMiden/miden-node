@@ -26,7 +26,7 @@ use tokio::sync::{Semaphore, mpsc, watch};
 use crate::chain_state::{ChainState, SharedChainState};
 use crate::clients::{RemoteTransactionProver, RpcClient};
 use crate::coordinator::AccountView;
-use crate::db::NtxDb;
+use crate::db::NtxDbReader;
 use crate::{LOG_TARGET, NoteError};
 
 /// Builds the [`TransactionArgs`] shared by every network transaction.
@@ -87,7 +87,7 @@ pub struct GrpcClients {
 #[derive(Clone)]
 pub struct State {
     /// Local database for account state, notes, and transaction tracking.
-    pub db: NtxDb,
+    pub db: NtxDbReader,
     /// The latest chain state. A single chain state is shared among all actors.
     pub chain: Arc<SharedChainState>,
     /// Shared LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
@@ -141,7 +141,7 @@ impl AccountActorContext {
     ///
     /// The URLs are fake and actors spawned with this context will fail on their first gRPC call,
     /// but this is sufficient for testing coordinator logic (registry, deactivation, etc.).
-    pub fn test(db: &NtxDb) -> Self {
+    pub fn test(db: &NtxDbReader) -> Self {
         use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
         use url::Url;
 
@@ -847,7 +847,7 @@ mod tests {
     }
 
     /// Builds an actor wired to `db` for the given account.
-    fn test_actor(db: &NtxDb, account: &Account) -> AccountActor {
+    fn test_actor(db: &NtxDbReader, account: &Account) -> AccountActor {
         let ctx = AccountActorContext::test(db);
         AccountActor::new(account.id(), &ctx)
     }

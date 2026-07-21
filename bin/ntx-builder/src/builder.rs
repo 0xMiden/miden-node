@@ -16,7 +16,7 @@ use crate::chain_state::SharedChainState;
 use crate::clients::RpcError;
 use crate::committed_block::CommittedBlockEffects;
 use crate::coordinator::Coordinator;
-use crate::db::NtxDb;
+use crate::db::NtxDbWriter;
 use crate::server::NtxBuilderRpcServer;
 use crate::{LOG_TARGET, NtxBuilderConfig};
 
@@ -57,7 +57,7 @@ pub struct NetworkTransactionBuilder {
     /// Configuration for the builder.
     config: NtxBuilderConfig,
     /// Database for persistent state.
-    db: NtxDb,
+    db: NtxDbWriter,
     /// Stream of committed blocks from the node RPC service.
     block_stream: BlockStream,
     /// Highest block number applied to the DB so far.
@@ -77,7 +77,7 @@ pub struct NetworkTransactionBuilder {
 impl NetworkTransactionBuilder {
     pub(crate) fn new(
         config: NtxBuilderConfig,
-        db: NtxDb,
+        db: NtxDbWriter,
         block_stream: BlockStream,
         last_applied_block: BlockNumber,
         chain: Arc<SharedChainState>,
@@ -111,7 +111,7 @@ impl NetworkTransactionBuilder {
         let mut tasks = Tasks::new();
 
         // Start the gRPC server.
-        let server = NtxBuilderRpcServer::new(self.db.clone(), self.config.max_note_attempts);
+        let server = NtxBuilderRpcServer::new(self.db.reader(), self.config.max_note_attempts);
         let server_shutdown = shutdown.clone();
         tasks.spawn("grpc-server", async move {
             server
@@ -275,7 +275,7 @@ impl NetworkTransactionBuilder {
 /// Handles a single actor request then acknowledges the actor. All writes go through the
 /// framework's single writer connection, so the actors' reads cannot starve them.
 async fn handle_actor_request(
-    db: &NtxDb,
+    db: &NtxDbWriter,
     request: ActorRequest,
     max_note_attempts: usize,
 ) -> anyhow::Result<()> {

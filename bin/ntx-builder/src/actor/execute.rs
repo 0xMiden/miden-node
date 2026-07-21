@@ -56,7 +56,7 @@ use tracing::Instrument;
 
 use crate::actor::candidate::TransactionCandidate;
 use crate::clients::{RemoteTransactionProver, RpcClient, RpcError};
-use crate::db::NtxDb;
+use crate::db::NtxDbReader;
 use crate::{COMPONENT, LOG_TARGET};
 
 #[derive(Debug, thiserror::Error)]
@@ -167,7 +167,7 @@ pub struct NtxContext {
     script_cache: LruCache<Word, NoteScript>,
 
     /// Local database for persistent note script caching.
-    db: NtxDb,
+    db: NtxDbReader,
 
     /// Maximum number of VM execution cycles for network transactions.
     max_cycles: u32,
@@ -190,7 +190,7 @@ impl NtxContext {
         prover: RemoteTransactionProver,
         rpc: RpcClient,
         script_cache: LruCache<Word, NoteScript>,
-        db: NtxDb,
+        db: NtxDbReader,
         max_cycles: u32,
         tx_args: TransactionArgs,
         request_backoff_initial: Duration,
@@ -575,7 +575,7 @@ struct NtxDataStore {
     /// LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
     script_cache: LruCache<Word, NoteScript>,
     /// Local database for persistent note script.
-    db: NtxDb,
+    db: NtxDbReader,
     /// Scripts fetched from the remote RPC service during execution, to be persisted by the
     /// coordinator.
     fetched_scripts: Arc<Mutex<Vec<(Word, NoteScript)>>>,
@@ -613,7 +613,7 @@ impl NtxDataStore {
         chain_mmr: Arc<PartialBlockchain>,
         rpc: RpcClient,
         script_cache: LruCache<Word, NoteScript>,
-        db: NtxDb,
+        db: NtxDbReader,
         request_backoff: ExponentialBuilder,
     ) -> Self {
         let mast_store = TransactionMastStore::new();

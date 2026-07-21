@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::{Database, ReadTx, WriteTx};
+use miden_node_db::sqlite::{DbReader, DbWriter, ReadTx, WriteTx};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
@@ -31,7 +31,7 @@ mod sql {
     target = COMPONENT,
     skip_all,
 )]
-pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
+pub async fn load(database_filepath: PathBuf) -> Result<(DbWriter, DbReader), DatabaseError> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -44,7 +44,7 @@ pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError>
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<Database, DatabaseError> {
+) -> Result<(DbWriter, DbReader), DatabaseError> {
     verify_latest_schema(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -55,7 +55,7 @@ pub async fn load_with_pool_size(
     target = COMPONENT,
     skip_all,
 )]
-pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
+pub async fn setup(database_filepath: PathBuf) -> Result<(DbWriter, DbReader), DatabaseError> {
     setup_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -67,7 +67,7 @@ pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError
 pub async fn setup_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<Database, DatabaseError> {
+) -> Result<(DbWriter, DbReader), DatabaseError> {
     bootstrap_database(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -86,15 +86,16 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError>
 fn open_with_pool_size(
     database_filepath: &Path,
     connection_pool_size: NonZeroUsize,
-) -> Result<Database, DatabaseError> {
-    let db = Database::new_with_pool_size(database_filepath, connection_pool_size)?;
+) -> Result<(DbWriter, DbReader), DatabaseError> {
+    let (writer, reader) =
+        miden_node_db::sqlite::open_with_pool_size(database_filepath, connection_pool_size)?;
     tracing::info!(
         target: LOG_TARGET,
         sqlite= %database_filepath.display(),
         connection_pool_size = %connection_pool_size,
         "Connected to the database"
     );
-    Ok(db)
+    Ok((writer, reader))
 }
 
 /// Inserts a new validated transaction into the database.
@@ -290,7 +291,7 @@ mod tests {
         use miden_protocol::Word;
 
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
 
         let validated_id = TransactionId::from_raw(Word::try_from([1u64, 2, 3, 4]).unwrap());
         let unknown_id = TransactionId::from_raw(Word::try_from([5u64, 6, 7, 8]).unwrap());
@@ -299,25 +300,26 @@ mod tests {
         // remaining columns are filled with placeholder bytes.
         let id = validated_id.to_bytes();
         let empty: Vec<u8> = vec![];
-        db.write("insert_row", move |tx| {
-            tx.execute(
-                "INSERT INTO validated_transactions \
+        writer
+            .write("insert_row", move |tx| {
+                tx.execute(
+                    "INSERT INTO validated_transactions \
                  (id, block_num, account_id, account_patch, input_notes, output_notes, \
                   initial_account_hash, final_account_hash) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
-            )
-        })
-        .await
-        .unwrap();
+                    &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
+                )
+            })
+            .await
+            .unwrap();
 
-        let validated_exists = db
+        let validated_exists = reader
             .read("transaction_exists", move |tx| transaction_exists(tx, validated_id))
             .await
             .unwrap();
         assert!(validated_exists, "an inserted transaction id should be reported as existing");
 
-        let unknown_exists = db
+        let unknown_exists = reader
             .read("transaction_exists", move |tx| transaction_exists(tx, unknown_id))
             .await
             .unwrap();

@@ -59,7 +59,7 @@ impl ValidatorServer {
         tracing::info!(target: LOG_TARGET, endpoint=?self.address, "Initializing server");
 
         // Initialize database connection.
-        let db = load_with_pool_size(
+        let (writer, reader) = load_with_pool_size(
             self.data_directory.database_path(),
             self.sqlite_connection_pool_size,
         )
@@ -71,7 +71,7 @@ impl ValidatorServer {
             .context("failed to load block store")?;
 
         // Load initial metrics from the database for the in-memory counters.
-        let (initial_chain_tip, initial_tx_count, initial_block_count) = db
+        let (initial_chain_tip, initial_tx_count, initial_block_count) = reader
             .read("load_initial_metrics", |tx| {
                 let tip = load_chain_tip(tx)?.map_or(0, |h| h.block_num().as_u32());
                 let tx_count = u64::try_from(count_validated_transactions(tx)?).unwrap_or(0);
@@ -98,7 +98,8 @@ impl ValidatorServer {
             .add_service(validator_api::service(
                 ValidatorService::new(
                     self.signer,
-                    db,
+                    writer,
+                    reader,
                     block_store,
                     initial_chain_tip,
                     initial_tx_count,

@@ -42,7 +42,7 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
 
         // Short-circuit transactions that have already been validated.
         let already_validated = self
-            .db
+            .reader
             .read("transaction_exists", move |tx| transaction_exists(tx, tx_id))
             .await
             .map_err(|err| {
@@ -59,7 +59,7 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
 
         // Store the validated transaction.
         let count = self
-            .db
+            .writer
             .write("insert_transaction", move |tx| insert_transaction(tx, &tx_info))
             .await
             .map_err(|err| {

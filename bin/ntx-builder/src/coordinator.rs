@@ -12,8 +12,12 @@ use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
 
 use crate::LOG_TARGET;
+#[cfg(test)]
+use crate::actor::ActorRequest;
 use crate::actor::{AccountActor, AccountActorContext};
 use crate::committed_block::CommittedBlockEffects;
+#[cfg(test)]
+use crate::db::NtxDbWriter;
 
 // ACCOUNT VIEW
 // ================================================================================================
@@ -346,13 +350,17 @@ impl Coordinator {
     /// Creates a coordinator with default settings backed by a temp DB. Returns the coordinator,
     /// the temp dir holding the DB file, and the actor request receiver (drop it to discard, or
     /// drive it from the test to inspect actor requests).
-    pub async fn test()
-    -> (Self, tempfile::TempDir, tokio::sync::mpsc::Receiver<crate::actor::ActorRequest>) {
+    pub async fn test() -> (
+        Self,
+        NtxDbWriter,
+        tempfile::TempDir,
+        tokio::sync::mpsc::Receiver<ActorRequest>,
+    ) {
         let (db, dir) = crate::db::test_setup().await;
         let (tx, rx) = tokio::sync::mpsc::channel(8);
         let mut actor_context = AccountActorContext::test(&db);
         actor_context.request_tx = tx;
-        (Self::new(4, 10, actor_context, CancellationToken::new()), dir, rx)
+        (Self::new(4, 10, actor_context, CancellationToken::new()), db, dir, rx)
     }
 }
 
@@ -377,8 +385,7 @@ mod tests {
     }
 
     /// Seeds a committed row for `account_id` so the coordinator's spawn check sees the account.
-    async fn seed_committed_account(coordinator: &Coordinator, account_id: AccountId) {
-        let db = coordinator.actor_context.state.db.clone();
+    async fn seed_committed_account(db: &NtxDbWriter, account_id: AccountId) {
         db.upsert_account_for_test(account_id, mock_account(account_id), mock_transaction_id(0))
             .await
             .unwrap();
@@ -386,10 +393,10 @@ mod tests {
 
     #[tokio::test]
     async fn handle_committed_block_spawns_for_committed_note_target() {
-        let (mut coordinator, _dir, _rx) = Coordinator::test().await;
+        let (mut coordinator, db, _dir, _rx) = Coordinator::test().await;
 
         let target_id = mock_network_account_id();
-        seed_committed_account(&coordinator, target_id).await;
+        seed_committed_account(&db, target_id).await;
 
         let note = mock_single_target_note(target_id, 10);
         let effects = CommittedBlockEffects {
@@ -410,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_committed_block_defers_spawn_until_account_creation_commits() {
-        let (mut coordinator, _dir, _rx) = Coordinator::test().await;
+        let (mut coordinator, db, _dir, _rx) = Coordinator::test().await;
 
         let (account, details) = mock_network_account_update();
         let account_id = account.id();
@@ -437,7 +444,6 @@ mod tests {
 
         // The creation commits in a later block; the builder persists the block's effects to the DB
         // before handing them to the coordinator.
-        let db = coordinator.actor_context.state.db.clone();
         db.upsert_account_for_test(account_id, account, mock_transaction_id(0))
             .await
             .unwrap();
@@ -462,7 +468,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_committed_block_does_not_spawn_for_account_update_only() {
-        let (mut coordinator, _dir, _rx) = Coordinator::test().await;
+        let (mut coordinator, _db, _dir, _rx) = Coordinator::test().await;
 
         let updated_id = mock_network_account_id();
         let effects = CommittedBlockEffects {
@@ -486,7 +492,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_actor_skips_deactivated_account() {
-        let (mut coordinator, _dir, _rx) = Coordinator::test().await;
+        let (mut coordinator, _db, _dir, _rx) = Coordinator::test().await;
 
         let account_id = mock_network_account_id();
         coordinator.crash_counts.insert(account_id, coordinator.max_account_crashes);
@@ -501,7 +507,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_actor_allows_below_threshold() {
-        let (mut coordinator, _dir, _rx) = Coordinator::test().await;
+        let (mut coordinator, _db, _dir, _rx) = Coordinator::test().await;
 
         let account_id = mock_network_account_id();
         coordinator
@@ -518,7 +524,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_committed_block_pushes_view_to_existing_actors() {
-        let (mut coordinator, _dir, _rx) = Coordinator::test().await;
+        let (mut coordinator, db, _dir, _rx) = Coordinator::test().await;
 
         let bystander = mock_network_account_id();
         let mut bystander_rx = register_dummy_actor(&mut coordinator, bystander);
@@ -526,7 +532,7 @@ mod tests {
         let _ = bystander_rx.borrow_and_update();
 
         let target = mock_network_account_id_seeded(42);
-        seed_committed_account(&coordinator, target).await;
+        seed_committed_account(&db, target).await;
         let note = mock_single_target_note(target, 10);
         let effects = CommittedBlockEffects {
             header: mock_block_header(1_u32.into()),
@@ -557,7 +563,7 @@ mod tests {
     /// and a bumped note counter (for the work signal).
     #[tokio::test]
     async fn handle_committed_block_view_carries_landing_and_new_notes() {
-        let (mut coordinator, _dir, _rx) = Coordinator::test().await;
+        let (mut coordinator, _db, _dir, _rx) = Coordinator::test().await;
 
         let account_id = mock_network_account_id();
         // A dummy handle for the targeted account so the coordinator updates it in place instead of

@@ -17,7 +17,7 @@ use url::Url;
 
 use crate::actor::{AccountActorContext, ActorConfig, GrpcClients, State};
 use crate::coordinator::Coordinator;
-use crate::db::NtxDb;
+use crate::db::NtxDbReader;
 
 pub(crate) type NoteError = Arc<dyn ErrorReport + Send + Sync>;
 
@@ -428,7 +428,7 @@ impl NtxBuilderConfig {
         let chain = Arc::new(SharedChainState::new(header, mmr));
 
         let (coordinator, actor_request_rx) =
-            self.build_coordinator(rpc, db.clone(), chain.clone(), shutdown)?;
+            self.build_coordinator(rpc, db.reader(), chain.clone(), shutdown)?;
 
         Ok(NetworkTransactionBuilder::new(
             self,
@@ -449,7 +449,7 @@ impl NtxBuilderConfig {
     fn build_coordinator(
         &self,
         rpc: RpcClient,
-        db: NtxDb,
+        db: NtxDbReader,
         chain: Arc<SharedChainState>,
         shutdown: CancellationToken,
     ) -> anyhow::Result<(Coordinator, mpsc::Receiver<actor::ActorRequest>)> {

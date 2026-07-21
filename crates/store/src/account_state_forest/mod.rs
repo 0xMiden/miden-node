@@ -635,7 +635,9 @@ impl<B: Backend> AccountStateForest<B> {
 
             let raw_map_entries: Vec<(StorageMapKey, Word)> = Vec::from_iter(
                 map_patch.entries().into_iter().flat_map(|e| e.as_map().iter()).filter_map(
-                    |(&key, &value)| if value == EMPTY_WORD { None } else { Some((key, value)) },
+                    |(&key, &value)| {
+                        if value == EMPTY_WORD { None } else { Some((key, value)) }
+                    },
                 ),
             );
 

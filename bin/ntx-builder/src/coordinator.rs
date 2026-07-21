@@ -350,12 +350,8 @@ impl Coordinator {
     /// Creates a coordinator with default settings backed by a temp DB. Returns the coordinator,
     /// the temp dir holding the DB file, and the actor request receiver (drop it to discard, or
     /// drive it from the test to inspect actor requests).
-    pub async fn test() -> (
-        Self,
-        NtxDbWriter,
-        tempfile::TempDir,
-        tokio::sync::mpsc::Receiver<ActorRequest>,
-    ) {
+    pub async fn test()
+    -> (Self, NtxDbWriter, tempfile::TempDir, tokio::sync::mpsc::Receiver<ActorRequest>) {
         let (db, dir) = crate::db::test_setup().await;
         let (tx, rx) = tokio::sync::mpsc::channel(8);
         let mut actor_context = AccountActorContext::test(&db);

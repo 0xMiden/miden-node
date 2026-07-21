@@ -83,19 +83,10 @@ COPY . .
 # as fresh. Touching while holding the lock guarantees sources are newer than
 # anything already in the cache. The mounted ./target is pruned from the walk
 # so cached fingerprints and artifacts keep their original mtimes.
-#
-# Diagnostics for stale-cache debugging: dump the current time and the mtimes
-# of cached fingerprints and sources so "artifact newer than touched sources"
-# anomalies are visible in CI logs, and have Cargo log its per-unit
-# fresh/dirty verdicts.
 RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
-    date --iso-8601=seconds && \
-    (ls -la --time-style=full-iso /app/target/release/.fingerprint/ | grep miden-node-utils || true) && \
     find . -path ./target -prune -o -type f -exec touch {} + && \
-    ls -la --time-style=full-iso /app/crates/utils/src/ && \
-    CARGO_LOG=cargo::core::compiler::fingerprint=info \
     cargo build --release --locked --bin ${BIN} && \
     mkdir -p /app/bin && \
     cp /app/target/release/${BIN} /app/bin/${BIN}

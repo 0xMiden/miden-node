@@ -9,6 +9,7 @@ pub use server::ValidatorServer;
 pub use signers::{
     KmsSigner,
     LocalX25519TransactionInputDecrypter,
+    NextEncryptionKeyInfo,
     TransactionEncryptionKeyInfo,
     TransactionInputDecrypter,
     ValidatorSigner,

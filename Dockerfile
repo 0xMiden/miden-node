@@ -75,16 +75,25 @@ COPY . .
 # incompatible .rlib. Touch all sources to the current time so every
 # workspace crate is always rebuilt; external dependencies are unaffected
 # (they are fingerprinted by checksum and stay cached via `cargo chef cook`).
-RUN find . -exec touch {} +
+#
+# The touch must happen inside the locked RUN below, after the target cache
+# mount is acquired: a concurrent build of another branch can hold the mount
+# and write artifacts into it, and a touch performed before lock acquisition
+# would leave those artifacts newer than our sources, making Cargo treat them
+# as fresh. Touching while holding the lock guarantees sources are newer than
+# anything already in the cache. The mounted ./target is pruned from the walk
+# so cached fingerprints and artifacts keep their original mtimes.
+#
 # Diagnostics for stale-cache debugging: dump the current time and the mtimes
 # of cached fingerprints and sources so "artifact newer than touched sources"
-# anomalies (e.g. written by a concurrent build after our touch step) are
-# visible in CI logs, and have Cargo log its per-unit fresh/dirty verdicts.
+# anomalies are visible in CI logs, and have Cargo log its per-unit
+# fresh/dirty verdicts.
 RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
     date --iso-8601=seconds && \
     (ls -la --time-style=full-iso /app/target/release/.fingerprint/ | grep miden-node-utils || true) && \
+    find . -path ./target -prune -o -type f -exec touch {} + && \
     ls -la --time-style=full-iso /app/crates/utils/src/ && \
     CARGO_LOG=cargo::core::compiler::fingerprint=info \
     cargo build --release --locked --bin ${BIN} && \

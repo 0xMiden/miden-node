@@ -5,7 +5,8 @@ ARG DEBIAN_RELEASE=bookworm
 ARG BIN
 ARG PORT
 
-FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS chef
+FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS builder
+ARG BIN
 # Disable incremental compilation: Docker normalises COPY timestamps, which
 # breaks Rust's mtime-based fingerprinting and causes stale .rlib reuse.
 # The /app/target cache still accelerates builds via pre-compiled dep .rlibs.
@@ -22,24 +23,7 @@ RUN apt-get update && \
         libssl-dev \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
-RUN cargo install cargo-chef
 WORKDIR /app
-
-
-FROM chef AS planner
-ARG BIN
-COPY . .
-# Scope the recipe to this binary's dependency graph. Different binaries in
-# this workspace enable different, non-overlapping feature sets on shared
-# deps (e.g. miden-protocol, miden-tx); preparing/cooking for the whole
-# workspace would resolve a feature union that never matches what `cargo
-# build --bin ${BIN}` below actually needs, forcing those crates (and
-# everything downstream of them) to recompile on every build regardless of
-# caching.
-RUN cargo chef prepare --recipe-path recipe.json --bin ${BIN}
-
-FROM chef AS builder
-ARG BIN
 # Automatic per-platform arg (no manual wiring needed for multi-platform
 # buildx builds). Used, together with BIN, to key the cache mounts below so
 # that amd64 and arm64 builds never share compiled objects or checkouts —
@@ -60,30 +44,21 @@ ARG BIN
 # BuildKit-level serialization is redundant there and would needlessly make
 # every matrix job queue on a single registry mount.
 ARG TARGETARCH
-# Disable incremental compilation: Docker normalises COPY timestamps, which
-# breaks Rust's mtime-based fingerprinting and causes stale .rlib reuse.
-# The /app/target cache still accelerates builds via pre-compiled dep .rlibs.
-ENV CARGO_INCREMENTAL=0
-COPY --from=planner /app/recipe.json recipe.json
-# Build dependencies while preserving Cargo artifacts across layer invalidations.
-#
-# Cache Cargo's git DB, but leave checkout worktrees ephemeral; shared checkout
-# caches are fragile when concurrent CI builds race or a build is interrupted.
-RUN --mount=type=cache,sharing=shared,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=shared,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
-    cargo chef cook --release --recipe-path recipe.json --bin ${BIN}
 # Build application
 COPY . .
 # Cargo's fingerprinting for workspace path crates is mtime-based: a crate is
 # rebuilt only if a source file is newer than the cached artifact. The
-# /app/target cache mount above is shared across branches and PRs on the
+# /app/target cache mount below is shared across branches and PRs on the
 # persistent builder, so its artifacts may come from source that differs from
 # this build context, and any source mtime older than those artifacts (local
 # checkouts, git-derived timestamps) makes Cargo silently link a stale,
 # incompatible .rlib. Touch all sources to the current time so every
 # workspace crate is always rebuilt; external dependencies are unaffected
-# (they are fingerprinted by checksum and stay cached via `cargo chef cook`).
+# (they are fingerprinted by checksum, not mtime, and stay cached in the
+# mounted target dir across builds).
+#
+# Cache Cargo's git DB, but leave checkout worktrees ephemeral; shared checkout
+# caches are fragile when concurrent CI builds race or a build is interrupted.
 #
 # The touch must happen inside the locked RUN below, after the target cache
 # mount is acquired: a concurrent build of another branch can hold the mount

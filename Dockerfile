@@ -50,6 +50,15 @@ ARG BIN
 # invalidating) a shared, lock-guarded mount for artifacts they can't reuse
 # anyway. Registry/git-db mounts stay arch-only since raw sources have no
 # feature dependence and are worth sharing across binaries.
+#
+# Sharing modes: the target mount is sharing=locked because the correctness
+# of the touch-then-build sequence below requires that no other build can
+# write artifacts into it between the touch and the build. The registry and
+# git-db mounts are sharing=shared: Cargo coordinates concurrent access to
+# CARGO_HOME with its own file locks (downloads and index updates take the
+# package-cache lock; extracted sources are immutable once unpacked), so
+# BuildKit-level serialization is redundant there and would needlessly make
+# every matrix job queue on a single registry mount.
 ARG TARGETARCH
 # Disable incremental compilation: Docker normalises COPY timestamps, which
 # breaks Rust's mtime-based fingerprinting and causes stale .rlib reuse.
@@ -60,8 +69,8 @@ COPY --from=planner /app/recipe.json recipe.json
 #
 # Cache Cargo's git DB, but leave checkout worktrees ephemeral; shared checkout
 # caches are fragile when concurrent CI builds race or a build is interrupted.
-RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
+RUN --mount=type=cache,sharing=shared,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=shared,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
     cargo chef cook --release --recipe-path recipe.json --bin ${BIN}
 # Build application
@@ -83,8 +92,8 @@ COPY . .
 # as fresh. Touching while holding the lock guarantees sources are newer than
 # anything already in the cache. The mounted ./target is pruned from the walk
 # so cached fingerprints and artifacts keep their original mtimes.
-RUN --mount=type=cache,sharing=locked,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=locked,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
+RUN --mount=type=cache,sharing=shared,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=shared,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
     find . -path ./target -prune -o -type f -exec touch {} + && \
     cargo build --release --locked --bin ${BIN} && \

@@ -1,6 +1,5 @@
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Context;
 use futures::Stream;
@@ -21,14 +20,6 @@ use crate::db::{Db, LoopDb};
 use crate::server::NtxBuilderRpcServer;
 use crate::{LOG_TARGET, NtxBuilderConfig};
 
-/// How often the steady-state loop emits a chain-following liveness signal.
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
-
-/// How long without applying a committed block before the heartbeat escalates to a warning. This
-/// makes a stalled subscription visible in the logs (silence would otherwise look identical to an
-/// idle chain). Kept above the node's block interval so a briefly quiet chain does not warn.
-const STALENESS_WARN_THRESHOLD: Duration = Duration::from_secs(90);
-
 /// Discriminator returned by the steady-state `select!` so the dispatch can run on a fully-owned
 /// `&mut self` instead of three concurrent borrows. The `Block` variant is boxed since a
 /// `SignedBlock` dwarfs the other two payloads.
@@ -36,8 +27,6 @@ enum SteadyStateAction {
     Block(Box<Option<Result<(SignedBlock, BlockNumber), RpcError>>>),
     Request(Option<ActorRequest>),
     Respawn(Option<miden_protocol::account::AccountId>),
-    /// Periodic liveness tick: log whether the builder is still following the chain.
-    Heartbeat,
     Shutdown,
 }
 
@@ -182,16 +171,6 @@ impl NetworkTransactionBuilder {
             self.coordinator.spawn_actor_when_committed(account_id).await?;
         }
 
-        // Liveness heartbeat: gives operators a positive "still following the chain" signal and,
-        // crucially, escalates to a warning when no block has been applied for a while — so a
-        // stalled subscription is distinguishable from a genuinely idle chain instead of looking
-        // like identical silence.
-        let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
-        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        // Consume the immediate first tick so the first heartbeat waits a full interval.
-        heartbeat.tick().await;
-        let mut last_block_at = tokio::time::Instant::now();
-
         // Phase 3: drive actors per committed block, plus serialize their DB writes.
         loop {
             // Split `&mut self` into disjoint borrows so each `select!` arm holds only the one
@@ -207,7 +186,6 @@ impl NetworkTransactionBuilder {
                     block = block_stream.next() => SteadyStateAction::Block(Box::new(block)),
                     request = actor_request_rx.recv() => SteadyStateAction::Request(request),
                     respawn = coordinator.next() => SteadyStateAction::Respawn(respawn?),
-                    _ = heartbeat.tick() => SteadyStateAction::Heartbeat,
                 }
             };
 
@@ -219,10 +197,6 @@ impl NetworkTransactionBuilder {
                         .apply_committed_block_with_effects(&loop_db, block, committed_tip)
                         .await?;
                     self.coordinator.handle_committed_block(&effects).await?;
-                    last_block_at = tokio::time::Instant::now();
-                },
-                SteadyStateAction::Heartbeat => {
-                    log_chain_follow_heartbeat(self.last_applied_block, last_block_at.elapsed());
                 },
                 SteadyStateAction::Request(request) => {
                     let Some(request) = request else {
@@ -305,27 +279,6 @@ impl NetworkTransactionBuilder {
         self.last_applied_block = block_num;
 
         Ok(effects)
-    }
-}
-
-/// Emits the steady-state liveness heartbeat: a debug line while blocks are flowing, escalating to
-/// a warning once no committed block has been applied for [`STALENESS_WARN_THRESHOLD`] so a stalled
-/// subscription is distinguishable from a genuinely idle chain.
-fn log_chain_follow_heartbeat(last_applied_block: BlockNumber, elapsed: Duration) {
-    if elapsed >= STALENESS_WARN_THRESHOLD {
-        tracing::warn!(
-            target: LOG_TARGET,
-            %last_applied_block,
-            stale_for_s = elapsed.as_secs(),
-            "no committed block applied recently; block subscription may be stalled",
-        );
-    } else {
-        tracing::debug!(
-            target: LOG_TARGET,
-            %last_applied_block,
-            since_last_block_s = elapsed.as_secs(),
-            "ntx-builder following chain",
-        );
     }
 }
 

@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use miden_node_utils::tracing::miden_instrument;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use backon::ExponentialBuilder;
 use futures::stream::{BoxStream, TryStreamExt};
@@ -51,8 +51,11 @@ type BlockSubscriptionItem = Result<(SignedBlock, BlockNumber), RpcError>;
 /// exponentially inside [`RpcClient::block_subscription_with_retry`].
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
-/// Maximum time to wait for the next committed block before treating the subscription as stalled
-/// and forcing a reconnect.
+/// How long a single `stream.next()` poll waits before re-evaluating liveness.
+const BLOCK_POLL_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Maximum time without a committed block before treating the subscription as stalled and forcing a
+/// reconnect.
 ///
 /// This is a defensive backstop for a silently dropped connection that never surfaces an error on
 /// its own (client HTTP/2 keepalive is the primary, faster detector). It must be comfortably larger
@@ -176,8 +179,8 @@ impl RpcClient {
         let client = self.clone();
 
         futures::stream::unfold(
-            (client, block_from, None),
-            |(client, mut next_from, mut inner)| async move {
+            (client, block_from, None, Instant::now()),
+            |(client, mut next_from, mut inner, mut last_block)| async move {
                 loop {
                     // Open the subscription if we don't hold a live one. The connect itself retries
                     // indefinitely with exponential backoff.
@@ -189,6 +192,9 @@ impl RpcClient {
                                     target: COMPONENT, %next_from,
                                     "block subscription connected",
                                 );
+                                // Reset the stall clock so time spent (re)connecting is not counted
+                                // against the next block's arrival.
+                                last_block = Instant::now();
                                 inner.insert(stream)
                             },
                             Err(err) => {
@@ -202,13 +208,17 @@ impl RpcClient {
                         },
                     };
 
-                    // A silently dropped connection can leave `stream.next()` pending forever with
-                    // no error, so bound the wait: if no block arrives within `STALL_TIMEOUT`,
-                    // treat the subscription as stalled and reconnect.
-                    match tokio::time::timeout(STALL_TIMEOUT, stream.next()).await {
+                    // Poll on a short timeout so a silently dropped connection stays observable.
+                    // Each quiet poll emits a liveness log; once no block has arrived for
+                    // `STALL_TIMEOUT` the subscription is treated as stalled and reconnected.
+                    match tokio::time::timeout(BLOCK_POLL_TIMEOUT, stream.next()).await {
                         Ok(Some(Ok((block, committed_tip)))) => {
                             next_from = block.header().block_num().child();
-                            return Some((Ok((block, committed_tip)), (client, next_from, inner)));
+                            last_block = Instant::now();
+                            return Some((
+                                Ok((block, committed_tip)),
+                                (client, next_from, inner, last_block),
+                            ));
                         },
                         Ok(Some(Err(err))) => tracing::warn!(
                             target: COMPONENT, err = %err.as_report(), %next_from,
@@ -218,15 +228,30 @@ impl RpcClient {
                             target: COMPONENT, %next_from,
                             "block subscription closed by node, reconnecting",
                         ),
-                        Err(_elapsed) => tracing::warn!(
-                            target: COMPONENT, %next_from,
-                            stall_timeout_s = STALL_TIMEOUT.as_secs(),
-                            "no block received within stall timeout; treating subscription as stalled, reconnecting",
-                        ),
+                        Err(_elapsed) => {
+                            let idle = last_block.elapsed();
+                            if idle < STALL_TIMEOUT {
+                                // Quiet but not yet stalled: emit a liveness signal and keep
+                                // polling the same stream instead of reconnecting.
+                                tracing::debug!(
+                                    target: COMPONENT, %next_from,
+                                    idle = %humantime::format_duration(Duration::from_secs(idle.as_secs())),
+                                    "no block received recently; subscription still open",
+                                );
+                                continue;
+                            }
+                            tracing::warn!(
+                                target: COMPONENT, %next_from,
+                                idle = %humantime::format_duration(Duration::from_secs(idle.as_secs())),
+                                stall_timeout = %humantime::format_duration(STALL_TIMEOUT),
+                                "no block received within stall timeout; treating subscription as stalled, reconnecting",
+                            );
+                        },
                     }
 
-                    // The subscription dropped: discard it, pace the reconnect, and resume from the
-                    // next un-applied block on the following loop iteration.
+                    // Reached on an error/close/stall branch: discard the stream, pace the
+                    // reconnect, and resume from the next un-applied block on the following
+                    // iteration.
                     inner = None;
                     tokio::time::sleep(RECONNECT_DELAY).await;
                 }

@@ -6,7 +6,16 @@ mod tx_validation;
 
 pub use data_directory::DataDirectory;
 pub use server::ValidatorServer;
-pub use signers::{KmsSigner, ValidatorSigner};
+pub use signers::{
+    KmsSigner,
+    LocalX25519TransactionInputDecrypter,
+    NextEncryptionKeyInfo,
+    TransactionEncryptionKeyInfo,
+    TransactionInputDecrypter,
+    ValidatorSigner,
+    attestation_commitment,
+    decrypt_key_material,
+};
 
 // CONSTANTS
 // =================================================================================================

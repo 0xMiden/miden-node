@@ -239,7 +239,7 @@ impl<B: Backend> AccountStateForest<B> {
     /// remains the latest version of its lineage until it is recreated; pruning cannot discard that
     /// latest version. The `account_state_forest` benchmark tracks the resulting recreation cost so
     /// this fallback remains visible until the forest API provides a constant-size reset primitive.
-    fn remove_current_tree_operations(
+    fn build_current_tree_removal_operations(
         &self,
         lineage: LineageId,
     ) -> Result<Vec<SmtForestOperation>, LargeSmtForestError> {
@@ -372,7 +372,7 @@ impl<B: Backend> AccountStateForest<B> {
             }
 
             let mut operations = if map_patch.patch_op() == StoragePatchOperation::Create {
-                self.remove_current_tree_operations(lineage)?
+                self.build_current_tree_removal_operations(lineage)?
             } else {
                 Vec::new()
             };

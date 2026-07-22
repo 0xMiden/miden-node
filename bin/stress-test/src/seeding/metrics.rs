@@ -3,28 +3,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const SQLITE_TABLES: &[&str] = &[
-    "accounts",
-    "block_headers",
-    "notes",
-    "note_scripts",
-    "nullifiers",
-    "transactions",
-];
-
-const SQLITE_INDEXES: &[&str] = &[
-    "idx_accounts_network_prefix",
-    "idx_notes_note_id",
-    "idx_notes_sender",
-    "idx_notes_tag",
-    "idx_notes_nullifier",
-    "idx_unconsumed_network_notes",
-    "idx_nullifiers_prefix",
-    "idx_nullifiers_block_num",
-    "idx_transactions_account_id",
-    "idx_transactions_block_num",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BlockKind {
     AccountNoteEmission,
@@ -41,7 +19,7 @@ impl Display for BlockKind {
             Self::UpdateNoteEmission => "update-note-emission",
             Self::AccountUpdate => "account-update",
         };
-        f.write_str(name)
+        f.pad(name)
     }
 }
 
@@ -182,9 +160,9 @@ impl SeedingMetrics {
                 "Note: Database contains {account_count} accounts and {note_count} notes across all blocks."
             )?;
         }
-        writeln!(f, "{:<35} {:<15} {:<15}", "Table", "Size (MB)", "KB/Entry")?;
-        writeln!(f, "{}", "-".repeat(70))?;
-        for table in SQLITE_TABLES {
+        writeln!(f, "{:<55} {:<15} {:<15}", "Table", "Size (MB)", "KB/Entry")?;
+        writeln!(f, "{}", "-".repeat(85))?;
+        for table in self.schema_object_names("table") {
             let db_stats = Command::new("sqlite3")
                 .arg(&self.store_file)
                 .arg(format!(
@@ -206,9 +184,26 @@ impl SeedingMetrics {
                 }
             });
 
-            writeln!(f, "{:<35} {:<15.1} {:<15}", stats[0], size_mb, kb_per_entry)?;
+            writeln!(f, "{:<55} {:<15.1} {:<15}", stats[0], size_mb, kb_per_entry)?;
         }
         Ok(())
+    }
+
+    /// Lists the names of the tables or indexes in the store, so the stats stay in sync with the
+    /// schema instead of relying on a hardcoded list.
+    fn schema_object_names(&self, kind: &str) -> Vec<String> {
+        let output = Command::new("sqlite3")
+            .arg(&self.store_file)
+            .arg(format!(
+                "SELECT name FROM sqlite_master WHERE type = '{kind}' AND name NOT LIKE 'sqlite_%' ORDER BY name;"
+            ))
+            .output()
+            .expect("failed to execute process");
+        String::from_utf8(output.stdout)
+            .expect("invalid utf8")
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     fn table_row_count(&self, table: &str) -> Option<u64> {
@@ -223,9 +218,9 @@ impl SeedingMetrics {
     /// Prints the index stats.
     fn print_index_stats(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "\nIndex stats:")?;
-        writeln!(f, "{:<35} {:<15}", "Index", "Size (MB)")?;
-        writeln!(f, "{}", "-".repeat(70))?;
-        for index in SQLITE_INDEXES {
+        writeln!(f, "{:<55} {:<15}", "Index", "Size (MB)")?;
+        writeln!(f, "{}", "-".repeat(85))?;
+        for index in self.schema_object_names("index") {
             let db_stats = Command::new("sqlite3")
                 .arg(&self.store_file)
                 .arg(format!(
@@ -240,7 +235,7 @@ impl SeedingMetrics {
             let size_mb = stats.get(1).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.0)
                 / (1024.0 * 1024.0);
 
-            writeln!(f, "{:<35} {:<15.1}", stats[0], size_mb)?;
+            writeln!(f, "{:<55} {:<15.1}", stats[0], size_mb)?;
         }
         Ok(())
     }

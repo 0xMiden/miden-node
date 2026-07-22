@@ -195,6 +195,28 @@ fn insert_block_header(conn: &mut SqliteConnection, block_num: BlockNumber) {
         .expect("Failed to insert block header");
 }
 
+fn precomputed_state_from_account(account: &Account) -> PrecomputedPublicAccountState {
+    PrecomputedPublicAccountState {
+        vault_root: account.vault().root(),
+        storage_map_roots: account
+            .storage()
+            .slots()
+            .iter()
+            .filter_map(|slot| match slot.content() {
+                StorageSlotContent::Map(map) => Some((slot.name().clone(), map.root())),
+                StorageSlotContent::Value(_) => None,
+            })
+            .collect(),
+    }
+}
+
+fn precomputed_states_from_account(account: &Account) -> PrecomputedPublicAccountStates {
+    PrecomputedPublicAccountStates::from_iter([(
+        account.id(),
+        precomputed_state_from_account(account),
+    )])
+}
+
 fn create_account_with_map_storage(
     slot_name: StorageSlotName,
     entries: Vec<(StorageMapKey, Word)>,
@@ -284,7 +306,13 @@ fn test_select_account_header_at_block_returns_correct_header() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("upsert_accounts failed");
 
     // Query the account header
     let (header, _storage_header) =
@@ -321,7 +349,13 @@ fn test_select_account_header_at_block_historical_query() {
         AccountUpdateDetails::Public(patch_1),
     );
 
-    upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update_1],
+        block_num_1,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("First upsert failed");
 
     // Query at block 1 - should return the account
     let (header_1, _) =
@@ -360,7 +394,13 @@ fn test_select_account_vault_at_block_empty() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("upsert_accounts failed");
 
     // Query vault - should return empty (the test account has no assets)
     let assets = select_account_vault_at_block(&mut conn, account_id, block_num)
@@ -396,7 +436,12 @@ fn test_upsert_accounts_inserts_storage_header() {
     );
 
     // Upsert account
-    let result = upsert_accounts(&mut conn, &[account_update], block_num);
+    let result = upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    );
     assert!(result.is_ok(), "upsert_accounts failed: {:?}", result.err());
     assert_eq!(result.unwrap(), 1, "Expected 1 account to be inserted");
 
@@ -443,6 +488,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     let account_commitment_1 = account.to_commitment();
 
     // First update with original account - full state patch
+    let precomputed_1 = precomputed_states_from_account(&account);
     let patch_1 = AccountPatch::try_from(account).unwrap();
 
     let account_update_1 = BlockAccountUpdate::new(
@@ -451,7 +497,8 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         AccountUpdateDetails::Public(patch_1),
     );
 
-    upsert_accounts(&mut conn, &[account_update_1], block_num_1).expect("First upsert failed");
+    upsert_accounts(&mut conn, &[account_update_1], block_num_1, &precomputed_1)
+        .expect("First upsert failed");
 
     // Create modified account with different storage value
     let storage_value_modified = Word::from([
@@ -488,6 +535,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     let account_commitment_2 = account_2.to_commitment();
 
     // Second update with modified account - full state patch
+    let precomputed_2 = precomputed_states_from_account(&account_2);
     let patch_2 = AccountPatch::try_from(account_2).unwrap();
 
     let account_update_2 = BlockAccountUpdate::new(
@@ -496,7 +544,8 @@ fn test_upsert_accounts_updates_is_latest_flag() {
         AccountUpdateDetails::Public(patch_2),
     );
 
-    upsert_accounts(&mut conn, &[account_update_2], block_num_2).expect("Second upsert failed");
+    upsert_accounts(&mut conn, &[account_update_2], block_num_2, &precomputed_2)
+        .expect("Second upsert failed");
 
     // Verify 2 total account rows exist (both historical records)
     let total_accounts: i64 = schema::accounts::table
@@ -595,8 +644,13 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_num)
-        .expect("Upsert with multiple storage slots failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("Upsert with multiple storage slots failed");
 
     // Query back and verify
     let queried_storage =
@@ -666,8 +720,13 @@ fn test_upsert_accounts_with_empty_storage() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_num)
-        .expect("Upsert with empty storage failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("Upsert with empty storage failed");
 
     // Query back and verify
     let queried_storage =
@@ -741,7 +800,13 @@ fn test_select_latest_account_storage_ordering_semantics() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("upsert_accounts failed");
 
     let storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
@@ -803,7 +868,13 @@ fn test_select_latest_account_storage_multiple_slots() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_num).expect("upsert_accounts failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_num,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("upsert_accounts failed");
 
     let storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
@@ -842,7 +913,8 @@ fn test_select_latest_account_storage_slot_updates() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_1).expect("upsert_accounts failed");
+    upsert_accounts(&mut conn, &[account_update], block_1, &PrecomputedPublicAccountStates::new())
+        .expect("upsert_accounts failed");
 
     let map_patch = StorageMapPatch::from_iters([], [(key_1, value_2), (key_2, value_3)]);
     let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
@@ -864,6 +936,7 @@ fn test_select_latest_account_storage_slot_updates() {
     let mut expected_account = account.clone();
     expected_account.apply_patch(&partial_patch).unwrap();
     let expected_commitment = expected_account.to_commitment();
+    let precomputed_public_states = precomputed_states_from_account(&expected_account);
 
     let account_update = BlockAccountUpdate::new(
         account_id,
@@ -871,7 +944,8 @@ fn test_select_latest_account_storage_slot_updates() {
         AccountUpdateDetails::Public(partial_patch),
     );
 
-    upsert_accounts(&mut conn, &[account_update], block_2).expect("upsert_accounts failed");
+    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
+        .expect("upsert_accounts failed");
 
     let storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
@@ -921,8 +995,13 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     );
 
     for block in [block_1, block_2, block_3] {
-        upsert_accounts(&mut conn, std::slice::from_ref(&account_update), block)
-            .expect("upsert_accounts failed");
+        upsert_accounts(
+            &mut conn,
+            std::slice::from_ref(&account_update),
+            block,
+            &precomputed_states_from_account(&account),
+        )
+        .expect("upsert_accounts failed");
     }
 
     // Insert vault asset at block 1: vault_key_1 = 1000 tokens
@@ -1003,8 +1082,13 @@ fn test_select_account_vault_at_block_bounds_read_to_limit() {
         account.to_commitment(),
         AccountUpdateDetails::Public(patch),
     );
-    upsert_accounts(&mut conn, std::slice::from_ref(&account_update), block_1)
-        .expect("upsert_accounts failed");
+    upsert_accounts(
+        &mut conn,
+        std::slice::from_ref(&account_update),
+        block_1,
+        &PrecomputedPublicAccountStates::new(),
+    )
+    .expect("upsert_accounts failed");
 
     // Insert two assets more than the return limit, each with a distinct vault key.
     let faucet_id = AccountIdBuilder::new()
@@ -1054,8 +1138,13 @@ fn test_select_account_vault_at_block_exponential_updates() {
     );
 
     for block in &blocks {
-        upsert_accounts(&mut conn, std::slice::from_ref(&account_update), *block)
-            .expect("upsert_accounts failed");
+        upsert_accounts(
+            &mut conn,
+            std::slice::from_ref(&account_update),
+            *block,
+            &precomputed_states_from_account(&account),
+        )
+        .expect("upsert_accounts failed");
     }
 
     let vault_key = AssetId::new_fungible(faucet_id);
@@ -1112,8 +1201,13 @@ fn test_select_account_vault_at_block_with_deletion() {
     );
 
     for block in [block_1, block_2, block_3] {
-        upsert_accounts(&mut conn, std::slice::from_ref(&account_update), block)
-            .expect("upsert_accounts failed");
+        upsert_accounts(
+            &mut conn,
+            std::slice::from_ref(&account_update),
+            block,
+            &precomputed_states_from_account(&account),
+        )
+        .expect("upsert_accounts failed");
     }
 
     // Insert vault asset at block 1
@@ -1254,12 +1348,22 @@ fn test_prune_account_code_retains_latest_after_code_change() {
     let code_commitment_b = account_b.code().commitment();
 
     // Block 0: insert account with code A.
-    upsert_accounts(&mut conn, &[make_full_state_update(&account_a)], block_0)
-        .expect("initial upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_a)],
+        block_0,
+        &precomputed_states_from_account(&account_a),
+    )
+    .expect("initial upsert failed");
 
     // Block RETENTION+1: update the same account ID to code B via a full-state delta.
-    upsert_accounts(&mut conn, &[make_full_state_update(&account_b)], block_code_b)
-        .expect("code-change upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_b)],
+        block_code_b,
+        &precomputed_states_from_account(&account_b),
+    )
+    .expect("code-change upsert failed");
 
     assert_eq!(count_account_codes(&mut conn), 2, "both codes must exist before pruning");
 
@@ -1326,14 +1430,29 @@ fn test_prune_account_code_retains_revisited_code() {
     let code_commitment_b = account_b.code().commitment();
 
     // Block 0: code A.
-    upsert_accounts(&mut conn, &[make_full_state_update(&account_a)], block_0)
-        .expect("block 0 upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_a)],
+        block_0,
+        &precomputed_states_from_account(&account_a),
+    )
+    .expect("block 0 upsert failed");
     // Block RETENTION+1: code B.
-    upsert_accounts(&mut conn, &[make_full_state_update(&account_b)], block_code_b)
-        .expect("block code_b upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_b)],
+        block_code_b,
+        &precomputed_states_from_account(&account_b),
+    )
+    .expect("block code_b upsert failed");
     // Block RETENTION+2: back to code A.
-    upsert_accounts(&mut conn, &[make_full_state_update(&account_a)], block_code_a_again)
-        .expect("block code_a_again upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_a)],
+        block_code_a_again,
+        &precomputed_states_from_account(&account_a),
+    )
+    .expect("block code_a_again upsert failed");
 
     // Before pruning: both codes must be in account_codes (code A inserted once via ON CONFLICT DO
     // NOTHING, code B inserted once).

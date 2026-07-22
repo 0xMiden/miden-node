@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
 use miden_protocol::block::account_tree::AccountMutationSet;
 use miden_protocol::block::nullifier_tree::{NullifierMutationSet, NullifierTree};
@@ -22,7 +23,11 @@ use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::serde::Serializable;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::account_state_forest::{AccountStateForest, AccountStateForestBackend};
+use crate::account_state_forest::{
+    AccountStateForest,
+    AccountStateForestBackend,
+    PreparedAccountStateForestBlockUpdate,
+};
 use crate::accounts::AccountTreeWithHistory;
 use crate::blocks::BlockStore;
 use crate::db::{Db, NoteRecord};
@@ -118,6 +123,14 @@ pub(super) struct BlockWriter {
     pub snapshots_live: Arc<AtomicUsize>,
 }
 
+/// Note records and state mutations computed from a validated block, before any modifications.
+struct PreparedBlockUpdate {
+    notes: Vec<(NoteRecord, Option<Nullifier>)>,
+    nullifier_tree_update: NullifierMutationSet,
+    account_tree_update: AccountMutationSet,
+    account_forest_update: PreparedAccountStateForestBlockUpdate<AccountStateForestBackend>,
+}
+
 impl BlockWriter {
     /// Runs the writer loop, processing requests until all write handles are dropped.
     pub async fn run(mut self) {
@@ -168,31 +181,12 @@ impl BlockWriter {
         // Compute the tree and forest mutations and note records upfront, before any modifications.
         // The writer is the sole forest mutator, so the precomputed forest update stays valid until
         // it is applied after the DB commit below.
-        let (notes, nullifier_tree_update, account_tree_update, account_forest_update) =
-            tokio::task::block_in_place(|| {
-                let notes = Self::build_note_records(header, body)?;
-                let (nullifier_tree_update, account_tree_update) =
-                    self.compute_tree_mutations(header, body)?;
-
-                // Public account updates carry patches; private accounts are filtered out since
-                // they don't expose their state changes.
-                let account_patches =
-                    body.updated_accounts().iter().filter_map(|update| match update.details() {
-                        AccountUpdateDetails::Public(patch) => Some(patch.clone()),
-                        AccountUpdateDetails::Private => None,
-                    });
-                let account_forest_update = self
-                    .forest
-                    .compute_block_update_mutations(block_num, account_patches)
-                    .map_err(ApplyBlockError::AccountStateForestPreparation)?;
-
-                Ok::<_, ApplyBlockError>((
-                    notes,
-                    nullifier_tree_update,
-                    account_tree_update,
-                    account_forest_update,
-                ))
-            })?;
+        let PreparedBlockUpdate {
+            notes,
+            nullifier_tree_update,
+            account_tree_update,
+            account_forest_update,
+        } = tokio::task::block_in_place(|| self.prepare_block_update(header, body))?;
         let precomputed_public_states = account_forest_update.account_states.clone();
 
         // Save the block to the block store. In a case of a failed DB transaction, the in-memory
@@ -210,39 +204,17 @@ impl BlockWriter {
             .await
             .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
-        // Apply the mutations to the writer-owned trees and build the new snapshot from reader
-        // views of them. The reader views are point-in-time storage snapshots, so no tree data is
-        // copied. The DB is committed at this point, so a failed mutation would leave the trees
-        // divergent from canonical state and the process must abort.
-        let snapshot =
-            tokio::task::block_in_place(|| {
-                self.nullifier_tree.apply_mutations(nullifier_tree_update).unwrap_or_else(
-                    |error| Self::abort_after_post_commit_failure("nullifier tree", &error),
-                );
-
-                self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
-                    Self::abort_after_post_commit_failure("account tree", &error)
-                });
-
-                self.blockchain.push(block_commitment);
-
-                self.forest
-                    .apply_precomputed_block_update(block_num, account_forest_update)
-                    .unwrap_or_else(|error| {
-                        Self::abort_after_post_commit_failure("account-state forest", &error)
-                    });
-
-                Arc::new(InMemoryState {
-                    nullifier_tree: self
-                        .nullifier_tree
-                        .reader()
-                        .expect("nullifier tree snapshot creation should not fail"),
-                    account_tree: self.account_tree.reader(),
-                    blockchain: self.blockchain.clone(),
-                    forest: self.forest.reader().expect("forest snapshot creation should not fail"),
-                    _guard: SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
-                })
-            });
+        // The DB is committed at this point, so the prepared mutations must be applied and any
+        // failure to do so aborts the process.
+        let snapshot = tokio::task::block_in_place(|| {
+            self.apply_prepared_mutations(
+                block_num,
+                block_commitment,
+                nullifier_tree_update,
+                account_tree_update,
+                account_forest_update,
+            )
+        });
 
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
         // see the updated state. Readers holding the old snapshot continue unaffected.
@@ -267,6 +239,86 @@ impl BlockWriter {
         tracing::debug!(target: LOG_TARGET, "Block applied");
 
         Ok(())
+    }
+
+    /// Computes the note records and all tree and forest mutations for a block, without mutating
+    /// any state.
+    ///
+    /// May block on backend I/O, so it must run on Tokio's blocking path. The returned forest
+    /// update is bound to the forest state observed here; it remains valid until applied because
+    /// the writer is the sole forest mutator.
+    fn prepare_block_update(
+        &self,
+        header: &BlockHeader,
+        body: &BlockBody,
+    ) -> Result<PreparedBlockUpdate, ApplyBlockError> {
+        let notes = Self::build_note_records(header, body)?;
+        let (nullifier_tree_update, account_tree_update) =
+            self.compute_tree_mutations(header, body)?;
+
+        // Public account updates carry patches; private accounts are filtered out since they don't
+        // expose their state changes.
+        let account_patches =
+            body.updated_accounts().iter().filter_map(|update| match update.details() {
+                AccountUpdateDetails::Public(patch) => Some(patch.clone()),
+                AccountUpdateDetails::Private => None,
+            });
+        let account_forest_update = self
+            .forest
+            .compute_block_update_mutations(header.block_num(), account_patches)
+            .map_err(ApplyBlockError::AccountStateForestPreparation)?;
+
+        Ok(PreparedBlockUpdate {
+            notes,
+            nullifier_tree_update,
+            account_tree_update,
+            account_forest_update,
+        })
+    }
+
+    /// Applies the prepared mutations to the writer-owned trees and builds the new snapshot from
+    /// reader views of them. The reader views are point-in-time storage snapshots, so no tree data
+    /// is copied.
+    ///
+    /// Must only be called after the corresponding DB commit: at that point the mutations are part
+    /// of canonical state, so a failure to apply them leaves the trees divergent and aborts the
+    /// process. May block on backend I/O, so it must run on Tokio's blocking path.
+    fn apply_prepared_mutations(
+        &mut self,
+        block_num: BlockNumber,
+        block_commitment: Word,
+        nullifier_tree_update: NullifierMutationSet,
+        account_tree_update: AccountMutationSet,
+        account_forest_update: PreparedAccountStateForestBlockUpdate<AccountStateForestBackend>,
+    ) -> Arc<InMemoryState> {
+        self.nullifier_tree
+            .apply_mutations(nullifier_tree_update)
+            .unwrap_or_else(|error| {
+                Self::abort_after_post_commit_failure("nullifier tree", &error)
+            });
+
+        self.account_tree
+            .apply_mutations(account_tree_update)
+            .unwrap_or_else(|error| Self::abort_after_post_commit_failure("account tree", &error));
+
+        self.blockchain.push(block_commitment);
+
+        self.forest
+            .apply_precomputed_block_update(block_num, account_forest_update)
+            .unwrap_or_else(|error| {
+                Self::abort_after_post_commit_failure("account-state forest", &error)
+            });
+
+        Arc::new(InMemoryState {
+            nullifier_tree: self
+                .nullifier_tree
+                .reader()
+                .expect("nullifier tree snapshot creation should not fail"),
+            account_tree: self.account_tree.reader(),
+            blockchain: self.blockchain.clone(),
+            forest: self.forest.reader().expect("forest snapshot creation should not fail"),
+            _guard: SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
+        })
     }
 
     /// Terminates after a persistent state failure that occurred after the canonical DB commit.

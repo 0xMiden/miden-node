@@ -219,16 +219,9 @@ impl BlockWriter {
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
         // see the updated state. Readers holding the old snapshot continue unaffected.
         self.in_memory.store(snapshot);
-        let snapshots_live = self.snapshots_live.load(Ordering::Relaxed) as u64;
+
+        let snapshots_live = self.check_live_snapshots(block_num);
         miden_span_record!(snapshots.live = snapshots_live);
-        if snapshots_live > SNAPSHOTS_LIVE_WARN_THRESHOLD {
-            tracing::warn!(
-                target: COMPONENT,
-                block_num = block_num.as_u32(),
-                snapshots.live = snapshots_live,
-                "too many live state snapshots; slow readers are pinning old generations",
-            );
-        }
 
         // Push to cache and notify replica subscribers.
         self.block_cache
@@ -239,6 +232,24 @@ impl BlockWriter {
         tracing::debug!(target: LOG_TARGET, "Block applied");
 
         Ok(())
+    }
+
+    /// Returns the number of live snapshot generations, warning when slow readers are pinning too
+    /// many old generations in memory.
+    ///
+    /// The count is returned rather than recorded here because `miden_span_record!` must be used
+    /// within a `#[miden_instrument]` function.
+    fn check_live_snapshots(&self, block_num: BlockNumber) -> u64 {
+        let snapshots_live = self.snapshots_live.load(Ordering::Relaxed) as u64;
+        if snapshots_live > SNAPSHOTS_LIVE_WARN_THRESHOLD {
+            tracing::warn!(
+                target: COMPONENT,
+                block_num = block_num.as_u32(),
+                snapshots.live = snapshots_live,
+                "too many live state snapshots; slow readers are pinning old generations",
+            );
+        }
+        snapshots_live
     }
 
     /// Computes the note records and all tree and forest mutations for a block, without mutating

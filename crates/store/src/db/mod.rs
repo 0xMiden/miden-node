@@ -38,7 +38,11 @@ pub use crate::db::models::queries::{
     PublicAccountIdsPage,
     PublicAccountStateRootsPage,
 };
-use crate::db::models::queries::{BlockHeaderCommitment, StorageMapValuesPage};
+use crate::db::models::queries::{
+    BlockHeaderCommitment,
+    PrecomputedPublicAccountStates,
+    StorageMapValuesPage,
+};
 use crate::errors::{DatabaseError, NoteSyncError};
 use crate::genesis::GenesisBlock;
 use crate::{COMPONENT, LOG_TARGET};
@@ -210,8 +214,15 @@ impl Db {
 
         // Insert genesis block data.
         let genesis_block = genesis.into_inner();
-        conn.transaction(move |conn| models::queries::apply_block(conn, &genesis_block, &[]))
-            .context("failed to insert genesis block")?;
+        conn.transaction(move |conn| {
+            models::queries::apply_block(
+                conn,
+                &genesis_block,
+                &[],
+                &PrecomputedPublicAccountStates::new(),
+            )
+        })
+        .context("failed to insert genesis block")?;
         Ok(())
     }
 
@@ -580,13 +591,14 @@ impl Db {
         skip_all,
         err,
     )]
-    pub async fn apply_block(
+    pub(crate) async fn apply_block(
         &self,
         signed_block: SignedBlock,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
+        precomputed_public_states: PrecomputedPublicAccountStates,
     ) -> Result<()> {
         self.transact("apply block", move |conn| -> Result<()> {
-            models::queries::apply_block(conn, &signed_block, &notes)?;
+            models::queries::apply_block(conn, &signed_block, &notes, &precomputed_public_states)?;
             models::queries::prune_history(conn, signed_block.header().block_num())?;
             Ok(())
         })

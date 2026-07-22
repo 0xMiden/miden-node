@@ -3,36 +3,41 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const SQLITE_TABLES: &[&str] = &[
-    "accounts",
-    "block_headers",
-    "notes",
-    "note_scripts",
-    "nullifiers",
-    "transactions",
-];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BlockKind {
+    AccountNoteEmission,
+    AccountCreation,
+    UpdateNoteEmission,
+    AccountUpdate,
+}
 
-const SQLITE_INDEXES: &[&str] = &[
-    "idx_accounts_network_prefix",
-    "idx_notes_note_id",
-    "idx_notes_sender",
-    "idx_notes_tag",
-    "idx_notes_nullifier",
-    "idx_unconsumed_network_notes",
-    "idx_nullifiers_prefix",
-    "idx_nullifiers_block_num",
-    "idx_transactions_account_id",
-    "idx_transactions_block_num",
-];
+impl Display for BlockKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::AccountNoteEmission => "account-note-emission",
+            Self::AccountCreation => "account-creation",
+            Self::UpdateNoteEmission => "update-note-emission",
+            Self::AccountUpdate => "account-update",
+        };
+        f.pad(name)
+    }
+}
+
+struct BlockMetric {
+    kind: BlockKind,
+    insertion_time: Duration,
+    get_block_inputs_time: Duration,
+    block_size: usize,
+    transaction_count: usize,
+    public_account_updates: usize,
+}
 
 /// Metrics struct to show the results of the stress test
 pub struct SeedingMetrics {
-    insertion_time_per_block: Vec<Duration>,
-    get_block_inputs_time_per_block: Vec<Duration>,
+    blocks: Vec<BlockMetric>,
+    pending_get_block_inputs_time: Option<Duration>,
     get_batch_inputs_time_per_block: Vec<Duration>,
-    bytes_per_block: Vec<usize>,
-    num_insertions: u32,
-    store_file_sizes: Vec<u64>,
+    store_file_sizes: Vec<(usize, u64)>,
     initial_store_size: u64,
     store_file: PathBuf,
 }
@@ -42,11 +47,9 @@ impl SeedingMetrics {
     pub fn new(store_file: PathBuf) -> Self {
         let initial_store_size = get_store_size(&store_file);
         Self {
-            insertion_time_per_block: Vec::new(),
-            get_block_inputs_time_per_block: Vec::new(),
+            blocks: Vec::new(),
+            pending_get_block_inputs_time: None,
             get_batch_inputs_time_per_block: Vec::new(),
-            bytes_per_block: Vec::new(),
-            num_insertions: 0,
             store_file_sizes: Vec::new(),
             initial_store_size,
             store_file,
@@ -54,20 +57,37 @@ impl SeedingMetrics {
     }
 
     /// Tracks a new block insertion to the metrics, with the insertion time and size of the block.
-    pub fn track_block_insertion(&mut self, insertion_time: Duration, block_size: usize) {
-        self.insertion_time_per_block.push(insertion_time);
-        self.bytes_per_block.push(block_size);
-        self.num_insertions += 1;
+    pub fn track_block_insertion(
+        &mut self,
+        kind: BlockKind,
+        insertion_time: Duration,
+        block_size: usize,
+        transaction_count: usize,
+        public_account_updates: usize,
+    ) {
+        self.blocks.push(BlockMetric {
+            kind,
+            insertion_time,
+            get_block_inputs_time: self.pending_get_block_inputs_time.take().unwrap_or_default(),
+            block_size,
+            transaction_count,
+            public_account_updates,
+        });
     }
 
     /// Tracks the size of the store file.
     pub fn record_store_size(&mut self) {
-        self.store_file_sizes.push(get_store_size(&self.store_file));
+        if let Some(block_index) = self.blocks.len().checked_sub(1) {
+            self.store_file_sizes.push((block_index, get_store_size(&self.store_file)));
+        }
     }
 
     /// Tracks the time it takes to query the block inputs.
     pub fn add_get_block_inputs(&mut self, query_time: Duration) {
-        self.get_block_inputs_time_per_block.push(query_time);
+        assert!(
+            self.pending_get_block_inputs_time.replace(query_time).is_none(),
+            "block input query time should be consumed before the next query"
+        );
     }
 
     /// Tracks the time it takes to query the batch inputs.
@@ -79,47 +99,52 @@ impl SeedingMetrics {
     #[expect(clippy::cast_precision_loss)]
     fn print_block_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "\nBlock metrics:")?;
-        writeln!(f, "Note: Each block contains 256 transactions (16 batches * 16 transactions).")?;
         writeln!(
             f,
-            "The first transaction sends assets from the faucet to 255 accounts, and the remaining 255 transactions consume notes created in the previous block."
-        )?;
-        writeln!(
-            f,
-            "{:<10} {:<20} {:<30} {:<30} {:<20} {:<20}",
+            "{:<10} {:<24} {:<8} {:<16} {:<18} {:<24} {:<16} {:<16}",
             "Block #",
-            "Insert Time (ms)",
-            "Get Block Inputs Time (ms)",
-            "Get Batch Inputs Time (ms)",
+            "Kind",
+            "Txs",
+            "Public updates",
+            "Insert time (ms)",
+            "Get block inputs (ms)",
             "Block Size (KB)",
             "DB Size (MB)"
         )?;
-        writeln!(f, "{}", "-".repeat(135))?;
-        for (i, store_size) in self.store_file_sizes.iter().enumerate() {
-            let block_index = i * 50;
-            let insertion_time = self
-                .insertion_time_per_block
-                .get(block_index)
-                .unwrap_or(&Duration::default())
-                .as_millis();
-            let block_query_time = self
-                .get_block_inputs_time_per_block
-                .get(block_index)
-                .unwrap_or(&Duration::default())
-                .as_millis();
-            let batch_query_time = self
-                .get_batch_inputs_time_per_block
-                .get(block_index)
-                .unwrap_or(&Duration::default())
-                .as_millis();
-            let block_size_kb =
-                *self.bytes_per_block.get(block_index).unwrap_or(&0) as f64 / 1024.0;
-            let store_size_mb = *store_size as f64 / (1024.0 * 1024.0);
+        writeln!(f, "{}", "-".repeat(150))?;
+        for (block_index, metric) in self.blocks.iter().enumerate().filter(|(index, metric)| {
+            self.blocks.len() <= 20
+                || index % 50 == 0
+                || index + 1 == self.blocks.len()
+                || metric.kind == BlockKind::AccountUpdate
+        }) {
+            let block_size_kb = metric.block_size as f64 / 1024.0;
+            let store_size_mb =
+                self.store_file_sizes.iter().rev().find_map(|(sample_index, size)| {
+                    (*sample_index == block_index).then_some(*size as f64 / (1024.0 * 1024.0))
+                });
+            let store_size =
+                store_size_mb.map_or_else(|| "-".to_string(), |size| format!("{size:.1}"));
 
             writeln!(
                 f,
-                "{block_index:<10} {insertion_time:<20} {block_query_time:<30} {batch_query_time:<30} {block_size_kb:<20.1} {store_size_mb:<20.1}",
+                "{block_index:<10} {:<24} {:<8} {:<16} {:<18} {:<24} {block_size_kb:<16.1} {store_size:<16}",
+                metric.kind,
+                metric.transaction_count,
+                metric.public_account_updates,
+                metric.insertion_time.as_millis(),
+                metric.get_block_inputs_time.as_millis(),
             )?;
+        }
+
+        if !self.get_batch_inputs_time_per_block.is_empty() {
+            let average = self
+                .get_batch_inputs_time_per_block
+                .iter()
+                .map(Duration::as_micros)
+                .sum::<u128>()
+                / self.get_batch_inputs_time_per_block.len() as u128;
+            writeln!(f, "Average get-batch-inputs time: {average} us")?;
         }
         Ok(())
     }
@@ -127,15 +152,17 @@ impl SeedingMetrics {
     /// Prints the database table stats.
     fn print_table_stats(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "\nDatabase stats:")?;
-        writeln!(
-            f,
-            "Note: Database contains {} accounts and {} notes across all blocks.",
-            self.num_insertions * 255,
-            self.num_insertions * 255
-        )?;
-        writeln!(f, "{:<35} {:<15} {:<15}", "Table", "Size (MB)", "KB/Entry")?;
-        writeln!(f, "{}", "-".repeat(70))?;
-        for table in SQLITE_TABLES {
+        let account_count = self.table_row_count("accounts");
+        let note_count = self.table_row_count("notes");
+        if let (Some(account_count), Some(note_count)) = (account_count, note_count) {
+            writeln!(
+                f,
+                "Note: Database contains {account_count} accounts and {note_count} notes across all blocks."
+            )?;
+        }
+        writeln!(f, "{:<55} {:<15} {:<15}", "Table", "Size (MB)", "KB/Entry")?;
+        writeln!(f, "{}", "-".repeat(85))?;
+        for table in self.schema_object_names("table") {
             let db_stats = Command::new("sqlite3")
                 .arg(&self.store_file)
                 .arg(format!(
@@ -157,17 +184,43 @@ impl SeedingMetrics {
                 }
             });
 
-            writeln!(f, "{:<35} {:<15.1} {:<15}", stats[0], size_mb, kb_per_entry)?;
+            writeln!(f, "{:<55} {:<15.1} {:<15}", stats[0], size_mb, kb_per_entry)?;
         }
         Ok(())
+    }
+
+    /// Lists the names of the tables or indexes in the store, so the stats stay in sync with the
+    /// schema instead of relying on a hardcoded list.
+    fn schema_object_names(&self, kind: &str) -> Vec<String> {
+        let output = Command::new("sqlite3")
+            .arg(&self.store_file)
+            .arg(format!(
+                "SELECT name FROM sqlite_master WHERE type = '{kind}' AND name NOT LIKE 'sqlite_%' ORDER BY name;"
+            ))
+            .output()
+            .expect("failed to execute process");
+        String::from_utf8(output.stdout)
+            .expect("invalid utf8")
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn table_row_count(&self, table: &str) -> Option<u64> {
+        let output = Command::new("sqlite3")
+            .arg(&self.store_file)
+            .arg(format!("SELECT COUNT(*) FROM {table};"))
+            .output()
+            .ok()?;
+        String::from_utf8(output.stdout).ok()?.trim().parse().ok()
     }
 
     /// Prints the index stats.
     fn print_index_stats(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "\nIndex stats:")?;
-        writeln!(f, "{:<35} {:<15}", "Index", "Size (MB)")?;
-        writeln!(f, "{}", "-".repeat(70))?;
-        for index in SQLITE_INDEXES {
+        writeln!(f, "{:<55} {:<15}", "Index", "Size (MB)")?;
+        writeln!(f, "{}", "-".repeat(85))?;
+        for index in self.schema_object_names("index") {
             let db_stats = Command::new("sqlite3")
                 .arg(&self.store_file)
                 .arg(format!(
@@ -182,7 +235,7 @@ impl SeedingMetrics {
             let size_mb = stats.get(1).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.0)
                 / (1024.0 * 1024.0);
 
-            writeln!(f, "{:<35} {:<15.1}", stats[0], size_mb)?;
+            writeln!(f, "{:<55} {:<15.1}", stats[0], size_mb)?;
         }
         Ok(())
     }
@@ -194,9 +247,9 @@ impl Display for SeedingMetrics {
         writeln!(
             f,
             "Inserted {} blocks with avg insertion time {} ms",
-            self.num_insertions,
-            (self.insertion_time_per_block.iter().map(Duration::as_millis).sum::<u128>()
-                / self.insertion_time_per_block.len() as u128)
+            self.blocks.len(),
+            self.blocks.iter().map(|metric| metric.insertion_time.as_millis()).sum::<u128>()
+                / self.blocks.len().max(1) as u128
         )?;
         writeln!(
             f,
@@ -205,9 +258,12 @@ impl Display for SeedingMetrics {
         )?;
 
         // Print out the average growth rate of the store file
-        let final_size = self.store_file_sizes.last().unwrap();
-        let growth_rate_mb = (final_size - self.initial_store_size) as f64
-            / f64::from(self.num_insertions)
+        let final_size = self
+            .store_file_sizes
+            .last()
+            .map_or_else(|| get_store_size(&self.store_file), |(_, size)| *size);
+        let growth_rate_mb = final_size.saturating_sub(self.initial_store_size) as f64
+            / self.blocks.len().max(1) as f64
             / (1024.0 * 1024.0);
         writeln!(f, "Average DB growth rate: {growth_rate_mb:.1} MB per block")?;
 

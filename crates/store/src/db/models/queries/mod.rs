@@ -53,6 +53,7 @@ pub(crate) fn apply_block(
     conn: &mut SqliteConnection,
     block: &SignedBlock,
     notes: &[(NoteRecord, Option<Nullifier>)],
+    precomputed_public_states: &PrecomputedPublicAccountStates,
 ) -> Result<usize, DatabaseError> {
     let mut count = 0;
     // Note: ordering here is important as the relevant tables have FK dependencies.
@@ -66,7 +67,12 @@ pub(crate) fn apply_block(
         },
     };
     count += insert_block_header(conn, block.header(), signature)?;
-    count += upsert_accounts(conn, block.body().updated_accounts(), block.header().block_num())?;
+    count += upsert_accounts(
+        conn,
+        block.body().updated_accounts(),
+        block.header().block_num(),
+        precomputed_public_states,
+    )?;
     count += insert_scripts(conn, notes.iter().map(|(note, _)| note))?;
     count += insert_notes(conn, notes)?;
     count += insert_transactions(conn, block.header().block_num(), block.body().transactions())?;

@@ -8,6 +8,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::crypto::merkle::mmr::MmrError;
+use miden_protocol::crypto::merkle::smt::{LargeSmtForestError, LineageId};
 use miden_protocol::crypto::utils::DeserializationError;
 use miden_protocol::errors::{
     AccountDeltaError,
@@ -25,6 +26,29 @@ use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 
 use crate::db::models::conv::DatabaseTypeConversionError;
+
+/// Errors produced while preparing or rebuilding account-state forest updates.
+///
+/// The underlying [`LargeSmtForestError`] is preserved so callers can distinguish fatal backend
+/// failures from invalid update preparation.
+#[derive(Debug, Error)]
+pub enum AccountStateForestUpdateError {
+    /// A full-state patch attempted to create a vault lineage that is already present.
+    #[error("account {account_id} vault lineage already exists")]
+    VaultLineageAlreadyExists { account_id: AccountId },
+    /// A full-state patch attempted to create a storage-map lineage that is already present.
+    #[error("account {account_id} storage map lineage for slot {slot_name} already exists")]
+    StorageLineageAlreadyExists {
+        account_id: AccountId,
+        slot_name: miden_protocol::account::StorageSlotName,
+    },
+    /// The forest mutation set did not contain a root for a lineage it was expected to update.
+    #[error("computed forest mutations are missing lineage {lineage}")]
+    MissingComputedRoot { lineage: LineageId },
+    /// The forest backend failed while computing, reading, or applying mutations.
+    #[error(transparent)]
+    Forest(#[from] LargeSmtForestError),
+}
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -98,6 +122,8 @@ pub enum StateInitializationError {
     NullifierTreeIoError(String),
     #[error("account state forest IO error: {0}")]
     AccountStateForestIoError(String),
+    #[error("failed to rebuild account state forest")]
+    AccountStateForestRebuild(#[source] AccountStateForestUpdateError),
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("failed to create nullifier tree")]
@@ -207,6 +233,8 @@ pub enum ApplyBlockError {
     // ---------------------------------------------------------------------------------------------
     #[error("block applying was cancelled because the writer task dropped the result channel")]
     ClosedChannel(#[from] RecvError),
+    #[error("account state forest update preparation failed")]
+    AccountStateForestPreparation(#[source] AccountStateForestUpdateError),
     #[error("database doesn't have any block header data")]
     DbBlockHeaderEmpty,
     #[error("database update failed: {0}")]

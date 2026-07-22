@@ -408,7 +408,8 @@ impl BlockWriter {
     ) -> Result<(NullifierMutationSet, AccountMutationSet), ApplyBlockError> {
         let block_num = header.block_num();
 
-        // nullifiers can be produced only once
+        // A nullifier can only ever be created once, so the block is invalid if any of its
+        // nullifiers are already recorded in the tree.
         let duplicate_nullifiers: Vec<_> = body
             .created_nullifiers()
             .iter()
@@ -419,13 +420,14 @@ impl BlockWriter {
             return Err(InvalidBlockError::DuplicatedNullifiers(duplicate_nullifiers).into());
         }
 
-        // new_block.chain_root must be equal to the chain MMR root prior to the update
+        // The header's chain commitment must equal the chain MMR root prior to this block.
         let peaks = self.blockchain.peaks();
         if peaks.hash_peaks() != header.chain_commitment() {
             return Err(InvalidBlockError::NewBlockInvalidChainCommitment.into());
         }
 
-        // compute update for nullifier tree
+        // Compute the nullifier tree mutations and verify that they produce the nullifier root
+        // claimed in the header.
         let nullifier_tree_update = self
             .nullifier_tree
             .compute_mutations(
@@ -437,7 +439,8 @@ impl BlockWriter {
             return Err(InvalidBlockError::NewBlockInvalidNullifierRoot.into());
         }
 
-        // compute update for account tree
+        // Compute the account tree mutations and verify that they produce the account root
+        // claimed in the header.
         let account_tree_update = self
             .account_tree
             .compute_mutations(

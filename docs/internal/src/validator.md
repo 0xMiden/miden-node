@@ -41,6 +41,14 @@ signatures, and the genesis commitment so an attestation cannot replay across ne
 signature proves to clients that a chain-recognized validator vouches for the key, so the key can
 be served through an untrusted RPC.
 
+The key can be rotated. Operators configure every validator with the same next shared secret and a
+rotation block number, and the endpoint announces the upcoming key in the `next_key` field ahead of
+the rotation. The announcement is covered by the attestation commitment, so it cannot be stripped
+or altered without invalidating the signatures. Once the chain tip reaches the rotation block, the
+validator serves the announced key as the current one under a fresh attestation computed at
+startup. The decrypter keeps both secrets, so submissions sealed against either key around the
+rotation still decrypt.
+
 This scheme does not protect the inputs from parties holding the shared secret and has no forward
 secrecy. It is the first phase of the transaction input encryption design: later phases move the
 key material to threshold and TEE-managed setups.

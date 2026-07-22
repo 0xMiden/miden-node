@@ -41,11 +41,12 @@ grpcurl rpc.testnet.miden.io:443 describe rpc.Api
 The public key returned by `GetTransactionEncryptionKey` is shared across the whole validator set, while each
 attestation is specific to one validator (currently the response carries a single attestation). Clients verify an
 attestation against a validator signing key they already trust from the chain and reconstruct the encryption key with
-miden-crypto. The exact attestation payload is documented on the `TransactionEncryptionKey` proto message. Note that
-this scheme does not hide transaction inputs from holders of the shared encryption secret (currently the network
-operator and every validator) and provides no forward secrecy. The attestation proves which validator vouched for the
-key but does not prove freshness: after a key rotation, a replayed older signed key still verifies until a chain or
-epoch rule for freshness exists.
+miden-crypto. When a key rotation is scheduled, the response also announces the next key and its rotation block in the
+`next_key` field. The next key carries its own attestations, whose commitment covers the rotation block. The exact
+attestation payload is documented on the `ValidatorKeyAttestation` proto message. Note that this scheme does not hide
+transaction inputs from holders of the shared encryption secret (currently the network operator and every validator) and
+provides no forward secrecy. The attestation proves which validator vouched for the key but does not prove freshness:
+after a key rotation, a replayed older signed key still verifies until a chain or epoch rule for freshness exists.
 
 Write requests must identify the target network with the `genesis` parameter in the `Accept` header:
 

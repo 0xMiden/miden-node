@@ -69,6 +69,48 @@ pub enum ValidatorError {
     EncryptionKeyAttestationFailed(String),
 }
 
+// ATTESTED ENCRYPTION KEY
+// ================================================================================
+
+/// Public metadata of the shared encryption key together with this validator's signatures over the
+/// attestation commitments: one for the current key, and one for the scheduled next key when a
+/// rotation is announced.
+struct AttestedEncryptionKey {
+    info: TransactionEncryptionKeyInfo,
+    attestation: Signature,
+    /// Signature over the scheduled next key's attestation commitment, which binds the rotation
+    /// block. Present exactly when `info.next_key` is.
+    next_attestation: Option<Signature>,
+}
+
+impl AttestedEncryptionKey {
+    /// Attests `info` with the validator's signing key, binding it to `genesis_commitment`. When a
+    /// rotation is scheduled, the next key is attested separately with its rotation block bound to
+    /// the signature.
+    async fn new(
+        info: TransactionEncryptionKeyInfo,
+        signer: &ValidatorSigner,
+        genesis_commitment: miden_protocol::Word,
+    ) -> Result<Self, ValidatorError> {
+        let attestation = signer
+            .sign_commitment(info.attestation_commitment(genesis_commitment))
+            .await
+            .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
+        let next_attestation = match &info.next_key {
+            Some(next) => Some(
+                signer
+                    .sign_commitment(next.attestation_commitment(genesis_commitment))
+                    .await
+                    .map_err(|err| {
+                        ValidatorError::EncryptionKeyAttestationFailed(err.to_string())
+                    })?,
+            ),
+            None => None,
+        };
+        Ok(Self { info, attestation, next_attestation })
+    }
+}
+
 // VALIDATOR SERVICE
 // ================================================================================
 
@@ -80,11 +122,13 @@ pub(crate) struct ValidatorService {
     /// Decrypter for transaction inputs sealed against the shared encryption key.
     #[expect(dead_code, reason = "used by the submit path in a follow-up PR")]
     decrypter: Arc<dyn TransactionInputDecrypter>,
-    /// Public metadata of the shared encryption key, fetched once at construction.
-    encryption_key_info: TransactionEncryptionKeyInfo,
-    /// Signature by this validator's own signing key over the encryption key attestation
-    /// commitment, computed once at construction.
-    encryption_key_attestation: Signature,
+    /// The attested metadata of the shared encryption key, computed once at construction. Served
+    /// until the scheduled rotation block (if any) is reached.
+    encryption_key: AttestedEncryptionKey,
+    /// The attested post-rotation metadata of the shared encryption key, computed once at
+    /// construction. Present only when a rotation is scheduled, and served once the chain tip
+    /// reaches the rotation block.
+    post_rotation_encryption_key: Option<AttestedEncryptionKey>,
     db: Arc<Database>,
     block_store: BlockStore,
     /// Enforces mutual exclusion between backup block subscriptions and all other RPCs. Regular
@@ -136,8 +180,10 @@ impl ValidatorService {
             });
         }
 
-        // Both keys are fixed for the process lifetime, so the attestation is computed once. This
-        // also keeps KMS-backed signers to a single signing call.
+        // Both keys are fixed for the process lifetime, so the attestations are computed once at
+        // startup. This keeps KMS-backed signers to at most three signing calls: one for the
+        // current key, and two more when a rotation is scheduled (the next key with its rotation
+        // block, and the same key re-attested as the current one for after the rotation).
         let genesis_commitment = db
             .read("load_genesis_header", |tx| load_block_header(tx, BlockNumber::GENESIS))
             .await
@@ -148,16 +194,20 @@ impl ValidatorService {
             .encryption_key()
             .await
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
-        let encryption_key_attestation = signer
-            .sign_commitment(encryption_key_info.attestation_commitment(genesis_commitment))
-            .await
-            .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
+        let post_rotation_encryption_key = match encryption_key_info.post_rotation_info() {
+            Some(info) => {
+                Some(AttestedEncryptionKey::new(info, &signer, genesis_commitment).await?)
+            },
+            None => None,
+        };
+        let encryption_key =
+            AttestedEncryptionKey::new(encryption_key_info, &signer, genesis_commitment).await?;
 
         Ok(Self {
             signer,
             decrypter,
-            encryption_key_info,
-            encryption_key_attestation,
+            encryption_key,
+            post_rotation_encryption_key,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
             db: db.into(),
             block_store,
@@ -166,6 +216,20 @@ impl ValidatorService {
             validated_transactions_count: AtomicU64::new(initial_tx_count),
             signed_blocks_count: AtomicU64::new(initial_block_count),
         })
+    }
+
+    /// Returns the attested encryption key metadata effective at the current chain tip: the
+    /// post-rotation key once the tip has reached the scheduled rotation block, and the current key
+    /// (announcing the scheduled rotation, if any) before that.
+    fn effective_encryption_key(&self) -> &AttestedEncryptionKey {
+        match (&self.post_rotation_encryption_key, &self.encryption_key.info.next_key) {
+            (Some(post), Some(next))
+                if self.committed_tip.borrow().as_u32() >= next.rotation_block_num =>
+            {
+                post
+            },
+            _ => &self.encryption_key,
+        }
     }
 
     /// Validates a proposed block by checking:

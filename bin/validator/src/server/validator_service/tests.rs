@@ -14,7 +14,7 @@ use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::{ValidatorError, ValidatorService};
 use crate::db::{load_chain_tip, setup, upsert_block_header};
-use crate::signers::{NextEncryptionKeyInfo, attestation_commitment};
+use crate::signers::{TransactionEncryptionKeyInfo, attestation_commitment};
 use crate::{LocalX25519TransactionInputDecrypter, TransactionInputDecrypter, ValidatorSigner};
 
 // TEST HELPERS
@@ -29,6 +29,46 @@ fn test_decrypter() -> LocalX25519TransactionInputDecrypter {
     let key = KeyExchangeKey::read_from_bytes(&TEST_ENCRYPTION_SECRET)
         .expect("test secret should be a valid key exchange key");
     LocalX25519TransactionInputDecrypter::new(key)
+}
+
+/// The next shared transaction encryption secret, used by the rotation tests.
+const TEST_NEXT_ENCRYPTION_SECRET: [u8; 32] = [4u8; 32];
+
+/// Creates a [`LocalX25519TransactionInputDecrypter`] with a key rotation to the next test secret
+/// scheduled at `rotation_block_num`.
+fn test_rotating_decrypter(rotation_block_num: u32) -> LocalX25519TransactionInputDecrypter {
+    let next_key = KeyExchangeKey::read_from_bytes(&TEST_NEXT_ENCRYPTION_SECRET)
+        .expect("next test secret should be a valid key exchange key");
+    test_decrypter().with_next_key(next_key, rotation_block_num)
+}
+
+/// The public metadata of the scheduled next test secret, as if it were a standalone current key.
+async fn next_test_key_info() -> TransactionEncryptionKeyInfo {
+    let next_key = KeyExchangeKey::read_from_bytes(&TEST_NEXT_ENCRYPTION_SECRET)
+        .expect("next test secret should be a valid key exchange key");
+    LocalX25519TransactionInputDecrypter::new(next_key)
+        .encryption_key()
+        .await
+        .expect("next key info should be available")
+}
+
+/// Returns the current key carried by the response.
+fn current_key(
+    response: &proto::transaction::TransactionEncryptionKeyResponse,
+) -> &proto::transaction::TransactionEncryptionKey {
+    response.current_key.as_ref().expect("the response must carry a current key")
+}
+
+/// Asserts `key` matches `info`'s public key material, and returns the key's scheme.
+fn assert_serves_key(
+    key: &proto::transaction::TransactionEncryptionKey,
+    info: &TransactionEncryptionKeyInfo,
+) -> u32 {
+    let scheme = u32::try_from(key.scheme).expect("scheme must be non-negative");
+    assert_eq!(scheme, info.scheme);
+    assert_eq!(key.key_id, info.key_id);
+    assert_eq!(key.public_key, info.public_key);
+    scheme
 }
 
 /// Test harness that wraps a [`Validator`] and tracks the chain MMR state needed to construct valid
@@ -46,6 +86,11 @@ impl TestValidator {
     /// Creates a correctly configured [`ValidatorService`]: the validator signs blocks with the
     /// same key that is designated as the `validator_key` in the genesis block.
     async fn new() -> Self {
+        Self::with_decrypter(test_decrypter()).await
+    }
+
+    /// Creates a correctly configured [`ValidatorService`] provisioned with the given decrypter.
+    async fn with_decrypter(decrypter: LocalX25519TransactionInputDecrypter) -> Self {
         let key = random_secret_key();
         let signer = ValidatorSigner::new_local(key.clone());
         let (temp_dir, db, block_store, genesis_header) = setup_db_with_genesis(&key).await;
@@ -53,7 +98,7 @@ impl TestValidator {
         Self {
             server: ValidatorService::new(
                 signer,
-                std::sync::Arc::new(test_decrypter()),
+                std::sync::Arc::new(decrypter),
                 db,
                 block_store,
                 0,
@@ -118,7 +163,7 @@ impl TestValidator {
     /// Calls the `get_transaction_encryption_key` endpoint on the validator server.
     async fn call_get_transaction_encryption_key(
         &self,
-    ) -> proto::transaction::TransactionEncryptionKey {
+    ) -> proto::transaction::TransactionEncryptionKeyResponse {
         validator_api::GetTransactionEncryptionKey::full(&self.server, tonic::Request::new(()))
             .await
             .expect("encryption key should always be available")
@@ -744,18 +789,15 @@ async fn transaction_encryption_key_is_attested() {
     // The chain has not advanced, so the chain tip is the genesis header.
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
+    let key = current_key(&response);
 
     let info = test_decrypter().encryption_key().await.expect("key info should be available");
-    let scheme = u32::try_from(response.scheme).expect("scheme must be non-negative");
-    assert_eq!(scheme, info.scheme);
-    assert_eq!(response.key_id, info.key_id);
-    assert_eq!(response.public_key, info.public_key);
+    let scheme = assert_serves_key(key, &info);
 
-    let commitment =
-        attestation_commitment(scheme, &response.key_id, genesis, &response.public_key, None);
+    let commitment = attestation_commitment(scheme, &key.key_id, genesis, &key.public_key, None);
     assert_eq!(commitment, info.attestation_commitment(genesis));
 
-    let [attestation] = response.attestations.as_slice() else {
+    let [attestation] = key.attestations.as_slice() else {
         panic!("response must carry exactly the serving validator's attestation");
     };
     assert_eq!(
@@ -780,12 +822,14 @@ async fn shared_key_is_attested_per_validator() {
 
     let response_a = tv_a.call_get_transaction_encryption_key().await;
     let response_b = tv_b.call_get_transaction_encryption_key().await;
+    let key_a = current_key(&response_a);
+    let key_b = current_key(&response_b);
 
-    assert_eq!(response_a.scheme, response_b.scheme);
-    assert_eq!(response_a.key_id, response_b.key_id);
-    assert_eq!(response_a.public_key, response_b.public_key);
+    assert_eq!(key_a.scheme, key_b.scheme);
+    assert_eq!(key_a.key_id, key_b.key_id);
+    assert_eq!(key_a.public_key, key_b.public_key);
     assert_ne!(
-        response_a.attestations[0].signature, response_b.attestations[0].signature,
+        key_a.attestations[0].signature, key_b.attestations[0].signature,
         "each validator must attest with its own signing key",
     );
 }
@@ -797,47 +841,29 @@ async fn tampered_attestation_fails_verification() {
     let tv = TestValidator::new().await;
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
-    let signature = Signature::read_from_bytes(&response.attestations[0].signature).unwrap();
+    let key = current_key(&response);
+    let signature = Signature::read_from_bytes(&key.attestations[0].signature).unwrap();
     let signing_key = tv.server.signer.public_key();
-    let scheme = u32::try_from(response.scheme).expect("scheme must be non-negative");
+    let scheme = u32::try_from(key.scheme).expect("scheme must be non-negative");
 
-    let mut tampered_public_key = response.public_key.clone();
+    let mut tampered_public_key = key.public_key.clone();
     tampered_public_key[0] ^= 0x01;
-    let mut tampered_key_id = response.key_id.clone();
+    let mut tampered_key_id = key.key_id.clone();
     tampered_key_id[0] ^= 0x01;
     // Moving a byte across the key id and public key boundary must also change the payload, which
     // the length prefixes in the transcript guarantee.
-    let mut extended_key_id = response.key_id.clone();
-    extended_key_id.push(response.public_key[0]);
+    let mut extended_key_id = key.key_id.clone();
+    extended_key_id.push(key.public_key[0]);
     let tampered_genesis = Word::try_from([9u64, 9, 9, 9]).unwrap();
-    // Injecting a scheduled rotation into a response attested without one must also break the
-    // signature.
-    let injected_next_key = NextEncryptionKeyInfo {
-        scheme,
-        key_id: response.key_id.clone(),
-        public_key: response.public_key.clone(),
-        rotation_block_num: 100,
-    };
 
     let tampered_commitments = [
-        attestation_commitment(scheme + 1, &response.key_id, genesis, &response.public_key, None),
-        attestation_commitment(scheme, &tampered_key_id, genesis, &response.public_key, None),
-        attestation_commitment(scheme, &extended_key_id, genesis, &response.public_key[1..], None),
-        attestation_commitment(scheme, &response.key_id, genesis, &tampered_public_key, None),
-        attestation_commitment(
-            scheme,
-            &response.key_id,
-            tampered_genesis,
-            &response.public_key,
-            None,
-        ),
-        attestation_commitment(
-            scheme,
-            &response.key_id,
-            genesis,
-            &response.public_key,
-            Some(&injected_next_key),
-        ),
+        attestation_commitment(scheme + 1, &key.key_id, genesis, &key.public_key, None),
+        attestation_commitment(scheme, &tampered_key_id, genesis, &key.public_key, None),
+        attestation_commitment(scheme, &extended_key_id, genesis, &key.public_key[1..], None),
+        attestation_commitment(scheme, &key.key_id, genesis, &tampered_public_key, None),
+        attestation_commitment(scheme, &key.key_id, tampered_genesis, &key.public_key, None),
+        // A current-key attestation must not be reusable as a next-key attestation.
+        attestation_commitment(scheme, &key.key_id, genesis, &key.public_key, Some(100)),
     ];
     for commitment in tampered_commitments {
         assert!(
@@ -845,6 +871,113 @@ async fn tampered_attestation_fails_verification() {
             "attestation must not verify over tampered fields",
         );
     }
+}
+
+/// Before the rotation block, the endpoint keeps serving the current key and announces the
+/// scheduled next key. The next key carries its own attestation, which verifies over the next key's
+/// transcript extended with the rotation block, recomputed entirely from the response.
+#[tokio::test]
+async fn scheduled_rotation_is_announced_and_attested() {
+    let tv = TestValidator::with_decrypter(test_rotating_decrypter(2)).await;
+    let genesis = tv.chain_tip.commitment();
+    let response = tv.call_get_transaction_encryption_key().await;
+
+    // The current key material is unchanged by the scheduled rotation.
+    let current_info =
+        test_decrypter().encryption_key().await.expect("key info should be available");
+    assert_serves_key(current_key(&response), &current_info);
+
+    // The announcement carries the next key's public material and the rotation block.
+    let next = response.next_key.as_ref().expect("a scheduled rotation must be announced");
+    let next_key = next.key.as_ref().expect("the announcement must carry the next key");
+    let next_info = next_test_key_info().await;
+    let next_scheme = assert_serves_key(next_key, &next_info);
+    assert_eq!(next.rotation_block_num, 2);
+
+    // The next key's attestation verifies over its transcript extended with the rotation block, and
+    // breaks if the rotation block is altered or dropped.
+    let signature = Signature::read_from_bytes(&next_key.attestations[0].signature).unwrap();
+    let verifies_with = |rotation_block_num: Option<u32>| {
+        let commitment = attestation_commitment(
+            next_scheme,
+            &next_key.key_id,
+            genesis,
+            &next_key.public_key,
+            rotation_block_num,
+        );
+        signature.verify(commitment, &tv.server.signer.public_key())
+    };
+    assert!(
+        verifies_with(Some(next.rotation_block_num)),
+        "attestation must verify over the rotation block"
+    );
+    assert!(!verifies_with(None), "a next-key attestation must not verify as a current key");
+    assert!(
+        !verifies_with(Some(next.rotation_block_num + 1)),
+        "an altered rotation block must not verify"
+    );
+}
+
+/// Once the chain tip reaches the rotation block, the endpoint serves the announced key as the
+/// current one, with no further rotation scheduled and an attestation that verifies over the
+/// promoted key.
+#[tokio::test]
+async fn rotation_takes_effect_at_rotation_block() {
+    let mut tv = TestValidator::with_decrypter(test_rotating_decrypter(1)).await;
+    let genesis = tv.chain_tip.commitment();
+
+    // At the genesis tip the rotation is still pending.
+    let before = tv.call_get_transaction_encryption_key().await;
+    let announced = before
+        .next_key
+        .as_ref()
+        .expect("the rotation must still be announced before its block");
+    let announced_key = announced.key.as_ref().expect("the announcement must carry the next key");
+
+    // Advance the chain tip to the rotation block.
+    tv.apply_empty_block().await;
+
+    let after = tv.call_get_transaction_encryption_key().await;
+    let after_key = current_key(&after);
+    let scheme = assert_serves_key(after_key, &next_test_key_info().await);
+    assert!(after.next_key.is_none(), "no further rotation is scheduled after the flip");
+
+    // The post-rotation attestation verifies over the promoted key as a current key, while the
+    // next-key attestation announced before the rotation is not replayable for it.
+    let commitment =
+        attestation_commitment(scheme, &after_key.key_id, genesis, &after_key.public_key, None);
+    let validator_key = tv.server.signer.public_key();
+    let signature = Signature::read_from_bytes(&after_key.attestations[0].signature).unwrap();
+    let announced_signature =
+        Signature::read_from_bytes(&announced_key.attestations[0].signature).unwrap();
+    assert!(
+        signature.verify(commitment, &validator_key),
+        "the post-rotation attestation must verify over the promoted key",
+    );
+    assert!(
+        !announced_signature.verify(commitment, &validator_key),
+        "the next-key attestation must not verify over the promoted key",
+    );
+
+    // Past the rotation block, the promoted key keeps being served.
+    tv.apply_empty_block().await;
+    let later = tv.call_get_transaction_encryption_key().await;
+    let later_key = current_key(&later);
+    assert_eq!(later_key.key_id, after_key.key_id);
+    assert_eq!(later_key.public_key, after_key.public_key);
+    assert!(later.next_key.is_none());
+}
+
+/// A validator that starts (or restarts) after the rotation block serves the promoted key
+/// immediately, so a stale `next` configuration does not resurrect the old key.
+#[tokio::test]
+async fn past_rotation_block_serves_promoted_key_at_startup() {
+    // The rotation block equals the genesis tip, so the rotation is already effective.
+    let tv = TestValidator::with_decrypter(test_rotating_decrypter(0)).await;
+    let response = tv.call_get_transaction_encryption_key().await;
+
+    assert_serves_key(current_key(&response), &next_test_key_info().await);
+    assert!(response.next_key.is_none());
 }
 
 /// A client can reconstruct the sealing key from the response fields and seal a payload that any
@@ -858,7 +991,7 @@ async fn response_key_seals_for_the_validator_set() {
     let tv = TestValidator::new().await;
     let response = tv.call_get_transaction_encryption_key().await;
 
-    let public_key = EncryptionPublicKey::read_from_bytes(&response.public_key)
+    let public_key = EncryptionPublicKey::read_from_bytes(&current_key(&response).public_key)
         .expect("response public key should deserialize");
     let sealing_key = SealingKey::X25519XChaCha20Poly1305(public_key);
 
@@ -897,7 +1030,7 @@ async fn encryption_key_available_during_backup() {
     // `call_get_transaction_encryption_key` panics on rejection, so completing proves availability
     // during the backup.
     let response = tv.call_get_transaction_encryption_key().await;
-    assert!(!response.public_key.is_empty());
+    assert!(!current_key(&response).public_key.is_empty());
 
     drop(stream);
 }

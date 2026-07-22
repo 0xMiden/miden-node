@@ -51,7 +51,7 @@ service Api {
     // validator attestations, currently containing a single one. Since all validators vouch for
     // the same key, an attestation verifiable against any chain-recognized validator signing key
     // is sufficient.
-    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKey) {}
+    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKeyResponse) {}
 
     // Submits proven transaction to the Miden network. Returns the node's current block height.
     rpc SubmitProvenTx(transaction.ProvenTransaction) returns (blockchain.BlockNumber) {}

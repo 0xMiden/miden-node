@@ -104,8 +104,7 @@ pub struct TransactionEncryptionKeyInfo {
     pub key_id: Vec<u8>,
     /// Raw public key bytes of the shared encryption key.
     pub public_key: Vec<u8>,
-    /// The next encryption key when a rotation is scheduled. Not populated yet; key rotation is not
-    /// implemented.
+    /// The next encryption key when a rotation is scheduled.
     pub next_key: Option<NextEncryptionKeyInfo>,
 }
 
@@ -123,16 +122,44 @@ pub struct NextEncryptionKeyInfo {
     pub rotation_block_num: u32,
 }
 
-impl TransactionEncryptionKeyInfo {
-    /// Returns the commitment signed by a validator to attest the encryption key.
+impl NextEncryptionKeyInfo {
+    /// Returns the commitment signed by a validator to attest the encryption key as the scheduled
+    /// next one, binding the rotation block to the signature.
     pub fn attestation_commitment(&self, genesis_commitment: Word) -> Word {
         attestation_commitment(
             self.scheme,
             &self.key_id,
             genesis_commitment,
             &self.public_key,
-            self.next_key.as_ref(),
+            Some(self.rotation_block_num),
         )
+    }
+}
+
+impl TransactionEncryptionKeyInfo {
+    /// Returns the commitment signed by a validator to attest the encryption key as the current
+    /// one.
+    pub fn attestation_commitment(&self, genesis_commitment: Word) -> Word {
+        attestation_commitment(
+            self.scheme,
+            &self.key_id,
+            genesis_commitment,
+            &self.public_key,
+            None,
+        )
+    }
+
+    /// Returns the key metadata that becomes effective once the scheduled rotation block is
+    /// reached: the next key promoted to the current one, with no further rotation scheduled.
+    ///
+    /// Returns `None` when no rotation is scheduled.
+    pub fn post_rotation_info(&self) -> Option<Self> {
+        self.next_key.as_ref().map(|next| Self {
+            scheme: next.scheme,
+            key_id: next.key_id.clone(),
+            public_key: next.public_key.clone(),
+            next_key: None,
+        })
     }
 }
 
@@ -143,47 +170,44 @@ impl TransactionEncryptionKeyInfo {
 /// applies to both sides.
 ///
 /// Computed as the Poseidon2 hash of `ATTESTATION_DOMAIN || scheme || len(key_id) || key_id ||
-/// genesis_commitment || len(public_key) || public_key || next_key_transcript`, binding every
-/// field of the attested response to the signature. The scheme, the rotation block number, and
-/// the length prefixes are encoded as 4 bytes little-endian, and the length prefixes on the
-/// variable-width fields ensure no two field combinations map to the same payload. Including the
-/// genesis commitment ties the attestation to one chain, so it cannot be replayed on another
-/// network whose validator reuses the same signing key.
+/// genesis_commitment || len(public_key) || public_key || rotation_transcript`, binding every
+/// attested field to the signature. The scheme, the rotation block number, and the length
+/// prefixes are encoded as 4 bytes little-endian, and the length prefixes on the variable-width
+/// fields ensure no two field combinations map to the same payload. Including the genesis
+/// commitment ties the attestation to one chain, so it cannot be replayed on another network
+/// whose validator reuses the same signing key.
 ///
-/// `next_key_transcript` is empty when no rotation is scheduled, or the next key's `scheme ||
-/// len(key_id) || key_id || len(public_key) || public_key || rotation_block_num` otherwise. All
-/// fields ahead of it are fixed-width or length-prefixed, so the transcript's presence and
-/// content are unambiguous and a scheduled rotation cannot be stripped from or injected into an
-/// attested response.
+/// `rotation_transcript` is a single `0` byte when the key is attested as the current one
+/// (`rotation_block_num` is `None`), or `1` followed by the rotation block number when the key is
+/// attested as a scheduled next key, so a next-key attestation cannot be replayed as a current
+/// key nor its rotation block altered.
 pub fn attestation_commitment(
     scheme: u32,
     key_id: &[u8],
     genesis_commitment: Word,
     public_key: &[u8],
-    next_key: Option<&NextEncryptionKeyInfo>,
+    rotation_block_num: Option<u32>,
 ) -> Word {
     let genesis_commitment = genesis_commitment.to_bytes();
-    let next_key_size = next_key
-        .map(|next| 3 * size_of::<u32>() + next.key_id.len() + next.public_key.len())
-        .unwrap_or_default();
     let mut payload = Vec::with_capacity(
         ATTESTATION_DOMAIN.len()
-            + 3 * size_of::<u32>()
+            + 4 * size_of::<u32>()
             + key_id.len()
             + genesis_commitment.len()
             + public_key.len()
-            + next_key_size,
+            + 1,
     );
     payload.extend_from_slice(ATTESTATION_DOMAIN);
     payload.extend_from_slice(&scheme.to_le_bytes());
     extend_with_length_prefixed(&mut payload, key_id, "key id");
     payload.extend_from_slice(&genesis_commitment);
     extend_with_length_prefixed(&mut payload, public_key, "public key");
-    if let Some(next) = next_key {
-        payload.extend_from_slice(&next.scheme.to_le_bytes());
-        extend_with_length_prefixed(&mut payload, &next.key_id, "next key id");
-        extend_with_length_prefixed(&mut payload, &next.public_key, "next public key");
-        payload.extend_from_slice(&next.rotation_block_num.to_le_bytes());
+    match rotation_block_num {
+        None => payload.push(0),
+        Some(rotation_block_num) => {
+            payload.push(1);
+            payload.extend_from_slice(&rotation_block_num.to_le_bytes());
+        },
     }
     miden_protocol::Hasher::hash(&payload)
 }
@@ -201,8 +225,20 @@ fn extend_with_length_prefixed(payload: &mut Vec<u8>, field: &[u8], name: &str) 
 }
 
 /// [`TransactionInputDecrypter`] backed by a locally provisioned X25519 shared secret.
+///
+/// When a key rotation is scheduled (see [`Self::with_next_key`]) the decrypter also holds the
+/// next shared secret. The next key is announced through [`TransactionEncryptionKeyInfo::next_key`]
+/// ahead of the rotation, and submissions sealed against either key can be unsealed, so
+/// submissions sealed just before the rotation block still decrypt after it.
 pub struct LocalX25519TransactionInputDecrypter {
     secret_key: KeyExchangeKey,
+    next_key: Option<NextKey>,
+}
+
+/// The next shared secret and its scheduled activation block.
+struct NextKey {
+    secret_key: KeyExchangeKey,
+    rotation_block_num: u32,
 }
 
 impl LocalX25519TransactionInputDecrypter {
@@ -211,7 +247,18 @@ impl LocalX25519TransactionInputDecrypter {
 
     /// Constructs a decrypter from a locally provisioned shared secret.
     pub fn new(secret_key: KeyExchangeKey) -> Self {
-        Self { secret_key }
+        Self { secret_key, next_key: None }
+    }
+
+    /// Schedules a key rotation: `secret_key` replaces the current shared secret at
+    /// `rotation_block_num`.
+    ///
+    /// Like the current secret, the next secret and the rotation block must be identical across
+    /// every validator in the set.
+    #[must_use]
+    pub fn with_next_key(mut self, secret_key: KeyExchangeKey, rotation_block_num: u32) -> Self {
+        self.next_key = Some(NextKey { secret_key, rotation_block_num });
+        self
     }
 
     /// Returns the wire representation of [`Self::SCHEME`].
@@ -227,7 +274,7 @@ impl LocalX25519TransactionInputDecrypter {
     /// Returns the opaque identifier of the current encryption key: the first 4 bytes of the public
     /// key commitment.
     pub fn key_id(&self) -> Vec<u8> {
-        self.public_key().to_commitment().to_bytes()[..4].to_vec()
+        key_id_of(&self.public_key())
     }
 
     /// Returns the sealing key that clients use to encrypt messages to the validator set.
@@ -235,6 +282,33 @@ impl LocalX25519TransactionInputDecrypter {
     pub fn sealing_key(&self) -> SealingKey {
         SealingKey::X25519XChaCha20Poly1305(self.public_key())
     }
+
+    /// Returns the sealing key of the scheduled next encryption key, if any.
+    #[cfg(test)]
+    pub fn next_sealing_key(&self) -> Option<SealingKey> {
+        self.next_key
+            .as_ref()
+            .map(|next| SealingKey::X25519XChaCha20Poly1305(next.secret_key.public_key()))
+    }
+
+    /// Attempts to unseal `message` with `secret_key`.
+    fn unseal_with(
+        secret_key: &KeyExchangeKey,
+        message: SealedMessage,
+        associated_data: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
+        use anyhow::Context;
+
+        UnsealingKey::X25519XChaCha20Poly1305(secret_key.clone())
+            .unseal_bytes_with_associated_data(message, associated_data)
+            .context("failed to unseal the transaction inputs")
+    }
+}
+
+/// Returns the opaque identifier of an encryption key: the first 4 bytes of the public key
+/// commitment.
+fn key_id_of(public_key: &EncryptionPublicKey) -> Vec<u8> {
+    public_key.to_commitment().to_bytes()[..4].to_vec()
 }
 
 #[tonic::async_trait]
@@ -244,7 +318,15 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
             scheme: Self::scheme_id(),
             key_id: self.key_id(),
             public_key: self.public_key().to_bytes(),
-            next_key: None,
+            next_key: self.next_key.as_ref().map(|next| {
+                let public_key = next.secret_key.public_key();
+                NextEncryptionKeyInfo {
+                    scheme: Self::scheme_id(),
+                    key_id: key_id_of(&public_key),
+                    public_key: public_key.to_bytes(),
+                    rotation_block_num: next.rotation_block_num,
+                }
+            }),
         })
     }
 
@@ -257,9 +339,16 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
 
         let message = SealedMessage::read_from_bytes(ciphertext)
             .context("failed to deserialize the sealed message")?;
-        UnsealingKey::X25519XChaCha20Poly1305(self.secret_key.clone())
-            .unseal_bytes_with_associated_data(message, associated_data)
-            .context("failed to unseal the transaction inputs")
+        // Submissions may be sealed against the current key or, around a scheduled rotation,
+        // against the next key. The sealed message does not identify its key, so try the current
+        // key first and fall back to the next one.
+        match Self::unseal_with(&self.secret_key, message.clone(), associated_data) {
+            Ok(plaintext) => Ok(plaintext),
+            Err(err) => match &self.next_key {
+                Some(next) => Self::unseal_with(&next.secret_key, message, associated_data),
+                None => Err(err),
+            },
+        }
     }
 }
 
@@ -300,6 +389,67 @@ mod tests {
         assert_ne!(info_a.public_key, info_b.public_key);
         assert_ne!(info_a.key_id, info_b.key_id);
         assert_ne!(info_a.attestation_commitment(genesis), info_b.attestation_commitment(genesis));
+    }
+
+    /// Around a scheduled rotation, messages sealed against either the current or the next key must
+    /// decrypt, while an unrelated key must still be rejected.
+    #[tokio::test]
+    async fn decrypts_messages_sealed_against_either_key() {
+        let mut rng = rng();
+        let next_secret = KeyExchangeKey::read_from_bytes(&[8u8; 32]).unwrap();
+        let decrypter = decrypter_from(&[7u8; 32]).with_next_key(next_secret, 42);
+        let plaintext = b"transaction inputs";
+        let associated_data = b"scheme|key_id|chain|tx";
+
+        let sealed_current = decrypter
+            .sealing_key()
+            .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
+            .unwrap()
+            .to_bytes();
+        assert_eq!(
+            decrypter
+                .decrypt_transaction_inputs(&sealed_current, associated_data)
+                .await
+                .unwrap()
+                .as_slice(),
+            plaintext,
+        );
+
+        let sealed_next = decrypter
+            .next_sealing_key()
+            .expect("a scheduled rotation must expose the next sealing key")
+            .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
+            .unwrap()
+            .to_bytes();
+        assert_eq!(
+            decrypter
+                .decrypt_transaction_inputs(&sealed_next, associated_data)
+                .await
+                .unwrap()
+                .as_slice(),
+            plaintext,
+        );
+
+        // A message sealed against an unrelated key must be rejected by both keyring entries.
+        let sealed_other = decrypter_from(&[9u8; 32])
+            .sealing_key()
+            .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
+            .unwrap()
+            .to_bytes();
+        assert!(
+            decrypter
+                .decrypt_transaction_inputs(&sealed_other, associated_data)
+                .await
+                .is_err()
+        );
+
+        // Mismatched associated data must fail for either key.
+        assert!(
+            decrypter
+                .decrypt_transaction_inputs(&sealed_next, b"wrong associated data")
+                .await
+                .is_err()
+        );
     }
 
     /// A message sealed against the decrypter's sealing key must decrypt to the original plaintext,

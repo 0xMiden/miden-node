@@ -49,4 +49,12 @@ so its AWS identity needs that permission on the wrapping key. Note that, unlike
 encryption key is held in validator memory: AWS KMS cannot perform X25519 key agreement itself, so envelope encryption
 is the supported provisioning path.
 
+To rotate the shared encryption key, restart every validator with `--encryption-key.next.hex` (or
+`MIDEN_VALIDATOR_NEXT_ENCRYPTION_KEY`) set to the new shared secret and `--encryption-key.next.rotation-block` (or
+`MIDEN_VALIDATOR_NEXT_ENCRYPTION_KEY_ROTATION_BLOCK`) set to the block number at which the new key takes effect. The
+next key must differ from the current one. All validators must be configured with the same next key and rotation block
+before the rotation block is reached. Until that block, validators keep serving the current key and announce the
+upcoming one so clients can prepare. From that block on, they serve the new key as the current one. After the rotation,
+deployments should eventually move the new secret to `--encryption-key.hex` and drop the `next` options.
+
 Use `miden-validator start --help` for the complete current option list.

@@ -80,31 +80,15 @@ message ValidatorKeyAttestation {
 
   // The validator's signature over the attestation commitment: the Poseidon2 byte-mode hash of
   // `domain_tag || scheme || len(key_id) || key_id || genesis_commitment || len(public_key) ||
-  // public_key || next_key_transcript`, where `domain_tag` is the ASCII string
+  // public_key || rotation_transcript`, where `domain_tag` is the ASCII string
   // `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, the scheme, the rotation block number, and the
   // length prefixes are encoded as 4 bytes little-endian, and the genesis block commitment ties
   // the attestation to one network.
-  // `next_key_transcript` is empty when no rotation is scheduled, or the next key's `scheme ||
-  // len(key_id) || key_id || len(public_key) || public_key || rotation_block_num` otherwise,
-  // binding any scheduled rotation to the signature. The canonical construction is
+  // `rotation_transcript` is a single `0` byte when the key is attested as the current key, or
+  // `1` followed by `rotation_block_num` when the key is attested as a scheduled next key,
+  // binding the rotation block to the signature. The canonical construction is
   // `miden_validator::attestation_commitment`.
   bytes signature = 2;
-}
-
-// The next transaction encryption key, announced ahead of a scheduled key rotation.
-message NextTransactionEncryptionKey {
-  // IES scheme the next encryption key belongs to.
-  IesScheme scheme = 1;
-
-  // Opaque identifier of the next encryption key.
-  bytes key_id = 2;
-
-  // Raw public key bytes of the next encryption key, in the same encoding as
-  // `TransactionEncryptionKey.public_key`.
-  bytes public_key = 3;
-
-  // Block number at which the next key replaces the current one.
-  fixed32 rotation_block_num = 4;
 }
 
 // The shared transaction encryption key, attested by validators.
@@ -128,23 +112,41 @@ message TransactionEncryptionKey {
   // key that miden-crypto converts internally for X25519 key agreement).
   bytes public_key = 3;
 
-  // Validator attestations of this key (and of `next_key` when set).
+  // Validator attestations of this key.
   //
   // Currently contains a single attestation from the validator that served the request.
   // Collecting attestations from the whole validator set requires validator intercommunication
   // and is planned as a follow-up; the wire format already accommodates it.
   repeated ValidatorKeyAttestation attestations = 4;
 
-  // Set when a key rotation is scheduled: the key that replaces the current one, and the block
-  // number at which it takes effect. Covered by the attestation commitment, so it cannot be
-  // stripped or altered without invalidating the signatures.
-  //
-  // Never set currently; key rotation is not implemented yet.
-  optional NextTransactionEncryptionKey next_key = 5;
-
   // Reserved for future attestation evidence beyond the validator signatures, e.g. a TEE quote,
   // signature chain, compose hash, app measurement, epoch, or accepted measurement set.
-  reserved 6 to 9;
+  reserved 5 to 9;
+}
+
+// The next transaction encryption key, announced ahead of a scheduled key rotation.
+message NextTransactionEncryptionKey {
+  // The next encryption key, carrying its own validator attestations. The attestation commitment
+  // of a next key covers `rotation_block_num`, so the rotation block cannot be altered without
+  // invalidating the signatures.
+  TransactionEncryptionKey key = 1;
+
+  // Block number at which the next key replaces the current one.
+  fixed32 rotation_block_num = 2;
+}
+
+// Response for the `GetTransactionEncryptionKey` endpoint: the current transaction encryption
+// key, and the next one when a key rotation is scheduled.
+message TransactionEncryptionKeyResponse {
+  // The encryption key currently in effect.
+  TransactionEncryptionKey current_key = 1;
+
+  // Set when a key rotation is scheduled: the key that replaces the current one, and the block
+  // number at which it takes effect.
+  //
+  // Once the chain reaches the rotation block, validators serve the announced key as the current
+  // one (with a fresh attestation) and this field is cleared until another rotation is scheduled.
+  optional NextTransactionEncryptionKey next_key = 2;
 }
 
 // Represents a transaction ID.

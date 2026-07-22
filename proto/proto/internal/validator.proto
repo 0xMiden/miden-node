@@ -34,7 +34,7 @@ service Api {
    // The encryption key is shared across the whole validator set, so the returned public key is
    // identical regardless of which validator serves the request. The attestation carried in the
    // response is specific to this validator.
-   rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKey) {}
+   rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKeyResponse) {}
 }
 
 // BLOCK SUBSCRIPTION

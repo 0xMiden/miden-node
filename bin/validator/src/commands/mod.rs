@@ -28,6 +28,9 @@ const ENV_SIGNING_KEY: &str = "MIDEN_VALIDATOR_SIGNING_KEY";
 const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
+const ENV_NEXT_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_NEXT_ENCRYPTION_KEY";
+const ENV_NEXT_ENCRYPTION_KEY_ROTATION_BLOCK: &str =
+    "MIDEN_VALIDATOR_NEXT_ENCRYPTION_KEY_ROTATION_BLOCK";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 
@@ -164,6 +167,33 @@ pub enum ValidatorCommand {
             group = "encryption_key_source"
         )]
         encryption_key_kms_ciphertext: Option<String>,
+
+        /// Hex-encoded shared secret of the next transaction encryption key, scheduling a key
+        /// rotation at the block given by `encryption-key.next.rotation-block`.
+        ///
+        /// Like the current key, this value and the rotation block must be identical across every
+        /// validator in the set, and every validator must be reconfigured before the rotation
+        /// block is reached. Must differ from the current encryption key.
+        ///
+        /// Requires `encryption-key.next.rotation-block`.
+        #[arg(
+            long = "encryption-key.next.hex",
+            env = ENV_NEXT_ENCRYPTION_KEY,
+            value_name = "VALIDATOR_NEXT_ENCRYPTION_KEY",
+            requires = "encryption_key_rotation_block"
+        )]
+        encryption_key_next: Option<String>,
+
+        /// Block number at which the next transaction encryption key replaces the current one.
+        ///
+        /// Requires `encryption-key.next.hex`.
+        #[arg(
+            long = "encryption-key.next.rotation-block",
+            env = ENV_NEXT_ENCRYPTION_KEY_ROTATION_BLOCK,
+            value_name = "ROTATION_BLOCK_NUM",
+            requires = "encryption_key_next"
+        )]
+        encryption_key_rotation_block: Option<u32>,
     },
 }
 
@@ -204,18 +234,21 @@ impl ValidatorCommand {
                 sqlite_connection_pool_size,
                 encryption_key,
                 encryption_key_kms_ciphertext,
+                encryption_key_next,
+                encryption_key_rotation_block,
                 ..
             } => {
                 let address = listen;
 
-                let encryption_key_bytes = if let Some(ciphertext) = encryption_key_kms_ciphertext {
+                let encryption_key_hex = if let Some(ciphertext) = encryption_key_kms_ciphertext {
                     let ciphertext =
                         base64::engine::general_purpose::STANDARD
                             .decode(ciphertext)
                             .context("failed to decode the encryption key KMS ciphertext base64")?;
-                    miden_validator::decrypt_key_material(ciphertext)
+                    let encryption_key_bytes = miden_validator::decrypt_key_material(ciphertext)
                         .await
-                        .context("failed to decrypt the encryption key with KMS")?
+                        .context("failed to decrypt the encryption key with KMS")?;
+                    hex::encode(encryption_key_bytes)
                 } else {
                     // Unlike the signing key, whose insecure default is caught at startup against
                     // the chain's committed validator key, nothing cross-checks the encryption key.
@@ -229,13 +262,13 @@ impl ValidatorCommand {
                         );
                     }
 
-                    hex::decode(encryption_key)
-                        .context("failed to decode the encryption key hex")?
+                    encryption_key
                 };
-                let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
-                    .context("failed to construct the encryption key")?;
-                let decrypter: Arc<dyn TransactionInputDecrypter> =
-                    Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key));
+                let decrypter: Arc<dyn TransactionInputDecrypter> = Arc::new(build_decrypter(
+                    &encryption_key_hex,
+                    encryption_key_next.as_deref(),
+                    encryption_key_rotation_block,
+                )?);
 
                 let signer = if let Some(kms_key_id) = signing_key_kms_id {
                     ValidatorSigner::new_kms(kms_key_id).await?
@@ -264,6 +297,42 @@ impl ValidatorCommand {
             Self::Bootstrap { .. } | Self::Migrate { .. } => OpenTelemetry::Disabled,
         }
     }
+}
+
+// TRANSACTION INPUT DECRYPTER CONSTRUCTION
+// ================================================================================================
+
+/// Builds the transaction input decrypter from the hex-encoded shared secret and, when a rotation
+/// is scheduled, the hex-encoded next shared secret and its rotation block.
+fn build_decrypter(
+    encryption_key_hex: &str,
+    next_key_hex: Option<&str>,
+    rotation_block: Option<u32>,
+) -> anyhow::Result<LocalX25519TransactionInputDecrypter> {
+    let encryption_key_bytes =
+        hex::decode(encryption_key_hex).context("failed to decode the encryption key hex")?;
+    let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
+        .context("failed to construct the encryption key")?;
+
+    let mut decrypter = LocalX25519TransactionInputDecrypter::new(encryption_key);
+    if let Some(next_key_hex) = next_key_hex {
+        let rotation_block =
+            rotation_block.context("encryption-key.next.hex requires a rotation block")?;
+        let next_key_bytes =
+            hex::decode(next_key_hex).context("failed to decode the next encryption key hex")?;
+        if next_key_bytes == encryption_key_bytes {
+            anyhow::bail!("the next encryption key must differ from the current encryption key");
+        }
+        let next_key = KeyExchangeKey::read_from_bytes(&next_key_bytes)
+            .context("failed to construct the next encryption key")?;
+        decrypter = decrypter.with_next_key(next_key, rotation_block);
+        tracing::info!(
+            target: LOG_TARGET,
+            rotation_block,
+            "Transaction encryption key rotation scheduled"
+        );
+    }
+    Ok(decrypter)
 }
 
 // VALIDATOR SIGNING KEY
@@ -366,5 +435,77 @@ mod tests {
             panic!("hex key and KMS ciphertext together must be rejected");
         };
         assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    const NEXT_KEY_HEX: &str = "0303030303030303030303030303030303030303030303030303030303030303";
+
+    /// The minimal `start` argument list the rotation flags are appended to.
+    fn start_args() -> Vec<&'static str> {
+        vec![
+            "miden-validator",
+            "start",
+            "--listen",
+            "127.0.0.1:0",
+            "--data-directory",
+            "/tmp/validator-data",
+        ]
+    }
+
+    /// A rotation is only accepted as a complete pair: the next key without a rotation block and
+    /// the rotation block without a next key must both be rejected at argument parsing.
+    #[test]
+    fn rotation_flags_require_each_other() {
+        let mut next_only = start_args();
+        next_only.extend(["--encryption-key.next.hex", NEXT_KEY_HEX]);
+        assert!(ValidatorCommand::try_parse_from(next_only).is_err());
+
+        let mut block_only = start_args();
+        block_only.extend(["--encryption-key.next.rotation-block", "100"]);
+        assert!(ValidatorCommand::try_parse_from(block_only).is_err());
+
+        let mut both = start_args();
+        both.extend([
+            "--encryption-key.next.hex",
+            NEXT_KEY_HEX,
+            "--encryption-key.next.rotation-block",
+            "100",
+        ]);
+        assert!(ValidatorCommand::try_parse_from(both).is_ok());
+
+        assert!(ValidatorCommand::try_parse_from(start_args()).is_ok());
+    }
+
+    /// A scheduled rotation yields a decrypter announcing the next key at the rotation block.
+    #[tokio::test]
+    async fn build_decrypter_schedules_rotation() {
+        let decrypter =
+            build_decrypter(INSECURE_ENCRYPTION_KEY_HEX, Some(NEXT_KEY_HEX), Some(42)).unwrap();
+        let info = decrypter.encryption_key().await.unwrap();
+        let next = info.next_key.expect("rotation must be scheduled");
+        assert_eq!(next.rotation_block_num, 42);
+
+        let plain = build_decrypter(INSECURE_ENCRYPTION_KEY_HEX, None, None).unwrap();
+        assert!(plain.encryption_key().await.unwrap().next_key.is_none());
+    }
+
+    /// Invalid rotation configurations must be rejected: a next key equal to the current one,
+    /// undecodable hex, key material of the wrong width, and a missing rotation block.
+    #[test]
+    fn build_decrypter_rejects_invalid_rotation_config() {
+        let same_key = build_decrypter(
+            INSECURE_ENCRYPTION_KEY_HEX,
+            Some(INSECURE_ENCRYPTION_KEY_HEX),
+            Some(42),
+        );
+        assert!(same_key.err().unwrap().to_string().contains("must differ"));
+
+        let bad_hex = build_decrypter(INSECURE_ENCRYPTION_KEY_HEX, Some("not hex"), Some(42));
+        assert!(bad_hex.err().unwrap().to_string().contains("decode"));
+
+        let short_key = build_decrypter(INSECURE_ENCRYPTION_KEY_HEX, Some("0badf00d"), Some(42));
+        assert!(short_key.is_err());
+
+        let missing_block = build_decrypter(INSECURE_ENCRYPTION_KEY_HEX, Some(NEXT_KEY_HEX), None);
+        assert!(missing_block.err().unwrap().to_string().contains("rotation block"));
     }
 }

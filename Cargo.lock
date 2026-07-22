@@ -3407,6 +3407,7 @@ dependencies = [
  "miden-standards",
  "rand 0.10.2",
  "rayon",
+ "tempfile",
  "tokio",
 ]
 
@@ -3782,6 +3783,7 @@ dependencies = [
  "anyhow",
  "aws-config",
  "aws-sdk-kms",
+ "base64",
  "build-rs",
  "clap",
  "fs-err",
@@ -3793,6 +3795,7 @@ dependencies = [
  "miden-node-utils",
  "miden-protocol",
  "miden-tx",
+ "rand 0.10.2",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

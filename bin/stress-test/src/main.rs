@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -34,22 +35,28 @@ pub enum Command {
 
         /// Number of accounts to create.
         #[arg(short, long, value_name = "NUM_ACCOUNTS")]
-        num_accounts: usize,
+        num_accounts: NonZeroUsize,
 
         /// Percentage of accounts that will be created as public accounts. The rest will be private
         /// accounts.
-        #[arg(short, long, value_name = "PUBLIC_ACCOUNTS_PERCENTAGE", default_value = "0")]
+        #[arg(
+            short,
+            long,
+            value_name = "PUBLIC_ACCOUNTS_PERCENTAGE",
+            default_value = "0",
+            value_parser = clap::value_parser!(u8).range(0..=100)
+        )]
         public_accounts_percentage: u8,
 
         /// Number of entries to add to a deterministic storage map on every public account.
         #[arg(long, value_name = "STORAGE_MAP_ENTRIES", default_value = "0")]
-        storage_map_entries: usize,
+        storage_map_entries: u32,
 
         /// Number of distinct vault assets to add to every public account.
         #[arg(long, value_name = "VAULT_ENTRIES", default_value = "1")]
-        vault_entries: usize,
+        vault_entries: NonZeroUsize,
 
-        /// Number of post-initialization blocks to generate with random account updates.
+        /// Number of post-initialization blocks containing public account updates.
         #[arg(long, value_name = "ACCOUNT_UPDATE_BLOCKS", default_value = "0")]
         account_update_blocks: usize,
     },
@@ -124,10 +131,10 @@ async fn main() {
         } => {
             Box::pin(seed_store(
                 data_directory,
-                num_accounts,
+                num_accounts.get(),
                 public_accounts_percentage,
                 storage_map_entries,
-                vault_entries,
+                vault_entries.get(),
                 account_update_blocks,
             ))
             .await;

@@ -8,7 +8,7 @@ use miden_node_utils::fs::ensure_empty_directory;
 use miden_protocol::utils::serde::Serializable;
 use miden_validator::{DataDirectory, ValidatorSigner};
 
-use super::ValidatorKey;
+use super::ValidatorSigningKey;
 
 // Bootstraps the validator component.
 pub async fn bootstrap(
@@ -17,7 +17,7 @@ pub async fn bootstrap(
     data_directory: &Path,
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_config: Option<&PathBuf>,
-    validator_key: ValidatorKey,
+    signing_key: ValidatorSigningKey,
 ) -> anyhow::Result<()> {
     let config = genesis_config
         .map(|file_path| {
@@ -32,7 +32,7 @@ pub async fn bootstrap(
         ensure_empty_directory(directory)?;
     }
 
-    let signer = validator_key.into_signer().await?;
+    let signer = signing_key.into_signer().await?;
     let dirs = DataDirectory::load_bootstrap(
         genesis_block_directory.to_path_buf(),
         accounts_directory.to_path_buf(),
@@ -68,7 +68,7 @@ async fn build_and_write_genesis(
         .into_unsigned_block()
         .context("failed to build the unsigned genesis block")?;
     let signature = signer
-        .sign(unsigned_genesis_block.header())
+        .sign_commitment(unsigned_genesis_block.header().commitment())
         .await
         .context("failed to sign the genesis block")?;
     let genesis_block = unsigned_genesis_block

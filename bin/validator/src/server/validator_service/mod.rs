@@ -19,12 +19,14 @@ use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
-use crate::{COMPONENT, ValidatorSigner};
+use crate::signers::TransactionEncryptionKeyInfo;
+use crate::{COMPONENT, TransactionInputDecrypter, ValidatorSigner};
 
 #[cfg(test)]
 mod tests;
 
 mod block_subscription;
+mod get_transaction_encryption_key;
 mod sign_block;
 mod status;
 mod submit_proven_transaction;
@@ -61,6 +63,10 @@ pub enum ValidatorError {
     BlockBackupFailed(#[source] std::io::Error),
     #[error("expected a single-key validator set, got {actual} keys")]
     UnexpectedValidatorSetSize { actual: usize },
+    #[error("no genesis block header exists")]
+    NoGenesisHeader,
+    #[error("failed to attest the transaction encryption key: {0}")]
+    EncryptionKeyAttestationFailed(String),
 }
 
 // VALIDATOR SERVICE
@@ -76,6 +82,14 @@ pub(crate) struct ValidatorService {
     /// Write handle, shared behind an `Arc` because this service is itself shared across concurrent
     /// gRPC handlers; writes still serialize on the single writer connection.
     writer: Arc<DbWriter>,
+    /// Decrypter for transaction inputs sealed against the shared encryption key.
+    #[expect(dead_code, reason = "used by the submit path in a follow-up PR")]
+    decrypter: Arc<dyn TransactionInputDecrypter>,
+    /// Public metadata of the shared encryption key, fetched once at construction.
+    encryption_key_info: TransactionEncryptionKeyInfo,
+    /// Signature by this validator's own signing key over the encryption key attestation
+    /// commitment, computed once at construction.
+    encryption_key_attestation: Signature,
     block_store: BlockStore,
     /// Enforces mutual exclusion between backup block subscriptions and all other RPCs. Regular
     /// RPCs take the read side (any number may run concurrently); a backup subscription takes the
@@ -95,10 +109,12 @@ pub(crate) struct ValidatorService {
 }
 
 impl ValidatorService {
+    #[expect(clippy::too_many_arguments)]
     pub(crate) async fn new(
         signer: ValidatorSigner,
         writer: DbWriter,
         reader: DbReader,
+        decrypter: Arc<dyn TransactionInputDecrypter>,
         block_store: BlockStore,
         initial_chain_tip: u32,
         initial_tx_count: u64,
@@ -126,8 +142,28 @@ impl ValidatorService {
             });
         }
 
+        // Both keys are fixed for the process lifetime, so the attestation is computed once. This
+        // also keeps KMS-backed signers to a single signing call.
+        let genesis_commitment = reader
+            .read("load_genesis_header", |tx| load_block_header(tx, BlockNumber::GENESIS))
+            .await
+            .map_err(ValidatorError::DatabaseError)?
+            .ok_or(ValidatorError::NoGenesisHeader)?
+            .commitment();
+        let encryption_key_info = decrypter
+            .encryption_key()
+            .await
+            .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
+        let encryption_key_attestation = signer
+            .sign_commitment(encryption_key_info.attestation_commitment(genesis_commitment))
+            .await
+            .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
+
         Ok(Self {
             signer,
+            decrypter,
+            encryption_key_info,
+            encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
             reader,
             writer: Arc::new(writer),
@@ -260,7 +296,7 @@ impl ValidatorService {
     )]
     async fn sign_header(&self, header: &BlockHeader) -> Result<Signature, ValidatorError> {
         self.signer
-            .sign(header)
+            .sign_commitment(header.commitment())
             .await
             .map_err(|err| ValidatorError::BlockSigningFailed(err.to_string()))
     }

@@ -20,7 +20,7 @@ use crate::db::{
     load_chain_tip,
     load_with_pool_size,
 };
-use crate::{DataDirectory, LOG_TARGET, ValidatorSigner};
+use crate::{DataDirectory, LOG_TARGET, TransactionInputDecrypter, ValidatorSigner};
 
 mod validator_service;
 
@@ -42,6 +42,10 @@ pub struct ValidatorServer {
 
     /// The signer used to sign blocks.
     pub signer: ValidatorSigner,
+
+    /// The decrypter for the shared transaction encryption key, used to unseal encrypted
+    /// transaction inputs.
+    pub decrypter: std::sync::Arc<dyn TransactionInputDecrypter>,
 
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
@@ -100,6 +104,7 @@ impl ValidatorServer {
                     self.signer,
                     writer,
                     reader,
+                    self.decrypter,
                     block_store,
                     initial_chain_tip,
                     initial_tx_count,

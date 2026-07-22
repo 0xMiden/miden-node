@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -773,9 +774,10 @@ impl State {
                 None
             };
 
-            // Non-unique account Id prefixes for new accounts are not allowed.
+            // Non-unique account Id prefixes for new accounts are not allowed, so the transaction
+            // cannot be valid and the response is already complete.
             if let Some(false) = new_account_id_prefix_is_unique {
-                return Err(TransactionInputs {
+                return ControlFlow::Break(TransactionInputs {
                     new_account_id_prefix_is_unique,
                     ..Default::default()
                 });
@@ -789,7 +791,7 @@ impl State {
                 })
                 .collect();
 
-            Ok((
+            ControlFlow::Continue((
                 account_commitment,
                 nullifiers,
                 new_account_id_prefix_is_unique,
@@ -798,8 +800,8 @@ impl State {
         });
         let (account_commitment, nullifiers, new_account_id_prefix_is_unique, latest_block_num) =
             match tree_inputs {
-                Ok(inputs) => inputs,
-                Err(inputs) => return Ok(inputs),
+                ControlFlow::Continue(inputs) => inputs,
+                ControlFlow::Break(response) => return Ok(response),
             };
 
         // Scope the note lookup by the snapshot's tip so the result is consistent with the tree

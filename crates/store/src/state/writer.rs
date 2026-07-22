@@ -165,9 +165,9 @@ impl BlockWriter {
 
         self.validate_block_header(header, body).await?;
 
-        // Compute the tree and forest mutations and note records upfront, before any
-        // modifications. The writer is the sole forest mutator, so the precomputed forest update
-        // stays valid until it is applied after the DB commit below.
+        // Compute the tree and forest mutations and note records upfront, before any modifications.
+        // The writer is the sole forest mutator, so the precomputed forest update stays valid until
+        // it is applied after the DB commit below.
         let (notes, nullifier_tree_update, account_tree_update, account_forest_update) =
             tokio::task::block_in_place(|| {
                 let notes = Self::build_note_records(header, body)?;

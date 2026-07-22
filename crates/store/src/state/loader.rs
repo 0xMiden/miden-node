@@ -558,7 +558,7 @@ pub async fn rebuild_account_state_forest(
             break;
         }
 
-        // Process each account in this page
+        let mut patches = Vec::with_capacity(page.account_ids.len());
         for account_id in page.account_ids {
             // TODO: Loading the full account from the database is inefficient and will need to go
             // away. <https://github.com/0xMiden/node/issues/1556>
@@ -572,8 +572,12 @@ pub async fn rebuild_account_state_forest(
                 StateInitializationError::AccountToDeltaConversionFailed(e.to_string())
             })?;
 
-            forest.update_account(block_num, &patch);
+            patches.push(patch);
         }
+
+        forest
+            .apply_rebuild_updates(block_num, patches)
+            .map_err(StateInitializationError::AccountStateForestRebuild)?;
 
         cursor = page.next_cursor;
         if cursor.is_none() {

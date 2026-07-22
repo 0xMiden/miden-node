@@ -126,13 +126,13 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
     echo "Bootstrapping validator 1 (signs genesis; validator 2's public key is committed, not signed with)..."
     KMS_BOOTSTRAP_ARGS=()
     if [[ -n "$KMS_KEY_ID" ]]; then
-        KMS_BOOTSTRAP_ARGS+=(--key.kms-id "$KMS_KEY_ID")
-        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.kms-id "$KMS_KEY_ID")
-        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.kms-id "$KMS_KEY_ID_2")
+        KMS_BOOTSTRAP_ARGS+=(--signing-key.kms-id "$KMS_KEY_ID")
+        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.kms-id "$KMS_KEY_ID")
+        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.kms-id "$KMS_KEY_ID_2")
     else
-        KMS_BOOTSTRAP_ARGS+=(--key.hex "$VALIDATOR_1_KEY_HEX")
-        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.hex "$VALIDATOR_1_KEY_HEX")
-        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --key.hex "$VALIDATOR_2_KEY_HEX")
+        KMS_BOOTSTRAP_ARGS+=(--signing-key.hex "$VALIDATOR_1_KEY_HEX")
+        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.hex "$VALIDATOR_1_KEY_HEX")
+        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.hex "$VALIDATOR_2_KEY_HEX")
     fi
 
     # The validator set is part of the genesis config. Prepend the top-level `validators` key to
@@ -176,11 +176,11 @@ echo "=== Starting components ==="
 KMS_START_ARGS_1=()
 KMS_START_ARGS_2=()
 if [[ -n "$KMS_KEY_ID" ]]; then
-    KMS_START_ARGS_1+=(--key.kms-id "$KMS_KEY_ID")
-    KMS_START_ARGS_2+=(--key.kms-id "$KMS_KEY_ID_2")
+    KMS_START_ARGS_1+=(--signing-key.kms-id "$KMS_KEY_ID")
+    KMS_START_ARGS_2+=(--signing-key.kms-id "$KMS_KEY_ID_2")
 else
-    KMS_START_ARGS_1+=(--key.hex "$VALIDATOR_1_KEY_HEX")
-    KMS_START_ARGS_2+=(--key.hex "$VALIDATOR_2_KEY_HEX")
+    KMS_START_ARGS_1+=(--signing-key.hex "$VALIDATOR_1_KEY_HEX")
+    KMS_START_ARGS_2+=(--signing-key.hex "$VALIDATOR_2_KEY_HEX")
 fi
 
 echo "Starting validator 1..."

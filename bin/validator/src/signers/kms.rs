@@ -1,5 +1,7 @@
+use anyhow::Context;
 use aws_sdk_kms::error::SdkError;
 use aws_sdk_kms::operation::sign::SignError;
+use aws_sdk_kms::primitives::Blob;
 use aws_sdk_kms::types::SigningAlgorithmSpec;
 use miden_protocol::Word;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
@@ -113,4 +115,32 @@ impl KmsSigner {
     pub fn public_key(&self) -> PublicKey {
         self.pub_key.clone()
     }
+}
+
+// KMS KEY MATERIAL DECRYPTION
+// ================================================================================================
+
+/// Recovers key material wrapped with an AWS KMS key by calling `kms:Decrypt`.
+///
+/// The ciphertext must have been produced by `kms:Encrypt` under a symmetric KMS key. The KMS key
+/// ID is embedded in the ciphertext blob, so it does not need to be supplied. The caller's AWS
+/// identity requires the `kms:Decrypt` permission on that key, analogous to the policy documented
+/// on [`KmsSigner::new`].
+///
+/// Note that unlike [`KmsSigner`], where the private key never leaves KMS, the decrypted key
+/// material is returned to and held by the calling process.
+pub async fn decrypt_key_material(ciphertext: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    let version = aws_config::BehaviorVersion::v2026_01_12();
+    let config = aws_config::load_defaults(version).await;
+    let client = aws_sdk_kms::Client::new(&config);
+
+    let output = client
+        .decrypt()
+        .ciphertext_blob(Blob::new(ciphertext))
+        .send()
+        .await
+        .context("KMS decrypt request failed")?;
+
+    let plaintext = output.plaintext().context("KMS decrypt returned no plaintext")?;
+    Ok(plaintext.as_ref().to_vec())
 }

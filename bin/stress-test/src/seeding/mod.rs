@@ -56,7 +56,7 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::utils::serde::Serializable;
 use miden_protocol::vm::ExecutionProof;
-use miden_protocol::{Felt, ONE, Word};
+use miden_protocol::{ACCOUNT_UPDATE_MAX_SIZE, Felt, ONE, Word};
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{FungibleFaucet, TokenName};
 use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
@@ -79,10 +79,57 @@ mod tests;
 
 const BATCHES_PER_BLOCK: usize = 16;
 const TRANSACTIONS_PER_BATCH: usize = 16;
+const ACCOUNT_UPDATES_PER_BLOCK: usize = BATCHES_PER_BLOCK * TRANSACTIONS_PER_BATCH - 1;
+const STORAGE_MAP_ENTRY_SERIALIZED_SIZE: u64 = 64;
+const ACCOUNT_UPDATE_SIZE_HEADROOM: u64 = 32 * 1024;
 
 pub const ACCOUNTS_FILENAME: &str = "accounts.txt";
 
 pub const BENCHMARK_STORAGE_MAP_SLOT_NAME: &str = "miden::mock::stress_test::map";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AccountBatch {
+    public: usize,
+    private: usize,
+}
+
+fn rounded_percentage(count: usize, percentage: u8) -> usize {
+    let numerator = (count as u128) * u128::from(percentage) + 50;
+    usize::try_from(numerator / 100).expect("percentage of usize fits into usize")
+}
+
+fn plan_account_batches(
+    num_accounts: usize,
+    public_accounts_percentage: u8,
+    batch_capacity: usize,
+) -> Vec<AccountBatch> {
+    assert!(
+        public_accounts_percentage <= 100,
+        "public account percentage must be at most 100"
+    );
+    assert!(batch_capacity > 0, "account batch capacity must be non-zero");
+
+    (0..num_accounts)
+        .step_by(batch_capacity)
+        .map(|start| {
+            let end = start.saturating_add(batch_capacity).min(num_accounts);
+            let public = rounded_percentage(end, public_accounts_percentage)
+                - rounded_percentage(start, public_accounts_percentage);
+            AccountBatch { public, private: end - start - public }
+        })
+        .collect()
+}
+
+fn account_update_may_exceed_protocol_limit(
+    storage_map_entries: u32,
+    vault_entries: usize,
+) -> bool {
+    let estimated_size = u64::from(storage_map_entries) * STORAGE_MAP_ENTRY_SERIALIZED_SIZE
+        + u64::try_from(vault_entries).expect("vault entry count fits into u64")
+            * STORAGE_MAP_ENTRY_SERIALIZED_SIZE
+        + ACCOUNT_UPDATE_SIZE_HEADROOM;
+    estimated_size > u64::from(ACCOUNT_UPDATE_MAX_SIZE)
+}
 
 // SEED STORE
 // ================================================================================================
@@ -92,16 +139,25 @@ pub async fn seed_store(
     data_directory: PathBuf,
     num_accounts: usize,
     public_accounts_percentage: u8,
-    storage_map_entries: usize,
+    storage_map_entries: u32,
     vault_entries: usize,
     account_update_blocks: usize,
 ) {
     let start = Instant::now();
+    assert!(num_accounts > 0, "--num-accounts must be greater than zero");
+    assert!(vault_entries > 0, "--vault-entries must be greater than zero");
     assert!(
         vault_entries <= NoteAssets::MAX_NUM_ASSETS,
         "--vault-entries must be at most {}",
         NoteAssets::MAX_NUM_ASSETS
     );
+    if account_update_blocks > 0 {
+        assert!(
+            storage_map_entries > 0
+                && rounded_percentage(num_accounts, public_accounts_percentage) > 0,
+            "--account-update-blocks requires at least one public account and a non-empty benchmark storage map"
+        );
+    }
 
     // Recreate the data directory (it should be empty for store bootstrapping).
     //
@@ -109,35 +165,78 @@ pub async fn seed_store(
     let _ = fs_err::remove_dir_all(&data_directory);
     fs_err::create_dir_all(&data_directory).expect("created data directory");
 
-    // generate the faucet account and the genesis state
+    // Generate the faucet accounts and genesis state. Public account state which cannot fit into a
+    // transaction account update is inserted at genesis so later partial updates can still exercise
+    // normal block application.
     let benchmark_faucets = create_benchmark_faucets(vault_entries);
     let faucet = benchmark_faucets[0].clone();
     let asset_faucet_ids = benchmark_faucets.iter().map(Account::id).collect::<Vec<_>>();
+    let num_public_accounts = rounded_percentage(num_accounts, public_accounts_percentage);
+    let seed_public_accounts_at_genesis =
+        account_update_may_exceed_protocol_limit(storage_map_entries, vault_entries);
+    let genesis_account_key_pair = if seed_public_accounts_at_genesis {
+        let coin_seed: [u64; 4] = rand::rng().random();
+        let mut rng = RandomCoin::new(coin_seed.map(Felt::new_unchecked).into());
+        Some(SecretKey::with_rng(&mut rng))
+    } else {
+        None
+    };
+    let genesis_benchmark_accounts =
+        genesis_account_key_pair.as_ref().map_or_else(Vec::new, |key| {
+            create_existing_benchmark_accounts(
+                num_public_accounts,
+                key,
+                &asset_faucet_ids,
+                storage_map_entries,
+                vault_entries,
+            )
+        });
+    let mut genesis_accounts = benchmark_faucets;
+    genesis_accounts.extend(genesis_benchmark_accounts);
     let fee_params = FeeParameters::new(faucet.id(), 0);
     let signer = EcdsaSecretKey::new();
     let genesis_state = GenesisState::new(
-        benchmark_faucets,
+        genesis_accounts,
         fee_params,
         1,
         1,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state
-        .clone()
-        .into_block(&signer)
-        .expect("genesis block should be created");
+    let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
+    let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 
     let store_state = load_state(data_directory.clone()).await;
+
+    // Recreate the deterministic genesis benchmark accounts after bootstrapping instead of keeping
+    // another copy of their potentially very large maps alive while the genesis block is built.
+    let initial_accounts = genesis_account_key_pair.as_ref().map_or_else(Vec::new, |key| {
+        create_existing_benchmark_accounts(
+            num_public_accounts,
+            key,
+            &asset_faucet_ids,
+            storage_map_entries,
+            vault_entries,
+        )
+    });
+    let account_batches = if seed_public_accounts_at_genesis {
+        plan_account_batches(num_accounts - num_public_accounts, 0, ACCOUNT_UPDATES_PER_BLOCK)
+    } else {
+        plan_account_batches(num_accounts, public_accounts_percentage, ACCOUNT_UPDATES_PER_BLOCK)
+    };
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
     let data_directory =
         miden_node_store::DataDirectory::load(data_directory).expect("data directory should exist");
-    let genesis_header = genesis_state.into_block(&signer).unwrap().into_inner();
     let metrics = Box::pin(generate_blocks(
-        num_accounts,
-        public_accounts_percentage,
+        account_batches,
+        initial_accounts,
+        if seed_public_accounts_at_genesis {
+            u64::try_from(num_public_accounts).expect("public account count fits into u64")
+        } else {
+            0
+        },
         faucet,
         genesis_header,
         &store_state,
@@ -157,46 +256,36 @@ pub async fn seed_store(
 
 /// Generates batches of transactions to be inserted into the store.
 ///
-/// The first transaction in each batch sends assets from the faucet to 255 accounts.
-/// The rest of the transactions consume the notes created by the faucet in the previous block.
+/// Account-creation notes are emitted in batches of at most 255 and consumed in a subsequent
+/// block. Optional benchmark updates likewise use separate note-emission and account-update
+/// blocks so their insertion times can be reported independently.
 #[expect(clippy::too_many_arguments)]
 #[expect(clippy::too_many_lines)]
 async fn generate_blocks(
-    num_accounts: usize,
-    public_accounts_percentage: u8,
+    account_batches: Vec<AccountBatch>,
+    initial_accounts: Vec<Account>,
+    first_account_index: u64,
     mut faucet: Account,
-    genesis_block: SignedBlock,
+    genesis_header: BlockHeader,
     store_state: &Arc<State>,
     data_directory: DataDirectory,
     accounts_filepath: PathBuf,
     signer: &EcdsaSecretKey,
-    storage_map_entries: usize,
+    storage_map_entries: u32,
     vault_entries: usize,
     account_update_blocks: usize,
     asset_faucet_ids: Vec<AccountId>,
 ) -> SeedingMetrics {
-    // Each block is composed of [`BATCHES_PER_BLOCK`] batches, and each batch is composed of
-    // [`TRANSACTIONS_PER_BATCH`] txs. The first note of the block is always a send assets tx from
-    // the faucet to (BATCHES_PER_BLOCK * TRANSACTIONS_PER_BATCH) - 1 accounts. The rest of the
-    // notes are consume note txs from the (BATCHES_PER_BLOCK * TRANSACTIONS_PER_BATCH) - 1 accounts
-    // that were minted in the previous block.
     let mut metrics = SeedingMetrics::new(data_directory.database_path());
 
-    let mut account_ids = vec![];
-    let mut note_nullifiers = vec![];
-    let mut account_states: BTreeMap<AccountId, Account> = BTreeMap::new();
+    let mut account_ids = initial_accounts.iter().map(Account::id).collect::<Vec<_>>();
+    let mut account_states = initial_accounts
+        .into_iter()
+        .map(|account| (account.id(), account))
+        .collect::<BTreeMap<_, _>>();
 
     let mut consume_notes_txs: Vec<ProvenTransaction> = vec![];
     let mut pending_consumed_accounts: Vec<Account> = vec![];
-
-    let consumes_per_block = TRANSACTIONS_PER_BATCH * BATCHES_PER_BLOCK - 1;
-    #[expect(clippy::cast_sign_loss, clippy::cast_precision_loss)]
-    let num_public_accounts = (consumes_per_block as f64
-        * (f64::from(public_accounts_percentage) / 100.0))
-        .round() as usize;
-    let num_private_accounts = consumes_per_block - num_public_accounts;
-    // +1 to account for the first block with the send assets tx only
-    let total_blocks = (num_accounts / consumes_per_block) + 1;
 
     // share random coin seed and key pair for all accounts to avoid key generation overhead
     let coin_seed: [u64; 4] = rand::rng().random();
@@ -206,45 +295,49 @@ async fn generate_blocks(
         SecretKey::with_rng(&mut *rng)
     };
 
-    let mut prev_block_header = genesis_block.header().clone();
-    let mut current_anchor_header = genesis_block.header().clone();
+    let mut prev_block_header = genesis_header;
+    let mut next_account_index = first_account_index;
+    let mut pending_public_accounts = 0;
 
-    for i in 0..total_blocks {
+    for (batch_index, batch) in account_batches.into_iter().enumerate() {
         let mut block_txs = Vec::with_capacity(BATCHES_PER_BLOCK * TRANSACTIONS_PER_BATCH);
 
         // create public accounts and notes that mint assets for these accounts
         let (pub_accounts, pub_notes) = create_accounts_and_notes(
-            num_public_accounts,
+            batch.public,
             AccountType::Public,
             &key_pair,
             &rng,
             &asset_faucet_ids,
-            i,
+            next_account_index,
             storage_map_entries,
             vault_entries,
         );
+        next_account_index += u64::try_from(batch.public).expect("account count fits into u64");
 
         // create private accounts and notes that mint assets for these accounts
         let (priv_accounts, priv_notes) = create_accounts_and_notes(
-            num_private_accounts,
+            batch.private,
             AccountType::Private,
             &key_pair,
             &rng,
             &asset_faucet_ids,
-            i,
+            next_account_index,
             storage_map_entries,
             vault_entries,
         );
+        next_account_index += u64::try_from(batch.private).expect("account count fits into u64");
 
-        let notes = [pub_notes, priv_notes].concat();
-        let accounts = [pub_accounts, priv_accounts].concat();
+        let mut notes = pub_notes;
+        notes.extend(priv_notes);
+        let mut accounts = pub_accounts;
+        accounts.extend(priv_accounts);
         account_ids.extend(accounts.iter().map(Account::id));
-        note_nullifiers.extend(notes.iter().map(|n| n.nullifier().prefix()));
-
         // create the tx that creates the notes
         let emit_note_tx = create_emit_note_tx(&prev_block_header, &mut faucet, notes.clone());
 
         // collect all the txs
+        let has_pending_account_creations = !consume_notes_txs.is_empty();
         block_txs.push(emit_note_tx);
         block_txs.extend(consume_notes_txs);
 
@@ -258,13 +351,23 @@ async fn generate_blocks(
         let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
 
         // update blocks
-        prev_block_header =
-            apply_block(batches, block_inputs, store_state, &mut metrics, signer).await;
+        let block_kind = if has_pending_account_creations {
+            metrics::BlockKind::AccountCreation
+        } else {
+            metrics::BlockKind::AccountNoteEmission
+        };
+        prev_block_header = apply_block(
+            batches,
+            block_inputs,
+            store_state,
+            &mut metrics,
+            signer,
+            block_kind,
+            pending_public_accounts,
+        )
+        .await;
         account_states
             .extend(pending_consumed_accounts.into_iter().map(|account| (account.id(), account)));
-        if current_anchor_header.block_epoch() != prev_block_header.block_epoch() {
-            current_anchor_header = prev_block_header.clone();
-        }
 
         // create the consume notes txs to be used in the next block
         let batch_inputs =
@@ -276,24 +379,50 @@ async fn generate_blocks(
             &batch_inputs.note_proofs,
             None,
         );
+        pending_public_accounts = batch.public;
 
         // track store size every 50 blocks
-        if i % 50 == 0 {
+        if batch_index % 50 == 0 {
             metrics.record_store_size();
         }
+    }
+
+    // The creation pipeline emits notes in one block and consumes them in the next. Flush the final
+    // set of consume transactions so `num_accounts` describes persisted accounts rather than merely
+    // emitted account-creation notes.
+    if !consume_notes_txs.is_empty() {
+        let batches: Vec<ProvenBatch> = consume_notes_txs
+            .par_chunks(TRANSACTIONS_PER_BATCH)
+            .map(|txs| create_batch(txs, &prev_block_header))
+            .collect();
+        let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
+        prev_block_header = apply_block(
+            batches,
+            block_inputs,
+            store_state,
+            &mut metrics,
+            signer,
+            metrics::BlockKind::AccountCreation,
+            pending_public_accounts,
+        )
+        .await;
+        account_states
+            .extend(pending_consumed_accounts.into_iter().map(|account| (account.id(), account)));
+        metrics.record_store_size();
     }
 
     let update_note_faucet_ids =
         asset_faucet_ids.iter().take(vault_entries).copied().collect::<Vec<_>>();
     let mut random = rand::rng();
     for update_block_index in 0..account_update_blocks {
-        let mut block_txs = Vec::with_capacity(BATCHES_PER_BLOCK * TRANSACTIONS_PER_BATCH);
-
         let selected_account_ids = select_random_account_ids_for_update_notes(
             &account_states,
-            &pending_consumed_accounts,
-            consumes_per_block,
+            ACCOUNT_UPDATES_PER_BLOCK,
             &mut random,
+        );
+        assert!(
+            !selected_account_ids.is_empty(),
+            "--account-update-blocks requires at least one public account with a benchmark storage map"
         );
         let notes = {
             let mut note_rng = rng.lock().unwrap();
@@ -304,31 +433,31 @@ async fn generate_blocks(
         };
 
         let emit_note_tx = create_emit_note_tx(&prev_block_header, &mut faucet, notes.clone());
-        block_txs.push(emit_note_tx);
-        block_txs.extend(consume_notes_txs);
-
-        let batches: Vec<ProvenBatch> = block_txs
-            .par_chunks(TRANSACTIONS_PER_BATCH)
-            .map(|txs| create_batch(txs, &prev_block_header))
-            .collect();
+        let batches = vec![create_batch(std::slice::from_ref(&emit_note_tx), &prev_block_header)];
 
         let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
-
-        prev_block_header =
-            apply_block(batches, block_inputs, store_state, &mut metrics, signer).await;
-        account_states
-            .extend(pending_consumed_accounts.into_iter().map(|account| (account.id(), account)));
-        if current_anchor_header.block_epoch() != prev_block_header.block_epoch() {
-            current_anchor_header = prev_block_header.clone();
-        }
+        prev_block_header = apply_block(
+            batches,
+            block_inputs,
+            store_state,
+            &mut metrics,
+            signer,
+            metrics::BlockKind::UpdateNoteEmission,
+            0,
+        )
+        .await;
 
         let batch_inputs =
             get_batch_inputs(store_state, &prev_block_header, &notes, &mut metrics).await;
         let accounts = selected_account_ids
             .iter()
-            .filter_map(|account_id| account_states.get(account_id).cloned())
+            .map(|account_id| {
+                account_states
+                    .remove(account_id)
+                    .expect("selected update account should be present")
+            })
             .collect::<Vec<_>>();
-        (pending_consumed_accounts, consume_notes_txs) = create_consume_note_txs(
+        let (updated_accounts, update_txs) = create_consume_note_txs(
             &prev_block_header,
             accounts,
             notes,
@@ -338,11 +467,26 @@ async fn generate_blocks(
                 storage_map_entries,
             }),
         );
-
-        if update_block_index % 50 == 0 {
-            metrics.record_store_size();
-        }
+        let batches: Vec<ProvenBatch> = update_txs
+            .par_chunks(TRANSACTIONS_PER_BATCH)
+            .map(|txs| create_batch(txs, &prev_block_header))
+            .collect();
+        let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
+        prev_block_header = apply_block(
+            batches,
+            block_inputs,
+            store_state,
+            &mut metrics,
+            signer,
+            metrics::BlockKind::AccountUpdate,
+            selected_account_ids.len(),
+        )
+        .await;
+        account_states.extend(updated_accounts.into_iter().map(|account| (account.id(), account)));
+        metrics.record_store_size();
     }
+
+    metrics.record_store_size();
 
     // dump account ids to a file
     let mut file = fs::File::create(accounts_filepath).await.unwrap();
@@ -363,7 +507,10 @@ async fn apply_block(
     store_state: &Arc<State>,
     metrics: &mut SeedingMetrics,
     signer: &EcdsaSecretKey,
+    block_kind: metrics::BlockKind,
+    public_account_updates: usize,
 ) -> BlockHeader {
+    let transaction_count = batches.iter().map(|batch| batch.transactions().as_slice().len()).sum();
     let proposed_block = ProposedBlock::new(block_inputs.clone(), batches).unwrap();
     let (header, body) = proposed_block.clone().into_header_and_body().unwrap();
     let block_size: usize = header.to_bytes().len() + body.to_bytes().len();
@@ -379,7 +526,13 @@ async fn apply_block(
         .apply_block_with_proving_inputs(ordered_batches, block_inputs, signed_block)
         .await
         .unwrap();
-    metrics.track_block_insertion(start.elapsed(), block_size);
+    metrics.track_block_insertion(
+        block_kind,
+        start.elapsed(),
+        block_size,
+        transaction_count,
+        public_account_updates,
+    );
 
     header
 }
@@ -399,8 +552,8 @@ fn create_accounts_and_notes(
     key_pair: &SecretKey,
     rng: &Arc<Mutex<RandomCoin>>,
     asset_faucet_ids: &[AccountId],
-    block_num: usize,
-    storage_map_entries: usize,
+    first_account_index: u64,
+    storage_map_entries: u32,
     vault_entries: usize,
 ) -> (Vec<Account>, Vec<Note>) {
     assert!(
@@ -417,7 +570,8 @@ fn create_accounts_and_notes(
         .map(|account_index| {
             let account = create_account(
                 key_pair.public_key(),
-                ((block_num * num_accounts) + account_index) as u64,
+                first_account_index
+                    + u64::try_from(account_index).expect("account index fits into u64"),
                 account_type,
                 storage_map_entries,
             );
@@ -451,17 +605,16 @@ fn create_note(faucet_ids: &[AccountId], target_id: AccountId, rng: &mut RandomC
 
 fn select_random_account_ids_for_update_notes<R: Rng + ?Sized>(
     account_states: &BTreeMap<AccountId, Account>,
-    pending_accounts: &[Account],
     max_accounts: usize,
     rng: &mut R,
 ) -> Vec<AccountId> {
-    let mut account_ids = account_states.keys().copied().collect::<Vec<_>>();
-    for account in pending_accounts {
-        let account_id = account.id();
-        if !account_states.contains_key(&account_id) {
-            account_ids.push(account_id);
-        }
-    }
+    let mut account_ids = account_states
+        .values()
+        .filter(|account| {
+            account.is_public() && account.storage().get(&benchmark_storage_map_slot()).is_some()
+        })
+        .map(Account::id)
+        .collect::<Vec<_>>();
 
     account_ids.shuffle(rng);
     account_ids.truncate(max_accounts);
@@ -471,14 +624,14 @@ fn select_random_account_ids_for_update_notes<R: Rng + ?Sized>(
 #[derive(Clone, Copy)]
 struct BenchmarkStorageUpdate {
     block_index: usize,
-    storage_map_entries: usize,
+    storage_map_entries: u32,
 }
 
-fn benchmark_storage_map_update_value(block_index: usize, tx_index: usize, key_index: u32) -> Word {
+fn benchmark_storage_map_update_value(block_index: usize, tx_index: u32, key_index: u32) -> Word {
     Word::from([
-        Felt::ZERO,
-        Felt::from(u32::try_from(block_index).expect("update block index fits into u32")),
-        Felt::from(u32::try_from(tx_index).expect("transaction index fits into u32")),
+        Felt::ONE,
+        Felt::from(u32::try_from(block_index + 1).expect("update block index fits into u32")),
+        Felt::from(tx_index.checked_add(1).expect("transaction index fits into u32")),
         Felt::from(key_index),
     ])
 }
@@ -487,14 +640,14 @@ fn update_benchmark_storage_map_entry(
     account: &mut Account,
     block_index: usize,
     tx_index: usize,
-    storage_map_entries: usize,
+    storage_map_entries: u32,
 ) -> bool {
     if !account.is_public() || storage_map_entries == 0 {
         return false;
     }
 
-    let key_index =
-        u32::try_from((tx_index % storage_map_entries) + 1).expect("storage map key fits into u32");
+    let tx_index = u32::try_from(tx_index).expect("transaction index fits into u32");
+    let key_index = (tx_index % storage_map_entries) + 1;
     let key = StorageMapKey::from_index(key_index);
     let value = benchmark_storage_map_update_value(block_index, tx_index, key_index);
 
@@ -514,7 +667,7 @@ fn create_account(
     public_key: PublicKey,
     index: u64,
     account_type: AccountType,
-    storage_map_entries: usize,
+    storage_map_entries: u32,
 ) -> Account {
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
     let mut builder = AccountBuilder::new(init_seed.try_into().unwrap())
@@ -526,15 +679,15 @@ fn create_account(
         .with_component(BasicWallet);
 
     if account_type == AccountType::Public && storage_map_entries > 0 {
-        let entries = (1..=storage_map_entries)
-            .map(|i| {
-                let i = u32::try_from(i).expect("storage map entry index fits into u32");
-                (
-                    StorageMapKey::from_index(i),
-                    Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(i)]),
-                )
-            })
-            .collect::<Vec<_>>();
+        let entry_count =
+            usize::try_from(storage_map_entries).expect("storage map entry count fits into usize");
+        let entries = (0..entry_count).map(|index| {
+            let i = u32::try_from(index + 1).expect("storage map entry index fits into u32");
+            (
+                StorageMapKey::from_index(i),
+                Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(i)]),
+            )
+        });
         let storage_map = StorageMap::with_entries(entries).unwrap();
         let component_storage =
             vec![StorageSlot::with_map(benchmark_storage_map_slot(), storage_map)];
@@ -558,6 +711,34 @@ end",
     }
 
     builder.build().unwrap()
+}
+
+fn create_existing_benchmark_accounts(
+    num_accounts: usize,
+    key_pair: &SecretKey,
+    asset_faucet_ids: &[AccountId],
+    storage_map_entries: u32,
+    vault_entries: usize,
+) -> Vec<Account> {
+    (0..num_accounts)
+        .into_par_iter()
+        .map(|account_index| {
+            let mut account = create_account(
+                key_pair.public_key(),
+                u64::try_from(account_index).expect("account index fits into u64"),
+                AccountType::Public,
+                storage_map_entries,
+            );
+            for faucet_id in asset_faucet_ids.iter().take(vault_entries) {
+                account
+                    .vault_mut()
+                    .add_asset(FungibleAsset::new(*faucet_id, 10).unwrap().into())
+                    .unwrap();
+            }
+            account.increment_nonce(ONE).unwrap();
+            account
+        })
+        .collect()
 }
 
 fn create_benchmark_faucets(vault_entries: usize) -> Vec<Account> {
@@ -724,8 +905,8 @@ fn create_existing_account_patch(
             if storage_update.storage_map_entries > 0
                 && account.storage().get(&benchmark_storage_map_slot()).is_some() =>
         {
-            let key_index = u32::try_from((tx_index % storage_update.storage_map_entries) + 1)
-                .expect("storage map key fits into u32");
+            let tx_index = u32::try_from(tx_index).expect("transaction index fits into u32");
+            let key_index = (tx_index % storage_update.storage_map_entries) + 1;
             let mut entries = StorageMapPatchEntries::new();
             entries.insert(
                 StorageMapKey::from_index(key_index),

@@ -11,7 +11,7 @@ use miden_protocol::block::BlockSignatures;
 use miden_protocol::utils::serde::Serializable;
 use miden_validator::DataDirectory;
 
-use super::ValidatorKeyArgs;
+use super::ValidatorSigningKey;
 
 /// Runs the signing form of `bootstrap`: builds and signs the genesis block with this
 /// validator's key.
@@ -33,7 +33,7 @@ pub async fn bootstrap_sign(
     data_directory: &Path,
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_config: Option<&PathBuf>,
-    validator_keys: ValidatorKeyArgs,
+    signing_key: ValidatorSigningKey,
 ) -> anyhow::Result<()> {
     let dirs = load_bootstrap_dirs(genesis_block_directory, accounts_directory, data_directory)?;
 
@@ -46,7 +46,7 @@ pub async fn bootstrap_sign(
         .transpose()?
         .unwrap_or_default();
 
-    let signer = validator_keys.into_signer().await?;
+    let signer = signing_key.into_signer().await?;
     let (genesis_state, secrets) = config.into_state(signer.public_key())?;
 
     for item in secrets.as_account_files(&genesis_state) {
@@ -68,7 +68,7 @@ pub async fn bootstrap_sign(
     // Sign the genesis block with this validator's key only. The other validators' keys are
     // committed to by the genesis header and must sign from the next block onwards.
     let signature = signer
-        .sign(unsigned_genesis_block.header())
+        .sign_commitment(unsigned_genesis_block.header().commitment())
         .await
         .context("failed to sign the genesis block")?;
     let signatures = BlockSignatures::new(vec![signature])

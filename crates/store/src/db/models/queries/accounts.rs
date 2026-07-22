@@ -46,7 +46,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_standards::account::auth::NetworkAccount;
+use miden_standards::account::auth::{NetworkAccount, NetworkAccountNoteAllowlist};
 
 use crate::COMPONENT;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
@@ -61,10 +61,11 @@ pub(crate) use at_block::select_account_header_with_storage_header_at_block;
 mod delta;
 use delta::{
     AccountStateForInsert,
+    LatestAccountStateRow,
     PartialAccountState,
-    apply_storage_patch,
-    select_latest_vault_assets,
-    select_minimal_account_state_headers,
+    PrecomputedFullAccountState,
+    apply_storage_patch_with_roots,
+    select_latest_account_state,
 };
 
 #[cfg(test)]
@@ -322,6 +323,15 @@ pub struct PublicAccountStateRootsPage {
     /// If `Some`, there are more results. Use this as the `after_account_id` for the next page.
     pub next_cursor: Option<AccountId>,
 }
+
+/// Public account state commitments computed by the account state forest before SQLite writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PrecomputedPublicAccountState {
+    pub(crate) vault_root: Word,
+    pub(crate) storage_map_roots: BTreeMap<StorageSlotName, Word>,
+}
+
+pub(crate) type PrecomputedPublicAccountStates = BTreeMap<AccountId, PrecomputedPublicAccountState>;
 
 /// Selects public account IDs with pagination.
 ///
@@ -867,56 +877,6 @@ fn select_latest_storage_map_entries_all(
     group_storage_map_entries(map_values)
 }
 
-fn select_latest_storage_map_entries_for_slots(
-    conn: &mut SqliteConnection,
-    account_id: &AccountId,
-    slot_names: &[StorageSlotName],
-) -> Result<HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    if slot_names.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    if let [slot_name] = slot_names {
-        let entries = select_latest_storage_map_entries_for_slot(conn, account_id, slot_name)?;
-        if entries.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let mut map_entries = HashMap::new();
-        map_entries.insert(slot_name.clone(), entries);
-        return Ok(map_entries);
-    }
-
-    let slot_names = Vec::from_iter(slot_names.iter().cloned().map(StorageSlotName::to_raw_sql));
-    let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
-            .filter(t::account_id.eq(&account_id.to_bytes()))
-            .filter(t::is_latest.eq(true))
-            .filter(t::slot_name.eq_any(slot_names))
-            .load(conn)?;
-
-    group_storage_map_entries(map_values)
-}
-
-fn select_latest_storage_map_entries_for_slot(
-    conn: &mut SqliteConnection,
-    account_id: &AccountId,
-    slot_name: &StorageSlotName,
-) -> Result<BTreeMap<StorageMapKey, Word>, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
-        SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
-            .filter(t::account_id.eq(&account_id.to_bytes()))
-            .filter(t::is_latest.eq(true))
-            .filter(t::slot_name.eq(slot_name.clone().to_raw_sql()))
-            .load(conn)?;
-
-    Ok(group_storage_map_entries(map_values)?.remove(slot_name).unwrap_or_default())
-}
-
 fn group_storage_map_entries(
     map_values: Vec<(String, Vec<u8>, Vec<u8>)>,
 ) -> Result<HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>, DatabaseError> {
@@ -1024,14 +984,18 @@ pub(crate) fn insert_account_vault_asset(
     })
 }
 
-/// Insert an account storage map value into the DB using the given [`SqliteConnection`].
+/// Inserts a versioned account storage-map value using the given [`SqliteConnection`].
 ///
-/// Sets `is_latest=true` for the new row and updates any existing
-/// row with the same `(account_id, slot_index, key)` tuple to `is_latest=false`.
+/// The new row is marked as latest, and any previous latest row for the same
+/// `(account_id, slot_name, key)` tuple is invalidated first.
 ///
 /// # Returns
 ///
-/// The number of affected rows.
+/// The total number of inserted and invalidated rows.
+///
+/// # Errors
+///
+/// Returns an error if the previous row cannot be invalidated or the new row cannot be inserted.
 pub(crate) fn insert_account_storage_map_value(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -1040,22 +1004,50 @@ pub(crate) fn insert_account_storage_map_value(
     key: StorageMapKey,
     value: Word,
 ) -> Result<usize, DatabaseError> {
+    insert_account_storage_map_value_inner(conn, account_id, block_num, slot_name, key, value, true)
+}
+
+/// Inserts a versioned account storage-map value with optional previous-row invalidation.
+///
+/// `invalidate_previous` may be disabled when inserting state for a new account, for which no
+/// previous latest row can exist. The inserted row is always marked as latest.
+///
+/// # Returns
+///
+/// The total number of inserted and invalidated rows.
+///
+/// # Errors
+///
+/// Returns an error if the requested invalidation or insertion fails.
+fn insert_account_storage_map_value_inner(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    slot_name: StorageSlotName,
+    key: StorageMapKey,
+    value: Word,
+    invalidate_previous: bool,
+) -> Result<usize, DatabaseError> {
     let account_id = account_id.to_bytes();
     let key = key.to_bytes();
     let value = value.to_bytes();
     let slot_name = slot_name.to_raw_sql();
     let block_num = block_num.to_raw_sql();
 
-    let update_count = diesel::update(schema::account_storage_map_values::table)
-        .filter(
-            schema::account_storage_map_values::account_id
-                .eq(&account_id)
-                .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
-                .and(schema::account_storage_map_values::key.eq(&key))
-                .and(schema::account_storage_map_values::is_latest.eq(true)),
-        )
-        .set(schema::account_storage_map_values::is_latest.eq(false))
-        .execute(conn)?;
+    let update_count = if invalidate_previous {
+        diesel::update(schema::account_storage_map_values::table)
+            .filter(
+                schema::account_storage_map_values::account_id
+                    .eq(&account_id)
+                    .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
+                    .and(schema::account_storage_map_values::key.eq(&key))
+                    .and(schema::account_storage_map_values::is_latest.eq(true)),
+            )
+            .set(schema::account_storage_map_values::is_latest.eq(false))
+            .execute(conn)?
+    } else {
+        0
+    };
 
     let record = AccountStorageMapRowInsert {
         account_id,
@@ -1115,17 +1107,116 @@ fn prepare_full_account_update(
     Ok((AccountStateForInsert::FullAccount(account), storage, assets))
 }
 
-/// Prepare partial patch data for account upserts and follow-up storage and vault inserts.
+/// Prepares a full public-account insertion using roots computed by the account-state forest.
+///
+/// This avoids reconstructing the account's vault and storage maps in SQLite. The returned state
+/// contains the account-row fields, while storage-map entries and vault assets are returned
+/// separately for insertion after the account row has satisfied their foreign-key dependency.
+/// Empty-word map entries and assets are omitted from the pending inserts.
+///
+/// # Errors
+///
+/// Returns an error if the full-state patch is missing its code or nonce, a required precomputed
+/// storage root is absent, an asset is invalid, or the reconstructed account header does not match
+/// the update's final state commitment.
+fn prepare_precomputed_full_account_update(
+    update: &BlockAccountUpdate,
+    patch: &AccountPatch,
+    precomputed: &PrecomputedPublicAccountState,
+) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
+    let account_id = patch.id();
+    let code = patch.code().cloned().ok_or_else(|| {
+        DatabaseError::DataCorrupted(format!(
+            "full-state patch for account {account_id} is missing account code"
+        ))
+    })?;
+    let nonce = patch.final_nonce().ok_or_else(|| {
+        DatabaseError::DataCorrupted(format!(
+            "full-state patch for account {account_id} is missing final nonce"
+        ))
+    })?;
+
+    let storage_header = apply_storage_patch_with_roots(
+        &AccountStorageHeader::new(Vec::new())?,
+        patch.storage(),
+        &precomputed.storage_map_roots,
+    )?;
+    let account_header = miden_protocol::account::AccountHeader::new(
+        account_id,
+        nonce,
+        precomputed.vault_root,
+        storage_header.to_commitment(),
+        code.commitment(),
+    );
+    if account_header.to_commitment() != update.final_state_commitment() {
+        return Err(DatabaseError::AccountCommitmentsMismatch {
+            calculated: account_header.to_commitment(),
+            expected: update.final_state_commitment(),
+        });
+    }
+
+    let storage = patch
+        .storage()
+        .maps()
+        .flat_map(|(slot_name, map_patch)| {
+            map_patch.entries().into_iter().flat_map(move |entries| {
+                entries
+                    .as_map()
+                    .iter()
+                    .filter(|(_key, value)| **value != Word::empty())
+                    .map(move |(key, value)| (account_id, slot_name.clone(), *key, *value))
+            })
+        })
+        .collect();
+    let assets = patch
+        .vault()
+        .iter()
+        .filter(|(_asset_id, value)| **value != Word::empty())
+        .map(|(asset_id, value)| {
+            Asset::from_id_and_value(*asset_id, *value)
+                .map(|asset| (account_id, *asset_id, Some(asset)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let is_network_account = account_id.is_public()
+        && patch
+            .storage()
+            .maps()
+            .find(|(slot_name, _)| *slot_name == NetworkAccountNoteAllowlist::slot_name())
+            .and_then(|(_slot_name, map_patch)| map_patch.entries())
+            .is_some_and(|entries| !entries.is_empty());
+    let state = PrecomputedFullAccountState {
+        nonce,
+        code,
+        storage_header,
+        vault_root: precomputed.vault_root,
+        is_network_account,
+    };
+
+    Ok((AccountStateForInsert::PrecomputedFullState(state), storage, assets))
+}
+
+/// Prepares a partial public-account update using the latest row and precomputed forest roots.
+///
+/// Unchanged header fields are carried forward from `existing`. The returned partial state is used
+/// for the next account row, while storage-map values and vault asset updates are returned
+/// separately for insertion after that row. Empty vault values are represented as removals.
+///
+/// # Errors
+///
+/// Returns an error if the existing row is invalid, a required precomputed storage root is absent,
+/// a patched asset is invalid, or the reconstructed account header does not match the update's
+/// final state commitment.
 fn prepare_partial_account_update(
-    conn: &mut SqliteConnection,
     update: &BlockAccountUpdate,
     account_id: AccountId,
     patch: &AccountPatch,
+    precomputed: &PrecomputedPublicAccountState,
+    existing: &LatestAccountStateRow,
 ) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
-    // Build the minimal account state needed for partial patch application. Only load the storage
-    // map entries that will receive updates. The next line fetches the header, which will always
-    // change unless the patch is empty.
-    let state_headers = select_minimal_account_state_headers(conn, account_id)?;
+    // Build the minimal account state needed for partial patch application from the latest row that
+    // was loaded with the account's creation metadata.
+    let state_headers = existing.state_headers(account_id)?;
 
     // --- Process asset updates. --------------------------------- The patch carries absolute final
     // values, so encode `Some` as update and `None` (an empty value word) as removal.
@@ -1149,28 +1240,14 @@ fn prepare_partial_account_update(
         }
     }
 
-    // First collect entries that have associated changes.
-    let slot_names = Vec::from_iter(patch.storage().maps().filter_map(|(slot_name, map_patch)| {
-        if map_patch.entries().is_none_or(StorageMapPatchEntries::is_empty) {
-            None
-        } else {
-            Some(slot_name.clone())
-        }
-    }));
-
-    let map_entries = select_latest_storage_map_entries_for_slots(conn, &account_id, &slot_names)?;
-
     // Apply the patch storage to the given storage header.
-    let new_storage_header =
-        apply_storage_patch(&state_headers.storage_header, patch.storage(), &map_entries)?;
+    let new_storage_header = apply_storage_patch_with_roots(
+        &state_headers.storage_header,
+        patch.storage(),
+        &precomputed.storage_map_roots,
+    )?;
 
-    // --- Update the vault root by constructing the asset vault from DB.
-    let new_vault_root = {
-        let assets = select_latest_vault_assets(conn, account_id)?;
-        let mut vault = AssetVault::new(&assets)?;
-        vault.apply_patch(patch.vault())?;
-        vault.root()
-    };
+    let new_vault_root = precomputed.vault_root;
 
     // --- Compute updated account state for the accounts row. --- Use the absolute final nonce.
     let new_nonce = patch.final_nonce().unwrap_or(state_headers.nonce);
@@ -1243,28 +1320,20 @@ pub(crate) fn upsert_accounts(
     conn: &mut SqliteConnection,
     accounts: &[BlockAccountUpdate],
     block_num: BlockNumber,
+    precomputed_public_states: &PrecomputedPublicAccountStates,
 ) -> Result<usize, DatabaseError> {
     let mut count = 0;
     for update in accounts {
         let account_id = update.account_id();
         let account_id_bytes = account_id.to_bytes();
 
-        // Pull the latest row (if any) so we can carry forward `created_at_block` and the
-        // `network_account_type` classification, both of which are fixed at account creation.
-        let existing: Option<(i64, i32)> = QueryDsl::select(
-            schema::accounts::table.filter(
-                schema::accounts::account_id
-                    .eq(&account_id_bytes)
-                    .and(schema::accounts::is_latest.eq(true)),
-            ),
-            (schema::accounts::created_at_block, schema::accounts::network_account_type),
-        )
-        .first(conn)
-        .optional()
-        .map_err(DatabaseError::Diesel)?;
+        // Pull the latest row once. Partial updates consume the state headers below, while every
+        // update carries forward creation metadata.
+        let existing = select_latest_account_state(conn, account_id)?;
+        let account_is_new = existing.is_none();
 
-        let created_at_block = match existing {
-            Some((raw, _)) => BlockNumber::from_raw_sql(raw)?,
+        let created_at_block = match &existing {
+            Some(row) => row.created_at_block()?,
             None => block_num,
         };
 
@@ -1278,27 +1347,46 @@ pub(crate) fn upsert_accounts(
 
             // New account is always a full account, but also comes as an update
             AccountUpdateDetails::Public(patch) if patch.is_full_state() => {
-                let account = Account::try_from(patch)
-                    .expect("Patch to full account always works for full state patches");
-                debug_assert_eq!(account_id, account.id());
-
-                prepare_full_account_update(update, account)?
+                if block_num == BlockNumber::GENESIS {
+                    let account = Account::try_from(patch)
+                        .expect("Patch to full account always works for full state patches");
+                    debug_assert_eq!(account_id, account.id());
+                    prepare_full_account_update(update, account)?
+                } else {
+                    let precomputed =
+                        precomputed_public_states.get(&account_id).ok_or_else(|| {
+                            DatabaseError::DataCorrupted(format!(
+                                "missing precomputed public account state for account {account_id}"
+                            ))
+                        })?;
+                    prepare_precomputed_full_account_update(update, patch, precomputed)?
+                }
             },
 
             // Update of an existing account
             AccountUpdateDetails::Public(patch) => {
-                prepare_partial_account_update(conn, update, account_id, patch)?
+                let precomputed = precomputed_public_states.get(&account_id).ok_or_else(|| {
+                    DatabaseError::DataCorrupted(format!(
+                        "missing precomputed public account state for account {account_id}"
+                    ))
+                })?;
+                let existing =
+                    existing.as_ref().ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+                prepare_partial_account_update(update, account_id, patch, precomputed, existing)?
             },
         };
 
         // Inherit the classification when the account already exists; otherwise classify it once at
         // creation based on the new state.
-        let network_account_type = match existing {
-            Some((_, raw)) => NetworkAccountType::from_raw_sql(raw)?,
+        let network_account_type = match &existing {
+            Some(row) => row.network_account_type()?,
             None => match &account_state {
                 AccountStateForInsert::FullAccount(account)
                     if NetworkAccount::new(account.clone()).is_ok() =>
                 {
+                    NetworkAccountType::Network
+                },
+                AccountStateForInsert::PrecomputedFullState(state) if state.is_network_account => {
                     NetworkAccountType::Network
                 },
                 _ => NetworkAccountType::None,
@@ -1311,6 +1399,17 @@ pub(crate) fn upsert_accounts(
             let code_value = AccountCodeRowInsert {
                 code_commitment: code.commitment().to_bytes(),
                 code: code.to_bytes(),
+            };
+            diesel::insert_into(schema::account_codes::table)
+                .values(&code_value)
+                .on_conflict(schema::account_codes::code_commitment)
+                .do_nothing()
+                .execute(conn)?;
+        }
+        if let AccountStateForInsert::PrecomputedFullState(ref state) = account_state {
+            let code_value = AccountCodeRowInsert {
+                code_commitment: state.code.commitment().to_bytes(),
+                code: state.code.to_bytes(),
             };
             diesel::insert_into(schema::account_codes::table)
                 .values(&code_value)
@@ -1345,6 +1444,16 @@ pub(crate) fn upsert_accounts(
                 created_at_block,
                 account,
             ),
+            AccountStateForInsert::PrecomputedFullState(state) => {
+                AccountRowInsert::new_from_precomputed_full_state(
+                    account_id,
+                    network_account_type,
+                    update.final_state_commitment(),
+                    block_num,
+                    created_at_block,
+                    state,
+                )
+            },
             AccountStateForInsert::PartialState(state) => AccountRowInsert::new_from_partial(
                 account_id,
                 network_account_type,
@@ -1364,7 +1473,13 @@ pub(crate) fn upsert_accounts(
 
         // insert pending storage map entries TODO consider batching
         for (acc_id, slot_name, key, value) in pending_storage_inserts {
-            insert_account_storage_map_value(conn, acc_id, block_num, slot_name, key, value)?;
+            if account_is_new {
+                insert_account_storage_map_value_inner(
+                    conn, acc_id, block_num, slot_name, key, value, false,
+                )?;
+            } else {
+                insert_account_storage_map_value(conn, acc_id, block_num, slot_name, key, value)?;
+            }
         }
 
         for (acc_id, vault_key, update) in pending_asset_inserts {
@@ -1440,6 +1555,28 @@ impl AccountRowInsert {
             code_commitment: Some(account.code().commitment().to_bytes()),
             storage_header: Some(account.storage().to_header().to_bytes()),
             vault_root: Some(account.vault().root().to_bytes()),
+            is_latest: true,
+            created_at_block: created_at_block.to_raw_sql(),
+        }
+    }
+
+    fn new_from_precomputed_full_state(
+        account_id: AccountId,
+        network_account_type: NetworkAccountType,
+        account_commitment: Word,
+        block_num: BlockNumber,
+        created_at_block: BlockNumber,
+        state: &PrecomputedFullAccountState,
+    ) -> Self {
+        Self {
+            account_id: account_id.to_bytes(),
+            network_account_type: network_account_type.to_raw_sql(),
+            block_num: block_num.to_raw_sql(),
+            account_commitment: account_commitment.to_bytes(),
+            code_commitment: Some(state.code.commitment().to_bytes()),
+            nonce: Some(nonce_to_raw_sql(state.nonce)),
+            storage_header: Some(state.storage_header.to_bytes()),
+            vault_root: Some(state.vault_root.to_bytes()),
             is_latest: true,
             created_at_block: created_at_block.to_raw_sql(),
         }

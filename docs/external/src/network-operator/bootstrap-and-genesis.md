@@ -34,7 +34,7 @@ validator signs it. Every other validator operator first prints their public key
 operator:
 
 ```bash
-miden-validator pubkey --key.kms-id <validator-N-kms-key-id>
+miden-validator pubkey --signing-key.kms-id <validator-N-kms-key-id>
 ```
 
 The full validator set — including the bootstrapping validator's own public key — is part of the genesis configuration,
@@ -57,7 +57,7 @@ miden-validator bootstrap \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.kms-id <validator-1-kms-key-id>
+  --signing-key.kms-id <validator-1-kms-key-id>
 ```
 
 Upload `genesis-data/genesis.dat` so it is served at:
@@ -103,9 +103,9 @@ Each validator operator's own KMS key ID must be used when that operator starts 
 **One** validator operator creates and signs the genesis block with their own local key. The genesis header commits to
 the full validator set, taken from the top-level `validators` list in `genesis.toml`; the other validators' secret keys
 are not needed. Each of the other operators prints their public key with
-`miden-validator pubkey --key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator, who lists it in the
-genesis configuration alongside their own. If `validators` is omitted, the set defaults to the bootstrapping validator's
-key alone (a single-validator network).
+`miden-validator pubkey --signing-key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator, who lists
+it in the genesis configuration alongside their own. If `validators` is omitted, the set defaults to the bootstrapping
+validator's key alone (a single-validator network).
 
 ```toml
 validators = [
@@ -121,7 +121,7 @@ miden-validator bootstrap \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
   --genesis-config-file genesis.toml \
-  --key.hex <validator-1-key-hex>
+  --signing-key.hex <validator-1-key-hex>
 ```
 
 Distribute `genesis-data/genesis.dat` to the other validator operators, who each seed their own database from it,

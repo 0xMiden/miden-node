@@ -3407,6 +3407,7 @@ dependencies = [
  "miden-standards",
  "rand 0.10.2",
  "rayon",
+ "tempfile",
  "tokio",
 ]
 

@@ -226,6 +226,10 @@ pub struct State {
     /// Handle for sending block-write requests to the [`BlockWriter`] task.
     write_handle: WriteHandle,
 
+    /// Join handle of the [`BlockWriter`] task, used by [`Self::shutdown`] to wait for the writer
+    /// to release the tree storage it owns.
+    writer_task: tokio::task::JoinHandle<()>,
+
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,
 
@@ -378,7 +382,7 @@ impl State {
             forest,
             snapshots_live,
         };
-        tokio::spawn(block_writer.run());
+        let writer_task = tokio::spawn(block_writer.run());
 
         Ok(Self {
             data_directory: data_path.to_path_buf(),
@@ -386,11 +390,33 @@ impl State {
             block_store,
             in_memory,
             write_handle,
+            writer_task,
             proven_tip,
             committed_tip_tx,
             block_cache,
             proof_cache,
         })
+    }
+
+    /// Shuts down the block writer task, waiting until it has released the tree storage it owns.
+    ///
+    /// Dropping the state also stops the writer, but only asynchronously: the task exits once it
+    /// observes the closed request channel and may briefly outlive the state, keeping the backing
+    /// storage open. Callers that need the storage released deterministically — e.g. to re-load
+    /// the state from the same data directory, or to delete it — must use this method instead of
+    /// dropping.
+    ///
+    /// # Errors
+    ///
+    /// Returns `self` unchanged if other references to the state are still alive.
+    pub async fn shutdown(self: Arc<Self>) -> Result<(), Arc<Self>> {
+        let state = Arc::try_unwrap(self)?;
+        // Destructuring drops every unbound field right here, including the write handle — the
+        // only sender of the writer's request channel. The writer drains any in-flight requests,
+        // observes the closed channel, and exits, so the join below is a graceful drain.
+        let Self { writer_task, .. } = state;
+        writer_task.await.expect("block writer task should not panic");
+        Ok(())
     }
 
     /// Returns a watch receiver that wakes every time a new block is committed.

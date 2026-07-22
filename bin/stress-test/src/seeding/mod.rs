@@ -243,6 +243,10 @@ pub async fn seed_store(
     ))
     .await;
 
+    // Wait for the store to release its backing storage so callers can immediately re-load the
+    // state from the same data directory.
+    assert!(store_state.shutdown().await.is_ok(), "no other references to the store state remain");
+
     println!("Total time: {:.3} seconds", start.elapsed().as_secs_f64());
     println!("{metrics}");
 }

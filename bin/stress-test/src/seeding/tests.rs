@@ -198,6 +198,9 @@ async fn seed_store_persists_one_public_account_and_applies_one_map_update() {
             .map(|(_, value)| *value),
         Some(benchmark_storage_map_update_value(0, 0, 1))
     );
+
+    // Release the backing storage before the temporary directory is deleted.
+    assert!(state.shutdown().await.is_ok(), "no other references to the store state remain");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -223,4 +226,7 @@ async fn seed_store_handles_map_larger_than_transaction_account_update_limit() {
         .await
         .unwrap();
     assert_ne!(response.witness.state_commitment(), Word::empty());
+
+    // Release the backing storage before the temporary directory is deleted.
+    assert!(state.shutdown().await.is_ok(), "no other references to the store state remain");
 }

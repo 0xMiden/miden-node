@@ -110,7 +110,7 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
     echo "Bootstrapping validator..."
     KMS_BOOTSTRAP_ARGS=()
     if [[ -n "$KMS_KEY_ID" ]]; then
-        KMS_BOOTSTRAP_ARGS+=(--key.kms-id "$KMS_KEY_ID")
+        KMS_BOOTSTRAP_ARGS+=(--signing-key.kms-id "$KMS_KEY_ID")
     fi
 
     "$VALIDATOR_BINARY" bootstrap \
@@ -137,7 +137,7 @@ echo "=== Starting components ==="
 
 KMS_START_ARGS=()
 if [[ -n "$KMS_KEY_ID" ]]; then
-    KMS_START_ARGS+=(--key.kms-id "$KMS_KEY_ID")
+    KMS_START_ARGS+=(--signing-key.kms-id "$KMS_KEY_ID")
 fi
 
 echo "Starting validator..."

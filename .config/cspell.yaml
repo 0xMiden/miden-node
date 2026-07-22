@@ -13,6 +13,7 @@ ignorePaths:
   - node_modules
   - "**/package-lock.json"
 words:
+  - ciphertext
   - Devnet
   - grpcurl
   - Merkle

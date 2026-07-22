@@ -50,7 +50,7 @@ The RPC server supports:
 | ---------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Status and limits      | `Status`, `GetLimits`                                                                                           |
 | State queries          | `GetAccount`, `GetBlockByNumber`, `GetBlockHeaderByNumber`, `GetNotesById`, `GetNoteScriptByRoot`               |
-| Transaction submission | `SubmitProvenTx`, `SubmitProvenTxBatch`                                                                         |
+| Transaction submission | `GetTransactionEncryptionKey`, `SubmitProvenTx`, `SubmitProvenTxBatch`                                          |
 | State synchronization  | `SyncTransactions`, `SyncNotes`, `SyncNullifiers`, `SyncAccountVault`, `SyncAccountStorageMaps`, `SyncChainMmr` |
 | Block streaming        | `BlockSubscription`, `ProofSubscription`                                                                        |
 | Network note debugging | `GetNetworkNoteStatus`                                                                                          |

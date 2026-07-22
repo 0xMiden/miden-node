@@ -43,6 +43,16 @@ service Api {
     // TRANSACTION SUBMISSION ENDPOINTS
     // --------------------------------------------------------------------------------------------
 
+    // Returns the public key that clients use to encrypt the private inputs of the transactions
+    // they submit, so that validators can decrypt and validate them.
+    //
+    // Every validator in the set is provisioned with the same encryption keypair, so the returned
+    // public key is identical regardless of which validator attests it. The key carries a list of
+    // validator attestations, currently containing a single one. Since all validators vouch for
+    // the same key, an attestation verifiable against any chain-recognized validator signing key
+    // is sufficient.
+    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKey) {}
+
     // Submits proven transaction to the Miden network. Returns the node's current block height.
     rpc SubmitProvenTx(transaction.ProvenTransaction) returns (blockchain.BlockNumber) {}
 

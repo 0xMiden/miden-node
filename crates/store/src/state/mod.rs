@@ -31,7 +31,7 @@ mod inputs;
 pub use inputs::TransactionInputs;
 
 mod lifecycle;
-pub use lifecycle::LoadedState;
+pub use lifecycle::{LoadedState, WriterTask};
 
 mod queries;
 

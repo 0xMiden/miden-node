@@ -5,8 +5,8 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated::validator::BlockSubscriptionRequest;
-use miden_node_store::State;
 use miden_node_store::state::Finality;
+use miden_node_store::{State, WriterTask};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use miden_protocol::utils::serde::Deserializable;
@@ -48,7 +48,7 @@ impl RecoverCommand {
         result
     }
 
-    async fn load_state(&self) -> anyhow::Result<(Arc<State>, tokio::task::JoinHandle<()>)> {
+    async fn load_state(&self) -> anyhow::Result<(Arc<State>, WriterTask)> {
         // Recovery is not wired into the node's shutdown token; the writer exits once the state
         // (holding the only write handle) is dropped after recovery completes.
         let loaded = State::load_with_database_options(

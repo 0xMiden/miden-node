@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use metrics::SeedingMetrics;
 use miden_node_proto::domain::batch::BatchInputs;
-use miden_node_store::{DataDirectory, GenesisState, State};
+use miden_node_store::{DataDirectory, GenesisState, State, WriterTask};
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::account::auth::AuthScheme;
@@ -1034,7 +1034,7 @@ pub async fn start_store(data_directory: PathBuf) -> Arc<State> {
 ///
 /// The writer exits once the last reference to the returned state is dropped; awaiting the handle
 /// after that guarantees the backing storage has been released.
-async fn load_state(data_directory: PathBuf) -> (Arc<State>, tokio::task::JoinHandle<()>) {
+async fn load_state(data_directory: PathBuf) -> (Arc<State>, WriterTask) {
     State::load(&data_directory, StorageOptions::bench(), CancellationToken::new())
         .await
         .expect("store state should load")

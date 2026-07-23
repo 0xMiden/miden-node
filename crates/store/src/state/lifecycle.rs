@@ -1,9 +1,12 @@
 //! Store lifecycle: loading the state, starting its block writer, and stopping the store.
 
+use std::future::Future;
 use std::num::NonZeroUsize;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::task::{Context, Poll};
 
 use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
@@ -56,7 +59,7 @@ pub struct LoadedState {
 
 impl LoadedState {
     /// Spawns the block writer onto the current runtime and returns the state together with the
-    /// writer task's join handle.
+    /// writer task's handle.
     ///
     /// The writer exits once the shutdown token passed to [`State::load`] is cancelled or the last
     /// state reference (holding the only write handle) is dropped — an in-flight block write
@@ -65,9 +68,30 @@ impl LoadedState {
     ///
     /// Callers without a token to cancel should stop the store via [`State::stop`] rather than
     /// dropping and joining by hand.
-    pub fn start(self) -> (Arc<State>, tokio::task::JoinHandle<()>) {
+    pub fn start(self) -> (Arc<State>, WriterTask) {
         let writer_task = tokio::spawn(self.writer.run());
-        (Arc::new(self.state), writer_task)
+        (Arc::new(self.state), WriterTask(writer_task))
+    }
+}
+
+// WRITER TASK
+// ================================================================================================
+
+/// Handle of the store's block writer task, returned by [`LoadedState::start`].
+///
+/// Awaiting it resolves once the writer has exited and released the tree storage it owns; a join
+/// error carries a writer panic. The newtype ensures [`State::stop`] can only be given the store's
+/// own writer task, and deliberately does not expose [`tokio::task::JoinHandle::abort`]: aborting
+/// the writer mid-write could leave the trees lagging the committed database state, voiding the
+/// guarantee that an in-flight block write always completes.
+#[must_use = "await the writer task to observe its exit, or pass it to `State::stop`"]
+pub struct WriterTask(tokio::task::JoinHandle<()>);
+
+impl Future for WriterTask {
+    type Output = Result<(), tokio::task::JoinError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.0).poll(cx)
     }
 }
 
@@ -255,8 +279,8 @@ impl State {
     /// Panics if the writer task panicked.
     pub async fn stop(
         self: Arc<Self>,
-        writer_task: tokio::task::JoinHandle<()>,
-    ) -> Result<(), (Arc<Self>, tokio::task::JoinHandle<()>)> {
+        writer_task: WriterTask,
+    ) -> Result<(), (Arc<Self>, WriterTask)> {
         match Arc::try_unwrap(self) {
             Ok(state) => {
                 drop(state);

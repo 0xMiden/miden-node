@@ -12,12 +12,11 @@ use miden_node_proto::clients::{
     ValidatorClient,
 };
 use miden_node_rpc::{Rpc, RpcMode, SequencerInternal};
-use miden_node_store::State;
+use miden_node_store::{State, WriterTask};
 use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use tokio::net::TcpListener;
-use tokio::task::JoinHandle;
 use url::Url;
 
 use super::block_producer::BlockProducerOptions;
@@ -253,7 +252,7 @@ impl SyncOptions {
 async fn load_state(
     runtime: &RuntimeConfig,
     shutdown: CancellationToken,
-) -> anyhow::Result<(Arc<State>, JoinHandle<()>)> {
+) -> anyhow::Result<(Arc<State>, WriterTask)> {
     let loaded = State::load_with_database_options(
         &runtime.data_directory,
         runtime.storage_options.clone(),
@@ -271,7 +270,7 @@ async fn load_state(
 /// On shutdown the task-drain loop waits for the writer to finish any in-flight block write and
 /// close its storage; an early exit or panic surfaces through the task set like any other task
 /// failure.
-async fn join_store_writer(writer_task: JoinHandle<()>) -> anyhow::Result<()> {
+async fn join_store_writer(writer_task: WriterTask) -> anyhow::Result<()> {
     writer_task.await.map_err(anyhow::Error::from)
 }
 

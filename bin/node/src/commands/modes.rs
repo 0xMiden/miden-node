@@ -11,7 +11,7 @@ use miden_node_proto::clients::{
     SequencerClient,
     ValidatorClient,
 };
-use miden_node_rpc::{Rpc, RpcMode, SequencerInternal};
+use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal};
 use miden_node_store::State;
 use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
 use miden_node_utils::shutdown::CancellationToken;
@@ -202,8 +202,7 @@ impl FullNodeCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         let runtime = self.runtime.runtime_config(&self.store);
         let source_rpc = self.sync.source_rpc_client()?;
-        let validator_clients = self.validator_clients();
-        let sequencer_client = self.sequencer_client();
+        let pre_auth = self.pre_auth_submission()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
         let state = load_state(&runtime).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
@@ -211,12 +210,7 @@ impl FullNodeCommand {
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
             store: state,
-            mode: RpcMode::full_node(
-                source_rpc,
-                self.sync.readiness_threshold,
-                validator_clients,
-                sequencer_client,
-            ),
+            mode: RpcMode::full_node(source_rpc, self.sync.readiness_threshold, pre_auth),
             ntx_builder: None,
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
@@ -227,24 +221,20 @@ impl FullNodeCommand {
         tasks.join_next_or_cancelled(shutdown).await
     }
 
-    fn sequencer_client(&self) -> Option<SequencerClient> {
-        self.sequencer_url.as_ref().map(|url| {
-            Builder::new(url.clone())
-                .with_tls()
-                .expect("TLS is enabled")
-                .with_timeout(Duration::from_secs(5))
-                .without_metadata_version()
-                .without_metadata_genesis()
-                .with_otel_context_injection()
-                .connect_lazy::<SequencerClient>()
-        })
-    }
-
-    fn validator_clients(&self) -> Option<Vec<ValidatorClient>> {
-        if self.validator_urls.is_empty() {
-            return None;
-        }
-        let clients = self
+    fn pre_auth_submission(&self) -> anyhow::Result<Option<PreAuthSubmission>> {
+        // Clap enforces that the sequencer URL and at least one validator URL come together.
+        let Some(sequencer_url) = self.sequencer_url.as_ref() else {
+            return Ok(None);
+        };
+        let sequencer = Builder::new(sequencer_url.clone())
+            .with_tls()
+            .expect("TLS is enabled")
+            .with_timeout(Duration::from_secs(5))
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .with_otel_context_injection()
+            .connect_lazy::<SequencerClient>();
+        let validators = self
             .validator_urls
             .iter()
             .map(|url| {
@@ -258,7 +248,7 @@ impl FullNodeCommand {
                     .connect_lazy::<ValidatorClient>()
             })
             .collect();
-        Some(clients)
+        PreAuthSubmission::new(validators, sequencer).map(Some)
     }
 }
 

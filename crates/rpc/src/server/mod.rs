@@ -71,15 +71,52 @@ pub enum RpcMode {
     /// By default it forwards submissions verbatim to the source RPC (the caller is responsible for
     /// configuring this client with any request metadata the source RPC requires).
     ///
-    /// When the validator and sequencer clients are set, the full-node will, instead of forwarding,
-    /// re-execute submissions through every validator and authenticate them against its store, then
-    /// submit the authenticated result directly to the sequencer's internal API.
+    /// When the pre-authenticated submission clients are set, the full-node will, instead of
+    /// forwarding, re-execute submissions through every validator and authenticate them against its
+    /// store, then submit the authenticated result directly to the sequencer's internal API.
     FullNode {
         source_rpc: Box<SourceRpcClient>,
         readiness_threshold: u32,
-        validators: Option<Vec<ValidatorClient>>,
-        sequencer: Option<Box<SequencerClient>>,
+        pre_auth: Option<PreAuthSubmission>,
     },
+}
+
+/// Validator and sequencer clients for the full-node pre-authenticated submission path.
+///
+/// The two are only meaningful together: submissions are re-executed through every validator and
+/// the authenticated result is submitted to the sequencer's internal API, so a full node is
+/// configured with both or neither.
+#[derive(Clone, Debug)]
+pub struct PreAuthSubmission {
+    validators: Vec<ValidatorClient>,
+    sequencer: Box<SequencerClient>,
+}
+
+impl PreAuthSubmission {
+    /// # Errors
+    ///
+    /// Fails if `validators` is empty; every submission must be re-executed by the validator set.
+    pub fn new(
+        validators: Vec<ValidatorClient>,
+        sequencer: SequencerClient,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !validators.is_empty(),
+            "pre-authenticated submission requires at least one validator"
+        );
+        Ok(Self {
+            validators,
+            sequencer: Box::new(sequencer),
+        })
+    }
+
+    pub(crate) fn validators(&self) -> &[ValidatorClient] {
+        &self.validators
+    }
+
+    pub(crate) fn sequencer(&self) -> &SequencerClient {
+        &self.sequencer
+    }
 }
 
 impl RpcMode {
@@ -93,14 +130,12 @@ impl RpcMode {
     pub fn full_node(
         source_rpc: SourceRpcClient,
         readiness_threshold: u32,
-        validators: Option<Vec<ValidatorClient>>,
-        sequencer: Option<SequencerClient>,
+        pre_auth: Option<PreAuthSubmission>,
     ) -> Self {
         Self::FullNode {
             source_rpc: Box::new(source_rpc),
             readiness_threshold,
-            sequencer: sequencer.map(Box::new),
-            validators,
+            pre_auth,
         }
     }
 }

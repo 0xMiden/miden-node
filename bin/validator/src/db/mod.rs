@@ -24,6 +24,11 @@ mod sql {
     pub(super) const COUNT_VALIDATED_TRANSACTIONS: &str =
         include_str!("sql/count_validated_transactions.sql");
     pub(super) const COUNT_SIGNED_BLOCKS: &str = include_str!("sql/count_signed_blocks.sql");
+    pub(super) const INSERT_ENCRYPTION_KEY: &str = include_str!("sql/insert_encryption_key.sql");
+    pub(super) const MAX_ARCHIVED_ENCRYPTION_KEY_EPOCH: &str =
+        include_str!("sql/max_archived_encryption_key_epoch.sql");
+    #[cfg(test)]
+    pub(super) const LOAD_ENCRYPTION_KEY: &str = include_str!("sql/load_encryption_key.sql");
 }
 
 /// Open a connection to the DB after verifying that it is at the latest schema version.
@@ -261,6 +266,93 @@ pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
         .unwrap_or(0))
 }
 
+/// A transaction encryption key of one epoch, as archived in the database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ArchivedEncryptionKey {
+    /// Wire identifier of the encryption scheme.
+    pub scheme: u32,
+    /// Opaque identifier of the encryption key.
+    pub key_id: Vec<u8>,
+    /// Raw public key bytes of the encryption key.
+    pub public_key: Vec<u8>,
+    /// Raw secret key bytes of the encryption key.
+    pub secret_key: Vec<u8>,
+}
+
+/// Archives one epoch's encryption key.
+///
+/// A key is immutable once derived, so a row that already exists for the epoch is left
+/// untouched.
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx, key),
+    err,
+)]
+pub(crate) fn insert_encryption_key(
+    tx: &WriteTx<'_>,
+    epoch: u16,
+    key: &ArchivedEncryptionKey,
+) -> Result<(), DatabaseError> {
+    tx.execute(
+        sql::INSERT_ENCRYPTION_KEY,
+        &[
+            &i64::from(epoch),
+            &i64::from(key.scheme),
+            &key.key_id,
+            &key.public_key,
+            &key.secret_key,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Returns the highest epoch whose encryption key has been archived, or `None` when the archive is
+/// empty.
+#[miden_instrument(
+    target = COMPONENT,
+    skip(tx),
+    err,
+)]
+pub(crate) fn max_archived_encryption_key_epoch(
+    tx: &ReadTx<'_>,
+) -> Result<Option<u16>, DatabaseError> {
+    tx.query(sql::MAX_ARCHIVED_ENCRYPTION_KEY_EPOCH, &[], |row| row.get::<Option<i64>>(0))?
+        .into_iter()
+        .next()
+        .flatten()
+        .map(|epoch| {
+            u16::try_from(epoch).map_err(|err| {
+                DatabaseError::deserialization("archived epoch out of the u16 range", err)
+            })
+        })
+        .transpose()
+}
+
+/// Loads the archived encryption key of the given epoch.
+///
+/// Returns `None` if no key has been archived for the epoch.
+///
+/// Test-only until an archive recovery path consumes it.
+#[cfg(test)]
+pub(crate) fn load_encryption_key(
+    tx: &ReadTx<'_>,
+    epoch: u16,
+) -> Result<Option<ArchivedEncryptionKey>, DatabaseError> {
+    Ok(tx
+        .query(sql::LOAD_ENCRYPTION_KEY, &[&i64::from(epoch)], |row| {
+            Ok(ArchivedEncryptionKey {
+                scheme: u32::try_from(row.get::<i64>(0)?).map_err(|err| {
+                    DatabaseError::deserialization("archived scheme out of the u32 range", err)
+                })?,
+                key_id: row.get(1)?,
+                public_key: row.get(2)?,
+                secret_key: row.get(3)?,
+            })
+        })?
+        .into_iter()
+        .next())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,5 +414,48 @@ mod tests {
             .await
             .unwrap();
         assert!(!unknown_exists, "an unknown transaction id should not be reported as existing");
+    }
+
+    fn test_archived_key(marker: u8) -> ArchivedEncryptionKey {
+        ArchivedEncryptionKey {
+            scheme: 1,
+            key_id: vec![marker; 4],
+            public_key: vec![marker; 32],
+            secret_key: vec![marker; 32],
+        }
+    }
+
+    /// Archived keys round-trip, the max archived epoch tracks inserts, and re-inserting an epoch
+    /// leaves the original row untouched.
+    #[tokio::test]
+    async fn encryption_key_archive_roundtrip() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+
+        // The archive starts empty.
+        let max = db.read("max_epoch", max_archived_encryption_key_epoch).await.unwrap();
+        assert_eq!(max, None);
+        let missing = db.read("load_key", |tx| load_encryption_key(tx, 0)).await.unwrap();
+        assert_eq!(missing, None);
+
+        // Insert two epochs and read them back.
+        for (epoch, marker) in [(0u16, 7u8), (3u16, 9u8)] {
+            let key = test_archived_key(marker);
+            db.write("insert_key", move |tx| insert_encryption_key(tx, epoch, &key))
+                .await
+                .unwrap();
+        }
+        let max = db.read("max_epoch", max_archived_encryption_key_epoch).await.unwrap();
+        assert_eq!(max, Some(3));
+        let loaded = db.read("load_key", |tx| load_encryption_key(tx, 3)).await.unwrap();
+        assert_eq!(loaded, Some(test_archived_key(9)));
+
+        // Re-inserting an archived epoch must not overwrite the existing row.
+        let conflicting = test_archived_key(5);
+        db.write("insert_key", move |tx| insert_encryption_key(tx, 3, &conflicting))
+            .await
+            .unwrap();
+        let loaded = db.read("load_key", |tx| load_encryption_key(tx, 3)).await.unwrap();
+        assert_eq!(loaded, Some(test_archived_key(9)), "archived keys must be immutable");
     }
 }

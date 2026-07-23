@@ -5,16 +5,15 @@ use miden_node_proto::server::validator_api;
 use miden_node_store::{BlockStore, GenesisState};
 use miden_node_utils::fee::test_fee_params;
 use miden_protocol::Word;
-use miden_protocol::block::{BlockHeader, BlockInputs, ProposedBlock};
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{Signature, SigningKey};
-use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::PartialBlockchain;
 use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::{ValidatorError, ValidatorService};
-use crate::db::{load_chain_tip, setup, upsert_block_header};
-use crate::signers::{NextEncryptionKeyInfo, attestation_commitment};
+use crate::db::{load_chain_tip, load_encryption_key, setup, upsert_block_header};
+use crate::signers::attestation_commitment;
 use crate::{LocalX25519TransactionInputDecrypter, TransactionInputDecrypter, ValidatorSigner};
 
 // TEST HELPERS
@@ -24,11 +23,9 @@ use crate::{LocalX25519TransactionInputDecrypter, TransactionInputDecrypter, Val
 const TEST_ENCRYPTION_SECRET: [u8; 32] = [3u8; 32];
 
 /// Creates a [`LocalX25519TransactionInputDecrypter`] from the shared test secret, modelling the
-/// identically provisioned encryption key of a validator in the set.
+/// identically provisioned encryption master secret of a validator in the set.
 fn test_decrypter() -> LocalX25519TransactionInputDecrypter {
-    let key = KeyExchangeKey::read_from_bytes(&TEST_ENCRYPTION_SECRET)
-        .expect("test secret should be a valid key exchange key");
-    LocalX25519TransactionInputDecrypter::new(key)
+    LocalX25519TransactionInputDecrypter::new(TEST_ENCRYPTION_SECRET)
 }
 
 /// Test harness that wraps a [`Validator`] and tracks the chain MMR state needed to construct valid
@@ -118,7 +115,7 @@ impl TestValidator {
     /// Calls the `get_transaction_encryption_key` endpoint on the validator server.
     async fn call_get_transaction_encryption_key(
         &self,
-    ) -> proto::transaction::TransactionEncryptionKey {
+    ) -> proto::transaction::TransactionEncryptionKeyResponse {
         validator_api::GetTransactionEncryptionKey::full(&self.server, tonic::Request::new(()))
             .await
             .expect("encryption key should always be available")
@@ -735,9 +732,10 @@ async fn requests_run_concurrently() {
 // TRANSACTION ENCRYPTION KEY
 // ================================================================================================
 
-/// The endpoint returns the shared encryption key attested by this validator's own signing key. The
-/// signature verifies over a commitment recomputed from the response fields and the chain's genesis
-/// commitment, so a client needs nothing beyond the response and the chain data it already trusts.
+/// The endpoint returns the current and next shared encryption keys, each attested by this
+/// validator's own signing key. The signatures verify over commitments recomputed from the response
+/// fields and the chain's genesis commitment, so a client needs nothing beyond the response and the
+/// chain data it already trusts.
 #[tokio::test]
 async fn transaction_encryption_key_is_attested() {
     let tv = TestValidator::new().await;
@@ -745,17 +743,21 @@ async fn transaction_encryption_key_is_attested() {
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
 
-    let info = test_decrypter().encryption_key().await.expect("key info should be available");
-    let scheme = u32::try_from(response.scheme).expect("scheme must be non-negative");
-    assert_eq!(scheme, info.scheme);
-    assert_eq!(response.key_id, info.key_id);
-    assert_eq!(response.public_key, info.public_key);
+    let keys = test_decrypter().encryption_keys(0).await.expect("key info should be available");
+
+    // The current key matches the epoch-0 derivation and its attestation verifies over the
+    // current-key commitment.
+    let current = response.current_key.expect("response must carry the current key");
+    let scheme = u32::try_from(current.scheme).expect("scheme must be non-negative");
+    assert_eq!(scheme, keys.current.scheme);
+    assert_eq!(current.key_id, keys.current.key_id);
+    assert_eq!(current.public_key, keys.current.public_key);
 
     let commitment =
-        attestation_commitment(scheme, &response.key_id, genesis, &response.public_key, None);
-    assert_eq!(commitment, info.attestation_commitment(genesis));
+        attestation_commitment(scheme, &current.key_id, genesis, &current.public_key, None);
+    assert_eq!(commitment, keys.current.attestation_commitment(genesis));
 
-    let [attestation] = response.attestations.as_slice() else {
+    let [attestation] = current.attestations.as_slice() else {
         panic!("response must carry exactly the serving validator's attestation");
     };
     assert_eq!(
@@ -769,6 +771,47 @@ async fn transaction_encryption_key_is_attested() {
         signature.verify(commitment, &tv.server.signer.public_key()),
         "attestation must verify against this validator's signing key",
     );
+
+    // The next key matches the epoch-1 derivation, rotates at the first block of epoch 1, and its
+    // attestation verifies over the next-key commitment binding the rotation block.
+    let next = response.next_key.expect("a next key must be announced");
+    let expected_next = keys.next.expect("epoch 0 must have a next key");
+    assert_eq!(next.rotation_block_num, expected_next.rotation_block_num);
+    assert_eq!(next.rotation_block_num, BlockNumber::from_epoch(1).as_u32());
+
+    let next_key = next.key.expect("the next key must carry its key material");
+    let next_scheme = u32::try_from(next_key.scheme).expect("scheme must be non-negative");
+    assert_eq!(next_key.key_id, expected_next.key.key_id);
+    assert_eq!(next_key.public_key, expected_next.key.public_key);
+    assert_ne!(next_key.public_key, current.public_key, "the next key must differ");
+
+    let next_commitment = attestation_commitment(
+        next_scheme,
+        &next_key.key_id,
+        genesis,
+        &next_key.public_key,
+        Some(next.rotation_block_num),
+    );
+    assert_eq!(next_commitment, expected_next.attestation_commitment(genesis));
+    let next_signature = Signature::read_from_bytes(&next_key.attestations[0].signature)
+        .expect("signature should deserialize");
+    assert!(
+        next_signature.verify(next_commitment, &tv.server.signer.public_key()),
+        "the next-key attestation must verify against this validator's signing key",
+    );
+    assert!(
+        !next_signature.verify(
+            attestation_commitment(
+                next_scheme,
+                &next_key.key_id,
+                genesis,
+                &next_key.public_key,
+                None
+            ),
+            &tv.server.signer.public_key(),
+        ),
+        "a next-key attestation must not verify as a current-key attestation",
+    );
 }
 
 /// Two validators provisioned with the same shared encryption secret but distinct signing keys
@@ -778,14 +821,14 @@ async fn shared_key_is_attested_per_validator() {
     let tv_a = TestValidator::new().await;
     let tv_b = TestValidator::new().await;
 
-    let response_a = tv_a.call_get_transaction_encryption_key().await;
-    let response_b = tv_b.call_get_transaction_encryption_key().await;
+    let key_a = tv_a.call_get_transaction_encryption_key().await.current_key.unwrap();
+    let key_b = tv_b.call_get_transaction_encryption_key().await.current_key.unwrap();
 
-    assert_eq!(response_a.scheme, response_b.scheme);
-    assert_eq!(response_a.key_id, response_b.key_id);
-    assert_eq!(response_a.public_key, response_b.public_key);
+    assert_eq!(key_a.scheme, key_b.scheme);
+    assert_eq!(key_a.key_id, key_b.key_id);
+    assert_eq!(key_a.public_key, key_b.public_key);
     assert_ne!(
-        response_a.attestations[0].signature, response_b.attestations[0].signature,
+        key_a.attestations[0].signature, key_b.attestations[0].signature,
         "each validator must attest with its own signing key",
     );
 }
@@ -797,47 +840,36 @@ async fn tampered_attestation_fails_verification() {
     let tv = TestValidator::new().await;
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
-    let signature = Signature::read_from_bytes(&response.attestations[0].signature).unwrap();
+    let current = response.current_key.expect("response must carry the current key");
+    let signature = Signature::read_from_bytes(&current.attestations[0].signature).unwrap();
     let signing_key = tv.server.signer.public_key();
-    let scheme = u32::try_from(response.scheme).expect("scheme must be non-negative");
+    let scheme = u32::try_from(current.scheme).expect("scheme must be non-negative");
 
-    let mut tampered_public_key = response.public_key.clone();
+    let mut tampered_public_key = current.public_key.clone();
     tampered_public_key[0] ^= 0x01;
-    let mut tampered_key_id = response.key_id.clone();
+    let mut tampered_key_id = current.key_id.clone();
     tampered_key_id[0] ^= 0x01;
     // Moving a byte across the key id and public key boundary must also change the payload, which
     // the length prefixes in the transcript guarantee.
-    let mut extended_key_id = response.key_id.clone();
-    extended_key_id.push(response.public_key[0]);
+    let mut extended_key_id = current.key_id.clone();
+    extended_key_id.push(current.public_key[0]);
     let tampered_genesis = Word::try_from([9u64, 9, 9, 9]).unwrap();
-    // Injecting a scheduled rotation into a response attested without one must also break the
-    // signature.
-    let injected_next_key = NextEncryptionKeyInfo {
-        scheme,
-        key_id: response.key_id.clone(),
-        public_key: response.public_key.clone(),
-        rotation_block_num: 100,
-    };
 
     let tampered_commitments = [
-        attestation_commitment(scheme + 1, &response.key_id, genesis, &response.public_key, None),
-        attestation_commitment(scheme, &tampered_key_id, genesis, &response.public_key, None),
-        attestation_commitment(scheme, &extended_key_id, genesis, &response.public_key[1..], None),
-        attestation_commitment(scheme, &response.key_id, genesis, &tampered_public_key, None),
+        attestation_commitment(scheme + 1, &current.key_id, genesis, &current.public_key, None),
+        attestation_commitment(scheme, &tampered_key_id, genesis, &current.public_key, None),
+        attestation_commitment(scheme, &extended_key_id, genesis, &current.public_key[1..], None),
+        attestation_commitment(scheme, &current.key_id, genesis, &tampered_public_key, None),
         attestation_commitment(
             scheme,
-            &response.key_id,
+            &current.key_id,
             tampered_genesis,
-            &response.public_key,
+            &current.public_key,
             None,
         ),
-        attestation_commitment(
-            scheme,
-            &response.key_id,
-            genesis,
-            &response.public_key,
-            Some(&injected_next_key),
-        ),
+        // Presenting a current-key attestation as a next-key attestation must also break the
+        // signature, regardless of the claimed rotation block.
+        attestation_commitment(scheme, &current.key_id, genesis, &current.public_key, Some(100)),
     ];
     for commitment in tampered_commitments {
         assert!(
@@ -856,9 +888,13 @@ async fn response_key_seals_for_the_validator_set() {
     use miden_protocol::crypto::ies::SealingKey;
 
     let tv = TestValidator::new().await;
-    let response = tv.call_get_transaction_encryption_key().await;
+    let current = tv
+        .call_get_transaction_encryption_key()
+        .await
+        .current_key
+        .expect("response must carry the current key");
 
-    let public_key = EncryptionPublicKey::read_from_bytes(&response.public_key)
+    let public_key = EncryptionPublicKey::read_from_bytes(&current.public_key)
         .expect("response public key should deserialize");
     let sealing_key = SealingKey::X25519XChaCha20Poly1305(public_key);
 
@@ -871,14 +907,14 @@ async fn response_key_seals_for_the_validator_set() {
 
     let sealed = sealed.to_bytes();
     let opened = test_decrypter()
-        .decrypt_transaction_inputs(&sealed, associated_data)
+        .decrypt_transaction_inputs(0, &sealed, associated_data)
         .await
         .unwrap();
     assert_eq!(opened.as_slice(), plaintext);
 
     assert!(
         test_decrypter()
-            .decrypt_transaction_inputs(&sealed, b"other associated data")
+            .decrypt_transaction_inputs(0, &sealed, b"other associated data")
             .await
             .is_err(),
         "decryption must fail under mismatched associated data",
@@ -897,7 +933,332 @@ async fn encryption_key_available_during_backup() {
     // `call_get_transaction_encryption_key` panics on rejection, so completing proves availability
     // during the backup.
     let response = tv.call_get_transaction_encryption_key().await;
-    assert!(!response.public_key.is_empty());
+    assert!(!response.current_key.expect("current key must be present").public_key.is_empty());
 
     drop(stream);
+}
+
+/// Crossing an epoch boundary rotates the served key: the previous next key becomes the current key
+/// and a fresh next key is announced and attested.
+#[tokio::test]
+async fn rotation_task_rotates_keys_at_epoch_boundary() {
+    use miden_node_utils::shutdown::CancellationToken;
+
+    let tv = TestValidator::new().await;
+    let genesis = tv.chain_tip.commitment();
+    let shutdown = CancellationToken::new();
+    let task = tv.server.spawn_key_rotation_task(shutdown.clone());
+
+    let before = tv.call_get_transaction_encryption_key().await;
+    let announced_next = before.next_key.expect("a next key must be announced").key.unwrap();
+
+    // A tip advancing within the same epoch must not replace the attested state. The state Arc is
+    // only swapped on rotation, so pointer identity detects a spurious re-attestation.
+    let state_before = tv.server.attested_encryption_keys();
+    tv.server.committed_tip.send_replace(BlockNumber::from(5u32));
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        std::sync::Arc::ptr_eq(&state_before, &tv.server.attested_encryption_keys()),
+        "an intra-epoch tip must not re-attest the encryption keys",
+    );
+
+    // Crossing into epoch 1 must rotate. The task signs asynchronously, so poll briefly.
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+    let rotated = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if tv.server.attested_encryption_keys().epoch == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(rotated.is_ok(), "the key must rotate after the epoch boundary");
+
+    let after = tv.call_get_transaction_encryption_key().await;
+    let current = after.current_key.expect("current key must be present");
+    assert_eq!(
+        current.public_key, announced_next.public_key,
+        "the announced next key must become the current key",
+    );
+
+    // The rotated current key carries a fresh, valid current-key attestation.
+    let scheme = u32::try_from(current.scheme).unwrap();
+    let commitment =
+        attestation_commitment(scheme, &current.key_id, genesis, &current.public_key, None);
+    let signature = Signature::read_from_bytes(&current.attestations[0].signature).unwrap();
+    assert!(signature.verify(commitment, &tv.server.signer.public_key()));
+
+    // A fresh next key is announced for epoch 2.
+    let next = after.next_key.expect("a next key must be announced after rotation");
+    assert_eq!(next.rotation_block_num, BlockNumber::from_epoch(2).as_u32());
+    assert_ne!(next.key.unwrap().public_key, current.public_key);
+
+    // The rotated epoch's secret key is archived.
+    let archived = tv
+        .server
+        .db
+        .read("load_encryption_key", |tx| load_encryption_key(tx, 1))
+        .await
+        .unwrap()
+        .expect("the rotated epoch's key must be archived");
+    assert_eq!(archived.secret_key, test_decrypter().key_for_epoch(1).to_bytes());
+    assert_eq!(archived.public_key, current.public_key);
+
+    shutdown.cancel();
+    task.await.expect("the rotation task must stop on shutdown");
+}
+
+/// Constructing the service archives the current epoch's secret key, and the archived material
+/// matches the deterministic derivation.
+#[tokio::test]
+async fn startup_archives_current_epoch_key() {
+    let tv = TestValidator::new().await;
+
+    let archived = tv
+        .server
+        .db
+        .read("load_encryption_key", |tx| load_encryption_key(tx, 0))
+        .await
+        .unwrap()
+        .expect("the current epoch's key must be archived at startup");
+
+    let decrypter = test_decrypter();
+    assert_eq!(archived.secret_key, decrypter.key_for_epoch(0).to_bytes());
+    let info = decrypter.key_info_for_epoch(0);
+    assert_eq!(archived.scheme, info.scheme);
+    assert_eq!(archived.key_id, info.key_id);
+    assert_eq!(archived.public_key, info.public_key);
+
+    // The announced next epoch's key is archived too: clients near a boundary may already seal
+    // against it.
+    let archived_next = tv
+        .server
+        .db
+        .read("load_encryption_key", |tx| load_encryption_key(tx, 1))
+        .await
+        .unwrap()
+        .expect("the announced next epoch's key must be archived at startup");
+    assert_eq!(archived_next.secret_key, decrypter.key_for_epoch(1).to_bytes());
+}
+
+/// A message sealed against an epoch's public key decrypts with the secret key recovered from the
+/// archive alone, proving archived material is sufficient for recovery.
+#[tokio::test]
+async fn archived_secret_key_decrypts_sealed_submissions() {
+    use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
+    use miden_protocol::crypto::ies::UnsealingKey;
+
+    let tv = TestValidator::new().await;
+    let archived = tv
+        .server
+        .db
+        .read("load_encryption_key", |tx| load_encryption_key(tx, 0))
+        .await
+        .unwrap()
+        .expect("epoch 0 must be archived");
+
+    let mut rng = rand::rng();
+    let plaintext = b"transaction inputs";
+    let associated_data = b"associated data";
+    let sealed = test_decrypter()
+        .sealing_key_for_epoch(0)
+        .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
+        .unwrap();
+
+    let recovered_key = KeyExchangeKey::read_from_bytes(&archived.secret_key)
+        .expect("archived secret key bytes must form a valid key");
+    let opened = UnsealingKey::X25519XChaCha20Poly1305(recovered_key)
+        .unseal_bytes_with_associated_data(sealed, associated_data)
+        .expect("the archived secret key must decrypt submissions of its epoch");
+    assert_eq!(opened.as_slice(), plaintext);
+}
+
+/// [`TransactionInputDecrypter`] test double wrapping the shared test decrypter with a configurable
+/// secret key export, modelling failing and non-exporting (e.g. TEE) decrypters.
+struct ExportOverrideDecrypter {
+    inner: LocalX25519TransactionInputDecrypter,
+    /// While set, `export_secret_key` fails. Toggleable to model a recovering fault.
+    fail_exports: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// When set, `export_secret_key` returns `None`, modelling a TEE-held key.
+    export_unavailable: bool,
+}
+
+impl ExportOverrideDecrypter {
+    fn new(fail_exports: bool, export_unavailable: bool) -> Self {
+        Self {
+            inner: test_decrypter(),
+            fail_exports: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(fail_exports)),
+            export_unavailable,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl TransactionInputDecrypter for ExportOverrideDecrypter {
+    async fn encryption_keys(&self, epoch: u16) -> anyhow::Result<crate::EncryptionKeySet> {
+        self.inner.encryption_keys(epoch).await
+    }
+
+    async fn decrypt_transaction_inputs(
+        &self,
+        epoch: u16,
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
+        self.inner.decrypt_transaction_inputs(epoch, ciphertext, associated_data).await
+    }
+
+    async fn export_secret_key(&self, epoch: u16) -> anyhow::Result<Option<Vec<u8>>> {
+        if self.fail_exports.load(std::sync::atomic::Ordering::Relaxed) {
+            anyhow::bail!("export unavailable");
+        }
+        if self.export_unavailable {
+            return Ok(None);
+        }
+        self.inner.export_secret_key(epoch).await
+    }
+}
+
+/// A decrypter whose secret key export fails must fail service construction with an archival error,
+/// since a served key that was never archived would silently void the archive guarantee.
+#[tokio::test]
+async fn failing_secret_key_export_fails_construction() {
+    let key = random_secret_key();
+    let signer = ValidatorSigner::new_local(key.clone());
+    let (_temp_dir, db, block_store, _genesis_header) = setup_db_with_genesis(&key).await;
+    let decrypter = ExportOverrideDecrypter::new(true, false);
+
+    let result =
+        ValidatorService::new(signer, std::sync::Arc::new(decrypter), db, block_store, 0, 0, 0)
+            .await;
+
+    assert!(
+        matches!(result, Err(ValidatorError::EncryptionKeyArchivalFailed(_))),
+        "construction must surface the archival failure",
+    );
+}
+
+/// A decrypter that cannot export secrets (e.g. a TEE-held key) skips archival entirely without
+/// failing construction.
+#[tokio::test]
+async fn non_exporting_decrypter_skips_archival() {
+    let key = random_secret_key();
+    let signer = ValidatorSigner::new_local(key.clone());
+    let (_temp_dir, db, block_store, _genesis_header) = setup_db_with_genesis(&key).await;
+    let decrypter = ExportOverrideDecrypter::new(false, true);
+
+    let server =
+        ValidatorService::new(signer, std::sync::Arc::new(decrypter), db, block_store, 0, 0, 0)
+            .await
+            .expect("a non-exporting decrypter must not fail construction");
+
+    let archived = server
+        .db
+        .read("load_encryption_key", |tx| load_encryption_key(tx, 0))
+        .await
+        .unwrap();
+    assert_eq!(archived, None, "no key must be archived when the decrypter cannot export");
+}
+
+/// A rotation that fails at the epoch boundary keeps serving the previous epoch's keys and
+/// completes once the fault clears, via the retry timer.
+#[tokio::test]
+async fn failed_rotation_retries_until_it_succeeds() {
+    use miden_node_utils::shutdown::CancellationToken;
+
+    let key = random_secret_key();
+    let signer = ValidatorSigner::new_local(key.clone());
+    let (_temp_dir, db, block_store, _genesis_header) = setup_db_with_genesis(&key).await;
+    let decrypter = ExportOverrideDecrypter::new(false, false);
+    let fail_exports = std::sync::Arc::clone(&decrypter.fail_exports);
+
+    let server =
+        ValidatorService::new(signer, std::sync::Arc::new(decrypter), db, block_store, 0, 0, 0)
+            .await
+            .unwrap();
+    let shutdown = CancellationToken::new();
+    let task = tokio::spawn(ValidatorService::key_rotation_loop(
+        std::sync::Arc::clone(&server.signer),
+        std::sync::Arc::clone(&server.decrypter),
+        std::sync::Arc::clone(&server.encryption_keys),
+        std::sync::Arc::clone(&server.db),
+        server.genesis_commitment,
+        server.committed_tip.subscribe(),
+        std::time::Duration::from_millis(20),
+        shutdown.clone(),
+    ));
+
+    // Cross the boundary while archival is failing: the previous epoch's keys stay served through
+    // several retry cycles.
+    fail_exports.store(true, std::sync::atomic::Ordering::Relaxed);
+    server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(
+        server.attested_encryption_keys().epoch,
+        0,
+        "a failing rotation must keep serving the previous epoch's keys",
+    );
+
+    // Once the fault clears, the retry timer completes the rotation without new blocks.
+    fail_exports.store(false, std::sync::atomic::Ordering::Relaxed);
+    let rotated = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if server.attested_encryption_keys().epoch == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(rotated.is_ok(), "the rotation must complete after the fault clears");
+
+    shutdown.cancel();
+    task.await.expect("the rotation loop must stop on shutdown");
+}
+
+/// A tip skipping several epochs at once (e.g. a validator catching up) rotates directly to the
+/// tip's epoch.
+#[tokio::test]
+async fn rotation_task_catches_up_across_multiple_epochs() {
+    use miden_node_utils::shutdown::CancellationToken;
+
+    let tv = TestValidator::new().await;
+    let shutdown = CancellationToken::new();
+    let task = tv.server.spawn_key_rotation_task(shutdown.clone());
+
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(3));
+    let rotated = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if tv.server.attested_encryption_keys().epoch == 3 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(rotated.is_ok(), "the key must rotate directly to the tip's epoch");
+
+    let expected = test_decrypter().encryption_keys(3).await.expect("key info should be available");
+    let current = tv
+        .call_get_transaction_encryption_key()
+        .await
+        .current_key
+        .expect("current key must be present");
+    assert_eq!(current.public_key, expected.current.public_key);
+
+    // Every skipped epoch is backfilled into the archive, including the announced next epoch.
+    for epoch in 0..=4u16 {
+        let archived = tv
+            .server
+            .db
+            .read("load_encryption_key", move |tx| load_encryption_key(tx, epoch))
+            .await
+            .unwrap()
+            .unwrap_or_else(|| panic!("epoch {epoch} must be archived"));
+        assert_eq!(archived.secret_key, test_decrypter().key_for_epoch(epoch).to_bytes());
+    }
+
+    shutdown.cancel();
+    task.await.expect("the rotation task must stop on shutdown");
 }

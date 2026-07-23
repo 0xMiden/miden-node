@@ -12,7 +12,6 @@ use miden_node_utils::clap::GrpcOptionsInternal;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
-use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::Deserializable;
 use miden_validator::{
     DataDirectory,
@@ -132,10 +131,11 @@ pub enum ValidatorCommand {
         )]
         signing_key_kms_id: Option<String>,
 
-        /// Hex-encoded shared secret of the transaction encryption key.
+        /// Hex-encoded shared master secret of the transaction encryption key.
         ///
-        /// Unlike the per-validator signing key, this value must be identical across every
-        /// validator in the set.
+        /// The per-epoch encryption keys are derived from this secret, rotating automatically at
+        /// each epoch boundary. Unlike the per-validator signing key, this value must be
+        /// identical across every validator in the set.
         ///
         /// If not provided, a predefined insecure key is used.
         ///
@@ -149,8 +149,8 @@ pub enum ValidatorCommand {
         )]
         encryption_key: String,
 
-        /// Base64-encoded KMS ciphertext of the shared transaction encryption key, as returned
-        /// by `kms:Encrypt`.
+        /// Base64-encoded KMS ciphertext of the shared transaction encryption master secret, as
+        /// returned by `kms:Encrypt`.
         ///
         /// The wrapped key material is recovered at startup with `kms:Decrypt`. The ciphertext
         /// must have been produced by `kms:Encrypt` under a symmetric KMS key, whose ID is
@@ -232,10 +232,12 @@ impl ValidatorCommand {
                     hex::decode(encryption_key)
                         .context("failed to decode the encryption key hex")?
                 };
-                let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
-                    .context("failed to construct the encryption key")?;
+                let master_secret: [u8; 32] = encryption_key_bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("the encryption key must be exactly 32 bytes"))?;
                 let decrypter: Arc<dyn TransactionInputDecrypter> =
-                    Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key));
+                    Arc::new(LocalX25519TransactionInputDecrypter::new(master_secret));
 
                 let signer = if let Some(kms_key_id) = signing_key_kms_id {
                     ValidatorSigner::new_kms(kms_key_id).await?

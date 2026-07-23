@@ -17,3 +17,11 @@ CREATE TABLE block_headers (
     block_num    BIGINT PRIMARY KEY,
     block_header BLOB NOT NULL
 ) WITHOUT ROWID;
+
+CREATE TABLE encryption_keys (
+    epoch      BIGINT PRIMARY KEY,
+    scheme     BIGINT NOT NULL,
+    key_id     BLOB NOT NULL,
+    public_key BLOB NOT NULL,
+    secret_key BLOB NOT NULL
+) WITHOUT ROWID;

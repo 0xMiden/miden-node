@@ -7,6 +7,7 @@ use metrics::SeedingMetrics;
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::{DataDirectory, GenesisState, State};
 use miden_node_utils::clap::StorageOptions;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
@@ -1026,7 +1027,7 @@ pub async fn start_store(data_directory: PathBuf) -> Arc<State> {
 }
 
 async fn load_state(data_directory: PathBuf) -> Arc<State> {
-    let state = State::load(&data_directory, StorageOptions::bench())
+    let state = State::load(&data_directory, StorageOptions::bench(), CancellationToken::new())
         .await
         .expect("store state should load");
     Arc::new(state)

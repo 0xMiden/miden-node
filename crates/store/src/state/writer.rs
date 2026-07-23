@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
@@ -111,6 +112,8 @@ pub(super) struct BlockWriter {
     pub committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
     pub block_cache: BlockCache,
     pub rx: mpsc::Receiver<WriteRequest>,
+    /// Token signalling node shutdown; the writer stops accepting new requests once cancelled.
+    pub shutdown: CancellationToken,
     /// The mutable nullifier tree owned by this writer.
     pub nullifier_tree: NullifierTree<LargeSmt<TreeStorage>>,
     /// The mutable account tree owned by this writer.
@@ -132,9 +135,22 @@ struct PreparedBlockUpdate {
 }
 
 impl BlockWriter {
-    /// Runs the writer loop, processing requests until all write handles are dropped.
+    /// Runs the writer loop, processing requests until shutdown is signalled or all write handles
+    /// are dropped.
+    ///
+    /// Cancellation is only observed between requests: an in-flight block write always runs to
+    /// completion, so shutdown never leaves the trees lagging the committed database state.
+    /// Requests still queued when cancellation fires are dropped, failing their senders.
     pub async fn run(mut self) {
-        while let Some(req) = self.rx.recv().await {
+        loop {
+            let req = tokio::select! {
+                biased;
+                () = self.shutdown.cancelled() => break,
+                req = self.rx.recv() => match req {
+                    Some(req) => req,
+                    None => break,
+                },
+            };
             let result = self.write_block(req.signed_block).await;
             let _ = req.result_tx.send(result);
         }

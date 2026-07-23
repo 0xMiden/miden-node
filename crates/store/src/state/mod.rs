@@ -16,6 +16,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::formatting::format_array;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
@@ -230,6 +231,10 @@ pub struct State {
     /// to release the tree storage it owns.
     writer_task: tokio::task::JoinHandle<()>,
 
+    /// Watch receiver whose channel is closed when the writer task exits; see
+    /// [`Self::writer_done`].
+    writer_done_rx: watch::Receiver<()>,
+
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,
 
@@ -261,9 +266,15 @@ impl State {
     pub async fn load(
         data_path: &Path,
         storage_options: StorageOptions,
+        shutdown: CancellationToken,
     ) -> Result<Self, StateInitializationError> {
-        Self::load_with_database_options(data_path, storage_options, DatabaseOptions::default())
-            .await
+        Self::load_with_database_options(
+            data_path,
+            storage_options,
+            DatabaseOptions::default(),
+            shutdown,
+        )
+        .await
     }
 
     /// Loads the state from the data directory using explicit database options.
@@ -278,6 +289,7 @@ impl State {
         data_path: &Path,
         storage_options: StorageOptions,
         database_options: DatabaseOptions,
+        shutdown: CancellationToken,
     ) -> Result<Self, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())
             .map_err(StateInitializationError::DataDirectoryLoadError)?;
@@ -365,8 +377,8 @@ impl State {
         let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
 
         // Spawn the block writer task. It owns the writable trees and processes write requests
-        // serially, publishing a new snapshot after each committed block. The task exits when all
-        // write handles are dropped.
+        // serially, publishing a new snapshot after each committed block. The task exits when the
+        // shutdown token is cancelled or all write handles are dropped.
         let (write_tx, write_rx) = tokio::sync::mpsc::channel(1);
         let write_handle = WriteHandle::new(write_tx);
         let block_writer = BlockWriter {
@@ -376,13 +388,20 @@ impl State {
             committed_tip_tx: Arc::clone(&committed_tip_tx),
             block_cache: block_cache.clone(),
             rx: write_rx,
+            shutdown,
             nullifier_tree,
             account_tree,
             blockchain,
             forest,
             snapshots_live,
         };
-        let writer_task = tokio::spawn(block_writer.run());
+        let (writer_done_tx, writer_done_rx) = watch::channel(());
+        let writer_task = tokio::spawn(async move {
+            // `run` consumes the writer, so the tree storage it owns is closed by the time the call
+            // returns; only then signal completion by dropping the watch sender.
+            block_writer.run().await;
+            drop(writer_done_tx);
+        });
 
         Ok(Self {
             data_directory: data_path.to_path_buf(),
@@ -391,11 +410,24 @@ impl State {
             in_memory,
             write_handle,
             writer_task,
+            writer_done_rx,
             proven_tip,
             committed_tip_tx,
             block_cache,
             proof_cache,
         })
+    }
+
+    /// Resolves once the block writer task has exited and released the tree storage it owns.
+    ///
+    /// The writer exits after the shutdown token passed to [`Self::load`] is cancelled, once any
+    /// in-flight block write has committed fully — or unexpectedly if it fails. Intended for
+    /// spawning into the node's task set so shutdown waits for the drain and an unexpected writer
+    /// exit takes the node down.
+    pub async fn writer_done(&self) {
+        let mut rx = self.writer_done_rx.clone();
+        // `changed` errors once the writer task drops its end of the channel.
+        while rx.changed().await.is_ok() {}
     }
 
     /// Shuts down the block writer task, waiting until it has released the tree storage it owns.
@@ -406,9 +438,9 @@ impl State {
     /// the state from the same data directory, or to delete it — must use this method instead of
     /// dropping.
     ///
-    /// This is also the node's graceful-shutdown drain: any in-flight block write commits fully
-    /// (database, trees, and published snapshot) before this returns, so a subsequent startup
-    /// skips crash recovery.
+    /// The running node does not use this method: its writer exits via the shutdown token passed
+    /// to [`Self::load`], and the drain is awaited through [`Self::writer_done`]. This method
+    /// serves callers without a token to cancel, such as tests and the recover command.
     ///
     /// # Errors
     ///

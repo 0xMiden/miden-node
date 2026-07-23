@@ -6,6 +6,7 @@ use miden_node_store::GenesisState;
 use miden_node_store::state::State;
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::fee::test_fee_params;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use url::Url;
@@ -56,6 +57,8 @@ fn bootstrap_store(path: &std::path::Path) {
 }
 
 async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let state = State::load(path, StorageOptions::default()).await.expect("state should load");
+    let state = State::load(path, StorageOptions::default(), CancellationToken::new())
+        .await
+        .expect("state should load");
     Arc::new(state)
 }

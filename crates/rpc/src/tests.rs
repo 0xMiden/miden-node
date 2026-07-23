@@ -31,6 +31,7 @@ use miden_node_utils::limiter::{
     QueryParamStorageMapKeyTotalLimit,
     QueryParamStorageMapSlotLimit,
 };
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -119,7 +120,9 @@ impl TestStore {
 }
 
 async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let state = State::load(path, StorageOptions::default()).await.expect("state should load");
+    let state = State::load(path, StorageOptions::default(), CancellationToken::new())
+        .await
+        .expect("state should load");
     Arc::new(state)
 }
 

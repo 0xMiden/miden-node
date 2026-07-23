@@ -7,6 +7,7 @@ use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated::validator::BlockSubscriptionRequest;
 use miden_node_store::State;
 use miden_node_store::state::Finality;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use miden_protocol::utils::serde::Deserializable;
 use tokio_stream::StreamExt;
@@ -44,10 +45,13 @@ impl RecoverCommand {
     }
 
     async fn load_state(&self) -> anyhow::Result<Arc<State>> {
+        // Recovery is not wired into the node's shutdown token; the writer is drained explicitly
+        // via `shutdown_state` once recovery completes.
         let state = State::load_with_database_options(
             &self.data_directory,
             self.store.storage.clone().into(),
             self.store.sqlite.database_options(),
+            CancellationToken::new(),
         )
         .await
         .context("failed to load state")?;

@@ -7,6 +7,7 @@ use miden_node_proto::domain::account::AccountRequest;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::state::{Finality, State};
 use miden_node_utils::clap::StorageOptions;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
@@ -685,7 +686,9 @@ fn transaction_record_to_proto(
 
 pub async fn load_state(data_directory: &Path) {
     let start = Instant::now();
-    let _state = State::load(data_directory, StorageOptions::default()).await.unwrap();
+    let _state = State::load(data_directory, StorageOptions::default(), CancellationToken::new())
+        .await
+        .unwrap();
     let elapsed = start.elapsed();
 
     // Get database path and run SQL commands to count records

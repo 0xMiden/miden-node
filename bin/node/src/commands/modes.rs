@@ -55,7 +55,7 @@ impl SequencerCommand {
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let state = load_state(&runtime).await?;
+        let state = load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let sequencer = Sequencer {
@@ -90,6 +90,7 @@ impl SequencerCommand {
         let mut tasks = Tasks::new();
         tasks.spawn("sequencer", sequencer.wait());
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
+        tasks.spawn("store block writer", store_writer_drain(state));
         if let Some(internal_listen) = self.internal {
             let sequencer_internal = SequencerInternal {
                 listener: bind_rpc(internal_listen).await?,
@@ -99,10 +100,7 @@ impl SequencerCommand {
             tasks.spawn("sequencer internal server", sequencer_internal.serve(shutdown.clone()));
         }
 
-        let result = tasks.join_next_or_cancelled(shutdown).await;
-        // All tasks have exited and dropped their state clones, so the writer can be drained.
-        super::shutdown_state(state).await;
-        result
+        tasks.join_next_or_cancelled(shutdown).await
     }
 }
 
@@ -189,7 +187,7 @@ impl FullNodeCommand {
         let validator_client = self.validator_client();
         let sequencer_client = self.sequencer_client();
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let state = load_state(&runtime).await?;
+        let state = load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let rpc = Rpc {
@@ -207,11 +205,9 @@ impl FullNodeCommand {
         };
         let mut tasks = Tasks::new();
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
+        tasks.spawn("store block writer", store_writer_drain(state));
 
-        let result = tasks.join_next_or_cancelled(shutdown).await;
-        // All tasks have exited and dropped their state clones, so the writer can be drained.
-        super::shutdown_state(state).await;
-        result
+        tasks.join_next_or_cancelled(shutdown).await
     }
 
     fn sequencer_client(&self) -> Option<SequencerClient> {
@@ -253,16 +249,30 @@ impl SyncOptions {
     }
 }
 
-async fn load_state(runtime: &RuntimeConfig) -> anyhow::Result<Arc<State>> {
+async fn load_state(
+    runtime: &RuntimeConfig,
+    shutdown: CancellationToken,
+) -> anyhow::Result<Arc<State>> {
     let state = State::load_with_database_options(
         &runtime.data_directory,
         runtime.storage_options.clone(),
         runtime.database_options,
+        shutdown,
     )
     .await
     .context("failed to load state")?;
 
     Ok(Arc::new(state))
+}
+
+/// Waits for the store's block writer to exit and release its storage.
+///
+/// Spawned into the node's task set: on shutdown the task-drain loop waits for the writer to
+/// finish any in-flight block write and close its storage, and an unexpected writer exit takes
+/// the node down like any other failed task.
+async fn store_writer_drain(state: Arc<State>) -> anyhow::Result<()> {
+    state.writer_done().await;
+    Ok(())
 }
 
 async fn bind_rpc(listen: SocketAddr) -> anyhow::Result<TcpListener> {

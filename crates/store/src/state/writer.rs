@@ -439,8 +439,8 @@ impl BlockWriter {
             return Err(InvalidBlockError::NewBlockInvalidNullifierRoot.into());
         }
 
-        // Compute the account tree mutations and verify that they produce the account root
-        // claimed in the header.
+        // Compute the account tree mutations and verify that they produce the account root claimed
+        // in the header.
         let account_tree_update = self
             .account_tree
             .compute_mutations(

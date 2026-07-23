@@ -78,7 +78,7 @@ impl SequencerCommand {
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: state,
+            store: Arc::clone(&state),
             mode: RpcMode::sequencer(
                 block_producer.clone(),
                 self.external_services.validator_client()?,
@@ -99,7 +99,10 @@ impl SequencerCommand {
             tasks.spawn("sequencer internal server", sequencer_internal.serve(shutdown.clone()));
         }
 
-        tasks.join_next_or_cancelled(shutdown).await
+        let result = tasks.join_next_or_cancelled(shutdown).await;
+        // All tasks have exited and dropped their state clones, so the writer can be drained.
+        super::shutdown_state(state).await;
+        result
     }
 }
 
@@ -191,7 +194,7 @@ impl FullNodeCommand {
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: state,
+            store: Arc::clone(&state),
             mode: RpcMode::full_node(
                 source_rpc,
                 self.sync.readiness_threshold,
@@ -205,7 +208,10 @@ impl FullNodeCommand {
         let mut tasks = Tasks::new();
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
 
-        tasks.join_next_or_cancelled(shutdown).await
+        let result = tasks.join_next_or_cancelled(shutdown).await;
+        // All tasks have exited and dropped their state clones, so the writer can be drained.
+        super::shutdown_state(state).await;
+        result
     }
 
     fn sequencer_client(&self) -> Option<SequencerClient> {

@@ -406,6 +406,10 @@ impl State {
     /// the state from the same data directory, or to delete it — must use this method instead of
     /// dropping.
     ///
+    /// This is also the node's graceful-shutdown drain: any in-flight block write commits fully
+    /// (database, trees, and published snapshot) before this returns, so a subsequent startup
+    /// skips crash recovery.
+    ///
     /// # Errors
     ///
     /// Returns `self` unchanged if other references to the state are still alive.

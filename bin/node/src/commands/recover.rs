@@ -38,7 +38,9 @@ impl RecoverCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
         let state = self.load_state().await?;
         let validator = self.validator_client()?;
-        recover_from_validator(&state, validator).await
+        let result = recover_from_validator(&state, validator).await;
+        super::shutdown_state(state).await;
+        result
     }
 
     async fn load_state(&self) -> anyhow::Result<Arc<State>> {

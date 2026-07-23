@@ -824,6 +824,9 @@ impl State {
                 inner.latest_block_num(),
             ))
         });
+        // `Break` carries a complete response (duplicate account ID prefix), so it is returned
+        // as-is without the note lookup below; `Continue` carries the tree reads needed to build
+        // the full response.
         let (account_commitment, nullifiers, new_account_id_prefix_is_unique, latest_block_num) =
             match tree_inputs {
                 ControlFlow::Continue(inputs) => inputs,

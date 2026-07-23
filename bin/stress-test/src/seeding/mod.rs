@@ -200,7 +200,7 @@ pub async fn seed_store(
     let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 
-    let store_state = load_state(data_directory.clone()).await;
+    let (store_state, writer_task) = load_state(data_directory.clone()).await;
 
     // Recreate the deterministic genesis benchmark accounts after bootstrapping instead of keeping
     // another copy of their potentially very large maps alive while the genesis block is built.
@@ -247,8 +247,8 @@ pub async fn seed_store(
     // Wait for the store to release its backing storage so callers can immediately re-load the
     // state from the same data directory.
     assert!(
-        store_state.shutdown().await.is_ok(),
-        "no other references to the store state remain"
+        store_state.stop(writer_task).await.is_ok(),
+        "no other references to the store state should remain"
     );
 
     println!("Total time: {:.3} seconds", start.elapsed().as_secs_f64());
@@ -1021,14 +1021,22 @@ async fn get_block_inputs(
     inputs
 }
 
-/// Loads the store state from the given data directory.
+/// Loads the store state from the given data directory, detaching the block writer task.
+///
+/// Intended for benches that run until process exit and never need the storage released
+/// deterministically; use [`load_state`] when the writer must be joined.
 pub async fn start_store(data_directory: PathBuf) -> Arc<State> {
-    load_state(data_directory).await
+    let (state, _writer_task) = load_state(data_directory).await;
+    state
 }
 
-async fn load_state(data_directory: PathBuf) -> Arc<State> {
-    let state = State::load(&data_directory, StorageOptions::bench(), CancellationToken::new())
+/// Loads the store state and spawns its block writer, returning the writer's join handle.
+///
+/// The writer exits once the last reference to the returned state is dropped; awaiting the handle
+/// after that guarantees the backing storage has been released.
+async fn load_state(data_directory: PathBuf) -> (Arc<State>, tokio::task::JoinHandle<()>) {
+    State::load(&data_directory, StorageOptions::bench(), CancellationToken::new())
         .await
-        .expect("store state should load");
-    Arc::new(state)
+        .expect("store state should load")
+        .start()
 }

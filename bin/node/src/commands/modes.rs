@@ -17,6 +17,7 @@ use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_str
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 use url::Url;
 
 use super::block_producer::BlockProducerOptions;
@@ -55,7 +56,7 @@ impl SequencerCommand {
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let state = load_state(&runtime, shutdown.clone()).await?;
+        let (state, writer_task) = load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let sequencer = Sequencer {
@@ -78,7 +79,7 @@ impl SequencerCommand {
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: Arc::clone(&state),
+            store: state,
             mode: RpcMode::sequencer(
                 block_producer.clone(),
                 self.external_services.validator_client()?,
@@ -90,7 +91,7 @@ impl SequencerCommand {
         let mut tasks = Tasks::new();
         tasks.spawn("sequencer", sequencer.wait());
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
-        tasks.spawn("store block writer", store_writer_drain(state));
+        tasks.spawn("store block writer", join_store_writer(writer_task));
         if let Some(internal_listen) = self.internal {
             let sequencer_internal = SequencerInternal {
                 listener: bind_rpc(internal_listen).await?,
@@ -187,12 +188,12 @@ impl FullNodeCommand {
         let validator_client = self.validator_client();
         let sequencer_client = self.sequencer_client();
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let state = load_state(&runtime, shutdown.clone()).await?;
+        let (state, writer_task) = load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: Arc::clone(&state),
+            store: state,
             mode: RpcMode::full_node(
                 source_rpc,
                 self.sync.readiness_threshold,
@@ -205,7 +206,7 @@ impl FullNodeCommand {
         };
         let mut tasks = Tasks::new();
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
-        tasks.spawn("store block writer", store_writer_drain(state));
+        tasks.spawn("store block writer", join_store_writer(writer_task));
 
         tasks.join_next_or_cancelled(shutdown).await
     }
@@ -252,8 +253,8 @@ impl SyncOptions {
 async fn load_state(
     runtime: &RuntimeConfig,
     shutdown: CancellationToken,
-) -> anyhow::Result<Arc<State>> {
-    let state = State::load_with_database_options(
+) -> anyhow::Result<(Arc<State>, JoinHandle<()>)> {
+    let loaded = State::load_with_database_options(
         &runtime.data_directory,
         runtime.storage_options.clone(),
         runtime.database_options,
@@ -262,17 +263,16 @@ async fn load_state(
     .await
     .context("failed to load state")?;
 
-    Ok(Arc::new(state))
+    Ok(loaded.start())
 }
 
-/// Waits for the store's block writer to exit and release its storage.
+/// Supervises the store's block writer task.
 ///
-/// Spawned into the node's task set: on shutdown the task-drain loop waits for the writer to
-/// finish any in-flight block write and close its storage, and an unexpected writer exit takes
-/// the node down like any other failed task.
-async fn store_writer_drain(state: Arc<State>) -> anyhow::Result<()> {
-    state.writer_done().await;
-    Ok(())
+/// On shutdown the task-drain loop waits for the writer to finish any in-flight block write and
+/// close its storage; an early exit or panic surfaces through the task set like any other task
+/// failure.
+async fn join_store_writer(writer_task: JoinHandle<()>) -> anyhow::Result<()> {
+    writer_task.await.map_err(anyhow::Error::from)
 }
 
 async fn bind_rpc(listen: SocketAddr) -> anyhow::Result<TcpListener> {

@@ -37,17 +37,21 @@ pub struct RecoverCommand {
 
 impl RecoverCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let state = self.load_state().await?;
+        let (state, writer_task) = self.load_state().await?;
         let validator = self.validator_client()?;
         let result = recover_from_validator(&state, validator).await;
-        super::shutdown_state(state).await;
+        // Wait for the writer to drain and release the backing storage before the process exits.
+        state
+            .stop(writer_task)
+            .await
+            .map_err(|_| anyhow::anyhow!("store state still referenced; cannot stop the store"))?;
         result
     }
 
-    async fn load_state(&self) -> anyhow::Result<Arc<State>> {
-        // Recovery is not wired into the node's shutdown token; the writer is drained explicitly
-        // via `shutdown_state` once recovery completes.
-        let state = State::load_with_database_options(
+    async fn load_state(&self) -> anyhow::Result<(Arc<State>, tokio::task::JoinHandle<()>)> {
+        // Recovery is not wired into the node's shutdown token; the writer exits once the state
+        // (holding the only write handle) is dropped after recovery completes.
+        let loaded = State::load_with_database_options(
             &self.data_directory,
             self.store.storage.clone().into(),
             self.store.sqlite.database_options(),
@@ -56,7 +60,7 @@ impl RecoverCommand {
         .await
         .context("failed to load state")?;
 
-        Ok(Arc::new(state))
+        Ok(loaded.start())
     }
 
     fn validator_client(&self) -> anyhow::Result<ValidatorClient> {

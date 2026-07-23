@@ -686,7 +686,9 @@ fn transaction_record_to_proto(
 
 pub async fn load_state(data_directory: &Path) {
     let start = Instant::now();
-    let _state = State::load(data_directory, StorageOptions::default(), CancellationToken::new())
+    // The writer is never started: this bench only measures load time, and dropping the un-started
+    // state releases the tree storage the writer owns.
+    let _loaded = State::load(data_directory, StorageOptions::default(), CancellationToken::new())
         .await
         .unwrap();
     let elapsed = start.elapsed();

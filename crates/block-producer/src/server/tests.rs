@@ -57,8 +57,10 @@ fn bootstrap_store(path: &std::path::Path) {
 }
 
 async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let state = State::load(path, StorageOptions::default(), CancellationToken::new())
-        .await
-        .expect("state should load");
-    Arc::new(state)
+    let (state, _writer_task) =
+        State::load(path, StorageOptions::default(), CancellationToken::new())
+            .await
+            .expect("state should load")
+            .start();
+    state
 }

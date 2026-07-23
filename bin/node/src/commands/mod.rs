@@ -7,39 +7,14 @@ mod runtime;
 pub(crate) mod section;
 mod store;
 
-use std::sync::Arc;
-use std::time::Duration;
-
 use clap::Subcommand;
 pub use lifecycle::{BootstrapCommand, MigrateCommand};
-use miden_node_store::State;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 pub use modes::{FullNodeCommand, SequencerCommand};
 pub use recover::RecoverCommand;
 
 const ENV_DATA_DIRECTORY: &str = "MIDEN_NODE_DATA_DIRECTORY";
-
-/// Best-effort drain of the store's block writer so any in-flight block write commits fully before
-/// the process exits.
-///
-/// Must be called after every other holder of the state has dropped its reference. Failure is
-/// logged rather than returned: an unclean stop is recovered by the store's startup consistency
-/// checks, so refusing to exit would be worse.
-async fn shutdown_state(state: Arc<State>) {
-    const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
-    match tokio::time::timeout(DRAIN_TIMEOUT, state.shutdown()).await {
-        Ok(Ok(())) => {},
-        Ok(Err(_state)) => tracing::error!(
-            target: crate::LOG_TARGET,
-            "store state still referenced at shutdown; skipping block writer drain"
-        ),
-        Err(_elapsed) => tracing::error!(
-            target: crate::LOG_TARGET,
-            "store block writer drain timed out"
-        ),
-    }
-}
 
 #[derive(Subcommand, Debug)]
 pub enum Command {

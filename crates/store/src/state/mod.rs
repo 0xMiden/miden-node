@@ -227,14 +227,6 @@ pub struct State {
     /// Handle for sending block-write requests to the [`BlockWriter`] task.
     write_handle: WriteHandle,
 
-    /// Join handle of the [`BlockWriter`] task, used by [`Self::shutdown`] to wait for the writer
-    /// to release the tree storage it owns.
-    writer_task: tokio::task::JoinHandle<()>,
-
-    /// Watch receiver whose channel is closed when the writer task exits; see
-    /// [`Self::writer_done`].
-    writer_done_rx: watch::Receiver<()>,
-
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,
 
@@ -251,6 +243,71 @@ pub struct State {
     pub(crate) proof_cache: ProofCache,
 }
 
+/// A loaded store state whose block writer has not been started yet.
+///
+/// Returned by [`State::load`]. [`Self::start`] spawns the writer and yields the usable
+/// [`State`]; since this is the only way to obtain one, [`State::apply_block`] can always make
+/// progress.
+#[must_use = "call `start` to spawn the block writer and obtain the state"]
+pub struct LoadedState {
+    state: State,
+    writer: BlockWriter,
+}
+
+impl LoadedState {
+    /// Spawns the block writer onto the current runtime and returns the state together with the
+    /// writer task's join handle.
+    ///
+    /// The writer exits once the shutdown token passed to [`State::load`] is cancelled or the last
+    /// state reference (holding the only write handle) is dropped — an in-flight block write
+    /// always completes first. Awaiting the returned handle after either event guarantees the
+    /// writer has released the tree storage it owns; a join error carries a writer panic.
+    ///
+    /// Callers without a token to cancel should stop the store via [`State::stop`] rather than
+    /// dropping and joining by hand.
+    pub fn start(self) -> (Arc<State>, tokio::task::JoinHandle<()>) {
+        let writer_task = tokio::spawn(self.writer.run());
+        (Arc::new(self.state), writer_task)
+    }
+}
+
+impl State {
+    /// Stops the store, waiting until the block writer has released the tree storage it owns.
+    ///
+    /// Consumes the last state reference — closing the write channel the writer listens on — and
+    /// then joins the writer task returned by [`LoadedState::start`]. The drop must precede the
+    /// join or the writer never observes the closed channel; doing both here keeps that ordering
+    /// out of caller hands.
+    ///
+    /// Callers that need the storage released deterministically must use this method instead of
+    /// dropping: the node's `recover` command stops the store before the process exits, and the
+    /// stress-test's store seeding stops it so the same data directory can be re-loaded (or its
+    /// temporary directory deleted) immediately afterwards. The running node does not use this
+    /// method — its writer exits via the shutdown token passed to [`State::load`] and is joined
+    /// through the node's task set.
+    ///
+    /// # Errors
+    ///
+    /// Returns both pieces unchanged if other references to the state are still alive.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the writer task panicked.
+    pub async fn stop(
+        self: Arc<Self>,
+        writer_task: tokio::task::JoinHandle<()>,
+    ) -> Result<(), (Arc<Self>, tokio::task::JoinHandle<()>)> {
+        match Arc::try_unwrap(self) {
+            Ok(state) => {
+                drop(state);
+                writer_task.await.expect("block writer task should not panic");
+                Ok(())
+            },
+            Err(state) => Err((state, writer_task)),
+        }
+    }
+}
+
 impl State {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -258,7 +315,8 @@ impl State {
     /// Loads the state from the data directory.
     ///
     /// The loaded state owns all store data structures and exposes subscription methods for
-    /// sequencer and replica tasks.
+    /// sequencer and replica tasks. Call [`LoadedState::start`] on the result to spawn the block
+    /// writer and obtain the usable [`State`].
     #[miden_instrument(
         target = COMPONENT,
         skip_all,
@@ -267,7 +325,7 @@ impl State {
         data_path: &Path,
         storage_options: StorageOptions,
         shutdown: CancellationToken,
-    ) -> Result<Self, StateInitializationError> {
+    ) -> Result<LoadedState, StateInitializationError> {
         Self::load_with_database_options(
             data_path,
             storage_options,
@@ -280,7 +338,8 @@ impl State {
     /// Loads the state from the data directory using explicit database options.
     ///
     /// The loaded state owns all store data structures and exposes subscription methods for
-    /// sequencer and replica tasks.
+    /// sequencer and replica tasks. Call [`LoadedState::start`] on the result to spawn the block
+    /// writer and obtain the usable [`State`].
     #[miden_instrument(
         target = COMPONENT,
         skip_all,
@@ -290,7 +349,7 @@ impl State {
         storage_options: StorageOptions,
         database_options: DatabaseOptions,
         shutdown: CancellationToken,
-    ) -> Result<Self, StateInitializationError> {
+    ) -> Result<LoadedState, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())
             .map_err(StateInitializationError::DataDirectoryLoadError)?;
 
@@ -376,9 +435,9 @@ impl State {
         });
         let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
 
-        // Spawn the block writer task. It owns the writable trees and processes write requests
-        // serially, publishing a new snapshot after each committed block. The task exits when the
-        // shutdown token is cancelled or all write handles are dropped.
+        // Assemble the block writer. It owns the writable trees and processes write requests
+        // serially, publishing a new snapshot after each committed block. The caller runs it; it
+        // exits when the shutdown token is cancelled or all write handles are dropped.
         let (write_tx, write_rx) = tokio::sync::mpsc::channel(1);
         let write_handle = WriteHandle::new(write_tx);
         let block_writer = BlockWriter {
@@ -395,66 +454,19 @@ impl State {
             forest,
             snapshots_live,
         };
-        let (writer_done_tx, writer_done_rx) = watch::channel(());
-        let writer_task = tokio::spawn(async move {
-            // `run` consumes the writer, so the tree storage it owns is closed by the time the call
-            // returns; only then signal completion by dropping the watch sender.
-            block_writer.run().await;
-            drop(writer_done_tx);
-        });
-
-        Ok(Self {
+        let state = Self {
             data_directory: data_path.to_path_buf(),
             db,
             block_store,
             in_memory,
             write_handle,
-            writer_task,
-            writer_done_rx,
             proven_tip,
             committed_tip_tx,
             block_cache,
             proof_cache,
-        })
-    }
+        };
 
-    /// Resolves once the block writer task has exited and released the tree storage it owns.
-    ///
-    /// The writer exits after the shutdown token passed to [`Self::load`] is cancelled, once any
-    /// in-flight block write has committed fully — or unexpectedly if it fails. Intended for
-    /// spawning into the node's task set so shutdown waits for the drain and an unexpected writer
-    /// exit takes the node down.
-    pub async fn writer_done(&self) {
-        let mut rx = self.writer_done_rx.clone();
-        // `changed` errors once the writer task drops its end of the channel.
-        while rx.changed().await.is_ok() {}
-    }
-
-    /// Shuts down the block writer task, waiting until it has released the tree storage it owns.
-    ///
-    /// Dropping the state also stops the writer, but only asynchronously: the task exits once it
-    /// observes the closed request channel and may briefly outlive the state, keeping the backing
-    /// storage open. Callers that need the storage released deterministically — e.g. to re-load
-    /// the state from the same data directory, or to delete it — must use this method instead of
-    /// dropping.
-    ///
-    /// The running node does not use this method: its writer exits via the shutdown token passed
-    /// to [`Self::load`], and the drain is awaited through [`Self::writer_done`]. This method
-    /// serves callers without a token to cancel, such as tests and the recover command.
-    ///
-    /// # Errors
-    ///
-    /// Returns `self` unchanged if other references to the state are still alive.
-    pub async fn shutdown(self: Arc<Self>) -> Result<(), Arc<Self>> {
-        let state = Arc::try_unwrap(self)?;
-        let Self { writer_task, write_handle, .. } = state;
-        // The unbound `..` fields above are dropped at the end of this scope, i.e. after the join
-        // below, so the write handle — the only sender of the writer's request channel — must be
-        // dropped explicitly to close the channel. The writer drains any in-flight requests,
-        // observes the closed channel, and exits, so the join is a graceful drain.
-        drop(write_handle);
-        writer_task.await.expect("block writer task should not panic");
-        Ok(())
+        Ok(LoadedState { state, writer: block_writer })
     }
 
     /// Returns a watch receiver that wakes every time a new block is committed.

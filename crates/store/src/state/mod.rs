@@ -411,10 +411,12 @@ impl State {
     /// Returns `self` unchanged if other references to the state are still alive.
     pub async fn shutdown(self: Arc<Self>) -> Result<(), Arc<Self>> {
         let state = Arc::try_unwrap(self)?;
-        // Destructuring drops every unbound field right here, including the write handle — the only
-        // sender of the writer's request channel. The writer drains any in-flight requests,
-        // observes the closed channel, and exits, so the join below is a graceful drain.
-        let Self { writer_task, .. } = state;
+        let Self { writer_task, write_handle, .. } = state;
+        // The unbound `..` fields above are dropped at the end of this scope, i.e. after the join
+        // below, so the write handle — the only sender of the writer's request channel — must be
+        // dropped explicitly to close the channel. The writer drains any in-flight requests,
+        // observes the closed channel, and exits, so the join is a graceful drain.
+        drop(write_handle);
         writer_task.await.expect("block writer task should not panic");
         Ok(())
     }

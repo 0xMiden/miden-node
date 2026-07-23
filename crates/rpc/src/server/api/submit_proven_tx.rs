@@ -129,9 +129,8 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
                     .map_err(Into::into)
             },
             RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => {
-                // Pre-authenticated transactions: validate and authenticate locally, then
-                // submit the authenticated transaction to the sequencer's pre-authenticated
-                // API.
+                // Pre-authenticated transactions: validate and authenticate locally, then submit
+                // the authenticated transaction to the sequencer's pre-authenticated API.
                 self.submit_authenticated_to_sequencer(
                     pre_auth.validators(),
                     pre_auth.sequencer().clone(),

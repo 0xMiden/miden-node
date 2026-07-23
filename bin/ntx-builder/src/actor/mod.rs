@@ -374,7 +374,9 @@ impl AccountActor {
                     next_retry_block = retry;
                     mode = match tx_candidate {
                         Some(candidate) => {
-                            let next = self.execute_transactions(account_id, candidate).await;
+                            let next = self
+                                .execute_transactions(account_id, candidate, &mut account)
+                                .await?;
                             // The actor did real work; push the idle deadline back.
                             idle_deadline = tokio::time::Instant::now() + self.config.idle_timeout;
                             next
@@ -571,12 +573,13 @@ impl AccountActor {
     /// error) are retried inside [`execute::NtxContext::execute_transaction`].
     /// Any error reaching this method is therefore terminal for the candidate: the batch's notes
     /// are marked failed and the actor moves on.
-    #[miden_instrument(name = "ntx.actor.execute_transactions", skip(self, tx_candidate))]
+    #[miden_instrument(name = "ntx.actor.execute_transactions", skip(self, tx_candidate, account))]
     async fn execute_transactions(
         &self,
         account_id: AccountId,
         tx_candidate: TransactionCandidate,
-    ) -> ActorMode {
+        account: &mut Account,
+    ) -> anyhow::Result<ActorMode> {
         let block_num = tx_candidate.chain_tip_header.block_num();
 
         // Execute the selected transaction.
@@ -603,7 +606,7 @@ impl AccountActor {
         );
 
         let execution_result = context.execute_transaction(tx_candidate).await;
-        match execution_result {
+        Ok(match execution_result {
             Ok(execute::NtxExecutionResult {
                 tx_id,
                 account_patch,
@@ -659,6 +662,13 @@ impl AccountActor {
                     "network transaction failed",
                 );
 
+                // A rejected submission (e.g. an account-commitment mismatch) means our in-memory
+                // account has diverged from the committed chain. Reload it from the DB below so the
+                // next selection builds on the authoritative state instead of re-declaring the same
+                // stale commitment. Resumption is gated on the next committed block by
+                // `NoViableNotes`, so this cannot hot-loop.
+                let submission_rejected = matches!(err, execute::NtxError::Submission(_));
+
                 // For `AllNotesFailed`, use the per-note errors which contain the specific reason
                 // each note failed (e.g. consumability check details).
                 let failed_notes: Vec<_> = match err {
@@ -683,9 +693,27 @@ impl AccountActor {
                     },
                 };
                 self.mark_notes_failed(&failed_notes, block_num).await;
+
+                if submission_rejected {
+                    if let Some(latest) = self
+                        .state
+                        .db
+                        .get_account(self.account_id)
+                        .await
+                        .context("failed to reload account after a rejected submission")?
+                    {
+                        tracing::info!(
+                            target: LOG_TARGET,
+                            %account_id,
+                            "reloaded account from the database after a rejected submission",
+                        );
+                        *account = latest;
+                    }
+                }
+
                 ActorMode::NoViableNotes
             },
-        }
+        })
     }
 
     /// Sends requests to the coordinator to cache note scripts fetched from the remote RPC service.

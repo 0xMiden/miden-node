@@ -2,6 +2,10 @@ use std::sync::Arc;
 
 use miden_node_utils::block_cache::BlockOrderedCache;
 use miden_protocol::block::BlockNumber;
+use tokio::sync::watch;
+
+use crate::errors::DatabaseError;
+use crate::state::{Finality, State};
 
 // BLOCK NOTIFICATION
 // ================================================================================================
@@ -65,3 +69,56 @@ pub type BlockCache = BlockOrderedCache<BlockNotification>;
 
 /// FIFO cache of recent block proofs for replica subscriptions.
 pub type ProofCache = BlockOrderedCache<ProofNotification>;
+
+// REPLICA STATE ACCESS
+// ================================================================================================
+
+impl State {
+    /// Returns a watch receiver that wakes every time a new block is committed.
+    pub fn subscribe_committed_tip(&self) -> watch::Receiver<BlockNumber> {
+        self.committed_tip_tx.subscribe()
+    }
+
+    /// Returns a watch receiver that wakes every time the proven-in-sequence tip advances.
+    pub fn subscribe_proven_tip(&self) -> watch::Receiver<BlockNumber> {
+        self.proven_tip.subscribe()
+    }
+
+    /// Loads a block from the in-memory replica cache or block store. Return `Ok(None)` if the
+    /// block is not found.
+    pub async fn load_block(
+        &self,
+        block_num: BlockNumber,
+    ) -> Result<Option<Vec<u8>>, DatabaseError> {
+        if block_num > self.chain_tip(Finality::Committed) {
+            return Ok(None);
+        }
+        if let Some(block) = self.block_cache.get(block_num) {
+            return Ok(Some(block.block_bytes().to_vec()));
+        }
+        self.block_store.load_block(block_num).await.map_err(Into::into)
+    }
+
+    /// Loads a block proof from the in-memory replica cache or block store. Returns `Ok(None)` if
+    /// the proof is not found.
+    pub async fn load_proof(
+        &self,
+        block_num: BlockNumber,
+    ) -> Result<Option<Vec<u8>>, DatabaseError> {
+        if block_num > self.chain_tip(Finality::Proven) {
+            return Ok(None);
+        }
+        if let Some(proof) = self.proof_cache.get(block_num) {
+            return Ok(Some(proof.proof_bytes().to_vec()));
+        }
+        self.block_store.load_proof(block_num).await.map_err(Into::into)
+    }
+
+    /// Loads serialized block proving inputs from the block store.
+    pub async fn load_proving_inputs(
+        &self,
+        block_num: BlockNumber,
+    ) -> std::io::Result<Option<Vec<u8>>> {
+        self.block_store.load_proving_inputs(block_num).await
+    }
+}

@@ -573,6 +573,11 @@ impl AccountActor {
     /// error) are retried inside [`execute::NtxContext::execute_transaction`].
     /// Any error reaching this method is therefore terminal for the candidate: the batch's notes
     /// are marked failed and the actor moves on.
+    ///
+    /// On a submission rejection (`NtxError::Submission`), `account` is refreshed in place from the
+    /// DB before returning: the rejection usually means the in-memory account diverged from the
+    /// committed chain, so the next selection must build on the authoritative state rather than
+    /// re-declaring the stale commitment.
     #[miden_instrument(name = "ntx.actor.execute_transactions", skip(self, tx_candidate, account))]
     async fn execute_transactions(
         &self,

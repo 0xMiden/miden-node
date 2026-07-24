@@ -1,6 +1,6 @@
 # Miden node
 
-[![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/node/blob/main/LICENSE)
+[![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/node/blob/next/LICENSE)
 [![CI][ci-badge]][ci-link]
 [![RUST_VERSION](https://img.shields.io/badge/rustc-1.93+-lightgray.svg)](https://www.rust-lang.org/tools/install)
 [![crates.io](https://img.shields.io/crates/v/miden-node)](https://crates.io/crates/miden-node)

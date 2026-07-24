@@ -20,7 +20,7 @@ use tokio::fs;
 use crate::seeding::{ACCOUNTS_FILENAME, start_store};
 use crate::store::metrics::print_summary;
 
-pub(crate) mod metrics;
+mod metrics;
 
 // CONSTANTS
 // ================================================================================================

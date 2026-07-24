@@ -61,50 +61,6 @@ pub enum Command {
         account_update_blocks: usize,
     },
 
-    /// Benchmark read latency under concurrent write load.
-    ///
-    /// Seeds the store like `seed-store` while concurrent reader tasks continuously request the
-    /// latest block header (with its MMR proof) from the same in-process state. Reports read
-    /// latency percentiles alongside the usual seeding metrics, capturing how reads behave while
-    /// blocks are being applied.
-    BenchmarkMixed {
-        /// Directory in which to store the database and raw block data. If the directory contains a
-        /// database dump file, it will be replaced.
-        #[arg(short, long, value_name = "DATA_DIRECTORY")]
-        data_directory: PathBuf,
-
-        /// Number of accounts to create.
-        #[arg(short, long, value_name = "NUM_ACCOUNTS")]
-        num_accounts: NonZeroUsize,
-
-        /// Percentage of accounts that will be created as public accounts. The rest will be private
-        /// accounts.
-        #[arg(
-            short,
-            long,
-            value_name = "PUBLIC_ACCOUNTS_PERCENTAGE",
-            default_value = "0",
-            value_parser = clap::value_parser!(u8).range(0..=100)
-        )]
-        public_accounts_percentage: u8,
-
-        /// Number of entries to add to a deterministic storage map on every public account.
-        #[arg(long, value_name = "STORAGE_MAP_ENTRIES", default_value = "0")]
-        storage_map_entries: u32,
-
-        /// Number of distinct vault assets to add to every public account.
-        #[arg(long, value_name = "VAULT_ENTRIES", default_value = "1")]
-        vault_entries: NonZeroUsize,
-
-        /// Number of post-initialization blocks containing public account updates.
-        #[arg(long, value_name = "ACCOUNT_UPDATE_BLOCKS", default_value = "0")]
-        account_update_blocks: usize,
-
-        /// Number of concurrent reader tasks measuring read latency during seeding.
-        #[arg(short, long, value_name = "READERS", default_value = "8")]
-        readers: NonZeroUsize,
-    },
-
     /// Benchmark the performance of the store endpoints.
     BenchmarkStore {
         /// Store endpoint to test against.
@@ -180,26 +136,6 @@ async fn main() {
                 storage_map_entries,
                 vault_entries.get(),
                 account_update_blocks,
-            ))
-            .await;
-        },
-        Command::BenchmarkMixed {
-            data_directory,
-            num_accounts,
-            public_accounts_percentage,
-            storage_map_entries,
-            vault_entries,
-            account_update_blocks,
-            readers,
-        } => {
-            Box::pin(seeding::seed_store_with_readers(
-                data_directory,
-                num_accounts.get(),
-                public_accounts_percentage,
-                storage_map_entries,
-                vault_entries.get(),
-                account_update_blocks,
-                readers.get(),
             ))
             .await;
         },

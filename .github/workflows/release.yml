@@ -53,8 +53,8 @@ jobs:
       - name: Verify release tag ruleset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -65,17 +65,24 @@ jobs:
           ruleset="$(
             gh api "repos/${REPO}/rulesets/${ruleset_id}?includes_parents=true"
           )"
-          pattern="$(jq -er '
-            select(.target == "tag" and .enforcement == "active")
-            | .conditions.ref_name.include[0]
-          ' <<< "${ruleset}")"
 
-          # Github uses `File.fnmatch` and not regex, so replicate that here.
-          if ! ruby -e '
-            pattern, ref = ARGV
-            exit(File.fnmatch?(pattern, ref, File::FNM_PATHNAME) ? 0 : 1)
-          ' "${pattern}" "${REF}"; then
-            echo "::error::${REF} is not targeted by the active Release tags ruleset"
+          if ! jq -e --arg tag "${TAG}" '
+            select(.target == "tag" and .enforcement == "active")
+            | [
+                .rules[]
+                | select(
+                    .type == "tag_name_pattern"
+                    and .parameters.operator == "regex"
+                  )
+              ]
+            | length > 0
+              and all(
+                .[];
+                .parameters as $restriction
+                | ($tag | test($restriction.pattern)) != $restriction.negate
+              )
+          ' <<< "${ruleset}" >/dev/null; then
+            echo "::error::${TAG} does not satisfy the active Release tags ruleset"
             exit 1
           fi
 

@@ -45,46 +45,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Check the tag against the `Release tags` ruleset, to ensure we only
-      # proceed if the `v*` tag actually is a valid release tag.
-      #
-      # This prevents running against tags that look like a release tag, but
-      # somehow avoided the actual ruleset checks.
-      - name: Verify release tag ruleset
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          ruleset_id="$(
-            gh api "repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100" \
-              --jq '.[] | select(.name == "Release tags") | .id'
-          )"
-          ruleset="$(
-            gh api "repos/${REPO}/rulesets/${ruleset_id}?includes_parents=true"
-          )"
-
-          if ! jq -e --arg tag "${TAG}" '
-            select(.target == "tag" and .enforcement == "active")
-            | [
-                .rules[]
-                | select(
-                    .type == "tag_name_pattern"
-                    and .parameters.operator == "regex"
-                  )
-              ]
-            | length > 0
-              and all(
-                .[];
-                .parameters as $restriction
-                | ($tag | test($restriction.pattern)) != $restriction.negate
-              )
-          ' <<< "${ruleset}" >/dev/null; then
-            echo "::error::${TAG} does not satisfy the active Release tags ruleset"
-            exit 1
-          fi
+      # GitHub enforces the tag restrictions. This only guards against the
+      # workflow trigger and ruleset target drifting apart.
+      - name: Verify release tag ruleset target
+        uses: ./.github/actions/verify-ruleset-target
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ruleset-name: "Release tags"
+          expected-patterns: '["v*"]'
 
       - name: Rustup
         run: rustup toolchain install --no-self-update

@@ -2,7 +2,7 @@ name: Docker Build Check
 
 on:
   push:
-    branches: [main, next]
+    branches: [next, "v*"]
   pull_request:
     types: [opened, reopened, synchronize]
 
@@ -14,7 +14,25 @@ env:
   DOCKER_PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
+  verify-ruleset:
+    name: Verify protected branch ruleset
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Verify protected branch ruleset target
+        uses: ./.github/actions/verify-ruleset-target
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ruleset-name: "Protected branches"
+          expected-patterns: '["next", "v*"]'
+
   docker-build:
+    needs: verify-ruleset
     runs-on: warp-ubuntu-latest-x64-8x
     strategy:
       matrix:

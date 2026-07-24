@@ -1,5 +1,5 @@
 # Continuous integration jobs.
-# These get run on every pull-request, with Warp caches updated on push into `main` or `next`.
+# These run on every pull request, with Warp caches updated on pushes to protected branches.
 name: CI
 
 permissions:
@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
       - next
+      - "v*"
     paths-ignore:
       - "**.txt"
   pull_request:
@@ -20,10 +20,10 @@ on:
 env:
   # Shared prefix key for the Rust caches.
   #
-  # Cache is trunk specific (next|main).
+  # Cache is specific to the target development or release branch.
   CACHE_PREFIX: rust-cache-${{ github.base_ref || github.ref_name }}
-  # Only trusted branch pushes should update caches; PRs restore from the target branch cache.
-  SAVE_CACHE: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next') }}
+  # Push triggers are limited to protected branches; PRs restore from the target branch cache.
+  SAVE_CACHE: ${{ github.event_name == 'push' }}
   # Reduce cache usage by removing debug information.
   CARGO_PROFILE_DEV_DEBUG: 0
 
@@ -119,6 +119,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - name: Verify protected branch ruleset target
+        uses: ./.github/actions/verify-ruleset-target
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ruleset-name: "Protected branches"
+          expected-patterns: '["next", "v*"]'
       - name: Rustup
         run: rustup toolchain install --no-self-update
       - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18

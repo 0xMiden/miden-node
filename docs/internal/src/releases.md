@@ -1,0 +1,32 @@
+# Release process
+
+A release is created by tagging the commit to release. It does not require a merge between `next` and a version branch.
+The commit may be on `next` while it still represents that release line, or on the applicable `vX.Y` branch after the
+branches have diverged.
+
+## Release tags
+
+Release tags use one of these forms:
+
+- `vX.Y.Z` for a stable release, for example `v0.16.2`.
+- `vX.Y.Z-suffix` for a prerelease, for example `v0.17.0-rc.1`.
+
+`X`, `Y`, and `Z` are non-negative integers without leading zeroes. A prerelease suffix must start with `-` and contain
+at least one character after it.
+
+The `Release tags` ruleset is the source of truth for the accepted tag format and restricts who can create, update, or
+delete release tags.
+
+## Creating a release
+
+1. Ensure the target commit is in a publishable state. Every publishable workspace package must use the same version.
+2. Create the release tag on that commit and push it to GitHub. The tag without its leading `v` must exactly match the
+   workspace package version.
+3. The `Release` workflow validates the tag and package versions, checks crate builds and the minimum supported Rust
+   version, dry-runs crate and Docker publishing, and publishes the Docker images.
+4. After those checks pass, the workflow creates the GitHub release and release notes, then starts the crates.io and
+   Debian publishing workflows.
+
+The workflow uses a broad `v*` trigger because GitHub Actions does not use the same pattern language as repository
+rulesets. Its preflight step verifies that this trigger still matches the target of the `Release tags` ruleset, while
+the ruleset itself enforces the release-tag format.

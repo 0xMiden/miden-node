@@ -1,16 +1,16 @@
 # Contributing to Miden Node
 
-#### First off, thanks for taking the time to contribute!
+Thanks for taking the time to contribute. We want to make contributing to this project as easy and transparent as
+possible.
 
-We want to make contributing to this project as easy and transparent as possible.
+## Before you begin
 
-## Before you begin..
+Start by commenting your interest in the issue you want to address. This lets us assign the issue to you, prevents
+multiple people from repeating the same work, and gives us a place to add any context you may need.
 
-Start by commenting your interest in the issue you want to address - this let's us assign the issue to you and prevents
-multiple people from repeating the same work. This also lets us add any additional information or context you may need.
-
-We use the `next` branch as our active development branch. This means your work should fork off the `next` branch (and
-not `main`).
+Most contributions should branch from and target `next`. Maintenance work may instead target a version branch; see the
+[branching policy](./branching-policy.md) for details. If you are unsure which branch to use, confirm the target on the
+issue before starting work.
 
 ### Typos and low-effort contributions
 
@@ -27,7 +27,8 @@ for the review process.
 
 ## Pre-PR checklist
 
-Before submitting a PR, ensure that you're up to date by rebasing onto `next`, and that tests and lints pass by running:
+Before submitting a PR, ensure that you're up to date by rebasing onto the branch your pull request targets, and that
+tests and lints pass by running:
 
 ```sh
 # Runs the various lints

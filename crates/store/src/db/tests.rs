@@ -1019,7 +1019,25 @@ fn insert_account_patch(
     block_number: BlockNumber,
     patch: &AccountPatch,
 ) {
+    use miden_protocol::account::StoragePatchOperation;
+
     for (slot_name, slot_patch) in patch.storage().maps() {
+        // Mirror `prepare_partial_account_update`'s full-slot invalidation: a `Create` (which is
+        // also what a merged `Remove` -> `Create` collapses to) fully replaces the map, and a
+        // `Remove` deletes it entirely, so any previously-latest keys must stop being latest even
+        // if they are absent from / irrelevant to the new entry set.
+        if matches!(
+            slot_patch.patch_op(),
+            StoragePatchOperation::Create | StoragePatchOperation::Remove
+        ) {
+            queries::invalidate_all_storage_map_values_for_slot(
+                conn,
+                account_id,
+                slot_name.clone(),
+            )
+            .unwrap();
+        }
+
         for (k, v) in slot_patch.entries().into_iter().flat_map(StorageMapPatchEntries::as_map) {
             insert_account_storage_map_value(
                 conn,
@@ -3360,6 +3378,168 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     // Verify roots are different across blocks (since we modified the map)
     assert_ne!(forest_root_1, forest_root_2, "Roots should differ after deletion");
     assert_ne!(forest_root_2, forest_root_3, "Roots should differ after modification");
+}
+
+/// Scenario 1: Remove and Create applied as two SEPARATE sequential block patches
+/// (no explicit merge()). Reproduces the SQL half of issue #2328.
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn storage_map_remove_then_create_sequential_blocks() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::{StorageMapPatch, StorageSlotPatch};
+
+    let mut conn = create_db();
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    let block1 = BlockNumber::from(1);
+    let block2 = BlockNumber::from(2);
+    let block3 = BlockNumber::from(3);
+    create_block(&mut conn, block1);
+    create_block(&mut conn, block2);
+    create_block(&mut conn, block3);
+
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block1, &queries::PrecomputedPublicAccountStates::new()).unwrap();
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 1)], block2, &queries::PrecomputedPublicAccountStates::new()).unwrap();
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 2)], block3, &queries::PrecomputedPublicAccountStates::new()).unwrap();
+
+    let slot_map = StorageSlotName::mock(1);
+    let key_a = StorageMapKey::from_index(100);
+    let key_b = StorageMapKey::from_index(200);
+    let key_c = StorageMapKey::from_index(300);
+    let value_a = num_to_word(1000);
+    let value_b = num_to_word(2000);
+    let value_c = num_to_word(3000);
+
+    let map_patch_1 = StorageMapPatch::from_iters([], [(key_a, value_a), (key_b, value_b)]);
+    let raw_1 = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch_1))]);
+    let storage_1 = AccountStoragePatch::from_raw(raw_1).unwrap();
+    let patch_1 = AccountPatch::new(account_id, storage_1, AccountVaultPatch::default(), None, Some(Felt::new_unchecked(2))).unwrap();
+    insert_account_patch(&mut conn, account_id, block1, &patch_1);
+
+    let raw_2 = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(StorageMapPatch::Remove))]);
+    let storage_2 = AccountStoragePatch::from_raw(raw_2).unwrap();
+    let patch_2 = AccountPatch::new(account_id, storage_2, AccountVaultPatch::default(), None, Some(Felt::new_unchecked(3))).unwrap();
+    insert_account_patch(&mut conn, account_id, block2, &patch_2);
+
+    let map_patch_3 = StorageMapPatch::Create { entries: StorageMapPatchEntries::from_iters([], [(key_c, value_c)]) };
+    let raw_3 = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch_3))]);
+    let storage_3 = AccountStoragePatch::from_raw(raw_3).unwrap();
+    let patch_3 = AccountPatch::new(account_id, storage_3, AccountVaultPatch::default(), None, Some(Felt::new_unchecked(4))).unwrap();
+    insert_account_patch(&mut conn, account_id, block3, &patch_3);
+
+    use crate::db::models::conv::SqlTypeConvert;
+    use diesel::prelude::*;
+
+    let account_id_bytes = account_id.to_bytes();
+    let slot_name_bytes = slot_map.to_raw_sql();
+
+    let live_key_bytes: Vec<Vec<u8>> = crate::db::schema::account_storage_map_values::table
+        .filter(crate::db::schema::account_storage_map_values::account_id.eq(&account_id_bytes))
+        .filter(crate::db::schema::account_storage_map_values::slot_name.eq(&slot_name_bytes))
+        .filter(crate::db::schema::account_storage_map_values::is_latest.eq(true))
+        .select(crate::db::schema::account_storage_map_values::key)
+        .load(&mut conn)
+        .unwrap();
+
+    let mut live_keys: Vec<StorageMapKey> = live_key_bytes
+        .into_iter()
+        .map(|bytes| {
+            let key: StorageMapKey = Deserializable::read_from_bytes(&bytes).unwrap();
+            key
+        })
+        .collect();
+    live_keys.sort();
+
+    assert_eq!(
+        live_keys,
+        vec![key_c],
+        "BUG #2328 (sequential): stale is_latest=true rows leak after remove+recreate, live keys = {live_keys:?}"
+    );
+}
+
+/// Scenario 2: Remove and Create merged via the PUBLIC `AccountPatch::merge`, mirroring
+/// exactly what issue #2328 describes (`StorageMapPatch::merge()` collapsing Remove+Create).
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn storage_map_remove_then_create_merged_patch() {
+    use std::collections::BTreeMap;
+
+    use miden_protocol::account::{StorageMapPatch, StorageSlotPatch};
+
+    let mut conn = create_db();
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+
+    let block1 = BlockNumber::from(1);
+    let block2 = BlockNumber::from(2);
+    create_block(&mut conn, block1);
+    create_block(&mut conn, block2);
+
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 0)], block1, &queries::PrecomputedPublicAccountStates::new()).unwrap();
+    queries::upsert_accounts(&mut conn, &[mock_block_account_update(account_id, 1)], block2, &queries::PrecomputedPublicAccountStates::new()).unwrap();
+
+    let slot_map = StorageSlotName::mock(1);
+    let key_a = StorageMapKey::from_index(100);
+    let key_b = StorageMapKey::from_index(200);
+    let key_c = StorageMapKey::from_index(300);
+    let value_a = num_to_word(1000);
+    let value_b = num_to_word(2000);
+    let value_c = num_to_word(3000);
+
+    let map_patch_1 = StorageMapPatch::from_iters([], [(key_a, value_a), (key_b, value_b)]);
+    let raw_1 = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch_1))]);
+    let storage_1 = AccountStoragePatch::from_raw(raw_1).unwrap();
+    let patch_1 = AccountPatch::new(account_id, storage_1, AccountVaultPatch::default(), None, Some(Felt::new_unchecked(2))).unwrap();
+    insert_account_patch(&mut conn, account_id, block1, &patch_1);
+
+    let raw_remove = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(StorageMapPatch::Remove))]);
+    let storage_remove = AccountStoragePatch::from_raw(raw_remove).unwrap();
+    let mut merged = AccountPatch::new(account_id, storage_remove, AccountVaultPatch::default(), None, Some(Felt::new_unchecked(3))).unwrap();
+
+    let map_patch_create = StorageMapPatch::Create { entries: StorageMapPatchEntries::from_iters([], [(key_c, value_c)]) };
+    let raw_create = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch_create))]);
+    let storage_create = AccountStoragePatch::from_raw(raw_create).unwrap();
+    let patch_create = AccountPatch::new(account_id, storage_create, AccountVaultPatch::default(), None, Some(Felt::new_unchecked(4))).unwrap();
+
+    merged.merge(patch_create).unwrap();
+
+    match merged.storage().get(&slot_map) {
+        Some(StorageSlotPatch::Map(StorageMapPatch::Create { entries })) => {
+            assert_eq!(entries.num_entries(), 1, "merged Create should only contain key C");
+        },
+        other => panic!("expected merged Create patch, got {other:?}"),
+    }
+
+    insert_account_patch(&mut conn, account_id, block2, &merged);
+
+    use crate::db::models::conv::SqlTypeConvert;
+    use diesel::prelude::*;
+
+    let account_id_bytes = account_id.to_bytes();
+    let slot_name_bytes = slot_map.to_raw_sql();
+
+    let live_key_bytes: Vec<Vec<u8>> = crate::db::schema::account_storage_map_values::table
+        .filter(crate::db::schema::account_storage_map_values::account_id.eq(&account_id_bytes))
+        .filter(crate::db::schema::account_storage_map_values::slot_name.eq(&slot_name_bytes))
+        .filter(crate::db::schema::account_storage_map_values::is_latest.eq(true))
+        .select(crate::db::schema::account_storage_map_values::key)
+        .load(&mut conn)
+        .unwrap();
+
+    let mut live_keys: Vec<StorageMapKey> = live_key_bytes
+        .into_iter()
+        .map(|bytes| {
+            let key: StorageMapKey = Deserializable::read_from_bytes(&bytes).unwrap();
+            key
+        })
+        .collect();
+    live_keys.sort();
+
+    assert_eq!(
+        live_keys,
+        vec![key_c],
+        "BUG #2328 (merged): stale is_latest=true rows leak after remove+recreate, live keys = {live_keys:?}"
+    );
 }
 
 #[test]

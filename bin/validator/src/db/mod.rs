@@ -556,6 +556,8 @@ mod tests {
 
     use super::*;
     use crate::private_record::test_private_record_sealer;
+    use crate::storage_key::tests::operator_keys;
+    use crate::{PrivateRecordCombiner, PrivateRecordSealer, PrivateRecordShareRequest};
 
     const CHAIN_ID: PrivateRecordChainId = PrivateRecordChainId::new([1; 32]);
     const KEY_EPOCH: StorageKeyEpoch = StorageKeyEpoch::new([2; 32]);
@@ -752,6 +754,53 @@ mod tests {
         let mut included = expected;
         included.set_block_num(BlockNumber::from(12));
         assert_eq!(after_inclusion, vec![included]);
+    }
+
+    #[tokio::test]
+    async fn stored_private_record_opens_with_threshold_shares() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let operators = operator_keys();
+        let transaction_id = TransactionId::from_raw(Word::from([9u32, 10, 11, 12]));
+        let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
+        let context = PrivateRecordContext::new(
+            CHAIN_ID,
+            operators[0].key_epoch(),
+            record_id,
+            transaction_id,
+        );
+        let plaintext = b"private transaction inputs";
+        let mut seal_rng = ChaCha20Rng::from_seed([40; 32]);
+        let record = PrivateRecordSealer::from_operator_key(&operators[0])
+            .seal(&mut seal_rng, context, plaintext)
+            .unwrap();
+        db.write("insert_threshold_record", move |tx| insert_private_record(tx, &record))
+            .await
+            .unwrap();
+
+        let stored = db
+            .read("load_threshold_record", move |tx| load_private_record(tx, record_id))
+            .await
+            .unwrap()
+            .unwrap();
+        let request = PrivateRecordShareRequest::for_record(&stored);
+        let allow = |_: &PrivateRecordShareRequest, _: &StoredPrivateRecord| true;
+        let mut first_rng = ChaCha20Rng::from_seed([41; 32]);
+        let mut second_rng = ChaCha20Rng::from_seed([42; 32]);
+        let shares = [
+            operators[0]
+                .issue_private_record_share(&mut first_rng, &request, &stored, &allow)
+                .unwrap(),
+            operators[1]
+                .issue_private_record_share(&mut second_rng, &request, &stored, &allow)
+                .unwrap(),
+        ];
+
+        let opened = PrivateRecordCombiner::from_operator_key(&operators[2])
+            .unwrap()
+            .open(&request, &stored, &shares)
+            .unwrap();
+        assert_eq!(opened.as_slice(), plaintext);
     }
 
     #[tokio::test]

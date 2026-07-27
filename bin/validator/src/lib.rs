@@ -1,11 +1,23 @@
 pub mod data_directory;
 pub mod db;
+mod private_record;
 mod server;
 mod signers;
 mod storage_key;
 mod tx_validation;
 
 pub use data_directory::DataDirectory;
+pub use private_record::{
+    PRIVATE_RECORD_CIPHER_V1,
+    PRIVATE_RECORD_SCHEMA_V1,
+    PrivateRecordChainId,
+    PrivateRecordCipher,
+    PrivateRecordContext,
+    PrivateRecordError,
+    PrivateRecordId,
+    PrivateRecordSealer,
+    StoredPrivateRecord,
+};
 pub use server::ValidatorServer;
 pub use signers::{
     KmsSigner,

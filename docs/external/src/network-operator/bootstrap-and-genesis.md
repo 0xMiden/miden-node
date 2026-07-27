@@ -49,8 +49,7 @@ validators = [
 ]
 ```
 
-**One** operator then runs `genesis` with the genesis configuration. Building the genesis block requires no signing
-key:
+**One** operator then runs `genesis` with the genesis configuration. Building the genesis block requires no signing key:
 
 ```bash
 miden-validator genesis \

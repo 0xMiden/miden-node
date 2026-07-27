@@ -226,6 +226,20 @@ pub fn insert_private_record(
     )
 }
 
+/// Inserts a validated transaction and its encrypted private inputs atomically.
+pub(crate) fn insert_validated_private_transaction(
+    tx: &WriteTx<'_>,
+    validated: &ValidatedTransactionRecord,
+    record: &StoredPrivateRecord,
+) -> Result<usize, DatabaseError> {
+    let inserted = insert_transaction(tx, validated)?;
+    if inserted == 0 {
+        return Ok(0);
+    }
+    insert_private_record(tx, record)?;
+    Ok(inserted)
+}
+
 /// Loads one encrypted private record by its stable record id.
 #[miden_instrument(target = COMPONENT, skip_all, fields(?record_id), err)]
 pub fn load_private_record(

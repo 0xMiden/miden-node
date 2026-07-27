@@ -33,18 +33,30 @@ use miden_protocol::vm::ExecutionProof;
 use miden_testing::{Auth, MockChainBuilder};
 use miden_tx::LocalTransactionProver;
 use miden_tx::utils::serde::{Deserializable, Serializable};
+use rand_chacha_03::ChaCha20Rng;
+use rand_chacha_03::rand_core::SeedableRng;
 use tokio::sync::OnceCell;
 
-use super::{ValidatorError, ValidatorService};
+use super::{InitialMetrics, ValidatorError, ValidatorService};
 use crate::db::{
     ValidatedTransactionRecord,
     count_validated_transactions,
+    insert_private_record,
     load_chain_tip,
+    load_private_record,
     load_transaction,
     setup,
     upsert_block_header,
 };
-use crate::{LocalX25519TransactionInputDecrypter, TransactionInputDecrypter, ValidatorSigner};
+use crate::storage_key::tests::operator_keys;
+use crate::{
+    LocalX25519TransactionInputDecrypter,
+    PrivateRecordContext,
+    PrivateRecordId,
+    PrivateRecordSealer,
+    TransactionInputDecrypter,
+    ValidatorSigner,
+};
 
 // TEST HELPERS
 // ================================================================================================
@@ -83,11 +95,10 @@ impl TestValidator {
             server: ValidatorService::new(
                 signer,
                 std::sync::Arc::new(test_decrypter()),
+                Some(std::sync::Arc::new(operator_keys().remove(0))),
                 db,
                 block_store,
-                0,
-                0,
-                0,
+                InitialMetrics::new(0, 0, 0),
             )
             .await
             .unwrap(),
@@ -417,11 +428,10 @@ async fn signing_key_mismatch_rejected() {
     let result = ValidatorService::new(
         rogue_signer,
         std::sync::Arc::new(test_decrypter()),
+        Some(std::sync::Arc::new(operator_keys().remove(0))),
         db,
         block_store,
-        0,
-        0,
-        0,
+        InitialMetrics::new(0, 0, 0),
     )
     .await;
     assert!(
@@ -709,6 +719,101 @@ async fn unknown_transactions_rejected() {
         },
         other => panic!("expected UnvalidatedTransactions error, got: {other}"),
     }
+}
+
+/// Signing a block adds its height to the indexed private records for its transactions.
+#[tokio::test]
+async fn sign_block_indexes_included_private_records() {
+    use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
+    use miden_protocol::block::BlockNumber;
+    use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+    use miden_protocol::transaction::{
+        InputNoteCommitment,
+        InputNotes,
+        OrderedTransactionHeaders,
+        TransactionHeader,
+    };
+    use miden_protocol::vm::ExecutionProof;
+
+    let tv = TestValidator::new().await;
+    let account_id = ACCOUNT_ID_SENDER.try_into().unwrap();
+    let tx_header = TransactionHeader::new(
+        account_id,
+        Word::default(),
+        Word::default(),
+        InputNotes::<InputNoteCommitment>::default(),
+        vec![],
+    );
+    let tx_id = tx_header.id();
+    let record_id = PrivateRecordId::for_transaction_inputs(tx_id);
+    let storage_key = tv.server.storage_key.as_ref().unwrap();
+    let context = PrivateRecordContext::new(
+        tv.server.private_record_chain_id,
+        storage_key.key_epoch(),
+        record_id,
+        tx_id,
+    );
+    let mut rng = ChaCha20Rng::from_seed([42; 32]);
+    let record = PrivateRecordSealer::from_operator_key(storage_key)
+        .seal(&mut rng, context, b"private transaction inputs")
+        .unwrap();
+
+    let id = tx_id.to_bytes();
+    let empty: Vec<u8> = vec![];
+    tv.server
+        .db
+        .write("seed_validated_private_transaction", move |tx| {
+            tx.execute(
+                "INSERT INTO validated_transactions \
+                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
+                  initial_account_hash, final_account_hash) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
+            )?;
+            insert_private_record(tx, &record)
+        })
+        .await
+        .unwrap();
+
+    let batch = ProvenBatch::new_unchecked(
+        BatchId::from_ids(std::iter::once((tx_id, account_id))),
+        tv.chain_tip.commitment(),
+        BlockNumber::GENESIS,
+        BTreeMap::from([(
+            account_id,
+            BatchAccountUpdate::new_unchecked(
+                account_id,
+                Word::default(),
+                Word::default(),
+                miden_protocol::account::AccountUpdateDetails::Private,
+            ),
+        )]),
+        InputNotes::default(),
+        vec![],
+        BlockNumber::MAX,
+        OrderedTransactionHeaders::new_unchecked(vec![tx_header]),
+        ExecutionProof::new_dummy(),
+    )
+    .unwrap();
+    let inputs = BlockInputs::new(
+        tv.chain_tip.clone(),
+        tv.chain.clone(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+    );
+    let proposed = ProposedBlock::new(inputs, vec![batch]).unwrap();
+
+    tv.call_sign_block(&proposed).await.unwrap();
+
+    let stored = tv
+        .server
+        .db
+        .read("load_included_private_record", move |tx| load_private_record(tx, record_id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.block_num(), Some(BlockNumber::from(1)));
 }
 
 /// After replacing the chain tip, a new block built against the pre-replacement tip should be

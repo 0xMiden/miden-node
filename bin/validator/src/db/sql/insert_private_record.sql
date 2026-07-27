@@ -11,5 +11,4 @@ INSERT INTO private_records (
     encrypted_record,
     wrapped_content_key
 )
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-ON CONFLICT DO NOTHING;
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11);

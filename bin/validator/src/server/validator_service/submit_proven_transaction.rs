@@ -5,13 +5,19 @@ use miden_node_proto::generated as grpc;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::transaction::{ProvenTransaction, TransactionId, TransactionInputs};
-use miden_tx::utils::serde::Deserializable;
+use miden_tx::utils::serde::{Deserializable, Serializable};
+use rand_core_06::OsRng;
 use tonic::Status;
 
 use super::ValidatorService;
-use crate::COMPONENT;
-use crate::db::{ValidatedTransactionRecord, insert_transaction, transaction_exists};
+use crate::db::{
+    ValidatedTransactionRecord,
+    insert_transaction,
+    insert_validated_private_transaction,
+    transaction_exists,
+};
 use crate::tx_validation::validate_transaction;
+use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId, PrivateRecordSealer};
 
 #[tonic::async_trait]
 impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
@@ -56,26 +62,46 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             return Ok(());
         }
 
+        let private_inputs = inputs.to_bytes();
+
         // Validate the transaction.
         validate_transaction(tx, inputs).await.map_err(|err| {
             Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
-        // This Phase 1 record stores the accepted client envelope only after plaintext validation.
-        // Phase 2 will instead store the validated inputs under threshold encryption.
-        let record = ValidatedTransactionRecord {
+        let validated = ValidatedTransactionRecord {
             transaction_id: tx_id,
             submission_scheme: self.encryption_key_info.scheme.as_u32(),
             submission_key_id: sealed.key_id,
             sealed_transaction_inputs: sealed.ciphertext,
         };
-        let count = self
-            .db
-            .write("insert_transaction", move |tx| insert_transaction(tx, &record))
-            .await
-            .map_err(|err| {
-                Status::internal(err.as_report_context("Failed to insert transaction"))
-            })?;
+
+        let count = if let Some(storage_key) = &self.storage_key {
+            // Re-encrypt the private inputs under a fresh content key.
+            let context = PrivateRecordContext::new(
+                self.private_record_chain_id,
+                storage_key.key_epoch(),
+                PrivateRecordId::for_transaction_inputs(tx_id),
+                tx_id,
+            );
+            let private_record = PrivateRecordSealer::from_operator_key(storage_key)
+                .seal(&mut OsRng, context, &private_inputs)
+                .map_err(|err| {
+                    Status::internal(err.as_report_context("Failed to protect transaction inputs"))
+                })?;
+
+            // Store the validated transaction and private record atomically.
+            self.db
+                .write("insert_validated_private_transaction", move |tx| {
+                    insert_validated_private_transaction(tx, &validated, &private_record)
+                })
+                .await
+        } else {
+            self.db
+                .write("insert_transaction", move |tx| insert_transaction(tx, &validated))
+                .await
+        }
+        .map_err(|err| Status::internal(err.as_report_context("Failed to insert transaction")))?;
 
         self.validated_transactions_count.fetch_add(count as u64, Ordering::Relaxed);
         Ok(())

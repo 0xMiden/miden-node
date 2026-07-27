@@ -51,11 +51,27 @@ so its AWS identity needs that permission on the wrapping key. Note that, unlike
 encryption key is held in validator memory: AWS KMS cannot perform X25519 key agreement itself, so envelope encryption
 is the supported provisioning path.
 
-The validator stores accepted private inputs under this shared key. Any holder of the shared secret can decrypt those
-records. Run each validator inside its trusted execution environment. If transaction proving uses a remote prover, that
-prover also receives the plaintext inputs and must run inside the same trusted boundary.
+Without Golden private record storage, the validator keeps the accepted client envelope under the shared submission
+key. Any holder of the shared secret can decrypt that record. Run each validator inside its trusted execution
+environment. If transaction proving uses a remote prover, that prover also receives the plaintext inputs and must run
+inside the same trusted boundary.
 
 The sealed-input storage migration cannot recover ciphertext for older validated rows. Bootstrap a fresh validator
 database before deploying a build with this schema.
+
+To protect stored private inputs with Golden, set all four storage key options:
+
+```bash
+miden-validator start \
+  --listen 0.0.0.0:50101 \
+  --data-directory validator-data \
+  --storage-key.epoch <32-byte-hex-epoch> \
+  --storage-key.setup-context <setup-context-file> \
+  --storage-key.public-key-set <public-key-set-file> \
+  --storage-key.secret-share <secret-share-file>
+```
+
+The files contain canonical Golden wire bytes. Every validator uses the same setup context and public key set, but uses
+its own secret share. If none of these options are set, private record storage is disabled. A partial setup is rejected.
 
 Use `miden-validator start --help` for the complete current option list.

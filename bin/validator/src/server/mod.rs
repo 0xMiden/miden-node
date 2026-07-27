@@ -20,11 +20,17 @@ use crate::db::{
     load_chain_tip,
     load_with_pool_size,
 };
-use crate::{DataDirectory, LOG_TARGET, TransactionInputDecrypter, ValidatorSigner};
+use crate::{
+    DataDirectory,
+    GoldenOperatorKey,
+    LOG_TARGET,
+    TransactionInputDecrypter,
+    ValidatorSigner,
+};
 
 mod validator_service;
 
-use validator_service::ValidatorService;
+use validator_service::{InitialMetrics, ValidatorService};
 
 // VALIDATOR SERVER
 // ================================================================================
@@ -46,6 +52,9 @@ pub struct ValidatorServer {
     /// The decrypter for the shared transaction encryption key, used to unseal encrypted
     /// transaction inputs.
     pub decrypter: std::sync::Arc<dyn TransactionInputDecrypter>,
+
+    /// The validated Golden storage key material for this operator.
+    pub storage_key: Option<std::sync::Arc<GoldenOperatorKey>>,
 
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
@@ -95,11 +104,10 @@ impl ValidatorServer {
         let service = ValidatorService::new(
             self.signer,
             self.decrypter,
+            self.storage_key,
             db,
             block_store,
-            initial_chain_tip,
-            initial_tx_count,
-            initial_block_count,
+            InitialMetrics::new(initial_chain_tip, initial_tx_count, initial_block_count),
         )
         .await
         .context("failed to initialize validator server")?;

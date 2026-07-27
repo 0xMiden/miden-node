@@ -18,8 +18,11 @@ use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_validator::{
     DataDirectory,
+    EncodedGoldenOperatorKey,
+    GoldenOperatorKey,
     LOG_TARGET,
     LocalX25519TransactionInputDecrypter,
+    StorageKeyEpoch,
     TransactionInputDecrypter,
     ValidatorSigner,
 };
@@ -32,6 +35,10 @@ const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
 const ENV_GENESIS_CONFIG: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
+const ENV_STORAGE_KEY_EPOCH: &str = "MIDEN_VALIDATOR_STORAGE_KEY_EPOCH";
+const ENV_STORAGE_KEY_PUBLIC_SET: &str = "MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET";
+const ENV_STORAGE_KEY_SECRET_SHARE: &str = "MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE";
+const ENV_STORAGE_KEY_SETUP_CONTEXT: &str = "MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT";
 
 /// A predefined, insecure shared transaction encryption key for development purposes.
 pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
@@ -191,6 +198,10 @@ pub enum ValidatorCommand {
             group = "encryption_key_source"
         )]
         encryption_key_kms_ciphertext: Option<String>,
+
+        /// Canonical Golden storage key material provisioned after setup.
+        #[command(flatten)]
+        storage_key: ValidatorStorageKey,
     },
 }
 
@@ -239,9 +250,11 @@ impl ValidatorCommand {
                 sqlite_connection_pool_size,
                 encryption_key,
                 encryption_key_kms_ciphertext,
+                storage_key,
                 ..
             } => {
                 let address = listen;
+                let storage_key = storage_key.load()?.map(Arc::new);
                 tracing::info!(
                     target: miden_validator::LOG_TARGET,
                     {
@@ -264,8 +277,7 @@ impl ValidatorCommand {
                 start::start(
                     address,
                     grpc_options,
-                    signer,
-                    decrypter,
+                    start::ValidatorKeys { signer, decrypter, storage_key },
                     data_directory,
                     sqlite_connection_pool_size,
                     shutdown,
@@ -317,6 +329,78 @@ async fn resolve_decrypter(
     let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
         .context("failed to construct the encryption key")?;
     Ok(Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key)))
+}
+
+/// Canonical Golden files needed to restore one validator storage key share.
+#[derive(clap::Args)]
+pub struct ValidatorStorageKey {
+    /// Hex-encoded 32-byte storage key epoch.
+    #[arg(
+        long = "storage-key.epoch",
+        env = ENV_STORAGE_KEY_EPOCH,
+        value_name = "STORAGE_KEY_EPOCH"
+    )]
+    key_epoch: Option<String>,
+    /// File containing canonical Golden `SetupContext` bytes.
+    #[arg(
+        long = "storage-key.setup-context",
+        env = ENV_STORAGE_KEY_SETUP_CONTEXT,
+        value_name = "FILE"
+    )]
+    setup_context: Option<PathBuf>,
+    /// File containing canonical Golden `PublicKeySet` bytes.
+    #[arg(
+        long = "storage-key.public-key-set",
+        env = ENV_STORAGE_KEY_PUBLIC_SET,
+        value_name = "FILE"
+    )]
+    public_key_set: Option<PathBuf>,
+    /// File containing this operator's canonical Golden `SecretShare` bytes.
+    #[arg(
+        long = "storage-key.secret-share",
+        env = ENV_STORAGE_KEY_SECRET_SHARE,
+        value_name = "FILE"
+    )]
+    secret_share: Option<PathBuf>,
+}
+
+impl ValidatorStorageKey {
+    fn load(self) -> anyhow::Result<Option<GoldenOperatorKey>> {
+        let (key_epoch, setup_context, public_key_set, secret_share) =
+            match (self.key_epoch, self.setup_context, self.public_key_set, self.secret_share) {
+                (None, None, None, None) => return Ok(None),
+                (Some(epoch), Some(setup), Some(public), Some(secret)) => {
+                    (epoch, setup, public, secret)
+                },
+                _ => anyhow::bail!(
+                    "storage key epoch, setup context, public key set, and secret share must be \
+                 configured together"
+                ),
+            };
+
+        let key_epoch = hex::decode(key_epoch).context("failed to decode storage key epoch")?;
+        let key_epoch = key_epoch.try_into().map_err(|bytes: Vec<u8>| {
+            anyhow::anyhow!("storage key epoch has {} bytes, expected 32", bytes.len())
+        })?;
+        let operator_key = EncodedGoldenOperatorKey::new(
+            StorageKeyEpoch::new(key_epoch),
+            fs_err::read(&setup_context).with_context(|| {
+                format!("failed to read storage key setup context from {}", setup_context.display())
+            })?,
+            fs_err::read(&public_key_set).with_context(|| {
+                format!(
+                    "failed to read storage key public key set from {}",
+                    public_key_set.display()
+                )
+            })?,
+            fs_err::read(&secret_share).with_context(|| {
+                format!("failed to read storage key secret share from {}", secret_share.display())
+            })?,
+        )
+        .decode()
+        .context("failed to validate Golden storage key material")?;
+        Ok(Some(operator_key))
+    }
 }
 
 // VALIDATOR SIGNING KEY
@@ -419,5 +503,27 @@ mod tests {
             panic!("hex key and KMS ciphertext together must be rejected");
         };
         assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn storage_key_is_optional() {
+        let command = parse_start(&[]).expect("start without a storage key must parse");
+        let ValidatorCommand::Start { storage_key, .. } = command else {
+            panic!("expected the start command");
+        };
+        assert!(storage_key.load().unwrap().is_none());
+    }
+
+    #[test]
+    fn partial_storage_key_configuration_fails() {
+        let command = parse_start(&[
+            "--storage-key.epoch",
+            "0909090909090909090909090909090909090909090909090909090909090909",
+        ])
+        .expect("the start command must parse before loading files");
+        let ValidatorCommand::Start { storage_key, .. } = command else {
+            panic!("expected the start command");
+        };
+        assert!(storage_key.load().is_err());
     }
 }

@@ -12,10 +12,13 @@ pub use private_record::{
     PRIVATE_RECORD_SCHEMA_V1,
     PrivateRecordChainId,
     PrivateRecordCipher,
+    PrivateRecordCombiner,
     PrivateRecordContext,
     PrivateRecordError,
     PrivateRecordId,
     PrivateRecordSealer,
+    PrivateRecordSharePolicy,
+    PrivateRecordShareRequest,
     PrivateRecordStorageFields,
     StoredPrivateRecord,
 };

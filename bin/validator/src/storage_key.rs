@@ -7,10 +7,19 @@ use golden_ehtdh1::{
     SealingKey,
     SecretShare,
     SetupContext,
+    UnsealingShare,
     derive_context_session_id,
 };
 use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
+use rand_core_06::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
+
+use crate::{
+    PrivateRecordError,
+    PrivateRecordSharePolicy,
+    PrivateRecordShareRequest,
+    StoredPrivateRecord,
+};
 
 /// Golden group used for validator storage keys.
 type StorageGroup = Secp256k1GoldenGroup;
@@ -213,6 +222,37 @@ impl GoldenOperatorKey {
     pub const fn participant(&self) -> ParticipantIndex {
         self.secret_share.participant
     }
+
+    /// Checks one private-record request and returns a canonical decryption share.
+    pub fn issue_private_record_share<R, P>(
+        &self,
+        rng: &mut R,
+        request: &PrivateRecordShareRequest,
+        record: &StoredPrivateRecord,
+        policy: &P,
+    ) -> Result<Vec<u8>, PrivateRecordError>
+    where
+        R: RngCore + CryptoRng,
+        P: PrivateRecordSharePolicy + ?Sized,
+    {
+        record.validate_share_request(request, self.key_epoch, self.setup_context_id())?;
+        if !policy.allows(request, record) {
+            return Err(PrivateRecordError::ShareDenied);
+        }
+
+        let ciphertext = record.decode_wrapped_content_key()?;
+        let context = request.context();
+        let share = UnsealingShare::new(self.secret_share.clone())
+            .decrypt_share_with_associated_data(
+                rng,
+                &self.setup_context,
+                &ciphertext,
+                context,
+                context,
+            )
+            .map_err(PrivateRecordError::ShareGeneration)?;
+        Ok(to_wire_bytes(&share))
+    }
 }
 
 /// Error raised while loading a Golden operator key.
@@ -257,7 +297,7 @@ pub enum GoldenOperatorKeyError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::BTreeMap;
 
     use golden_core::{GoldenScalar, SessionId};
@@ -284,9 +324,10 @@ mod tests {
         secret.add(&coefficient.mul(&participant.to_scalar().unwrap()))
     }
 
-    fn values() -> (SetupContext, PublicKeySet<StorageGroup>, SecretShare<StorageGroup>) {
+    fn values_for(
+        local_participant: ParticipantIndex,
+    ) -> (SetupContext, PublicKeySet<StorageGroup>, SecretShare<StorageGroup>) {
         let participants = [participant(1), participant(2), participant(3)];
-        let local_participant = participants[0];
         let decryption_secret = scalar(11);
         let decryption_coefficient = scalar(7);
         let context_coefficient = scalar(13);
@@ -327,9 +368,22 @@ mod tests {
         (setup_context, public_key_set, local_secret_share.unwrap())
     }
 
+    fn values() -> (SetupContext, PublicKeySet<StorageGroup>, SecretShare<StorageGroup>) {
+        values_for(participant(1))
+    }
+
+    pub(crate) fn operator_keys() -> Vec<GoldenOperatorKey> {
+        [participant(1), participant(2), participant(3)]
+            .into_iter()
+            .map(|participant| {
+                let (setup_context, public_key_set, secret_share) = values_for(participant);
+                GoldenOperatorKey::new(EPOCH, setup_context, public_key_set, secret_share).unwrap()
+            })
+            .collect()
+    }
+
     fn operator_key() -> GoldenOperatorKey {
-        let (setup_context, public_key_set, secret_share) = values();
-        GoldenOperatorKey::new(EPOCH, setup_context, public_key_set, secret_share).unwrap()
+        operator_keys().remove(0)
     }
 
     #[test]

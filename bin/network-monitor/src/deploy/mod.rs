@@ -8,6 +8,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use backon::{ExponentialBuilder, Retryable};
 use miden_node_proto::clients::{Builder, RpcClient};
+use miden_node_proto::domain::encryption::TransactionInputSealer;
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
@@ -79,6 +80,19 @@ pub async fn create_genesis_aware_rpc_client(
     rpc_url: &Url,
     timeout: Duration,
 ) -> Result<RpcClient> {
+    create_genesis_aware_rpc_client_with_commitment(rpc_url, timeout)
+        .await
+        .map(|(client, _)| client)
+}
+
+/// As [`create_genesis_aware_rpc_client`], but also returns the discovered genesis commitment.
+///
+/// Submitting call sites need the commitment to seal transaction inputs, and it is already computed
+/// during the handshake.
+pub async fn create_genesis_aware_rpc_client_with_commitment(
+    rpc_url: &Url,
+    timeout: Duration,
+) -> Result<(RpcClient, Word)> {
     (|| async {
         // First, create a temporary client without genesis metadata to discover the genesis block
         // header and its commitment.
@@ -126,7 +140,7 @@ pub async fn create_genesis_aware_rpc_client(
             .await
             .context("Failed to connect to RPC server with genesis metadata")?;
 
-        Ok(rpc_client)
+        Ok((rpc_client, genesis_commitment))
     })
     .retry(genesis_discovery_backoff())
     .notify(|err: &anyhow::Error, sleep: Duration| {
@@ -240,7 +254,8 @@ pub async fn deploy_counter_account(
     prover: &LocalTransactionProver,
 ) -> Result<()> {
     // Deploy counter account to the network using a genesis-aware RPC client.
-    let mut rpc_client = create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
+    let (mut rpc_client, genesis_commitment) =
+        create_genesis_aware_rpc_client_with_commitment(rpc_url, Duration::from_secs(10)).await?;
 
     let executed_tx = execute_counter_genesis_tx(counter_account, &mut rpc_client).await?;
 
@@ -252,9 +267,19 @@ pub async fn deploy_counter_account(
         .context("prover task panicked")?
         .context("Failed to prove transaction")?;
 
+    let key = rpc_client
+        .get_transaction_encryption_key(())
+        .await
+        .context("Failed to fetch the transaction encryption key")?
+        .into_inner();
+    let sealed = TransactionInputSealer::new(key, genesis_commitment)
+        .context("Unusable transaction encryption key")?
+        .seal(proven_tx.id(), &transaction_inputs)
+        .context("Failed to seal the transaction inputs")?;
+
     let request = ProvenTransaction {
         transaction: proven_tx.to_bytes(),
-        transaction_inputs: Some(transaction_inputs),
+        sealed_transaction_inputs: Some(sealed),
     };
 
     rpc_client

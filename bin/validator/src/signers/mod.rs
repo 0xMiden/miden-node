@@ -257,9 +257,16 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
 
         let message = SealedMessage::read_from_bytes(ciphertext)
             .context("failed to deserialize the sealed message")?;
-        UnsealingKey::X25519XChaCha20Poly1305(self.secret_key.clone())
-            .unseal_bytes_with_associated_data(message, associated_data)
-            .context("failed to unseal the transaction inputs")
+
+        let secret_key = self.secret_key.clone();
+        let associated_data = associated_data.to_vec();
+        spawn_blocking_in_current_span(move || {
+            UnsealingKey::X25519XChaCha20Poly1305(secret_key)
+                .unseal_bytes_with_associated_data(message, &associated_data)
+                .context("AEAD authentication failed")
+        })
+        .await
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
     }
 }
 

@@ -38,14 +38,16 @@ grpcurl rpc.testnet.miden.io:443 describe rpc.Api
 | `SubmitProvenTx`              | Submits one proven transaction and returns the node's current block height.                 |
 | `SubmitProvenTxBatch`         | Submits an atomic batch of proven transactions and returns the node's current block height. |
 
+Fetching the encryption key is a **required first step** before submitting. Both submit methods carry their private
+transaction inputs sealed against that key, and a submission with missing or unsealable inputs is rejected. For a batch,
+each transaction's inputs are sealed independently against that transaction's own id.
+
 The public key returned by `GetTransactionEncryptionKey` is shared across the whole validator set, while each
 attestation is specific to one validator (currently the response carries a single attestation). Clients verify an
 attestation against a validator signing key they already trust from the chain and reconstruct the encryption key with
-miden-crypto. The exact attestation payload is documented on the `TransactionEncryptionKey` proto message. Note that
-this scheme does not hide transaction inputs from holders of the shared encryption secret (currently the network
-operator and every validator) and provides no forward secrecy. The attestation proves which validator vouched for the
-key but does not prove freshness: after a key rotation, a replayed older signed key still verifies until a chain or
-epoch rule for freshness exists.
+miden-crypto. The exact attestation payload, and the associated data that binds a sealed submission to one key, one
+network and one transaction, are documented on the `TransactionEncryptionKey` and `SealedTransactionInputs` proto
+messages.
 
 Write requests must identify the target network with the `genesis` parameter in the `Accept` header:
 

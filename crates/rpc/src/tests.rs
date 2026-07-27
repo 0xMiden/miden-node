@@ -437,7 +437,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx_bytes,
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -476,7 +476,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -515,7 +515,7 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
     let tx = build_test_proven_tx_with_id(network_account_id, &account, genesis);
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let service = RpcService::new(
@@ -1045,7 +1045,7 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;

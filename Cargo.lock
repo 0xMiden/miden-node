@@ -3356,6 +3356,7 @@ name = "miden-node-proto"
 version = "0.16.0-alpha.2"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "build-rs",
  "codegen",
  "fs-err",
@@ -3370,6 +3371,7 @@ dependencies = [
  "proptest",
  "prost",
  "prost-types",
+ "rand 0.10.2",
  "thiserror 2.0.19",
  "tonic",
  "tonic-prost",

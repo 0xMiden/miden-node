@@ -1,7 +1,10 @@
 use std::collections::BTreeSet;
 use miden_node_utils::tracing::miden_instrument;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use tokio::sync::RwLock;
 
 use backon::ExponentialBuilder;
 use futures::stream::{BoxStream, TryStreamExt};
@@ -10,6 +13,7 @@ use miden_node_proto::clients::{Builder, RpcClient as InnerRpcClient};
 use miden_node_proto::domain::account::{
     AccountDetails, AccountResponse, AccountVaultDetails, StorageMapEntries
 };
+use miden_node_proto::domain::encryption::TransactionInputSealer;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::account_request::account_detail_request::{StorageMapDetailRequest, StorageMapDetailRequests, StorageRequest, storage_map_detail_request};
 use miden_node_proto::generated::rpc::account_request::account_detail_request::storage_map_detail_request::MapKeys;
@@ -70,6 +74,11 @@ pub struct RpcClient {
     /// Backoff schedule applied to repeated `block_subscription` connection attempts. Built once at
     /// construction time and cloned cheaply on each retry loop.
     backoff: ExponentialBuilder,
+    /// Genesis commitment of the network being submitted to, bound into the associated data of
+    /// sealed transaction inputs.
+    genesis_commitment: Word,
+    /// Cached sealer for transaction inputs, fetched on first submission.
+    sealer: Arc<RwLock<Option<TransactionInputSealer>>>,
 }
 
 impl RpcClient {
@@ -112,7 +121,40 @@ impl RpcClient {
 
         let backoff = retry::exponential(backoff_initial, backoff_max);
 
-        Ok(Self { inner: rpc, backoff })
+        Ok(Self {
+            inner: rpc,
+            backoff,
+            genesis_commitment,
+            sealer: Arc::new(RwLock::new(None)),
+        })
+    }
+
+    /// Returns a sealer for transaction inputs, fetching the encryption key on first use.
+    async fn sealer(&self) -> Result<TransactionInputSealer, Status> {
+        if let Some(sealer) = self.sealer.read().await.clone() {
+            return Ok(sealer);
+        }
+
+        let mut cached = self.sealer.write().await;
+        // Another task may have populated the cache while this one waited for the write lock.
+        if let Some(sealer) = cached.clone() {
+            return Ok(sealer);
+        }
+
+        let key = self.inner.clone().get_transaction_encryption_key(()).await?.into_inner();
+        let sealer = TransactionInputSealer::new(key, self.genesis_commitment).map_err(|err| {
+            Status::failed_precondition(
+                err.as_report_context("Unusable transaction encryption key"),
+            )
+        })?;
+
+        *cached = Some(sealer.clone());
+        Ok(sealer)
+    }
+
+    /// Discards the cached sealer so the next submission re-fetches the encryption key.
+    async fn invalidate_sealer(&self) {
+        *self.sealer.write().await = None;
     }
 
     /// Opens a committed-block subscription starting at `block_from`, retrying indefinitely with
@@ -270,12 +312,31 @@ impl RpcClient {
         proven_tx: &ProvenTransaction,
         tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
+        let sealed =
+            self.sealer()
+                .await?
+                .seal(proven_tx.id(), &tx_inputs.to_bytes())
+                .map_err(|err| {
+                    Status::failed_precondition(
+                        err.as_report_context("Failed to seal the transaction inputs"),
+                    )
+                })?;
+
         let request = proto::transaction::ProvenTransaction {
             transaction: proven_tx.to_bytes(),
-            transaction_inputs: Some(tx_inputs.to_bytes()),
+            sealed_transaction_inputs: Some(sealed),
         };
 
-        self.inner.clone().submit_proven_tx(request).await?;
+        let result = self.inner.clone().submit_proven_tx(request).await;
+
+        // A validator restarted with a different encryption key rejects with `failed_precondition`.
+        // Drop the cached key so the next attempt seals against the current one.
+        if let Err(status) = &result
+            && status.code() == tonic::Code::FailedPrecondition
+        {
+            self.invalidate_sealer().await;
+        }
+        result?;
 
         Ok(())
     }

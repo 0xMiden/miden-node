@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
+use miden_protocol::Word;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use url::Url;
@@ -143,7 +144,7 @@ async fn build_rpc_client(
 
 /// Discover the genesis commitment (hex) of the node at `rpc_url`. This is the value write RPCs
 /// such as `SubmitProvenTransaction` expect echoed back in request metadata.
-async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<String> {
+async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<Word> {
     let mut rpc = build_rpc_client(rpc_url, timeout, None)
         .await
         .context("Failed to create RPC client for genesis discovery")?;
@@ -161,7 +162,7 @@ async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<String> {
     let genesis_header: BlockHeader =
         genesis_block_header.try_into().context("Failed to convert block header")?;
 
-    Ok(genesis_header.commitment().to_hex())
+    Ok(genesis_header.commitment())
 }
 
 /// Create an RPC client configured with the correct genesis metadata in the `Accept` header so that
@@ -171,7 +172,7 @@ pub(crate) async fn create_genesis_aware_rpc_client(
     timeout: Duration,
 ) -> Result<RpcClient> {
     let genesis = discover_genesis(rpc_url, timeout).await?;
-    build_rpc_client(rpc_url, timeout, Some(genesis)).await
+    build_rpc_client(rpc_url, timeout, Some(genesis.to_hex())).await
 }
 
 /// Create a pool of `size` genesis-aware RPC clients, each on its own gRPC connection.
@@ -179,18 +180,22 @@ pub(crate) async fn create_genesis_aware_rpc_client(
 /// Genesis is discovered once and reused. Because every client owns a distinct channel, concurrent
 /// submissions spread across this pool ride separate HTTP/2 sockets (and, behind a load balancer,
 /// separate backend replicas) instead of multiplexing over a single connection.
+///
+/// The discovered genesis commitment is returned alongside the pool because submissions need it to
+/// seal their transaction inputs.
 pub(crate) async fn create_genesis_aware_rpc_client_pool(
     rpc_url: &Url,
     timeout: Duration,
     size: usize,
-) -> Result<Vec<RpcClient>> {
+) -> Result<(Vec<RpcClient>, Word)> {
     let size = size.max(1);
     let genesis = discover_genesis(rpc_url, timeout).await?;
+    let genesis_hex = genesis.to_hex();
     let mut pool = Vec::with_capacity(size);
     for _ in 0..size {
-        pool.push(build_rpc_client(rpc_url, timeout, Some(genesis.clone())).await?);
+        pool.push(build_rpc_client(rpc_url, timeout, Some(genesis_hex.clone())).await?);
     }
-    Ok(pool)
+    Ok((pool, genesis))
 }
 
 pub(crate) fn get_genesis_header_request() -> BlockHeaderByNumberRequest {

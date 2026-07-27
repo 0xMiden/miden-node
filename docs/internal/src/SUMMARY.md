@@ -4,6 +4,8 @@
 
 - [Overview](./index.md)
 - [Contributing](./contributing.md)
+- [Branching policy](./branching-policy.md)
+- [Release process](./releases.md)
 - [Navigating the codebase](./codebase.md)
 - [Monitoring](./monitoring.md)
 - [Components](./components.md)

@@ -181,7 +181,7 @@ impl NtxBuilderCommand {
                             if genesis_block_file.is_some() { "file" } else { "network" },
                         genesis.source = %genesis_block_file.as_ref().map_or_else(
                             || network.map_or_else(
-                                || "unknown".to_owned(),
+                                || "custom".to_owned(),
                                 |network| network.to_string(),
                             ),
                             |path| path.display().to_string(),

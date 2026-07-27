@@ -25,6 +25,7 @@ use miden_protocol::transaction::{
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
+    TransactionHeader,
     TransactionId,
     TransactionInputs,
     TxAccountUpdate,
@@ -160,6 +161,16 @@ impl TestValidator {
             proposed_block: proposed_block.to_bytes(),
         });
         validator_api::SignBlock::full(&self.server, request).await
+    }
+
+    /// Submits a proved transaction and its private inputs to the validator.
+    async fn call_submit_transaction(
+        &self,
+        transaction: &ProvenTransaction,
+        inputs: &TransactionInputs,
+    ) -> Result<(), tonic::Status> {
+        let sealed = self.seal(transaction.id(), &inputs.to_bytes());
+        self.call_submit_proven_transaction(transaction, sealed).await
     }
 
     /// Opens a block subscription starting from `block_from`.
@@ -411,15 +422,8 @@ fn private_transaction_block(
     parent_header: &BlockHeader,
     chain: &PartialBlockchain,
 ) -> (ProposedBlock, miden_protocol::transaction::TransactionId) {
-    use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
     use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-    use miden_protocol::transaction::{
-        InputNoteCommitment,
-        InputNotes,
-        OrderedTransactionHeaders,
-        TransactionHeader,
-    };
-    use miden_protocol::vm::ExecutionProof;
+    use miden_protocol::transaction::{InputNoteCommitment, InputNotes};
 
     let account_id = ACCOUNT_ID_SENDER.try_into().unwrap();
     let tx_header = TransactionHeader::new(
@@ -429,6 +433,21 @@ fn private_transaction_block(
         InputNotes::<InputNoteCommitment>::default(),
         vec![],
     );
+    let tx_id = tx_header.id();
+    (private_transaction_block_for_header(parent_header, chain, tx_header), tx_id)
+}
+
+/// Builds a block with one given transaction header.
+fn private_transaction_block_for_header(
+    parent_header: &BlockHeader,
+    chain: &PartialBlockchain,
+    tx_header: TransactionHeader,
+) -> ProposedBlock {
+    use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
+    use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders};
+    use miden_protocol::vm::ExecutionProof;
+
+    let account_id = tx_header.account_id();
     let tx_id = tx_header.id();
     let batch = ProvenBatch::new_unchecked(
         BatchId::from_ids(std::iter::once((tx_id, account_id))),
@@ -457,7 +476,44 @@ fn private_transaction_block(
         BTreeMap::new(),
         BTreeMap::new(),
     );
-    (ProposedBlock::new(inputs, vec![batch]).unwrap(), tx_id)
+    ProposedBlock::new(inputs, vec![batch]).unwrap()
+}
+
+/// Proves one private-note transaction and returns the inputs needed to validate it.
+async fn proven_private_transaction() -> (ProvenTransaction, TransactionInputs) {
+    use miden_protocol::testing::account_id::{
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_SENDER,
+    };
+
+    let mut builder = MockChainBuilder::new();
+    let account = builder
+        .add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })
+        .unwrap();
+    let asset: Asset =
+        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 100)
+            .unwrap()
+            .into();
+    let note = builder
+        .add_p2id_note(
+            ACCOUNT_ID_SENDER.try_into().unwrap(),
+            account.id(),
+            &[asset],
+            NoteType::Private,
+        )
+        .unwrap();
+    let chain = builder.build().unwrap();
+    let context = chain
+        .build_tx_context(account.id(), &[note.id()], &[])
+        .unwrap()
+        .build()
+        .unwrap();
+    let executed = Box::pin(context.execute()).await.unwrap();
+    let inputs = executed.tx_inputs().clone();
+    let proven = LocalTransactionProver::default().prove(inputs.clone()).unwrap();
+    (proven, inputs)
 }
 
 // TESTS
@@ -787,10 +843,9 @@ async fn validated_transaction_without_private_record_is_rejected() {
         .write("seed_unprotected_transaction", move |tx| {
             tx.execute(
                 "INSERT INTO validated_transactions \
-                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
-                  initial_account_hash, final_account_hash) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
+                 (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                &[&id, &1i64, &empty, &empty],
             )
         })
         .await
@@ -801,6 +856,44 @@ async fn validated_transaction_without_private_record_is_rejected() {
         ValidatorError::UnprotectedTransactions(ids) => assert_eq!(ids, vec![tx_id]),
         other => panic!("expected UnprotectedTransactions error, got: {other}"),
     }
+}
+
+/// Resubmitting a legacy transaction creates its missing protected record before signing.
+#[tokio::test]
+async fn resubmission_backfills_private_record() {
+    let tv = TestValidator::new().await;
+    let (transaction, inputs) = proven_private_transaction().await;
+    let tx_header = TransactionHeader::from(&transaction);
+    let tx_id = tx_header.id();
+    let record_id = PrivateRecordId::for_transaction_inputs(tx_id);
+    let proposed = private_transaction_block_for_header(&tv.chain_tip, &tv.chain, tx_header);
+    let id = tx_id.to_bytes();
+    let empty: Vec<u8> = vec![];
+    tv.server
+        .db
+        .write("seed_legacy_transaction", move |tx| {
+            tx.execute(
+                "INSERT INTO validated_transactions \
+                 (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                &[&id, &1i64, &empty, &empty],
+            )
+        })
+        .await
+        .unwrap();
+
+    tv.call_submit_transaction(&transaction, &inputs).await.unwrap();
+    tv.call_sign_block(&proposed).await.unwrap();
+
+    let record = tv
+        .server
+        .db
+        .read("load_backfilled_private_record", move |tx| load_private_record(tx, record_id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.context().transaction_id(), tx_id);
+    assert_eq!(record.block_num(), Some(miden_protocol::block::BlockNumber::from(1)));
 }
 
 /// Signing a block adds its height to the indexed private records for its transactions.
@@ -847,10 +940,9 @@ async fn sign_block_indexes_included_private_records() {
         .write("seed_validated_private_transaction", move |tx| {
             tx.execute(
                 "INSERT INTO validated_transactions \
-                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
-                  initial_account_hash, final_account_hash) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
+                 (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                &[&id, &1i64, &empty, &empty],
             )?;
             insert_private_record(tx, &record)
         })

@@ -106,8 +106,8 @@ message TransactionEncryptionKey {
   // key that miden-crypto converts internally for X25519 key agreement).
   bytes public_key = 3;
 
-  reserved 4 to 9;
-  reserved "attestations";
+  reserved 4, 5;
+  reserved "attestations", "next_key";
 }
 
 // The next transaction encryption key, announced ahead of a scheduled key rotation.

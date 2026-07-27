@@ -43,9 +43,14 @@ In addition to its signing key, every validator holds the shared transaction enc
 every validator in the set. The validator does not derive replacement keys or rotate it automatically. The validator
 logs a warning at startup if the insecure development default is in use.
 
-The provider interface supports a manually selected next key whose activation must be an epoch boundary. The validator
-binary does not expose an operator command for scheduling that change yet. When no next key is configured, the current
-key remains active across epochs.
+The validator accepts an optional previous key for grace decryption and an optional next key for a planned rotation.
+Each key has an activation block, which must be an epoch boundary. Configure these with `--encryption-key.previous.*`,
+`--encryption-key.activation-block`, and `--encryption-key.next.*`. Hex and KMS ciphertext sources are supported for all
+three keys.
+
+At a rotation boundary, all validators must restart with the same schedule. For example, a restart that activates key B
+and announces key C uses A as the previous key, B as the current key, and C as the next key. The provider accepts A
+through B's activation epoch, then marks it expired. A later restart can drop A and move B into the previous slot.
 
 Production deployments should not pass the key in plaintext. Instead, wrap it with a symmetric AWS KMS key
 (`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via `--encryption-key.kms-ciphertext` or
@@ -55,4 +60,4 @@ encryption key is held in validator memory: AWS KMS cannot perform X25519 key ag
 is the supported provisioning path. Other providers may keep the secret outside the validator process because the
 provider contract requires only public schedule metadata and a decrypt operation.
 
-Use `miden-validator start --help` for the complete current option list.
+Use `miden-validator start --help` for the complete option list.

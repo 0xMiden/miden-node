@@ -140,11 +140,10 @@ struct ScheduledLocalEncryptionKey {
 ///
 /// Constructing this provider does not derive keys or choose a rotation cadence. When a next key
 /// is configured, its declared epoch-boundary activation is enforced from the trusted chain tip.
-/// The prior key remains decrypt-only through the activation epoch and expires at the following
-/// epoch boundary.
+/// One previous key may be retained for decryption through the current key's activation epoch.
 pub struct LocalX25519TransactionInputDecrypter {
-    current: LocalEncryptionKey,
-    current_activation_block_num: BlockNumber,
+    previous: Option<ScheduledLocalEncryptionKey>,
+    current: ScheduledLocalEncryptionKey,
     next: Option<ScheduledLocalEncryptionKey>,
 }
 
@@ -155,23 +154,61 @@ impl LocalX25519TransactionInputDecrypter {
     /// Constructs a provider with one key active since genesis and no scheduled rotation.
     pub fn new(secret_key: KeyExchangeKey) -> Self {
         Self {
-            current: LocalEncryptionKey::new(secret_key),
-            current_activation_block_num: BlockNumber::GENESIS,
+            previous: None,
+            current: ScheduledLocalEncryptionKey {
+                key: LocalEncryptionKey::new(secret_key),
+                activation_block_num: BlockNumber::GENESIS,
+            },
             next: None,
         }
     }
 
-    /// Constructs a provider whose current key activated at the given epoch boundary.
-    pub fn new_at(
-        secret_key: KeyExchangeKey,
-        activation_block_num: BlockNumber,
+    /// Constructs a complete manual key schedule for startup.
+    pub fn from_schedule(
+        previous: Option<(KeyExchangeKey, BlockNumber)>,
+        current: (KeyExchangeKey, BlockNumber),
+        next: Option<(KeyExchangeKey, BlockNumber)>,
     ) -> anyhow::Result<Self> {
-        ensure_epoch_boundary(activation_block_num)?;
-        Ok(Self {
-            current: LocalEncryptionKey::new(secret_key),
-            current_activation_block_num: activation_block_num,
-            next: None,
-        })
+        let previous = previous
+            .map(|(key, activation_block_num)| scheduled_local_key(key, activation_block_num))
+            .transpose()?;
+        let current = scheduled_local_key(current.0, current.1)?;
+        let next = next
+            .map(|(key, activation_block_num)| scheduled_local_key(key, activation_block_num))
+            .transpose()?;
+
+        anyhow::ensure!(
+            current.activation_block_num == BlockNumber::GENESIS || previous.is_some(),
+            "a previous key is required when the current key activated after genesis"
+        );
+        if let Some(previous) = &previous {
+            anyhow::ensure!(
+                previous.activation_block_num < current.activation_block_num,
+                "previous key activation must be before current key activation"
+            );
+            anyhow::ensure!(
+                previous.key.info.key_id != current.key.info.key_id,
+                "previous and current keys must have distinct ids"
+            );
+        }
+        if let Some(next) = &next {
+            anyhow::ensure!(
+                current.activation_block_num < next.activation_block_num,
+                "next key activation must be after current key activation"
+            );
+            anyhow::ensure!(
+                current.key.info.key_id != next.key.info.key_id,
+                "current and next keys must have distinct ids"
+            );
+            anyhow::ensure!(
+                previous
+                    .as_ref()
+                    .is_none_or(|previous| previous.key.info.key_id != next.key.info.key_id),
+                "previous and next keys must have distinct ids"
+            );
+        }
+
+        Ok(Self { previous, current, next })
     }
 
     /// Adds a manually chosen replacement key at a future epoch boundary.
@@ -182,13 +219,19 @@ impl LocalX25519TransactionInputDecrypter {
     ) -> anyhow::Result<Self> {
         ensure_epoch_boundary(activation_block_num)?;
         anyhow::ensure!(
-            activation_block_num > self.current_activation_block_num,
+            activation_block_num > self.current.activation_block_num,
             "next key activation must be after current key activation"
         );
         let next = LocalEncryptionKey::new(secret_key);
         anyhow::ensure!(
-            next.info.key_id != self.current.info.key_id,
+            next.info.key_id != self.current.key.info.key_id,
             "current and next keys must have distinct ids"
+        );
+        anyhow::ensure!(
+            self.previous
+                .as_ref()
+                .is_none_or(|previous| previous.key.info.key_id != next.info.key_id),
+            "previous and next keys must have distinct ids"
         );
         self.next = Some(ScheduledLocalEncryptionKey { key: next, activation_block_num });
         Ok(self)
@@ -201,7 +244,14 @@ impl LocalX25519TransactionInputDecrypter {
 
     #[cfg(test)]
     fn sealing_key(&self) -> SealingKey {
-        SealingKey::X25519XChaCha20Poly1305(self.current.secret_key.public_key())
+        SealingKey::X25519XChaCha20Poly1305(self.current.key.secret_key.public_key())
+    }
+
+    #[cfg(test)]
+    fn previous_sealing_key(&self) -> Option<SealingKey> {
+        self.previous.as_ref().map(|previous| {
+            SealingKey::X25519XChaCha20Poly1305(previous.key.secret_key.public_key())
+        })
     }
 
     #[cfg(test)]
@@ -229,11 +279,36 @@ impl LocalX25519TransactionInputDecrypter {
         key_id: &[u8],
         chain_tip: BlockNumber,
     ) -> Result<&LocalEncryptionKey, TransactionInputDecryptionError> {
-        if key_id == self.current.info.key_id {
-            if chain_tip < self.current_activation_block_num {
+        if let Some(previous) = &self.previous
+            && key_id == previous.key.info.key_id
+        {
+            if chain_tip < previous.activation_block_num {
                 return Err(TransactionInputDecryptionError::PrematureKey {
                     key_id: hex::encode(key_id),
-                    activation: self.current_activation_block_num,
+                    activation: previous.activation_block_num,
+                });
+            }
+            if let Some(grace_expiry) = self
+                .current
+                .activation_block_num
+                .block_epoch()
+                .checked_add(1)
+                .map(BlockNumber::from_epoch)
+                && chain_tip >= grace_expiry
+            {
+                return Err(TransactionInputDecryptionError::ExpiredKey {
+                    key_id: hex::encode(key_id),
+                    expired_at: grace_expiry,
+                });
+            }
+            return Ok(&previous.key);
+        }
+
+        if key_id == self.current.key.info.key_id {
+            if chain_tip < self.current.activation_block_num {
+                return Err(TransactionInputDecryptionError::PrematureKey {
+                    key_id: hex::encode(key_id),
+                    activation: self.current.activation_block_num,
                 });
             }
 
@@ -252,7 +327,7 @@ impl LocalX25519TransactionInputDecrypter {
                 });
             }
 
-            return Ok(&self.current);
+            return Ok(&self.current.key);
         }
 
         if let Some(next) = &self.next
@@ -277,6 +352,23 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
         &self,
         chain_tip: BlockNumber,
     ) -> anyhow::Result<TransactionEncryptionKeySchedule> {
+        if chain_tip < self.current.activation_block_num {
+            let previous = self.previous.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "current key does not activate until block {} and no previous key is configured",
+                    self.current.activation_block_num
+                )
+            })?;
+            return Ok(TransactionEncryptionKeySchedule {
+                current_key: previous.key.info.clone(),
+                current_key_activation_block_num: previous.activation_block_num,
+                next_key: Some(NextTransactionEncryptionKey {
+                    key: self.current.key.info.clone(),
+                    activation_block_num: self.current.activation_block_num,
+                }),
+            });
+        }
+
         if let Some(next) = &self.next
             && chain_tip >= next.activation_block_num
         {
@@ -288,8 +380,8 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
         }
 
         Ok(TransactionEncryptionKeySchedule {
-            current_key: self.current.info.clone(),
-            current_key_activation_block_num: self.current_activation_block_num,
+            current_key: self.current.key.info.clone(),
+            current_key_activation_block_num: self.current.activation_block_num,
             next_key: self.next.as_ref().map(|next| NextTransactionEncryptionKey {
                 key: next.key.info.clone(),
                 activation_block_num: next.activation_block_num,
@@ -312,6 +404,17 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
         let key = self.key_for_decryption(key_id, chain_tip)?;
         Self::unseal(key, message, associated_data)
     }
+}
+
+fn scheduled_local_key(
+    secret_key: KeyExchangeKey,
+    activation_block_num: BlockNumber,
+) -> anyhow::Result<ScheduledLocalEncryptionKey> {
+    ensure_epoch_boundary(activation_block_num)?;
+    Ok(ScheduledLocalEncryptionKey {
+        key: LocalEncryptionKey::new(secret_key),
+        activation_block_num,
+    })
 }
 
 fn ensure_epoch_boundary(block_num: BlockNumber) -> anyhow::Result<()> {
@@ -345,11 +448,78 @@ mod tests {
             .unwrap()
     }
 
+    fn repeated_rotation_decrypter() -> LocalX25519TransactionInputDecrypter {
+        LocalX25519TransactionInputDecrypter::from_schedule(
+            Some((key(7), BlockNumber::GENESIS)),
+            (key(8), BlockNumber::from_epoch(1)),
+            Some((key(9), BlockNumber::from_epoch(2))),
+        )
+        .unwrap()
+    }
+
     fn seal(sealing_key: &SealingKey, plaintext: &[u8], associated_data: &[u8]) -> Vec<u8> {
         sealing_key
             .seal_bytes_with_associated_data(&mut rng(), plaintext, associated_data)
             .unwrap()
             .to_bytes()
+    }
+
+    fn repeated_rotation_ciphertexts(
+        decrypter: &LocalX25519TransactionInputDecrypter,
+        associated_data: &[u8],
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        (
+            seal(&decrypter.previous_sealing_key().unwrap(), b"previous", associated_data),
+            seal(&decrypter.sealing_key(), b"current", associated_data),
+            seal(&decrypter.next_sealing_key().unwrap(), b"next", associated_data),
+        )
+    }
+
+    async fn assert_decrypts(
+        decrypter: &LocalX25519TransactionInputDecrypter,
+        key_id: &[u8],
+        chain_tip: BlockNumber,
+        ciphertext: &[u8],
+        associated_data: &[u8],
+        expected: &[u8],
+    ) {
+        assert_eq!(
+            decrypter
+                .decrypt_transaction_inputs(key_id, chain_tip, ciphertext, associated_data,)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+
+    async fn assert_premature(
+        decrypter: &LocalX25519TransactionInputDecrypter,
+        key_id: &[u8],
+        chain_tip: BlockNumber,
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) {
+        assert!(matches!(
+            decrypter
+                .decrypt_transaction_inputs(key_id, chain_tip, ciphertext, associated_data)
+                .await,
+            Err(TransactionInputDecryptionError::PrematureKey { .. })
+        ));
+    }
+
+    async fn assert_expired(
+        decrypter: &LocalX25519TransactionInputDecrypter,
+        key_id: &[u8],
+        chain_tip: BlockNumber,
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) {
+        assert!(matches!(
+            decrypter
+                .decrypt_transaction_inputs(key_id, chain_tip, ciphertext, associated_data)
+                .await,
+            Err(TransactionInputDecryptionError::ExpiredKey { .. })
+        ));
     }
 
     #[tokio::test]
@@ -485,9 +655,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn two_manual_rotations_enforce_activation_and_grace() {
+        let decrypter = repeated_rotation_decrypter();
+        let previous_id = decrypter.previous.as_ref().unwrap().key.info.key_id.clone();
+        let current_id = decrypter.current.key.info.key_id.clone();
+        let next_id = decrypter.next.as_ref().unwrap().key.info.key_id.clone();
+        let associated_data = b"associated";
+        let (previous_ciphertext, current_ciphertext, next_ciphertext) =
+            repeated_rotation_ciphertexts(&decrypter, associated_data);
+
+        let before_first = BlockNumber::from((1 << 16) - 1);
+        let before_schedule = decrypter.encryption_key_schedule(before_first).await.unwrap();
+        assert_eq!(before_schedule.current_key.key_id, previous_id);
+        assert_eq!(before_schedule.next_key.unwrap().key.key_id, current_id);
+        assert_premature(
+            &decrypter,
+            &current_id,
+            before_first,
+            &current_ciphertext,
+            associated_data,
+        )
+        .await;
+        assert_premature(&decrypter, &next_id, before_first, &next_ciphertext, associated_data)
+            .await;
+
+        let first_activation = BlockNumber::from_epoch(1);
+        let first_schedule = decrypter.encryption_key_schedule(first_activation).await.unwrap();
+        assert_eq!(first_schedule.current_key.key_id, current_id);
+        assert_eq!(first_schedule.next_key.unwrap().key.key_id, next_id);
+        assert_decrypts(
+            &decrypter,
+            &previous_id,
+            first_activation,
+            &previous_ciphertext,
+            associated_data,
+            b"previous",
+        )
+        .await;
+
+        let second_activation = BlockNumber::from_epoch(2);
+        let second_schedule = decrypter.encryption_key_schedule(second_activation).await.unwrap();
+        assert_eq!(second_schedule.current_key.key_id, next_id);
+        assert!(second_schedule.next_key.is_none());
+        assert_decrypts(
+            &decrypter,
+            &current_id,
+            second_activation,
+            &current_ciphertext,
+            associated_data,
+            b"current",
+        )
+        .await;
+        assert_expired(
+            &decrypter,
+            &previous_id,
+            second_activation,
+            &previous_ciphertext,
+            associated_data,
+        )
+        .await;
+        assert_decrypts(
+            &decrypter,
+            &next_id,
+            second_activation,
+            &next_ciphertext,
+            associated_data,
+            b"next",
+        )
+        .await;
+
+        assert_expired(
+            &decrypter,
+            &current_id,
+            BlockNumber::from_epoch(3),
+            &current_ciphertext,
+            associated_data,
+        )
+        .await;
+        assert!(matches!(
+            decrypter
+                .decrypt_transaction_inputs(
+                    b"unknown",
+                    second_activation,
+                    &next_ciphertext,
+                    associated_data,
+                )
+                .await,
+            Err(TransactionInputDecryptionError::UnknownKey { .. })
+        ));
+    }
+
+    #[tokio::test]
     async fn rejects_wrong_associated_data_and_malformed_ciphertext() {
         let decrypter = decrypter(7);
-        let key_id = decrypter.current.info.key_id.clone();
+        let key_id = decrypter.current.key.info.key_id.clone();
         let ciphertext = seal(&decrypter.sealing_key(), b"inputs", b"correct");
 
         assert!(matches!(

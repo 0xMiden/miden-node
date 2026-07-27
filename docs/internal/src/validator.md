@@ -30,15 +30,17 @@ Once verified, the block is signed and returned to the sender.
 
 In addition to its per-validator signing key, every validator is provisioned with the _same_
 transaction encryption provider. The provider owns its opaque key IDs and secret storage. It
-exposes public metadata for the current key and an optional manually selected next key, and it
-decrypts using the key ID supplied by the caller. It does not expose raw secret bytes.
+stores an optional previous key, a current key, and an optional manually selected next key. It
+exposes only the current and next public metadata, and it decrypts using the key ID supplied by
+the caller. It does not expose raw secret bytes.
 
 A scheduled key may activate only at an epoch boundary. Before that boundary its ID is premature.
 At the boundary it becomes current and the prior current key remains decrypt-only through the
 activation epoch. The old ID is expired from the following epoch boundary onward. The provider,
 not the validator service, enforces these rules. The validator does not derive keys or choose an
 automatic rotation policy. Providers keep the schedule fixed within each epoch. Operators publish
-a manually selected next key only at an epoch boundary.
+a manually selected next key only at an epoch boundary and restart all validators with the same
+previous, current, and next state.
 
 `GetTransactionEncryptionKey` returns the current key and optional next key as one schedule. A
 single validator signature binds the complete schedule, including both activation blocks and the

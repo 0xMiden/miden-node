@@ -1,11 +1,9 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::Duration;
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::Database;
 use miden_node_store::BlockStore;
-use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use miden_protocol::block::{
@@ -21,16 +19,9 @@ use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
-use crate::db::{
-    ArchivedEncryptionKey,
-    find_unvalidated_transactions,
-    insert_encryption_key,
-    load_block_header,
-    load_chain_tip,
-    max_archived_encryption_key_epoch,
-};
-use crate::signers::EncryptionKeySet;
-use crate::{COMPONENT, LOG_TARGET, TransactionInputDecrypter, ValidatorSigner};
+use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
+use crate::signers::TransactionEncryptionKeySchedule;
+use crate::{COMPONENT, TransactionInputDecrypter, ValidatorSigner};
 
 #[cfg(test)]
 mod tests;
@@ -77,23 +68,21 @@ pub enum ValidatorError {
     NoGenesisHeader,
     #[error("failed to attest the transaction encryption key: {0}")]
     EncryptionKeyAttestationFailed(String),
-    #[error("failed to archive the transaction encryption key: {0}")]
-    EncryptionKeyArchivalFailed(String),
+    #[error("invalid transaction encryption key schedule: {0}")]
+    InvalidEncryptionKeySchedule(String),
 }
 
-// ATTESTED ENCRYPTION KEYS
+// ATTESTED ENCRYPTION KEY SCHEDULE
 // ================================================================================
 
-/// The encryption keys of one epoch together with this validator's attestations over them.
-pub(crate) struct AttestedEncryptionKeys {
-    /// The epoch these keys were derived for.
+/// A provider schedule together with this validator's epoch-scoped attestation.
+pub(crate) struct AttestedEncryptionKeySchedule {
+    /// The epoch in which this schedule was attested.
     pub epoch: u16,
-    /// The current key and the key that replaces it at the next epoch boundary.
-    pub keys: EncryptionKeySet,
-    /// Signature over the current key's attestation commitment.
-    pub current_attestation: Signature,
-    /// Signature over the next key's attestation commitment, absent only when no next key exists.
-    pub next_attestation: Option<Signature>,
+    /// The complete current and optional-next schedule.
+    pub schedule: TransactionEncryptionKeySchedule,
+    /// Signature over the complete schedule and its attestation epoch.
+    pub attestation: Signature,
 }
 
 // VALIDATOR SERVICE
@@ -106,9 +95,8 @@ pub(crate) struct ValidatorService {
     signer: Arc<ValidatorSigner>,
     /// Decrypter for transaction inputs sealed against the shared encryption key.
     decrypter: Arc<dyn TransactionInputDecrypter>,
-    /// The attested encryption keys of the epoch currently served. Replaced by the key rotation
-    /// task after each epoch boundary.
-    encryption_keys: Arc<std::sync::RwLock<Arc<AttestedEncryptionKeys>>>,
+    /// Attested provider schedule, refreshed lazily for freshness at most once per epoch.
+    encryption_key_schedule: tokio::sync::Mutex<Arc<AttestedEncryptionKeySchedule>>,
     /// Commitment of the genesis block header, binding key attestations to this chain.
     genesis_commitment: Word,
     db: Arc<Database>,
@@ -131,10 +119,6 @@ pub(crate) struct ValidatorService {
 }
 
 impl ValidatorService {
-    /// How long the key rotation task waits before retrying a failed rotation, in the absence of
-    /// newly signed blocks.
-    const KEY_ROTATION_RETRY_DELAY: Duration = Duration::from_secs(30);
-
     pub(crate) async fn new(
         signer: ValidatorSigner,
         decrypter: Arc<dyn TransactionInputDecrypter>,
@@ -166,25 +150,27 @@ impl ValidatorService {
             });
         }
 
-        // Derive and attest the keys of the current epoch before serving. The key rotation task
-        // re-derives and re-signs them after each epoch boundary, so KMS-backed signers see two
-        // signing calls per epoch.
+        // Attest the provider-owned schedule before serving. The same schedule is re-attested
+        // lazily once per epoch for freshness, without deriving or scheduling any rotation.
         let genesis_commitment = db
             .read("load_genesis_header", |tx| load_block_header(tx, BlockNumber::GENESIS))
             .await
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoGenesisHeader)?
             .commitment();
-        let epoch = BlockNumber::from(initial_chain_tip).block_epoch();
-        Self::archive_encryption_keys(&db, &decrypter, epoch.saturating_add(1)).await?;
-        let encryption_keys =
-            Self::attest_encryption_keys(&signer, decrypter.as_ref(), genesis_commitment, epoch)
-                .await?;
+        let chain_tip = BlockNumber::from(initial_chain_tip);
+        let encryption_key_schedule = Self::attest_encryption_key_schedule(
+            &signer,
+            decrypter.as_ref(),
+            genesis_commitment,
+            chain_tip,
+        )
+        .await?;
 
         Ok(Self {
             signer: Arc::new(signer),
             decrypter,
-            encryption_keys: Arc::new(std::sync::RwLock::new(Arc::new(encryption_keys))),
+            encryption_key_schedule: tokio::sync::Mutex::new(Arc::new(encryption_key_schedule)),
             genesis_commitment,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
             db: db.into(),
@@ -196,250 +182,51 @@ impl ValidatorService {
         })
     }
 
-    /// Derives the encryption keys of the given epoch and signs their attestation commitments.
-    ///
-    /// The current key's commitment is signed with the current-key role suffix, and the next
-    /// key's commitment binds its rotation block. See
-    /// [`crate::signers::attestation_commitment`].
-    async fn attest_encryption_keys(
+    /// Fetches, validates, and signs the provider schedule effective at `chain_tip`.
+    async fn attest_encryption_key_schedule(
         signer: &ValidatorSigner,
         decrypter: &dyn TransactionInputDecrypter,
         genesis_commitment: Word,
-        epoch: u16,
-    ) -> Result<AttestedEncryptionKeys, ValidatorError> {
-        let keys = decrypter
-            .encryption_keys(epoch)
+        chain_tip: BlockNumber,
+    ) -> Result<AttestedEncryptionKeySchedule, ValidatorError> {
+        let schedule = decrypter
+            .encryption_key_schedule(chain_tip)
             .await
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
-        let current_attestation = signer
-            .sign_commitment(keys.current.attestation_commitment(genesis_commitment))
+        schedule
+            .validate_at(chain_tip)
+            .map_err(|err| ValidatorError::InvalidEncryptionKeySchedule(err.to_string()))?;
+        let epoch = chain_tip.block_epoch();
+        let attestation = signer
+            .sign_commitment(schedule.attestation_commitment(genesis_commitment, epoch))
             .await
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
-        let next_attestation = match &keys.next {
-            Some(next) => Some(
-                signer
-                    .sign_commitment(next.attestation_commitment(genesis_commitment))
-                    .await
-                    .map_err(|err| {
-                        ValidatorError::EncryptionKeyAttestationFailed(err.to_string())
-                    })?,
-            ),
-            None => None,
-        };
 
-        Ok(AttestedEncryptionKeys {
-            epoch,
-            keys,
-            current_attestation,
-            next_attestation,
-        })
+        Ok(AttestedEncryptionKeySchedule { epoch, schedule, attestation })
     }
 
-    /// Archives the secret encryption keys of every epoch up to and including `up_to_epoch`.
-    ///
-    /// Callers pass the epoch FOLLOWING the one being attested: the next key is announced and
-    /// attested a whole epoch ahead of its rotation block, so clients may already be sealing
-    /// against it and its secret must be archived along with the current one.
-    ///
-    /// Keys already archived are skipped, so this both backfills epochs missed while the
-    /// validator was offline and is a no-op when the archive is up to date. If the decrypter
-    /// cannot export secret key bytes (e.g. a TEE-held key), archival is skipped entirely.
-    async fn archive_encryption_keys(
-        db: &Database,
-        decrypter: &Arc<dyn TransactionInputDecrypter>,
-        up_to_epoch: u16,
-    ) -> Result<(), ValidatorError> {
-        let start = db
-            .read("max_archived_encryption_key_epoch", max_archived_encryption_key_epoch)
-            .await
-            .map_err(ValidatorError::DatabaseError)?
-            .map_or(0, |max| max.saturating_add(1));
-
-        for epoch in start..=up_to_epoch {
-            let secret_key = decrypter
-                .export_secret_key(epoch)
-                .await
-                .map_err(|err| ValidatorError::EncryptionKeyArchivalFailed(err.to_string()))?;
-            let Some(secret_key) = secret_key else {
-                tracing::debug!(
-                    target: COMPONENT,
-                    "The decrypter cannot export secret keys, skipping encryption key archival"
-                );
-                return Ok(());
-            };
-            let keys = decrypter
-                .encryption_keys(epoch)
-                .await
-                .map_err(|err| ValidatorError::EncryptionKeyArchivalFailed(err.to_string()))?;
-            let key = ArchivedEncryptionKey {
-                scheme: keys.current.scheme,
-                key_id: keys.current.key_id,
-                public_key: keys.current.public_key,
-                secret_key,
-            };
-            db.write("insert_encryption_key", move |tx| insert_encryption_key(tx, epoch, &key))
-                .await
-                .map_err(ValidatorError::DatabaseError)?;
-            tracing::info!(
-                target: LOG_TARGET,
-                epoch,
-                "Archived the transaction encryption key"
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Returns the attested encryption keys currently served.
-    pub(crate) fn attested_encryption_keys(&self) -> Arc<AttestedEncryptionKeys> {
-        self.encryption_keys
-            .read()
-            .expect("encryption key lock must not be poisoned")
-            .clone()
-    }
-
-    /// Spawns the key rotation task, which follows the committed chain tip and re-derives and
-    /// re-attests the encryption keys after each epoch boundary.
-    ///
-    /// Signing happens on this task, off the request path, so a slow signer
-    /// never delays block signing or key requests. If attestation fails, the previous epoch's
-    /// state remains served and the rotation is retried on the next signed block or after
-    /// [`Self::KEY_ROTATION_RETRY_DELAY`], whichever comes first.
-    pub(crate) fn spawn_key_rotation_task(
+    /// Returns an epoch-fresh attestation without changing provider rotation policy.
+    pub(crate) async fn attested_encryption_key_schedule(
         &self,
-        shutdown: CancellationToken,
-    ) -> tokio::task::JoinHandle<()> {
-        let signer = Arc::clone(&self.signer);
-        let decrypter = Arc::clone(&self.decrypter);
-        let state = Arc::clone(&self.encryption_keys);
-        let db = Arc::clone(&self.db);
-        let genesis_commitment = self.genesis_commitment;
-        let committed_tip = self.committed_tip.subscribe();
-
-        tokio::spawn(async move {
-            loop {
-                let worker = tokio::spawn(Self::key_rotation_loop(
-                    Arc::clone(&signer),
-                    Arc::clone(&decrypter),
-                    Arc::clone(&state),
-                    Arc::clone(&db),
-                    genesis_commitment,
-                    committed_tip.clone(),
-                    Self::KEY_ROTATION_RETRY_DELAY,
-                    shutdown.clone(),
-                ));
-                match worker.await {
-                    // The loop exits cleanly only on shutdown or when the tip channel closes.
-                    Ok(()) => break,
-                    Err(err) => {
-                        tracing::error!(
-                            target: LOG_TARGET,
-                            %err,
-                            "The key rotation task terminated abnormally, restarting it"
-                        );
-                    },
-                }
-                if shutdown.is_cancelled() {
-                    break;
-                }
-            }
-        })
-    }
-
-    /// Follows the committed chain tip and re-derives, re-archives, and re-attests the encryption
-    /// keys after each epoch boundary. See [`Self::spawn_key_rotation_task`].
-    ///
-    /// While a rotation is failing, retries are paced by `retry_delay` rather than by every newly
-    /// signed block, bounding the extra load on a possibly degraded signer.
-    #[expect(clippy::too_many_arguments, reason = "task inputs, spawned detached from &self")]
-    async fn key_rotation_loop(
-        signer: Arc<ValidatorSigner>,
-        decrypter: Arc<dyn TransactionInputDecrypter>,
-        state: Arc<std::sync::RwLock<Arc<AttestedEncryptionKeys>>>,
-        db: Arc<Database>,
-        genesis_commitment: Word,
-        mut committed_tip: watch::Receiver<BlockNumber>,
-        retry_delay: Duration,
-        shutdown: CancellationToken,
-    ) {
-        let mut retry_pending = false;
-        loop {
-            let retry_timer_fired = tokio::select! {
-                () = shutdown.cancelled() => break,
-                changed = committed_tip.changed() => {
-                    if changed.is_err() {
-                        break;
-                    }
-                    false
-                },
-                () = tokio::time::sleep(retry_delay), if retry_pending => true,
-            };
-
-            let epoch = committed_tip.borrow_and_update().block_epoch();
-            let served_epoch =
-                state.read().expect("encryption key lock must not be poisoned").epoch;
-            if epoch <= served_epoch {
-                retry_pending = false;
-                continue;
-            }
-            if retry_pending && !retry_timer_fired {
-                continue;
-            }
-            if epoch - served_epoch > 1 {
-                // The decrypt grace window covers a single epoch, so submissions sealed against a
-                // key this stale can become undecryptable.
-                tracing::error!(
-                    target: LOG_TARGET,
-                    epoch,
-                    served_epoch,
-                    "Serving a transaction encryption key more than one epoch stale"
-                );
-            }
-
-            // Archive the new epoch's secret key (and its announced next key) before attesting, so
-            // a failed archival is retried without spending signatures.
-            let archive_up_to = epoch.saturating_add(1);
-            if let Err(err) = Self::archive_encryption_keys(&db, &decrypter, archive_up_to).await {
-                tracing::warn!(
-                    target: LOG_TARGET,
-                    epoch,
-                    %err,
-                    "Failed to archive the rotated transaction encryption key, retrying shortly"
-                );
-                retry_pending = true;
-                continue;
-            }
-
-            match Self::attest_encryption_keys(
-                &signer,
-                decrypter.as_ref(),
-                genesis_commitment,
-                epoch,
-            )
-            .await
-            {
-                Ok(rotated) => {
-                    tracing::info!(
-                        target: LOG_TARGET,
-                        epoch,
-                        key_id = %hex::encode(&rotated.keys.current.key_id),
-                        "Rotated the transaction encryption key"
-                    );
-                    *state.write().expect("encryption key lock must not be poisoned") =
-                        Arc::new(rotated);
-                    retry_pending = false;
-                },
-                Err(err) => {
-                    tracing::warn!(
-                        target: LOG_TARGET,
-                        epoch,
-                        %err,
-                        "Failed to attest the rotated transaction encryption key, retrying shortly"
-                    );
-                    retry_pending = true;
-                },
-            }
+    ) -> Result<Arc<AttestedEncryptionKeySchedule>, ValidatorError> {
+        let chain_tip = *self.committed_tip.borrow();
+        let epoch = chain_tip.block_epoch();
+        let mut cached = self.encryption_key_schedule.lock().await;
+        if cached.epoch == epoch {
+            return Ok(Arc::clone(&cached));
         }
+
+        let attested = Arc::new(
+            Self::attest_encryption_key_schedule(
+                &self.signer,
+                self.decrypter.as_ref(),
+                self.genesis_commitment,
+                chain_tip,
+            )
+            .await?,
+        );
+        *cached = Arc::clone(&attested);
+        Ok(attested)
     }
 
     /// Validates a proposed block by checking:

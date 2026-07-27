@@ -31,12 +31,11 @@ service Api {
    // Returns the public key that clients use to encrypt the private inputs of the transactions
    // they submit, attested by this validator's own signing key.
    //
-   // The encryption keys are derived per epoch from a secret shared across the whole validator
-   // set, so the returned keys are identical regardless of which validator serves the request.
-   // The attestations carried in the response are specific to this validator.
+   // The provider-owned keys are shared across the validator set, so the returned schedule is
+   // identical regardless of which validator serves the request. The schedule attestation is
+   // specific to this validator and refreshed once per epoch for replay protection.
    //
-   // The encryption key rotates every epoch. The response carries the key currently in effect
-   // and, when a next epoch exists, the key that replaces it at the next epoch boundary.
+   // Rotations are scheduled manually and may activate only at epoch boundaries.
    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKeyResponse) {}
 }
 

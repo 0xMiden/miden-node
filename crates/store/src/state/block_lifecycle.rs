@@ -14,12 +14,6 @@ use miden_protocol::transaction::TransactionId;
 
 use crate::LOG_TARGET;
 
-/// Returns whether any subscriber is interested in user-facing lifecycle events.
-pub(super) fn lifecycle_events_enabled() -> bool {
-    tracing::enabled!(target: LOG_TARGET, tracing::Level::INFO)
-        || tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG)
-}
-
 /// User-facing lifecycle information derived from a block before it is committed.
 ///
 /// The information is emitted only after the block has been committed to all store state.
@@ -29,46 +23,6 @@ pub(super) struct BlockLifecycle {
     created_notes: Vec<CreatedNote>,
     consumed_notes: Vec<ConsumedNote>,
     storage_changes: Vec<StorageChange>,
-}
-
-struct RegisteredAccount {
-    account_id: AccountId,
-    transaction_id: TransactionId,
-}
-
-struct CreatedNote {
-    note_id: NoteId,
-    sender: AccountId,
-    transaction_id: TransactionId,
-    erased: bool,
-}
-
-struct ConsumedNote {
-    note_id: Option<NoteId>,
-    nullifier: Nullifier,
-    transaction_id: TransactionId,
-}
-
-enum StorageChange {
-    Value {
-        account_id: AccountId,
-        slot_name: StorageSlotName,
-        operation: StoragePatchOperation,
-        value: Option<Word>,
-    },
-    MapEntry {
-        account_id: AccountId,
-        slot_name: StorageSlotName,
-        operation: StoragePatchOperation,
-        key: StorageMapKey,
-        value: Word,
-    },
-    MapSlot {
-        account_id: AccountId,
-        slot_name: StorageSlotName,
-        operation: StoragePatchOperation,
-        entries_count: usize,
-    },
 }
 
 impl BlockLifecycle {
@@ -186,6 +140,52 @@ impl BlockLifecycle {
             change.emit(self.block_num);
         }
     }
+}
+
+/// Returns whether any subscriber is interested in user-facing lifecycle events.
+pub(super) fn lifecycle_events_enabled() -> bool {
+    tracing::enabled!(target: LOG_TARGET, tracing::Level::INFO)
+        || tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG)
+}
+
+struct RegisteredAccount {
+    account_id: AccountId,
+    transaction_id: TransactionId,
+}
+
+struct CreatedNote {
+    note_id: NoteId,
+    sender: AccountId,
+    transaction_id: TransactionId,
+    erased: bool,
+}
+
+struct ConsumedNote {
+    note_id: Option<NoteId>,
+    nullifier: Nullifier,
+    transaction_id: TransactionId,
+}
+
+enum StorageChange {
+    Value {
+        account_id: AccountId,
+        slot_name: StorageSlotName,
+        operation: StoragePatchOperation,
+        value: Option<Word>,
+    },
+    MapEntry {
+        account_id: AccountId,
+        slot_name: StorageSlotName,
+        operation: StoragePatchOperation,
+        key: StorageMapKey,
+        value: Word,
+    },
+    MapSlot {
+        account_id: AccountId,
+        slot_name: StorageSlotName,
+        operation: StoragePatchOperation,
+        entries_count: usize,
+    },
 }
 
 impl StorageChange {

@@ -50,7 +50,8 @@ three keys.
 
 At a rotation boundary, all validators must restart with the same schedule. For example, a restart that activates key B
 and announces key C uses A as the previous key, B as the current key, and C as the next key. The provider accepts A
-through B's activation epoch, then marks it expired. A later restart can drop A and move B into the previous slot.
+through B's activation epoch, then marks it expired. After that epoch, a restart can drop A. When C activates, move B
+into the previous slot.
 
 Production deployments should not pass the key in plaintext. Instead, wrap it with a symmetric AWS KMS key
 (`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via `--encryption-key.kms-ciphertext` or

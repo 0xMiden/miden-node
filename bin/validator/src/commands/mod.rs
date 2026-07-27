@@ -50,6 +50,7 @@ pub(crate) const INSECURE_SIGNING_KEY_HEX: &str =
 /// A predefined, insecure shared transaction encryption key for development purposes.
 pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
     "0202020202020202020202020202020202020202020202020202020202020202";
+const INSECURE_ENCRYPTION_KEY_BYTES: [u8; 32] = [2; 32];
 
 // VALIDATOR COMMAND
 // ================================================================================================
@@ -244,17 +245,6 @@ pub(crate) struct ValidatorEncryptionKeys {
 
 impl ValidatorEncryptionKeys {
     async fn into_decrypter(self) -> anyhow::Result<LocalX25519TransactionInputDecrypter> {
-        if self.current_key_kms_ciphertext.is_none()
-            && self.current_key == INSECURE_ENCRYPTION_KEY_HEX
-        {
-            tracing::warn!(
-                target: LOG_TARGET,
-                "Using the predefined, insecure transaction encryption key, configure \
-                 --encryption-key.hex or --encryption-key.kms-ciphertext for production \
-                 deployments"
-            );
-        }
-
         let current =
             load_encryption_key(Some(self.current_key), self.current_key_kms_ciphertext, "current")
                 .await?
@@ -299,6 +289,14 @@ async fn load_encryption_key(
             })
             .transpose()?
     };
+
+    if key_bytes.as_deref() == Some(INSECURE_ENCRYPTION_KEY_BYTES.as_slice()) {
+        tracing::warn!(
+            target: LOG_TARGET,
+            role,
+            "Using the predefined, insecure transaction encryption key"
+        );
+    }
 
     key_bytes
         .map(|key| {

@@ -197,10 +197,6 @@ impl LocalX25519TransactionInputDecrypter {
             .map(|(key, activation_block_num)| scheduled_local_key(key, activation_block_num))
             .transpose()?;
 
-        anyhow::ensure!(
-            current.activation_block_num == BlockNumber::GENESIS || previous.is_some(),
-            "a previous key is required when the current key activated after genesis"
-        );
         if let Some(previous) = &previous {
             anyhow::ensure!(
                 previous.activation_block_num < current.activation_block_num,
@@ -372,6 +368,19 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
         &self,
         chain_tip: BlockNumber,
     ) -> anyhow::Result<TransactionEncryptionKeySchedule> {
+        let previous_is_required = self.current.activation_block_num != BlockNumber::GENESIS
+            && self
+                .current
+                .activation_block_num
+                .block_epoch()
+                .checked_add(1)
+                .map(BlockNumber::from_epoch)
+                .is_none_or(|grace_expiry| chain_tip < grace_expiry);
+        anyhow::ensure!(
+            !previous_is_required || self.previous.is_some(),
+            "a previous key is required through the current key's activation epoch"
+        );
+
         if chain_tip < self.current.activation_block_num {
             let previous = self.previous.as_ref().ok_or_else(|| {
                 anyhow::anyhow!(
@@ -763,6 +772,21 @@ mod tests {
                 .await,
             Err(TransactionInputDecryptionError::UnknownKey { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn previous_key_can_be_dropped_after_grace_expiry() {
+        let decrypter = LocalX25519TransactionInputDecrypter::from_schedule(
+            None,
+            (key(8), BlockNumber::from_epoch(1)),
+            None,
+        )
+        .unwrap();
+
+        assert!(decrypter.encryption_key_schedule(BlockNumber::from_epoch(1)).await.is_err());
+
+        let schedule = decrypter.encryption_key_schedule(BlockNumber::from_epoch(2)).await.unwrap();
+        assert_eq!(schedule.current_key.key_id, decrypter.current.key.info.key_id);
     }
 
     #[tokio::test]

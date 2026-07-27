@@ -104,7 +104,7 @@ MIDEN_GENESIS_CONFIG_FILE=/absolute/path/to/genesis.toml make local-network-up
 ```
 
 The override bind mounts the host file into the bootstrap validator container as `/genesis.toml` and passes that
-in-container path to `miden-validator bootstrap --genesis-config-file`.
+in-container path to `miden-validator genesis --config`.
 
 This only affects validator bootstrap. If the local network has already been bootstrapped, delete the existing local
 chain data before starting with a different genesis configuration:

@@ -18,8 +18,8 @@ pub async fn start(
     sqlite_connection_pool_size: NonZeroUsize,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
-    let data_directory = DataDirectory::load_server(data_directory)
-        .context("failed to load validator data directory")?;
+    let data_directory =
+        DataDirectory::load(data_directory).context("failed to load validator data directory")?;
     ValidatorServer {
         address,
         grpc_options,

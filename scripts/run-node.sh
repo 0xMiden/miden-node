@@ -36,8 +36,8 @@ FULL_NODE_1_DIR="/tmp/full-node-1"
 FULL_NODE_2_DIR="/tmp/full-node-2"
 VALIDATOR_1_DIR="/tmp/validator-1"
 VALIDATOR_2_DIR="/tmp/validator-2"
-VALIDATOR_2_ACCOUNTS_DIR="/tmp/validator-2-accounts"
 NTX_BUILDER_DIR="/tmp/ntx-builder"
+GENESIS_DIR="/tmp/genesis"
 ACCOUNTS_DIR="/tmp/accounts"
 
 VALIDATOR_1_PORT=50101
@@ -90,7 +90,7 @@ bootstrap_node_data_dir() {
     echo "Bootstrapping $label..."
     "$NODE_BINARY" bootstrap \
         --data-directory "$data_dir" \
-        --file "$VALIDATOR_1_DIR/genesis.dat"
+        --genesis "$GENESIS_DIR/genesis.dat"
 }
 
 bootstrap_ntx_builder() {
@@ -98,7 +98,7 @@ bootstrap_ntx_builder() {
 
     "$NTX_BUILDER_BINARY" bootstrap \
         --data-directory "$NTX_BUILDER_DIR" \
-        --file "$VALIDATOR_1_DIR/genesis.dat"
+        --genesis "$GENESIS_DIR/genesis.dat"
 }
 
 node_resource_attributes() {
@@ -120,10 +120,10 @@ kill_ports
 if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
     echo "=== Bootstrapping ==="
 
-    rm -rf "$VALIDATOR_1_DIR" "$VALIDATOR_2_DIR" "$VALIDATOR_2_ACCOUNTS_DIR" "$ACCOUNTS_DIR" \
+    rm -rf "$VALIDATOR_1_DIR" "$VALIDATOR_2_DIR" "$GENESIS_DIR" "$ACCOUNTS_DIR" \
         "$NODE_DIR" "$FULL_NODE_1_DIR" "$FULL_NODE_2_DIR" "$NTX_BUILDER_DIR"
 
-    echo "Bootstrapping validator 1 (builds the unsigned genesis block committing both validators' public keys)..."
+    echo "Building the unsigned genesis block (commits both validators' public keys)..."
     if [[ -n "$KMS_KEY_ID" ]]; then
         VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.kms-id "$KMS_KEY_ID")
         VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.kms-id "$KMS_KEY_ID_2")
@@ -141,18 +141,20 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
         cat "$GENESIS_CONFIG"
     } > "$BOOTSTRAP_GENESIS_CONFIG"
 
+    "$VALIDATOR_BINARY" genesis \
+        --genesis-block-directory "$GENESIS_DIR" \
+        --accounts-directory "$ACCOUNTS_DIR" \
+        --config "$BOOTSTRAP_GENESIS_CONFIG"
+
+    echo "Bootstrapping validator 1 (seeds from the genesis block)..."
     "$VALIDATOR_BINARY" bootstrap \
         --data-directory "$VALIDATOR_1_DIR" \
-        --genesis-block-directory "$VALIDATOR_1_DIR" \
-        --accounts-directory "$ACCOUNTS_DIR" \
-        --genesis-config-file "$BOOTSTRAP_GENESIS_CONFIG"
+        --genesis "$GENESIS_DIR/genesis.dat"
 
-    echo "Bootstrapping validator 2 (seeds from validator 1's genesis block)..."
+    echo "Bootstrapping validator 2 (seeds from the genesis block)..."
     "$VALIDATOR_BINARY" bootstrap \
         --data-directory "$VALIDATOR_2_DIR" \
-        --genesis-block-directory "$VALIDATOR_2_DIR" \
-        --accounts-directory "$VALIDATOR_2_ACCOUNTS_DIR" \
-        --file "$VALIDATOR_1_DIR/genesis.dat"
+        --genesis "$GENESIS_DIR/genesis.dat"
 
     bootstrap_node_data_dir "sequencer node" "$NODE_DIR"
     bootstrap_ntx_builder

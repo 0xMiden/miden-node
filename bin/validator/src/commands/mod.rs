@@ -1,4 +1,5 @@
 mod bootstrap;
+mod genesis;
 mod start;
 
 use std::num::NonZeroUsize;
@@ -28,7 +29,7 @@ const ENV_SIGNING_KEY: &str = "MIDEN_VALIDATOR_SIGNING_KEY";
 const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
-const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
+const ENV_GENESIS_CONFIG: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 
 /// A predefined, insecure validator signing key for development purposes.
@@ -45,28 +46,39 @@ pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub enum ValidatorCommand {
-    /// Bootstraps the genesis block.
+    /// Builds the genesis block from a genesis configuration.
     ///
     /// Creates accounts from the genesis configuration, builds the genesis block, and writes the
-    /// block and account secret files to disk. Also initializes the validator's database with the
-    /// genesis block as the chain tip.
+    /// block and account secret files to disk.
     ///
     /// The genesis block is the chain's trust root and is not signed: its header commits to the
     /// full validator set — the `validators` public keys in the genesis configuration, defaulting
     /// to the predefined, insecure development key for local development — and that set is
     /// required to sign every block after genesis. Building the genesis block needs no signing
-    /// access to any validator's key.
+    /// access to any validator's key, so one operator — who need not be a validator — runs this
+    /// once and distributes the genesis block file.
     ///
-    /// Alternatively, pass `--file` to seed this validator's database from an already-built
-    /// genesis block file, which must come from a trusted source. Use this for every validator
-    /// other than the one that built the genesis block.
-    Bootstrap {
+    /// Every validator then seeds its database from the genesis block file with `bootstrap`.
+    Genesis {
         /// Directory in which to write the genesis block file.
         #[arg(long, value_name = "DIR")]
         genesis_block_directory: PathBuf,
         /// Directory to write the account secret files (.mac) to.
         #[arg(long, value_name = "DIR")]
         accounts_directory: PathBuf,
+        /// Use the given configuration file to construct the genesis state from.
+        ///
+        /// If not provided, the built-in single-validator development configuration is used.
+        #[arg(long = "config", env = ENV_GENESIS_CONFIG, value_name = "GENESIS_CONFIG")]
+        genesis_config_file: Option<PathBuf>,
+    },
+
+    /// Seeds this validator's database from a genesis block file.
+    ///
+    /// Every validator runs this once before `start`, against the genesis block file produced by
+    /// the `genesis` command. The genesis block is the chain's trust root and carries no
+    /// signatures; the file must come from a trusted source.
+    Bootstrap {
         /// Directory in which to store the validator's database.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
@@ -78,17 +90,9 @@ pub enum ValidatorCommand {
             value_name = "NUM"
         )]
         sqlite_connection_pool_size: NonZeroUsize,
-        /// Use the given configuration file to construct the genesis state from.
-        ///
-        /// Cannot be used with `--file`.
-        #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
-        genesis_config_file: Option<PathBuf>,
-        /// Seed this validator's database from an already-built genesis block file, instead of
-        /// building a new one.
-        ///
-        /// Cannot be used with `--genesis-config-file`.
-        #[arg(long = "file", value_name = "FILE", conflicts_with = "genesis_config_file")]
-        genesis_block_file: Option<PathBuf>,
+        /// Genesis block file to seed this validator's database from.
+        #[arg(long = "genesis", value_name = "FILE")]
+        genesis_block_file: PathBuf,
     },
 
     /// Prints the hex-encoded public key for the configured validator signing key.
@@ -195,33 +199,26 @@ pub enum ValidatorCommand {
 impl ValidatorCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         match self {
-            Self::Bootstrap {
+            Self::Genesis {
                 genesis_block_directory,
                 accounts_directory,
+                genesis_config_file,
+            } => genesis::generate(
+                &genesis_block_directory,
+                &accounts_directory,
+                genesis_config_file.as_ref(),
+            ),
+            Self::Bootstrap {
                 data_directory,
                 sqlite_connection_pool_size,
-                genesis_config_file,
                 genesis_block_file,
             } => {
-                if let Some(genesis_block_file) = genesis_block_file {
-                    bootstrap::bootstrap_from_file(
-                        &genesis_block_directory,
-                        &accounts_directory,
-                        &data_directory,
-                        sqlite_connection_pool_size,
-                        &genesis_block_file,
-                    )
-                    .await
-                } else {
-                    bootstrap::bootstrap_build(
-                        &genesis_block_directory,
-                        &accounts_directory,
-                        &data_directory,
-                        sqlite_connection_pool_size,
-                        genesis_config_file.as_ref(),
-                    )
-                    .await
-                }
+                bootstrap::bootstrap(
+                    &data_directory,
+                    sqlite_connection_pool_size,
+                    &genesis_block_file,
+                )
+                .await
             },
             Self::Pubkey { signing_key } => {
                 let signer = signing_key.into_signer().await?;
@@ -229,7 +226,7 @@ impl ValidatorCommand {
                 Ok(())
             },
             Self::Migrate { data_directory } => {
-                let data_dir = DataDirectory::load_server(data_directory)
+                let data_dir = DataDirectory::load(data_directory)
                     .context("failed to load validator data directory")?;
                 miden_validator::db::migrate(data_dir.database_path())
                     .context("failed to apply validator database migrations")?;
@@ -301,9 +298,10 @@ impl ValidatorCommand {
     pub fn open_telemetry(&self) -> OpenTelemetry {
         match self {
             Self::Start { .. } => OpenTelemetry::from_env().with_name("validator"),
-            Self::Bootstrap { .. } | Self::Pubkey { .. } | Self::Migrate { .. } => {
-                OpenTelemetry::Disabled
-            },
+            Self::Genesis { .. }
+            | Self::Bootstrap { .. }
+            | Self::Pubkey { .. }
+            | Self::Migrate { .. } => OpenTelemetry::Disabled,
         }
     }
 }

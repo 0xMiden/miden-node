@@ -144,7 +144,7 @@ pub enum NtxBuilderCommand {
         data_directory: PathBuf,
 
         /// Bootstrap from a trusted genesis block file.
-        #[arg(long = "file", value_name = "FILE")]
+        #[arg(long = "genesis", value_name = "FILE")]
         genesis_block_file: Option<PathBuf>,
 
         /// Bootstrap for an official Miden network.

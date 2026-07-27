@@ -49,15 +49,14 @@ validators = [
 ]
 ```
 
-**One** operator then runs `bootstrap` with the genesis configuration. Building the genesis block requires no signing
+**One** operator then runs `genesis` with the genesis configuration. Building the genesis block requires no signing
 key:
 
 ```bash
-miden-validator bootstrap \
-  --data-directory validator-1-data \
+miden-validator genesis \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --genesis-config-file genesis.toml
+  --config genesis.toml
 ```
 
 Upload `genesis-data/genesis.dat` so it is served at:
@@ -66,14 +65,13 @@ Upload `genesis-data/genesis.dat` so it is served at:
 https://genesis.<network>.miden.io
 ```
 
-Every other validator operator seeds their own database from the same genesis block:
+Every validator operator — including the one that built the genesis block — seeds their own database from the genesis
+block:
 
 ```bash
 miden-validator bootstrap \
-  --data-directory validator-2-data \
-  --genesis-block-directory genesis-data \
-  --accounts-directory accounts \
-  --file genesis-data/genesis.dat
+  --data-directory validator-1-data \
+  --genesis genesis-data/genesis.dat
 ```
 
 Initialize the sequencer's node storage from the hosted genesis block:
@@ -115,21 +113,19 @@ validators = [
 ```
 
 ```bash
-miden-validator bootstrap \
-  --data-directory validator-1-data \
+miden-validator genesis \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --genesis-config-file genesis.toml
+  --config genesis.toml
 ```
 
-Distribute `genesis-data/genesis.dat` to the other validator operators, who each seed their own database from it:
+Distribute `genesis-data/genesis.dat` to the validator operators, who each seed their own database from it — including
+the operator who built the genesis block:
 
 ```bash
 miden-validator bootstrap \
-  --data-directory validator-2-data \
-  --genesis-block-directory genesis-data \
-  --accounts-directory accounts \
-  --file genesis-data/genesis.dat
+  --data-directory validator-1-data \
+  --genesis genesis-data/genesis.dat
 ```
 
 For unofficial networks or pre-publication testing, distribute the genesis block file directly and initialize services
@@ -138,13 +134,13 @@ from that file:
 ```bash
 miden-node bootstrap \
   --data-directory node-data \
-  --file genesis-data/genesis.dat
+  --genesis genesis-data/genesis.dat
 ```
 
 ```bash
 miden-ntx-builder bootstrap \
   --data-directory ntx-builder-data \
-  --file genesis-data/genesis.dat
+  --genesis genesis-data/genesis.dat
 ```
 
   </TabItem>

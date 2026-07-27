@@ -24,6 +24,8 @@ use crate::{
 
 /// SQL statements, kept in dedicated `.sql` files (under `sql/`).
 mod sql {
+    pub(super) const CLEAR_PRIVATE_RECORD_BLOCK_NUM: &str =
+        include_str!("sql/clear_private_record_block_num.sql");
     pub(super) const INSERT_TRANSACTION: &str = include_str!("sql/insert_transaction.sql");
     #[cfg(test)]
     pub(super) const LOAD_TRANSACTION: &str = include_str!("sql/load_transaction.sql");
@@ -292,22 +294,26 @@ pub fn load_private_records_by_block_num(
     )
 }
 
-/// Adds block lookup data to every private record for one included transaction.
+/// Replaces the private-record assignments for one block height.
 #[miden_instrument(
     target = COMPONENT,
     skip_all,
-    fields(%transaction_id, %block_num),
+    fields(%block_num, transaction_count = transaction_ids.len()),
     err,
 )]
-pub fn set_private_record_block_num(
+pub fn replace_private_record_block_assignments(
     tx: &WriteTx<'_>,
-    transaction_id: TransactionId,
     block_num: BlockNumber,
+    transaction_ids: &[TransactionId],
 ) -> Result<usize, DatabaseError> {
-    tx.execute(
-        sql::SET_PRIVATE_RECORD_BLOCK_NUM,
-        &[&i64::from(block_num.as_u32()), &transaction_id.to_bytes()],
-    )
+    let block_num = i64::from(block_num.as_u32());
+    tx.execute(sql::CLEAR_PRIVATE_RECORD_BLOCK_NUM, &[&block_num])?;
+
+    transaction_ids.iter().try_fold(0, |assigned, transaction_id| {
+        let transaction_id = transaction_id.to_bytes();
+        tx.execute(sql::SET_PRIVATE_RECORD_BLOCK_NUM, &[&block_num, &transaction_id])
+            .map(|updated| assigned + updated)
+    })
 }
 
 fn private_record_from_row(row: &Row<'_>) -> Result<StoredPrivateRecord, DatabaseError> {
@@ -504,10 +510,13 @@ mod tests {
     const RECORD_ID: PrivateRecordId = PrivateRecordId::new([3; 32]);
     const SETUP_CONTEXT_ID: [u8; 32] = [4; 32];
 
-    fn private_record() -> StoredPrivateRecord {
-        let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
-        let context = PrivateRecordContext::new(CHAIN_ID, KEY_EPOCH, RECORD_ID, transaction_id);
-        let mut rng = ChaCha20Rng::from_seed([9; 32]);
+    fn private_record(
+        record_id: PrivateRecordId,
+        transaction_id: TransactionId,
+        seed: u8,
+    ) -> StoredPrivateRecord {
+        let context = PrivateRecordContext::new(CHAIN_ID, KEY_EPOCH, record_id, transaction_id);
+        let mut rng = ChaCha20Rng::from_seed([seed; 32]);
         test_private_record_sealer(KEY_EPOCH, SETUP_CONTEXT_ID)
             .seal(&mut rng, context, b"private transaction inputs")
             .unwrap()
@@ -572,9 +581,9 @@ mod tests {
     async fn private_record_indexes_work_before_and_after_inclusion() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
         let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
-        let record = private_record();
+        let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
+        let record = private_record(RECORD_ID, transaction_id, 9);
         let record_id = record.context().record_id();
-        let transaction_id = record.context().transaction_id();
 
         let expected = record.clone();
         db.write("insert_private_record", move |tx| insert_private_record(tx, &record))
@@ -620,8 +629,12 @@ mod tests {
         assert!(before_inclusion.is_empty());
 
         let updated = db
-            .write("set_private_record_block_num", move |tx| {
-                set_private_record_block_num(tx, transaction_id, BlockNumber::from(12))
+            .write("replace_private_record_block_assignments", move |tx| {
+                replace_private_record_block_assignments(
+                    tx,
+                    BlockNumber::from(12),
+                    &[transaction_id],
+                )
             })
             .await
             .unwrap();
@@ -636,6 +649,59 @@ mod tests {
         let mut included = expected;
         included.set_block_num(BlockNumber::from(12));
         assert_eq!(after_inclusion, vec![included]);
+    }
+
+    #[tokio::test]
+    async fn replacing_block_assignments_removes_orphaned_records() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let old_transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
+        let new_transaction_id = TransactionId::from_raw(Word::from([8u32, 7, 6, 5]));
+        let old_record = private_record(RECORD_ID, old_transaction_id, 9);
+        let new_record_id = PrivateRecordId::new([6; 32]);
+        let new_record = private_record(new_record_id, new_transaction_id, 10);
+
+        db.write("insert_private_records", move |tx| {
+            insert_private_record(tx, &old_record)?;
+            insert_private_record(tx, &new_record)
+        })
+        .await
+        .unwrap();
+
+        db.write("assign_old_block", move |tx| {
+            replace_private_record_block_assignments(
+                tx,
+                BlockNumber::from(12),
+                &[old_transaction_id],
+            )
+        })
+        .await
+        .unwrap();
+        db.write("replace_block", move |tx| {
+            replace_private_record_block_assignments(
+                tx,
+                BlockNumber::from(12),
+                &[new_transaction_id],
+            )
+        })
+        .await
+        .unwrap();
+
+        let at_height = db
+            .read("load_replacement_block", move |tx| {
+                load_private_records_by_block_num(tx, BlockNumber::from(12))
+            })
+            .await
+            .unwrap();
+        assert_eq!(at_height.len(), 1);
+        assert_eq!(at_height[0].context().record_id(), new_record_id);
+
+        let orphaned = db
+            .read("load_orphaned_record", move |tx| load_private_record(tx, RECORD_ID))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(orphaned.block_num(), None);
     }
 
     #[tokio::test]

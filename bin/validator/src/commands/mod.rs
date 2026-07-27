@@ -234,8 +234,8 @@ impl ValidatorCommand {
                 };
                 let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
                     .context("failed to construct the encryption key")?;
-                let decrypter: Arc<dyn TransactionInputDecrypter> =
-                    Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key));
+                let decrypter = LocalX25519TransactionInputDecrypter::new(encryption_key);
+                let decrypter: Arc<dyn TransactionInputDecrypter> = Arc::new(decrypter);
 
                 let signer = if let Some(kms_key_id) = signing_key_kms_id {
                     ValidatorSigner::new_kms(kms_key_id).await?

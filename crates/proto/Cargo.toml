@@ -23,6 +23,7 @@ miden-node-utils            = { workspace = true }
 miden-protocol              = { workspace = true }
 miden-standards             = { workspace = true }
 prost                       = { workspace = true }
+rand                        = { workspace = true }
 thiserror                   = { workspace = true }
 tonic                       = { default-features = true, workspace = true }
 tonic-prost                 = { workspace = true }
@@ -30,6 +31,7 @@ tower                       = { workspace = true }
 url                         = { workspace = true }
 
 [dev-dependencies]
+assert_matches = { workspace = true }
 miden-protocol = { features = ["testing"], workspace = true }
 proptest       = { version = "1.7" }
 

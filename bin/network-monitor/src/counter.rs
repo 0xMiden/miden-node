@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use miden_node_proto::clients::RpcClient;
+use miden_node_proto::domain::encryption::TransactionInputSealer;
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
@@ -54,6 +55,7 @@ use crate::deploy::{
     MonitorDataStore,
     create_and_deploy_accounts,
     create_genesis_aware_rpc_client,
+    create_genesis_aware_rpc_client_with_commitment,
 };
 use crate::service::Service;
 use crate::status::{
@@ -164,6 +166,12 @@ pub struct IncrementService {
     /// whenever the increment task regenerates accounts after persistent failures, so the tracker
     /// can switch to the new account IDs without polling disk.
     accounts_sender: watch::Sender<TrackedAccounts>,
+    /// Genesis commitment of the monitored network, bound into the associated data of sealed
+    /// transaction inputs.
+    genesis_commitment: Word,
+    /// Cached sealer for transaction inputs, populated on first submission. A plain `Option`
+    /// suffices because submissions run through `&mut self`.
+    sealer: Option<TransactionInputSealer>,
 }
 
 impl IncrementService {
@@ -180,8 +188,11 @@ impl IncrementService {
         accounts_sender: watch::Sender<TrackedAccounts>,
         latency_state: Arc<Mutex<LatencyState>>,
     ) -> Result<Self> {
-        let mut rpc_client =
-            create_genesis_aware_rpc_client(&config.rpc_url, config.request_timeout).await?;
+        let (mut rpc_client, genesis_commitment) = create_genesis_aware_rpc_client_with_commitment(
+            &config.rpc_url,
+            config.request_timeout,
+        )
+        .await?;
         let (tx, details) =
             setup_increment_task(wallet_account, secret_key, counter_account, &mut rpc_client)
                 .await?;
@@ -194,7 +205,28 @@ impl IncrementService {
             details,
             latency_state,
             accounts_sender,
+            genesis_commitment,
+            sealer: None,
         })
+    }
+
+    /// Returns the cached sealer, fetching the encryption key on first use.
+    async fn sealer(&mut self) -> Result<TransactionInputSealer> {
+        if let Some(sealer) = &self.sealer {
+            return Ok(sealer.clone());
+        }
+
+        let key = self
+            .rpc_client
+            .get_transaction_encryption_key(())
+            .await
+            .context("Failed to fetch the transaction encryption key")?
+            .into_inner();
+        let sealer = TransactionInputSealer::new(key, self.genesis_commitment)
+            .context("Unusable transaction encryption key")?;
+
+        self.sealer = Some(sealer.clone());
+        Ok(sealer)
     }
 
     /// Applies a successful increment: advances the local wallet by the transaction's account
@@ -368,15 +400,28 @@ impl IncrementService {
         .await
         .context("counter increment task failed")??;
 
+        let sealed = self
+            .sealer()
+            .await?
+            .seal(proven_tx.id(), &tx_inputs)
+            .context("Failed to seal the transaction inputs")?;
+
         let request = ProvenTransaction {
             transaction: proven_tx.to_bytes(),
-            transaction_inputs: Some(tx_inputs),
+            sealed_transaction_inputs: Some(sealed),
         };
 
         let block_height: BlockNumber = self
             .rpc_client
             .submit_proven_tx(request)
             .await
+            .inspect_err(|status| {
+                // A validator restarted with a different encryption key rejects with
+                // `failed_precondition`. Drop the cached key so the next tick re-fetches it.
+                if status.code() == tonic::Code::FailedPrecondition {
+                    self.sealer = None;
+                }
+            })
             .context("Failed to submit proven transaction to RPC")?
             .into_inner()
             .block_num

@@ -530,21 +530,21 @@ impl ValidatorClient {
     ///
     /// # Errors
     ///
-    /// - If `transaction_inputs` does not match the batch's transactions in length
+    /// - If `sealed_transaction_inputs` does not match the batch's transactions in length
     pub async fn submit_batch(
         &mut self,
         proposed_batch: &ProposedBatch,
-        transaction_inputs: &[Vec<u8>],
+        sealed_transaction_inputs: &[generated::transaction::SealedTransactionInputs],
     ) -> Result<(), Status> {
-        if proposed_batch.transactions().len() != transaction_inputs.len() {
+        if proposed_batch.transactions().len() != sealed_transaction_inputs.len() {
             return Err(Status::invalid_argument(
                 "transaction inputs do not match the batch's transactions",
             ));
         }
-        for (tx, inputs) in proposed_batch.transactions().iter().zip(transaction_inputs) {
+        for (tx, inputs) in proposed_batch.transactions().iter().zip(sealed_transaction_inputs) {
             let proven_tx = generated::transaction::ProvenTransaction {
                 transaction: tx.to_bytes(),
-                transaction_inputs: Some(inputs.clone()),
+                sealed_transaction_inputs: Some(inputs.clone()),
             };
             self.submit_proven_transaction(proven_tx).await?;
         }

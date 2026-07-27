@@ -132,6 +132,9 @@ services:
     pull_policy: if_not_present
     volumes:
       - node-data:/data
+    environment:
+      - MIDEN_VALIDATOR_ENCRYPTION_KEY
+      - MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT
     depends_on:
       bootstrap-validator:
         condition: service_completed_successfully

@@ -1,15 +1,25 @@
 use std::collections::BTreeMap;
 
+use miden_node_proto::domain::encryption::transaction_inputs_associated_data;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::validator_api;
 use miden_node_store::{BlockStore, GenesisState};
 use miden_node_utils::fee::test_fee_params;
 use miden_protocol::Word;
-use miden_protocol::block::{BlockHeader, BlockInputs, ProposedBlock};
+use miden_protocol::account::AccountUpdateDetails;
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{Signature, SigningKey};
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::PartialBlockchain;
+use miden_protocol::transaction::{
+    InputNoteCommitment,
+    OutputNote,
+    PartialBlockchain,
+    ProvenTransaction,
+    TransactionId,
+    TxAccountUpdate,
+};
+use miden_protocol::vm::ExecutionProof;
 use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::{ValidatorError, ValidatorService};
@@ -71,6 +81,44 @@ impl TestValidator {
     /// Builds an empty [`ProposedBlock`] extending the current chain tip.
     fn propose_empty_block(&self) -> ProposedBlock {
         empty_block(&self.chain_tip, &self.chain)
+    }
+
+    /// Calls `submit_proven_transaction` on the validator server.
+    async fn call_submit_proven_transaction(
+        &self,
+        tx: &ProvenTransaction,
+        sealed: Option<proto::transaction::SealedTransactionInputs>,
+    ) -> Result<(), tonic::Status> {
+        let request = tonic::Request::new(proto::transaction::ProvenTransaction {
+            transaction: tx.to_bytes(),
+            sealed_transaction_inputs: sealed,
+        });
+        validator_api::SubmitProvenTransaction::full(&self.server, request).await
+    }
+
+    /// Seals `plaintext` exactly as a well-behaved client would: against the key this validator
+    /// serves, bound to `tx_id` and this network's genesis commitment.
+    fn seal(
+        &self,
+        tx_id: TransactionId,
+        plaintext: &[u8],
+    ) -> proto::transaction::SealedTransactionInputs {
+        let key = &self.server.encryption_key_info;
+        let associated_data = transaction_inputs_associated_data(
+            key.scheme,
+            &key.key_id,
+            self.server.genesis_commitment,
+            tx_id,
+        );
+        let sealed = test_decrypter()
+            .sealing_key()
+            .seal_bytes_with_associated_data(&mut rand::rng(), plaintext, &associated_data)
+            .expect("sealing should succeed");
+
+        proto::transaction::SealedTransactionInputs {
+            key_id: key.key_id.clone(),
+            ciphertext: sealed.to_bytes(),
+        }
     }
 
     /// Calls `sign_block` on the validator server.
@@ -193,6 +241,33 @@ fn empty_block(parent_header: &BlockHeader, chain: &PartialBlockchain) -> Propos
         BTreeMap::new(),
     );
     ProposedBlock::new(block_inputs, vec![]).unwrap()
+}
+
+/// Builds a syntactically valid [`ProvenTransaction`] with a dummy proof.
+fn dummy_proven_tx(seed: u8) -> ProvenTransaction {
+    let account_update = TxAccountUpdate::new(
+        miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER
+            .try_into()
+            .unwrap(),
+        Word::empty(),
+        Word::from([u32::from(seed), 0, 0, 0]),
+        Word::empty(),
+        AccountUpdateDetails::Private,
+    )
+    .unwrap();
+
+    // The account state changes, which is what keeps this from being rejected as an empty
+    // transaction; no input or output notes are needed.
+    ProvenTransaction::new(
+        account_update,
+        Vec::<InputNoteCommitment>::new(),
+        Vec::<OutputNote>::new(),
+        BlockNumber::GENESIS,
+        Word::empty(),
+        BlockNumber::from(u32::from(seed) + 1),
+        ExecutionProof::new_dummy(),
+    )
+    .unwrap()
 }
 
 // TESTS
@@ -900,4 +975,90 @@ async fn encryption_key_available_during_backup() {
     assert!(!response.public_key.is_empty());
 
     drop(stream);
+}
+
+// SUBMIT PATH: TRANSACTION INPUT SEALING
+// ================================================================================================
+
+/// Plaintext transaction inputs must be impossible to submit. This is the central guarantee of the
+/// whole change.
+#[tokio::test]
+async fn submit_rejects_plaintext_inputs() {
+    let tv = TestValidator::new().await;
+    let tx = dummy_proven_tx(3);
+    let sealed = proto::transaction::SealedTransactionInputs {
+        key_id: tv.server.encryption_key_info.key_id.clone(),
+        ciphertext: b"not a sealed message, just bytes".to_vec(),
+    };
+
+    let status = tv.call_submit_proven_transaction(&tx, Some(sealed)).await.unwrap_err();
+
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert!(status.message().contains("unseal"), "got: {}", status.message());
+}
+
+/// A key id that does not match the validator's earns a distinct, actionable status so a client
+/// knows to re-fetch rather than retry the same blob, without disclosing the validator's own key id.
+#[tokio::test]
+async fn submit_rejects_unknown_key_id() {
+    let tv = TestValidator::new().await;
+    let tx = dummy_proven_tx(4);
+    let mut sealed = tv.seal(tx.id(), b"transaction inputs");
+    sealed.key_id = vec![0xAA, 0xBB, 0xCC, 0xDD];
+
+    let status = tv.call_submit_proven_transaction(&tx, Some(sealed)).await.unwrap_err();
+
+    assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+    assert!(
+        status.message().contains("GetTransactionEncryptionKey"),
+        "the rejection must tell the client to re-fetch the key, got: {}",
+        status.message(),
+    );
+    // This status reaches the client verbatim through the RPC.
+    let own_key_id = hex::encode(&tv.server.encryption_key_info.key_id);
+    assert!(
+        !status.message().contains(&own_key_id),
+        "the rejection must not echo the validator's key id",
+    );
+}
+
+/// The validator enforces the associated data, so a ciphertext captured from one transaction cannot
+/// be replayed onto another. Which fields the transcript covers is pinned separately by the golden
+/// vector in `miden_node_proto::domain::encryption`.
+#[tokio::test]
+async fn submit_rejects_inputs_sealed_for_a_different_transaction() {
+    let tv = TestValidator::new().await;
+    let tx_a = dummy_proven_tx(6);
+    let tx_b = dummy_proven_tx(7);
+    assert_ne!(tx_a.id(), tx_b.id());
+
+    let sealed_for_a = tv.seal(tx_a.id(), b"transaction inputs");
+
+    let status = tv.call_submit_proven_transaction(&tx_b, Some(sealed_for_a)).await.unwrap_err();
+
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert!(status.message().contains("unseal"), "got: {}", status.message());
+}
+
+/// Correctly sealed inputs get past the unseal and fail later, at deserialization. Without this the
+/// tests above would all still pass if the unseal simply always failed.
+#[tokio::test]
+async fn correctly_sealed_inputs_reach_the_deserialization_stage() {
+    let tv = TestValidator::new().await;
+    let tx = dummy_proven_tx(10);
+    let sealed = tv.seal(tx.id(), b"not really transaction inputs");
+
+    let status = tv.call_submit_proven_transaction(&tx, Some(sealed)).await.unwrap_err();
+
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert!(
+        status.message().contains("Invalid transaction inputs"),
+        "the unseal should have succeeded and failed at deserialization instead, got: {}",
+        status.message(),
+    );
+    assert!(
+        !status.message().contains("unseal"),
+        "the unseal must have succeeded, got: {}",
+        status.message(),
+    );
 }

@@ -16,7 +16,11 @@ Read queries are served from the full node's local state. This includes account,
 Two endpoints are exceptions because they depend on state that is not replicated. The network-note debugging endpoint,
 `GetNetworkNoteStatus`, depends on NTX builder state, so full nodes forward it to the configured upstream RPC source.
 `GetTransactionEncryptionKey` depends on a validator: full nodes with a validator connected forward it there, and full
-nodes without one forward it to the upstream RPC source.
+nodes without one forward it to the upstream RPC source. Responses are cached briefly, since every submitting client
+must fetch the key first and a validator's answer does not change while it is running.
+
+Because sealing transaction inputs is mandatory, this endpoint is on the critical path for submission: a full node that
+cannot reach a validator or its upstream source can no longer serve submitting clients at all, not merely the key query.
 
 ## Transaction Submission
 

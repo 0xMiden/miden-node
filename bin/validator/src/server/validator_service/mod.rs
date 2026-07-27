@@ -5,6 +5,7 @@ use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::Database;
 use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_protocol::Word;
 use miden_protocol::block::{
     BlockHeader,
     BlockNumber,
@@ -78,8 +79,9 @@ pub enum ValidatorError {
 pub(crate) struct ValidatorService {
     signer: ValidatorSigner,
     /// Decrypter for transaction inputs sealed against the shared encryption key.
-    #[expect(dead_code, reason = "used by the submit path in a follow-up PR")]
     decrypter: Arc<dyn TransactionInputDecrypter>,
+    /// Commitment of the genesis block, loaded once at construction.
+    genesis_commitment: Word,
     /// Public metadata of the shared encryption key, fetched once at construction.
     encryption_key_info: TransactionEncryptionKeyInfo,
     /// Signature by this validator's own signing key over the encryption key attestation
@@ -156,6 +158,7 @@ impl ValidatorService {
         Ok(Self {
             signer,
             decrypter,
+            genesis_commitment,
             encryption_key_info,
             encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),

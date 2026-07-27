@@ -587,7 +587,8 @@ impl Db {
     ///
     /// Consumed note IDs omitted from transaction headers are resolved from
     /// `unresolved_note_nullifiers` on a best-effort basis. The returned mapping is used only for
-    /// lifecycle events and never affects block application.
+    /// lifecycle events and never affects block application. `unresolved_note_nullifiers` is empty
+    /// when neither INFO nor DEBUG lifecycle events are enabled.
     // TODO: This span is logged in a root span, we should connect it to the parent one.
     #[miden_instrument(
         target = COMPONENT,

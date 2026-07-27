@@ -41,6 +41,7 @@ struct FailingScheduleProvider {
     inner: LocalX25519TransactionInputDecrypter,
     schedule_calls: AtomicUsize,
     fail_schedule: AtomicBool,
+    panic_schedule: AtomicBool,
     block_schedule: AtomicBool,
     schedule_started: tokio::sync::Notify,
     schedule_released: tokio::sync::Notify,
@@ -52,6 +53,7 @@ impl FailingScheduleProvider {
             inner: test_decrypter(),
             schedule_calls: AtomicUsize::new(0),
             fail_schedule: AtomicBool::new(false),
+            panic_schedule: AtomicBool::new(false),
             block_schedule: AtomicBool::new(false),
             schedule_started: tokio::sync::Notify::new(),
             schedule_released: tokio::sync::Notify::new(),
@@ -69,6 +71,7 @@ impl TransactionInputDecrypter for FailingScheduleProvider {
         if self.fail_schedule.load(Ordering::SeqCst) {
             anyhow::bail!("schedule provider unavailable");
         }
+        assert!(!self.panic_schedule.load(Ordering::SeqCst), "schedule provider panicked");
         if self.block_schedule.load(Ordering::SeqCst) {
             self.schedule_started.notify_one();
             self.schedule_released.notified().await;
@@ -899,6 +902,29 @@ async fn failed_schedule_refresh_is_backed_off() {
         2,
         "the initial load and first failed refresh should be the only provider calls",
     );
+}
+
+#[tokio::test]
+async fn panicked_schedule_refresh_is_backed_off_without_wedging_cache() {
+    let provider = Arc::new(FailingScheduleProvider::new());
+    let tv = TestValidator::new_with_decrypter(provider.clone()).await;
+
+    provider.panic_schedule.store(true, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyAttestationFailed(message))
+            if message.contains("refresh task failed")
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+
+    provider.panic_schedule.store(false, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(2));
+    tv.server.attested_encryption_key_schedule().await.unwrap();
+    assert_eq!(provider.schedule_calls.load(Ordering::SeqCst), 3);
 }
 
 /// A client cancellation does not penalize the next request.

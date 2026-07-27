@@ -344,15 +344,23 @@ impl ValidatorService {
             let encryption_key_schedule = Arc::clone(&self.encryption_key_schedule);
             let genesis_commitment = self.genesis_commitment;
             let refresh_timeout = self.encryption_key_refresh_timeout;
-            tokio::spawn(async move {
-                let result = Self::attest_encryption_key_schedule(
+            let refresh = tokio::spawn(async move {
+                Self::attest_encryption_key_schedule(
                     &signer,
                     decrypter.as_ref(),
                     genesis_commitment,
                     chain_tip,
                     refresh_timeout,
                 )
-                .await;
+                .await
+            });
+            tokio::spawn(async move {
+                let result = match refresh.await {
+                    Ok(result) => result,
+                    Err(err) => Err(ValidatorError::EncryptionKeyAttestationFailed(format!(
+                        "transaction encryption key schedule refresh task failed: {err}"
+                    ))),
+                };
                 let mut cached = encryption_key_schedule.lock().await;
                 let state = match result {
                     Ok(attested) => {

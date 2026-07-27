@@ -1,5 +1,3 @@
-use anyhow::Context;
-use miden_node_utils::genesis::verify_genesis_signatures;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountPatch, AccountUpdateDetails};
 use miden_protocol::block::account_tree::{AccountIdKey, AccountTree};
@@ -37,6 +35,7 @@ pub struct GenesisState {
 
 /// A type-safety wrapper ensuring that genesis block data can only be created from [`GenesisState`]
 /// or validated from a [`SignedBlock`] via [`GenesisBlock::try_from`].
+#[derive(Debug)]
 pub struct GenesisBlock(SignedBlock);
 
 impl GenesisBlock {
@@ -59,8 +58,14 @@ impl TryFrom<SignedBlock> for GenesisBlock {
             block.header().block_num(),
         );
 
-        verify_genesis_signatures(block.signatures())
-            .context("genesis block signature verification failed")?;
+        // The genesis block has no parent and is not signed: it acts as the chain's trust root and
+        // must be obtained from a trusted source. Its header commits to the validator set, which is
+        // required to sign every block after genesis.
+        anyhow::ensure!(
+            block.signatures().is_empty(),
+            "genesis block must not carry signatures, got {}",
+            block.signatures().len(),
+        );
 
         Ok(Self(block))
     }

@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::Path;
 
 use anyhow::Context;
-use miden_protocol::block::{BlockSignatures, SignedBlock};
+use miden_protocol::block::SignedBlock;
 use miden_protocol::utils::serde::Deserializable;
 
 /// A predefined, insecure validator signing key for development purposes.
@@ -63,18 +63,4 @@ pub async fn fetch_signed_genesis_block(network: OfficialNetwork) -> anyhow::Res
 
 fn deserialize_signed_genesis_block(bytes: &[u8]) -> anyhow::Result<SignedBlock> {
     SignedBlock::read_from_bytes(bytes).context("failed to deserialize genesis block")
-}
-
-/// Verifies that a genesis block carries no signatures.
-///
-/// The genesis block has no parent and is not signed: it acts as the chain's trust root and must
-/// be obtained from a trusted source. Its header commits to the validator set, which is required
-/// to sign every block after genesis.
-pub fn verify_genesis_signatures(signatures: &BlockSignatures) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        signatures.is_empty(),
-        "genesis block must not carry signatures, got {}",
-        signatures.len(),
-    );
-    Ok(())
 }

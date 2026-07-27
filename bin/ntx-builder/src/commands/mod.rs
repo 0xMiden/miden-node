@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::{ArgGroup, Parser};
+use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::clap::duration_to_human_readable_string;
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::{
@@ -14,7 +15,6 @@ use miden_node_utils::genesis::{
 };
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_protocol::block::SignedBlock;
 use tokio::net::TcpListener;
 use tonic::metadata::AsciiMetadataValue;
 use url::Url;
@@ -241,13 +241,15 @@ impl NtxBuilderCommand {
     }
 }
 
+/// Reads the genesis block from the configured source and validates it.
 async fn read_bootstrap_genesis_block(
     genesis_block_file: Option<&Path>,
     network: Option<OfficialNetwork>,
-) -> anyhow::Result<SignedBlock> {
-    match (genesis_block_file, network) {
-        (Some(path), None) => read_signed_genesis_block(path),
-        (None, Some(network)) => fetch_signed_genesis_block(network).await,
+) -> anyhow::Result<GenesisBlock> {
+    let signed_block = match (genesis_block_file, network) {
+        (Some(path), None) => read_signed_genesis_block(path)?,
+        (None, Some(network)) => fetch_signed_genesis_block(network).await?,
         _ => unreachable!("clap requires exactly one genesis block source"),
-    }
+    };
+    GenesisBlock::try_from(signed_block)
 }

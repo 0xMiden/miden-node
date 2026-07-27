@@ -200,8 +200,7 @@ jobs:
         uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: "22.18.0"
-          cache: "npm"
-          cache-dependency-path: docs/external/package-lock.json
+          package-manager-cache: false
       - name: Install dependencies
         working-directory: ./docs/external
         run: npm ci

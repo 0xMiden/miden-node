@@ -19,7 +19,7 @@ use miden_protocol::crypto::utils::Serializable;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
-use tokio::time::Instant;
+use tokio::time::{Instant, timeout};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
 use crate::signers::TransactionEncryptionKeySchedule;
@@ -70,6 +70,8 @@ pub enum ValidatorError {
     NoGenesisHeader,
     #[error("failed to attest the transaction encryption key: {0}")]
     EncryptionKeyAttestationFailed(String),
+    #[error("timed out while {operation} the transaction encryption key schedule")]
+    EncryptionKeyScheduleRefreshTimedOut { operation: &'static str },
     #[error("transaction encryption key schedule refresh for epoch {epoch} is in backoff")]
     EncryptionKeyScheduleRefreshBackoff { epoch: u16 },
     #[error("invalid transaction encryption key schedule: {0}")]
@@ -99,38 +101,11 @@ struct FailedEncryptionKeyScheduleRefresh {
     retry_at: Instant,
 }
 
-struct EncryptionKeyScheduleRefreshGuard<'a> {
-    failed_refresh: &'a mut Option<FailedEncryptionKeyScheduleRefresh>,
-    epoch: u16,
-    completed: bool,
-}
-
-impl<'a> EncryptionKeyScheduleRefreshGuard<'a> {
-    fn new(failed_refresh: &'a mut Option<FailedEncryptionKeyScheduleRefresh>, epoch: u16) -> Self {
-        Self { failed_refresh, epoch, completed: false }
-    }
-
-    fn complete(mut self) {
-        self.completed = true;
-        *self.failed_refresh = None;
-    }
-}
-
-impl Drop for EncryptionKeyScheduleRefreshGuard<'_> {
-    fn drop(&mut self) {
-        if !self.completed {
-            *self.failed_refresh = Some(FailedEncryptionKeyScheduleRefresh {
-                epoch: self.epoch,
-                retry_at: Instant::now() + ENCRYPTION_KEY_REFRESH_RETRY_DELAY,
-            });
-        }
-    }
-}
-
 // VALIDATOR SERVICE
 // ================================================================================
 
 const ENCRYPTION_KEY_REFRESH_RETRY_DELAY: Duration = Duration::from_secs(30);
+const ENCRYPTION_KEY_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The underlying implementation of the gRPC validator server.
 ///
@@ -141,6 +116,8 @@ pub(crate) struct ValidatorService {
     decrypter: Arc<dyn TransactionInputDecrypter>,
     /// Attested provider schedule and request-path refresh backoff.
     encryption_key_schedule: tokio::sync::Mutex<EncryptionKeyScheduleCache>,
+    /// Bounds provider and signing calls made while refreshing the schedule.
+    encryption_key_refresh_timeout: Duration,
     /// Commitment of the genesis block header, binding key attestations to this chain.
     genesis_commitment: Word,
     db: Arc<Database>,
@@ -208,6 +185,7 @@ impl ValidatorService {
             decrypter.as_ref(),
             genesis_commitment,
             chain_tip,
+            ENCRYPTION_KEY_REFRESH_TIMEOUT,
         )
         .await?;
 
@@ -218,6 +196,7 @@ impl ValidatorService {
                 attested: Arc::new(encryption_key_schedule),
                 failed_refresh: None,
             }),
+            encryption_key_refresh_timeout: ENCRYPTION_KEY_REFRESH_TIMEOUT,
             genesis_commitment,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
             db: db.into(),
@@ -235,19 +214,25 @@ impl ValidatorService {
         decrypter: &dyn TransactionInputDecrypter,
         genesis_commitment: Word,
         chain_tip: BlockNumber,
+        refresh_timeout: Duration,
     ) -> Result<AttestedEncryptionKeySchedule, ValidatorError> {
-        let schedule = decrypter
-            .encryption_key_schedule(chain_tip)
+        let schedule = timeout(refresh_timeout, decrypter.encryption_key_schedule(chain_tip))
             .await
+            .map_err(|_| ValidatorError::EncryptionKeyScheduleRefreshTimedOut {
+                operation: "loading",
+            })?
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
         schedule
             .validate_at(chain_tip)
             .map_err(|err| ValidatorError::InvalidEncryptionKeySchedule(err.to_string()))?;
         let epoch = chain_tip.block_epoch();
-        let attestation = signer
-            .sign_commitment(schedule.attestation_commitment(genesis_commitment, epoch))
-            .await
-            .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
+        let attestation = timeout(
+            refresh_timeout,
+            signer.sign_commitment(schedule.attestation_commitment(genesis_commitment, epoch)),
+        )
+        .await
+        .map_err(|_| ValidatorError::EncryptionKeyScheduleRefreshTimedOut { operation: "signing" })?
+        .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
 
         Ok(AttestedEncryptionKeySchedule { epoch, schedule, attestation })
     }
@@ -270,22 +255,28 @@ impl ValidatorService {
             return Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch });
         }
 
-        let refresh = EncryptionKeyScheduleRefreshGuard::new(&mut cached.failed_refresh, epoch);
         match Self::attest_encryption_key_schedule(
             &self.signer,
             self.decrypter.as_ref(),
             self.genesis_commitment,
             chain_tip,
+            self.encryption_key_refresh_timeout,
         )
         .await
         {
             Ok(attested) => {
-                refresh.complete();
+                cached.failed_refresh = None;
                 let attested = Arc::new(attested);
                 cached.attested = Arc::clone(&attested);
                 Ok(attested)
             },
-            Err(err) => Err(err),
+            Err(err) => {
+                cached.failed_refresh = Some(FailedEncryptionKeyScheduleRefresh {
+                    epoch,
+                    retry_at: Instant::now() + ENCRYPTION_KEY_REFRESH_RETRY_DELAY,
+                });
+                Err(err)
+            },
         }
     }
 

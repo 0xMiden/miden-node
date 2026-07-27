@@ -24,6 +24,10 @@ pub use self::kms::{KmsSigner, decrypt_key_material};
 pub enum ValidatorSigner {
     Kms(KmsSigner),
     Local(SigningKey),
+    #[cfg(test)]
+    Failing(PublicKey),
+    #[cfg(test)]
+    Blocking(PublicKey),
 }
 
 impl ValidatorSigner {
@@ -41,11 +45,23 @@ impl ValidatorSigner {
         Self::Local(secret_key)
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_failing(public_key: PublicKey) -> Self {
+        Self::Failing(public_key)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_blocking(public_key: PublicKey) -> Self {
+        Self::Blocking(public_key)
+    }
+
     /// Returns the public key corresponding to the configured signer.
     pub fn public_key(&self) -> PublicKey {
         match self {
             Self::Kms(signer) => signer.public_key(),
             Self::Local(signer) => signer.public_key(),
+            #[cfg(test)]
+            Self::Failing(public_key) | Self::Blocking(public_key) => public_key.clone(),
         }
     }
 
@@ -59,6 +75,10 @@ impl ValidatorSigner {
             })
             .await
             .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic())),
+            #[cfg(test)]
+            Self::Failing(_) => anyhow::bail!("test signer unavailable"),
+            #[cfg(test)]
+            Self::Blocking(_) => std::future::pending::<Signature>().await,
         };
 
         Ok(signature)

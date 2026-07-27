@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::future::pending;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use miden_node_proto::domain::transaction_encryption::{
     TrustedChainState,
@@ -899,10 +900,9 @@ async fn failed_schedule_refresh_is_backed_off() {
     );
 }
 
-/// Cancelling an in-flight refresh records the same request-path backoff as an explicit provider
-/// error.
+/// A client cancellation does not penalize the next request.
 #[tokio::test]
-async fn cancelled_schedule_refresh_is_backed_off() {
+async fn cancelled_schedule_refresh_allows_immediate_retry() {
     let provider = Arc::new(FailingScheduleProvider::new());
     let tv = TestValidator::new_with_decrypter(provider.clone()).await;
 
@@ -916,15 +916,67 @@ async fn cancelled_schedule_refresh_is_backed_off() {
     }
     drop(refresh);
 
+    provider.block_schedule.store(false, Ordering::SeqCst);
+    tv.server.attested_encryption_key_schedule().await.unwrap();
+    assert_eq!(
+        provider.schedule_calls.load(Ordering::SeqCst),
+        3,
+        "the initial load, cancelled refresh, and successful retry must call the provider",
+    );
+}
+
+#[tokio::test]
+async fn failed_signer_refresh_is_backed_off() {
+    let mut tv = TestValidator::new().await;
+    let public_key = tv.server.signer.public_key();
+    tv.server.signer = Arc::new(ValidatorSigner::new_failing(public_key));
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyAttestationFailed(_))
+    ));
     assert!(matches!(
         tv.server.attested_encryption_key_schedule().await,
         Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
     ));
-    assert_eq!(
-        provider.schedule_calls.load(Ordering::SeqCst),
-        2,
-        "cancelling the first refresh must suppress another provider call",
-    );
+}
+
+#[tokio::test]
+async fn schedule_lookup_timeout_is_backed_off() {
+    let provider = Arc::new(FailingScheduleProvider::new());
+    let mut tv = TestValidator::new_with_decrypter(provider.clone()).await;
+    tv.server.encryption_key_refresh_timeout = Duration::from_millis(1);
+    provider.block_schedule.store(true, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshTimedOut { operation: "loading" })
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+    assert_eq!(provider.schedule_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn schedule_signing_timeout_is_backed_off() {
+    let mut tv = TestValidator::new().await;
+    tv.server.encryption_key_refresh_timeout = Duration::from_millis(1);
+    let public_key = tv.server.signer.public_key();
+    tv.server.signer = Arc::new(ValidatorSigner::new_blocking(public_key));
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshTimedOut { operation: "signing" })
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
 }
 
 /// A client can reconstruct the sealing key from the response and the provider can decrypt the

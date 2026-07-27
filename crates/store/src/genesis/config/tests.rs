@@ -27,8 +27,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
     let config_path = write_toml_file(temp_dir.path(), sample_content);
 
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
-    let signer = SigningKey::new();
-    let (state, _secrets) = gcfg.into_state(signer.public_key())?;
+    let (state, _secrets) = gcfg.into_state()?;
     let _ = state;
     // faucets always precede wallet accounts
     let native_faucet = state.accounts[0].clone();
@@ -72,8 +71,8 @@ fn parsing_yields_expected_default_values() -> TestResult {
 fn validator_set_is_read_from_config() -> TestResult {
     use miden_protocol::utils::serde::Serializable;
 
-    let signer = SigningKey::new();
-    let other = SigningKey::new();
+    let validator_1 = SigningKey::new();
+    let validator_2 = SigningKey::new();
     let toml = format!(
         r#"
 version = 1
@@ -83,29 +82,24 @@ validators = ["{}", "{}"]
 [fee_parameters]
 verification_base_fee = 0
 "#,
-        hex::encode(signer.public_key().to_bytes()),
-        hex::encode(other.public_key().to_bytes()),
+        hex::encode(validator_1.public_key().to_bytes()),
+        hex::encode(validator_2.public_key().to_bytes()),
     );
 
     let gcfg = GenesisConfig::read_toml(&toml, Path::new("."))?;
-    let (state, _) = gcfg.into_state(signer.public_key())?;
+    let (state, _) = gcfg.into_state()?;
     assert_eq!(state.validator_keys.len(), 2);
-    let _block = state.into_block(&signer)?;
-
-    // A signer whose key is not in the configured set is rejected.
-    let gcfg = GenesisConfig::read_toml(&toml, Path::new("."))?;
-    let result = gcfg.into_state(SigningKey::new().public_key());
-    assert_matches!(result, Err(GenesisConfigError::SignerNotInValidatorSet));
+    let block = state.into_block()?;
+    assert!(block.inner().signatures().is_empty());
 
     Ok(())
 }
 
 #[test]
-fn validator_set_defaults_to_signer() -> TestResult {
-    let signer = SigningKey::new();
+fn validator_set_defaults_to_insecure_dev_key() -> TestResult {
     let gcfg = GenesisConfig::default();
-    let (state, _) = gcfg.into_state(signer.public_key())?;
-    assert_eq!(state.validator_keys.as_keys(), &[signer.public_key()]);
+    let (state, _) = gcfg.into_state()?;
+    assert_eq!(state.validator_keys.as_keys(), &[insecure_dev_validator_public_key()]);
     Ok(())
 }
 
@@ -113,15 +107,14 @@ fn validator_set_defaults_to_signer() -> TestResult {
 #[miden_node_test_macro::enable_logging]
 async fn genesis_accounts_have_nonce_one() -> TestResult {
     let gcfg = GenesisConfig::default();
-    let signer = SigningKey::new();
-    let (state, secrets) = gcfg.into_state(signer.public_key()).unwrap();
+    let (state, secrets) = gcfg.into_state().unwrap();
     let mut iter = secrets.as_account_files(&state);
     let AccountFileWithName { account_file: status_quo, .. } = iter.next().unwrap().unwrap();
     assert!(iter.next().is_none());
 
     assert_eq!(status_quo.account.nonce(), ONE);
 
-    let _block = state.into_block(&signer)?;
+    let _block = state.into_block()?;
     Ok(())
 }
 
@@ -169,8 +162,7 @@ path = "test_account.mac"
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
 
     // Convert to state and verify the account is included
-    let signer = SigningKey::new();
-    let (state, _secrets) = gcfg.into_state(signer.public_key())?;
+    let (state, _secrets) = gcfg.into_state()?;
     assert!(state.accounts.iter().any(|a| a.id() == account_id));
 
     Ok(())
@@ -240,8 +232,7 @@ verification_base_fee = 0
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
 
     // Convert to state and verify the native faucet is included
-    let signer = SigningKey::new();
-    let (state, secrets) = gcfg.into_state(signer.public_key())?;
+    let (state, secrets) = gcfg.into_state()?;
     assert!(state.accounts.iter().any(|a| a.id() == faucet_id));
 
     // No secrets should be generated for file-loaded native faucet
@@ -291,7 +282,7 @@ verification_base_fee = 0
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
 
     // into_state should fail with NativeFaucetNotFungible error when loading the file
-    let result = gcfg.into_state(SigningKey::new().public_key());
+    let result = gcfg.into_state();
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -324,7 +315,7 @@ path = "does_not_exist.mac"
     let gcfg = GenesisConfig::read_toml_file(&config_path).unwrap();
 
     // into_state should fail with AccountFileRead error when loading the file
-    let result = gcfg.into_state(SigningKey::new().public_key());
+    let result = gcfg.into_state();
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(

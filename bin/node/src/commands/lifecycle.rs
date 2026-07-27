@@ -58,7 +58,7 @@ async fn read_bootstrap_genesis_block(
     }
 }
 
-/// Validates a signed genesis block and bootstraps the store.
+/// Validates a genesis block and bootstraps the store.
 pub fn bootstrap_store(data_directory: &Path, signed_block: SignedBlock) -> anyhow::Result<()> {
     let genesis_block =
         GenesisBlock::try_from(signed_block).context("genesis block validation failed")?;

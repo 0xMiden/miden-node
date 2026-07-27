@@ -170,7 +170,7 @@ async fn setup_db_with_genesis(
         0,
         ValidatorKeys::new(vec![key.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(key).unwrap();
+    let genesis_block = genesis_state.into_block().unwrap();
     let genesis_header = genesis_block.inner().header().clone();
 
     let dir = tempfile::tempdir().unwrap();
@@ -386,7 +386,7 @@ async fn commitment_mismatch_rejected() {
         1,
         ValidatorKeys::new(vec![other_genesis_signer.public_key()]).unwrap(),
     );
-    let other_genesis_block = other_genesis_state.into_block(&other_genesis_signer).unwrap();
+    let other_genesis_block = other_genesis_state.into_block().unwrap();
     let other_genesis_header = other_genesis_block.inner().header().clone();
     let mismatched_block = empty_block(&other_genesis_header, &PartialBlockchain::default());
 
@@ -419,7 +419,7 @@ async fn replacement_commitment_mismatch_rejected() {
         1,
         ValidatorKeys::new(vec![other_genesis_signer.public_key()]).unwrap(),
     );
-    let other_genesis_block = other_genesis_state.into_block(&other_genesis_signer).unwrap();
+    let other_genesis_block = other_genesis_state.into_block().unwrap();
     let other_genesis_header = other_genesis_block.inner().header().clone();
     let mismatched_replacement = empty_block(&other_genesis_header, &PartialBlockchain::default());
 

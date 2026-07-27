@@ -57,7 +57,7 @@ fn bootstrap_store(path: &std::path::Path) {
         1,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
+    let genesis_block = genesis_state.into_block().expect("genesis block should be created");
 
     State::bootstrap(genesis_block, path).expect("store should bootstrap");
 }

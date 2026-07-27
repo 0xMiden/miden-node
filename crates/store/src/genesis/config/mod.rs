@@ -9,7 +9,7 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountFile, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::block::{FeeParameters, ValidatorKeys};
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey as RpoSecretKey;
 use miden_protocol::errors::TokenSymbolError;
 use miden_protocol::utils::serde::Deserializable;
@@ -76,9 +76,10 @@ pub struct GenesisConfig {
     account: Vec<GenericAccountConfig>,
     /// Hex-encoded public keys of the genesis validator set, committed to by the genesis header.
     ///
-    /// If unspecified, the set contains only the bootstrapping validator's key. When specified,
-    /// the set must include the bootstrapping validator's public key, since the genesis block is
-    /// signed by that key and verified against the committed set.
+    /// The genesis block itself is not signed; the committed set is required to sign every block
+    /// after genesis. If unspecified, the set contains only the public key of the predefined,
+    /// insecure development signing key, which `miden-validator start` signs with by default —
+    /// production networks must list their validators explicitly.
     #[serde(default)]
     validators: Vec<String>,
     #[serde(skip)]
@@ -134,17 +135,14 @@ impl GenesisConfig {
 
     /// Convert the in memory representation into the new genesis state
     ///
-    /// The genesis validator set is taken from the configured `validators` public keys; when
-    /// none are configured it contains only `signer_key`. `signer_key` is the public key of the
-    /// bootstrapping validator, which signs the genesis block, and so must be a member of the
-    /// configured set.
+    /// The genesis validator set is taken from the configured `validators` public keys; when none
+    /// are configured it contains only the public key of the predefined, insecure development
+    /// signing key. The genesis block is not signed; the committed set is required to sign every
+    /// block after genesis.
     ///
     /// Also returns the set of secrets for the generated accounts.
     #[expect(clippy::too_many_lines)]
-    pub fn into_state(
-        self,
-        signer_key: PublicKey,
-    ) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
+    pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
         let GenesisConfig {
             version,
             timestamp,
@@ -158,12 +156,12 @@ impl GenesisConfig {
         } = self;
 
         // Build the genesis validator set committed to by the genesis header. When the config does
-        // not list validators, the set is just the bootstrapping validator's key.
+        // not list validators, the set is just the insecure development key's public key.
         let keys = if validators.is_empty() {
-            vec![signer_key]
+            vec![insecure_dev_validator_public_key()]
         } else {
             // Decode the configured hex-encoded public keys.
-            let keys = validators
+            validators
                 .iter()
                 .map(|key| {
                     hex::decode(key)
@@ -176,15 +174,7 @@ impl GenesisConfig {
                             message,
                         })
                 })
-                .collect::<Result<Vec<_>, _>>()?;
-            // The genesis block is signed by `signer_key` and verified against the committed set,
-            // so a configured set that omits the signer could never produce a valid genesis block.
-            // Reject it here to fail fast with a clearer error than the downstream signature
-            // verification failure.
-            if !keys.contains(&signer_key) {
-                return Err(GenesisConfigError::SignerNotInValidatorSet);
-            }
-            keys
+                .collect::<Result<Vec<_>, _>>()?
         };
         let validator_keys = ValidatorKeys::new(keys)?;
 
@@ -570,6 +560,15 @@ impl AccountSecrets {
 
 // HELPERS
 // ================================================================================================
+
+/// Returns the public key of the predefined, insecure development validator signing key.
+fn insecure_dev_validator_public_key() -> PublicKey {
+    let bytes = hex::decode(miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX)
+        .expect("insecure development signing key hex is valid");
+    SigningKey::read_from_bytes(&bytes)
+        .expect("insecure development signing key bytes are a valid signing key")
+        .public_key()
+}
 
 /// Process wallet assets and return them as a fungible asset delta. Track the negative adjustments
 /// for the respective faucets.

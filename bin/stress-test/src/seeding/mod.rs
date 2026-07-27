@@ -231,7 +231,7 @@ pub async fn seed_store_with_readers(
         1,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
+    let genesis_block = genesis_state.into_block().expect("genesis block should be created");
     let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 

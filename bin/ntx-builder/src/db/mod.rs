@@ -96,7 +96,7 @@ impl Db {
         Ok(Db { inner })
     }
 
-    /// Creates and initializes the database, then seeds it with the signed genesis block.
+    /// Creates and initializes the database, then seeds it with the genesis block.
     ///
     /// Mirrors the store's bootstrap (`Db::bootstrap`): after this completes the singleton
     /// `chain_state` row exists at [`BlockNumber::GENESIS`], so [`crate::NtxBuilderConfig::build`]

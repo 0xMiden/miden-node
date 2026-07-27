@@ -63,7 +63,7 @@ fn validate_genesis_block(block: &SignedBlock) -> anyhow::Result<()> {
         block.header().block_num(),
     );
 
-    miden_node_utils::genesis::verify_genesis_signatures(block.header(), block.signatures())
+    miden_node_utils::genesis::verify_genesis_signatures(block.signatures())
         .context("genesis block signature verification failed")?;
 
     Ok(())
@@ -71,12 +71,25 @@ fn validate_genesis_block(block: &SignedBlock) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod bootstrap_tests {
+    use miden_protocol::block::{BlockSignatures, SignedBlock};
+    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+
     use super::*;
 
     #[test]
-    fn validate_genesis_block_rejects_invalid_signature() {
+    fn validate_genesis_block_accepts_unsigned_block() {
         let block = crate::test_utils::mock_genesis_block();
-        let err = validate_genesis_block(&block).expect_err("invalid signature should fail");
+        validate_genesis_block(&block).expect("unsigned genesis block should validate");
+    }
+
+    #[test]
+    fn validate_genesis_block_rejects_signed_block() {
+        let (header, body, _) = crate::test_utils::mock_genesis_block().into_parts();
+        let signature = SigningKey::new().sign(header.commitment());
+        let signatures = BlockSignatures::new(vec![signature]).unwrap();
+        let block = SignedBlock::new_unchecked(header, body, signatures);
+
+        let err = validate_genesis_block(&block).expect_err("signed genesis block should fail");
 
         assert!(
             err.to_string().contains("signature verification failed"),

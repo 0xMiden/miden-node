@@ -33,7 +33,7 @@ const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION
 
 /// A predefined, insecure validator signing key for development purposes.
 pub(crate) const INSECURE_SIGNING_KEY_HEX: &str =
-    "0101010101010101010101010101010101010101010101010101010101010101";
+    miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX;
 
 /// A predefined, insecure shared transaction encryption key for development purposes.
 pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
@@ -47,20 +47,19 @@ pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
 pub enum ValidatorCommand {
     /// Bootstraps the genesis block.
     ///
-    /// Creates accounts from the genesis configuration, builds the genesis block, signs it with
-    /// this validator's key, and writes the signed block and account secret files to disk. Also
-    /// initializes the validator's database with the genesis block as the chain tip.
+    /// Creates accounts from the genesis configuration, builds the genesis block, and writes the
+    /// block and account secret files to disk. Also initializes the validator's database with the
+    /// genesis block as the chain tip.
     ///
-    /// The genesis block is the chain's trust root: its header commits to the full validator set
-    /// — the `validators` public keys in the genesis configuration, defaulting to this
-    /// validator's key alone — but only the bootstrapping validator signs it. The full set is
-    /// required to sign from the next block onwards. Only one validator in the set runs this
-    /// form, and it only needs signing access to its own key.
+    /// The genesis block is the chain's trust root and is not signed: its header commits to the
+    /// full validator set — the `validators` public keys in the genesis configuration, defaulting
+    /// to the predefined, insecure development key for local development — and that set is
+    /// required to sign every block after genesis. Building the genesis block needs no signing
+    /// access to any validator's key.
     ///
-    /// Alternatively, pass `--file` to seed this validator's database from the genesis block
-    /// produced by the signing form above. The block must carry a valid signature from a key in
-    /// its committed validator set and is verified, not re-signed. Use this for every validator
-    /// other than the one that ran the signing form.
+    /// Alternatively, pass `--file` to seed this validator's database from an already-built
+    /// genesis block file, which must come from a trusted source. Use this for every validator
+    /// other than the one that built the genesis block.
     Bootstrap {
         /// Directory in which to write the genesis block file.
         #[arg(long, value_name = "DIR")]
@@ -84,24 +83,19 @@ pub enum ValidatorCommand {
         /// Cannot be used with `--file`.
         #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
         genesis_config_file: Option<PathBuf>,
-        /// Seed this validator's database from an already-signed genesis block file, instead of
-        /// building and signing a new one.
+        /// Seed this validator's database from an already-built genesis block file, instead of
+        /// building a new one.
         ///
-        /// Cannot be used with `--genesis-config-file`; the signing key arguments are ignored.
+        /// Cannot be used with `--genesis-config-file`.
         #[arg(long = "file", value_name = "FILE", conflicts_with = "genesis_config_file")]
         genesis_block_file: Option<PathBuf>,
-        /// Configuration for the validator signing key used to sign the genesis block.
-        ///
-        /// Ignored when `--file` is used.
-        #[command(flatten)]
-        signing_key: ValidatorSigningKey,
     },
 
     /// Prints the hex-encoded public key for the configured validator signing key.
     ///
-    /// Every validator other than the one bootstrapping the genesis block runs this and sends
-    /// the printed key to the bootstrapping validator, which commits it to the genesis header
-    /// via the `validators` list in the genesis configuration.
+    /// Every validator operator runs this and sends the printed key to whoever composes the
+    /// genesis configuration, which commits the full set to the genesis header via its
+    /// `validators` list.
     Pubkey {
         #[command(flatten)]
         signing_key: ValidatorSigningKey,
@@ -208,7 +202,6 @@ impl ValidatorCommand {
                 sqlite_connection_pool_size,
                 genesis_config_file,
                 genesis_block_file,
-                signing_key,
             } => {
                 if let Some(genesis_block_file) = genesis_block_file {
                     bootstrap::bootstrap_from_file(
@@ -220,13 +213,12 @@ impl ValidatorCommand {
                     )
                     .await
                 } else {
-                    bootstrap::bootstrap_sign(
+                    bootstrap::bootstrap_build(
                         &genesis_block_directory,
                         &accounts_directory,
                         &data_directory,
                         sqlite_connection_pool_size,
                         genesis_config_file.as_ref(),
-                        signing_key,
                     )
                     .await
                 }

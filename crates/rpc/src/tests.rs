@@ -43,7 +43,6 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AssetCallbackFlag,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
 use miden_protocol::utils::serde::Serializable;
@@ -105,12 +104,9 @@ impl TestStore {
 
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
-        let signer = SigningKey::new();
-        let (genesis_state, _) = config.into_state(signer.public_key()).unwrap();
-        let genesis_block = genesis_state
-            .clone()
-            .into_block(&signer)
-            .expect("genesis block should be created");
+        let (genesis_state, _) = config.into_state().unwrap();
+        let genesis_block =
+            genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
 
         State::bootstrap(genesis_block, path).expect("store should bootstrap");

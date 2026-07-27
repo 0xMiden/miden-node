@@ -2048,7 +2048,7 @@ async fn genesis_with_account_assets() {
         0,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_block = genesis_state.into_block().unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");
@@ -2120,7 +2120,7 @@ async fn genesis_with_account_storage_map() {
         0,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_block = genesis_state.into_block().unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");
@@ -2185,7 +2185,7 @@ async fn genesis_with_account_assets_and_storage() {
         0,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_block = genesis_state.into_block().unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");
@@ -2286,7 +2286,7 @@ async fn genesis_with_multiple_accounts() {
         0,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block(&signer).unwrap();
+    let genesis_block = genesis_state.into_block().unwrap();
 
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("store.sqlite");

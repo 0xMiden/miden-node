@@ -14,7 +14,6 @@ use miden_protocol::block::{
     SignedBlock,
     ValidatorKeys,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks};
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::AccountError;
@@ -40,31 +39,6 @@ pub struct GenesisState {
 /// or validated from a [`SignedBlock`] via [`GenesisBlock::try_from`].
 pub struct GenesisBlock(SignedBlock);
 
-/// A genesis block with all data except the validator signature.
-pub struct UnsignedGenesisBlock {
-    header: BlockHeader,
-    body: BlockBody,
-}
-
-impl UnsignedGenesisBlock {
-    pub fn header(&self) -> &BlockHeader {
-        &self.header
-    }
-
-    /// Combines the unsigned block with the bootstrapper's signature into a [`GenesisBlock`].
-    ///
-    /// The genesis block has no parent, so it acts as the chain's trust root: it carries exactly
-    /// one signature, produced by the bootstrapping validator, which must verify against a key in
-    /// the validator set committed to by its own header. The full committed set is only required
-    /// to sign from the next block onwards, so bootstrapping needs a single validator key.
-    pub fn into_block(self, signatures: BlockSignatures) -> anyhow::Result<GenesisBlock> {
-        verify_genesis_signatures(&self.header, &signatures)
-            .context("genesis block signature verification failed")?;
-
-        Ok(GenesisBlock(SignedBlock::new(self.header, self.body, signatures)?))
-    }
-}
-
 impl GenesisBlock {
     pub fn inner(&self) -> &SignedBlock {
         &self.0
@@ -85,7 +59,7 @@ impl TryFrom<SignedBlock> for GenesisBlock {
             block.header().block_num(),
         );
 
-        verify_genesis_signatures(block.header(), block.signatures())
+        verify_genesis_signatures(block.signatures())
             .context("genesis block signature verification failed")?;
 
         Ok(Self(block))
@@ -109,8 +83,12 @@ impl GenesisState {
         }
     }
 
-    /// Returns the unsigned genesis block.
-    pub fn into_unsigned_block(self) -> anyhow::Result<UnsignedGenesisBlock> {
+    /// Builds the genesis block.
+    ///
+    /// The genesis block has no parent and is not signed: it acts as the chain's trust root and
+    /// must be obtained from a trusted source. Its header commits to the validator set, which is
+    /// required to sign every block after genesis.
+    pub fn into_block(self) -> anyhow::Result<GenesisBlock> {
         let accounts: Vec<BlockAccountUpdate> = self
             .accounts
             .iter()
@@ -174,27 +152,9 @@ impl GenesisState {
             empty_transactions,
         );
 
-        Ok(UnsignedGenesisBlock { header, body })
-    }
+        let signatures = BlockSignatures::new(Vec::new())
+            .map_err(|err| anyhow::anyhow!("failed to build empty genesis signatures: {err}"))?;
 
-    /// Builds and signs the genesis block with the local secret key of the bootstrapping
-    /// validator.
-    ///
-    /// The signer's public key must be a member of the genesis validator set. The remaining
-    /// validators do not sign genesis; their signatures are required from the next block onwards.
-    pub fn into_block(self, signer: &SigningKey) -> anyhow::Result<GenesisBlock> {
-        let unsigned_block = self.into_unsigned_block()?;
-        anyhow::ensure!(
-            unsigned_block
-                .header()
-                .validator_keys()
-                .as_keys()
-                .contains(&signer.public_key()),
-            "the genesis signer's public key is not in the genesis validator set",
-        );
-        let signature = signer.sign(unsigned_block.header().commitment());
-        let signatures = BlockSignatures::new(vec![signature])
-            .map_err(|err| anyhow::anyhow!("failed to build genesis signatures: {err}"))?;
-        unsigned_block.into_block(signatures)
+        Ok(GenesisBlock(SignedBlock::new(header, body, signatures)?))
     }
 }

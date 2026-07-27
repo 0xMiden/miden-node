@@ -9,12 +9,13 @@ import Tabs from "@theme/Tabs"; import TabItem from "@theme/TabItem";
 
 # Bootstrap and Genesis
 
-A signed genesis block is the trust anchor for every service that joins a network. One of the network's validators is
-responsible for creating and signing this block. Its header commits to the full validator set, but only the
-bootstrapping validator signs it; the full set must sign every block after genesis. On official networks, the validators
-are operated by separate entities from the network operator.
+The genesis block is the trust anchor for every service that joins a network. It is not signed: it simply commits to the
+full validator set in its header, and that set must sign every block after genesis. Because nothing signs the genesis
+block, it must always be obtained from a trusted source. One of the network's operators is responsible for building it
+from the genesis configuration. On official networks, the validators are operated by separate entities from the network
+operator.
 
-This signed block is subsequently made available for official networks at
+The genesis block is subsequently made available for official networks at
 
 ```text
 https://genesis.<network>.miden.io
@@ -29,17 +30,16 @@ networks, or if the official URLs are not trusted.
 <Tabs groupId="network-operator-genesis-source" defaultValue="official">
   <TabItem value="official" label="Official network">
 
-The genesis block is the chain's trust root: its header commits to the full validator set, but only the bootstrapping
-validator signs it. Every other validator operator first prints their public key and sends it to the bootstrapping
-operator:
+The genesis block is the chain's trust root: its header commits to the full validator set, which must sign every block
+after genesis. Each validator operator first prints their public key and sends it to the bootstrapping operator:
 
 ```bash
 miden-validator pubkey --signing-key.kms-id <validator-N-kms-key-id>
 ```
 
-The full validator set — including the bootstrapping validator's own public key — is part of the genesis configuration,
-as a top-level `validators` list in `genesis.toml`. If `validators` is omitted, the set defaults to the bootstrapping
-validator's key alone (a single-validator network).
+The full validator set is part of the genesis configuration, as a top-level `validators` list in `genesis.toml`. If
+`validators` is omitted, the set defaults to the public key of the predefined, insecure development signing key —
+production networks must always list their validators explicitly.
 
 ```toml
 validators = [
@@ -49,15 +49,15 @@ validators = [
 ]
 ```
 
-**One** validator operator then runs the signing form of `bootstrap` with their own KMS key ID:
+**One** operator then runs `bootstrap` with the genesis configuration. Building the genesis block requires no signing
+key:
 
 ```bash
 miden-validator bootstrap \
   --data-directory validator-1-data \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --genesis-config-file genesis.toml \
-  --signing-key.kms-id <validator-1-kms-key-id>
+  --genesis-config-file genesis.toml
 ```
 
 Upload `genesis-data/genesis.dat` so it is served at:
@@ -66,7 +66,7 @@ Upload `genesis-data/genesis.dat` so it is served at:
 https://genesis.<network>.miden.io
 ```
 
-Every other validator operator seeds their own database from the same genesis block, without re-signing it:
+Every other validator operator seeds their own database from the same genesis block:
 
 ```bash
 miden-validator bootstrap \
@@ -92,20 +92,19 @@ miden-ntx-builder bootstrap \
   --network testnet
 ```
 
-For `devnet`, use `--network devnet` instead. The `--network` flag is shorthand for downloading the signed genesis block
-from `https://genesis.<network>.miden.io`.
+For `devnet`, use `--network devnet` instead. The `--network` flag is shorthand for downloading the genesis block from
+`https://genesis.<network>.miden.io`.
 
 Each validator operator's own KMS key ID must be used when that operator starts their validator for this network.
 
   </TabItem>
   <TabItem value="unofficial" label="Unofficial network">
 
-**One** validator operator creates and signs the genesis block with their own local key. The genesis header commits to
-the full validator set, taken from the top-level `validators` list in `genesis.toml`; the other validators' secret keys
-are not needed. Each of the other operators prints their public key with
+**One** operator builds the genesis block; no signing key is needed. The genesis header commits to the full validator
+set, taken from the top-level `validators` list in `genesis.toml`. Each validator operator prints their public key with
 `miden-validator pubkey --signing-key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator, who lists
-it in the genesis configuration alongside their own. If `validators` is omitted, the set defaults to the bootstrapping
-validator's key alone (a single-validator network).
+it in the genesis configuration. If `validators` is omitted, the set defaults to the public key of the predefined,
+insecure development signing key — anything but local development must list the validators explicitly.
 
 ```toml
 validators = [
@@ -120,12 +119,10 @@ miden-validator bootstrap \
   --data-directory validator-1-data \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --genesis-config-file genesis.toml \
-  --signing-key.hex <validator-1-key-hex>
+  --genesis-config-file genesis.toml
 ```
 
-Distribute `genesis-data/genesis.dat` to the other validator operators, who each seed their own database from it,
-without re-signing it:
+Distribute `genesis-data/genesis.dat` to the other validator operators, who each seed their own database from it:
 
 ```bash
 miden-validator bootstrap \
@@ -135,8 +132,8 @@ miden-validator bootstrap \
   --file genesis-data/genesis.dat
 ```
 
-For unofficial networks or pre-publication testing, distribute the signed genesis block file directly and initialize
-services from that file:
+For unofficial networks or pre-publication testing, distribute the genesis block file directly and initialize services
+from that file:
 
 ```bash
 miden-node bootstrap \
@@ -153,6 +150,7 @@ miden-ntx-builder bootstrap \
   </TabItem>
 </Tabs>
 
-The validator key used during bootstrap must match the key used when starting the validator for the network.
+The key each validator operator starts their validator with must match the public key committed for them in the genesis
+configuration's `validators` list.
 
 <!-- markdownlint-enable MD033 MD041 -->

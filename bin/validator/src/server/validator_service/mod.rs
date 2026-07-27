@@ -94,11 +94,75 @@ pub(crate) struct AttestedEncryptionKeySchedule {
 struct EncryptionKeyScheduleCache {
     attested: Arc<AttestedEncryptionKeySchedule>,
     failed_refresh: Option<FailedEncryptionKeyScheduleRefresh>,
+    refresh: Option<InFlightEncryptionKeyScheduleRefresh>,
 }
 
 struct FailedEncryptionKeyScheduleRefresh {
     epoch: u16,
     retry_at: Instant,
+}
+
+struct InFlightEncryptionKeyScheduleRefresh {
+    epoch: u16,
+    state: watch::Receiver<EncryptionKeyScheduleRefreshState>,
+}
+
+#[derive(Clone)]
+enum EncryptionKeyScheduleRefreshState {
+    Pending,
+    Complete(Result<Arc<AttestedEncryptionKeySchedule>, EncryptionKeyScheduleRefreshFailure>),
+}
+
+#[derive(Clone)]
+enum EncryptionKeyScheduleRefreshFailure {
+    Attestation(String),
+    Timeout { operation: &'static str },
+    InvalidSchedule(String),
+}
+
+impl EncryptionKeyScheduleRefreshFailure {
+    fn from_error(error: ValidatorError) -> Self {
+        match error {
+            ValidatorError::EncryptionKeyAttestationFailed(message) => Self::Attestation(message),
+            ValidatorError::EncryptionKeyScheduleRefreshTimedOut { operation } => {
+                Self::Timeout { operation }
+            },
+            ValidatorError::InvalidEncryptionKeySchedule(message) => Self::InvalidSchedule(message),
+            error => Self::Attestation(error.to_string()),
+        }
+    }
+
+    fn into_error(self) -> ValidatorError {
+        match self {
+            Self::Attestation(message) => ValidatorError::EncryptionKeyAttestationFailed(message),
+            Self::Timeout { operation } => {
+                ValidatorError::EncryptionKeyScheduleRefreshTimedOut { operation }
+            },
+            Self::InvalidSchedule(message) => ValidatorError::InvalidEncryptionKeySchedule(message),
+        }
+    }
+}
+
+async fn wait_for_encryption_key_schedule_refresh(
+    mut state: watch::Receiver<EncryptionKeyScheduleRefreshState>,
+) -> Result<Arc<AttestedEncryptionKeySchedule>, ValidatorError> {
+    if matches!(*state.borrow(), EncryptionKeyScheduleRefreshState::Pending) {
+        state.changed().await.map_err(|_| {
+            ValidatorError::EncryptionKeyAttestationFailed(
+                "transaction encryption key schedule refresh stopped".to_owned(),
+            )
+        })?;
+    }
+
+    match state.borrow().clone() {
+        EncryptionKeyScheduleRefreshState::Pending => {
+            Err(ValidatorError::EncryptionKeyAttestationFailed(
+                "transaction encryption key schedule refresh did not complete".to_owned(),
+            ))
+        },
+        EncryptionKeyScheduleRefreshState::Complete(Ok(attested)) => Ok(attested),
+        EncryptionKeyScheduleRefreshState::Complete(Err(error)) => Err(error.into_error()),
+    }
 }
 
 // VALIDATOR SERVICE
@@ -115,7 +179,7 @@ pub(crate) struct ValidatorService {
     /// Decrypter for transaction inputs sealed against the shared encryption key.
     decrypter: Arc<dyn TransactionInputDecrypter>,
     /// Attested provider schedule and request-path refresh backoff.
-    encryption_key_schedule: tokio::sync::Mutex<EncryptionKeyScheduleCache>,
+    encryption_key_schedule: Arc<tokio::sync::Mutex<EncryptionKeyScheduleCache>>,
     /// Bounds provider and signing calls made while refreshing the schedule.
     encryption_key_refresh_timeout: Duration,
     /// Commitment of the genesis block header, binding key attestations to this chain.
@@ -192,10 +256,13 @@ impl ValidatorService {
         Ok(Self {
             signer: Arc::new(signer),
             decrypter,
-            encryption_key_schedule: tokio::sync::Mutex::new(EncryptionKeyScheduleCache {
-                attested: Arc::new(encryption_key_schedule),
-                failed_refresh: None,
-            }),
+            encryption_key_schedule: Arc::new(tokio::sync::Mutex::new(
+                EncryptionKeyScheduleCache {
+                    attested: Arc::new(encryption_key_schedule),
+                    failed_refresh: None,
+                    refresh: None,
+                },
+            )),
             encryption_key_refresh_timeout: ENCRYPTION_KEY_REFRESH_TIMEOUT,
             genesis_commitment,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
@@ -243,40 +310,72 @@ impl ValidatorService {
     ) -> Result<Arc<AttestedEncryptionKeySchedule>, ValidatorError> {
         let chain_tip = *self.committed_tip.borrow();
         let epoch = chain_tip.block_epoch();
-        let mut cached = self.encryption_key_schedule.lock().await;
-        if cached.attested.epoch == epoch {
-            return Ok(Arc::clone(&cached.attested));
-        }
-        if cached
-            .failed_refresh
-            .as_ref()
-            .is_some_and(|failure| failure.epoch == epoch && Instant::now() < failure.retry_at)
-        {
-            return Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch });
-        }
 
-        match Self::attest_encryption_key_schedule(
-            &self.signer,
-            self.decrypter.as_ref(),
-            self.genesis_commitment,
-            chain_tip,
-            self.encryption_key_refresh_timeout,
-        )
-        .await
-        {
-            Ok(attested) => {
-                cached.failed_refresh = None;
-                let attested = Arc::new(attested);
-                cached.attested = Arc::clone(&attested);
-                Ok(attested)
-            },
-            Err(err) => {
-                cached.failed_refresh = Some(FailedEncryptionKeyScheduleRefresh {
-                    epoch,
-                    retry_at: Instant::now() + ENCRYPTION_KEY_REFRESH_RETRY_DELAY,
-                });
-                Err(err)
-            },
+        loop {
+            let mut cached = self.encryption_key_schedule.lock().await;
+            if cached.attested.epoch == epoch {
+                return Ok(Arc::clone(&cached.attested));
+            }
+            if cached
+                .failed_refresh
+                .as_ref()
+                .is_some_and(|failure| failure.epoch == epoch && Instant::now() < failure.retry_at)
+            {
+                return Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch });
+            }
+            if let Some(refresh) = &cached.refresh {
+                let refresh_epoch = refresh.epoch;
+                let state = refresh.state.clone();
+                drop(cached);
+                let result = wait_for_encryption_key_schedule_refresh(state).await;
+                if refresh_epoch == epoch {
+                    return result;
+                }
+                continue;
+            }
+
+            let (state_tx, state_rx) = watch::channel(EncryptionKeyScheduleRefreshState::Pending);
+            cached.refresh =
+                Some(InFlightEncryptionKeyScheduleRefresh { epoch, state: state_rx.clone() });
+            drop(cached);
+
+            let signer = Arc::clone(&self.signer);
+            let decrypter = Arc::clone(&self.decrypter);
+            let encryption_key_schedule = Arc::clone(&self.encryption_key_schedule);
+            let genesis_commitment = self.genesis_commitment;
+            let refresh_timeout = self.encryption_key_refresh_timeout;
+            tokio::spawn(async move {
+                let result = Self::attest_encryption_key_schedule(
+                    &signer,
+                    decrypter.as_ref(),
+                    genesis_commitment,
+                    chain_tip,
+                    refresh_timeout,
+                )
+                .await;
+                let mut cached = encryption_key_schedule.lock().await;
+                let state = match result {
+                    Ok(attested) => {
+                        cached.failed_refresh = None;
+                        let attested = Arc::new(attested);
+                        cached.attested = Arc::clone(&attested);
+                        EncryptionKeyScheduleRefreshState::Complete(Ok(attested))
+                    },
+                    Err(err) => {
+                        cached.failed_refresh = Some(FailedEncryptionKeyScheduleRefresh {
+                            epoch,
+                            retry_at: Instant::now() + ENCRYPTION_KEY_REFRESH_RETRY_DELAY,
+                        });
+                        EncryptionKeyScheduleRefreshState::Complete(Err(
+                            EncryptionKeyScheduleRefreshFailure::from_error(err),
+                        ))
+                    },
+                };
+                cached.refresh = None;
+                state_tx.send_replace(state);
+            });
+
+            return wait_for_encryption_key_schedule_refresh(state_rx).await;
         }
     }
 

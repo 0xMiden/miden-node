@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::pending;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -44,6 +43,7 @@ struct FailingScheduleProvider {
     fail_schedule: AtomicBool,
     block_schedule: AtomicBool,
     schedule_started: tokio::sync::Notify,
+    schedule_released: tokio::sync::Notify,
 }
 
 impl FailingScheduleProvider {
@@ -54,6 +54,7 @@ impl FailingScheduleProvider {
             fail_schedule: AtomicBool::new(false),
             block_schedule: AtomicBool::new(false),
             schedule_started: tokio::sync::Notify::new(),
+            schedule_released: tokio::sync::Notify::new(),
         }
     }
 }
@@ -70,7 +71,7 @@ impl TransactionInputDecrypter for FailingScheduleProvider {
         }
         if self.block_schedule.load(Ordering::SeqCst) {
             self.schedule_started.notify_one();
-            pending::<()>().await;
+            self.schedule_released.notified().await;
         }
         self.inner.encryption_key_schedule(chain_tip).await
     }
@@ -917,11 +918,12 @@ async fn cancelled_schedule_refresh_allows_immediate_retry() {
     drop(refresh);
 
     provider.block_schedule.store(false, Ordering::SeqCst);
+    provider.schedule_released.notify_one();
     tv.server.attested_encryption_key_schedule().await.unwrap();
     assert_eq!(
         provider.schedule_calls.load(Ordering::SeqCst),
-        3,
-        "the initial load, cancelled refresh, and successful retry must call the provider",
+        2,
+        "the successful retry must share the refresh started by the cancelled request",
     );
 }
 

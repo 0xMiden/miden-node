@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::time::Duration;
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::Database;
@@ -18,6 +19,7 @@ use miden_protocol::crypto::utils::Serializable;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
+use tokio::time::Instant;
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
 use crate::signers::TransactionEncryptionKeySchedule;
@@ -68,6 +70,8 @@ pub enum ValidatorError {
     NoGenesisHeader,
     #[error("failed to attest the transaction encryption key: {0}")]
     EncryptionKeyAttestationFailed(String),
+    #[error("transaction encryption key schedule refresh for epoch {epoch} is in backoff")]
+    EncryptionKeyScheduleRefreshBackoff { epoch: u16 },
     #[error("invalid transaction encryption key schedule: {0}")]
     InvalidEncryptionKeySchedule(String),
 }
@@ -85,8 +89,20 @@ pub(crate) struct AttestedEncryptionKeySchedule {
     pub attestation: Signature,
 }
 
+struct EncryptionKeyScheduleCache {
+    attested: Arc<AttestedEncryptionKeySchedule>,
+    failed_refresh: Option<FailedEncryptionKeyScheduleRefresh>,
+}
+
+struct FailedEncryptionKeyScheduleRefresh {
+    epoch: u16,
+    retry_at: Instant,
+}
+
 // VALIDATOR SERVICE
 // ================================================================================
+
+const ENCRYPTION_KEY_REFRESH_RETRY_DELAY: Duration = Duration::from_secs(30);
 
 /// The underlying implementation of the gRPC validator server.
 ///
@@ -95,8 +111,8 @@ pub(crate) struct ValidatorService {
     signer: Arc<ValidatorSigner>,
     /// Decrypter for transaction inputs sealed against the shared encryption key.
     decrypter: Arc<dyn TransactionInputDecrypter>,
-    /// Attested provider schedule, refreshed lazily for freshness at most once per epoch.
-    encryption_key_schedule: tokio::sync::Mutex<Arc<AttestedEncryptionKeySchedule>>,
+    /// Attested provider schedule and request-path refresh backoff.
+    encryption_key_schedule: tokio::sync::Mutex<EncryptionKeyScheduleCache>,
     /// Commitment of the genesis block header, binding key attestations to this chain.
     genesis_commitment: Word,
     db: Arc<Database>,
@@ -170,7 +186,10 @@ impl ValidatorService {
         Ok(Self {
             signer: Arc::new(signer),
             decrypter,
-            encryption_key_schedule: tokio::sync::Mutex::new(Arc::new(encryption_key_schedule)),
+            encryption_key_schedule: tokio::sync::Mutex::new(EncryptionKeyScheduleCache {
+                attested: Arc::new(encryption_key_schedule),
+                failed_refresh: None,
+            }),
             genesis_commitment,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
             db: db.into(),
@@ -212,21 +231,39 @@ impl ValidatorService {
         let chain_tip = *self.committed_tip.borrow();
         let epoch = chain_tip.block_epoch();
         let mut cached = self.encryption_key_schedule.lock().await;
-        if cached.epoch == epoch {
-            return Ok(Arc::clone(&cached));
+        if cached.attested.epoch == epoch {
+            return Ok(Arc::clone(&cached.attested));
+        }
+        if cached
+            .failed_refresh
+            .as_ref()
+            .is_some_and(|failure| failure.epoch == epoch && Instant::now() < failure.retry_at)
+        {
+            return Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch });
         }
 
-        let attested = Arc::new(
-            Self::attest_encryption_key_schedule(
-                &self.signer,
-                self.decrypter.as_ref(),
-                self.genesis_commitment,
-                chain_tip,
-            )
-            .await?,
-        );
-        *cached = Arc::clone(&attested);
-        Ok(attested)
+        match Self::attest_encryption_key_schedule(
+            &self.signer,
+            self.decrypter.as_ref(),
+            self.genesis_commitment,
+            chain_tip,
+        )
+        .await
+        {
+            Ok(attested) => {
+                let attested = Arc::new(attested);
+                cached.attested = Arc::clone(&attested);
+                cached.failed_refresh = None;
+                Ok(attested)
+            },
+            Err(err) => {
+                cached.failed_refresh = Some(FailedEncryptionKeyScheduleRefresh {
+                    epoch,
+                    retry_at: Instant::now() + ENCRYPTION_KEY_REFRESH_RETRY_DELAY,
+                });
+                Err(err)
+            },
+        }
     }
 
     /// Validates a proposed block by checking:

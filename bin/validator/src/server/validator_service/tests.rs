@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use miden_node_proto::domain::transaction_encryption::{
     TrustedChainState,
@@ -34,6 +36,48 @@ fn test_decrypter() -> LocalX25519TransactionInputDecrypter {
     )
 }
 
+struct FailingScheduleProvider {
+    inner: LocalX25519TransactionInputDecrypter,
+    schedule_calls: AtomicUsize,
+    fail_schedule: AtomicBool,
+}
+
+impl FailingScheduleProvider {
+    fn new() -> Self {
+        Self {
+            inner: test_decrypter(),
+            schedule_calls: AtomicUsize::new(0),
+            fail_schedule: AtomicBool::new(false),
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl TransactionInputDecrypter for FailingScheduleProvider {
+    async fn encryption_key_schedule(
+        &self,
+        chain_tip: BlockNumber,
+    ) -> anyhow::Result<crate::TransactionEncryptionKeySchedule> {
+        self.schedule_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail_schedule.load(Ordering::SeqCst) {
+            anyhow::bail!("schedule provider unavailable");
+        }
+        self.inner.encryption_key_schedule(chain_tip).await
+    }
+
+    async fn decrypt_transaction_inputs(
+        &self,
+        key_id: &[u8],
+        chain_tip: BlockNumber,
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> Result<Vec<u8>, crate::TransactionInputDecryptionError> {
+        self.inner
+            .decrypt_transaction_inputs(key_id, chain_tip, ciphertext, associated_data)
+            .await
+    }
+}
+
 /// Test harness that wraps a [`Validator`] and tracks the chain MMR state needed to construct valid
 /// [`ProposedBlock`]s.
 struct TestValidator {
@@ -49,22 +93,18 @@ impl TestValidator {
     /// Creates a correctly configured [`ValidatorService`]: the validator signs blocks with the
     /// same key that is designated as the `validator_key` in the genesis block.
     async fn new() -> Self {
+        Self::new_with_decrypter(Arc::new(test_decrypter())).await
+    }
+
+    async fn new_with_decrypter(decrypter: Arc<dyn TransactionInputDecrypter>) -> Self {
         let key = random_secret_key();
         let signer = ValidatorSigner::new_local(key.clone());
         let (temp_dir, db, block_store, genesis_header) = setup_db_with_genesis(&key).await;
 
         Self {
-            server: ValidatorService::new(
-                signer,
-                std::sync::Arc::new(test_decrypter()),
-                db,
-                block_store,
-                0,
-                0,
-                0,
-            )
-            .await
-            .unwrap(),
+            server: ValidatorService::new(signer, decrypter, db, block_store, 0, 0, 0)
+                .await
+                .unwrap(),
             chain: PartialBlockchain::default(),
             chain_tip: genesis_header,
             _temp_dir: temp_dir,
@@ -822,6 +862,32 @@ async fn schedule_is_reattested_without_automatic_rotation() {
     };
     verify_transaction_encryption_key_schedule(&after, &trusted).unwrap();
     assert!(verify_transaction_encryption_key_schedule(&before, &trusted).is_err());
+}
+
+/// A failed epoch refresh is retried only after a request-path backoff, avoiding repeated provider
+/// or KMS calls during an outage without introducing a background rotation worker.
+#[tokio::test]
+async fn failed_schedule_refresh_is_backed_off() {
+    let provider = Arc::new(FailingScheduleProvider::new());
+    let tv = TestValidator::new_with_decrypter(provider.clone()).await;
+    assert_eq!(provider.schedule_calls.load(Ordering::SeqCst), 1);
+
+    provider.fail_schedule.store(true, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyAttestationFailed(_))
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+    assert_eq!(
+        provider.schedule_calls.load(Ordering::SeqCst),
+        2,
+        "the initial load and first failed refresh should be the only provider calls",
+    );
 }
 
 /// A client can reconstruct the sealing key from the response and the provider can decrypt the

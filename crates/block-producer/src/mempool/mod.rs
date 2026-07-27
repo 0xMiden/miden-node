@@ -713,6 +713,10 @@ impl Mempool {
 }
 
 fn emit_transaction_added(tx: &AuthenticatedTransaction) {
+    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+        return;
+    }
+
     tracing::debug!(
         target: LOG_TARGET,
         {
@@ -725,6 +729,10 @@ fn emit_transaction_added(tx: &AuthenticatedTransaction) {
 }
 
 fn emit_transaction_expirations(removal: &graph::TransactionRemoval, chain_tip: BlockNumber) {
+    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+        return;
+    }
+
     for transaction_id in sorted_transaction_ids(removal.direct()) {
         tracing::debug!(
             target: LOG_TARGET,
@@ -744,6 +752,10 @@ fn emit_transaction_evictions(
     direct_reason: &'static str,
     dependent_reason: &'static str,
 ) {
+    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+        return;
+    }
+
     for transaction_id in sorted_transaction_ids(removal.direct()) {
         tracing::debug!(
             target: LOG_TARGET,

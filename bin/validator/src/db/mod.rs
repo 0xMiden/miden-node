@@ -232,12 +232,50 @@ pub(crate) fn insert_validated_private_transaction(
     validated: &ValidatedTransactionRecord,
     record: &StoredPrivateRecord,
 ) -> Result<usize, DatabaseError> {
-    let inserted = insert_transaction(tx, validated)?;
-    if inserted == 0 {
-        return Ok(0);
+    let transaction_inserted = insert_transaction(tx, validated)?;
+    let record_inserted = insert_private_record(tx, record)?;
+    if transaction_inserted != 0 && record_inserted == 0 {
+        return Err(DatabaseError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "private record exists without its validated transaction",
+        )));
     }
-    insert_private_record(tx, record)?;
-    Ok(inserted)
+    Ok(transaction_inserted)
+}
+
+/// Returns whether a validated transaction has all storage required by the active mode.
+pub(crate) fn transaction_storage_is_complete(
+    tx: &ReadTx<'_>,
+    transaction_id: TransactionId,
+    private_record_required: bool,
+) -> Result<bool, DatabaseError> {
+    if !transaction_exists(tx, transaction_id)? {
+        return Ok(false);
+    }
+    if !private_record_required {
+        return Ok(true);
+    }
+    let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
+    Ok(load_private_record(tx, record_id)?.is_some())
+}
+
+/// Returns validated transactions that have no checked private record.
+pub(crate) fn find_unprotected_transactions(
+    tx: &ReadTx<'_>,
+    transaction_ids: &[TransactionId],
+) -> Result<Vec<TransactionId>, DatabaseError> {
+    transaction_ids
+        .iter()
+        .copied()
+        .filter_map(|transaction_id| {
+            let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
+            match load_private_record(tx, record_id) {
+                Ok(Some(_)) => None,
+                Ok(None) => Some(Ok(transaction_id)),
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .collect()
 }
 
 /// Loads one encrypted private record by its stable record id.
@@ -589,6 +627,57 @@ mod tests {
             .await
             .unwrap();
         assert!(!unknown_exists, "an unknown transaction id should not be reported as existing");
+    }
+
+    #[tokio::test]
+    async fn enabling_private_storage_requires_record_backfill() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
+        let id = transaction_id.to_bytes();
+        let empty: Vec<u8> = vec![];
+        db.write("insert_legacy_transaction", move |tx| {
+            tx.execute(
+                "INSERT INTO validated_transactions \
+                 (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                &[&id, &1i64, &empty, &empty],
+            )
+        })
+        .await
+        .unwrap();
+
+        let complete_without_storage = db
+            .read("legacy_storage_complete", move |tx| {
+                transaction_storage_is_complete(tx, transaction_id, false)
+            })
+            .await
+            .unwrap();
+        assert!(complete_without_storage);
+        let incomplete_with_storage = db
+            .read("private_storage_incomplete", move |tx| {
+                transaction_storage_is_complete(tx, transaction_id, true)
+            })
+            .await
+            .unwrap();
+        assert!(!incomplete_with_storage);
+
+        let record = private_record(
+            PrivateRecordId::for_transaction_inputs(transaction_id),
+            transaction_id,
+            11,
+        );
+        db.write("backfill_private_record", move |tx| insert_private_record(tx, &record))
+            .await
+            .unwrap();
+
+        let complete_with_storage = db
+            .read("private_storage_complete", move |tx| {
+                transaction_storage_is_complete(tx, transaction_id, true)
+            })
+            .await
+            .unwrap();
+        assert!(complete_with_storage);
     }
 
     #[tokio::test]

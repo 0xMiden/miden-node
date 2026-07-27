@@ -406,6 +406,60 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
         .await
 }
 
+/// Builds a block with one unchecked private transaction for validator storage tests.
+fn private_transaction_block(
+    parent_header: &BlockHeader,
+    chain: &PartialBlockchain,
+) -> (ProposedBlock, miden_protocol::transaction::TransactionId) {
+    use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
+    use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+    use miden_protocol::transaction::{
+        InputNoteCommitment,
+        InputNotes,
+        OrderedTransactionHeaders,
+        TransactionHeader,
+    };
+    use miden_protocol::vm::ExecutionProof;
+
+    let account_id = ACCOUNT_ID_SENDER.try_into().unwrap();
+    let tx_header = TransactionHeader::new(
+        account_id,
+        Word::default(),
+        Word::default(),
+        InputNotes::<InputNoteCommitment>::default(),
+        vec![],
+    );
+    let tx_id = tx_header.id();
+    let batch = ProvenBatch::new_unchecked(
+        BatchId::from_ids(std::iter::once((tx_id, account_id))),
+        parent_header.commitment(),
+        parent_header.block_num(),
+        BTreeMap::from([(
+            account_id,
+            BatchAccountUpdate::new_unchecked(
+                account_id,
+                Word::default(),
+                Word::default(),
+                miden_protocol::account::AccountUpdateDetails::Private,
+            ),
+        )]),
+        InputNotes::default(),
+        vec![],
+        miden_protocol::block::BlockNumber::MAX,
+        OrderedTransactionHeaders::new_unchecked(vec![tx_header]),
+        ExecutionProof::new_dummy(),
+    )
+    .unwrap();
+    let inputs = BlockInputs::new(
+        parent_header.clone(),
+        chain.clone(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+    );
+    (ProposedBlock::new(inputs, vec![batch]).unwrap(), tx_id)
+}
+
 // TESTS
 // ================================================================================================
 
@@ -718,6 +772,34 @@ async fn unknown_transactions_rejected() {
             assert_eq!(ids, vec![tx_id], "should report the unknown transaction ID");
         },
         other => panic!("expected UnvalidatedTransactions error, got: {other}"),
+    }
+}
+
+/// A validator with private storage enabled rejects validated transactions that have no record.
+#[tokio::test]
+async fn validated_transaction_without_private_record_is_rejected() {
+    let tv = TestValidator::new().await;
+    let (proposed, tx_id) = private_transaction_block(&tv.chain_tip, &tv.chain);
+    let id = tx_id.to_bytes();
+    let empty: Vec<u8> = vec![];
+    tv.server
+        .db
+        .write("seed_unprotected_transaction", move |tx| {
+            tx.execute(
+                "INSERT INTO validated_transactions \
+                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
+                  initial_account_hash, final_account_hash) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
+            )
+        })
+        .await
+        .unwrap();
+
+    let result = tv.server.validate_block(proposed, tv.chain_tip.clone()).await;
+    match result.unwrap_err() {
+        ValidatorError::UnprotectedTransactions(ids) => assert_eq!(ids, vec![tx_id]),
+        other => panic!("expected UnprotectedTransactions error, got: {other}"),
     }
 }
 

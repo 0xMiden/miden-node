@@ -14,7 +14,7 @@ use crate::db::{
     ValidatedTransactionRecord,
     insert_transaction,
     insert_validated_private_transaction,
-    transaction_exists,
+    transaction_storage_is_complete,
 };
 use crate::tx_validation::validate_transaction;
 use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId, PrivateRecordSealer};
@@ -50,15 +50,18 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             .try_read()
             .map_err(|_| Status::resource_exhausted("validator is busy streaming a backup"))?;
 
-        // Short-circuit transactions that have already been validated.
-        let already_validated = self
+        // Short-circuit only when the active storage mode has all required rows.
+        let private_record_required = self.storage_key.is_some();
+        let storage_complete = self
             .db
-            .read("transaction_exists", move |tx| transaction_exists(tx, tx_id))
+            .read("transaction_storage_is_complete", move |tx| {
+                transaction_storage_is_complete(tx, tx_id, private_record_required)
+            })
             .await
             .map_err(|err| {
                 Status::internal(err.as_report_context("Failed to query transaction"))
             })?;
-        if already_validated {
+        if storage_complete {
             return Ok(());
         }
 

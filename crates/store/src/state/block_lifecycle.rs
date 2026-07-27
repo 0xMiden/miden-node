@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountId,
@@ -12,7 +13,7 @@ use miden_protocol::block::{BlockBody, BlockNumber};
 use miden_protocol::note::{NoteId, Nullifier};
 use miden_protocol::transaction::TransactionId;
 
-use crate::LOG_TARGET;
+use crate::{COMPONENT, LOG_TARGET};
 
 /// User-facing lifecycle information derived from a block before it is committed.
 ///
@@ -26,6 +27,11 @@ pub(super) struct BlockLifecycle {
 }
 
 impl BlockLifecycle {
+    #[miden_instrument(
+        target = COMPONENT,
+        name = "block_lifecycle.from_block_body",
+        skip_all,
+    )]
     pub(super) fn from_block_body(block_num: BlockNumber, body: &BlockBody) -> Self {
         let persisted_note_ids =
             body.output_notes().map(|(_, note)| note.id()).collect::<BTreeSet<_>>();
@@ -82,6 +88,11 @@ impl BlockLifecycle {
             .collect()
     }
 
+    #[miden_instrument(
+        target = COMPONENT,
+        name = "block_lifecycle.emit",
+        skip_all,
+    )]
     pub(super) fn emit(self, resolved_note_ids: &BTreeMap<Nullifier, NoteId>) {
         for account in self.registered_accounts {
             tracing::info!(

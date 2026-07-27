@@ -16,6 +16,7 @@ pub use private_record::{
     PrivateRecordError,
     PrivateRecordId,
     PrivateRecordSealer,
+    PrivateRecordStorageFields,
     StoredPrivateRecord,
 };
 pub use server::ValidatorServer;

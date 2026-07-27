@@ -230,6 +230,27 @@ impl PrivateRecordSealer {
     }
 }
 
+/// Database fields for one versioned private record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PrivateRecordStorageFields {
+    /// Values bound into both encryption layers.
+    pub context: PrivateRecordContext,
+    /// Record format version stored as a separate lookup field.
+    pub schema_version: u32,
+    /// Golden setup context identifier.
+    pub setup_context_id: [u8; 32],
+    /// Block number after transaction inclusion.
+    pub block_num: Option<BlockNumber>,
+    /// Stable public record cipher identifier.
+    pub cipher_id: u16,
+    /// Public record cipher nonce.
+    pub nonce: Vec<u8>,
+    /// Authenticated record ciphertext.
+    pub encrypted_record: Vec<u8>,
+    /// Canonical Golden ciphertext for the content key.
+    pub wrapped_content_key: Vec<u8>,
+}
+
 /// Versioned encrypted private record stored by the validator.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoredPrivateRecord {
@@ -243,6 +264,50 @@ pub struct StoredPrivateRecord {
 }
 
 impl StoredPrivateRecord {
+    /// Rebuilds a record after validating its stored fields.
+    pub fn from_storage_fields(
+        fields: PrivateRecordStorageFields,
+    ) -> Result<Self, PrivateRecordError> {
+        if fields.schema_version != PRIVATE_RECORD_SCHEMA_V1 {
+            return Err(PrivateRecordError::UnsupportedSchema(fields.schema_version));
+        }
+        if fields.cipher_id != PRIVATE_RECORD_CIPHER_V1.id() {
+            return Err(PrivateRecordError::UnsupportedCipher(fields.cipher_id));
+        }
+        let nonce = fields.nonce.try_into().map_err(|nonce: Vec<u8>| {
+            PrivateRecordError::InvalidNonceLength { actual: nonce.len() }
+        })?;
+        if fields.encrypted_record.len() < TAG_BYTES {
+            return Err(PrivateRecordError::InvalidRecordCiphertext);
+        }
+
+        let record = Self {
+            context: fields.context,
+            setup_context_id: fields.setup_context_id,
+            block_num: fields.block_num,
+            cipher: PRIVATE_RECORD_CIPHER_V1,
+            nonce,
+            encrypted_record: fields.encrypted_record,
+            wrapped_content_key: fields.wrapped_content_key,
+        };
+        record.verify_wrapped_content_key()?;
+        Ok(record)
+    }
+
+    /// Splits a checked record into the fields stored by the database.
+    pub fn into_storage_fields(self) -> PrivateRecordStorageFields {
+        PrivateRecordStorageFields {
+            context: self.context,
+            schema_version: self.context.schema_version(),
+            setup_context_id: self.setup_context_id,
+            block_num: self.block_num,
+            cipher_id: self.cipher.id(),
+            nonce: self.nonce.to_vec(),
+            encrypted_record: self.encrypted_record,
+            wrapped_content_key: self.wrapped_content_key,
+        }
+    }
+
     /// Returns the values bound into both encryption layers.
     pub const fn context(&self) -> PrivateRecordContext {
         self.context
@@ -320,6 +385,18 @@ pub enum PrivateRecordError {
     /// The Golden ciphertext does not wrap one schema version 1 content key.
     #[error("Golden ciphertext has the wrong content key size")]
     InvalidWrappedContentKey,
+    /// The stored schema version is not supported.
+    #[error("unsupported private record schema version {0}")]
+    UnsupportedSchema(u32),
+    /// The stored cipher identifier is not supported.
+    #[error("unsupported private record cipher {0}")]
+    UnsupportedCipher(u16),
+    /// The stored nonce has the wrong size.
+    #[error("private record nonce has {actual} bytes, expected {NONCE_BYTES}")]
+    InvalidNonceLength { actual: usize },
+    /// The stored record ciphertext cannot contain an authentication tag.
+    #[error("private record ciphertext is shorter than its authentication tag")]
+    InvalidRecordCiphertext,
 }
 
 #[cfg(test)]
@@ -463,6 +540,53 @@ mod tests {
         assert_eq!(record.block_num(), Some(BlockNumber::from(12)));
         assert_eq!(record.context().to_bytes(), context_bytes);
         record.verify_wrapped_content_key().unwrap();
+    }
+
+    #[test]
+    fn storage_fields_round_trip() {
+        let mut rng = ChaCha20Rng::from_seed([12; 32]);
+        let mut expected = sealer().seal(&mut rng, context(), b"record").unwrap();
+        expected.set_block_num(BlockNumber::from(13));
+
+        let actual =
+            StoredPrivateRecord::from_storage_fields(expected.clone().into_storage_fields())
+                .unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn storage_fields_reject_invalid_metadata() {
+        let mut rng = ChaCha20Rng::from_seed([13; 32]);
+        let record = sealer().seal(&mut rng, context(), b"record").unwrap();
+
+        let mut wrong_schema = record.clone().into_storage_fields();
+        wrong_schema.schema_version = 2;
+        assert!(matches!(
+            StoredPrivateRecord::from_storage_fields(wrong_schema),
+            Err(PrivateRecordError::UnsupportedSchema(2)),
+        ));
+
+        let mut wrong_cipher = record.clone().into_storage_fields();
+        wrong_cipher.cipher_id = 2;
+        assert!(matches!(
+            StoredPrivateRecord::from_storage_fields(wrong_cipher),
+            Err(PrivateRecordError::UnsupportedCipher(2)),
+        ));
+
+        let mut wrong_nonce = record.clone().into_storage_fields();
+        wrong_nonce.nonce.pop();
+        assert!(matches!(
+            StoredPrivateRecord::from_storage_fields(wrong_nonce),
+            Err(PrivateRecordError::InvalidNonceLength { actual: 23 }),
+        ));
+
+        let mut short_ciphertext = record.into_storage_fields();
+        short_ciphertext.encrypted_record.truncate(TAG_BYTES - 1);
+        assert!(matches!(
+            StoredPrivateRecord::from_storage_fields(short_ciphertext),
+            Err(PrivateRecordError::InvalidRecordCiphertext),
+        ));
     }
 
     #[test]

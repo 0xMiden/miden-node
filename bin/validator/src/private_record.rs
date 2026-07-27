@@ -230,6 +230,23 @@ impl PrivateRecordSealer {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn test_private_record_sealer(
+    key_epoch: StorageKeyEpoch,
+    setup_context_id: [u8; 32],
+) -> PrivateRecordSealer {
+    use golden_core::{GoldenGroup, GoldenScalar};
+    use golden_halo2curves::golden_group::Secp256k1Scalar;
+
+    let scalar = Secp256k1Scalar::from_u64(11).expect("test scalar is valid");
+    PrivateRecordSealer {
+        key_epoch,
+        setup_context_id,
+        sealing_key: SealingKey::new(StorageGroup::mul_generator(&scalar))
+            .expect("test sealing key is valid"),
+    }
+}
+
 /// Database fields for one versioned private record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PrivateRecordStorageFields {
@@ -401,9 +418,6 @@ pub enum PrivateRecordError {
 
 #[cfg(test)]
 mod tests {
-    use golden_core::{GoldenGroup, GoldenScalar};
-    use golden_ehtdh1::SealingKey;
-    use golden_halo2curves::golden_group::Secp256k1Scalar;
     use miden_protocol::Word;
     use rand_chacha_03::ChaCha20Rng;
     use rand_chacha_03::rand_core::SeedableRng;
@@ -423,12 +437,7 @@ mod tests {
     }
 
     fn sealer() -> PrivateRecordSealer {
-        let scalar = Secp256k1Scalar::from_u64(11).unwrap();
-        PrivateRecordSealer {
-            key_epoch: EPOCH,
-            setup_context_id: [8; 32],
-            sealing_key: SealingKey::new(StorageGroup::mul_generator(&scalar)).unwrap(),
-        }
+        test_private_record_sealer(EPOCH, [8; 32])
     }
 
     #[test]

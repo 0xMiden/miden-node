@@ -1,0 +1,124 @@
+# Verifies that a workflow's ref filters still match the ruleset intended to
+# protect every branch or tag that can trigger the workflow.
+name: "Verify ruleset target"
+description: "Verify a ruleset's target"
+
+inputs:
+  github-token:
+    description: "GitHub token with repository metadata read access"
+    required: true
+  ruleset-name:
+    description: "Exact name of the ruleset"
+    required: true
+  expected-patterns:
+    description: "JSON array of expected branch or tag patterns, without refs prefixes"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve ruleset ID
+      id: ruleset_id
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RULESET_NAME: ${{ inputs.ruleset-name }}
+      run: |
+        set -euo pipefail
+
+        rulesets="$(
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/rulesets?includes_parents=true&per_page=100"
+        )"
+        matches="$(
+          jq -c --arg name "${RULESET_NAME}" \
+            '[.[] | select(.name == $name)]' <<< "${rulesets}"
+        )"
+        match_count="$(jq 'length' <<< "${matches}")"
+
+        if [[ "${match_count}" -ne 1 ]]; then
+          echo "::error::Expected exactly one ruleset named ${RULESET_NAME}, found ${match_count}"
+          exit 1
+        fi
+
+        ruleset_id="$(jq -r '.[0].id' <<< "${matches}")"
+        echo "id=${ruleset_id}" >> "${GITHUB_OUTPUT}"
+
+    - name: Fetch ruleset
+      id: ruleset
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RULESET_ID: ${{ steps.ruleset_id.outputs.id }}
+      run: |
+        set -euo pipefail
+
+        ruleset="$(
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/rulesets/${RULESET_ID}?includes_parents=true" \
+            | jq -c .
+        )"
+        echo "json=${ruleset}" >> "${GITHUB_OUTPUT}"
+
+    - name: Resolve ruleset target prefix
+      id: target
+      shell: bash
+      env:
+        RULESET: ${{ steps.ruleset.outputs.json }}
+        RULESET_NAME: ${{ inputs.ruleset-name }}
+      run: |
+        set -euo pipefail
+
+        target="$(jq -r '.target' <<< "${RULESET}")"
+        case "${target}" in
+          branch)
+            ref_prefix="refs/heads/"
+            ;;
+          tag)
+            ref_prefix="refs/tags/"
+            ;;
+          *)
+            echo "::error::Ruleset ${RULESET_NAME} has unsupported target: ${target}"
+            exit 1
+            ;;
+        esac
+        echo "prefix=${ref_prefix}" >> "${GITHUB_OUTPUT}"
+
+    - name: Match targets
+      shell: bash
+      env:
+        RULESET: ${{ steps.ruleset.outputs.json }}
+        RULESET_NAME: ${{ inputs.ruleset-name }}
+        REF_PREFIX: ${{ steps.target.outputs.prefix }}
+        EXPECTED_PATTERNS: ${{ inputs.expected-patterns }}
+      run: |
+        set -euo pipefail
+
+        if ! expected_refs="$(
+          jq -ce --arg prefix "${REF_PREFIX}" '
+            if type == "array"
+              and length > 0
+              and all(.[]; type == "string" and length > 0)
+            then map($prefix + .) | sort
+            else error("expected-patterns must be a non-empty JSON array of strings")
+            end
+          ' <<< "${EXPECTED_PATTERNS}"
+        )"; then
+          echo "::error::Invalid expected-patterns input"
+          exit 1
+        fi
+
+        if ! jq -e \
+          --argjson expected_refs "${expected_refs}" '
+            .enforcement == "active"
+            and (.conditions.ref_name.include | sort) == $expected_refs
+            and .conditions.ref_name.exclude == []
+          ' <<< "${RULESET}" >/dev/null; then
+          actual="$(
+            jq -c \
+              '{target, enforcement, ref_name: .conditions.ref_name}' \
+              <<< "${RULESET}"
+          )"
+          echo "::error::Ruleset ${RULESET_NAME} target diverged from ${expected_refs}: ${actual}"
+          exit 1
+        fi

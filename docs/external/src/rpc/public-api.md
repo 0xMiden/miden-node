@@ -32,10 +32,20 @@ grpcurl rpc.testnet.miden.io:443 describe rpc.Api
 
 ## Transaction Submission
 
-| Method                | Purpose                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| `SubmitProvenTx`      | Submits one proven transaction and returns the node's current block height.                 |
-| `SubmitProvenTxBatch` | Submits an atomic batch of proven transactions and returns the node's current block height. |
+| Method                        | Purpose                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| `GetTransactionEncryptionKey` | Returns the transaction encryption public key, attested by a validator's signing key.       |
+| `SubmitProvenTx`              | Submits one proven transaction and returns the node's current block height.                 |
+| `SubmitProvenTxBatch`         | Submits an atomic batch of proven transactions and returns the node's current block height. |
+
+The public key returned by `GetTransactionEncryptionKey` is shared across the whole validator set, while each
+attestation is specific to one validator (currently the response carries a single attestation). Clients verify an
+attestation against a validator signing key they already trust from the chain and reconstruct the encryption key with
+miden-crypto. The exact attestation payload is documented on the `TransactionEncryptionKey` proto message. Note that
+this scheme does not hide transaction inputs from holders of the shared encryption secret (currently the network
+operator and every validator) and provides no forward secrecy. The attestation proves which validator vouched for the
+key but does not prove freshness: after a key rotation, a replayed older signed key still verifies until a chain or
+epoch rule for freshness exists.
 
 Write requests must identify the target network with the `genesis` parameter in the `Accept` header:
 

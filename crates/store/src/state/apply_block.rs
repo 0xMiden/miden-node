@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use miden_node_proto::domain::proof_request::BlockProofRequest;
@@ -18,7 +19,7 @@ use tracing::{Instrument, info_span};
 use crate::db::NoteRecord;
 use crate::errors::{ApplyBlockError, ApplyBlockWithProvingInputsError, InvalidBlockError};
 use crate::state::block_lifecycle::{BlockLifecycle, lifecycle_events_enabled};
-use crate::state::{BlockNotification, State};
+use crate::state::{BlockNotification, InnerState, State};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
 impl State {
@@ -70,13 +71,16 @@ impl State {
     /// - a transaction is open in the DB and the writes are started.
     /// - while the transaction is not committed, concurrent reads are allowed, both the DB and the
     ///   in-memory representations, which are consistent at this stage.
-    /// - prior to committing the changes to the DB, an exclusive lock to the in-memory data is
-    ///   acquired, preventing concurrent reads to the in-memory data, since that will be
-    ///   out-of-sync w.r.t. the DB.
+    /// - prior to committing the changes to the DB, exclusive locks to the canonical in-memory
+    ///   state and account-state forest are acquired, preventing readers from observing them at
+    ///   different block heights.
     /// - the DB transaction is committed, and requests that read only from the DB can proceed to
     ///   use the fresh data.
-    /// - the in-memory structures are updated, including the latest block pointer and the lock is
-    ///   released.
+    /// - the account-state forest and canonical in-memory structures are updated, including the
+    ///   latest block pointer, and both locks are released.
+    /// - if any persistent tree update fails after the DB commit, the process aborts. The durable
+    ///   database remains authoritative, and divergent tree storage must be rebuilt before the node
+    ///   resumes normal processing.
     // TODO: This span is logged in a root span, we should connect it to the parent span.
     #[miden_instrument(
         target = COMPONENT,
@@ -141,6 +145,12 @@ impl State {
                     AccountUpdateDetails::Private => None,
                 },
             ));
+        let account_forest_update = self.with_forest_read_blocking(|forest| {
+            forest
+                .compute_block_update_mutations(block_num, account_patches)
+                .map_err(ApplyBlockError::AccountStateForestPreparation)
+        })?;
+        let precomputed_public_states = account_forest_update.account_states.clone();
 
         // The DB and in-memory state updates need to be synchronized and are partially overlapping.
         // Namely, the DB transaction only proceeds after this task acquires the in-memory write
@@ -153,6 +163,7 @@ impl State {
                     acquire_done,
                     signed_block,
                     notes,
+                    precomputed_public_states,
                     unresolved_note_nullifiers,
                 )
                 .await
@@ -169,7 +180,7 @@ impl State {
         // Awaiting the block saving task to complete without errors.
         block_save_task.await??;
 
-        let resolved_note_ids = self.with_inner_write_blocking(|inner| {
+        let resolved_note_ids = self.with_inner_and_forest_write_blocking(|inner, forest| {
             // We need to check that neither the nullifier tree nor the account tree have changed
             // while we were waiting for the DB preparation task to complete. If either of them did
             // change, we do not proceed with in-memory and database updates, since it may lead to
@@ -193,24 +204,24 @@ impl State {
                 .block_on(db_update_task)?
                 .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
-            // Update the in-memory data structures after successful commit of the DB transaction
-            inner
-                .nullifier_tree
-                .apply_mutations(nullifier_tree_update)
-                .expect("Unreachable: old nullifier tree root must be checked before this step");
-            inner
-                .account_tree
-                .apply_mutations(account_tree_update)
-                .expect("Unreachable: old account tree root must be checked before this step");
-
-            inner.blockchain.push(block_commitment);
+            // The DB is now committed. Keep both write locks held while advancing the forest and
+            // canonical in-memory state so readers cannot observe different block heights.
+            let InnerState { nullifier_tree, blockchain, account_tree } = inner;
+            forest
+                .apply_precomputed_block_update(block_num, account_forest_update)
+                .unwrap_or_else(|error| {
+                    Self::abort_after_post_commit_failure("account-state forest", &error)
+                });
+            nullifier_tree.apply_mutations(nullifier_tree_update).unwrap_or_else(|error| {
+                Self::abort_after_post_commit_failure("nullifier tree", &error)
+            });
+            account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
+                Self::abort_after_post_commit_failure("account tree", &error)
+            });
+            blockchain.push(block_commitment);
 
             Ok(resolved_note_ids)
         })?;
-
-        self.with_forest_write_blocking(|forest| {
-            forest.apply_block_updates(block_num, account_patches);
-        });
 
         // Push to cache and notify replica subscribers.
         self.block_cache
@@ -224,6 +235,25 @@ impl State {
         tracing::debug!(target: LOG_TARGET, "Block applied");
 
         Ok(())
+    }
+
+    /// Terminates after a persistent state failure that occurred after the canonical DB commit.
+    ///
+    /// Returning would expose components at different block heights. Tests panic so the fatal path
+    /// can be asserted without terminating the test process; production aborts immediately.
+    fn abort_after_post_commit_failure(component: &str, error: &impl Display) -> ! {
+        tracing::error!(
+            target: LOG_TARGET,
+            component,
+            error = %error,
+            "persistent state update failed after database commit; aborting"
+        );
+
+        #[cfg(test)]
+        panic!("{component} update failed after database commit: {error}");
+
+        #[cfg(not(test))]
+        std::process::abort();
     }
 
     /// Saves the proving inputs for the given block to the block store.

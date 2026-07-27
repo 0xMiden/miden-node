@@ -18,7 +18,7 @@ use miden_node_proto::clients::{
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::rpc::api_server::Api;
 use miden_node_proto::generated::{self as proto};
-use miden_node_proto::server::{ntx_builder_api, rpc_api};
+use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_store::state::State;
 use miden_node_utils::clap::{GrpcOptionsExternal, StorageOptions};
@@ -617,7 +617,20 @@ async fn start_ntx_builder(
     (client, call_count, last_accept)
 }
 
-async fn start_source_rpc(ntx_builder: NtxBuilderClient) -> (RpcClient, TestStore) {
+fn dummy_client<T: GrpcClient>() -> T {
+    Builder::new(Url::parse("http://127.0.0.1:0").unwrap())
+        .without_tls()
+        .without_timeout()
+        .without_metadata_version()
+        .without_metadata_genesis()
+        .with_otel_context_injection()
+        .connect_lazy::<T>()
+}
+
+async fn start_source_rpc(
+    ntx_builder: NtxBuilderClient,
+    validator: ValidatorClient,
+) -> (RpcClient, TestStore) {
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
@@ -628,19 +641,11 @@ async fn start_source_rpc(ntx_builder: NtxBuilderClient) -> (RpcClient, TestStor
     let addr = listener.local_addr().expect("Failed to get source RPC address");
 
     task::spawn(async move {
-        let validator_url = Url::parse("http://127.0.0.1:0").unwrap();
         let block_producer = BlockProducerApi::new(
             block_producer_state,
             0.into(),
             BlockProducerApiConfig::default(),
         );
-        let validator = Builder::new(validator_url)
-            .without_tls()
-            .without_timeout()
-            .without_metadata_version()
-            .without_metadata_genesis()
-            .with_otel_context_injection()
-            .connect_lazy::<ValidatorClient>();
         let source_rpc = RpcService::new(
             store_state,
             RpcMode::sequencer(block_producer, validator),
@@ -667,6 +672,276 @@ async fn start_source_rpc(ntx_builder: NtxBuilderClient) -> (RpcClient, TestStor
     (client, store)
 }
 
+/// Stub validator gRPC service that serves a fixed transaction encryption key and rejects every
+/// other RPC.
+#[derive(Clone)]
+struct FixedValidator {
+    encryption_key: proto::transaction::TransactionEncryptionKey,
+    call_count: Arc<AtomicUsize>,
+    last_accept: Arc<std::sync::Mutex<Option<String>>>,
+}
+
+#[tonic::async_trait]
+impl validator_api::GetTransactionEncryptionKey for FixedValidator {
+    type Input = ();
+    type Output = proto::transaction::TransactionEncryptionKey;
+
+    fn decode(request: ()) -> tonic::Result<Self::Input> {
+        Ok(request)
+    }
+
+    fn encode(output: Self::Output) -> tonic::Result<proto::transaction::TransactionEncryptionKey> {
+        Ok(output)
+    }
+
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        metadata: &MetadataMap,
+        _extensions: &Extensions,
+    ) -> tonic::Result<Self::Output> {
+        self.call_count.fetch_add(1, Ordering::SeqCst);
+        let accept = metadata
+            .get(ACCEPT.as_str())
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        *self.last_accept.lock().expect("last_accept mutex should not be poisoned") = accept;
+
+        Ok(self.encryption_key.clone())
+    }
+}
+
+#[tonic::async_trait]
+impl validator_api::Status for FixedValidator {
+    type Input = ();
+    type Output = proto::validator::ValidatorStatus;
+
+    fn decode(request: ()) -> tonic::Result<Self::Input> {
+        Ok(request)
+    }
+
+    fn encode(output: Self::Output) -> tonic::Result<proto::validator::ValidatorStatus> {
+        Ok(output)
+    }
+
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        _metadata: &MetadataMap,
+        _extensions: &Extensions,
+    ) -> tonic::Result<Self::Output> {
+        Err(tonic::Status::unimplemented("not supported by the stub validator"))
+    }
+}
+
+#[tonic::async_trait]
+impl validator_api::SubmitProvenTransaction for FixedValidator {
+    type Input = ();
+    type Output = ();
+
+    fn decode(_request: proto::transaction::ProvenTransaction) -> tonic::Result<Self::Input> {
+        Ok(())
+    }
+
+    fn encode(output: Self::Output) -> tonic::Result<()> {
+        Ok(output)
+    }
+
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        _metadata: &MetadataMap,
+        _extensions: &Extensions,
+    ) -> tonic::Result<Self::Output> {
+        Err(tonic::Status::unimplemented("not supported by the stub validator"))
+    }
+}
+
+#[tonic::async_trait]
+impl validator_api::SignBlock for FixedValidator {
+    type Input = ();
+    type Output = proto::blockchain::SignBlockResponse;
+
+    fn decode(_request: proto::blockchain::ProposedBlock) -> tonic::Result<Self::Input> {
+        Ok(())
+    }
+
+    fn encode(output: Self::Output) -> tonic::Result<proto::blockchain::SignBlockResponse> {
+        Ok(output)
+    }
+
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        _metadata: &MetadataMap,
+        _extensions: &Extensions,
+    ) -> tonic::Result<Self::Output> {
+        Err(tonic::Status::unimplemented("not supported by the stub validator"))
+    }
+}
+
+#[tonic::async_trait]
+impl validator_api::BlockSubscription for FixedValidator {
+    type Input = ();
+    type Item = proto::validator::BlockSubscriptionResponse;
+    type ItemStream = tokio_stream::Empty<tonic::Result<Self::Item>>;
+
+    fn decode(_request: proto::validator::BlockSubscriptionRequest) -> tonic::Result<Self::Input> {
+        Ok(())
+    }
+
+    fn encode(item: Self::Item) -> tonic::Result<proto::validator::BlockSubscriptionResponse> {
+        Ok(item)
+    }
+
+    async fn handle(
+        &self,
+        _input: Self::Input,
+        _metadata: &MetadataMap,
+        _extensions: &Extensions,
+    ) -> tonic::Result<Self::ItemStream> {
+        Err(tonic::Status::unimplemented("not supported by the stub validator"))
+    }
+}
+
+/// Serves a [`FixedValidator`] on an ephemeral port and returns a connected client together with
+/// the stub's call counter and the last ACCEPT header it observed.
+async fn start_validator(
+    encryption_key: proto::transaction::TransactionEncryptionKey,
+) -> (ValidatorClient, Arc<AtomicUsize>, Arc<std::sync::Mutex<Option<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind validator");
+    let addr = listener.local_addr().expect("Failed to get validator address");
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let last_accept = Arc::new(std::sync::Mutex::new(None));
+    let service = FixedValidator {
+        encryption_key,
+        call_count: Arc::clone(&call_count),
+        last_accept: Arc::clone(&last_accept),
+    };
+
+    task::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(validator_api::service(service))
+            .serve_with_incoming(TcpListenerStream::new(listener))
+            .await
+            .expect("Failed to serve validator");
+    });
+
+    let client = Builder::new(Url::parse(&format!("http://{addr}")).unwrap())
+        .without_tls()
+        .without_timeout()
+        .without_metadata_version()
+        .without_metadata_genesis()
+        .without_otel_context_injection()
+        .connect_lazy::<ValidatorClient>();
+
+    (client, call_count, last_accept)
+}
+
+/// A fixed transaction encryption key response for forwarding tests. The values only need to
+/// survive the passthrough unchanged.
+fn test_encryption_key() -> proto::transaction::TransactionEncryptionKey {
+    proto::transaction::TransactionEncryptionKey {
+        scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
+        key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
+        public_key: vec![7; 32],
+        attestations: vec![proto::transaction::ValidatorKeyAttestation {
+            validator_public_key: vec![8; 33],
+            signature: vec![9; 65],
+        }],
+        next_key: Some(proto::transaction::NextTransactionEncryptionKey {
+            scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
+            key_id: vec![0xFE, 0xED],
+            public_key: vec![6; 32],
+            rotation_block_num: 42,
+        }),
+    }
+}
+
+#[tokio::test]
+async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
+    let expected = test_encryption_key();
+    let (validator, validator_call_count, _last_accept) = start_validator(expected.clone()).await;
+    let local_store = TestStore::start().await;
+    let full_node = RpcService::new(
+        Arc::clone(&local_store.state),
+        RpcMode::full_node(dummy_client::<RpcClient>(), 100, Some(validator), None),
+        None,
+        NonZeroUsize::new(1_000).unwrap(),
+        None,
+    );
+
+    let response = full_node
+        .get_transaction_encryption_key(Request::new(()))
+        .await
+        .expect("full-node RPC should forward the encryption key request to its validator")
+        .into_inner();
+
+    assert_eq!(response, expected);
+    assert_eq!(validator_call_count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn full_node_forwards_get_transaction_encryption_key_to_source_rpc() {
+    let expected = test_encryption_key();
+    let (validator, validator_call_count, _last_accept) = start_validator(expected.clone()).await;
+    let (source_rpc, _source_store) =
+        start_source_rpc(dummy_client::<NtxBuilderClient>(), validator).await;
+    let local_store = TestStore::start().await;
+    let full_node = RpcService::new(
+        Arc::clone(&local_store.state),
+        RpcMode::full_node(source_rpc, 100, None, None),
+        None,
+        NonZeroUsize::new(1_000).unwrap(),
+        None,
+    );
+
+    let response = full_node
+        .get_transaction_encryption_key(Request::new(()))
+        .await
+        .expect("full-node RPC should forward the encryption key request to its source")
+        .into_inner();
+
+    assert_eq!(response, expected);
+    assert_eq!(validator_call_count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn full_node_preserves_original_accept_metadata_when_forwarding_encryption_key() {
+    let expected = test_encryption_key();
+    let (validator, _validator_call_count, last_accept) = start_validator(expected.clone()).await;
+    let (source_rpc, source_store) =
+        start_source_rpc(dummy_client::<NtxBuilderClient>(), validator).await;
+    let local_store = TestStore::start().await;
+    let full_node = RpcService::new(
+        Arc::clone(&local_store.state),
+        RpcMode::full_node(source_rpc, 100, None, None),
+        None,
+        NonZeroUsize::new(1_000).unwrap(),
+        None,
+    );
+
+    let original_accept = format!(
+        "application/vnd.miden; version={}; genesis={}",
+        env!("CARGO_PKG_VERSION"),
+        source_store.genesis_commitment().to_hex(),
+    );
+    let mut request = Request::new(());
+    request.metadata_mut().insert(ACCEPT.as_str(), original_accept.parse().unwrap());
+
+    let response = full_node
+        .get_transaction_encryption_key(request)
+        .await
+        .expect("full-node RPC should forward the encryption key request")
+        .into_inner();
+
+    assert_eq!(response, expected);
+    assert_eq!(
+        *last_accept.lock().expect("last_accept mutex should not be poisoned"),
+        Some(original_accept),
+    );
+}
+
 #[tokio::test]
 async fn full_node_forwards_get_network_note_status_to_source_rpc() {
     let expected = proto::rpc::GetNetworkNoteStatusResponse {
@@ -677,7 +952,8 @@ async fn full_node_forwards_get_network_note_status_to_source_rpc() {
     };
     let (ntx_builder, ntx_builder_call_count, _last_accept) =
         start_ntx_builder(expected.clone()).await;
-    let (source_rpc, _source_store) = start_source_rpc(ntx_builder).await;
+    let (source_rpc, _source_store) =
+        start_source_rpc(ntx_builder, dummy_client::<ValidatorClient>()).await;
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
@@ -707,7 +983,8 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
     };
     let (ntx_builder, _ntx_builder_call_count, last_accept) =
         start_ntx_builder(expected.clone()).await;
-    let (source_rpc, source_store) = start_source_rpc(ntx_builder).await;
+    let (source_rpc, source_store) =
+        start_source_rpc(ntx_builder, dummy_client::<ValidatorClient>()).await;
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),

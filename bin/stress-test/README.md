@@ -17,6 +17,29 @@ point-in-time comparison rather than current guarantees.
 Use the binary help output for the current command and configuration surface. The help output is the source of truth for
 flags and environment variables.
 
+### Large public account storage map
+
+`seed-store` can create an exact number of accounts with a deterministic storage map on every public account. The
+following command creates one public account containing 250,000 entries in one map, then applies one partial account
+update that changes a single entry in that map:
+
+```sh
+cargo run --release --locked -p miden-node-stress-test -- \
+  seed-store \
+  --data-directory /tmp/miden-large-storage-map \
+  --num-accounts 1 \
+  --public-accounts-percentage 100 \
+  --storage-map-entries 250000 \
+  --vault-entries 1 \
+  --account-update-blocks 1
+```
+
+Account creation and account updates each require a preceding note-emission block. The block metrics label these phases
+separately, so `account-update` rows measure the partial public-account updates rather than their setup work. The
+generated account IDs are written to `accounts.txt` in the data directory. If a full public account state would exceed
+the protocol's transaction account-update size limit, `seed-store` inserts that account at genesis automatically; its
+subsequent partial updates still use normal blocks and appear as `account-update` rows.
+
 ## Benchmark Results
 
 The following reference results were obtained using a store with 100k accounts, half of which are public.

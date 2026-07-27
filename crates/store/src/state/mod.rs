@@ -312,15 +312,24 @@ impl State {
         })
     }
 
-    /// Runs a synchronous mutable operation over the inner state on Tokio's blocking path.
+    /// Runs a synchronous mutable operation while holding both in-memory state write locks.
     ///
-    /// See [`Self::with_inner_read_blocking`] for why this uses `block_in_place`.
-    fn with_inner_write_blocking<R>(&self, f: impl FnOnce(&mut InnerState<TreeStorage>) -> R) -> R {
+    /// Locks are always acquired in inner-state then forest order. Holding both across the database
+    /// commit window prevents readers from observing canonical tree state from one block and
+    /// account-state forest data from another.
+    fn with_inner_and_forest_write_blocking<R>(
+        &self,
+        f: impl FnOnce(
+            &mut InnerState<TreeStorage>,
+            &mut AccountStateForest<AccountStateForestBackend>,
+        ) -> R,
+    ) -> R {
         let span = Span::current();
         tokio::task::block_in_place(|| {
             span.in_scope(|| {
                 let mut inner = self.inner.blocking_write();
-                f(&mut inner)
+                let mut forest = self.forest.blocking_write();
+                f(&mut inner, &mut forest)
             })
         })
     }
@@ -339,22 +348,6 @@ impl State {
             span.in_scope(|| {
                 let forest = self.forest.blocking_read();
                 f(&forest)
-            })
-        })
-    }
-
-    /// Runs a synchronous mutable operation over the account state forest on Tokio's blocking path.
-    ///
-    /// See [`Self::with_forest_read_blocking`] for why this uses `block_in_place`.
-    fn with_forest_write_blocking<R>(
-        &self,
-        f: impl FnOnce(&mut AccountStateForest<AccountStateForestBackend>) -> R,
-    ) -> R {
-        let span = Span::current();
-        tokio::task::block_in_place(|| {
-            span.in_scope(|| {
-                let mut forest = self.forest.blocking_write();
-                f(&mut forest)
             })
         })
     }

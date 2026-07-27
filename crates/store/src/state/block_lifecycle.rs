@@ -95,7 +95,7 @@ impl BlockLifecycle {
     )]
     pub(super) fn emit(self, resolved_note_ids: &BTreeMap<Nullifier, NoteId>) {
         for account in self.registered_accounts {
-            tracing::info!(
+            tracing::debug!(
                 target: LOG_TARGET,
                 {
                     account.id = %account.account_id,
@@ -107,7 +107,7 @@ impl BlockLifecycle {
         }
 
         for note in self.created_notes {
-            tracing::info!(
+            tracing::debug!(
                 target: LOG_TARGET,
                 {
                     note.id = %note.note_id,
@@ -123,7 +123,7 @@ impl BlockLifecycle {
         for note in self.consumed_notes {
             let note_id = note.note_id.or_else(|| resolved_note_ids.get(&note.nullifier).copied());
             if let Some(note_id) = note_id {
-                tracing::info!(
+                tracing::debug!(
                     target: LOG_TARGET,
                     {
                         note.id = %note_id,
@@ -134,7 +134,7 @@ impl BlockLifecycle {
                     "Note consumed",
                 );
             } else {
-                tracing::info!(
+                tracing::debug!(
                     target: LOG_TARGET,
                     {
                         note.nullifier = %note.nullifier,
@@ -155,8 +155,7 @@ impl BlockLifecycle {
 
 /// Returns whether any subscriber is interested in user-facing lifecycle events.
 pub(super) fn lifecycle_events_enabled() -> bool {
-    tracing::enabled!(target: LOG_TARGET, tracing::Level::INFO)
-        || tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG)
+    tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG)
 }
 
 struct RegisteredAccount {

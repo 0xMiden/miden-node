@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use miden_protocol::Word;
@@ -102,8 +102,8 @@ pub struct TransactionGraph {
 /// transactions which were removed because they depended on a direct transaction.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct TransactionRemoval {
-    direct: HashSet<TransactionId>,
-    removed: HashSet<TransactionId>,
+    direct: BTreeSet<TransactionId>,
+    removed: BTreeSet<TransactionId>,
 }
 
 impl TransactionRemoval {
@@ -294,10 +294,14 @@ impl TransactionGraph {
     /// _before_ calling this function. i.e. first revert expired batches and deselect their
     /// transactions, then call this.
     pub fn revert_expired(&mut self, chain_tip: BlockNumber) -> TransactionRemoval {
-        let mut direct = self.inner.expired(chain_tip);
-        direct.retain(|tx| !self.inner.is_selected(tx));
+        let direct = self
+            .inner
+            .expired(chain_tip)
+            .into_iter()
+            .filter(|tx| !self.inner.is_selected(tx))
+            .collect::<BTreeSet<_>>();
 
-        let mut removed = HashSet::with_capacity(direct.len());
+        let mut removed = BTreeSet::new();
 
         for tx in direct.iter().copied() {
             removed.extend(&self.revert_tx_and_descendants(tx));
@@ -385,8 +389,8 @@ impl TransactionGraph {
             }
         }
 
-        let direct = to_revert.into_iter().collect::<HashSet<_>>();
-        let mut removed = HashSet::default();
+        let direct = to_revert.into_iter().collect::<BTreeSet<_>>();
+        let mut removed = BTreeSet::new();
         for tx in direct.iter().copied() {
             removed.extend(self.revert_tx_and_descendants(tx));
         }

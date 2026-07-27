@@ -58,7 +58,7 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::batch::{BatchId, ProvenBatch};
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use miden_protocol::transaction::{TransactionHeader, TransactionId};
+use miden_protocol::transaction::TransactionHeader;
 use thiserror::Error;
 
 use crate::block_builder::SelectedBlock;
@@ -733,7 +733,7 @@ fn emit_transaction_expirations(removal: &graph::TransactionRemoval, chain_tip: 
         return;
     }
 
-    for transaction_id in sorted_transaction_ids(removal.direct()) {
+    for transaction_id in removal.direct() {
         tracing::debug!(
             target: LOG_TARGET,
             {
@@ -756,7 +756,7 @@ fn emit_transaction_evictions(
         return;
     }
 
-    for transaction_id in sorted_transaction_ids(removal.direct()) {
+    for transaction_id in removal.direct() {
         tracing::debug!(
             target: LOG_TARGET,
             {
@@ -771,7 +771,7 @@ fn emit_transaction_evictions(
 }
 
 fn emit_dependent_transaction_evictions(removal: &graph::TransactionRemoval, reason: &'static str) {
-    for transaction_id in sorted_transaction_ids(removal.dependents()) {
+    for transaction_id in removal.dependents() {
         tracing::debug!(
             target: LOG_TARGET,
             {
@@ -781,12 +781,4 @@ fn emit_dependent_transaction_evictions(removal: &graph::TransactionRemoval, rea
             "Transaction evicted from mempool",
         );
     }
-}
-
-fn sorted_transaction_ids(
-    transaction_ids: impl Iterator<Item = TransactionId>,
-) -> Vec<TransactionId> {
-    let mut transaction_ids = transaction_ids.collect::<Vec<_>>();
-    transaction_ids.sort_unstable();
-    transaction_ids
 }

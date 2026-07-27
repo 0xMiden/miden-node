@@ -67,6 +67,11 @@ impl EncodedGoldenOperatorKey {
         }
     }
 
+    /// Splits the bundle into its epoch, setup, public key set, and protected secret share.
+    pub fn into_parts(self) -> (StorageKeyEpoch, Vec<u8>, Vec<u8>, Zeroizing<Vec<u8>>) {
+        (self.key_epoch, self.setup_context, self.public_key_set, self.secret_share)
+    }
+
     /// Decodes and validates the operator key.
     pub fn decode(self) -> Result<GoldenOperatorKey, GoldenOperatorKeyError> {
         let setup_context = from_wire_bytes(&self.setup_context).map_err(|source| {
@@ -338,6 +343,21 @@ mod tests {
         assert_eq!(decoded.participant(), expected.participant());
         assert_eq!(decoded.sealing_key(), expected.sealing_key());
         assert_eq!(decoded.setup_context_id(), expected.setup_context_id());
+    }
+
+    #[test]
+    fn restart_bundle_exposes_persisted_parts() {
+        let expected = operator_key();
+        let (key_epoch, setup_context, public_key_set, secret_share) =
+            expected.encode().into_parts();
+        let decoded_setup = from_wire_bytes::<SetupContext>(&setup_context).unwrap();
+        let decoded_public_key_set =
+            from_wire_bytes::<PublicKeySet<StorageGroup>>(&public_key_set).unwrap();
+
+        assert_eq!(key_epoch, EPOCH);
+        assert_eq!(&decoded_setup, expected.setup_context());
+        assert_eq!(&decoded_public_key_set, expected.public_key_set());
+        assert!(from_wire_bytes::<SecretShare<StorageGroup>>(&secret_share).is_ok());
     }
 
     #[test]

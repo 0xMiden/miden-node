@@ -1,8 +1,8 @@
 # Release process
 
-A release is created by tagging the commit to release. It does not require a merge between `next` and a version branch.
-The commit may be on `next` while it still represents that release line, or on the applicable `vX.Y` branch after the
-branches have diverged.
+A release is created by tagging the commit to release. It does not require a merge between `next` and a release branch.
+The commit may be on `next` while it still represents that release line, or on the applicable `release/vX.Y` branch
+after the branches have diverged.
 
 ## Release tags
 

@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - next
-      - "v*"
+      - "release/v*"
     paths-ignore:
       - "**.txt"
   pull_request:
@@ -124,7 +124,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ruleset-name: "Protected branches"
-          expected-patterns: '["next", "v*"]'
+          expected-patterns: '["next", "release/v*"]'
       - name: Rustup
         run: rustup toolchain install --no-self-update
       - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18

@@ -2,7 +2,7 @@ name: GitHub Actions Security Analysis with zizmor
 
 on:
   push:
-    branches: [next, "v*"]
+    branches: [next, "release/v*"]
     paths:
       - ".github/workflows/**"
       - ".github/actions/**"
@@ -36,7 +36,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ruleset-name: "Protected branches"
-          expected-patterns: '["next", "v*"]'
+          expected-patterns: '["next", "release/v*"]'
 
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@71321a20a9ded102f6e9ce5718a2fcec2c4f70d8 # v0.5.2

@@ -8,7 +8,7 @@ possible.
 Start by commenting your interest in the issue you want to address. This lets us assign the issue to you, prevents
 multiple people from repeating the same work, and gives us a place to add any context you may need.
 
-Most contributions should branch from and target `next`. Maintenance work may instead target a version branch; see the
+Most contributions should branch from and target `next`. Maintenance work may instead target a release branch; see the
 [branching policy](./branching-policy.md) for details. If you are unsure which branch to use, confirm the target on the
 issue before starting work.
 

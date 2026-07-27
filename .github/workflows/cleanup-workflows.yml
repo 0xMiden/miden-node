@@ -40,7 +40,7 @@ jobs:
             while IFS= read -r ref; do
               git ls-tree -r "$ref" --name-only | grep '^.github/workflows/'
             done < <(
-              git for-each-ref --format='%(refname)' 'refs/remotes/origin/v*'
+              git for-each-ref --format='%(refname)' 'refs/remotes/origin/release/v*'
             )
           )
           printf "%s\n" "$WORKFLOWS"

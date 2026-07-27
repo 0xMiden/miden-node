@@ -2,7 +2,7 @@ name: Docker Build Check
 
 on:
   push:
-    branches: [next, "v*"]
+    branches: [next, "release/v*"]
   pull_request:
     types: [opened, reopened, synchronize]
 
@@ -28,7 +28,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ruleset-name: "Protected branches"
-          expected-patterns: '["next", "v*"]'
+          expected-patterns: '["next", "release/v*"]'
 
   docker-build:
     needs: verify-ruleset

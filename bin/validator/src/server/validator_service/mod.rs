@@ -99,6 +99,34 @@ struct FailedEncryptionKeyScheduleRefresh {
     retry_at: Instant,
 }
 
+struct EncryptionKeyScheduleRefreshGuard<'a> {
+    failed_refresh: &'a mut Option<FailedEncryptionKeyScheduleRefresh>,
+    epoch: u16,
+    completed: bool,
+}
+
+impl<'a> EncryptionKeyScheduleRefreshGuard<'a> {
+    fn new(failed_refresh: &'a mut Option<FailedEncryptionKeyScheduleRefresh>, epoch: u16) -> Self {
+        Self { failed_refresh, epoch, completed: false }
+    }
+
+    fn complete(mut self) {
+        self.completed = true;
+        *self.failed_refresh = None;
+    }
+}
+
+impl Drop for EncryptionKeyScheduleRefreshGuard<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            *self.failed_refresh = Some(FailedEncryptionKeyScheduleRefresh {
+                epoch: self.epoch,
+                retry_at: Instant::now() + ENCRYPTION_KEY_REFRESH_RETRY_DELAY,
+            });
+        }
+    }
+}
+
 // VALIDATOR SERVICE
 // ================================================================================
 
@@ -242,6 +270,7 @@ impl ValidatorService {
             return Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch });
         }
 
+        let refresh = EncryptionKeyScheduleRefreshGuard::new(&mut cached.failed_refresh, epoch);
         match Self::attest_encryption_key_schedule(
             &self.signer,
             self.decrypter.as_ref(),
@@ -251,18 +280,12 @@ impl ValidatorService {
         .await
         {
             Ok(attested) => {
+                refresh.complete();
                 let attested = Arc::new(attested);
                 cached.attested = Arc::clone(&attested);
-                cached.failed_refresh = None;
                 Ok(attested)
             },
-            Err(err) => {
-                cached.failed_refresh = Some(FailedEncryptionKeyScheduleRefresh {
-                    epoch,
-                    retry_at: Instant::now() + ENCRYPTION_KEY_REFRESH_RETRY_DELAY,
-                });
-                Err(err)
-            },
+            Err(err) => Err(err),
         }
     }
 

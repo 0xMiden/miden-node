@@ -1,3 +1,19 @@
+-- Phase 1 rows contain only the client envelope and cannot be converted into Golden records.
+-- Require a fresh validator database rather than retaining submission-key ciphertext.
+CREATE TABLE golden_storage_cutover (
+    phase_one_row_count  BIGINT NOT NULL CHECK (phase_one_row_count = 0)
+);
+INSERT INTO golden_storage_cutover
+SELECT COUNT(*) FROM validated_transactions;
+
+DROP TABLE validated_transactions;
+DROP TABLE golden_storage_cutover;
+
+CREATE TABLE validated_transactions (
+    id  BLOB NOT NULL,
+    PRIMARY KEY (id)
+) WITHOUT ROWID;
+
 CREATE TABLE private_records (
     record_id            BLOB NOT NULL,
     transaction_id       BLOB NOT NULL,

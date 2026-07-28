@@ -72,7 +72,7 @@ mod tests {
 
     const EXPECTED_SCHEMA_HASHES: [SchemaHash; 2] = [
         SchemaHash::from_hex("68955ff3be5db1aa9967285fca66c14e56e04f22c5e9bc5729f586e09d6c0531"),
-        SchemaHash::from_hex("c1483c019289c38d92dceec8c1f945ad50720f70186446506ca56944c8443168"),
+        SchemaHash::from_hex("7f48f71cee5bc7aa436dfb19de84c684d2779bedfab5870ed0bbad1f91fdda7a"),
     ];
 
     #[test]

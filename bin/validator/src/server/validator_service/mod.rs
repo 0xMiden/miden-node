@@ -114,7 +114,7 @@ pub(crate) struct ValidatorService {
     /// Commitment of the genesis block, loaded once at construction.
     genesis_commitment: Word,
     /// Golden storage key material used to seal records and issue operator shares.
-    storage_key: Option<Arc<GoldenOperatorKey>>,
+    storage_key: Arc<GoldenOperatorKey>,
     /// Genesis commitment bound into every private record context.
     private_record_chain_id: PrivateRecordChainId,
     /// Public metadata of the shared encryption key, fetched once at construction.
@@ -145,7 +145,7 @@ impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
         decrypter: Arc<dyn TransactionInputDecrypter>,
-        storage_key: Option<Arc<GoldenOperatorKey>>,
+        storage_key: Arc<GoldenOperatorKey>,
         db: Database,
         block_store: BlockStore,
         initial_metrics: InitialMetrics,
@@ -185,13 +185,6 @@ impl ValidatorService {
             .sign_commitment(encryption_key_info.attestation_commitment(genesis_commitment))
             .await
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
-        if storage_key.is_none() {
-            tracing::warn!(
-                target: crate::LOG_TARGET,
-                "Golden storage key is not configured; private record storage is disabled"
-            );
-        }
-
         Ok(Self {
             signer,
             decrypter,
@@ -246,17 +239,15 @@ impl ValidatorService {
         if !unvalidated_txs.is_empty() {
             return Err(ValidatorError::UnvalidatedTransactions(unvalidated_txs));
         }
-        if self.storage_key.is_some() {
-            let unprotected_txs = self
-                .db
-                .read("find_unprotected_transactions", move |tx| {
-                    find_unprotected_transactions(tx, &proposed_tx_ids)
-                })
-                .await
-                .map_err(ValidatorError::DatabaseError)?;
-            if !unprotected_txs.is_empty() {
-                return Err(ValidatorError::UnprotectedTransactions(unprotected_txs));
-            }
+        let unprotected_txs = self
+            .db
+            .read("find_unprotected_transactions", move |tx| {
+                find_unprotected_transactions(tx, &proposed_tx_ids)
+            })
+            .await
+            .map_err(ValidatorError::DatabaseError)?;
+        if !unprotected_txs.is_empty() {
+            return Err(ValidatorError::UnprotectedTransactions(unprotected_txs));
         }
 
         // Build the block header.

@@ -20,8 +20,7 @@ pub(super) async fn issue_from_options(options: PrivateRecordShareOptions) -> an
         output,
         storage_key,
     } = options;
-    let operator_key =
-        storage_key.load()?.context("Golden storage key configuration is required")?;
+    let operator_key = storage_key.load()?;
     issue(data_directory, &record_id, output.as_deref(), &operator_key).await
 }
 

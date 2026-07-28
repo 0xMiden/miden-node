@@ -1,8 +1,5 @@
 INSERT INTO validated_transactions (
-    id,
-    submission_scheme,
-    submission_key_id,
-    sealed_transaction_inputs
+    id
 )
-VALUES (?1, ?2, ?3, ?4)
+VALUES (?1)
 ON CONFLICT DO NOTHING;

@@ -3,8 +3,8 @@
 ## Unreleased
 
 - [BREAKING] Updated `miden-protocol` dependencies to use the `next` branch (v0.16). Block and transaction account updates now use the absolute `AccountPatch` representation instead of the relative `AccountDelta`, and the `miden-tx-batch-prover` crate was renamed to `miden-tx-batch` ([#2282](https://github.com/0xMiden/node/pull/2282)).
-- Validators can store validated private inputs under a Golden threshold key and issue local decryption shares for those records ([#2374](https://github.com/0xMiden/node/issues/2374)).
-- Validator databases must apply the private record migration before Golden storage is enabled ([#2374](https://github.com/0xMiden/node/issues/2374)).
+- [BREAKING] Validators now require Golden storage key material and store validated private inputs only as threshold-encrypted records. They can issue local decryption shares for those records ([#2374](https://github.com/0xMiden/node/issues/2374)).
+- [BREAKING] The Golden storage migration rejects validator databases that contain Phase 1 validated transaction rows. Bootstrap a fresh validator database for this version ([#2374](https://github.com/0xMiden/node/issues/2374)).
 
 ## v0.15.0 (2026-06-10)
 

@@ -27,8 +27,6 @@ mod sql {
     pub(super) const CLEAR_PRIVATE_RECORD_BLOCK_NUM: &str =
         include_str!("sql/clear_private_record_block_num.sql");
     pub(super) const INSERT_TRANSACTION: &str = include_str!("sql/insert_transaction.sql");
-    #[cfg(test)]
-    pub(super) const LOAD_TRANSACTION: &str = include_str!("sql/load_transaction.sql");
     pub(super) const INSERT_PRIVATE_RECORD: &str = include_str!("sql/insert_private_record.sql");
     pub(super) const LOAD_PRIVATE_RECORD: &str = include_str!("sql/load_private_record.sql");
     pub(super) const LOAD_PRIVATE_RECORDS_BY_BLOCK_NUM: &str =
@@ -121,64 +119,20 @@ fn open_with_pool_size(
     Ok(db)
 }
 
-/// The sealed transaction inputs accepted by the validator.
-///
-/// This is the Phase 1 storage record. Phase 2 will replace the client envelope with inputs
-/// re-encrypted under a fresh content key protected by Golden EHTDH1.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ValidatedTransactionRecord {
-    pub transaction_id: TransactionId,
-    pub submission_scheme: u32,
-    pub submission_key_id: Vec<u8>,
-    pub sealed_transaction_inputs: Vec<u8>,
-}
-
-/// Inserts the accepted sealed inputs and validated marker in one database write.
+/// Inserts a validated transaction marker.
 #[miden_instrument(
     target = COMPONENT,
     skip_all,
     fields(
-        transaction.id = %record.transaction_id,
+        transaction.id = %transaction_id,
     ),
     err,
 )]
 pub(crate) fn insert_transaction(
     tx: &WriteTx<'_>,
-    record: &ValidatedTransactionRecord,
+    transaction_id: TransactionId,
 ) -> Result<usize, DatabaseError> {
-    let id = record.transaction_id.to_bytes();
-    let submission_scheme = i64::from(record.submission_scheme);
-
-    tx.execute(
-        sql::INSERT_TRANSACTION,
-        &[
-            &id,
-            &submission_scheme,
-            &record.submission_key_id,
-            &record.sealed_transaction_inputs,
-        ],
-    )
-}
-
-/// Loads the sealed record stored for a validated transaction.
-#[cfg(test)]
-pub(crate) fn load_transaction(
-    tx: &ReadTx<'_>,
-    tx_id: TransactionId,
-) -> Result<Option<ValidatedTransactionRecord>, DatabaseError> {
-    tx.query(sql::LOAD_TRANSACTION, &[&tx_id.to_bytes()], |row| {
-        let submission_scheme = row
-            .get::<i64>(0)?
-            .try_into()
-            .expect("stored submission scheme should fit in u32");
-        Ok(ValidatedTransactionRecord {
-            transaction_id: tx_id,
-            submission_scheme,
-            submission_key_id: row.get(1)?,
-            sealed_transaction_inputs: row.get(2)?,
-        })
-    })
-    .map(|mut records| records.pop())
+    tx.execute(sql::INSERT_TRANSACTION, &[&transaction_id.to_bytes()])
 }
 
 /// Inserts one encrypted private record.
@@ -229,31 +183,27 @@ pub fn insert_private_record(
 /// Inserts a validated transaction and its encrypted private inputs atomically.
 pub(crate) fn insert_validated_private_transaction(
     tx: &WriteTx<'_>,
-    validated: &ValidatedTransactionRecord,
+    transaction_id: TransactionId,
     record: &StoredPrivateRecord,
 ) -> Result<usize, DatabaseError> {
-    let transaction_inserted = insert_transaction(tx, validated)?;
+    let transaction_inserted = insert_transaction(tx, transaction_id)?;
     let record_inserted = insert_private_record(tx, record)?;
-    if transaction_inserted != 0 && record_inserted == 0 {
+    if transaction_inserted != record_inserted {
         return Err(DatabaseError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "private record exists without its validated transaction",
+            "validated transaction and private record must be inserted together",
         )));
     }
     Ok(transaction_inserted)
 }
 
-/// Returns whether a validated transaction has all storage required by the active mode.
+/// Returns whether a validated transaction and its private record are both stored.
 pub(crate) fn transaction_storage_is_complete(
     tx: &ReadTx<'_>,
     transaction_id: TransactionId,
-    private_record_required: bool,
 ) -> Result<bool, DatabaseError> {
     if !transaction_exists(tx, transaction_id)? {
         return Ok(false);
-    }
-    if !private_record_required {
-        return Ok(true);
     }
     let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
     Ok(load_private_record(tx, record_id)?.is_some())
@@ -606,14 +556,8 @@ mod tests {
 
         // Insert a row keyed by `validated_id`.
         let id = validated_id.to_bytes();
-        let empty: Vec<u8> = vec![];
         db.write("insert_row", move |tx| {
-            tx.execute(
-                "INSERT INTO validated_transactions \
-                 (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                &[&id, &1i64, &empty, &empty],
-            )
+            tx.execute("INSERT INTO validated_transactions (id) VALUES (?1)", &[&id])
         })
         .await
         .unwrap();
@@ -632,13 +576,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enabling_private_storage_requires_record_backfill() {
+    async fn migration_rejects_phase_one_validated_rows() {
+        use miden_node_db::migration::Migrator;
+
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let db_path = temp_dir.path().join("validator.sqlite3");
+        Migrator::builder()
+            .unwrap()
+            .push_sql("001_initial", include_str!("migrations/001_initial.sql"))
+            .unwrap()
+            .push_sql(
+                "002_store_sealed_transaction_inputs",
+                include_str!("migrations/002_store_sealed_transaction_inputs.sql"),
+            )
+            .unwrap()
+            .build()
+            .unwrap()
+            .bootstrap(&db_path)
+            .unwrap();
+
+        let db = Database::new(&db_path).unwrap();
         let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
         let id = transaction_id.to_bytes();
         let empty: Vec<u8> = vec![];
-        db.write("insert_legacy_transaction", move |tx| {
+        db.write("insert_phase_one_transaction", move |tx| {
             tx.execute(
                 "INSERT INTO validated_transactions \
                  (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
@@ -648,38 +609,34 @@ mod tests {
         })
         .await
         .unwrap();
+        drop(db);
 
-        let complete_without_storage = db
-            .read("legacy_storage_complete", move |tx| {
-                transaction_storage_is_complete(tx, transaction_id, false)
-            })
-            .await
-            .unwrap();
-        assert!(complete_without_storage);
-        let incomplete_with_storage = db
-            .read("private_storage_incomplete", move |tx| {
-                transaction_storage_is_complete(tx, transaction_id, true)
-            })
-            .await
-            .unwrap();
-        assert!(!incomplete_with_storage);
+        let err = migrate(&db_path).expect_err("migration must reject Phase 1 rows");
+        assert!(matches!(err, DatabaseError::Migration(_)), "unexpected error: {err:?}");
+    }
 
-        let record = private_record(
-            PrivateRecordId::for_transaction_inputs(transaction_id),
-            transaction_id,
-            11,
-        );
-        db.write("backfill_private_record", move |tx| insert_private_record(tx, &record))
+    #[tokio::test]
+    async fn validated_transaction_cannot_be_backfilled() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
+        db.write("insert_transaction", move |tx| insert_transaction(tx, transaction_id))
             .await
             .unwrap();
 
-        let complete_with_storage = db
-            .read("private_storage_complete", move |tx| {
-                transaction_storage_is_complete(tx, transaction_id, true)
-            })
+        let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
+        let record = private_record(record_id, transaction_id, 11);
+        db.write("reject_private_record_backfill", move |tx| {
+            insert_validated_private_transaction(tx, transaction_id, &record)
+        })
+        .await
+        .expect_err("a private record must not be added after its transaction marker");
+
+        let stored = db
+            .read("load_private_record", move |tx| load_private_record(tx, record_id))
             .await
             .unwrap();
-        assert!(complete_with_storage);
+        assert_eq!(stored, None);
     }
 
     #[tokio::test]

@@ -58,7 +58,7 @@ The unseal happens before the serve lock is taken, so a slow or hung decrypt bac
 the exclusive lock that a backup block subscription needs. The cost is that an already-validated
 resubmission pays for the unseal before being short-circuited.
 
-After the proof, re-execution, and header checks pass, the validator stores the exact sealed input
-envelope with its scheme and key ID. It does not store the plaintext or fields derived from it. This
-is a Phase 1 stand-in. Phase 2 will store the validated inputs under threshold encryption instead.
-A rejected transaction never creates a record.
+After the proof, re-execution, and header checks pass, the validator encrypts the validated inputs
+under a fresh content key. Golden EHTDH1 protects that content key with the validators' threshold
+key. The validator stores only the transaction ID and the protected record. It does not store the
+client envelope or plaintext. A rejected transaction never creates a record.

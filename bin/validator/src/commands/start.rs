@@ -17,7 +17,7 @@ use miden_validator::{
 pub(crate) struct ValidatorKeys {
     pub(crate) signer: ValidatorSigner,
     pub(crate) decrypter: Arc<dyn TransactionInputDecrypter>,
-    pub(crate) storage_key: Option<Arc<GoldenOperatorKey>>,
+    pub(crate) storage_key: Arc<GoldenOperatorKey>,
 }
 
 // Starts the validator component.

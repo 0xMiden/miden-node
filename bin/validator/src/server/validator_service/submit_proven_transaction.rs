@@ -10,12 +10,7 @@ use rand_core_06::OsRng;
 use tonic::Status;
 
 use super::ValidatorService;
-use crate::db::{
-    ValidatedTransactionRecord,
-    insert_transaction,
-    insert_validated_private_transaction,
-    transaction_storage_is_complete,
-};
+use crate::db::{insert_validated_private_transaction, transaction_storage_is_complete};
 use crate::tx_validation::validate_transaction;
 use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId, PrivateRecordSealer};
 
@@ -50,12 +45,10 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             .try_read()
             .map_err(|_| Status::resource_exhausted("validator is busy streaming a backup"))?;
 
-        // Short-circuit only when the active storage mode has all required rows.
-        let private_record_required = self.storage_key.is_some();
         let storage_complete = self
             .db
             .read("transaction_storage_is_complete", move |tx| {
-                transaction_storage_is_complete(tx, tx_id, private_record_required)
+                transaction_storage_is_complete(tx, tx_id)
             })
             .await
             .map_err(|err| {
@@ -72,39 +65,29 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
-        let validated = ValidatedTransactionRecord {
-            transaction_id: tx_id,
-            submission_scheme: self.encryption_key_info.scheme.as_u32(),
-            submission_key_id: sealed.key_id,
-            sealed_transaction_inputs: sealed.ciphertext,
-        };
+        // Re-encrypt the private inputs under a fresh content key.
+        let context = PrivateRecordContext::new(
+            self.private_record_chain_id,
+            self.storage_key.key_epoch(),
+            PrivateRecordId::for_transaction_inputs(tx_id),
+            tx_id,
+        );
+        let private_record = PrivateRecordSealer::from_operator_key(&self.storage_key)
+            .seal(&mut OsRng, context, &private_inputs)
+            .map_err(|err| {
+                Status::internal(err.as_report_context("Failed to protect transaction inputs"))
+            })?;
 
-        let count = if let Some(storage_key) = &self.storage_key {
-            // Re-encrypt the private inputs under a fresh content key.
-            let context = PrivateRecordContext::new(
-                self.private_record_chain_id,
-                storage_key.key_epoch(),
-                PrivateRecordId::for_transaction_inputs(tx_id),
-                tx_id,
-            );
-            let private_record = PrivateRecordSealer::from_operator_key(storage_key)
-                .seal(&mut OsRng, context, &private_inputs)
-                .map_err(|err| {
-                    Status::internal(err.as_report_context("Failed to protect transaction inputs"))
-                })?;
-
-            // Store the validated transaction and private record atomically.
-            self.db
-                .write("insert_validated_private_transaction", move |tx| {
-                    insert_validated_private_transaction(tx, &validated, &private_record)
-                })
-                .await
-        } else {
-            self.db
-                .write("insert_transaction", move |tx| insert_transaction(tx, &validated))
-                .await
-        }
-        .map_err(|err| Status::internal(err.as_report_context("Failed to insert transaction")))?;
+        // Store the validated transaction and private record atomically.
+        let count = self
+            .db
+            .write("insert_validated_private_transaction", move |tx| {
+                insert_validated_private_transaction(tx, tx_id, &private_record)
+            })
+            .await
+            .map_err(|err| {
+                Status::internal(err.as_report_context("Failed to insert transaction"))
+            })?;
 
         self.validated_transactions_count.fetch_add(count as u64, Ordering::Relaxed);
         Ok(())

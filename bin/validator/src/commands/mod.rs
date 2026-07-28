@@ -281,7 +281,7 @@ impl ValidatorCommand {
                 ..
             } => {
                 let address = listen;
-                let storage_key = storage_key.load()?.map(Arc::new);
+                let storage_key = Arc::new(storage_key.load()?);
                 tracing::info!(
                     target: miden_validator::LOG_TARGET,
                     {
@@ -368,66 +368,61 @@ pub struct ValidatorStorageKey {
         env = ENV_STORAGE_KEY_EPOCH,
         value_name = "STORAGE_KEY_EPOCH"
     )]
-    key_epoch: Option<String>,
+    key_epoch: String,
     /// File containing canonical Golden `SetupContext` bytes.
     #[arg(
         long = "storage-key.setup-context",
         env = ENV_STORAGE_KEY_SETUP_CONTEXT,
         value_name = "FILE"
     )]
-    setup_context: Option<PathBuf>,
+    setup_context: PathBuf,
     /// File containing canonical Golden `PublicKeySet` bytes.
     #[arg(
         long = "storage-key.public-key-set",
         env = ENV_STORAGE_KEY_PUBLIC_SET,
         value_name = "FILE"
     )]
-    public_key_set: Option<PathBuf>,
+    public_key_set: PathBuf,
     /// File containing this operator's canonical Golden `SecretShare` bytes.
     #[arg(
         long = "storage-key.secret-share",
         env = ENV_STORAGE_KEY_SECRET_SHARE,
         value_name = "FILE"
     )]
-    secret_share: Option<PathBuf>,
+    secret_share: PathBuf,
 }
 
 impl ValidatorStorageKey {
-    fn load(self) -> anyhow::Result<Option<GoldenOperatorKey>> {
-        let (key_epoch, setup_context, public_key_set, secret_share) =
-            match (self.key_epoch, self.setup_context, self.public_key_set, self.secret_share) {
-                (None, None, None, None) => return Ok(None),
-                (Some(epoch), Some(setup), Some(public), Some(secret)) => {
-                    (epoch, setup, public, secret)
-                },
-                _ => anyhow::bail!(
-                    "storage key epoch, setup context, public key set, and secret share must be \
-                 configured together"
-                ),
-            };
-
-        let key_epoch = hex::decode(key_epoch).context("failed to decode storage key epoch")?;
+    fn load(self) -> anyhow::Result<GoldenOperatorKey> {
+        let key_epoch =
+            hex::decode(self.key_epoch).context("failed to decode storage key epoch")?;
         let key_epoch = key_epoch.try_into().map_err(|bytes: Vec<u8>| {
             anyhow::anyhow!("storage key epoch has {} bytes, expected 32", bytes.len())
         })?;
         let operator_key = EncodedGoldenOperatorKey::new(
             StorageKeyEpoch::new(key_epoch),
-            fs_err::read(&setup_context).with_context(|| {
-                format!("failed to read storage key setup context from {}", setup_context.display())
-            })?,
-            fs_err::read(&public_key_set).with_context(|| {
+            fs_err::read(&self.setup_context).with_context(|| {
                 format!(
-                    "failed to read storage key public key set from {}",
-                    public_key_set.display()
+                    "failed to read storage key setup context from {}",
+                    self.setup_context.display()
                 )
             })?,
-            fs_err::read(&secret_share).with_context(|| {
-                format!("failed to read storage key secret share from {}", secret_share.display())
+            fs_err::read(&self.public_key_set).with_context(|| {
+                format!(
+                    "failed to read storage key public key set from {}",
+                    self.public_key_set.display()
+                )
+            })?,
+            fs_err::read(&self.secret_share).with_context(|| {
+                format!(
+                    "failed to read storage key secret share from {}",
+                    self.secret_share.display()
+                )
             })?,
         )
         .decode()
         .context("failed to validate Golden storage key material")?;
-        Ok(Some(operator_key))
+        Ok(operator_key)
     }
 }
 
@@ -511,10 +506,24 @@ mod tests {
         "--data-directory",
         "/tmp/validator-data",
     ];
+    const STORAGE_KEY_ARGS: [&str; 8] = [
+        "--storage-key.epoch",
+        "0909090909090909090909090909090909090909090909090909090909090909",
+        "--storage-key.setup-context",
+        "/tmp/setup.bin",
+        "--storage-key.public-key-set",
+        "/tmp/public.bin",
+        "--storage-key.secret-share",
+        "/tmp/secret.bin",
+    ];
 
     fn parse_start(extra: &[&str]) -> Result<ValidatorCommand, clap::Error> {
         ValidatorCommand::try_parse_from(
-            BASE_START_ARGS.iter().copied().chain(extra.iter().copied()),
+            BASE_START_ARGS
+                .iter()
+                .copied()
+                .chain(extra.iter().copied())
+                .chain(STORAGE_KEY_ARGS.iter().copied()),
         )
     }
 
@@ -665,25 +674,22 @@ mod tests {
     }
 
     #[test]
-    fn storage_key_is_optional() {
-        let command = parse_start(&[]).expect("start without a storage key must parse");
-        let ValidatorCommand::Start { storage_key, .. } = command else {
-            panic!("expected the start command");
+    fn storage_key_is_required() {
+        let Err(error) = ValidatorCommand::try_parse_from(BASE_START_ARGS) else {
+            panic!("start without a storage key must fail");
         };
-        assert!(storage_key.load().unwrap().is_none());
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
     fn partial_storage_key_configuration_fails() {
-        let command = parse_start(&[
+        let Err(error) = ValidatorCommand::try_parse_from(BASE_START_ARGS.into_iter().chain([
             "--storage-key.epoch",
             "0909090909090909090909090909090909090909090909090909090909090909",
-        ])
-        .expect("the start command must parse before loading files");
-        let ValidatorCommand::Start { storage_key, .. } = command else {
-            panic!("expected the start command");
+        ])) else {
+            panic!("a partial storage key must fail");
         };
-        assert!(storage_key.load().is_err());
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

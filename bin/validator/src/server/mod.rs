@@ -54,7 +54,7 @@ pub struct ValidatorServer {
     pub decrypter: std::sync::Arc<dyn TransactionInputDecrypter>,
 
     /// The validated Golden storage key material for this operator.
-    pub storage_key: Option<std::sync::Arc<GoldenOperatorKey>>,
+    pub storage_key: std::sync::Arc<GoldenOperatorKey>,
 
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,

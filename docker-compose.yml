@@ -5,6 +5,9 @@
 #   MIDEN_VALIDATOR_3_SIGNING_KEY: private signing keys for the three validators.
 #   The insecure defaults correspond to the public keys in the genesis config
 #   in compose/bootstrap.yml and are intended only for local development.
+# - MIDEN_VALIDATOR_STORAGE_KEY_DIRECTORY: host directory containing
+#   setup-context.bin, public-key-set.bin, and secret-share.bin.
+# - MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: hex-encoded 32-byte Golden key epoch.
 # - MIDEN_NODE_IMAGE, MIDEN_VALIDATOR_IMAGE, MIDEN_NTX_BUILDER_IMAGE,
 #   MIDEN_REMOTE_PROVER_IMAGE, MIDEN_NETWORK_MONITOR_IMAGE,
 #   MIDEN_FAUCET_IMAGE, and MIDEN_NOTE_TRANSPORT_IMAGE: container images used

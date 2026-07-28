@@ -23,9 +23,15 @@ delete release tags.
 2. Create the release tag on that commit and push it to GitHub. The tag without its leading `v` must exactly match the
    workspace package version.
 3. The `Release` workflow validates the tag and package versions, checks crate builds and the minimum supported Rust
-   version, dry-runs crate and Docker publishing, and publishes the Docker images.
+   version, dry-runs crate, Docker image, and Compose publishing, then publishes the Docker images and Compose
+   application.
 4. After those checks pass, the workflow creates the GitHub release and release notes, then starts the crates.io and
    Debian publishing workflows.
+
+The Compose publication jobs merge `docker-compose.yml` with `compose/publish.yml`. The main model supports custom
+genesis configuration through a local bind mount, which cannot be included in a portable OCI artifact.
+`compose/publish.yml` uses Compose's `!override` tag to replace that volume list and configures the published
+application to use the validator's built-in genesis configuration.
 
 The workflow uses a broad `v*` trigger because GitHub Actions does not use the same pattern language as repository
 rulesets. Its preflight step verifies that this trigger still matches the target of the `Release tags` ruleset, while

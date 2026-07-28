@@ -7,6 +7,7 @@ use anyhow::Context;
 use clap::{ArgGroup, Parser};
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::clap::duration_to_human_readable_string;
+use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::{
     OfficialNetwork,
@@ -171,13 +172,41 @@ impl NtxBuilderCommand {
                 genesis_block_file,
                 network,
             } => {
+                tracing::info!(
+                    target: miden_ntx_builder::LOG_TARGET,
+                    {
+                        service.name = "miden-ntx-builder",
+                        service.version = env!("CARGO_PKG_VERSION"),
+                        genesis.source.kind =
+                            if genesis_block_file.is_some() { "file" } else { "network" },
+                        genesis.source = %genesis_block_file.as_ref().map_or_else(
+                            || network.map_or_else(
+                                || "custom".to_owned(),
+                                |network| network.to_string(),
+                            ),
+                            |path| path.display().to_string(),
+                        ),
+                        data.directory = %data_directory.display(),
+                    },
+                    "Bootstrapping NTX builder",
+                );
                 ensure_empty_directory(&data_directory)?;
                 let database_filepath = data_directory.join("ntx-builder.sqlite3");
                 let genesis =
                     read_bootstrap_genesis_block(genesis_block_file.as_deref(), network).await?;
+                let genesis_commitment = genesis.inner().header().commitment();
                 miden_ntx_builder::bootstrap(database_filepath, &genesis)
                     .await
-                    .context("failed to bootstrap ntx-builder database")
+                    .context("failed to bootstrap ntx-builder database")?;
+                tracing::info!(
+                    target: miden_ntx_builder::LOG_TARGET,
+                    {
+                        genesis.commitment = %genesis_commitment,
+                        data.directory = %data_directory.display(),
+                    },
+                    "NTX builder bootstrap complete",
+                );
+                Ok(())
             },
             Self::Migrate { data_directory } => {
                 miden_ntx_builder::migrate(data_directory.join("ntx-builder.sqlite3"))
@@ -203,6 +232,24 @@ impl NtxBuilderCommand {
         else {
             unreachable!("start is only called for the Start variant")
         };
+
+        tracing::info!(
+            target: miden_ntx_builder::LOG_TARGET,
+            {
+                service.name = "miden-ntx-builder",
+                service.version = env!("CARGO_PKG_VERSION"),
+                ntx_builder.listen = %listen,
+                data.directory = %data_directory.display(),
+                rpc.endpoint = %format_endpoint(&rpc_url),
+                tx_prover.endpoint = %format_endpoint(&tx_prover_url),
+                rpc.authentication.configured = rpc_auth_header_value.is_some(),
+                ntx_builder.idle_timeout = %humantime::Duration::from(idle_timeout),
+                ntx_builder.max_cycles = max_tx_cycles,
+                ntx_builder.tx_expiration_delta = tx_expiration_delta.get(),
+                sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
+            },
+            "Starting NTX builder",
+        );
 
         let listener = TcpListener::bind(listen)
             .await

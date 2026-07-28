@@ -60,8 +60,6 @@ impl ValidatorServer {
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
     /// encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        tracing::info!(target: LOG_TARGET, endpoint=?self.address, "Initializing server");
-
         // Initialize database connection.
         let db = load_with_pool_size(
             self.data_directory.database_path(),
@@ -94,24 +92,35 @@ impl ValidatorServer {
             .build_v1()
             .context("failed to build reflection service")?;
 
+        let service = ValidatorService::new(
+            self.signer,
+            self.decrypter,
+            db,
+            block_store,
+            initial_chain_tip,
+            initial_tx_count,
+            initial_block_count,
+        )
+        .await
+        .context("failed to initialize validator server")?;
+        let endpoint = listener.local_addr().context("failed to read validator listen address")?;
+        tracing::info!(
+            target: LOG_TARGET,
+            {
+                service.name = "miden-validator",
+                service.version = env!("CARGO_PKG_VERSION"),
+                validator.listen = %endpoint,
+                block.number = initial_chain_tip,
+            },
+            "Validator ready",
+        );
+
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .timeout(self.grpc_options.request_timeout)
-            .add_service(validator_api::service(
-                ValidatorService::new(
-                    self.signer,
-                    self.decrypter,
-                    db,
-                    block_store,
-                    initial_chain_tip,
-                    initial_tx_count,
-                    initial_block_count,
-                )
-                .await
-                .context("failed to initialize validator server")?,
-            ))
+            .add_service(validator_api::service(service))
             .add_service(reflection_service)
             .serve_with_incoming_shutdown(
                 TcpListenerStream::new(listener),

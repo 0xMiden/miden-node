@@ -85,7 +85,7 @@ mod bootstrap_tests {
 const COMPONENT: &str = "miden-ntx-builder";
 
 // Tracing target used for user-visible events.
-const LOG_TARGET: &str = "user::miden-ntx-builder";
+pub const LOG_TARGET: &str = "user::miden-ntx-builder";
 
 /// Default maximum number of network notes a network transaction is allowed to consume.
 const DEFAULT_MAX_NOTES_PER_TX: NonZeroUsize = NonZeroUsize::new(20).expect("literal is non-zero");

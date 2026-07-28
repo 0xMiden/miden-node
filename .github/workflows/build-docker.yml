@@ -83,3 +83,33 @@ jobs:
             CREATED=${{ steps.metadata.outputs.created }}
             VERSION=${{ steps.metadata.outputs.version }}
             COMMIT=${{ steps.metadata.outputs.commit }}
+
+  compose-publish-check:
+    name: Dry-run docker compose publishing
+    needs: verify-ruleset
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Dry-run Compose publishing
+        env:
+          MIDEN_NODE_IMAGE: ghcr.io/0xmiden/miden-node:dry-run
+          MIDEN_VALIDATOR_IMAGE: ghcr.io/0xmiden/miden-validator:dry-run
+          MIDEN_NTX_BUILDER_IMAGE: ghcr.io/0xmiden/miden-ntx-builder:dry-run
+          MIDEN_REMOTE_PROVER_IMAGE: ghcr.io/0xmiden/miden-remote-prover:dry-run
+          MIDEN_NETWORK_MONITOR_IMAGE: ghcr.io/0xmiden/miden-network-monitor:dry-run
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f compose/publish.yml \
+            --profile "*" \
+            publish \
+            --with-env \
+            --yes \
+            --dry-run \
+            ghcr.io/0xmiden/miden-local-network:dry-run

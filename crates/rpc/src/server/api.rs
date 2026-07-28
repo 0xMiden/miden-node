@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::ops::RangeInclusive;
 use std::sync::{Arc, LazyLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Context as AnyhowContext;
 use miden_node_block_producer::BlockProducerApi;
@@ -27,7 +27,7 @@ use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use tokio::sync::{Mutex as TokioMutex, Semaphore};
+use tokio::sync::Semaphore;
 use tonic::metadata::MetadataMap;
 use tonic::{IntoRequest, Request, Status};
 
@@ -121,17 +121,7 @@ pub struct RpcService {
     block_subscription_semaphore: Arc<Semaphore>,
     proof_subscription_semaphore: Arc<Semaphore>,
     subscription_ban: Arc<IpBanList>,
-    encryption_key_cache: Arc<TokioMutex<Option<CachedEncryptionKey>>>,
 }
-
-/// A cached `GetTransactionEncryptionKey` response and the time it was fetched.
-struct CachedEncryptionKey {
-    key: proto::transaction::TransactionEncryptionKey,
-    fetched_at: Instant,
-}
-
-/// How long a cached transaction encryption key is served before being refetched.
-const ENCRYPTION_KEY_CACHE_TTL: Duration = Duration::from_secs(30);
 
 impl RpcService {
     pub(crate) fn new(
@@ -151,7 +141,6 @@ impl RpcService {
             block_subscription_semaphore: Arc::new(Semaphore::new(MAX_REPLICA_SUBSCRIPTIONS)),
             proof_subscription_semaphore: Arc::new(Semaphore::new(MAX_REPLICA_SUBSCRIPTIONS)),
             subscription_ban: Arc::new(IpBanList::default()),
-            encryption_key_cache: Arc::new(TokioMutex::new(None)),
         }
     }
 

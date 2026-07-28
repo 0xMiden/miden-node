@@ -883,6 +883,16 @@ async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
 
     assert_eq!(response, expected);
     assert_eq!(validator_call_count.load(Ordering::SeqCst), 1);
+
+    full_node
+        .get_transaction_encryption_key(Request::new(()))
+        .await
+        .expect("each encryption key request should reach the validator");
+    assert_eq!(
+        validator_call_count.load(Ordering::SeqCst),
+        2,
+        "the public RPC must not cache transaction encryption keys",
+    );
 }
 
 #[tokio::test]

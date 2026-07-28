@@ -42,7 +42,11 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
         let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
-        tracing::trace!(target: LOG_TARGET, batch_size = request.sealed_transaction_inputs.len());
+        tracing::trace!(
+            target: LOG_TARGET,
+            { batch.size = request.sealed_transaction_inputs.len() },
+            "Received transaction batch",
+        );
 
         let proven_batch = ProvenBatch::read_from_bytes(&request.batch_proof).map_err(|err| {
             Status::invalid_argument(err.as_report_context("invalid proven_batch"))

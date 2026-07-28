@@ -1,10 +1,8 @@
-use std::time::Instant;
-
 use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::miden_instrument;
 use tracing::debug;
 
-use super::{CachedEncryptionKey, ENCRYPTION_KEY_CACHE_TTL, Request, RpcMode, RpcService};
+use super::{Request, RpcMode, RpcService};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -36,13 +34,6 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
 
         debug!(target: LOG_TARGET, "Getting transaction encryption key");
 
-        let mut cache = self.encryption_key_cache.lock().await;
-        if let Some(cached) = cache.as_ref()
-            && cached.fetched_at.elapsed() < ENCRYPTION_KEY_CACHE_TTL
-        {
-            return Ok(cached.key.clone());
-        }
-
         let mut forwarded_request = Request::new(());
         if let Some(accept) = original_accept_header {
             forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
@@ -50,7 +41,7 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
 
         // Nodes connected to validators ask one directly, otherwise the request is forwarded. The
         // encryption key is shared by the whole validator set, so any single validator serves.
-        let key = match &self.mode {
+        let validator = match &self.mode {
             RpcMode::Sequencer { validators, .. } => validators.random(),
             RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => pre_auth.validators().random(),
             RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
@@ -61,17 +52,11 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
                     .await
                     .map(tonic::Response::into_inner);
             },
-        }
-        .clone()
+        };
+        validator
+            .clone()
         .get_transaction_encryption_key(forwarded_request)
         .await
-        .map(tonic::Response::into_inner)?;
-
-        *cache = Some(CachedEncryptionKey {
-            key: key.clone(),
-            fetched_at: Instant::now(),
-        });
-
-        Ok(key)
+            .map(tonic::Response::into_inner)
     }
 }

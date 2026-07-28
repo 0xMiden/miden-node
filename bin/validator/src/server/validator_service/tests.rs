@@ -97,11 +97,11 @@ impl TestValidator {
     async fn call_submit_proven_transaction(
         &self,
         tx: &ProvenTransaction,
-        sealed: Option<proto::transaction::SealedTransactionInputs>,
+        sealed: proto::transaction::SealedTransactionInputs,
     ) -> Result<(), tonic::Status> {
         let request = tonic::Request::new(proto::transaction::ProvenTransaction {
             transaction: tx.to_bytes(),
-            sealed_transaction_inputs: sealed,
+            sealed_transaction_inputs: Some(sealed),
         });
         validator_api::SubmitProvenTransaction::full(&self.server, request).await
     }
@@ -988,6 +988,24 @@ async fn encryption_key_available_during_backup() {
 // SUBMIT PATH: TRANSACTION INPUT SEALING
 // ================================================================================================
 
+/// A submission with no encrypted inputs is rejected before validation.
+#[tokio::test]
+async fn submit_rejects_missing_encrypted_inputs() {
+    let tv = TestValidator::new().await;
+    let tx = dummy_proven_tx(2);
+    let request = tonic::Request::new(proto::transaction::ProvenTransaction {
+        transaction: tx.to_bytes(),
+        sealed_transaction_inputs: None,
+    });
+
+    let status = validator_api::SubmitProvenTransaction::full(&tv.server, request)
+        .await
+        .unwrap_err();
+
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert!(status.message().contains("Missing sealed transaction inputs"));
+}
+
 /// Plaintext transaction inputs must be impossible to submit. This is the central guarantee of the
 /// whole change.
 #[tokio::test]
@@ -999,7 +1017,7 @@ async fn submit_rejects_plaintext_inputs() {
         ciphertext: b"not a sealed message, just bytes".to_vec(),
     };
 
-    let status = tv.call_submit_proven_transaction(&tx, Some(sealed)).await.unwrap_err();
+    let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert!(status.message().contains("unseal"), "got: {}", status.message());
@@ -1015,7 +1033,7 @@ async fn submit_rejects_unknown_key_id() {
     let mut sealed = tv.seal(tx.id(), b"transaction inputs");
     sealed.key_id = vec![0xAA, 0xBB, 0xCC, 0xDD];
 
-    let status = tv.call_submit_proven_transaction(&tx, Some(sealed)).await.unwrap_err();
+    let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::FailedPrecondition);
     assert!(
@@ -1043,7 +1061,7 @@ async fn submit_rejects_inputs_sealed_for_a_different_transaction() {
 
     let sealed_for_a = tv.seal(tx_a.id(), b"transaction inputs");
 
-    let status = tv.call_submit_proven_transaction(&tx_b, Some(sealed_for_a)).await.unwrap_err();
+    let status = tv.call_submit_proven_transaction(&tx_b, sealed_for_a).await.unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert!(status.message().contains("unseal"), "got: {}", status.message());
@@ -1057,7 +1075,7 @@ async fn correctly_sealed_inputs_reach_the_deserialization_stage() {
     let tx = dummy_proven_tx(10);
     let sealed = tv.seal(tx.id(), b"not really transaction inputs");
 
-    let status = tv.call_submit_proven_transaction(&tx, Some(sealed)).await.unwrap_err();
+    let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert!(

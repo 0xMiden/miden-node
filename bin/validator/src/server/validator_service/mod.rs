@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicU64;
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::Database;
+use miden_node_proto::domain::encryption::TransactionEncryptionKeyInfo;
 use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::Word;
@@ -20,7 +21,6 @@ use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
-use crate::signers::TransactionEncryptionKeyInfo;
 use crate::{COMPONENT, TransactionInputDecrypter, ValidatorSigner};
 
 #[cfg(test)]

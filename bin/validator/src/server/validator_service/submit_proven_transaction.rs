@@ -119,7 +119,7 @@ impl ValidatorService {
         }
 
         let associated_data = transaction_inputs_associated_data(
-            self.encryption_key_info.scheme,
+            self.encryption_key_info.scheme.as_u32(),
             &self.encryption_key_info.key_id,
             self.genesis_commitment,
             tx_id,

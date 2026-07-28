@@ -103,7 +103,7 @@ message ValidatorKeyAttestation {
   // `next_key_transcript` is empty when no rotation is scheduled, or the next key's `scheme ||
   // len(key_id) || key_id || len(public_key) || public_key || rotation_block_num` otherwise,
   // binding any scheduled rotation to the signature. The canonical construction is
-  // `miden_validator::attestation_commitment`.
+  // `miden_node_proto::domain::encryption`.
   bytes signature = 2;
 }
 

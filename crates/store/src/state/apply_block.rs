@@ -18,6 +18,7 @@ use tracing::{Instrument, info_span};
 
 use crate::db::NoteRecord;
 use crate::errors::{ApplyBlockError, ApplyBlockWithProvingInputsError, InvalidBlockError};
+use crate::state::block_lifecycle::{BlockLifecycle, lifecycle_events_enabled};
 use crate::state::{BlockNotification, InnerState, State};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
@@ -104,6 +105,12 @@ impl State {
 
         self.validate_block_header(header, body).await?;
 
+        let block_lifecycle =
+            lifecycle_events_enabled().then(|| BlockLifecycle::from_block_body(block_num, body));
+        let unresolved_note_nullifiers = block_lifecycle
+            .as_ref()
+            .map_or_else(Vec::new, BlockLifecycle::unresolved_note_nullifiers);
+
         // Save the block to the block store. In a case of a rolled-back DB transaction, the
         // in-memory state will be unchanged, but the file might still be written. Such blocks
         // should be considered candidates, not finalized blocks.
@@ -157,6 +164,7 @@ impl State {
                     signed_block,
                     notes,
                     precomputed_public_states,
+                    unresolved_note_nullifiers,
                 )
                 .await
             }
@@ -172,7 +180,7 @@ impl State {
         // Awaiting the block saving task to complete without errors.
         block_save_task.await??;
 
-        self.with_inner_and_forest_write_blocking(|inner, forest| {
+        let resolved_note_ids = self.with_inner_and_forest_write_blocking(|inner, forest| {
             // We need to check that neither the nullifier tree nor the account tree have changed
             // while we were waiting for the DB preparation task to complete. If either of them did
             // change, we do not proceed with in-memory and database updates, since it may lead to
@@ -192,7 +200,7 @@ impl State {
             // TODO: shutdown #91 Await for successful commit of the DB transaction. If the commit
             // fails, we mustn't change in-memory state, so we return a block applying error and
             // don't proceed with in-memory updates.
-            tokio::runtime::Handle::current()
+            let resolved_note_ids = tokio::runtime::Handle::current()
                 .block_on(db_update_task)?
                 .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
@@ -212,7 +220,7 @@ impl State {
             });
             blockchain.push(block_commitment);
 
-            Ok(())
+            Ok(resolved_note_ids)
         })?;
 
         // Push to cache and notify replica subscribers.
@@ -221,6 +229,9 @@ impl State {
             .expect("block cache receives sequential block numbers");
         let _ = self.committed_tip_tx.send(block_num);
 
+        if let Some(block_lifecycle) = block_lifecycle {
+            block_lifecycle.emit(&resolved_note_ids);
+        }
         tracing::debug!(target: LOG_TARGET, "Block applied");
 
         Ok(())

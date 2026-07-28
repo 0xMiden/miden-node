@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -31,23 +32,96 @@ pub(crate) const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 pub struct RpcReadiness {
     reporter: HealthReporter,
     threshold: u32,
+    state: Arc<AtomicU8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReadinessTransition {
+    InitialNotReady,
+    BecameReady,
+    BecameNotReady,
+    Unchanged,
 }
 
 impl RpcReadiness {
     const SERVICE_NAME: &'static str = "rpc.Api";
+    const UNKNOWN: u8 = 0;
+    const NOT_READY: u8 = 1;
+    const READY: u8 = 2;
 
     pub fn new(reporter: HealthReporter, threshold: u32) -> Self {
-        Self { reporter, threshold }
+        Self {
+            reporter,
+            threshold,
+            state: Arc::new(AtomicU8::new(Self::UNKNOWN)),
+        }
     }
 
     /// Updates the RPC service health status based on the upstream/local tip gap.
     pub async fn update(&self, upstream_tip: BlockNumber, local_tip: BlockNumber) {
-        let status = if upstream_tip.as_u32().saturating_sub(local_tip.as_u32()) <= self.threshold {
+        let gap = upstream_tip.as_u32().saturating_sub(local_tip.as_u32());
+        let ready = gap <= self.threshold;
+        let status = if ready {
             ServingStatus::Serving
         } else {
             ServingStatus::NotServing
         };
         self.reporter.set_service_status(Self::SERVICE_NAME, status).await;
+
+        match self.record_transition(ready) {
+            ReadinessTransition::BecameReady => {
+                info!(
+                    target: LOG_TARGET,
+                    {
+                        service.name = "miden-node",
+                        service.version = env!("CARGO_PKG_VERSION"),
+                        node.role = "full",
+                        block.number = %local_tip,
+                        sync.upstream_block = %upstream_tip,
+                        sync.block_gap = gap,
+                        sync.ready_threshold = self.threshold,
+                    },
+                    "Node ready",
+                );
+            },
+            ReadinessTransition::BecameNotReady => {
+                warn!(
+                    target: LOG_TARGET,
+                    {
+                        block.number = %local_tip,
+                        sync.upstream_block = %upstream_tip,
+                        sync.block_gap = gap,
+                        sync.ready_threshold = self.threshold,
+                    },
+                    "Node no longer ready",
+                );
+            },
+            ReadinessTransition::InitialNotReady => {
+                tracing::debug!(
+                    target: LOG_TARGET,
+                    {
+                        block.number = %local_tip,
+                        sync.upstream_block = %upstream_tip,
+                        sync.block_gap = gap,
+                        sync.ready_threshold = self.threshold,
+                    },
+                    "Node synchronizing",
+                );
+            },
+            ReadinessTransition::Unchanged => {},
+        }
+    }
+
+    fn record_transition(&self, ready: bool) -> ReadinessTransition {
+        let next = if ready { Self::READY } else { Self::NOT_READY };
+        match self.state.swap(next, Ordering::Relaxed) {
+            previous if previous == next => ReadinessTransition::Unchanged,
+            Self::UNKNOWN if ready => ReadinessTransition::BecameReady,
+            Self::UNKNOWN => ReadinessTransition::InitialNotReady,
+            Self::READY => ReadinessTransition::BecameNotReady,
+            Self::NOT_READY => ReadinessTransition::BecameReady,
+            _ => unreachable!("readiness state is one of the declared constants"),
+        }
     }
 }
 
@@ -120,10 +194,15 @@ impl BlockSync {
         err,
     )]
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let block_from = self.state.chain_tip(Finality::Committed).await.child().as_u32();
+        let local_tip = self.state.chain_tip(Finality::Committed).await;
+        let mut client = self.source_rpc.clone();
+        let upstream_tip =
+            BlockNumber::from(client.status(tonic::Request::new(())).await?.into_inner().chain_tip);
+        self.readiness.update(upstream_tip, local_tip).await;
+
+        let block_from = local_tip.child().as_u32();
         info!(target: LOG_TARGET, block_from, "Connecting to upstream RPC for blocks");
 
-        let mut client = self.source_rpc.clone();
         let mut stream = client
             .block_subscription(BlockSubscriptionRequest { block_from })
             .await?
@@ -228,5 +307,22 @@ impl ProofSync {
 
             expected = expected.child();
         }
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+
+    #[test]
+    fn readiness_transitions_are_emitted_once_per_state_change() {
+        let (reporter, _service) = tonic_health::server::health_reporter();
+        let readiness = RpcReadiness::new(reporter, 10);
+
+        assert_eq!(readiness.record_transition(false), ReadinessTransition::InitialNotReady,);
+        assert_eq!(readiness.record_transition(false), ReadinessTransition::Unchanged,);
+        assert_eq!(readiness.record_transition(true), ReadinessTransition::BecameReady,);
+        assert_eq!(readiness.record_transition(true), ReadinessTransition::Unchanged,);
+        assert_eq!(readiness.record_transition(false), ReadinessTransition::BecameNotReady,);
     }
 }

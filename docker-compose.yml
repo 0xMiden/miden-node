@@ -5,10 +5,17 @@
 #   By default, the local network bootstraps from the validator's built-in
 #   genesis configuration. Use this environment variable to override the
 #   built-in configuration.
+# - MIDEN_NODE_IMAGE, MIDEN_VALIDATOR_IMAGE, MIDEN_NTX_BUILDER_IMAGE,
+#   MIDEN_REMOTE_PROVER_IMAGE, and MIDEN_NETWORK_MONITOR_IMAGE: container
+#   images used by the local network. They default to the unqualified image
+#   names built by the Makefile.
+# - OTEL_EXPORTER_OTLP_ENDPOINT: optional additional OTLP/gRPC endpoint. Traces
+#   are always sent to the bundled collector, which forwards them to this
+#   endpoint and to Tempo when the telemetry profile is enabled.
 
 services:
   bootstrap-validator:
-    image: miden-validator
+    image: ${MIDEN_VALIDATOR_IMAGE:-miden-validator}
     pull_policy: if_not_present
     volumes:
       - node-data:/data
@@ -51,7 +58,7 @@ services:
         touch /data/validator/.bootstrapped
 
   bootstrap-node:
-    image: miden-node
+    image: ${MIDEN_NODE_IMAGE:-miden-node}
     pull_policy: if_not_present
     volumes:
       - node-data:/data
@@ -79,7 +86,7 @@ services:
         touch /data/node/.bootstrapped
 
   bootstrap-ntx-builder:
-    image: miden-ntx-builder
+    image: ${MIDEN_NTX_BUILDER_IMAGE:-miden-ntx-builder}
     pull_policy: if_not_present
     volumes:
       - node-data:/data
@@ -107,13 +114,15 @@ services:
         touch /data/ntx-builder/.bootstrapped
 
   sequencer:
-    image: miden-node
+    image: ${MIDEN_NODE_IMAGE:-miden-node}
     pull_policy: if_not_present
     volumes:
       - node-data:/data
     depends_on:
       bootstrap-node:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
       validator:
         condition: service_started
     command:
@@ -124,39 +133,53 @@ services:
       - --validator.url=http://validator:50101
       - --ntx-builder.url=http://ntx-builder:50301
       - --rpc.network-tx-auth-header-value=secret_value
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_RESOURCE_ATTRIBUTES: service.instance.id=sequencer
     ports:
       - "127.0.0.1:57291:57291"
 
   validator:
-    image: miden-validator
+    image: ${MIDEN_VALIDATOR_IMAGE:-miden-validator}
     pull_policy: if_not_present
     volumes:
       - node-data:/data
     depends_on:
       bootstrap-validator:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     command:
       - miden-validator
       - start
       - --listen=0.0.0.0:50101
       - --data-directory=/data/validator
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
 
   tx-prover:
-    image: miden-remote-prover
+    image: ${MIDEN_REMOTE_PROVER_IMAGE:-miden-remote-prover}
     pull_policy: if_not_present
+    depends_on:
+      otel-collector:
+        condition: service_started
     command:
       - miden-remote-prover
       - --kind=transaction
       - --port=50051
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
 
   ntx-builder:
-    image: miden-ntx-builder
+    image: ${MIDEN_NTX_BUILDER_IMAGE:-miden-ntx-builder}
     pull_policy: if_not_present
     volumes:
       - node-data:/data
     depends_on:
       bootstrap-ntx-builder:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
       sequencer:
         condition: service_started
       tx-prover:
@@ -169,6 +192,332 @@ services:
       - --rpc.auth-header-value=secret_value
       - --tx-prover.url=${MIDEN_REMOTE_PROVER_URL:-http://tx-prover:50051}
       - --data-directory=/data/ntx-builder
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.157.0
+    configs:
+      - source: otel-collector
+        target: /etc/otelcol-contrib/config.yaml
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+
+  tempo:
+    profiles: [telemetry]
+    image: grafana/tempo:2.10.4
+    configs:
+      - source: tempo
+        target: /etc/tempo.yaml
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:4317:4317"
+
+  grafana:
+    profiles: [telemetry]
+    image: grafana/grafana:12.4
+    configs:
+      - source: grafana-datasources
+        target: /etc/grafana/provisioning/datasources/datasources.yaml
+      - source: grafana-dashboards
+        target: /etc/grafana/provisioning/dashboards/dashboards.yaml
+      - source: grafana-miden-node-dashboard
+        target: /var/lib/grafana/dashboards/miden-node.json
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/miden-node.json
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - tempo
+
+  monitor:
+    profiles: [monitor]
+    image: ${MIDEN_NETWORK_MONITOR_IMAGE:-miden-network-monitor}
+    pull_policy: if_not_present
+    depends_on:
+      otel-collector:
+        condition: service_started
+      sequencer:
+        condition: service_started
+    command:
+      - miden-network-monitor
+      - start
+    environment:
+      MIDEN_MONITOR_RPC_URL: http://sequencer:57291
+      MIDEN_MONITOR_PORT: "3001"
+      MIDEN_MONITOR_NETWORK_NAME: Localhost
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "127.0.0.1:3001:3001"
 
 volumes:
   node-data:
+
+configs:
+  otel-collector:
+    content: |
+      receivers:
+        # Miden services always send traces to this stable in-stack endpoint.
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+        # An unset caller endpoint loops back through this sink receiver. This
+        # gives the upstream exporter a valid, quiet default destination.
+        otlp/null:
+          protocols:
+            grpc:
+              endpoint: 127.0.0.1:14317
+
+      processors:
+        batch:
+
+      exporters:
+        otlp_grpc/tempo:
+          endpoint: tempo:4317
+          tls:
+            insecure: true
+          retry_on_failure:
+            enabled: false
+          sending_queue:
+            enabled: false
+        otlp_grpc/upstream:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:-127.0.0.1:14317}
+          tls:
+            insecure: true
+          retry_on_failure:
+            enabled: false
+          sending_queue:
+            enabled: false
+        file/null:
+          path: /dev/null
+
+      connectors:
+        # Each destination fails over independently. Unavailable destinations
+        # drop traces through file/null and are retried every five seconds.
+        failover/tempo:
+          priority_levels:
+            - [traces/tempo]
+            - [traces/null-tempo]
+          retry_interval: 5s
+        failover/upstream:
+          priority_levels:
+            - [traces/upstream]
+            - [traces/null-upstream]
+          retry_interval: 5s
+
+      service:
+        pipelines:
+          traces:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [failover/tempo, failover/upstream]
+          traces/tempo:
+            receivers: [failover/tempo]
+            exporters: [otlp_grpc/tempo]
+          traces/null-tempo:
+            receivers: [failover/tempo]
+            exporters: [file/null]
+          traces/upstream:
+            receivers: [failover/upstream]
+            exporters: [otlp_grpc/upstream]
+          traces/null-upstream:
+            receivers: [failover/upstream]
+            exporters: [file/null]
+          traces/local-null:
+            receivers: [otlp/null]
+            exporters: [file/null]
+        telemetry:
+          logs:
+            level: error
+
+  tempo:
+    content: |
+      stream_over_http_enabled: true
+
+      server:
+        http_listen_port: 3200
+
+      distributor:
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: "0.0.0.0:4317"
+
+      storage:
+        trace:
+          backend: local
+          local:
+            path: /var/tempo/traces
+          wal:
+            path: /var/tempo/wal
+
+      metrics_generator:
+        registry:
+          external_labels:
+            source: tempo
+        storage:
+          path: /var/tempo/metrics/wal
+        traces_storage:
+          path: /var/tempo/metrics/traces
+
+      overrides:
+        metrics_generator_processors: [service-graphs, span-metrics, local-blocks] # enables metrics generator
+
+  grafana-datasources:
+    content: |
+      apiVersion: 1
+
+      datasources:
+        - name: Tempo
+          type: tempo
+          access: proxy
+          url: http://tempo:3200
+          isDefault: true
+          version: 1
+          editable: false
+          uid: tempo
+
+  grafana-dashboards:
+    content: |
+      apiVersion: 1
+
+      providers:
+        - name: default
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards
+            foldersFromFilesStructure: false
+
+  grafana-miden-node-dashboard:
+    content: |
+      {
+        "annotations": {
+          "list": []
+        },
+        "editable": true,
+        "fiscalYearStartMonth": 0,
+        "graphTooltip": 0,
+        "links": [],
+        "panels": [
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "gridPos": {
+              "h": 10,
+              "w": 24,
+              "x": 0,
+              "y": 0
+            },
+            "id": 1,
+            "targets": [
+              {
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceqlSearch",
+                "limit": 20,
+                "tableType": "traces",
+                "filters": [
+                  {
+                    "id": "service-name",
+                    "tag": "service.name",
+                    "operator": "=",
+                    "scope": "resource"
+                  }
+                ]
+              }
+            ],
+            "title": "Recent Traces",
+            "type": "table"
+          },
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "gridPos": {
+              "h": 10,
+              "w": 24,
+              "x": 0,
+              "y": 10
+            },
+            "id": 2,
+            "targets": [
+              {
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{name =~ \"block_builder.*\"}",
+                "limit": 20,
+                "tableType": "traces"
+              }
+            ],
+            "title": "Block Building Traces",
+            "type": "table"
+          },
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "gridPos": {
+              "h": 10,
+              "w": 24,
+              "x": 0,
+              "y": 20
+            },
+            "id": 3,
+            "targets": [
+              {
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{name =~ \"batch_builder.*\"}",
+                "limit": 20,
+                "tableType": "traces"
+              }
+            ],
+            "title": "Batch Building Traces",
+            "type": "table"
+          }
+        ],
+        "schemaVersion": 39,
+        "tags": ["miden"],
+        "templating": {
+          "list": []
+        },
+        "time": {
+          "from": "now-30m",
+          "to": "now"
+        },
+        "title": "Miden Node",
+        "uid": "miden-node",
+        "version": 2
+      }

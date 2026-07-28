@@ -54,12 +54,11 @@ previous key, B as the current key, and C as the next key. The provider accepts 
 marks it expired. After that epoch, a restart can drop A. When C activates, move B into the previous slot.
 
 The validator logs a warning when any key is loaded from plain hex. Production deployments should instead wrap each key
-with a symmetric AWS KMS key
-(`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via `--encryption-key.kms-ciphertext` or
-`MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT`. The validator recovers the key material at startup with `kms:Decrypt`,
-so its AWS identity needs that permission on the wrapping key. Note that, unlike KMS-backed signing, the decrypted
-encryption key is held in validator memory: AWS KMS cannot perform X25519 key agreement itself, so envelope encryption
-is the supported provisioning path. Other providers may keep the secret outside the validator process because the
-provider contract requires only public schedule metadata and a decrypt operation.
+with a symmetric AWS KMS key (`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via
+`--encryption-key.kms-ciphertext` or `MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT`. The validator recovers the key
+material at startup with `kms:Decrypt`, so its AWS identity needs that permission on the wrapping key. Note that, unlike
+KMS-backed signing, the decrypted encryption key is held in validator memory: AWS KMS cannot perform X25519 key
+agreement itself, so envelope encryption is the supported provisioning path. Other providers may keep the secret outside
+the validator process because the provider contract requires only public schedule metadata and a decrypt operation.
 
 Use `miden-validator start --help` for the complete option list.

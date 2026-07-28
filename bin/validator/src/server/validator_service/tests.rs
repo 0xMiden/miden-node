@@ -878,6 +878,38 @@ async fn schedule_is_reattested_without_automatic_rotation() {
     assert!(verify_transaction_encryption_key_schedule(&before, &trusted).is_err());
 }
 
+/// A request that waits on the cache lock reads the chain tip after the lock is acquired, so it
+/// cannot replace a newer attestation with one for an older epoch.
+#[tokio::test]
+async fn stale_request_cannot_roll_back_schedule_attestation() {
+    let tv = TestValidator::new().await;
+    let epoch_one = ValidatorService::attest_encryption_key_schedule(
+        tv.server.signer.as_ref(),
+        tv.server.decrypter.as_ref(),
+        tv.server.genesis_commitment,
+        BlockNumber::from_epoch(1),
+        tv.server.encryption_key_refresh_timeout,
+    )
+    .await
+    .unwrap();
+
+    let mut cached = tv.server.encryption_key_schedule.lock().await;
+    let mut stale_request = Box::pin(tv.server.attested_encryption_key_schedule());
+    tokio::select! {
+        biased;
+        _ = &mut stale_request => panic!("request unexpectedly completed"),
+        () = tokio::task::yield_now() => {},
+    }
+
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+    cached.attested = Arc::new(epoch_one);
+    drop(cached);
+
+    let attested = stale_request.await.unwrap();
+    assert_eq!(attested.epoch, 1);
+    assert_eq!(tv.server.encryption_key_schedule.lock().await.attested.epoch, 1);
+}
+
 /// A failed epoch refresh is retried only after a request-path backoff, avoiding repeated provider
 /// or KMS calls during an outage without introducing a background rotation worker.
 #[tokio::test]

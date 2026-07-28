@@ -271,6 +271,7 @@ async fn load_encryption_key(
     kms_ciphertext: Option<String>,
     role: &str,
 ) -> anyhow::Result<Option<KeyExchangeKey>> {
+    let loaded_from_hex = kms_ciphertext.is_none() && hex_key.is_some();
     let key_bytes = if let Some(ciphertext) = kms_ciphertext {
         let ciphertext =
             base64::engine::general_purpose::STANDARD.decode(ciphertext).with_context(|| {
@@ -295,6 +296,12 @@ async fn load_encryption_key(
             target: LOG_TARGET,
             role,
             "Using the predefined, insecure transaction encryption key"
+        );
+    } else if loaded_from_hex {
+        tracing::warn!(
+            target: LOG_TARGET,
+            role,
+            "Using a plaintext transaction encryption key; use KMS ciphertext in production"
         );
     }
 

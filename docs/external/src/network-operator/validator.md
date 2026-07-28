@@ -48,12 +48,13 @@ Each key has an activation block, which must be an epoch boundary. Configure the
 `--encryption-key.activation-block`, and `--encryption-key.next.*`. Hex and KMS ciphertext sources are supported for all
 three keys.
 
-At a rotation boundary, all validators must restart with the same schedule. For example, a restart that activates key B
-and announces key C uses A as the previous key, B as the current key, and C as the next key. The provider accepts A
-through B's activation epoch, then marks it expired. After that epoch, a restart can drop A. When C activates, move B
-into the previous slot.
+All validators must restart with the same key schedule whenever the configured keys change. Keys then activate at their
+epoch boundaries without another restart. For example, a restart that activates key B and announces key C uses A as the
+previous key, B as the current key, and C as the next key. The provider accepts A through B's activation epoch, then
+marks it expired. After that epoch, a restart can drop A. When C activates, move B into the previous slot.
 
-Production deployments should not pass the key in plaintext. Instead, wrap it with a symmetric AWS KMS key
+The validator logs a warning when any key is loaded from plain hex. Production deployments should instead wrap each key
+with a symmetric AWS KMS key
 (`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via `--encryption-key.kms-ciphertext` or
 `MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT`. The validator recovers the key material at startup with `kms:Decrypt`,
 so its AWS identity needs that permission on the wrapping key. Note that, unlike KMS-backed signing, the decrypted

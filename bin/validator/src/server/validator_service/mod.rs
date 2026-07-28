@@ -23,7 +23,7 @@ use tokio::time::{Instant, timeout};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
 use crate::signers::TransactionEncryptionKeySchedule;
-use crate::{COMPONENT, TransactionInputDecrypter, ValidatorSigner};
+use crate::{COMPONENT, LOG_TARGET, TransactionInputDecrypter, ValidatorSigner};
 
 #[cfg(test)]
 mod tests;
@@ -308,11 +308,10 @@ impl ValidatorService {
     pub(crate) async fn attested_encryption_key_schedule(
         &self,
     ) -> Result<Arc<AttestedEncryptionKeySchedule>, ValidatorError> {
-        let chain_tip = *self.committed_tip.borrow();
-        let epoch = chain_tip.block_epoch();
-
         loop {
             let mut cached = self.encryption_key_schedule.lock().await;
+            let chain_tip = *self.committed_tip.borrow();
+            let epoch = chain_tip.block_epoch();
             if cached.attested.epoch == epoch {
                 return Ok(Arc::clone(&cached.attested));
             }
@@ -366,6 +365,12 @@ impl ValidatorService {
                     Ok(attested) => {
                         cached.failed_refresh = None;
                         let attested = Arc::new(attested);
+                        tracing::info!(
+                            target: LOG_TARGET,
+                            epoch = attested.epoch,
+                            key_id = %hex::encode(&attested.schedule.current_key.key_id),
+                            "Refreshed the transaction encryption key schedule attestation"
+                        );
                         cached.attested = Arc::clone(&attested);
                         EncryptionKeyScheduleRefreshState::Complete(Ok(attested))
                     },

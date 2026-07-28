@@ -235,8 +235,8 @@ mod tests {
         assert_eq!(ad.len(), 98);
     }
 
-    /// Scheme 0 means "unspecified" on the wire but K256 in `IesScheme`, so converting the raw value
-    /// would silently select a scheme the node does not serve instead of erroring.
+    /// Scheme 0 means "unspecified" on the wire but K256 in `IesScheme`, so converting the raw
+    /// value would silently select a scheme the node does not serve instead of erroring.
     #[test]
     fn sealer_rejects_unspecified_scheme() {
         let key = proto::transaction::TransactionEncryptionKey {

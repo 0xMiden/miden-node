@@ -1019,7 +1019,8 @@ async fn submit_rejects_plaintext_inputs() {
 }
 
 /// A key id that does not match the validator's earns a distinct, actionable status so a client
-/// knows to re-fetch rather than retry the same blob, without disclosing the validator's own key id.
+/// knows to re-fetch rather than retry the same blob, without disclosing the validator's own key
+/// id.
 #[tokio::test]
 async fn submit_rejects_unknown_key_id() {
     let tv = TestValidator::new().await;

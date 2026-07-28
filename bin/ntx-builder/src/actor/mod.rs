@@ -151,6 +151,7 @@ impl AccountActorContext {
 
         let url = Url::parse("http://127.0.0.1:1").unwrap();
         let block_header = mock_block_header(0_u32.into());
+        let trusted_validator_signing_keys = block_header.validator_keys().as_keys().to_vec();
         let chain_mmr = PartialMmr::from_peaks(
             MmrPeaks::new(Forest::new(0).expect("forest 0 is valid"), vec![]).unwrap(),
         );
@@ -163,6 +164,7 @@ impl AccountActorContext {
                 rpc: RpcClient::new(
                     url.clone(),
                     miden_protocol::Word::default(),
+                    trusted_validator_signing_keys,
                     Duration::from_millis(100),
                     Duration::from_secs(30),
                 )

@@ -5,7 +5,10 @@
 
 use std::time::Duration;
 
+use anyhow::{Context, Result};
 use clap::Parser;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
+use miden_protocol::utils::serde::Deserializable;
 use url::Url;
 
 // MONITOR CONFIGURATION CONSTANTS
@@ -108,6 +111,16 @@ pub struct MonitorConfig {
     )]
     pub disable_ntx_service: bool,
 
+    /// Hex-encoded validator signing public key trusted to attest the transaction encryption key.
+    ///
+    /// Required when network transaction checks are enabled.
+    #[arg(
+        long = "validator-signing-public-key",
+        env = "MIDEN_MONITOR_VALIDATOR_SIGNING_PUBLIC_KEY",
+        value_name = "HEX"
+    )]
+    pub validator_signing_public_key: Option<String>,
+
     /// The interval at which to send the increment counter transaction.
     #[arg(
         long = "counter-increment-interval",
@@ -186,4 +199,17 @@ pub struct MonitorConfig {
         help = "Maximum time without a chain tip update before marking RPC as unhealthy"
     )]
     pub stale_chain_tip_threshold: Duration,
+}
+
+impl MonitorConfig {
+    /// Decodes the validator signing key required by transaction submission checks.
+    pub fn trusted_validator_signing_key(&self) -> Result<ValidatorPublicKey> {
+        let encoded = self.validator_signing_public_key.as_deref().context(
+            "--validator-signing-public-key is required when network transaction checks are enabled",
+        )?;
+        let bytes =
+            hex::decode(encoded).context("validator signing public key must be hex encoded")?;
+        ValidatorPublicKey::read_from_bytes(&bytes)
+            .context("validator signing public key must be a valid K256 public key")
+    }
 }

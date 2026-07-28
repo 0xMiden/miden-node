@@ -3,20 +3,26 @@
 //! This module contains functionality for deploying Miden accounts to the network.
 
 use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use backon::{ExponentialBuilder, Retryable};
 use miden_node_proto::clients::{Builder, RpcClient};
-use miden_node_proto::domain::encryption::TransactionInputSealer;
+use miden_node_proto::domain::encryption::{
+    TransactionInputsSealer,
+    TrustedTransactionEncryptionState,
+    verify_transaction_encryption_key,
+};
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
-use miden_node_proto::generated::transaction::ProvenTransaction;
+use miden_node_proto::generated::transaction::ProvenTransaction as ProtoProvenTransaction;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, PartialAccount, StorageMapKey};
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
@@ -25,6 +31,7 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNotes,
     PartialBlockchain,
+    ProvenTransaction,
     TransactionArgs,
     TransactionInputs,
 };
@@ -39,6 +46,7 @@ use miden_tx::{
     TransactionExecutor,
     TransactionMastStore,
 };
+use tokio::sync::Mutex;
 use url::Url;
 
 use crate::deploy::counter::create_counter_account;
@@ -47,6 +55,105 @@ use crate::{COMPONENT, LOG_TARGET};
 
 pub mod counter;
 pub mod wallet;
+
+/// Monitor accounts and signing key created as one deployment unit.
+pub struct DeployedMonitorAccounts {
+    pub wallet: Account,
+    pub secret_key: SecretKey,
+    pub counter: Account,
+}
+
+/// RPC client and verified transaction-input sealer shared by monitor submission workflows.
+#[derive(Clone)]
+pub struct TransactionSubmissionClient {
+    rpc_client: RpcClient,
+    genesis_commitment: Word,
+    trusted_validator_signing_keys: Arc<[ValidatorPublicKey]>,
+    sealer: Arc<Mutex<Option<TransactionInputsSealer>>>,
+}
+
+impl TransactionSubmissionClient {
+    /// Connects to RPC and pins the validator key trusted for encryption-key attestations.
+    pub async fn connect(
+        rpc_url: &Url,
+        timeout: Duration,
+        trusted_validator_signing_key: ValidatorPublicKey,
+    ) -> Result<Self> {
+        let (rpc_client, genesis_commitment) =
+            create_genesis_aware_rpc_client_with_commitment(rpc_url, timeout).await?;
+        let client = Self {
+            rpc_client,
+            genesis_commitment,
+            trusted_validator_signing_keys: Arc::from([trusted_validator_signing_key]),
+            sealer: Arc::new(Mutex::new(None)),
+        };
+        client.sealer().await?;
+        Ok(client)
+    }
+
+    /// Returns a clone of the underlying RPC client for read operations.
+    pub fn rpc_client(&self) -> RpcClient {
+        self.rpc_client.clone()
+    }
+
+    /// Returns the cached verified sealer, fetching and checking the attested key on first use.
+    async fn sealer(&self) -> Result<TransactionInputsSealer> {
+        let mut cached = self.sealer.lock().await;
+        if let Some(sealer) = cached.clone() {
+            return Ok(sealer);
+        }
+
+        let key = self
+            .rpc_client
+            .clone()
+            .get_transaction_encryption_key(())
+            .await
+            .context("Failed to fetch the transaction encryption key")?
+            .into_inner();
+        let verified = verify_transaction_encryption_key(
+            key,
+            TrustedTransactionEncryptionState::new(
+                self.genesis_commitment,
+                &self.trusted_validator_signing_keys,
+            ),
+        )
+        .context("Untrusted transaction encryption key")?;
+        let sealer = TransactionInputsSealer::new(verified);
+        *cached = Some(sealer.clone());
+        Ok(sealer)
+    }
+
+    /// Seals and submits one proven transaction, invalidating stale key state on rejection.
+    pub async fn submit(
+        &self,
+        proven_tx: &ProvenTransaction,
+        transaction_inputs: &[u8],
+    ) -> Result<BlockNumber> {
+        let sealed = self
+            .sealer()
+            .await?
+            .seal(proven_tx.id(), transaction_inputs)
+            .context("Failed to seal the transaction inputs")?;
+        let request = ProtoProvenTransaction {
+            transaction: proven_tx.to_bytes(),
+            sealed_transaction_inputs: Some(sealed),
+        };
+
+        let result = self.rpc_client.clone().submit_proven_tx(request).await;
+        if result
+            .as_ref()
+            .is_err_and(|status| status.code() == tonic::Code::FailedPrecondition)
+        {
+            *self.sealer.lock().await = None;
+        }
+
+        Ok(result
+            .context("Failed to submit proven transaction to RPC")?
+            .into_inner()
+            .block_num
+            .into())
+    }
+}
 
 /// Backoff schedule applied to the genesis-discovery RPC handshake.
 ///
@@ -160,18 +267,22 @@ pub async fn create_genesis_aware_rpc_client_with_commitment(
 /// (e.g., after a network reset) and re-syncing from the RPC is not sufficient. The accounts
 /// are never persisted to disk; the monitor re-creates them on every restart.
 pub async fn create_and_deploy_accounts(
-    rpc_url: &Url,
+    submission_client: &TransactionSubmissionClient,
     prover: &LocalTransactionProver,
-) -> Result<(Account, SecretKey, Account)> {
+) -> Result<DeployedMonitorAccounts> {
     tracing::info!(target: LOG_TARGET, "Creating fresh monitor accounts");
 
     let (wallet_account, secret_key) = create_wallet_account()?;
     let counter_account = create_counter_account(wallet_account.id())?;
 
-    deploy_counter_account(&counter_account, rpc_url, prover).await?;
+    deploy_counter_account(&counter_account, submission_client, prover).await?;
     tracing::info!(target: LOG_TARGET, "Successfully created and deployed accounts");
 
-    Ok((wallet_account, secret_key, counter_account))
+    Ok(DeployedMonitorAccounts {
+        wallet: wallet_account,
+        secret_key,
+        counter: counter_account,
+    })
 }
 
 /// Execute the counter account's genesis (creation) transaction in-memory.
@@ -250,12 +361,10 @@ pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<Transaction
 )]
 pub async fn deploy_counter_account(
     counter_account: &Account,
-    rpc_url: &Url,
+    submission_client: &TransactionSubmissionClient,
     prover: &LocalTransactionProver,
 ) -> Result<()> {
-    // Deploy counter account to the network using a genesis-aware RPC client.
-    let (mut rpc_client, genesis_commitment) =
-        create_genesis_aware_rpc_client_with_commitment(rpc_url, Duration::from_secs(10)).await?;
+    let mut rpc_client = submission_client.rpc_client();
 
     let executed_tx = execute_counter_genesis_tx(counter_account, &mut rpc_client).await?;
 
@@ -267,25 +376,7 @@ pub async fn deploy_counter_account(
         .context("prover task panicked")?
         .context("Failed to prove transaction")?;
 
-    let key = rpc_client
-        .get_transaction_encryption_key(())
-        .await
-        .context("Failed to fetch the transaction encryption key")?
-        .into_inner();
-    let sealed = TransactionInputSealer::new(key, genesis_commitment)
-        .context("Unusable transaction encryption key")?
-        .seal(proven_tx.id(), &transaction_inputs)
-        .context("Failed to seal the transaction inputs")?;
-
-    let request = ProvenTransaction {
-        transaction: proven_tx.to_bytes(),
-        sealed_transaction_inputs: Some(sealed),
-    };
-
-    rpc_client
-        .submit_proven_tx(request)
-        .await
-        .context("Failed to submit proven transaction to RPC")?;
+    submission_client.submit(&proven_tx, &transaction_inputs).await?;
 
     Ok(())
 }

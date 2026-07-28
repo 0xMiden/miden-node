@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
-use miden_node_utils::tracing::miden_instrument;
-
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -13,7 +12,11 @@ use miden_node_proto::clients::{Builder, RpcClient as InnerRpcClient};
 use miden_node_proto::domain::account::{
     AccountDetails, AccountResponse, AccountVaultDetails, StorageMapEntries
 };
-use miden_node_proto::domain::encryption::TransactionInputSealer;
+use miden_node_proto::domain::encryption::{
+    TransactionInputsSealer,
+    TrustedTransactionEncryptionState,
+    verify_transaction_encryption_key,
+};
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::account_request::account_detail_request::{StorageMapDetailRequest, StorageMapDetailRequests, StorageRequest, storage_map_detail_request};
 use miden_node_proto::generated::rpc::account_request::account_detail_request::storage_map_detail_request::MapKeys;
@@ -21,6 +24,7 @@ use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, BlockSubscripti
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
 use miden_node_utils::retry::{self, Retryable};
+use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -33,6 +37,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetVault, AssetId, AssetWitness, PartialVault};
 use miden_protocol::block::{BlockNumber, SignedBlock};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::{AccountInputs, ProvenTransaction, TransactionInputs};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -78,7 +83,9 @@ pub struct RpcClient {
     /// sealed transaction inputs.
     genesis_commitment: Word,
     /// Cached sealer for transaction inputs, fetched on first submission.
-    sealer: Arc<RwLock<Option<TransactionInputSealer>>>,
+    sealer: Arc<RwLock<Option<TransactionInputsSealer>>>,
+    /// Validator signing keys read from the genesis block at bootstrap.
+    trusted_validator_signing_keys: Arc<[ValidatorPublicKey]>,
 }
 
 impl RpcClient {
@@ -89,10 +96,18 @@ impl RpcClient {
     pub fn new(
         rpc_url: Url,
         genesis_commitment: Word,
+        trusted_validator_signing_keys: Vec<ValidatorPublicKey>,
         backoff_initial: Duration,
         backoff_max: Duration,
     ) -> anyhow::Result<Self> {
-        Self::new_with_auth(rpc_url, None, genesis_commitment, backoff_initial, backoff_max)
+        Self::new_with_auth(
+            rpc_url,
+            None,
+            genesis_commitment,
+            trusted_validator_signing_keys,
+            backoff_initial,
+            backoff_max,
+        )
     }
 
     /// Creates a new client with an optional metadata header for internal RPC authentication.
@@ -103,6 +118,7 @@ impl RpcClient {
         rpc_url: Url,
         rpc_auth_header_value: Option<AsciiMetadataValue>,
         genesis_commitment: Word,
+        trusted_validator_signing_keys: Vec<ValidatorPublicKey>,
         backoff_initial: Duration,
         backoff_max: Duration,
     ) -> anyhow::Result<Self> {
@@ -126,11 +142,12 @@ impl RpcClient {
             backoff,
             genesis_commitment,
             sealer: Arc::new(RwLock::new(None)),
+            trusted_validator_signing_keys: trusted_validator_signing_keys.into(),
         })
     }
 
     /// Returns a sealer for transaction inputs, fetching the encryption key on first use.
-    async fn sealer(&self) -> Result<TransactionInputSealer, Status> {
+    pub(crate) async fn sealer(&self) -> Result<TransactionInputsSealer, Status> {
         if let Some(sealer) = self.sealer.read().await.clone() {
             return Ok(sealer);
         }
@@ -142,11 +159,19 @@ impl RpcClient {
         }
 
         let key = self.inner.clone().get_transaction_encryption_key(()).await?.into_inner();
-        let sealer = TransactionInputSealer::new(key, self.genesis_commitment).map_err(|err| {
+        let verified = verify_transaction_encryption_key(
+            key,
+            TrustedTransactionEncryptionState::new(
+                self.genesis_commitment,
+                &self.trusted_validator_signing_keys,
+            ),
+        )
+        .map_err(|err| {
             Status::failed_precondition(
-                err.as_report_context("Unusable transaction encryption key"),
+                err.as_report_context("Untrusted transaction encryption key"),
             )
         })?;
+        let sealer = TransactionInputsSealer::new(verified);
 
         *cached = Some(sealer.clone());
         Ok(sealer)
@@ -312,33 +337,63 @@ impl RpcClient {
         proven_tx: &ProvenTransaction,
         tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
-        let sealed =
-            self.sealer()
-                .await?
-                .seal(proven_tx.id(), &tx_inputs.to_bytes())
-                .map_err(|err| {
+        let transaction = proven_tx.to_bytes();
+        let transaction_inputs = tx_inputs.to_bytes();
+        let tx_id = proven_tx.id();
+
+        let submit = |sealer: TransactionInputsSealer| {
+            let mut client = self.inner.clone();
+            let transaction = transaction.clone();
+            let transaction_inputs = transaction_inputs.clone();
+            async move {
+                let sealed = sealer.seal(tx_id, &transaction_inputs).map_err(|err| {
                     Status::failed_precondition(
                         err.as_report_context("Failed to seal the transaction inputs"),
                     )
                 })?;
-
-        let request = proto::transaction::ProvenTransaction {
-            transaction: proven_tx.to_bytes(),
-            sealed_transaction_inputs: Some(sealed),
+                client
+                    .submit_proven_tx(proto::transaction::ProvenTransaction {
+                        transaction,
+                        sealed_transaction_inputs: Some(sealed),
+                    })
+                    .await
+            }
         };
 
-        let result = self.inner.clone().submit_proven_tx(request).await;
-
-        // A validator restarted with a different encryption key rejects with `failed_precondition`.
-        // Drop the cached key so the next attempt seals against the current one.
-        if let Err(status) = &result
-            && status.code() == tonic::Code::FailedPrecondition
-        {
-            self.invalidate_sealer().await;
-        }
-        result?;
+        retry_once_on_failed_precondition(
+            self.sealer().await?,
+            || async {
+                self.invalidate_sealer().await;
+                self.sealer().await
+            },
+            submit,
+        )
+        .await?;
 
         Ok(())
+    }
+}
+
+/// Retries one operation once after refreshing state rejected as stale.
+async fn retry_once_on_failed_precondition<T, S, Refresh, RefreshFuture, Submit, SubmitFuture>(
+    initial_state: S,
+    mut refresh: Refresh,
+    mut submit: Submit,
+) -> Result<T, Status>
+where
+    Refresh: FnMut() -> RefreshFuture,
+    RefreshFuture: Future<Output = Result<S, Status>>,
+    Submit: FnMut(S) -> SubmitFuture,
+    SubmitFuture: Future<Output = Result<T, Status>>,
+{
+    let result = submit(initial_state).await;
+    if result
+        .as_ref()
+        .is_err_and(|status| status.code() == tonic::Code::FailedPrecondition)
+    {
+        submit(refresh().await?).await
+    } else {
+        result
     }
 }
 
@@ -562,4 +617,64 @@ pub enum RpcError {
     Conversion(#[source] ConversionError),
     #[error("invalid RPC response: {0}")]
     InvalidResponse(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::future::ready;
+
+    use super::retry_once_on_failed_precondition;
+
+    /// A stale key refreshes state and retries the rejected operation once.
+    #[tokio::test]
+    async fn failed_precondition_refreshes_and_retries_once() {
+        let refreshes = Cell::new(0);
+        let submissions = Cell::new(0);
+
+        let result = retry_once_on_failed_precondition(
+            1,
+            || {
+                refreshes.set(refreshes.get() + 1);
+                ready(Ok(2))
+            },
+            |state| {
+                submissions.set(submissions.get() + 1);
+                ready(if submissions.get() == 1 {
+                    Err(tonic::Status::failed_precondition("stale key"))
+                } else {
+                    Ok(state)
+                })
+            },
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), 2);
+        assert_eq!(refreshes.get(), 1);
+        assert_eq!(submissions.get(), 2);
+    }
+
+    /// A second stale-key rejection is returned without a third submission.
+    #[tokio::test]
+    async fn second_failed_precondition_is_not_retried() {
+        let refreshes = Cell::new(0);
+        let submissions = Cell::new(0);
+
+        let result: Result<(), _> = retry_once_on_failed_precondition(
+            (),
+            || {
+                refreshes.set(refreshes.get() + 1);
+                ready(Ok(()))
+            },
+            |()| {
+                submissions.set(submissions.get() + 1);
+                ready(Err(tonic::Status::failed_precondition("stale key")))
+            },
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err().code(), tonic::Code::FailedPrecondition);
+        assert_eq!(refreshes.get(), 1);
+        assert_eq!(submissions.get(), 2);
+    }
 }

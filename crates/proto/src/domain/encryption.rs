@@ -11,7 +11,7 @@ use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{
     Signature as ValidatorSignature,
 };
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::PublicKey as EncryptionPublicKey;
-use miden_protocol::crypto::ies::{IesScheme, SealingKey};
+use miden_protocol::crypto::ies::SealingKey;
 use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 
@@ -243,17 +243,9 @@ pub enum TransactionEncryptionKeyError {
     InvalidAttestation,
 }
 
-/// Failure to build a sealer from a served encryption key, or to seal with it.
+/// Failure to seal transaction inputs.
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionInputSealError {
-    #[error("encryption key scheme is unspecified")]
-    UnspecifiedScheme,
-    #[error("unsupported encryption key scheme {0}")]
-    UnsupportedScheme(i32),
-    #[error("encryption key id is {len} bytes, which exceeds the maximum of {MAX_KEY_ID_LEN}")]
-    KeyIdTooLong { len: usize },
-    #[error("invalid encryption public key")]
-    InvalidPublicKey(#[source] miden_protocol::utils::serde::DeserializationError),
     #[error("failed to seal the transaction inputs")]
     Seal(#[source] miden_protocol::crypto::ies::IesError),
 }
@@ -413,51 +405,26 @@ fn extend_with_length_prefixed(payload: &mut Vec<u8>, field: &[u8], name: &str) 
 
 /// Seals transaction inputs against the validator set's shared encryption key.
 ///
-/// Built from a `GetTransactionEncryptionKey` response and reusable for any number of transactions.
+/// Built from a verified transaction encryption key and reusable for any number of transactions.
 /// Holding one avoids re-fetching the key per submission; callers should discard it when the
-/// validator reports an unknown key id, which is how a key change is detected.
+/// validator reports an unknown key ID.
 #[derive(Debug, Clone)]
-pub struct TransactionInputSealer {
-    scheme: u32,
+pub struct TransactionInputsSealer {
+    scheme: TransactionEncryptionScheme,
     key_id: Vec<u8>,
     sealing_key: SealingKey,
     genesis_commitment: Word,
 }
 
-impl TransactionInputSealer {
-    /// Builds a sealer from a served encryption key and the genesis commitment of the network the
-    /// inputs will be submitted to.
-    pub fn new(
-        key: proto::transaction::TransactionEncryptionKey,
-        genesis_commitment: Word,
-    ) -> Result<Self, TransactionInputSealError> {
-        // Match the wire value explicitly. The proto enum reserves 0 for "unspecified" while
-        // `IesScheme` uses 0 for K256, so converting straight from the raw value would silently
-        // select a scheme the node does not serve instead of reporting an error.
-        let scheme = match key.scheme {
-            0 => return Err(TransactionInputSealError::UnspecifiedScheme),
-            1 => SCHEME_X25519_XCHACHA20_POLY1305,
-            other => return Err(TransactionInputSealError::UnsupportedScheme(other)),
-        };
-        debug_assert_eq!(
-            u32::from(u8::from(IesScheme::X25519XChaCha20Poly1305)),
-            scheme,
-            "the wire scheme identifier must match the crypto discriminant",
-        );
-
-        if key.key_id.len() > MAX_KEY_ID_LEN {
-            return Err(TransactionInputSealError::KeyIdTooLong { len: key.key_id.len() });
+impl TransactionInputsSealer {
+    /// Builds a sealer from a key whose validator attestation has already been verified.
+    pub fn new(key: VerifiedTransactionEncryptionKey) -> Self {
+        Self {
+            scheme: key.info.scheme,
+            key_id: key.info.key_id,
+            sealing_key: SealingKey::X25519XChaCha20Poly1305(key.public_key),
+            genesis_commitment: key.genesis_commitment,
         }
-
-        let public_key = EncryptionPublicKey::read_from_bytes(&key.public_key)
-            .map_err(TransactionInputSealError::InvalidPublicKey)?;
-
-        Ok(Self {
-            scheme,
-            key_id: key.key_id,
-            sealing_key: SealingKey::X25519XChaCha20Poly1305(public_key),
-            genesis_commitment,
-        })
     }
 
     /// The identifier of the key this sealer seals against.
@@ -478,7 +445,7 @@ impl TransactionInputSealer {
         transaction_inputs: &[u8],
     ) -> Result<proto::transaction::SealedTransactionInputs, TransactionInputSealError> {
         let associated_data = transaction_inputs_associated_data(
-            self.scheme,
+            self.scheme.as_u32(),
             &self.key_id,
             self.genesis_commitment,
             tx_id,
@@ -700,26 +667,5 @@ mod tests {
         assert_eq!(ad, expected);
         // 22-byte tag + 4 scheme + 4 length + 4 key id + 32 genesis + 32 transaction id.
         assert_eq!(ad.len(), 98);
-    }
-
-    /// Scheme 0 means "unspecified" on the wire but K256 in `IesScheme`, so converting the raw
-    /// value would silently select a scheme the node does not serve instead of erroring.
-    #[test]
-    fn sealer_rejects_unspecified_scheme() {
-        let key = proto::transaction::TransactionEncryptionKey {
-            scheme: 0,
-            key_id: TEST_KEY_ID.to_vec(),
-            public_key: KeyExchangeKey::read_from_bytes(&[7u8; 32])
-                .unwrap()
-                .public_key()
-                .to_bytes(),
-            attestations: Vec::new(),
-            next_key: None,
-        };
-
-        assert_matches!(
-            TransactionInputSealer::new(key, genesis()),
-            Err(TransactionInputSealError::UnspecifiedScheme)
-        );
     }
 }

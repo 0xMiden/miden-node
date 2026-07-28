@@ -18,10 +18,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use miden_node_proto::clients::RpcClient;
-use miden_node_proto::domain::encryption::TransactionInputSealer;
+use miden_node_proto::domain::encryption::TransactionInputsSealer;
 use miden_node_proto::generated as proto;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::transaction::{ProvenTransaction, TransactionId};
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tokio::sync::Semaphore;
 use url::Url;
 
@@ -32,7 +33,13 @@ use crate::{PROOFS_DIR, create_genesis_aware_rpc_client_pool, read_from_file};
 // ORCHESTRATOR
 // ================================================================================================
 
-pub(crate) async fn run(rpc_url: Url, concurrency: usize, connections: usize, wait_blocks: u32) {
+pub(crate) async fn run(
+    rpc_url: Url,
+    concurrency: usize,
+    connections: usize,
+    wait_blocks: u32,
+    validator_signing_public_key: String,
+) {
     let in_dir = PathBuf::from(PROOFS_DIR);
 
     println!("Loading mint txs from {}", in_dir.join("mint_txs.bin").display());
@@ -50,22 +57,21 @@ pub(crate) async fn run(rpc_url: Url, concurrency: usize, connections: usize, wa
     let consume_ids: Vec<TransactionId> = consume_txs.iter().map(ProvenTransaction::id).collect();
 
     println!("Connecting to {rpc_url} ({connections} connection(s))...");
-    let (pool, genesis_commitment) =
-        create_genesis_aware_rpc_client_pool(&rpc_url, Duration::from_secs(30), connections)
-            .await
-            .expect("failed to create RPC client pool");
+    let trusted_validator_signing_key = ValidatorPublicKey::read_from_bytes(
+        &hex::decode(validator_signing_public_key)
+            .expect("validator signing public key must be a hex-encoded K256 public key"),
+    )
+    .expect("validator signing public key must be a valid K256 public key");
+    let (pool, sealer) = create_genesis_aware_rpc_client_pool(
+        &rpc_url,
+        Duration::from_secs(30),
+        connections,
+        trusted_validator_signing_key,
+    )
+    .await
+    .expect("failed to create RPC client pool");
     let pool = Arc::new(pool);
-
-    let key = pool[0]
-        .clone()
-        .get_transaction_encryption_key(())
-        .await
-        .expect("failed to fetch the transaction encryption key")
-        .into_inner();
-    let sealer = Arc::new(
-        TransactionInputSealer::new(key, genesis_commitment)
-            .expect("unusable transaction encryption key"),
-    );
+    let sealer = Arc::new(sealer);
 
     let h_start = current_block_height(pool[0].clone()).await;
     println!("Chain height at start: {h_start}");
@@ -156,7 +162,7 @@ async fn submit_all(
     txs: Vec<ProvenTransaction>,
     tx_inputs: Vec<Vec<u8>>,
     concurrency: usize,
-    sealer: &Arc<TransactionInputSealer>,
+    sealer: &Arc<TransactionInputsSealer>,
 ) -> PhaseStats {
     /// How many distinct error messages to surface to the console as they happen. The full failure
     /// breakdown still appears in the summary.
@@ -231,7 +237,7 @@ async fn submit_sequential(
     mut client: RpcClient,
     txs: Vec<ProvenTransaction>,
     tx_inputs: Vec<Vec<u8>>,
-    sealer: &Arc<TransactionInputSealer>,
+    sealer: &Arc<TransactionInputsSealer>,
 ) -> PhaseStats {
     let start = Instant::now();
     let total = txs.len();

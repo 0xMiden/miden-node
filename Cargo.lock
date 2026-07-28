@@ -2994,6 +2994,7 @@ dependencies = [
  "anyhow",
  "clap",
  "fs-err",
+ "hex",
  "miden-node-proto",
  "miden-node-utils",
  "miden-protocol",

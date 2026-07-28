@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use miden_protocol::Word;
@@ -94,6 +94,36 @@ pub struct TransactionGraph {
 
     /// Bijective mapping of user batches and their transactions.
     user_batches: BatchTxMap,
+}
+
+/// Transactions removed by a single lifecycle transition.
+///
+/// `direct` contains the transactions which triggered the removal. `removed` additionally contains
+/// transactions which were removed because they depended on a direct transaction.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct TransactionRemoval {
+    direct: BTreeSet<TransactionId>,
+    removed: BTreeSet<TransactionId>,
+}
+
+impl TransactionRemoval {
+    pub(crate) fn direct(&self) -> impl Iterator<Item = TransactionId> + '_ {
+        self.direct.iter().copied()
+    }
+
+    pub(crate) fn dependents(&self) -> impl Iterator<Item = TransactionId> + '_ {
+        self.removed.difference(&self.direct).copied()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.removed.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn contains(&self, transaction_id: &TransactionId) -> bool {
+        self.removed.contains(transaction_id)
+    }
 }
 
 impl TransactionGraph {
@@ -253,7 +283,8 @@ impl TransactionGraph {
     /// didn't ignore selected transactions here, we would revert committed ones as well, which
     /// breaks the state.
     ///
-    /// Returns the identifiers of transactions that were removed from the graph.
+    /// Returns both the directly expired transactions and all transactions removed from the graph,
+    /// including their dependents.
     ///
     /// # Note
     ///
@@ -262,17 +293,21 @@ impl TransactionGraph {
     /// transactions from expired batches (and therefore not committed) are deselected
     /// _before_ calling this function. i.e. first revert expired batches and deselect their
     /// transactions, then call this.
-    pub fn revert_expired(&mut self, chain_tip: BlockNumber) -> HashSet<TransactionId> {
-        let mut to_revert = self.inner.expired(chain_tip);
-        to_revert.retain(|tx| !self.inner.is_selected(tx));
+    pub fn revert_expired(&mut self, chain_tip: BlockNumber) -> TransactionRemoval {
+        let direct = self
+            .inner
+            .expired(chain_tip)
+            .into_iter()
+            .filter(|tx| !self.inner.is_selected(tx))
+            .collect::<BTreeSet<_>>();
 
-        let mut reverted = HashSet::with_capacity(to_revert.len());
+        let mut removed = BTreeSet::new();
 
-        for tx in to_revert {
-            reverted.extend(&self.revert_tx_and_descendants(tx));
+        for tx in direct.iter().copied() {
+            removed.extend(&self.revert_tx_and_descendants(tx));
         }
 
-        reverted
+        TransactionRemoval { direct, removed }
     }
 
     /// Reverts the given transaction and _all_ its descendants _IFF_ it is present in the graph.
@@ -337,11 +372,12 @@ impl TransactionGraph {
     ///
     /// # Returns
     ///
-    /// Returns the set of reverted transactions.
+    /// Returns both the transactions which reached the failure limit directly and all transactions
+    /// removed from the graph, including their dependents.
     pub fn increment_failure_count(
         &mut self,
         txs: impl Iterator<Item = TransactionId>,
-    ) -> HashSet<TransactionId> {
+    ) -> TransactionRemoval {
         let mut to_revert = Vec::default();
 
         for tx in txs {
@@ -353,12 +389,13 @@ impl TransactionGraph {
             }
         }
 
-        let mut reverted = HashSet::default();
-        for tx in to_revert {
-            reverted.extend(self.revert_tx_and_descendants(tx));
+        let direct = to_revert.into_iter().collect::<BTreeSet<_>>();
+        let mut removed = BTreeSet::new();
+        for tx in direct.iter().copied() {
+            removed.extend(self.revert_tx_and_descendants(tx));
         }
 
-        reverted
+        TransactionRemoval { direct, removed }
     }
 
     /// Prunes the given given batch's transactions.

@@ -9,7 +9,11 @@ use anyhow::Context;
 use diesel::{Connection, SqliteConnection};
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_proto::domain::account::AccountInfo;
-use miden_node_utils::limiter::MAX_RESPONSE_PAYLOAD_BYTES;
+use miden_node_utils::limiter::{
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamLimiter,
+    QueryParamNoteCommitmentLimit,
+};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader, StorageMapKey};
@@ -580,6 +584,11 @@ impl Db {
     ///
     /// `allow_acquire` and `acquire_done` are used to synchronize writes to the DB with writes to
     /// the in-memory trees. Further details available on [`super::state::State::apply_block`].
+    ///
+    /// Consumed note IDs omitted from transaction headers are resolved from
+    /// `unresolved_note_nullifiers` on a best-effort basis. The returned mapping is used only for
+    /// lifecycle events and never affects block application. `unresolved_note_nullifiers` is empty
+    /// when neither INFO nor DEBUG lifecycle events are enabled.
     // TODO: This span is logged in a root span, we should connect it to the parent one.
     #[miden_instrument(
         target = COMPONENT,
@@ -593,8 +602,9 @@ impl Db {
         signed_block: SignedBlock,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
         precomputed_public_states: PrecomputedPublicAccountStates,
-    ) -> Result<()> {
-        self.transact("apply block", move |conn| -> Result<()> {
+        unresolved_note_nullifiers: Vec<Nullifier>,
+    ) -> Result<BTreeMap<Nullifier, NoteId>> {
+        self.transact("apply block", move |conn| {
             models::queries::apply_block(conn, &signed_block, &notes, &precomputed_public_states)?;
 
             // XXX FIXME TODO free floating mutex MUST NOT exist it doesn't bind it properly to the
@@ -608,11 +618,29 @@ impl Db {
 
             models::queries::prune_history(conn, signed_block.header().block_num())?;
 
+            let mut resolved_note_ids = BTreeMap::new();
+            for chunk in
+                unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT)
+            {
+                match queries::select_note_ids_by_nullifier(conn, chunk) {
+                    Ok(note_ids) => resolved_note_ids.extend(note_ids),
+                    Err(err) => {
+                        tracing::warn!(
+                            target: COMPONENT,
+                            %err,
+                            nullifiers.count = chunk.len(),
+                            "Failed to resolve consumed note IDs for lifecycle events",
+                        );
+                        break;
+                    },
+                }
+            }
+
             let _span =
                 tracing::info_span!(target: COMPONENT, "acquire_done_lock").entered();
             acquire_done.blocking_recv()?;
 
-            Ok(())
+            Ok(resolved_note_ids)
         })
         .await
     }

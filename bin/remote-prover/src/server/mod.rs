@@ -72,11 +72,15 @@ impl Server {
 
         tracing::info!(
             target: LOG_TARGET,
-            server_timeout=%humantime::Duration::from(self.timeout),
-            server_capacity=self.capacity,
-            proof_kind = %self.kind,
-            server_port = port,
-            "Proof server listening"
+            {
+                service.name = "miden-remote-prover",
+                service.version = env!("CARGO_PKG_VERSION"),
+                prover.timeout = %humantime::Duration::from(self.timeout),
+                prover.capacity = self.capacity.get(),
+                prover.kind = %self.kind,
+                prover.port = port,
+            },
+            "Remote prover ready",
         );
 
         let status_service =

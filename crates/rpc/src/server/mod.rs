@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ use miden_node_proto::clients::{
 };
 use miden_node_proto::server::{rpc_api, sequencer_api};
 use miden_node_proto_build::rpc_api_descriptor;
-use miden_node_store::state::State;
+use miden_node_store::state::{Finality, State};
 use miden_node_utils::clap::{GrpcOptionsExternal, GrpcOptionsInternal};
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_node_utils::grpc;
@@ -29,9 +30,9 @@ use tower_http::classify::{GrpcCode, GrpcErrorsAsFailures, SharedClassifier};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
+use crate::LOG_TARGET;
 use crate::server::api::SequencerInternalService;
 use crate::server::health::HealthCheckLayer;
-use crate::{COMPONENT, LOG_TARGET};
 
 mod accept;
 pub(crate) mod api;
@@ -99,6 +100,13 @@ impl RpcMode {
             validator: validator.map(Box::new),
         }
     }
+
+    const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Sequencer { .. } => "sequencer",
+            Self::FullNode { .. } => "full",
+        }
+    }
 }
 
 impl Rpc {
@@ -110,6 +118,8 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
+        let endpoint = self.listener.local_addr().context("failed to read RPC listen address")?;
+        let mode = self.mode.as_str();
         let mut api = api::RpcService::new(
             self.store.clone(),
             self.mode.clone(),
@@ -127,8 +137,6 @@ impl Rpc {
 
         let api_service = rpc_api::service(api);
 
-        info!(target: LOG_TARGET, endpoint=?self.listener, mode=?self.mode, "Server initialized");
-
         let mut tasks = Tasks::new();
 
         // Initialize health reporter and sync service based on the RPC mode.
@@ -141,6 +149,8 @@ impl Rpc {
                         tonic_health::ServingStatus::Serving,
                     )
                     .await;
+                let chain_tip = self.store.chain_tip(Finality::Committed);
+                log_node_ready(mode, endpoint, chain_tip);
             },
             RpcMode::FullNode { source_rpc, readiness_threshold, .. } => {
                 health_reporter
@@ -159,6 +169,7 @@ impl Rpc {
                     }
                     .run(shutdown.clone()),
                 );
+                log_node_synchronizing(mode, endpoint, readiness_threshold);
             },
         }
 
@@ -221,6 +232,34 @@ impl Rpc {
     }
 }
 
+fn log_node_ready(mode: &str, endpoint: impl Display, chain_tip: impl Display) {
+    info!(
+        target: LOG_TARGET,
+        {
+            service.name = "miden-node",
+            service.version = env!("CARGO_PKG_VERSION"),
+            node.role = mode,
+            rpc.listen = %endpoint,
+            block.number = %chain_tip,
+        },
+        "Node ready",
+    );
+}
+
+fn log_node_synchronizing(mode: &str, endpoint: impl Display, readiness_threshold: u32) {
+    info!(
+        target: LOG_TARGET,
+        {
+            service.name = "miden-node",
+            service.version = env!("CARGO_PKG_VERSION"),
+            node.role = mode,
+            rpc.listen = %endpoint,
+            sync.ready_threshold = readiness_threshold,
+        },
+        "Node started; synchronizing",
+    );
+}
+
 // INTERNAL SEQUENCER
 // ================================================================================================
 
@@ -247,7 +286,15 @@ impl SequencerInternal {
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
     /// encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint = ?self.listener, "Internal sequencer server initialized");
+        let endpoint = self
+            .listener
+            .local_addr()
+            .context("failed to read internal sequencer listen address")?;
+        info!(
+            target: LOG_TARGET,
+            { internal.listen = %endpoint },
+            "Internal sequencer server ready",
+        );
 
         let service = SequencerInternalService { block_producer: self.block_producer };
 

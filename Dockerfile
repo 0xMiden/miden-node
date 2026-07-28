@@ -32,17 +32,25 @@ WORKDIR /app
 # workspace enable different feature sets on shared deps, so giving each
 # binary its own target dir avoids matrix builds serializing on (and
 # invalidating) a shared, lock-guarded mount for artifacts they can't reuse
-# anyway. Registry/git-db mounts stay arch-only since raw sources have no
-# feature dependence and are worth sharing across binaries.
+# anyway.
+#
+# The registry/git-db mounts are also keyed by BIN, even though raw sources
+# have no feature dependence. Sharing one registry mount across concurrent
+# matrix jobs corrupts it: Cargo permits concurrent downloads across
+# processes, and two cargo processes extracting the same newly-downloaded
+# crate race on creating `.cargo-ok` — the loser fails the whole build with
+# "failed to open .cargo-ok ... File exists". Keying by BIN removes all
+# concurrency on a registry mount: jobs for different binaries use different
+# mounts, and builds of the same binary are already serialized by the locked
+# target mount below (every RUN that touches the registry also holds that
+# lock). The cost is one registry copy per binary per arch.
 #
 # Sharing modes: the target mount is sharing=locked because the correctness
 # of the touch-then-build sequence below requires that no other build can
 # write artifacts into it between the touch and the build. The registry and
-# git-db mounts are sharing=shared: Cargo coordinates concurrent access to
-# CARGO_HOME with its own file locks (downloads and index updates take the
-# package-cache lock; extracted sources are immutable once unpacked), so
-# BuildKit-level serialization is redundant there and would needlessly make
-# every matrix job queue on a single registry mount.
+# git-db mounts stay sharing=shared; the BIN+arch keying plus the target
+# lock already guarantee exclusive access, so BuildKit-level locking on
+# them would be redundant.
 ARG TARGETARCH
 # Build application
 COPY . .
@@ -67,9 +75,18 @@ COPY . .
 # as fresh. Touching while holding the lock guarantees sources are newer than
 # anything already in the cache. The mounted ./target is pruned from the walk
 # so cached fingerprints and artifacts keep their original mtimes.
-RUN --mount=type=cache,sharing=shared,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=shared,id=cargo-git-${TARGETARCH},target=/usr/local/cargo/git/db \
+# An interrupted build (e.g. a cancelled CI job) can leave a partially
+# extracted crate in the cached registry: the source dir exists but
+# `.cargo-ok` is missing or empty. Cargo does not recover from this — every
+# subsequent build fails with "failed to open .cargo-ok ... File exists" —
+# so drop any such partial extraction before building.
+RUN --mount=type=cache,sharing=shared,id=cargo-registry-${BIN}-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=shared,id=cargo-git-${BIN}-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
+    if [ -d /usr/local/cargo/registry/src ]; then \
+        find /usr/local/cargo/registry/src -mindepth 2 -maxdepth 2 -type d \
+            '!' -exec test -s '{}/.cargo-ok' ';' -exec rm -rf '{}' +; \
+    fi && \
     find . -path ./target -prune -o -type f -exec touch {} + && \
     cargo build --release --locked --bin ${BIN} && \
     mkdir -p /app/bin && \

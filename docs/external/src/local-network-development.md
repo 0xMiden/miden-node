@@ -40,7 +40,7 @@ later, start the core local network directly from the release artifact:
 
 ```bash
 RELEASE_TAG=vX.Y.Z
-COMPOSE_APPLICATION=oci://ghcr.io/0xmiden/miden-node-compose:${RELEASE_TAG}
+COMPOSE_APPLICATION=oci://ghcr.io/0xmiden/miden-local-network:${RELEASE_TAG}
 
 docker compose -f "${COMPOSE_APPLICATION}" up -d
 docker compose -f "${COMPOSE_APPLICATION}" logs -f

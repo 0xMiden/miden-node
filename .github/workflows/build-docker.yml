@@ -112,4 +112,4 @@ jobs:
             --with-env \
             --yes \
             --dry-run \
-            ghcr.io/0xmiden/miden-node-compose:dry-run
+            ghcr.io/0xmiden/miden-local-network:dry-run

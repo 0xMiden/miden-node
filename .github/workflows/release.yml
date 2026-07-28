@@ -315,7 +315,7 @@ jobs:
 
       - name: Dry-run Compose publishing
         env:
-          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-node-compose
+          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-local-network
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
           MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}
@@ -434,7 +434,7 @@ jobs:
 
       - name: Publish Compose application
         env:
-          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-node-compose
+          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-local-network
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
           MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}

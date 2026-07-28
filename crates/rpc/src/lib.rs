@@ -2,7 +2,7 @@ mod server;
 #[cfg(test)]
 mod tests;
 
-pub use server::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal};
+pub use server::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
 
 // CONSTANTS
 // =================================================================================================

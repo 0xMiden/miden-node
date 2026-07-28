@@ -107,7 +107,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         match &self.mode {
             RpcMode::Sequencer { block_producer, validators } => {
                 submit_batch_to_validators(
-                    validators,
+                    validators.as_slice(),
                     &proposed_batch,
                     &request.transaction_inputs,
                 )
@@ -122,7 +122,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                 // Pre-authenticated transactions: validate and authenticate locally, then submit
                 // the authenticated batch to the sequencer's pre-authenticated API.
                 self.submit_authenticated_batch_to_sequencer(
-                    pre_auth.validators(),
+                    pre_auth.validators().as_slice(),
                     pre_auth.sequencer().clone(),
                     proposed_batch,
                     &request.transaction_inputs,

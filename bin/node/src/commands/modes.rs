@@ -11,7 +11,7 @@ use miden_node_proto::clients::{
     SequencerClient,
     ValidatorClient,
 };
-use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal};
+use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
 use miden_node_store::State;
 use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
 use miden_node_utils::formatting::format_endpoint;
@@ -170,8 +170,9 @@ pub struct SequencerExternalServiceOptions {
 }
 
 impl SequencerExternalServiceOptions {
-    fn validator_clients(&self) -> anyhow::Result<Vec<ValidatorClient>> {
-        self.validator_urls
+    fn validator_clients(&self) -> anyhow::Result<ValidatorClients> {
+        let clients = self
+            .validator_urls
             .iter()
             .map(|url| {
                 Ok(Builder::new(url.clone())
@@ -182,7 +183,8 @@ impl SequencerExternalServiceOptions {
                     .with_otel_context_injection()
                     .connect_lazy::<ValidatorClient>())
             })
-            .collect()
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        ValidatorClients::new(clients)
     }
 
     fn ntx_builder_client(&self) -> anyhow::Result<NtxBuilderClient> {

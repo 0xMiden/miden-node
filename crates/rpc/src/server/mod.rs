@@ -21,6 +21,7 @@ use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use rand::RngExt;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::metadata::AsciiMetadataValue;
@@ -65,7 +66,7 @@ pub enum RpcMode {
     /// later prevent that validator from signing the block containing it.
     Sequencer {
         block_producer: Box<BlockProducerApi>,
-        validators: Vec<ValidatorClient>,
+        validators: ValidatorClients,
     },
     /// Full-node RPC.
     ///
@@ -82,6 +83,35 @@ pub enum RpcMode {
     },
 }
 
+/// A non-empty set of validator clients.
+///
+/// Every submission is re-executed through every validator, and state shared by the validator set
+/// (such as the transaction encryption key) can be served by any single member, so an empty set is
+/// rejected at construction.
+#[derive(Clone, Debug)]
+pub struct ValidatorClients(Vec<ValidatorClient>);
+
+impl ValidatorClients {
+    /// # Errors
+    ///
+    /// Fails if `validators` is empty.
+    pub fn new(validators: Vec<ValidatorClient>) -> anyhow::Result<Self> {
+        anyhow::ensure!(!validators.is_empty(), "at least one validator is required");
+        Ok(Self(validators))
+    }
+
+    /// Returns a randomly chosen validator; use for state that any single validator can serve, so
+    /// the load spreads across the set.
+    pub(crate) fn random(&self) -> &ValidatorClient {
+        let index = rand::rng().random_range(0..self.0.len());
+        &self.0[index]
+    }
+
+    pub(crate) fn as_slice(&self) -> &[ValidatorClient] {
+        &self.0
+    }
+}
+
 /// Validator and sequencer clients for the full-node pre-authenticated submission path.
 ///
 /// The two are only meaningful together: submissions are re-executed through every validator and
@@ -89,7 +119,7 @@ pub enum RpcMode {
 /// configured with both or neither.
 #[derive(Clone, Debug)]
 pub struct PreAuthSubmission {
-    validators: Vec<ValidatorClient>,
+    validators: ValidatorClients,
     sequencer: Box<SequencerClient>,
 }
 
@@ -101,17 +131,15 @@ impl PreAuthSubmission {
         validators: Vec<ValidatorClient>,
         sequencer: SequencerClient,
     ) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            !validators.is_empty(),
-            "pre-authenticated submission requires at least one validator"
-        );
+        let validators = ValidatorClients::new(validators)
+            .context("pre-authenticated submission requires at least one validator")?;
         Ok(Self {
             validators,
             sequencer: Box::new(sequencer),
         })
     }
 
-    pub(crate) fn validators(&self) -> &[ValidatorClient] {
+    pub(crate) fn validators(&self) -> &ValidatorClients {
         &self.validators
     }
 
@@ -121,7 +149,7 @@ impl PreAuthSubmission {
 }
 
 impl RpcMode {
-    pub fn sequencer(block_producer: BlockProducerApi, validators: Vec<ValidatorClient>) -> Self {
+    pub fn sequencer(block_producer: BlockProducerApi, validators: ValidatorClients) -> Self {
         Self::Sequencer {
             block_producer: Box::new(block_producer),
             validators,

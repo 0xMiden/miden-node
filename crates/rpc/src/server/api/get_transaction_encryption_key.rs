@@ -42,8 +42,8 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
         // Nodes connected to validators ask one directly, otherwise the request is forwarded. The
         // encryption key is shared by the whole validator set, so any single validator serves.
         let validator = match &self.mode {
-            RpcMode::Sequencer { validators, .. } => validators.first(),
-            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => pre_auth.validators().first(),
+            RpcMode::Sequencer { validators, .. } => validators.random(),
+            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => pre_auth.validators().random(),
             RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
                 return source_rpc
                     .as_ref()
@@ -54,7 +54,6 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
             },
         };
         validator
-            .ok_or_else(|| tonic::Status::internal("no validators configured"))?
             .clone()
             .get_transaction_encryption_key(forwarded_request)
             .await

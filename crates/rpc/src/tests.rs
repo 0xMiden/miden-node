@@ -57,7 +57,7 @@ use tonic::metadata::MetadataMap;
 use url::Url;
 
 use crate::server::api::RpcService;
-use crate::{PreAuthSubmission, Rpc, RpcMode};
+use crate::{PreAuthSubmission, Rpc, RpcMode, ValidatorClients};
 
 /// Global registry of temp directories. Held for the lifetime of the test binary so that `RocksDB`
 /// can always flush on drop regardless of test outcome or drop ordering.
@@ -645,7 +645,7 @@ async fn start_source_rpc(
         );
         let source_rpc = RpcService::new(
             store_state,
-            RpcMode::sequencer(block_producer, vec![validator]),
+            RpcMode::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
             Some(ntx_builder),
             NonZeroUsize::new(1_000_000).unwrap(),
             None,
@@ -1122,7 +1122,10 @@ async fn start_rpc_with_options(
         Rpc {
             listener: rpc_listener,
             store: store_state,
-            mode: RpcMode::sequencer(block_producer, vec![validator]),
+            mode: RpcMode::sequencer(
+                block_producer,
+                ValidatorClients::new(vec![validator]).unwrap(),
+            ),
             ntx_builder: None,
             grpc_options,
             network_tx_auth: None,

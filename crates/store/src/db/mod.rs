@@ -612,9 +612,7 @@ impl Db {
             models::queries::prune_history(conn, signed_block.header().block_num())?;
 
             let mut resolved_note_ids = BTreeMap::new();
-            for chunk in
-                unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT)
-            {
+            for chunk in unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT) {
                 match queries::select_note_ids_by_nullifier(conn, chunk) {
                     Ok(note_ids) => resolved_note_ids.extend(note_ids),
                     Err(err) => {

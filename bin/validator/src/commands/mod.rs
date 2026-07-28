@@ -10,6 +10,7 @@ use anyhow::Context;
 use base64::Engine;
 use clap::Parser;
 use miden_node_utils::clap::GrpcOptionsInternal;
+use miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -31,10 +32,6 @@ const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
 const ENV_GENESIS_CONFIG: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
-
-/// A predefined, insecure validator signing key for development purposes.
-pub(crate) const INSECURE_SIGNING_KEY_HEX: &str =
-    miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX;
 
 /// A predefined, insecure shared transaction encryption key for development purposes.
 pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
@@ -145,7 +142,7 @@ pub enum ValidatorCommand {
             long = "signing-key.hex",
             env = ENV_SIGNING_KEY,
             value_name = "VALIDATOR_SIGNING_KEY",
-            default_value = INSECURE_SIGNING_KEY_HEX,
+            default_value = INSECURE_VALIDATOR_SIGNING_KEY_HEX,
             group = "signing_key_source"
         )]
         signing_key: String,
@@ -322,7 +319,7 @@ pub struct ValidatorSigningKey {
         long = "signing-key.hex",
         env = ENV_SIGNING_KEY,
         value_name = "VALIDATOR_SIGNING_KEY",
-        default_value = INSECURE_SIGNING_KEY_HEX,
+        default_value = INSECURE_VALIDATOR_SIGNING_KEY_HEX,
     )]
     pub signing_key: String,
     /// Key ID for the KMS key used by validator to sign blocks.

@@ -10,7 +10,7 @@ use tonic::Status;
 
 use super::ValidatorService;
 use crate::COMPONENT;
-use crate::db::{insert_transaction, transaction_exists};
+use crate::db::{ValidatedTransactionRecord, insert_transaction, transaction_exists};
 use crate::tx_validation::validate_transaction;
 
 #[tonic::async_trait]
@@ -30,12 +30,13 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        let tx_id = input.tx.id();
+        let Input { tx, sealed } = input;
+        let tx_id = tx.id();
         miden_span_record!(
             transaction.id = %tx_id,
         );
 
-        let inputs = self.unseal_transaction_inputs(&input.sealed, tx_id).await?;
+        let inputs = self.unseal_transaction_inputs(&sealed, tx_id).await?;
 
         // Reject requests while a backup subscription is streaming.
         let _guard = self
@@ -56,14 +57,21 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         }
 
         // Validate the transaction.
-        let tx_info = validate_transaction(input.tx, inputs).await.map_err(|err| {
+        validate_transaction(tx, inputs).await.map_err(|err| {
             Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
-        // Store the validated transaction.
+        // This Phase 1 record stores the accepted client envelope only after plaintext validation.
+        // Phase 2 will instead store the validated inputs under threshold encryption.
+        let record = ValidatedTransactionRecord {
+            transaction_id: tx_id,
+            submission_scheme: self.encryption_key_info.scheme.as_u32(),
+            submission_key_id: sealed.key_id,
+            sealed_transaction_inputs: sealed.ciphertext,
+        };
         let count = self
             .db
-            .write("insert_transaction", move |tx| insert_transaction(tx, &tx_info))
+            .write("insert_transaction", move |tx| insert_transaction(tx, &record))
             .await
             .map_err(|err| {
                 Status::internal(err.as_report_context("Failed to insert transaction"))

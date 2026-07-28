@@ -106,10 +106,6 @@ impl ValidatorServer {
         .await
         .context("failed to initialize validator server")?;
 
-        // Rotate and re-attest the transaction encryption key as the chain crosses epoch
-        // boundaries. The task follows the committed tip and stops on shutdown.
-        service.spawn_key_rotation_task(shutdown.clone());
-
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))

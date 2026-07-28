@@ -7,6 +7,7 @@ pub mod note;
 pub mod nullifier;
 pub mod proof_request;
 pub mod transaction;
+pub mod transaction_encryption;
 
 // UTILITIES
 // ================================================================================================

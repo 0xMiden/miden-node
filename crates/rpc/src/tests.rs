@@ -848,23 +848,21 @@ fn test_encryption_key() -> proto::transaction::TransactionEncryptionKeyResponse
             scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
             key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
             public_key: vec![7; 32],
-            attestations: vec![proto::transaction::ValidatorKeyAttestation {
-                validator_public_key: vec![8; 33],
-                signature: vec![9; 65],
-            }],
         }),
         next_key: Some(proto::transaction::NextTransactionEncryptionKey {
             key: Some(proto::transaction::TransactionEncryptionKey {
                 scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
                 key_id: vec![0xFE, 0xED],
                 public_key: vec![6; 32],
-                attestations: vec![proto::transaction::ValidatorKeyAttestation {
-                    validator_public_key: vec![8; 33],
-                    signature: vec![10; 65],
-                }],
             }),
-            rotation_block_num: 42,
+            activation_block_num: 1 << 16,
         }),
+        current_key_activation_block_num: 0,
+        attestation_epoch: 0,
+        attestations: vec![proto::transaction::ValidatorKeyAttestation {
+            validator_public_key: vec![8; 33],
+            signature: vec![9; 65],
+        }],
     }
 }
 

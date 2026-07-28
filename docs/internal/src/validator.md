@@ -29,35 +29,30 @@ Once verified, the block is signed and returned to the sender.
 ## Transaction encryption key
 
 In addition to its per-validator signing key, every validator is provisioned with the _same_
-shared master secret for transaction encryption. From it, the validator derives one encryption
-keypair per epoch (an Ed25519 key that miden-crypto uses for X25519 key agreement in its IES
-scheme): the key seed is the blake3 hash of a domain tag, the master secret, and the epoch
-number. Clients will use the epoch's key to encrypt the private transaction inputs they submit,
-so that any validator in the set can decrypt them.
+transaction encryption provider. The provider owns its opaque key IDs and secret storage. It
+stores an optional previous key, a current key, and an optional manually selected next key. It
+exposes only the current and next public metadata, and it decrypts using the key ID supplied by
+the caller. It does not expose raw secret bytes.
 
-The encryption key rotates at every epoch boundary (every `2^16` blocks). Since the derivation
-is deterministic, all validators transition to the same new key without coordination. A
-background task follows the validator's committed chain tip and, after each boundary, derives
-the new epoch's keys and re-signs their attestations off the request path. Submissions sealed
-against the previous epoch's key remain decryptable for one further epoch as a grace window.
+A scheduled key may activate only at an epoch boundary. Before that boundary its ID is premature.
+At the boundary it becomes current and the prior current key remains decrypt-only through the
+activation epoch. The old ID is expired from the following epoch boundary onward. The provider,
+not the validator service, enforces these rules. The validator does not derive keys or choose an
+automatic rotation policy. Providers keep the schedule fixed within each epoch. Operators publish
+a manually selected next key only at an epoch boundary and restart all validators with the same
+previous, current, and next state.
 
-Each epoch's secret key is archived in the validator's database, at startup (backfilling any
-epochs missed while offline) and at every rotation, always including the announced next epoch's
-key since clients near a boundary may already seal against it. The archive preserves the key
-material needed to recover past submissions should the shared master secret ever be replaced;
-the live decrypt path always re-derives from the master secret. Decrypter implementations that
-cannot export secret key bytes (e.g. a future TEE-held key) skip this archival and are
-responsible for their own.
+`GetTransactionEncryptionKey` returns the current key and optional next key as one schedule. A
+single validator signature binds the complete schedule, including both activation blocks and the
+presence or absence of the next key. It also binds the genesis commitment and an attestation
+epoch. The validator lazily refreshes this attestation at most once per epoch without changing
+the provider schedule.
 
-The `GetTransactionEncryptionKey` endpoint returns the current key and the key that replaces it
-at the next epoch boundary, each carrying an IES scheme identifier, an opaque key ID, and a list
-of validator attestations, currently holding one signature from this validator's own signing key
-over an attestation commitment (the `ValidatorKeyAttestation` proto message documents the exact
-payload). The commitment carries a domain tag that separates attestations from block header
-signatures, the genesis commitment so an attestation cannot replay across networks, and a role
-suffix that separates current-key from next-key attestations and binds the next key's rotation
-block. The signature proves to clients that a chain-recognized validator vouches for the key, so
-the key can be served through an untrusted RPC.
+The canonical typed verifier lives in
+`miden_node_proto::domain::transaction_encryption`. It checks the signature against
+chain-recognized validator keys, requires the attestation epoch to match the trusted chain tip,
+and enforces activation boundaries. This lets node-owned clients reject cross-network, stale,
+premature, and structurally altered schedules served through an untrusted RPC.
 
 This scheme does not protect the inputs from parties holding the shared secret and has no forward
 secrecy. It is the first phase of the transaction input encryption design: later phases move the

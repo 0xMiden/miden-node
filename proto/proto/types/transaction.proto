@@ -71,22 +71,17 @@ enum IesScheme {
   IES_SCHEME_X25519_XCHACHA20_POLY1305 = 1;
 }
 
-// A single validator's attestation of the transaction encryption key.
+// A single validator's attestation of a complete transaction encryption key schedule.
 message ValidatorKeyAttestation {
   // Public key of the attesting validator, encoded using the [miden_serde_utils::Serializable]
   // implementation for [miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey]. Must match a
   // validator signing key committed in block headers to be trusted.
   bytes validator_public_key = 1;
 
-  // The validator's signature over the attestation commitment: the Poseidon2 byte-mode hash of
-  // `domain_tag || scheme || len(key_id) || key_id || genesis_commitment || len(public_key) ||
-  // public_key || role_suffix`, where `domain_tag` is the ASCII string
-  // `MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1`, the scheme and the length prefixes are encoded as
-  // 4 bytes little-endian, and the genesis block commitment ties the attestation to one network.
-  // `role_suffix` is a single `0` byte when the key is attested as the current key, or a `1`
-  // byte followed by `rotation_block_num` (4 bytes little-endian) when the key is attested as a
-  // scheduled next key, binding the rotation block to the signature. The canonical construction
-  // is `miden_validator::attestation_commitment`.
+  // The validator's signature over the complete response schedule. The commitment binds the
+  // genesis commitment, attestation epoch, current key and activation block, and the presence or
+  // absence and contents of the optional next key. The canonical construction and verifier live
+  // in `miden_node_proto::domain::transaction_encryption`.
   bytes signature = 2;
 }
 
@@ -111,28 +106,17 @@ message TransactionEncryptionKey {
   // key that miden-crypto converts internally for X25519 key agreement).
   bytes public_key = 3;
 
-  // Validator attestations of this key.
-  //
-  // Currently contains a single attestation from the validator that served the request.
-  // Collecting attestations from the whole validator set requires validator intercommunication
-  // and is planned as a follow-up; the wire format already accommodates it.
-  repeated ValidatorKeyAttestation attestations = 4;
-
-  // Reserved for future attestation evidence beyond the validator signatures, e.g. a TEE quote,
-  // signature chain, compose hash, app measurement, epoch, or accepted measurement set.
-  reserved 5 to 9;
+  reserved 4, 5;
+  reserved "attestations", "next_key";
 }
 
 // The next transaction encryption key, announced ahead of a scheduled key rotation.
 message NextTransactionEncryptionKey {
-  // The key that replaces the current one at the rotation block. Its attestations sign the
-  // next-key role suffix (`1 || rotation_block_num`), so a scheduled rotation cannot be altered
-  // or forged from a current-key attestation.
+  // The key that replaces the current one at the activation block.
   TransactionEncryptionKey key = 1;
 
-  // Block number at which the next key replaces the current one. Always the first block of the
-  // epoch following the current key's epoch: keys rotate every epoch (`2^16` blocks).
-  fixed32 rotation_block_num = 2;
+  // Block number at which the next key replaces the current one. Must be an epoch boundary.
+  fixed32 activation_block_num = 2;
 }
 
 // Response to a transaction encryption key request: the current key and the key scheduled to
@@ -141,9 +125,22 @@ message TransactionEncryptionKeyResponse {
   // The encryption key currently in effect.
   TransactionEncryptionKey current_key = 1;
 
-  // The key that replaces `current_key` at `rotation_block_num`. Encryption keys rotate every
-  // epoch, so this is populated except in the degenerate case where no next epoch exists.
+  // The key that replaces `current_key` at its activation block when a manual rotation has been
+  // scheduled.
   optional NextTransactionEncryptionKey next_key = 2;
+
+  // Epoch boundary at which the current key became active.
+  fixed32 current_key_activation_block_num = 3;
+
+  // Epoch in which this schedule was attested. A verifier must compare this with a trusted chain
+  // tip so a schedule from an earlier epoch cannot be replayed.
+  fixed32 attestation_epoch = 4;
+
+  // Validator attestations over this complete schedule.
+  //
+  // Currently contains a single attestation from the validator that served the request.
+  // Collecting attestations from the whole validator set requires validator intercommunication.
+  repeated ValidatorKeyAttestation attestations = 5;
 }
 
 // Represents a transaction ID.

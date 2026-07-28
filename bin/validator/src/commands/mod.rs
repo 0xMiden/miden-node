@@ -11,7 +11,9 @@ use clap::Parser;
 use miden_node_utils::clap::GrpcOptionsInternal;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
+use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::Deserializable;
 use miden_validator::{
     DataDirectory,
@@ -27,6 +29,17 @@ const ENV_SIGNING_KEY: &str = "MIDEN_VALIDATOR_SIGNING_KEY";
 const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
+const ENV_ENCRYPTION_KEY_ACTIVATION_BLOCK: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_ACTIVATION_BLOCK";
+const ENV_PREVIOUS_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_PREVIOUS_ENCRYPTION_KEY";
+const ENV_PREVIOUS_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str =
+    "MIDEN_VALIDATOR_PREVIOUS_ENCRYPTION_KEY_KMS_CIPHERTEXT";
+const ENV_PREVIOUS_ENCRYPTION_KEY_ACTIVATION_BLOCK: &str =
+    "MIDEN_VALIDATOR_PREVIOUS_ENCRYPTION_KEY_ACTIVATION_BLOCK";
+const ENV_NEXT_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_NEXT_ENCRYPTION_KEY";
+const ENV_NEXT_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str =
+    "MIDEN_VALIDATOR_NEXT_ENCRYPTION_KEY_KMS_CIPHERTEXT";
+const ENV_NEXT_ENCRYPTION_KEY_ACTIVATION_BLOCK: &str =
+    "MIDEN_VALIDATOR_NEXT_ENCRYPTION_KEY_ACTIVATION_BLOCK";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 
@@ -37,6 +50,7 @@ pub(crate) const INSECURE_SIGNING_KEY_HEX: &str =
 /// A predefined, insecure shared transaction encryption key for development purposes.
 pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
     "0202020202020202020202020202020202020202020202020202020202020202";
+const INSECURE_ENCRYPTION_KEY_BYTES: [u8; 32] = [2; 32];
 
 // VALIDATOR COMMAND
 // ================================================================================================
@@ -131,40 +145,189 @@ pub enum ValidatorCommand {
         )]
         signing_key_kms_id: Option<String>,
 
-        /// Hex-encoded shared master secret of the transaction encryption key.
-        ///
-        /// The per-epoch encryption keys are derived from this secret, rotating automatically at
-        /// each epoch boundary. Unlike the per-validator signing key, this value must be
-        /// identical across every validator in the set.
-        ///
-        /// If not provided, a predefined insecure key is used.
-        ///
-        /// Cannot be used with `encryption-key.kms-ciphertext`.
-        #[arg(
-            long = "encryption-key.hex",
-            env = ENV_ENCRYPTION_KEY,
-            value_name = "VALIDATOR_ENCRYPTION_KEY",
-            default_value = INSECURE_ENCRYPTION_KEY_HEX,
-            group = "encryption_key_source"
-        )]
-        encryption_key: String,
-
-        /// Base64-encoded KMS ciphertext of the shared transaction encryption master secret, as
-        /// returned by `kms:Encrypt`.
-        ///
-        /// The wrapped key material is recovered at startup with `kms:Decrypt`. The ciphertext
-        /// must have been produced by `kms:Encrypt` under a symmetric KMS key, whose ID is
-        /// embedded in the ciphertext blob.
-        ///
-        /// Cannot be used with `encryption-key.hex`.
-        #[arg(
-            long = "encryption-key.kms-ciphertext",
-            env = ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT,
-            value_name = "VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT",
-            group = "encryption_key_source"
-        )]
-        encryption_key_kms_ciphertext: Option<String>,
+        /// Manual transaction encryption key schedule.
+        #[command(flatten)]
+        encryption_keys: ValidatorEncryptionKeys,
     },
+}
+
+#[derive(clap::Args)]
+pub(crate) struct ValidatorEncryptionKeys {
+    /// Hex-encoded shared current transaction encryption secret key.
+    ///
+    /// Unlike the per-validator signing key, this value must be identical across every validator
+    /// in the set. If not provided, a predefined insecure key is used.
+    #[arg(
+        long = "encryption-key.hex",
+        env = ENV_ENCRYPTION_KEY,
+        value_name = "VALIDATOR_ENCRYPTION_KEY",
+        default_value = INSECURE_ENCRYPTION_KEY_HEX,
+        group = "encryption_key_source"
+    )]
+    current_key: String,
+
+    /// Base64-encoded KMS ciphertext of the current transaction encryption secret key.
+    #[arg(
+        long = "encryption-key.kms-ciphertext",
+        env = ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT,
+        value_name = "VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT",
+        group = "encryption_key_source"
+    )]
+    current_key_kms_ciphertext: Option<String>,
+
+    /// Epoch-boundary block at which the current key became active.
+    #[arg(
+        long = "encryption-key.activation-block",
+        env = ENV_ENCRYPTION_KEY_ACTIVATION_BLOCK,
+        value_name = "BLOCK_NUM",
+        default_value_t = 0
+    )]
+    current_key_activation_block: u32,
+
+    /// Hex-encoded previous transaction encryption secret key retained for grace decryption.
+    #[arg(
+        long = "encryption-key.previous.hex",
+        env = ENV_PREVIOUS_ENCRYPTION_KEY,
+        value_name = "PREVIOUS_VALIDATOR_ENCRYPTION_KEY",
+        group = "previous_encryption_key_source",
+        requires = "previous_key_activation_block"
+    )]
+    previous_key: Option<String>,
+
+    /// Base64-encoded KMS ciphertext of the previous transaction encryption secret key.
+    #[arg(
+        long = "encryption-key.previous.kms-ciphertext",
+        env = ENV_PREVIOUS_ENCRYPTION_KEY_KMS_CIPHERTEXT,
+        value_name = "PREVIOUS_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT",
+        group = "previous_encryption_key_source",
+        requires = "previous_key_activation_block"
+    )]
+    previous_key_kms_ciphertext: Option<String>,
+
+    /// Epoch-boundary block at which the previous key became active.
+    #[arg(
+        long = "encryption-key.previous.activation-block",
+        env = ENV_PREVIOUS_ENCRYPTION_KEY_ACTIVATION_BLOCK,
+        value_name = "BLOCK_NUM",
+        requires = "previous_encryption_key_source"
+    )]
+    previous_key_activation_block: Option<u32>,
+
+    /// Hex-encoded next transaction encryption secret key.
+    #[arg(
+        long = "encryption-key.next.hex",
+        env = ENV_NEXT_ENCRYPTION_KEY,
+        value_name = "NEXT_VALIDATOR_ENCRYPTION_KEY",
+        group = "next_encryption_key_source",
+        requires = "next_key_activation_block"
+    )]
+    next_key: Option<String>,
+
+    /// Base64-encoded KMS ciphertext of the next transaction encryption secret key.
+    #[arg(
+        long = "encryption-key.next.kms-ciphertext",
+        env = ENV_NEXT_ENCRYPTION_KEY_KMS_CIPHERTEXT,
+        value_name = "NEXT_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT",
+        group = "next_encryption_key_source",
+        requires = "next_key_activation_block"
+    )]
+    next_key_kms_ciphertext: Option<String>,
+
+    /// Epoch-boundary block at which the next key will become active.
+    #[arg(
+        long = "encryption-key.next.activation-block",
+        env = ENV_NEXT_ENCRYPTION_KEY_ACTIVATION_BLOCK,
+        value_name = "BLOCK_NUM",
+        requires = "next_encryption_key_source"
+    )]
+    next_key_activation_block: Option<u32>,
+}
+
+impl ValidatorEncryptionKeys {
+    async fn into_decrypter(self) -> anyhow::Result<LocalX25519TransactionInputDecrypter> {
+        let current =
+            load_encryption_key(Some(self.current_key), self.current_key_kms_ciphertext, "current")
+                .await?
+                .expect("the current encryption key always has a default");
+        let previous =
+            load_encryption_key(self.previous_key, self.previous_key_kms_ciphertext, "previous")
+                .await?;
+        let next = load_encryption_key(self.next_key, self.next_key_kms_ciphertext, "next").await?;
+
+        let previous =
+            pair_key_with_activation(previous, self.previous_key_activation_block, "previous")?;
+        let next = pair_key_with_activation(next, self.next_key_activation_block, "next")?;
+
+        LocalX25519TransactionInputDecrypter::from_schedule(
+            previous,
+            (current, BlockNumber::from(self.current_key_activation_block)),
+            next,
+        )
+    }
+}
+
+async fn load_encryption_key(
+    hex_key: Option<String>,
+    kms_ciphertext: Option<String>,
+    role: &str,
+) -> anyhow::Result<Option<KeyExchangeKey>> {
+    let loaded_from_hex = kms_ciphertext.is_none() && hex_key.is_some();
+    let key_bytes = if let Some(ciphertext) = kms_ciphertext {
+        let ciphertext =
+            base64::engine::general_purpose::STANDARD.decode(ciphertext).with_context(|| {
+                format!("failed to decode the {role} encryption key KMS ciphertext")
+            })?;
+        Some(
+            miden_validator::decrypt_key_material(ciphertext)
+                .await
+                .with_context(|| format!("failed to decrypt the {role} encryption key with KMS"))?,
+        )
+    } else {
+        hex_key
+            .map(|key| {
+                hex::decode(key)
+                    .with_context(|| format!("failed to decode the {role} encryption key hex"))
+            })
+            .transpose()?
+    };
+
+    if key_bytes.as_deref() == Some(INSECURE_ENCRYPTION_KEY_BYTES.as_slice()) {
+        tracing::warn!(
+            target: LOG_TARGET,
+            role,
+            "Using the predefined, insecure transaction encryption key"
+        );
+    } else if loaded_from_hex {
+        tracing::warn!(
+            target: LOG_TARGET,
+            role,
+            "Using a plaintext transaction encryption key; use KMS ciphertext in production"
+        );
+    }
+
+    key_bytes
+        .map(|key| {
+            KeyExchangeKey::read_from_bytes(&key)
+                .with_context(|| format!("failed to parse the {role} transaction encryption key"))
+        })
+        .transpose()
+}
+
+fn pair_key_with_activation(
+    key: Option<KeyExchangeKey>,
+    activation_block: Option<u32>,
+    role: &str,
+) -> anyhow::Result<Option<(KeyExchangeKey, BlockNumber)>> {
+    match (key, activation_block) {
+        (Some(key), Some(activation_block)) => Ok(Some((key, BlockNumber::from(activation_block)))),
+        (None, None) => Ok(None),
+        (Some(_), None) => {
+            anyhow::bail!("{role} encryption key requires an activation block")
+        },
+        (None, Some(_)) => {
+            anyhow::bail!("{role} encryption key activation requires a key")
+        },
+    }
 }
 
 impl ValidatorCommand {
@@ -202,42 +365,12 @@ impl ValidatorCommand {
                 data_directory,
                 signing_key_kms_id,
                 sqlite_connection_pool_size,
-                encryption_key,
-                encryption_key_kms_ciphertext,
+                encryption_keys,
                 ..
             } => {
                 let address = listen;
-
-                let encryption_key_bytes = if let Some(ciphertext) = encryption_key_kms_ciphertext {
-                    let ciphertext =
-                        base64::engine::general_purpose::STANDARD
-                            .decode(ciphertext)
-                            .context("failed to decode the encryption key KMS ciphertext base64")?;
-                    miden_validator::decrypt_key_material(ciphertext)
-                        .await
-                        .context("failed to decrypt the encryption key with KMS")?
-                } else {
-                    // Unlike the signing key, whose insecure default is caught at startup against
-                    // the chain's committed validator key, nothing cross-checks the encryption key.
-                    // Warn loudly so the default never runs in production unnoticed.
-                    if encryption_key == INSECURE_ENCRYPTION_KEY_HEX {
-                        tracing::warn!(
-                            target: LOG_TARGET,
-                            "Using the predefined, insecure transaction encryption key, configure \
-                             --encryption-key.hex or --encryption-key.kms-ciphertext for \
-                             production deployments"
-                        );
-                    }
-
-                    hex::decode(encryption_key)
-                        .context("failed to decode the encryption key hex")?
-                };
-                let master_secret: [u8; 32] = encryption_key_bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("the encryption key must be exactly 32 bytes"))?;
                 let decrypter: Arc<dyn TransactionInputDecrypter> =
-                    Arc::new(LocalX25519TransactionInputDecrypter::new(master_secret));
+                    Arc::new(encryption_keys.into_decrypter().await?);
 
                 let signer = if let Some(kms_key_id) = signing_key_kms_id {
                     ValidatorSigner::new_kms(kms_key_id).await?
@@ -314,7 +447,13 @@ impl ValidatorSigningKey {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::crypto::utils::Serializable;
+
     use super::*;
+
+    const KEY_A: &str = "0303030303030303030303030303030303030303030303030303030303030303";
+    const KEY_B: &str = "0404040404040404040404040404040404040404040404040404040404040404";
+    const KEY_C: &str = "0505050505050505050505050505050505050505050505050505050505050505";
 
     const BASE_START_ARGS: [&str; 6] = [
         "miden-validator",
@@ -334,26 +473,24 @@ mod tests {
     #[test]
     fn encryption_key_defaults_to_insecure_hex() {
         let command = parse_start(&[]).expect("start without encryption options must parse");
-        let ValidatorCommand::Start {
-            encryption_key,
-            encryption_key_kms_ciphertext,
-            ..
-        } = command
-        else {
+        let ValidatorCommand::Start { encryption_keys, .. } = command else {
             panic!("expected the start command");
         };
-        assert_eq!(encryption_key, INSECURE_ENCRYPTION_KEY_HEX);
-        assert_eq!(encryption_key_kms_ciphertext, None);
+        assert_eq!(encryption_keys.current_key, INSECURE_ENCRYPTION_KEY_HEX);
+        assert_eq!(encryption_keys.current_key_kms_ciphertext, None);
+        assert_eq!(encryption_keys.current_key_activation_block, 0);
+        assert!(encryption_keys.previous_key.is_none());
+        assert!(encryption_keys.next_key.is_none());
     }
 
     #[test]
     fn encryption_key_kms_ciphertext_parses_alone() {
         let command = parse_start(&["--encryption-key.kms-ciphertext", "deadbeef"])
             .expect("KMS ciphertext without a hex key must parse");
-        let ValidatorCommand::Start { encryption_key_kms_ciphertext, .. } = command else {
+        let ValidatorCommand::Start { encryption_keys, .. } = command else {
             panic!("expected the start command");
         };
-        assert_eq!(encryption_key_kms_ciphertext.as_deref(), Some("deadbeef"));
+        assert_eq!(encryption_keys.current_key_kms_ciphertext.as_deref(), Some("deadbeef"));
     }
 
     #[test]
@@ -368,5 +505,65 @@ mod tests {
             panic!("hex key and KMS ciphertext together must be rejected");
         };
         assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[tokio::test]
+    async fn complete_manual_encryption_key_schedule_parses() {
+        let command = parse_start(&[
+            "--encryption-key.previous.hex",
+            KEY_A,
+            "--encryption-key.previous.activation-block",
+            "0",
+            "--encryption-key.hex",
+            KEY_B,
+            "--encryption-key.activation-block",
+            "65536",
+            "--encryption-key.next.hex",
+            KEY_C,
+            "--encryption-key.next.activation-block",
+            "131072",
+        ])
+        .expect("a complete previous, current, and next schedule must parse");
+        let ValidatorCommand::Start { encryption_keys, .. } = command else {
+            panic!("expected the start command");
+        };
+        let provider = encryption_keys.into_decrypter().await.unwrap();
+        let schedule = provider.encryption_key_schedule(BlockNumber::from_epoch(1)).await.unwrap();
+
+        let current = KeyExchangeKey::read_from_bytes(&[4; 32]).unwrap();
+        let next = KeyExchangeKey::read_from_bytes(&[5; 32]).unwrap();
+        assert_eq!(schedule.current_key.key_id, current.public_key().to_commitment().to_bytes());
+        assert_eq!(
+            schedule.next_key.unwrap().key.key_id,
+            next.public_key().to_commitment().to_bytes()
+        );
+    }
+
+    #[test]
+    fn scheduled_key_requires_an_activation_block() {
+        let Err(error) = parse_start(&["--encryption-key.next.hex", KEY_C]) else {
+            panic!("a next key without an activation must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[tokio::test]
+    async fn startup_rejects_non_boundary_key_activation() {
+        let command = parse_start(&[
+            "--encryption-key.previous.hex",
+            KEY_A,
+            "--encryption-key.previous.activation-block",
+            "0",
+            "--encryption-key.hex",
+            KEY_B,
+            "--encryption-key.activation-block",
+            "65537",
+        ])
+        .unwrap();
+        let ValidatorCommand::Start { encryption_keys, .. } = command else {
+            panic!("expected the start command");
+        };
+
+        assert!(encryption_keys.into_decrypter().await.is_err());
     }
 }

@@ -38,16 +38,21 @@ grpcurl rpc.testnet.miden.io:443 describe rpc.Api
 | `SubmitProvenTx`              | Submits one proven transaction and returns the node's current block height.                             |
 | `SubmitProvenTxBatch`         | Submits an atomic batch of proven transactions and returns the node's current block height.             |
 
-The keys returned by `GetTransactionEncryptionKey` are shared across the whole validator set, while each attestation is
-specific to one validator (currently each key carries a single attestation). The encryption key rotates every epoch
-(`2^16` blocks): the response carries the key currently in effect and the key that replaces it at the next epoch
-boundary, together with the rotation block number. Clients verify an attestation against a validator signing key they
-already trust from the chain and reconstruct the encryption key with miden-crypto. The exact attestation payload is
-documented on the `ValidatorKeyAttestation` proto message. Note that this scheme does not hide transaction inputs from
-holders of the shared encryption secret (currently the network operator and every validator) and provides no forward
-secrecy. The attestation proves which validator vouched for the key but does not prove freshness: a replayed older
-signed key still verifies until a chain or epoch rule for freshness exists, though the rotation block bound into
-next-key attestations lets clients detect stale keys once the chain has passed that block.
+The response carries the current key, its activation block, and an optional manually scheduled next key. Activations
+must be epoch boundaries. One validator signature covers the complete schedule, including whether the next key is
+absent, so an untrusted RPC cannot remove a scheduled key without invalidating the signature.
+
+Clients should use `miden_node_proto::domain::transaction_encryption` to verify the response against a genesis
+commitment, trusted chain tip, and validator signing keys. The signed attestation epoch must match the trusted tip's
+epoch, which rejects responses replayed from an earlier epoch. The verifier also rejects premature current keys,
+already-active next keys, and activations that are not epoch boundaries. Key IDs are opaque provider-owned bytes and
+must be sent back with encrypted submissions so the provider can select the intended key.
+
+Providers keep a schedule unchanged within an epoch. Preventing a validator from signing two different schedules in one
+epoch requires this operational rule until the schedule has its own on-chain commitment.
+
+This scheme does not hide transaction inputs from holders of the shared encryption secret and provides no forward
+secrecy.
 
 Write requests must identify the target network with the `genesis` parameter in the `Accept` header:
 

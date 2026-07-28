@@ -33,47 +33,43 @@ impl grpc::server::validator_api::GetTransactionEncryptionKey for ValidatorServi
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        // Built entirely from in-memory attested state, so the endpoint stays available while a
-        // backup subscription holds the serve lock.
-        let attested = self.attested_encryption_keys();
+        // The schedule is cached in memory and re-attested lazily at most once per epoch, so this
+        // endpoint remains independent of the backup serve lock.
+        let attested = self
+            .attested_encryption_key_schedule()
+            .await
+            .map_err(|err| tonic::Status::failed_precondition(err.to_string()))?;
         let validator_public_key = self.signer.public_key().to_bytes();
 
-        let current_key = encode_key(
-            &attested.keys.current,
-            &validator_public_key,
-            &attested.current_attestation.to_bytes(),
-        );
-        let next_key = attested.keys.next.as_ref().map(|next| {
-            let attestation = attested
-                .next_attestation
-                .as_ref()
-                .expect("a next key is always attested together with the current key");
+        let current_key = encode_key(&attested.schedule.current_key);
+        let next_key = attested.schedule.next_key.as_ref().map(|next| {
             grpc::transaction::NextTransactionEncryptionKey {
-                key: Some(encode_key(&next.key, &validator_public_key, &attestation.to_bytes())),
-                rotation_block_num: next.rotation_block_num,
+                key: Some(encode_key(&next.key)),
+                activation_block_num: next.activation_block_num.as_u32(),
             }
         });
 
         Ok(grpc::transaction::TransactionEncryptionKeyResponse {
             current_key: Some(current_key),
             next_key,
+            current_key_activation_block_num: attested
+                .schedule
+                .current_key_activation_block_num
+                .as_u32(),
+            attestation_epoch: u32::from(attested.epoch),
+            attestations: vec![grpc::transaction::ValidatorKeyAttestation {
+                validator_public_key,
+                signature: attested.attestation.to_bytes(),
+            }],
         })
     }
 }
 
-/// Encodes one attested encryption key in wire format.
-fn encode_key(
-    key: &TransactionEncryptionKeyInfo,
-    validator_public_key: &[u8],
-    signature: &[u8],
-) -> grpc::transaction::TransactionEncryptionKey {
+/// Encodes one encryption key in wire format.
+fn encode_key(key: &TransactionEncryptionKeyInfo) -> grpc::transaction::TransactionEncryptionKey {
     grpc::transaction::TransactionEncryptionKey {
         scheme: i32::try_from(key.scheme).expect("scheme identifier must fit in i32"),
         key_id: key.key_id.clone(),
         public_key: key.public_key.clone(),
-        attestations: vec![grpc::transaction::ValidatorKeyAttestation {
-            validator_public_key: validator_public_key.to_vec(),
-            signature: signature.to_vec(),
-        }],
     }
 }

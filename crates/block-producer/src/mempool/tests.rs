@@ -7,7 +7,7 @@ use pretty_assertions::assert_eq;
 use serial_test::serial;
 
 use super::*;
-use crate::mempool::graph::TransactionGraph;
+use crate::mempool::graph::{TransactionGraph, TransactionRemoval};
 use crate::test_utils::batch::TransactionBatchConstructor;
 use crate::test_utils::{MockProvenTxBuilder, mock_account_id};
 
@@ -442,7 +442,65 @@ fn transactions_exceeding_failure_limit_are_removed() {
 
     let reverted = uut.transactions.increment_failure_count(std::iter::once(tx_id));
     assert!(reverted.contains(&tx_id));
+    assert_eq!(reverted.direct().collect::<Vec<_>>(), vec![tx_id]);
+    assert!(reverted.dependents().next().is_none());
     assert_eq!(uut.unbatched_transactions_count(), 0);
+}
+
+#[test]
+fn failure_eviction_distinguishes_direct_and_dependent_transactions() {
+    let (mut uut, _) = Mempool::for_tests();
+    let [parent, child, _] = MockProvenTxBuilder::sequential();
+    let parent_id = parent.id();
+    let child_id = child.id();
+
+    uut.add_transaction(parent).unwrap();
+    uut.add_transaction(child).unwrap();
+
+    let mut removal = TransactionRemoval::default();
+    for _ in 0..TransactionGraph::FAILURE_LIMIT {
+        removal = uut.transactions.increment_failure_count(std::iter::once(parent_id));
+    }
+
+    assert_eq!(removal.direct().collect::<Vec<_>>(), vec![parent_id]);
+    assert_eq!(removal.dependents().collect::<Vec<_>>(), vec![child_id]);
+}
+
+#[test]
+fn expiration_distinguishes_direct_and_dependent_transactions() {
+    let (mut uut, _) = Mempool::for_tests();
+    uut.config.expiration_slack = 0;
+    let [parent_template, child_template, _] = MockProvenTxBuilder::sequential();
+    let parent_update = parent_template.account_update();
+    let child_update = child_template.account_update();
+    let parent = Arc::new(AuthenticatedTransaction::from_inner(
+        MockProvenTxBuilder::with_account(
+            parent_update.account_id(),
+            parent_update.initial_state_commitment(),
+            parent_update.final_state_commitment(),
+        )
+        .expiration_block_num(BlockNumber::from(1))
+        .build(),
+    ));
+    let child = Arc::new(AuthenticatedTransaction::from_inner(
+        MockProvenTxBuilder::with_account(
+            child_update.account_id(),
+            child_update.initial_state_commitment(),
+            child_update.final_state_commitment(),
+        )
+        .expiration_block_num(BlockNumber::from(10))
+        .build(),
+    ));
+    let parent_id = parent.id();
+    let child_id = child.id();
+
+    uut.add_transaction(parent).unwrap();
+    uut.add_transaction(child).unwrap();
+
+    let removal = uut.transactions.revert_expired(BlockNumber::from(1));
+
+    assert_eq!(removal.direct().collect::<Vec<_>>(), vec![parent_id]);
+    assert_eq!(removal.dependents().collect::<Vec<_>>(), vec![child_id]);
 }
 
 /// We've decided that transactions from a rolled back batch should be requeued.

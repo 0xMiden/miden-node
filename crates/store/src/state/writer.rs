@@ -33,6 +33,7 @@ use crate::accounts::AccountTreeWithHistory;
 use crate::blocks::BlockStore;
 use crate::db::{Db, NoteRecord};
 use crate::errors::{ApplyBlockError, InvalidBlockError};
+use crate::state::block_lifecycle::{BlockLifecycle, lifecycle_events_enabled};
 use crate::state::loader::TreeStorage;
 use crate::state::{
     BlockCache,
@@ -194,6 +195,12 @@ impl BlockWriter {
 
         self.validate_block_header(header, body).await?;
 
+        let block_lifecycle =
+            lifecycle_events_enabled().then(|| BlockLifecycle::from_block_body(block_num, body));
+        let unresolved_note_nullifiers = block_lifecycle
+            .as_ref()
+            .map_or_else(Vec::new, BlockLifecycle::unresolved_note_nullifiers);
+
         // Compute the tree and forest mutations and note records upfront, before any modifications.
         // The writer is the sole forest mutator, so the precomputed forest update stays valid until
         // it is applied after the DB commit below.
@@ -215,8 +222,9 @@ impl BlockWriter {
 
         // Commit to the DB. Readers continue to see the previous in-memory snapshot while the DB
         // commits; queries that combine DB and in-memory data are scoped by block number.
-        self.db
-            .apply_block(signed_block, notes, precomputed_public_states)
+        let resolved_note_ids = self
+            .db
+            .apply_block(signed_block, notes, precomputed_public_states, unresolved_note_nullifiers)
             .await
             .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
@@ -245,6 +253,9 @@ impl BlockWriter {
             .expect("block cache receives sequential block numbers");
         let _ = self.committed_tip_tx.send(block_num);
 
+        if let Some(block_lifecycle) = block_lifecycle {
+            block_lifecycle.emit(&resolved_note_ids);
+        }
         tracing::debug!(target: LOG_TARGET, "Block applied");
 
         Ok(())

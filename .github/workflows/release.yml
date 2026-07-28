@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     tags:
+      # We can only apply a basic filter here, the proper filter is implemented in
+      # the tag ruleset "Release tags". We avoid duplicating that here and instead
+      # check the ruleset gate in a dedicated step below.
+      #
+      # This prevents drift between this workflow and the ruleset, as well as
+      # problems with the patterns using different "regex-like" engines. The ruleset
+      # remains the source of truth.
       - "v*"
 
 concurrency:
@@ -38,20 +45,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # GitHub enforces the tag restrictions. This only guards against the
+      # workflow trigger and ruleset target drifting apart.
+      - name: Verify release tag ruleset target
+        uses: ./.github/actions/verify-ruleset-target
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ruleset-name: "Release tags"
+          expected-patterns: '["v*"]'
+
       - name: Rustup
         run: rustup toolchain install --no-self-update
 
-      - name: Validate release tag and version
+      - name: Validate release version
         id: release
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
-            echo "::error::Release tags must look like v1.2.3 or v1.2.3-rc.1"
-            exit 1
-          fi
 
           version="${TAG#v}"
           metadata="$(cargo metadata --no-deps --format-version 1)"

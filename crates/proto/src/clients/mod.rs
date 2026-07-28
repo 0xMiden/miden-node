@@ -32,6 +32,7 @@ use std::time::Duration;
 
 use http::header::ACCEPT;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_protocol::Word;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::utils::serde::Serializable;
 use tonic::metadata::AsciiMetadataValue;
@@ -164,6 +165,8 @@ type GeneratedProverClient = generated::remote_prover::api_client::ApiClient<Int
 type GeneratedValidatorClient = generated::validator::api_client::ApiClient<InterceptedChannel>;
 type GeneratedNtxBuilderClient = generated::ntx_builder::api_client::ApiClient<InterceptedChannel>;
 type GeneratedSequencerClient = generated::sequencer::api_client::ApiClient<InterceptedChannel>;
+type GeneratedProvenTransaction = generated::transaction::ProvenTransaction;
+type SealedTransactionInputs = generated::transaction::SealedTransactionInputs;
 
 // gRPC CLIENTS
 // ================================================================================================
@@ -343,7 +346,7 @@ impl GrpcClient for SequencerClient {
 pub struct Builder<State> {
     endpoint: Endpoint,
     metadata_version: Option<String>,
-    metadata_genesis: Option<String>,
+    metadata_genesis: Option<Word>,
     metadata_auth_header_value: Option<AsciiMetadataValue>,
     enable_otel: bool,
     _state: PhantomData<State>,
@@ -453,8 +456,8 @@ impl Builder<WantsGenesis> {
         self.next_state()
     }
 
-    /// Include a specific genesis commitment string in request metadata.
-    pub fn with_metadata_genesis(mut self, genesis: String) -> Builder<WantsOTel> {
+    /// Include a specific genesis commitment in request metadata.
+    pub fn with_metadata_genesis(mut self, genesis: Word) -> Builder<WantsOTel> {
         self.metadata_genesis = Some(genesis);
         self.next_state()
     }
@@ -515,10 +518,11 @@ impl Builder<WantsConnection> {
     where
         T: GrpcClient,
     {
+        let metadata_genesis = self.metadata_genesis.map(|genesis| genesis.to_hex());
         let interceptor = Interceptor::new(
             self.enable_otel,
             self.metadata_version.as_deref(),
-            self.metadata_genesis.as_deref(),
+            metadata_genesis.as_deref(),
             self.metadata_auth_header_value,
         );
         T::with_interceptor(channel, interceptor)
@@ -534,7 +538,7 @@ impl ValidatorClient {
     pub async fn submit_batch(
         &mut self,
         proposed_batch: &ProposedBatch,
-        sealed_transaction_inputs: &[generated::transaction::SealedTransactionInputs],
+        sealed_transaction_inputs: &[SealedTransactionInputs],
     ) -> Result<(), Status> {
         if proposed_batch.transactions().len() != sealed_transaction_inputs.len() {
             return Err(Status::invalid_argument(
@@ -542,7 +546,7 @@ impl ValidatorClient {
             ));
         }
         for (tx, inputs) in proposed_batch.transactions().iter().zip(sealed_transaction_inputs) {
-            let proven_tx = generated::transaction::ProvenTransaction {
+            let proven_tx = GeneratedProvenTransaction {
                 transaction: tx.to_bytes(),
                 sealed_transaction_inputs: Some(inputs.clone()),
             };

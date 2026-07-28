@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -128,7 +128,7 @@ impl RpcClient {
             .with_tls()?
             .without_timeout()
             .without_metadata_version()
-            .with_metadata_genesis(genesis_commitment.to_hex());
+            .with_metadata_genesis(genesis_commitment);
         let builder = match rpc_auth_header_value {
             Some(value) => builder.with_auth_header_value(value),
             None => builder.without_auth_header(),
@@ -146,15 +146,9 @@ impl RpcClient {
         })
     }
 
-    /// Returns a sealer for transaction inputs, fetching the encryption key on first use.
+    /// Returns a sealer for transaction inputs, fetching the encryption key if the cache is empty.
     pub(crate) async fn sealer(&self) -> Result<TransactionInputsSealer, Status> {
         if let Some(sealer) = self.sealer.read().await.clone() {
-            return Ok(sealer);
-        }
-
-        let mut cached = self.sealer.write().await;
-        // Another task may have populated the cache while this one waited for the write lock.
-        if let Some(sealer) = cached.clone() {
             return Ok(sealer);
         }
 
@@ -173,13 +167,12 @@ impl RpcClient {
         })?;
         let sealer = TransactionInputsSealer::new(verified);
 
+        let mut cached = self.sealer.write().await;
+        if let Some(sealer) = cached.clone() {
+            return Ok(sealer);
+        }
         *cached = Some(sealer.clone());
         Ok(sealer)
-    }
-
-    /// Discards the cached sealer so the next submission re-fetches the encryption key.
-    async fn invalidate_sealer(&self) {
-        *self.sealer.write().await = None;
     }
 
     /// Opens a committed-block subscription starting at `block_from`, retrying indefinitely with
@@ -340,12 +333,19 @@ impl RpcClient {
         let transaction = proven_tx.to_bytes();
         let transaction_inputs = tx_inputs.to_bytes();
         let tx_id = proven_tx.id();
+        let stale_key = AtomicBool::new(false);
 
-        let submit = |sealer: TransactionInputsSealer| {
+        (|| {
             let mut client = self.inner.clone();
             let transaction = transaction.clone();
             let transaction_inputs = transaction_inputs.clone();
+            let stale_key = &stale_key;
             async move {
+                if stale_key.swap(false, Ordering::Relaxed) {
+                    *self.sealer.write().await = None;
+                }
+
+                let sealer = self.sealer().await?;
                 let sealed = sealer.seal(tx_id, &transaction_inputs).map_err(|err| {
                     Status::failed_precondition(
                         err.as_report_context("Failed to seal the transaction inputs"),
@@ -358,42 +358,20 @@ impl RpcClient {
                     })
                     .await
             }
-        };
-
-        retry_once_on_failed_precondition(
-            self.sealer().await?,
-            || async {
-                self.invalidate_sealer().await;
-                self.sealer().await
-            },
-            submit,
-        )
-        .await?;
-
-        Ok(())
-    }
-}
-
-/// Retries one operation once after refreshing state rejected as stale.
-async fn retry_once_on_failed_precondition<T, S, Refresh, RefreshFuture, Submit, SubmitFuture>(
-    initial_state: S,
-    mut refresh: Refresh,
-    mut submit: Submit,
-) -> Result<T, Status>
-where
-    Refresh: FnMut() -> RefreshFuture,
-    RefreshFuture: Future<Output = Result<S, Status>>,
-    Submit: FnMut(S) -> SubmitFuture,
-    SubmitFuture: Future<Output = Result<T, Status>>,
-{
-    let result = submit(initial_state).await;
-    if result
-        .as_ref()
-        .is_err_and(|status| status.code() == tonic::Code::FailedPrecondition)
-    {
-        submit(refresh().await?).await
-    } else {
-        result
+        })
+        .retry(retry::constant(Duration::ZERO, Some(1)))
+        .when(|status: &Status| status.code() == tonic::Code::FailedPrecondition)
+        .notify(|status: &Status, _| {
+            stale_key.store(true, Ordering::Relaxed);
+            tracing::warn!(
+                target: COMPONENT,
+                %tx_id,
+                err = %status.message(),
+                "Transaction inputs rejected as stale, refreshing the encryption key and retrying",
+            );
+        })
+        .await
+        .map(|_| ())
     }
 }
 
@@ -617,64 +595,4 @@ pub enum RpcError {
     Conversion(#[source] ConversionError),
     #[error("invalid RPC response: {0}")]
     InvalidResponse(String),
-}
-
-#[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-    use std::future::ready;
-
-    use super::retry_once_on_failed_precondition;
-
-    /// A stale key refreshes state and retries the rejected operation once.
-    #[tokio::test]
-    async fn failed_precondition_refreshes_and_retries_once() {
-        let refreshes = Cell::new(0);
-        let submissions = Cell::new(0);
-
-        let result = retry_once_on_failed_precondition(
-            1,
-            || {
-                refreshes.set(refreshes.get() + 1);
-                ready(Ok(2))
-            },
-            |state| {
-                submissions.set(submissions.get() + 1);
-                ready(if submissions.get() == 1 {
-                    Err(tonic::Status::failed_precondition("stale key"))
-                } else {
-                    Ok(state)
-                })
-            },
-        )
-        .await;
-
-        assert_eq!(result.unwrap(), 2);
-        assert_eq!(refreshes.get(), 1);
-        assert_eq!(submissions.get(), 2);
-    }
-
-    /// A second stale-key rejection is returned without a third submission.
-    #[tokio::test]
-    async fn second_failed_precondition_is_not_retried() {
-        let refreshes = Cell::new(0);
-        let submissions = Cell::new(0);
-
-        let result: Result<(), _> = retry_once_on_failed_precondition(
-            (),
-            || {
-                refreshes.set(refreshes.get() + 1);
-                ready(Ok(()))
-            },
-            |()| {
-                submissions.set(submissions.get() + 1);
-                ready(Err(tonic::Status::failed_precondition("stale key")))
-            },
-        )
-        .await;
-
-        assert_eq!(result.unwrap_err().code(), tonic::Code::FailedPrecondition);
-        assert_eq!(refreshes.get(), 1);
-        assert_eq!(submissions.get(), 2);
-    }
 }

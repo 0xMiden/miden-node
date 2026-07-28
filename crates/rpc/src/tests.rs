@@ -417,7 +417,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
             .without_tls()
             .with_timeout(Duration::from_secs(5))
             .without_metadata_version()
-            .with_metadata_genesis(genesis.to_hex())
+            .with_metadata_genesis(genesis)
             .without_otel_context_injection()
             .connect_lazy::<miden_node_proto::clients::RpcClient>();
 
@@ -465,7 +465,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
             .without_tls()
             .with_timeout(Duration::from_secs(5))
             .without_metadata_version()
-            .with_metadata_genesis(genesis.to_hex())
+            .with_metadata_genesis(genesis)
             .without_otel_context_injection()
             .connect_lazy::<miden_node_proto::clients::RpcClient>();
 

@@ -233,10 +233,6 @@ pub enum TransactionEncryptionKeyError {
     NoTrustedValidatorKeys,
     #[error("transaction encryption key has no validator attestations")]
     NoAttestations,
-    #[error("invalid validator public key in transaction encryption key attestation")]
-    InvalidValidatorPublicKey(#[source] miden_protocol::utils::serde::DeserializationError),
-    #[error("invalid validator signature in transaction encryption key attestation")]
-    InvalidValidatorSignature(#[source] miden_protocol::utils::serde::DeserializationError),
     #[error("transaction encryption key has no attestation from a trusted validator")]
     NoTrustedAttestation,
     #[error("trusted validator attestation does not cover the transaction encryption key")]
@@ -270,17 +266,20 @@ pub fn verify_transaction_encryption_key(
     let mut found_trusted_signer = false;
 
     for attestation in key.attestations {
-        let validator_public_key =
+        let Ok(validator_public_key) =
             ValidatorPublicKey::read_from_bytes(&attestation.validator_public_key)
-                .map_err(TransactionEncryptionKeyError::InvalidValidatorPublicKey)?;
-        let signature = ValidatorSignature::read_from_bytes(&attestation.signature)
-            .map_err(TransactionEncryptionKeyError::InvalidValidatorSignature)?;
+        else {
+            continue;
+        };
 
         if !trusted.validator_signing_keys.contains(&validator_public_key) {
             continue;
         }
         found_trusted_signer = true;
 
+        let Ok(signature) = ValidatorSignature::read_from_bytes(&attestation.signature) else {
+            continue;
+        };
         if signature.verify(commitment, &validator_public_key) {
             return Ok(VerifiedTransactionEncryptionKey {
                 info,
@@ -536,7 +535,7 @@ mod tests {
         assert_eq!(verified.genesis_commitment(), genesis());
     }
 
-    /// An untrusted RPC cannot omit or corrupt the validator attestation.
+    /// An untrusted RPC cannot omit or rely on a malformed validator attestation.
     #[test]
     fn rejects_missing_and_malformed_attestations() {
         let signer = signing_key(1);
@@ -552,15 +551,36 @@ mod tests {
         malformed_key.attestations[0].validator_public_key.clear();
         assert_matches!(
             verify_transaction_encryption_key(malformed_key, trusted),
-            Err(TransactionEncryptionKeyError::InvalidValidatorPublicKey(_))
+            Err(TransactionEncryptionKeyError::NoTrustedAttestation)
         );
 
         let mut malformed_signature = signed_encryption_key(&signer, genesis());
         malformed_signature.attestations[0].signature.clear();
         assert_matches!(
             verify_transaction_encryption_key(malformed_signature, trusted),
-            Err(TransactionEncryptionKeyError::InvalidValidatorSignature(_))
+            Err(TransactionEncryptionKeyError::InvalidAttestation)
         );
+    }
+
+    /// A malformed attestation does not hide a later valid attestation.
+    #[test]
+    fn skips_malformed_attestations() {
+        let signer = signing_key(1);
+        let trusted_keys = [signer.public_key()];
+        let mut key = signed_encryption_key(&signer, genesis());
+        key.attestations.insert(
+            0,
+            proto::transaction::ValidatorKeyAttestation {
+                validator_public_key: Vec::new(),
+                signature: Vec::new(),
+            },
+        );
+
+        verify_transaction_encryption_key(
+            key,
+            TrustedTransactionEncryptionState::new(genesis(), &trusted_keys),
+        )
+        .unwrap();
     }
 
     /// A valid signature does not help when its signer is absent from trusted chain state.

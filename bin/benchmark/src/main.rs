@@ -138,7 +138,7 @@ impl Cli {
 async fn build_rpc_client(
     rpc_url: &Url,
     timeout: Duration,
-    genesis: Option<String>,
+    genesis: Option<Word>,
 ) -> Result<RpcClient> {
     let use_tls = rpc_url.scheme() == "https";
 
@@ -160,8 +160,8 @@ async fn build_rpc_client(
         .context("Failed to connect to RPC server")
 }
 
-/// Discover the genesis commitment (hex) of the node at `rpc_url`. This is the value write RPCs
-/// such as `SubmitProvenTransaction` expect echoed back in request metadata.
+/// Discover the genesis commitment of the node at `rpc_url`. This is the value write RPCs such as
+/// `SubmitProvenTransaction` expect echoed back in request metadata.
 async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<Word> {
     let mut rpc = build_rpc_client(rpc_url, timeout, None)
         .await
@@ -190,7 +190,7 @@ pub(crate) async fn create_genesis_aware_rpc_client(
     timeout: Duration,
 ) -> Result<RpcClient> {
     let genesis = discover_genesis(rpc_url, timeout).await?;
-    build_rpc_client(rpc_url, timeout, Some(genesis.to_hex())).await
+    build_rpc_client(rpc_url, timeout, Some(genesis)).await
 }
 
 /// Create a pool of `size` genesis-aware RPC clients, each on its own gRPC connection.
@@ -209,10 +209,9 @@ pub(crate) async fn create_genesis_aware_rpc_client_pool(
 ) -> Result<(Vec<RpcClient>, TransactionInputsSealer)> {
     let size = size.max(1);
     let genesis = discover_genesis(rpc_url, timeout).await?;
-    let genesis_hex = genesis.to_hex();
     let mut pool = Vec::with_capacity(size);
     for _ in 0..size {
-        pool.push(build_rpc_client(rpc_url, timeout, Some(genesis_hex.clone())).await?);
+        pool.push(build_rpc_client(rpc_url, timeout, Some(genesis)).await?);
     }
     let key = pool[0]
         .clone()

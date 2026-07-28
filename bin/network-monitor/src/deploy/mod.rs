@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -16,6 +17,7 @@ use miden_node_proto::domain::encryption::{
 };
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction as ProtoProvenTransaction;
+use miden_node_utils::retry;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
@@ -80,7 +82,7 @@ impl TransactionSubmissionClient {
         trusted_validator_signing_key: ValidatorPublicKey,
     ) -> Result<Self> {
         let (rpc_client, genesis_commitment) =
-            create_genesis_aware_rpc_client_with_commitment(rpc_url, timeout).await?;
+            create_genesis_aware_rpc_client(rpc_url, timeout).await?;
         let client = Self {
             rpc_client,
             genesis_commitment,
@@ -98,8 +100,7 @@ impl TransactionSubmissionClient {
 
     /// Returns the cached verified sealer, fetching and checking the attested key on first use.
     async fn sealer(&self) -> Result<TransactionInputsSealer> {
-        let mut cached = self.sealer.lock().await;
-        if let Some(sealer) = cached.clone() {
+        if let Some(sealer) = self.sealer.lock().await.clone() {
             return Ok(sealer);
         }
 
@@ -119,39 +120,64 @@ impl TransactionSubmissionClient {
         )
         .context("Untrusted transaction encryption key")?;
         let sealer = TransactionInputsSealer::new(verified);
+
+        let mut cached = self.sealer.lock().await;
+        if let Some(sealer) = cached.clone() {
+            return Ok(sealer);
+        }
         *cached = Some(sealer.clone());
         Ok(sealer)
     }
 
-    /// Seals and submits one proven transaction, invalidating stale key state on rejection.
+    /// Seals and submits one proven transaction, retrying once with a fresh key when needed.
     pub async fn submit(
         &self,
         proven_tx: &ProvenTransaction,
         transaction_inputs: &[u8],
     ) -> Result<BlockNumber> {
-        let sealed = self
-            .sealer()
-            .await?
-            .seal(proven_tx.id(), transaction_inputs)
-            .context("Failed to seal the transaction inputs")?;
-        let request = ProtoProvenTransaction {
-            transaction: proven_tx.to_bytes(),
-            sealed_transaction_inputs: Some(sealed),
-        };
+        let transaction = proven_tx.to_bytes();
+        let tx_id = proven_tx.id();
+        let stale_key = AtomicBool::new(false);
 
-        let result = self.rpc_client.clone().submit_proven_tx(request).await;
-        if result
-            .as_ref()
-            .is_err_and(|status| status.code() == tonic::Code::FailedPrecondition)
-        {
-            *self.sealer.lock().await = None;
-        }
+        let result = (|| {
+            let transaction = transaction.clone();
+            async {
+                if stale_key.swap(false, Ordering::Relaxed) {
+                    *self.sealer.lock().await = None;
+                }
 
-        Ok(result
-            .context("Failed to submit proven transaction to RPC")?
-            .into_inner()
-            .block_num
-            .into())
+                let sealed = self
+                    .sealer()
+                    .await?
+                    .seal(tx_id, transaction_inputs)
+                    .context("Failed to seal the transaction inputs")?;
+                self.rpc_client
+                    .clone()
+                    .submit_proven_tx(ProtoProvenTransaction {
+                        transaction,
+                        sealed_transaction_inputs: Some(sealed),
+                    })
+                    .await
+                    .context("Failed to submit proven transaction to RPC")
+            }
+        })
+        .retry(retry::constant(Duration::ZERO, Some(1)))
+        .when(|err: &anyhow::Error| {
+            err.downcast_ref::<tonic::Status>()
+                .is_some_and(|status| status.code() == tonic::Code::FailedPrecondition)
+        })
+        .notify(|status: &anyhow::Error, _| {
+            stale_key.store(true, Ordering::Relaxed);
+            tracing::warn!(
+                target: COMPONENT,
+                %tx_id,
+                err = %status,
+                "Transaction inputs rejected as stale, refreshing the encryption key and retrying",
+            );
+        })
+        .await;
+
+        Ok(result?.into_inner().block_num.into())
     }
 }
 
@@ -184,19 +210,6 @@ fn genesis_discovery_backoff() -> ExponentialBuilder {
 /// The full handshake (genesis discovery plus the genesis-aware reconnect) is retried with
 /// [`genesis_discovery_backoff`] so a node that is still starting up does not abort the monitor.
 pub async fn create_genesis_aware_rpc_client(
-    rpc_url: &Url,
-    timeout: Duration,
-) -> Result<RpcClient> {
-    create_genesis_aware_rpc_client_with_commitment(rpc_url, timeout)
-        .await
-        .map(|(client, _)| client)
-}
-
-/// As [`create_genesis_aware_rpc_client`], but also returns the discovered genesis commitment.
-///
-/// Submitting call sites need the commitment to seal transaction inputs, and it is already computed
-/// during the handshake.
-pub async fn create_genesis_aware_rpc_client_with_commitment(
     rpc_url: &Url,
     timeout: Duration,
 ) -> Result<(RpcClient, Word)> {
@@ -232,8 +245,6 @@ pub async fn create_genesis_aware_rpc_client_with_commitment(
         let genesis_header: BlockHeader =
             genesis_block_header.try_into().context("Failed to convert block header")?;
         let genesis_commitment = genesis_header.commitment();
-        let genesis = genesis_commitment.to_hex();
-
         // Rebuild the client, this time including the required genesis metadata so that write RPCs
         // like SubmitProvenTx are accepted by the node.
         let rpc_client = Builder::new(rpc_url.clone())
@@ -241,7 +252,7 @@ pub async fn create_genesis_aware_rpc_client_with_commitment(
             .context("Failed to configure TLS for RPC client")?
             .with_timeout(timeout)
             .without_metadata_version()
-            .with_metadata_genesis(genesis)
+            .with_metadata_genesis(genesis_commitment)
             .without_otel_context_injection()
             .connect()
             .await
@@ -346,7 +357,8 @@ pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<Transaction
     let (wallet_account, _secret_key) = create_wallet_account()?;
     let counter_account = create_counter_account(wallet_account.id())?;
 
-    let mut rpc_client = create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
+    let (mut rpc_client, _) =
+        create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
     let executed_tx = execute_counter_genesis_tx(&counter_account, &mut rpc_client).await?;
 
     Ok(executed_tx.tx_inputs().clone())

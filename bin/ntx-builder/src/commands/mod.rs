@@ -9,11 +9,7 @@ use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::clap::duration_to_human_readable_string;
 use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::fs::ensure_empty_directory;
-use miden_node_utils::genesis::{
-    OfficialNetwork,
-    fetch_signed_genesis_block,
-    read_signed_genesis_block,
-};
+use miden_node_utils::genesis::{OfficialNetwork, fetch_genesis_block, read_genesis_block};
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 use tokio::net::TcpListener;
@@ -294,8 +290,8 @@ async fn read_bootstrap_genesis_block(
     network: Option<OfficialNetwork>,
 ) -> anyhow::Result<GenesisBlock> {
     let signed_block = match (genesis_block_file, network) {
-        (Some(path), None) => read_signed_genesis_block(path)?,
-        (None, Some(network)) => fetch_signed_genesis_block(network).await?,
+        (Some(path), None) => read_genesis_block(path)?,
+        (None, Some(network)) => fetch_genesis_block(network).await?,
         _ => unreachable!("clap requires exactly one genesis block source"),
     };
     GenesisBlock::try_from(signed_block)

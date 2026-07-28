@@ -5,7 +5,7 @@ use anyhow::Context;
 use miden_node_store::BlockStore;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::fs::ensure_empty_directory;
-use miden_node_utils::genesis::read_signed_genesis_block;
+use miden_node_utils::genesis::read_genesis_block;
 use miden_validator::DataDirectory;
 
 /// Runs the `bootstrap` command: seeds this validator's database from the genesis block file
@@ -34,8 +34,8 @@ pub async fn bootstrap(
     let dirs = DataDirectory::load(data_directory.to_path_buf())
         .context("failed to load the data directory")?;
 
-    let signed_block = read_signed_genesis_block(genesis_block_file)
-        .context("failed to read genesis block file")?;
+    let signed_block =
+        read_genesis_block(genesis_block_file).context("failed to read genesis block file")?;
     let genesis_block =
         GenesisBlock::try_from(signed_block).context("genesis block validation failed")?;
     let genesis_commitment = genesis_block.inner().header().commitment();

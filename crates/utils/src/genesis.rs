@@ -40,13 +40,13 @@ impl fmt::Display for OfficialNetwork {
 }
 
 /// Reads a trusted genesis block from disk.
-pub fn read_signed_genesis_block(path: &Path) -> anyhow::Result<SignedBlock> {
+pub fn read_genesis_block(path: &Path) -> anyhow::Result<SignedBlock> {
     let bytes = fs_err::read(path).context("failed to read genesis block file")?;
-    deserialize_signed_genesis_block(&bytes)
+    deserialize_genesis_block(&bytes)
 }
 
 /// Downloads a trusted genesis block for an official Miden network.
-pub async fn fetch_signed_genesis_block(network: OfficialNetwork) -> anyhow::Result<SignedBlock> {
+pub async fn fetch_genesis_block(network: OfficialNetwork) -> anyhow::Result<SignedBlock> {
     let url = network.genesis_block_url();
     let response = reqwest::get(url.as_str())
         .await
@@ -58,9 +58,9 @@ pub async fn fetch_signed_genesis_block(network: OfficialNetwork) -> anyhow::Res
         .await
         .with_context(|| format!("failed to read genesis block response from {url}"))?;
 
-    deserialize_signed_genesis_block(&bytes)
+    deserialize_genesis_block(&bytes)
 }
 
-fn deserialize_signed_genesis_block(bytes: &[u8]) -> anyhow::Result<SignedBlock> {
+fn deserialize_genesis_block(bytes: &[u8]) -> anyhow::Result<SignedBlock> {
     SignedBlock::read_from_bytes(bytes).context("failed to deserialize genesis block")
 }

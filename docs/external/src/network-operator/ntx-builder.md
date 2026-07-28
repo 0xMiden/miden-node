@@ -23,6 +23,9 @@ miden-ntx-builder start \
 The configured `--rpc.url` should point at a node that can reach the sequencer, either directly or through a full-node
 upstream chain.
 
+The NTX builder verifies transaction encryption key attestations against the validator signing keys in its genesis data.
+Existing data directories must be bootstrapped again after this storage migration so those keys are available.
+
 The `--rpc.auth-header-value` value is sent as the fixed `x-miden-network-tx-auth` metadata header when the NTX builder
 submits network transactions. It must match the sequencer's `--rpc.network-tx-auth-header-value`; otherwise, those
 network transactions are rejected.

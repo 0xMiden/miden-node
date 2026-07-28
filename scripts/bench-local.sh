@@ -35,6 +35,8 @@ USE_REMOTE_PROVER="${USE_REMOTE_PROVER:-0}"
 CONCURRENCY="${CONCURRENCY:-8}"
 WAIT_BLOCKS="${WAIT_BLOCKS:-30}"
 RUN_DIR="${RUN_DIR:-./bench-local-run}"
+# Public key for the validator's insecure default development signing key.
+VALIDATOR_SIGNING_PUBLIC_KEY="${VALIDATOR_SIGNING_PUBLIC_KEY:-031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f}"
 
 # --- ports --------------------------------------------------------------------
 VALIDATOR_PORT=50101
@@ -196,9 +198,10 @@ miden-benchmark create-proofs \
 
 say "running run-benchmark"
 miden-benchmark run-benchmark \
-    --rpc-url     "http://127.0.0.1:$RPC_PORT" \
-    --concurrency "$CONCURRENCY" \
-    --wait-blocks "$WAIT_BLOCKS" \
+    --rpc-url                      "http://127.0.0.1:$RPC_PORT" \
+    --validator-signing-public-key "$VALIDATOR_SIGNING_PUBLIC_KEY" \
+    --concurrency                  "$CONCURRENCY" \
+    --wait-blocks                  "$WAIT_BLOCKS" \
     2>&1 | tee "$LOGS/run-benchmark.log"
 
 say "done. logs in $LOGS/"

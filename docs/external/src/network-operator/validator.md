@@ -51,12 +51,11 @@ so its AWS identity needs that permission on the wrapping key. Note that, unlike
 encryption key is held in validator memory: AWS KMS cannot perform X25519 key agreement itself, so envelope encryption
 is the supported provisioning path.
 
-The validator stores accepted private inputs under this shared key. Any holder of the shared secret
-can decrypt those records. Run each validator inside its trusted execution environment. If
-transaction proving uses a remote prover, that prover also receives the plaintext inputs and must
-run inside the same trusted boundary.
+The validator stores accepted private inputs under this shared key. Any holder of the shared secret can decrypt those
+records. Run each validator inside its trusted execution environment. If transaction proving uses a remote prover, that
+prover also receives the plaintext inputs and must run inside the same trusted boundary.
 
-The sealed-input storage migration cannot recover ciphertext for older validated rows. Bootstrap a
-fresh validator database before deploying a build with this schema.
+The sealed-input storage migration cannot recover ciphertext for older validated rows. Bootstrap a fresh validator
+database before deploying a build with this schema.
 
 Use `miden-validator start --help` for the complete current option list.

@@ -118,7 +118,7 @@ impl BlockBuilder {
         miden_span_record!(
             block.number = %telemetry.block_number,
             block.batches.count = telemetry.batches_count,
-            block.batch.ids = ?telemetry.batch_ids,
+            block.batch.ids = %format_array(telemetry.batch_ids),
             block.transactions.ids = ?telemetry.transaction_ids,
             block.transactions.count = telemetry.transactions_count,
         );

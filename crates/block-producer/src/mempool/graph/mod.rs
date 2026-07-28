@@ -7,3 +7,4 @@ mod transaction;
 
 pub use batch::BatchGraph;
 pub use transaction::TransactionGraph;
+pub(super) use transaction::TransactionRemoval;

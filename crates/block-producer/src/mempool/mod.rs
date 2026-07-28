@@ -50,7 +50,7 @@
 //! Recently committed batches are retained in `committed_blocks` according to the configured
 //! `state_retention`, giving the mempool enough local history to validate newly authenticated
 //! transactions even if the store and block producer momentarily disagree on the chain tip.
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, LockResult, Mutex, MutexGuard};
 
@@ -58,7 +58,7 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::batch::{BatchId, ProvenBatch};
 use miden_protocol::block::{BlockHeader, BlockNumber};
-use miden_protocol::transaction::{TransactionHeader, TransactionId};
+use miden_protocol::transaction::TransactionHeader;
 use thiserror::Error;
 
 use crate::block_builder::SelectedBlock;
@@ -69,6 +69,7 @@ use crate::mempool::budget::BudgetStatus;
 use crate::{
     COMPONENT,
     DEFAULT_MEMPOOL_TX_CAPACITY,
+    LOG_TARGET,
     SERVER_MEMPOOL_EXPIRATION_SLACK,
     SERVER_MEMPOOL_STATE_RETENTION,
 };
@@ -269,6 +270,7 @@ impl Mempool {
             mempool.nullifiers = telemetry.nullifiers,
             mempool.output_notes = telemetry.output_notes,
         );
+        emit_transaction_added(&tx);
 
         Ok(self.committed_chain_tip)
     }
@@ -316,6 +318,9 @@ impl Mempool {
             mempool.nullifiers = telemetry.nullifiers,
             mempool.output_notes = telemetry.output_notes,
         );
+        for tx in txs {
+            emit_transaction_added(tx);
+        }
 
         Ok(self.committed_chain_tip)
     }
@@ -413,10 +418,13 @@ impl Mempool {
         // This could occur if this batch is the descendent of a separate batch or block rollback.
         // The batch and transaction graphs already ignore unknown reversions, alternatively we
         // could check this precondition above.
-        if let Some(batch) = reverted_batches.iter().find(|reverted| reverted.id() == batch) {
-            let failed_txs = batch.transactions().iter().map(|tx| tx.id());
-            self.transactions.increment_failure_count(failed_txs);
-        }
+        let evicted =
+            if let Some(batch) = reverted_batches.iter().find(|reverted| reverted.id() == batch) {
+                let failed_txs = batch.transactions().iter().map(|tx| tx.id());
+                self.transactions.increment_failure_count(failed_txs)
+            } else {
+                graph::TransactionRemoval::default()
+            };
 
         let telemetry = self.telemetry();
         miden_span_record!(
@@ -428,6 +436,7 @@ impl Mempool {
             mempool.nullifiers = telemetry.nullifiers,
             mempool.output_notes = telemetry.output_notes,
         );
+        emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }
 
     /// Marks a batch as proven if it exists.
@@ -516,7 +525,7 @@ impl Mempool {
         self.committed_blocks.push_back(block);
         self.prune_oldest_block();
 
-        self.revert_expired();
+        let expired = self.revert_expired();
         let telemetry = self.telemetry();
         miden_span_record!(
             mempool.transactions.uncommitted = telemetry.uncommitted_transactions,
@@ -527,6 +536,7 @@ impl Mempool {
             mempool.nullifiers = telemetry.nullifiers,
             mempool.output_notes = telemetry.output_notes,
         );
+        emit_transaction_expirations(&expired, self.committed_chain_tip);
     }
 
     /// Notify the pool that construction of the in flight block failed.
@@ -566,7 +576,7 @@ impl Mempool {
             .batches
             .iter()
             .flat_map(|batch| batch.transactions().as_slice().iter().map(TransactionHeader::id));
-        self.transactions.increment_failure_count(failed_txs);
+        let evicted = self.transactions.increment_failure_count(failed_txs);
         let telemetry = self.telemetry();
         miden_span_record!(
             mempool.transactions.uncommitted = telemetry.uncommitted_transactions,
@@ -577,6 +587,7 @@ impl Mempool {
             mempool.nullifiers = telemetry.nullifiers,
             mempool.output_notes = telemetry.output_notes,
         );
+        emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }
 
     // STATS & INSPECTION
@@ -645,7 +656,7 @@ impl Mempool {
     ///
     /// Transactions from batches are requeued. Expired transactions and their descendants are then
     /// reverted as well.
-    fn revert_expired(&mut self) -> HashSet<TransactionId> {
+    fn revert_expired(&mut self) -> graph::TransactionRemoval {
         let batches = self.batches.revert_expired(self.chain_tip());
         for batch in batches {
             self.transactions.requeue_transactions(&batch);
@@ -698,5 +709,76 @@ impl Mempool {
         }
 
         Ok(())
+    }
+}
+
+fn emit_transaction_added(tx: &AuthenticatedTransaction) {
+    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+        return;
+    }
+
+    tracing::debug!(
+        target: LOG_TARGET,
+        {
+            transaction.id = %tx.id(),
+            account.id = %tx.account_id(),
+            transaction.expires_at = %tx.expires_at(),
+        },
+        "Transaction added to mempool",
+    );
+}
+
+fn emit_transaction_expirations(removal: &graph::TransactionRemoval, chain_tip: BlockNumber) {
+    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+        return;
+    }
+
+    for transaction_id in removal.direct() {
+        tracing::debug!(
+            target: LOG_TARGET,
+            {
+                transaction.id = %transaction_id,
+                block.number = %chain_tip,
+            },
+            "Transaction expired from mempool",
+        );
+    }
+
+    emit_dependent_transaction_evictions(removal, "dependency_expired");
+}
+
+fn emit_transaction_evictions(
+    removal: &graph::TransactionRemoval,
+    direct_reason: &'static str,
+    dependent_reason: &'static str,
+) {
+    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+        return;
+    }
+
+    for transaction_id in removal.direct() {
+        tracing::debug!(
+            target: LOG_TARGET,
+            {
+                transaction.id = %transaction_id,
+                mempool.removal.reason = direct_reason,
+            },
+            "Transaction evicted from mempool",
+        );
+    }
+
+    emit_dependent_transaction_evictions(removal, dependent_reason);
+}
+
+fn emit_dependent_transaction_evictions(removal: &graph::TransactionRemoval, reason: &'static str) {
+    for transaction_id in removal.dependents() {
+        tracing::debug!(
+            target: LOG_TARGET,
+            {
+                transaction.id = %transaction_id,
+                mempool.removal.reason = reason,
+            },
+            "Transaction evicted from mempool",
+        );
     }
 }

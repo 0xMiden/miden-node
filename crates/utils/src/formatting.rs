@@ -9,8 +9,12 @@ pub fn format_opt<T: Display>(opt: Option<&T>) -> String {
 
 pub fn format_input_notes(notes: &InputNotes<InputNoteCommitment>) -> String {
     format_array(notes.iter().map(|c| match c.header() {
-        Some(header) => format!("({}, {})", c.nullifier().to_hex(), header.id().to_hex()),
-        None => format!("({})", c.nullifier().to_hex()),
+        Some(header) => format!(
+            "{{ nullifier: {}, note_id: {} }}",
+            c.nullifier().to_hex(),
+            header.id().to_hex()
+        ),
+        None => format!("{{ nullifier: {} }}", c.nullifier().to_hex()),
     }))
 }
 
@@ -32,5 +36,52 @@ pub fn format_array(list: impl IntoIterator<Item = impl Display>) -> String {
         "None".to_owned()
     } else {
         format!("[{comma_separated}]")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::Word;
+    use miden_protocol::account::AccountId;
+    use miden_protocol::note::{
+        NoteAttachments,
+        NoteDetailsCommitment,
+        NoteHeader,
+        NoteMetadata,
+        NoteTag,
+        NoteType,
+        Nullifier,
+        PartialNoteMetadata,
+    };
+    use miden_protocol::transaction::{InputNoteCommitment, InputNotes};
+
+    use super::format_input_notes;
+
+    #[test]
+    fn input_notes_are_labeled() {
+        let unresolved_nullifier = Nullifier::from_raw(Word::from([1, 2, 3, 4u32]));
+        let resolved_nullifier = Nullifier::from_raw(Word::from([5, 6, 7, 8u32]));
+        let sender = AccountId::try_from(0xfa00_0000_0000_bb01_0000_cc00_0000_de00_u128).unwrap();
+        let header = NoteHeader::new(
+            NoteDetailsCommitment::from_raw(Word::from([9, 10, 11, 12u32])),
+            NoteMetadata::new(
+                PartialNoteMetadata::new(sender, NoteType::Private).with_tag(NoteTag::new(1)),
+                &NoteAttachments::default(),
+            ),
+        );
+        let notes = InputNotes::new_unchecked(vec![
+            InputNoteCommitment::from(unresolved_nullifier),
+            InputNoteCommitment::from_parts_unchecked(resolved_nullifier, Some(header)),
+        ]);
+
+        assert_eq!(
+            format_input_notes(&notes),
+            format!(
+                "[{{ nullifier: {} }}, {{ nullifier: {}, note_id: {} }}]",
+                unresolved_nullifier.to_hex(),
+                resolved_nullifier.to_hex(),
+                header.id().to_hex(),
+            ),
+        );
     }
 }

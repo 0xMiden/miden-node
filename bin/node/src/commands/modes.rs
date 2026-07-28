@@ -139,8 +139,9 @@ impl SequencerCommand {
 pub struct SequencerExternalServiceOptions {
     /// The validator service gRPC URLs.
     ///
-    /// One URL per validator; repeat the argument or comma-separate the values. Transactions are
-    /// submitted to, and blocks are signed by, every validator.
+    /// Repeat the flag once per validator (`--validator.url <URL> --validator.url <URL>`); the
+    /// environment variable takes a comma-separated list. Transactions are submitted to, and
+    /// blocks are signed by, every validator.
     #[arg(
         long = "validator.url",
         env = "MIDEN_NODE_VALIDATOR_URL",
@@ -208,8 +209,9 @@ pub struct FullNodeCommand {
 
     /// The validator service gRPC URLs.
     ///
-    /// One URL per validator; repeat the argument or comma-separate the values. Transactions are
-    /// submitted to every validator.
+    /// Repeat the flag once per validator (`--validator.url <URL> --validator.url <URL>`); the
+    /// environment variable takes a comma-separated list. Transactions are submitted to every
+    /// validator.
     #[arg(
         long = "validator.url",
         env = "MIDEN_NODE_VALIDATOR_URL",

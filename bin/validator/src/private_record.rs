@@ -586,6 +586,10 @@ pub enum PrivateRecordError {
 mod tests {
     use golden_ehtdh1::DecryptionShare;
     use miden_protocol::Word;
+    use miden_protocol::account::auth::AuthScheme;
+    use miden_protocol::transaction::TransactionInputs;
+    use miden_protocol::utils::serde::Deserializable;
+    use miden_testing::{Auth, MockChainBuilder};
     use rand_chacha_03::ChaCha20Rng;
     use rand_chacha_03::rand_core::SeedableRng;
 
@@ -645,6 +649,16 @@ mod tests {
         operator_key
             .issue_private_record_share(&mut rng, request, record, &allow_all)
             .unwrap()
+    }
+
+    fn transaction_inputs() -> TransactionInputs {
+        let mut builder = MockChainBuilder::new();
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            })
+            .unwrap();
+        builder.build().unwrap().get_transaction_inputs(&account, &[], &[]).unwrap()
     }
 
     #[test]
@@ -824,9 +838,10 @@ mod tests {
     #[test]
     fn two_of_three_canonical_shares_open_the_record() {
         let operator_keys = operator_keys();
-        let plaintext = b"private transaction inputs";
+        let inputs = transaction_inputs();
+        let plaintext = inputs.to_bytes();
         let record =
-            threshold_record(&operator_keys[0], RECORD_ID, transaction_id(), 20, plaintext);
+            threshold_record(&operator_keys[0], RECORD_ID, transaction_id(), 20, &plaintext);
         let request = PrivateRecordShareRequest::for_record(&record);
         let mut denied_rng = ChaCha20Rng::from_seed([21; 32]);
 
@@ -853,7 +868,33 @@ mod tests {
             .unwrap()
             .open(&request, &record, &shares)
             .unwrap();
-        assert_eq!(opened.as_slice(), plaintext);
+        assert_eq!(TransactionInputs::read_from_bytes(&opened).unwrap(), inputs);
+    }
+
+    #[test]
+    fn shares_for_independently_sealed_records_do_not_combine() {
+        let operator_keys = operator_keys();
+        let plaintext = transaction_inputs().to_bytes();
+        let first_record =
+            threshold_record(&operator_keys[0], RECORD_ID, transaction_id(), 31, &plaintext);
+        let second_record =
+            threshold_record(&operator_keys[0], RECORD_ID, transaction_id(), 32, &plaintext);
+        assert_ne!(first_record.wrapped_content_key(), second_record.wrapped_content_key());
+
+        let first_request = PrivateRecordShareRequest::for_record(&first_record);
+        let second_request = PrivateRecordShareRequest::for_record(&second_record);
+        assert_eq!(first_request, second_request);
+        let shares = [
+            issue_share(&operator_keys[0], &first_request, &first_record, 33),
+            issue_share(&operator_keys[1], &second_request, &second_record, 34),
+        ];
+
+        let result = PrivateRecordCombiner::from_operator_key(&operator_keys[2]).unwrap().open(
+            &first_request,
+            &first_record,
+            &shares,
+        );
+        assert!(matches!(result, Err(PrivateRecordError::ShareCombination(_))));
     }
 
     #[test]

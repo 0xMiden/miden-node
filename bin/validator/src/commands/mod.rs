@@ -1,5 +1,6 @@
 mod bootstrap;
 mod genesis;
+mod issue_private_record_share;
 mod start;
 
 use std::num::NonZeroUsize;
@@ -46,6 +47,26 @@ pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
 
 // VALIDATOR COMMAND
 // ================================================================================================
+
+/// Local inputs for issuing one Golden private-record share.
+#[derive(clap::Args)]
+pub struct PrivateRecordShareOptions {
+    /// Directory containing the validator database that owns the record.
+    #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
+    data_directory: PathBuf,
+
+    /// Hex-encoded private record identifier.
+    #[arg(long, value_name = "RECORD_ID")]
+    record_id: String,
+
+    /// File that receives the canonical share bytes. Writes to stdout when omitted.
+    #[arg(long, value_name = "FILE")]
+    output: Option<PathBuf>,
+
+    /// Canonical Golden storage key material for this validator.
+    #[command(flatten)]
+    storage_key: ValidatorStorageKey,
+}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -118,6 +139,9 @@ pub enum ValidatorCommand {
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
     },
+
+    /// Issues this validator's Golden decryption share for one stored private record.
+    IssuePrivateRecordShare(PrivateRecordShareOptions),
 
     /// Starts the validator component.
     Start {
@@ -241,6 +265,9 @@ impl ValidatorCommand {
                     .context("failed to apply validator database migrations")?;
                 Ok(())
             },
+            Self::IssuePrivateRecordShare(options) => {
+                issue_private_record_share::issue_from_options(options).await
+            },
             Self::Start {
                 listen,
                 grpc_options,
@@ -293,6 +320,7 @@ impl ValidatorCommand {
             Self::Genesis { .. }
             | Self::Bootstrap { .. }
             | Self::Pubkey { .. }
+            | Self::IssuePrivateRecordShare(_)
             | Self::Migrate { .. } => OpenTelemetry::Disabled,
         }
     }
@@ -449,7 +477,31 @@ impl ValidatorSigningKey {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
+    use golden_core::{GoldenGroup, GoldenScalar, ParticipantIndex, SessionId};
+    use golden_ehtdh1::wire::{from_wire_bytes, to_wire_bytes};
+    use golden_ehtdh1::{
+        DecryptionShare,
+        PublicKeySet,
+        PublicShare,
+        SecretShare,
+        SetupContext,
+        derive_context_session_id,
+    };
+    use golden_halo2curves::golden_group::{Secp256k1GoldenGroup, Secp256k1Scalar};
+    use miden_protocol::Word;
+    use miden_protocol::account::auth::AuthScheme;
+    use miden_protocol::transaction::{TransactionId, TransactionInputs};
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
+    use miden_testing::{Auth, MockChainBuilder};
+    use rand_chacha_03::ChaCha20Rng;
+    use rand_chacha_03::rand_core::SeedableRng;
+
     use super::*;
+
+    type TestStorageGroup = Secp256k1GoldenGroup;
 
     const BASE_START_ARGS: [&str; 6] = [
         "miden-validator",
@@ -464,6 +516,113 @@ mod tests {
         ValidatorCommand::try_parse_from(
             BASE_START_ARGS.iter().copied().chain(extra.iter().copied()),
         )
+    }
+
+    fn test_operator_keys(epoch: u8, setup_marker: u8) -> Vec<GoldenOperatorKey> {
+        let participants = [1, 2, 3].map(|value| ParticipantIndex::new(value).unwrap());
+        let decryption_secret = Secp256k1Scalar::from_u64(11).unwrap();
+        let decryption_coefficient = Secp256k1Scalar::from_u64(7).unwrap();
+        let context_coefficient = Secp256k1Scalar::from_u64(13).unwrap();
+        let mut public_shares = BTreeMap::new();
+        let secret_shares = participants.map(|participant| {
+            let point = participant.to_scalar::<Secp256k1Scalar>().unwrap();
+            let decryption = decryption_secret.add(&decryption_coefficient.mul(&point));
+            let context = context_coefficient.mul(&point);
+            public_shares.insert(
+                participant,
+                PublicShare {
+                    decryption: TestStorageGroup::mul_generator(&decryption),
+                    context: TestStorageGroup::mul_generator(&context),
+                },
+            );
+            SecretShare { participant, decryption, context }
+        });
+        let public_key_set = PublicKeySet::new(
+            2,
+            TestStorageGroup::mul_generator(&decryption_secret),
+            public_shares,
+        )
+        .unwrap();
+        let decryption_session_id = SessionId([2; 32]);
+        let setup_context = SetupContext {
+            backend_id: TestStorageGroup::BACKEND_ID.to_owned(),
+            threshold: 2,
+            registry_root: [1; 32],
+            participants: participants.to_vec(),
+            decryption_session_id,
+            context_session_id: derive_context_session_id(decryption_session_id),
+            decryption_transcript_root: [setup_marker; 32],
+            context_transcript_root: [4; 32],
+            epoch: [epoch; 32],
+        };
+        secret_shares
+            .into_iter()
+            .map(|secret_share| {
+                GoldenOperatorKey::new(
+                    StorageKeyEpoch::new([epoch; 32]),
+                    setup_context.clone(),
+                    public_key_set.clone(),
+                    secret_share,
+                )
+                .unwrap()
+            })
+            .collect()
+    }
+
+    fn transaction_inputs() -> TransactionInputs {
+        let mut builder = MockChainBuilder::new();
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            })
+            .unwrap();
+        builder.build().unwrap().get_transaction_inputs(&account, &[], &[]).unwrap()
+    }
+
+    async fn issue_error(
+        data_directory: &Path,
+        encoded_record_id: &str,
+        output: &Path,
+        operator_key: &GoldenOperatorKey,
+    ) -> String {
+        let error = issue_private_record_share::issue(
+            data_directory.to_path_buf(),
+            encoded_record_id,
+            Some(output),
+            operator_key,
+        )
+        .await
+        .unwrap_err();
+        format!("{error:#}")
+    }
+
+    async fn issue_share_file(
+        data_directory: &Path,
+        encoded_record_id: &str,
+        output: &Path,
+        operator_key: &GoldenOperatorKey,
+    ) -> Vec<u8> {
+        issue_private_record_share::issue(
+            data_directory.to_path_buf(),
+            encoded_record_id,
+            Some(output),
+            operator_key,
+        )
+        .await
+        .unwrap();
+        fs_err::read(output).unwrap()
+    }
+
+    async fn store_private_record(
+        database: &miden_node_db::sqlite::Database,
+        record: miden_validator::StoredPrivateRecord,
+    ) {
+        database
+            .write("insert_private_record", move |tx| {
+                miden_validator::db::insert_private_record(tx, &record)
+            })
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -525,5 +684,148 @@ mod tests {
             panic!("expected the start command");
         };
         assert!(storage_key.load().is_err());
+    }
+
+    #[test]
+    fn private_record_share_command_parses() {
+        let command = ValidatorCommand::try_parse_from([
+            "miden-validator",
+            "issue-private-record-share",
+            "--data-directory",
+            "/tmp/validator-data",
+            "--record-id",
+            "0101010101010101010101010101010101010101010101010101010101010101",
+            "--output",
+            "/tmp/share.bin",
+            "--storage-key.epoch",
+            "0909090909090909090909090909090909090909090909090909090909090909",
+            "--storage-key.setup-context",
+            "/tmp/setup.bin",
+            "--storage-key.public-key-set",
+            "/tmp/public.bin",
+            "--storage-key.secret-share",
+            "/tmp/secret.bin",
+        ])
+        .expect("the local share command must parse");
+
+        let ValidatorCommand::IssuePrivateRecordShare(PrivateRecordShareOptions {
+            data_directory,
+            record_id,
+            output,
+            ..
+        }) = command
+        else {
+            panic!("expected the private record share command");
+        };
+        assert_eq!(data_directory, PathBuf::from("/tmp/validator-data"));
+        assert_eq!(record_id, "0101010101010101010101010101010101010101010101010101010101010101",);
+        assert_eq!(output, Some(PathBuf::from("/tmp/share.bin")));
+    }
+
+    #[tokio::test]
+    async fn private_record_share_command_opens_stored_inputs() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = miden_validator::db::setup(directory.path().join("validator.sqlite3"))
+            .await
+            .unwrap();
+        let operator_keys = test_operator_keys(9, 3);
+        let transaction_id = TransactionId::from_raw(Word::from([1u32, 2, 3, 4]));
+        let record_id = miden_validator::PrivateRecordId::for_transaction_inputs(transaction_id);
+        let context = miden_validator::PrivateRecordContext::new(
+            miden_validator::PrivateRecordChainId::new([5; 32]),
+            operator_keys[0].key_epoch(),
+            record_id,
+            transaction_id,
+        );
+        let inputs = transaction_inputs();
+        let mut rng = ChaCha20Rng::from_seed([6; 32]);
+        let record = miden_validator::PrivateRecordSealer::from_operator_key(&operator_keys[0])
+            .seal(&mut rng, context, &inputs.to_bytes())
+            .unwrap();
+        let stored = record.clone();
+        store_private_record(&database, record).await;
+
+        let first_output = directory.path().join("share-1.bin");
+        let second_output = directory.path().join("share-2.bin");
+        let encoded_record_id = hex::encode(record_id.as_bytes());
+        let first_share = issue_share_file(
+            directory.path(),
+            &encoded_record_id,
+            &first_output,
+            &operator_keys[0],
+        )
+        .await;
+        let second_share = issue_share_file(
+            directory.path(),
+            &encoded_record_id,
+            &second_output,
+            &operator_keys[1],
+        )
+        .await;
+        let shares = [first_share, second_share];
+        for share in &shares {
+            let decoded = from_wire_bytes::<DecryptionShare<TestStorageGroup>>(share).unwrap();
+            assert_eq!(to_wire_bytes(&decoded), *share);
+        }
+        let request = miden_validator::PrivateRecordShareRequest::for_record(&stored);
+        let opened = miden_validator::PrivateRecordCombiner::from_operator_key(&operator_keys[2])
+            .unwrap()
+            .open(&request, &stored, &shares)
+            .unwrap();
+        assert_eq!(TransactionInputs::read_from_bytes(&opened).unwrap(), inputs);
+
+        assert!(
+            issue_error(directory.path(), &"ff".repeat(32), &first_output, &operator_keys[0])
+                .await
+                .contains("was not found"),
+        );
+
+        let wrong_epoch = test_operator_keys(10, 3).remove(0);
+        assert!(
+            issue_error(directory.path(), &encoded_record_id, &first_output, &wrong_epoch)
+                .await
+                .contains("key epoch does not match"),
+        );
+
+        let wrong_setup = test_operator_keys(9, 7).remove(0);
+        assert!(
+            issue_error(directory.path(), &encoded_record_id, &first_output, &wrong_setup)
+                .await
+                .contains("setup does not match"),
+        );
+
+        let id = transaction_id.to_bytes();
+        database
+            .write("damage_private_record_context", move |tx| {
+                tx.execute(
+                    "UPDATE private_records SET chain_id = ?1 WHERE record_id = ?2",
+                    &[&vec![8u8; 32], &id],
+                )
+            })
+            .await
+            .unwrap();
+        assert!(
+            issue_error(directory.path(), &encoded_record_id, &first_output, &operator_keys[0])
+                .await
+                .contains("invalid Golden content key ciphertext"),
+        );
+
+        let id = transaction_id.to_bytes();
+        database
+            .write("damage_private_record_encoding", move |tx| {
+                tx.execute(
+                    "UPDATE private_records \
+                     SET chain_id = ?1, wrapped_content_key = ?2 \
+                     WHERE record_id = ?3",
+                    &[&vec![5u8; 32], &vec![0u8], &id],
+                )
+            })
+            .await
+            .unwrap();
+        assert!(
+            issue_error(directory.path(), &encoded_record_id, &first_output, &operator_keys[0])
+                .await
+                .contains("invalid Golden content key ciphertext"),
+        );
     }
 }

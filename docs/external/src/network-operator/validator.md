@@ -74,4 +74,26 @@ miden-validator start \
 The files contain canonical Golden wire bytes. Every validator uses the same setup context and public key set, but uses
 its own secret share. If none of these options are set, private record storage is disabled. A partial setup is rejected.
 
+## Issue a Demo Decryption Share
+
+The Phase 2 demo can issue one validator's decryption share through a local admin command:
+
+```bash
+miden-validator issue-private-record-share \
+  --data-directory validator-data \
+  --record-id <32-byte-hex-record-id> \
+  --output share.bin \
+  --storage-key.epoch <32-byte-hex-epoch> \
+  --storage-key.setup-context <setup-context-file> \
+  --storage-key.public-key-set <public-key-set-file> \
+  --storage-key.secret-share <secret-share-file>
+```
+
+The output file contains canonical Golden wire bytes. To combine shares, run each participating validator key against
+the same data directory and record id. Shares issued for independently encrypted copies of the same transaction cannot
+be combined.
+
+This command relies on local filesystem access as its authorization boundary. It is for the demo only and does not
+provide release policy, remote access, or an audit log.
+
 Use `miden-validator start --help` for the complete current option list.

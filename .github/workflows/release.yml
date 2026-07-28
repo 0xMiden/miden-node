@@ -298,10 +298,45 @@ jobs:
             VERSION=${{ needs.preflight.outputs.tag }}
             COMMIT=${{ needs.preflight.outputs.commit }}
 
+  dry-run-compose:
+    name: Dry-run Compose publish
+    runs-on: ubuntu-24.04
+    needs: preflight
+    if: ${{ github.repository_owner == '0xMiden' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Dry-run Compose publishing
+        env:
+          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-node-compose
+          MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
+          MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
+          MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}
+          MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
+          MIDEN_NETWORK_MONITOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f compose/publish.yml \
+            --profile "*" \
+            publish \
+            --with-env \
+            --yes \
+            --dry-run \
+            "${COMPOSE_PACKAGE}:${TAG}"
+
   publish-docker:
     name: Publish Docker ${{ matrix.component }}
     runs-on: warp-ubuntu-latest-x64-8x
-    needs: [preflight, check-crate-builds, dry-run-crates, check-msrv, dry-run-docker]
+    needs: [preflight, check-crate-builds, dry-run-crates, check-msrv, dry-run-docker, dry-run-compose]
     if: ${{ github.repository_owner == '0xMiden' }}
     environment: publish-docker
     permissions:
@@ -373,10 +408,54 @@ jobs:
             COMMIT=${{ needs.preflight.outputs.commit }}
           tags: ${{ env.REGISTRY }}/0xmiden/miden-${{ matrix.component }}:${{ needs.preflight.outputs.tag }}
 
+  publish-compose:
+    name: Publish Compose
+    runs-on: ubuntu-24.04
+    needs: [preflight, publish-docker]
+    if: ${{ github.repository_owner == '0xMiden' }}
+    environment: publish-docker
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Compose application
+        env:
+          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-node-compose
+          MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
+          MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
+          MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}
+          MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
+          MIDEN_NETWORK_MONITOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f compose/publish.yml \
+            --profile "*" \
+            publish \
+            --with-env \
+            --yes \
+            --resolve-image-digests \
+            "${COMPOSE_PACKAGE}:${TAG}"
+
   publish-github-release:
     name: Publish GitHub release
     runs-on: ubuntu-24.04
-    needs: [preflight, publish-docker]
+    needs: [preflight, publish-compose]
     if: ${{ github.repository_owner == '0xMiden' }}
     permissions:
       actions: write

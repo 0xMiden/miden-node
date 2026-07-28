@@ -21,6 +21,21 @@ want to rely almost entirely on `tracing::#[instrument]` to create spans as thes
 There are of course exceptions to the rule - usually the root span itself is created manually e.g. a new root span for
 each block building iteration. Inner spans should ideally keep to `#[instrument]` where possible.
 
+## Local Compose routing
+
+The local Compose model always runs an OpenTelemetry Collector, and every Miden service exports to its stable in-stack
+address. This indirection is necessary because a Compose profile can start Tempo but cannot conditionally change the
+environment of the already-running Miden services.
+
+The collector fans each trace out through two independent failover connectors. One prefers the Tempo service and the
+other prefers the caller-defined `OTEL_EXPORTER_OTLP_ENDPOINT`. An unavailable destination falls back to a `/dev/null`
+file exporter, and the collector periodically probes the preferred destination so it can resume forwarding when the
+destination becomes available. The caller branch defaults to a secondary loopback OTLP receiver that feeds the same null
+exporter, avoiding connection errors when no external endpoint is configured.
+
+This setup deliberately favors isolation over durable delivery. Traces are dropped while a destination is unavailable,
+so neither an optional Compose profile nor an external collector can interfere with the node services.
+
 ## Relevant crates
 
 We've attempted to lock most of the OpenTelemetry crates behind our own abstractions in the `utils` crate. There are a

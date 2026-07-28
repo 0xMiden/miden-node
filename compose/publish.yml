@@ -1,0 +1,15 @@
+# This override is used only when publishing the Compose application as an OCI
+# artifact. The main Compose model bind mounts a local genesis configuration so
+# repository users can replace it during development. A published application
+# cannot carry that host file or assume it exists on the consumer's machine.
+#
+# Compose normally merges volume lists from multiple files. `!override` replaces
+# the bootstrap validator's complete volume list, retaining its named data volume
+# while removing the genesis bind mount. Clearing the environment variable makes
+# the validator use its built-in genesis configuration.
+services:
+  bootstrap-validator:
+    volumes: !override
+      - node-data:/data
+    environment:
+      MIDEN_NODE_VALIDATOR_USE_GENESIS_CONFIG: ""

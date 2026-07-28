@@ -9,7 +9,7 @@ Use this guide to start a disposable Miden network for local development and tes
 includes the local network, monitoring, and trace collection, so you can develop against a working environment without
 wiring the network services manually.
 
-The compose files live in the repository: `docker-compose.yml` in the root and supporting files under `compose/`. The
+The Compose model lives in `docker-compose.yml` and uses profiles for optional telemetry and monitoring services. The
 guide uses `make` targets as shorthand for the underlying Docker image builds and Docker Compose commands; check the
 `Makefile` when you need the exact command.
 
@@ -33,10 +33,46 @@ cd node
 git checkout <release-tag-or-branch>
 ```
 
+## Run a Published Version
+
+New releases are also published as Compose applications in the GitHub container registry. With Docker Compose 2.34.0 or
+later, start the core local network directly from the release artifact:
+
+```bash
+RELEASE_TAG=vX.Y.Z
+COMPOSE_APPLICATION=oci://ghcr.io/0xmiden/miden-node-compose:${RELEASE_TAG}
+
+docker compose -f "${COMPOSE_APPLICATION}" up -d
+docker compose -f "${COMPOSE_APPLICATION}" logs -f
+docker compose -f "${COMPOSE_APPLICATION}" down -v
+```
+
+The application includes an OpenTelemetry Collector that receives traces from the Miden services. Enable the optional
+Tempo, Grafana, and network monitor services with Compose profiles:
+
+```bash
+docker compose \
+  -f "${COMPOSE_APPLICATION}" \
+  --profile telemetry \
+  --profile monitor \
+  up -d
+```
+
+When the telemetry profile is enabled, the collector forwards traces to Tempo. To send a copy to another OTLP/gRPC
+endpoint, set `OTEL_EXPORTER_OTLP_ENDPOINT`; this works with or without the telemetry profile:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4317 \
+docker compose -f "${COMPOSE_APPLICATION}" up -d
+```
+
+A repository checkout is still required to bind mount a custom genesis configuration.
+
 ## Local Network Commands
 
-Build the images after checkout or whenever you need fresh local images. The local network stores data in the
-`node-data` Docker volume; `local-network-down` keeps that data, while `local-network-delete` removes it.
+Build the images after checkout or whenever you need fresh local images. The Makefile targets enable the `telemetry` and
+`monitor` profiles. The local network stores data in the `node-data` Docker volume; `local-network-down` keeps that
+data, while `local-network-delete` removes it.
 
 ```bash
 # Build the Docker images used by the local network.
@@ -76,8 +112,9 @@ Published ports are bound to `localhost`; the following services are available:
 
 ## Monitoring and Traces
 
-The local network exports OpenTelemetry traces to Tempo. Grafana is preconfigured with Tempo as a data source, so use
-`http://localhost:3000` to inspect traces when a request fails, stalls, or behaves differently than expected.
+The bundled OpenTelemetry Collector receives traces from the local network. With the telemetry profile enabled, it
+forwards traces to Tempo. Grafana is preconfigured with Tempo as a data source, so use `http://localhost:3000` to
+inspect traces when a request fails, stalls, or behaves differently than expected.
 
 Container logs are still useful for startup failures and quick checks, but traces usually provide a better view of how a
 request moved through the local network.

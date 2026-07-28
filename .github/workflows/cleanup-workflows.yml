@@ -32,11 +32,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Workflows on main
-        id: main
+      - name: Workflows on release branches
+        id: releases
         run: |
-          git fetch origin main
-          WORKFLOWS=$(git ls-tree -r origin/main --name-only | grep '^.github/workflows/')
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+          WORKFLOWS=$(
+            while IFS= read -r ref; do
+              git ls-tree -r "$ref" --name-only | grep '^.github/workflows/'
+            done < <(
+              git for-each-ref --format='%(refname)' 'refs/remotes/origin/release/v*'
+            )
+          )
           printf "%s\n" "$WORKFLOWS"
           {
             echo "workflows<<EOF"
@@ -60,17 +66,17 @@ jobs:
         id: deleted
         env:
           GH_TOKEN: ${{ github.token }}
-          MAIN_WORKFLOWS: ${{ steps.main.outputs.workflows }}
           NEXT_WORKFLOWS: ${{ steps.next.outputs.workflows }}
+          RELEASE_WORKFLOWS: ${{ steps.releases.outputs.workflows }}
         run: |
           set -euo pipefail
 
-          # Union of `main` and `next` workflows as a JSON array of strings (paths)
+          # Union of workflows on `next` and all release branches.
           EXISTING=$(printf "%s\n%s\n" \
-            "$MAIN_WORKFLOWS" \
             "$NEXT_WORKFLOWS" \
+            "$RELEASE_WORKFLOWS" \
           )
-          EXISTING=$(echo "$EXISTING" | sort -u | jq -R . | jq -s .)
+          EXISTING=$(echo "$EXISTING" | sed '/^$/d' | sort -u | jq -R . | jq -s .)
 
           echo "Existing workflows:"
           echo "$EXISTING"
@@ -83,7 +89,7 @@ jobs:
           echo "Workflows on GitHub:"
           echo "$GITHUB"
 
-          # Find deleted workflows: present on GitHub but not in main/next
+          # Find workflows that no longer exist on any active branch.
           DELETED=$(echo "$GITHUB" | jq -c \
             --argjson existing "$EXISTING" '
               map(select(.path as $p | $existing | index($p) | not))

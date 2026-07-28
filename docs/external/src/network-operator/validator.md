@@ -56,7 +56,7 @@ can decrypt those records. Run each validator inside its trusted execution envir
 transaction proving uses a remote prover, that prover also receives the plaintext inputs and must
 run inside the same trusted boundary.
 
-The sealed-input storage migration cannot recover ciphertext for older validated rows. Rebootstrap
-an existing validator database before deploying a build with this schema.
+The sealed-input storage migration cannot recover ciphertext for older validated rows. Bootstrap a
+fresh validator database before deploying a build with this schema.
 
 Use `miden-validator start --help` for the complete current option list.

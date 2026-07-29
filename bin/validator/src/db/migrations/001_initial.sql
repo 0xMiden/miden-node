@@ -1,17 +1,10 @@
 CREATE TABLE validated_transactions (
-    id                    BLOB NOT NULL,
-    block_num             BIGINT NOT NULL,
-    account_id            BLOB NOT NULL,
-    account_patch         BLOB NOT NULL,
-    input_notes           BLOB,
-    output_notes          BLOB,
-    initial_account_hash  BLOB NOT NULL,
-    final_account_hash    BLOB NOT NULL,
+    id                         BLOB NOT NULL,
+    submission_scheme          BIGINT NOT NULL,
+    submission_key_id          BLOB NOT NULL,
+    sealed_transaction_inputs  BLOB NOT NULL,
     PRIMARY KEY (id)
 ) WITHOUT ROWID;
-
-CREATE INDEX idx_validated_transactions_account_id ON validated_transactions(account_id);
-CREATE INDEX idx_validated_transactions_block_num ON validated_transactions(block_num);
 
 CREATE TABLE block_headers (
     block_num    BIGINT PRIMARY KEY,

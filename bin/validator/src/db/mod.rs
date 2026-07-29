@@ -11,12 +11,13 @@ use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::serde::Serializable;
 
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
-use crate::tx_validation::ValidatedTransaction;
 use crate::{COMPONENT, LOG_TARGET};
 
 /// SQL statements, kept in dedicated `.sql` files (under `sql/`).
 mod sql {
     pub(super) const INSERT_TRANSACTION: &str = include_str!("sql/insert_transaction.sql");
+    #[cfg(test)]
+    pub(super) const LOAD_TRANSACTION: &str = include_str!("sql/load_transaction.sql");
     pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
     pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
     pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
@@ -97,41 +98,64 @@ fn open_with_pool_size(
     Ok(db)
 }
 
-/// Inserts a new validated transaction into the database.
+/// The sealed transaction inputs accepted by the validator.
+///
+/// This is the Phase 1 storage record. Phase 2 will replace the client envelope with inputs
+/// re-encrypted under a fresh content key protected by Golden EHTDH1.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ValidatedTransactionRecord {
+    pub transaction_id: TransactionId,
+    pub submission_scheme: u32,
+    pub submission_key_id: Vec<u8>,
+    pub sealed_transaction_inputs: Vec<u8>,
+}
+
+/// Inserts the accepted sealed inputs and validated marker in one database write.
 #[miden_instrument(
     target = COMPONENT,
     skip_all,
     fields(
-        transaction.id = %tx_info.tx_id(),
+        transaction.id = %record.transaction_id,
     ),
     err,
 )]
 pub(crate) fn insert_transaction(
     tx: &WriteTx<'_>,
-    tx_info: &ValidatedTransaction,
+    record: &ValidatedTransactionRecord,
 ) -> Result<usize, DatabaseError> {
-    let id = tx_info.tx_id().to_bytes();
-    let block_num = i64::from(tx_info.block_num().as_u32());
-    let account_id = tx_info.account_id().to_bytes();
-    let account_patch = tx_info.account_patch().to_bytes();
-    let input_notes = tx_info.input_notes().to_bytes();
-    let output_notes = tx_info.output_notes().to_bytes();
-    let initial_account_hash = tx_info.initial_account_hash().to_bytes();
-    let final_account_hash = tx_info.final_account_hash().to_bytes();
+    let id = record.transaction_id.to_bytes();
+    let submission_scheme = i64::from(record.submission_scheme);
 
     tx.execute(
         sql::INSERT_TRANSACTION,
         &[
             &id,
-            &block_num,
-            &account_id,
-            &account_patch,
-            &input_notes,
-            &output_notes,
-            &initial_account_hash,
-            &final_account_hash,
+            &submission_scheme,
+            &record.submission_key_id,
+            &record.sealed_transaction_inputs,
         ],
     )
+}
+
+/// Loads the sealed record stored for a validated transaction.
+#[cfg(test)]
+pub(crate) fn load_transaction(
+    tx: &ReadTx<'_>,
+    tx_id: TransactionId,
+) -> Result<Option<ValidatedTransactionRecord>, DatabaseError> {
+    tx.query(sql::LOAD_TRANSACTION, &[&tx_id.to_bytes()], |row| {
+        let submission_scheme = row
+            .get::<i64>(0)?
+            .try_into()
+            .expect("stored submission scheme should fit in u32");
+        Ok(ValidatedTransactionRecord {
+            transaction_id: tx_id,
+            submission_scheme,
+            submission_key_id: row.get(1)?,
+            sealed_transaction_inputs: row.get(2)?,
+        })
+    })
+    .map(|mut records| records.pop())
 }
 
 /// Returns whether a transaction with the given id has already been validated.
@@ -295,17 +319,15 @@ mod tests {
         let validated_id = TransactionId::from_raw(Word::try_from([1u64, 2, 3, 4]).unwrap());
         let unknown_id = TransactionId::from_raw(Word::try_from([5u64, 6, 7, 8]).unwrap());
 
-        // Insert a row keyed by `validated_id`. Only the primary key matters for this query, so the
-        // remaining columns are filled with placeholder bytes.
+        // Insert a row keyed by `validated_id`.
         let id = validated_id.to_bytes();
         let empty: Vec<u8> = vec![];
         db.write("insert_row", move |tx| {
             tx.execute(
                 "INSERT INTO validated_transactions \
-                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
-                  initial_account_hash, final_account_hash) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
+                 (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                &[&id, &1i64, &empty, &empty],
             )
         })
         .await

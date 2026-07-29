@@ -1,12 +1,8 @@
 INSERT INTO validated_transactions (
     id,
-    block_num,
-    account_id,
-    account_patch,
-    input_notes,
-    output_notes,
-    initial_account_hash,
-    final_account_hash
+    submission_scheme,
+    submission_key_id,
+    sealed_transaction_inputs
 )
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT DO NOTHING;

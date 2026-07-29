@@ -57,3 +57,8 @@ mismatched `key_id` cannot influence which key is tried: it only lets the valida
 The unseal happens before the serve lock is taken, so a slow or hung decrypt backend cannot starve
 the exclusive lock that a backup block subscription needs. The cost is that an already-validated
 resubmission pays for the unseal before being short-circuited.
+
+After the proof, re-execution, and header checks pass, the validator stores the exact sealed input
+envelope with its scheme and key ID. It does not store the plaintext or fields derived from it. This
+is a Phase 1 stand-in. Phase 2 will store the validated inputs under threshold encryption instead.
+A rejected transaction never creates a record.

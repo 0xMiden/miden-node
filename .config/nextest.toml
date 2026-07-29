@@ -1,0 +1,3 @@
+[[profile.default.overrides]]
+filter           = 'package(miden-validator) & test(/(failed_(batch_item|proof_verification|reexecution)|header_mismatch)_does_not_store_inputs|valid_submission_stores_first_sealed_inputs/)'
+threads-required = "num-test-threads"

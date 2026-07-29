@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -18,14 +17,14 @@ pub(super) async fn issue_from_options(options: PrivateRecordShareOptions) -> an
         storage_key,
     } = options;
     let operator_key = storage_key.load()?;
-    issue(data_directory, &transaction_id, output.as_deref(), &operator_key).await
+    issue(data_directory, &transaction_id, &output, &operator_key).await
 }
 
 /// Issues this validator's canonical share for one checked private record.
 pub(super) async fn issue(
     data_directory: PathBuf,
     encoded_transaction_id: &str,
-    output: Option<&Path>,
+    output: &Path,
     operator_key: &GoldenOperatorKey,
 ) -> anyhow::Result<()> {
     let transaction_id = parse_transaction_id(encoded_transaction_id)?;
@@ -55,20 +54,15 @@ pub(super) async fn issue(
 /// Parses one canonical transaction identifier.
 fn parse_transaction_id(encoded: &str) -> anyhow::Result<TransactionId> {
     let bytes = hex::decode(encoded).context("transaction id is not valid hex")?;
+    let actual = bytes.len();
+    anyhow::ensure!(actual == 32, "transaction id has {actual} bytes, expected 32");
     TransactionId::read_from_bytes(&bytes).context("transaction id is not canonical")
 }
 
 /// Writes canonical share bytes without adding a text encoding or delimiter.
-fn write_share(output: Option<&Path>, share: &[u8]) -> anyhow::Result<()> {
-    if let Some(path) = output {
-        fs_err::write(path, share)
-            .with_context(|| format!("failed to write private record share to {}", path.display()))
-    } else {
-        let stdout = std::io::stdout();
-        let mut stdout = stdout.lock();
-        stdout.write_all(share).context("failed to write private record share")?;
-        stdout.flush().context("failed to flush private record share")
-    }
+fn write_share(output: &Path, share: &[u8]) -> anyhow::Result<()> {
+    fs_err::write(output, share)
+        .with_context(|| format!("failed to write private record share to {}", output.display()))
 }
 
 #[cfg(test)]
@@ -89,7 +83,7 @@ mod tests {
         let output = directory.path().join("share.bin");
         let share = [0, 1, 2, 3, 0xff];
 
-        write_share(Some(&output), &share).unwrap();
+        write_share(&output, &share).unwrap();
 
         assert_eq!(fs_err::read(output).unwrap(), share);
     }

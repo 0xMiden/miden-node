@@ -60,9 +60,9 @@ pub struct PrivateRecordShareOptions {
     #[arg(long, value_name = "TRANSACTION_ID")]
     transaction_id: String,
 
-    /// File that receives the canonical share bytes. Writes to stdout when omitted.
+    /// File that receives the canonical share bytes.
     #[arg(long, value_name = "FILE")]
-    output: Option<PathBuf>,
+    output: PathBuf,
 
     /// Canonical Golden storage key material for this validator.
     #[command(flatten)]
@@ -599,12 +599,23 @@ mod tests {
         let error = issue_private_record_share::issue(
             data_directory.to_path_buf(),
             encoded_transaction_id,
-            Some(output),
+            output,
             operator_key,
         )
         .await
         .unwrap_err();
         format!("{error:#}")
+    }
+
+    async fn assert_issue_error(
+        data_directory: &Path,
+        encoded_transaction_id: &str,
+        output: &Path,
+        operator_key: &GoldenOperatorKey,
+        expected: &str,
+    ) {
+        let error = issue_error(data_directory, encoded_transaction_id, output, operator_key).await;
+        assert!(error.contains(expected), "expected {expected:?} in {error:?}");
     }
 
     async fn issue_share_file(
@@ -616,7 +627,7 @@ mod tests {
         issue_private_record_share::issue(
             data_directory.to_path_buf(),
             encoded_transaction_id,
-            Some(output),
+            output,
             operator_key,
         )
         .await
@@ -634,6 +645,55 @@ mod tests {
             })
             .await
             .unwrap();
+    }
+
+    async fn assert_damaged_private_records_rejected(
+        database: &miden_node_db::sqlite::Database,
+        data_directory: &Path,
+        transaction_id: TransactionId,
+        encoded_transaction_id: &str,
+        output: &Path,
+        operator_key: &GoldenOperatorKey,
+    ) {
+        let id = transaction_id.to_bytes();
+        database
+            .write("damage_private_record_context", move |tx| {
+                tx.execute(
+                    "UPDATE validated_transactions SET chain_id = ?1 WHERE id = ?2",
+                    &[&vec![8u8; 32], &id],
+                )
+            })
+            .await
+            .unwrap();
+        assert_issue_error(
+            data_directory,
+            encoded_transaction_id,
+            output,
+            operator_key,
+            "invalid Golden content key ciphertext",
+        )
+        .await;
+
+        let id = transaction_id.to_bytes();
+        database
+            .write("damage_private_record_encoding", move |tx| {
+                tx.execute(
+                    "UPDATE validated_transactions \
+                     SET chain_id = ?1, encrypted_record_key = ?2 \
+                     WHERE id = ?3",
+                    &[&vec![5u8; 32], &vec![0u8], &id],
+                )
+            })
+            .await
+            .unwrap();
+        assert_issue_error(
+            data_directory,
+            encoded_transaction_id,
+            output,
+            operator_key,
+            "invalid Golden content key ciphertext",
+        )
+        .await;
     }
 
     #[test]
@@ -730,7 +790,32 @@ mod tests {
             transaction_id,
             "0101010101010101010101010101010101010101010101010101010101010101",
         );
-        assert_eq!(output, Some(PathBuf::from("/tmp/share.bin")));
+        assert_eq!(output, PathBuf::from("/tmp/share.bin"));
+    }
+
+    #[test]
+    fn private_record_share_output_is_required() {
+        let result = ValidatorCommand::try_parse_from([
+            "miden-validator",
+            "issue-private-record-share",
+            "--data-directory",
+            "/tmp/validator-data",
+            "--transaction-id",
+            "0101010101010101010101010101010101010101010101010101010101010101",
+            "--storage-key.epoch",
+            "0909090909090909090909090909090909090909090909090909090909090909",
+            "--storage-key.setup-context",
+            "/tmp/setup.bin",
+            "--storage-key.public-key-set",
+            "/tmp/public.bin",
+            "--storage-key.secret-share",
+            "/tmp/secret.bin",
+        ]);
+
+        let Err(error) = result else {
+            panic!("share output must be explicit");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[tokio::test]
@@ -783,68 +868,45 @@ mod tests {
             .unwrap();
         assert_eq!(TransactionInputs::read_from_bytes(&opened).unwrap(), inputs);
 
-        assert!(
-            issue_error(directory.path(), &"ff".repeat(32), &first_output, &operator_keys[0])
-                .await
-                .contains("was not found"),
-        );
+        let unknown_transaction_id =
+            TransactionId::from_raw(Word::from([9u32, 10, 11, 12])).to_bytes();
+        assert_issue_error(
+            directory.path(),
+            &hex::encode(unknown_transaction_id),
+            &first_output,
+            &operator_keys[0],
+            "was not found",
+        )
+        .await;
 
         let wrong_epoch = test_operator_keys(10, 3).remove(0);
-        assert!(
-            issue_error(directory.path(), &encoded_transaction_id, &first_output, &wrong_epoch)
-                .await
-                .contains("key epoch does not match"),
-        );
+        assert_issue_error(
+            directory.path(),
+            &encoded_transaction_id,
+            &first_output,
+            &wrong_epoch,
+            "key epoch does not match",
+        )
+        .await;
 
         let wrong_setup = test_operator_keys(9, 7).remove(0);
-        assert!(
-            issue_error(directory.path(), &encoded_transaction_id, &first_output, &wrong_setup)
-                .await
-                .contains("setup does not match"),
-        );
+        assert_issue_error(
+            directory.path(),
+            &encoded_transaction_id,
+            &first_output,
+            &wrong_setup,
+            "setup does not match",
+        )
+        .await;
 
-        let id = transaction_id.to_bytes();
-        database
-            .write("damage_private_record_context", move |tx| {
-                tx.execute(
-                    "UPDATE validated_transactions SET chain_id = ?1 WHERE id = ?2",
-                    &[&vec![8u8; 32], &id],
-                )
-            })
-            .await
-            .unwrap();
-        assert!(
-            issue_error(
-                directory.path(),
-                &encoded_transaction_id,
-                &first_output,
-                &operator_keys[0],
-            )
-            .await
-            .contains("invalid Golden content key ciphertext"),
-        );
-
-        let id = transaction_id.to_bytes();
-        database
-            .write("damage_private_record_encoding", move |tx| {
-                tx.execute(
-                    "UPDATE validated_transactions \
-                     SET chain_id = ?1, encrypted_record_key = ?2 \
-                     WHERE id = ?3",
-                    &[&vec![5u8; 32], &vec![0u8], &id],
-                )
-            })
-            .await
-            .unwrap();
-        assert!(
-            issue_error(
-                directory.path(),
-                &encoded_transaction_id,
-                &first_output,
-                &operator_keys[0],
-            )
-            .await
-            .contains("invalid Golden content key ciphertext"),
-        );
+        assert_damaged_private_records_rejected(
+            &database,
+            directory.path(),
+            transaction_id,
+            &encoded_transaction_id,
+            &first_output,
+            &operator_keys[0],
+        )
+        .await;
     }
 }

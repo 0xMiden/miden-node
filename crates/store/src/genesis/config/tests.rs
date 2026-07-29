@@ -18,13 +18,24 @@ fn write_toml_file(dir: &Path, content: &str) -> std::path::PathBuf {
     path
 }
 
+/// A `validators` line listing the insecure development key, for tests exercising unrelated config
+/// features. Top-level keys must precede any TOML tables, so prepend it to the content.
+fn dev_validators_line() -> String {
+    use miden_protocol::utils::serde::Serializable;
+    format!(
+        "validators = [\"{}\"]\n",
+        hex::encode(insecure_dev_validator_public_key().to_bytes())
+    )
+}
+
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn parsing_yields_expected_default_values() -> TestResult {
     // Copy sample file to temp dir since read_toml_file needs a real file path
     let temp_dir = tempfile::tempdir()?;
-    let sample_content = include_str!("./samples/01-simple.toml");
-    let config_path = write_toml_file(temp_dir.path(), sample_content);
+    let sample_content =
+        format!("{}{}", dev_validators_line(), include_str!("./samples/01-simple.toml"));
+    let config_path = write_toml_file(temp_dir.path(), &sample_content);
 
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
     let (state, _secrets) = gcfg.into_state()?;
@@ -96,11 +107,29 @@ verification_base_fee = 0
 }
 
 #[test]
-fn validator_set_defaults_to_insecure_dev_key() -> TestResult {
+fn default_config_uses_insecure_dev_key() -> TestResult {
     let gcfg = GenesisConfig::default();
     let (state, _) = gcfg.into_state()?;
     assert_eq!(state.validator_keys.as_keys(), &[insecure_dev_validator_public_key()]);
     Ok(())
+}
+
+#[test]
+fn config_without_validators_is_rejected() {
+    let toml = r#"
+version = 1
+timestamp = 1717344256
+
+[fee_parameters]
+verification_base_fee = 0
+"#;
+
+    let gcfg = GenesisConfig::read_toml(toml, Path::new(".")).unwrap();
+    let err = gcfg.into_state().expect_err("config without validators must be rejected");
+    assert!(
+        matches!(err, GenesisConfigError::MissingValidators),
+        "Expected MissingValidators error, got: {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -146,7 +175,8 @@ fn parsing_account_from_file() -> TestResult {
     account_file.write(&account_file_path)?;
 
     // Create a genesis config TOML that references the account file
-    let toml_content = r#"
+    let toml_content = format!(
+        r#"{}
 timestamp = 1717344256
 version   = 1
 
@@ -155,8 +185,10 @@ verification_base_fee = 0
 
 [[account]]
 path = "test_account.mac"
-"#;
-    let config_path = write_toml_file(config_dir, toml_content);
+"#,
+        dev_validators_line()
+    );
+    let config_path = write_toml_file(config_dir, &toml_content);
 
     // Parse the config
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
@@ -217,7 +249,8 @@ fn parsing_native_faucet_from_file() -> TestResult {
     account_file.write(&faucet_file_path)?;
 
     // Create a genesis config TOML that references the faucet file
-    let toml_content = r#"
+    let toml_content = format!(
+        r#"{}
 timestamp = 1717344256
 version   = 1
 
@@ -225,8 +258,10 @@ native_faucet = "native_faucet.mac"
 
 [fee_parameters]
 verification_base_fee = 0
-"#;
-    let config_path = write_toml_file(config_dir, toml_content);
+"#,
+        dev_validators_line()
+    );
+    let config_path = write_toml_file(config_dir, &toml_content);
 
     // Parse the config
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
@@ -267,7 +302,8 @@ fn native_faucet_from_file_must_be_faucet_type() -> TestResult {
     account_file.write(&account_file_path)?;
 
     // Create a genesis config TOML that tries to use a non-faucet as native faucet
-    let toml_content = r#"
+    let toml_content = format!(
+        r#"{}
 timestamp = 1717344256
 version   = 1
 
@@ -275,8 +311,10 @@ native_faucet = "not_a_faucet.mac"
 
 [fee_parameters]
 verification_base_fee = 0
-"#;
-    let config_path = write_toml_file(config_dir, toml_content);
+"#,
+        dev_validators_line()
+    );
+    let config_path = write_toml_file(config_dir, &toml_content);
 
     // Parsing should succeed
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
@@ -296,7 +334,8 @@ verification_base_fee = 0
 #[test]
 fn missing_account_file_returns_error() {
     // Create a genesis config TOML that references a non-existent file
-    let toml_content = r#"
+    let toml_content = format!(
+        r#"{}
 timestamp = 1717344256
 version   = 1
 
@@ -305,11 +344,13 @@ verification_base_fee = 0
 
 [[account]]
 path = "does_not_exist.mac"
-"#;
+"#,
+        dev_validators_line()
+    );
 
     // Use temp dir as config dir
     let temp_dir = tempfile::tempdir().unwrap();
-    let config_path = write_toml_file(temp_dir.path(), toml_content);
+    let config_path = write_toml_file(temp_dir.path(), &toml_content);
 
     // Parsing should succeed
     let gcfg = GenesisConfig::read_toml_file(&config_path).unwrap();

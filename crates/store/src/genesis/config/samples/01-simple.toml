@@ -1,11 +1,11 @@
 timestamp = 1717344256
 version   = 1
 
-# Hex-encoded public keys of the genesis validator set (see `miden-validator pubkey`), committed
-# to by the genesis header. The genesis block itself is not signed; these keys must sign every
-# block after genesis. When omitted, the set defaults to the public key of the predefined,
-# insecure development signing key — list the validators explicitly for anything but local
-# development.
+# Required: hex-encoded public keys of the genesis validator set (see `miden-validator pubkey`),
+# committed to by the genesis header. The genesis block itself is not signed; these keys must sign
+# every block after genesis. A configuration file must list its validators explicitly — only the
+# built-in development configuration (used when no config file is supplied) falls back to the
+# predefined, insecure development key.
 # validators = ["<validator-1-public-key-hex>", "<validator-2-public-key-hex>"]
 
 [fee_parameters]

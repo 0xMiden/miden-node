@@ -37,9 +37,9 @@ after genesis. Each validator operator first prints their public key and sends i
 miden-validator pubkey --signing-key.kms-id <validator-N-kms-key-id>
 ```
 
-The full validator set is part of the genesis configuration, as a top-level `validators` list in `genesis.toml`. If
-`validators` is omitted, the set defaults to the public key of the predefined, insecure development signing key —
-production networks must always list their validators explicitly.
+The full validator set is part of the genesis configuration, as a required top-level `validators` list in
+`genesis.toml`. A configuration file without `validators` is rejected; only the built-in development configuration (used
+when no config file is supplied) falls back to the predefined, insecure development signing key.
 
 ```toml
 validators = [
@@ -100,8 +100,9 @@ Each validator operator's own KMS key ID must be used when that operator starts 
 **One** operator builds the genesis block; no signing key is needed. The genesis header commits to the full validator
 set, taken from the top-level `validators` list in `genesis.toml`. Each validator operator prints their public key with
 `miden-validator pubkey --signing-key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator, who lists
-it in the genesis configuration. If `validators` is omitted, the set defaults to the public key of the predefined,
-insecure development signing key — anything but local development must list the validators explicitly.
+it in the genesis configuration. The `validators` list is required: a configuration file without it is rejected, and
+only the built-in development configuration (used when no config file is supplied) falls back to the predefined,
+insecure development signing key.
 
 ```toml
 validators = [

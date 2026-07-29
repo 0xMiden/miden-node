@@ -49,11 +49,12 @@ pub enum ValidatorCommand {
     /// block and account secret files to disk.
     ///
     /// The genesis block is the chain's trust root and is not signed: its header commits to the
-    /// full validator set — the `validators` public keys in the genesis configuration, defaulting
-    /// to the predefined, insecure development key for local development — and that set is
-    /// required to sign every block after genesis. Building the genesis block needs no signing
-    /// access to any validator's key, so one operator — who need not be a validator — runs this
-    /// once and distributes the genesis block file.
+    /// full validator set — the `validators` public keys, which a genesis configuration file must
+    /// list explicitly; only the built-in development configuration (used when `--config` is
+    /// omitted) falls back to the predefined, insecure development key — and that set is required
+    /// to sign every block after genesis. Building the genesis block needs no signing access to
+    /// any validator's key, so one operator — who need not be a validator — runs this once and
+    /// distributes the genesis block file.
     ///
     /// Every validator then seeds its database from the genesis block file with `bootstrap`.
     Genesis {

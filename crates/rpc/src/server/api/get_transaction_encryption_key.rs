@@ -55,8 +55,8 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
         };
         validator
             .clone()
-        .get_transaction_encryption_key(forwarded_request)
-        .await
+            .get_transaction_encryption_key(forwarded_request)
+            .await
             .map(tonic::Response::into_inner)
     }
 }

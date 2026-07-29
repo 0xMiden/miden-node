@@ -7,12 +7,12 @@ sidebar_position: 1
 
 Use this guide to start a disposable Miden network for local development and testing. The provided Docker Compose setup
 includes a sequencer, three validators, a transaction prover, a network transaction builder, and optional block
-explorer, monitoring, and trace services, so you can develop against a working environment without wiring the network
-services manually.
+explorer, faucet, monitoring, and trace services, so you can develop against a working environment without wiring the
+network services manually.
 
-The Compose model lives in `docker-compose.yml` and uses profiles for optional explorer, telemetry, and monitoring
-services. The guide uses `make` targets as shorthand for the underlying Docker image builds and Docker Compose commands;
-check the `Makefile` when you need the exact command.
+The Compose model lives in `docker-compose.yml` and uses profiles for optional explorer, faucet, telemetry, and
+monitoring services. The guide uses `make` targets as shorthand for the underlying Docker image builds and Docker
+Compose commands; check the `Makefile` when you need the exact command.
 
 This is not a production deployment guide and it is not the path for independent full node runners on an existing
 network.
@@ -49,11 +49,12 @@ docker compose -f "${COMPOSE_APPLICATION}" down -v
 ```
 
 The application includes an OpenTelemetry Collector that receives traces from the Miden services. Enable the optional
-Midenscan explorer, Tempo, Grafana, and network monitor services with Compose profiles:
+faucet, Midenscan explorer, Tempo, Grafana, and network monitor services with Compose profiles:
 
 ```bash
 docker compose \
   -f "${COMPOSE_APPLICATION}" \
+  --profile faucet \
   --profile explorer \
   --profile telemetry \
   --profile monitor \
@@ -110,6 +111,8 @@ Published ports are bound to `localhost`; the following services are available:
 | Grafana          | `http://localhost:3000`         | Inspect dashboards and traces.                   |
 | Network monitor  | `http://localhost:3001`         | View local network health.                       |
 | Block explorer   | `http://localhost:8080`         | Browse locally indexed network data.             |
+| Faucet API       | `http://localhost:8000`         | Request tokens programmatically.                 |
+| Faucet frontend  | `http://localhost:8081`         | Request tokens through the faucet UI.            |
 | Explorer GraphQL | `http://localhost:8199/graphql` | Query the explorer backend.                      |
 | Tempo HTTP API   | `http://localhost:3200`         | Query stored trace data.                         |
 | Tempo OTLP gRPC  | `http://localhost:4317`         | Receive OpenTelemetry traces from services.      |
@@ -126,6 +129,27 @@ docker compose --profile explorer up -d
 The indexer reads from the local sequencer and persists its state in the `explorer-data` volume. The frontend is
 available at `http://localhost:8080`, with its GraphQL API at `http://localhost:8199/graphql`. These third-party
 components are intended for local development and are not part of the Miden node implementation.
+
+## Faucet
+
+The faucet is maintained in the separate [0xMiden/faucet](https://github.com/0xMiden/faucet) repository and can lag
+behind the node's protocol version. It is therefore excluded from the default stack. Enable its profile explicitly:
+
+```bash
+docker compose --profile faucet up -d --build
+```
+
+For a repository checkout, the first run builds the exact upstream commit pinned in `compose/faucet.yml`. Node releases
+publish an image built from the same pin, so the published Compose application can pull it without requiring a source
+build.
+
+On its first successful start, the service creates a fungible faucet account and stores it in the `faucet-data` volume.
+Later starts reuse that account. The API is available at `http://localhost:8000` and the frontend at
+`http://localhost:8081`.
+
+The default token symbol is `MIDEN`, with 6 decimals and a maximum supply of `100000000000000000` base units. Override
+these before the first successful start with `MIDEN_FAUCET_TOKEN_SYMBOL`, `MIDEN_FAUCET_DECIMALS`, and
+`MIDEN_FAUCET_MAX_SUPPLY`. Delete `faucet-data` before changing these initialization settings for an existing stack.
 
 ## Monitoring and Traces
 

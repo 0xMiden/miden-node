@@ -1,0 +1,54 @@
+# The faucet is maintained in https://github.com/0xMiden/faucet and can lag
+# behind the node's protocol version. Keep it optional and pin the exact source
+# used for local builds and node release images.
+services:
+  faucet:
+    profiles: [faucet]
+    image: ${MIDEN_FAUCET_IMAGE:-miden-faucet:0.16.0-alpha.1}
+    pull_policy: missing
+    build:
+      context: https://github.com/0xMiden/faucet.git#9fe3dc6c4fb419a67b1065a5f9c45411b92e3c31
+    volumes:
+      - faucet-data:/faucet
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+
+        if [ ! -f /faucet/.initialized ]; then
+          echo "Initializing faucet..."
+          rm -f \
+            /faucet/store.sqlite \
+            /faucet/store.sqlite-shm \
+            /faucet/store.sqlite-wal
+          /usr/local/bin/entrypoint.sh init
+          touch /faucet/.initialized
+        fi
+
+        exec /usr/local/bin/entrypoint.sh start
+    environment:
+      MIDEN_FAUCET_API_PUBLIC_URL: http://localhost:8000
+      MIDEN_FAUCET_DECIMALS: ${MIDEN_FAUCET_DECIMALS:-6}
+      MIDEN_FAUCET_ENABLE_OTEL: "true"
+      MIDEN_FAUCET_MAX_SUPPLY: ${MIDEN_FAUCET_MAX_SUPPLY:-100000000000000000}
+      MIDEN_FAUCET_NETWORK: localhost
+      MIDEN_FAUCET_NODE_URL: http://sequencer:57291
+      MIDEN_FAUCET_REMOTE_TX_PROVER_URL: http://tx-prover:50051
+      MIDEN_FAUCET_STORE: /faucet/store.sqlite
+      MIDEN_FAUCET_TOKEN_SYMBOL: ${MIDEN_FAUCET_TOKEN_SYMBOL:-MIDEN}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_RESOURCE_ATTRIBUTES: service.instance.id=faucet
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      otel-collector:
+        condition: service_started
+      sequencer:
+        condition: service_started
+      tx-prover:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  faucet-data:

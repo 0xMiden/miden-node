@@ -2,49 +2,43 @@ services:
   bootstrap-validator:
     image: ${MIDEN_VALIDATOR_IMAGE:-miden-validator}
     pull_policy: missing
+    configs:
+      - source: genesis
+        target: /genesis.toml
     volumes:
       - node-data:/data
-      - type: bind
-        source: ${MIDEN_GENESIS_CONFIG_FILE:-./genesis/dummy.toml}
-        target: /genesis.toml
-        read_only: true
-    environment:
-      MIDEN_NODE_VALIDATOR_USE_GENESIS_CONFIG: ${MIDEN_GENESIS_CONFIG_FILE:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -e
-        if [ -f /data/validator/.bootstrapped ]; then
-          echo "Validator already bootstrapped."
+        if [ -f /data/validators/.bootstrapped ]; then
+          echo "Validators already bootstrapped."
           exit 0
         fi
 
-        echo "Cleaning incomplete validator bootstrap state..."
-        rm -rf /data/genesis /data/validator /data/accounts
-        mkdir -p /data/genesis /data/validator /data/accounts
-
-        GENESIS_CONFIG_ARGS=""
-        if [ -n "$${MIDEN_NODE_VALIDATOR_USE_GENESIS_CONFIG:-}" ]; then
-          if [ ! -f /genesis.toml ]; then
-            echo "Genesis config requested but /genesis.toml is not mounted."
-            exit 1
-          fi
-
-          GENESIS_CONFIG_ARGS="--config /genesis.toml"
-        fi
+        echo "Cleaning incomplete network bootstrap state..."
+        rm -rf \
+          /data/accounts \
+          /data/genesis \
+          /data/node \
+          /data/ntx-builder \
+          /data/validators
+        mkdir -p /data/genesis /data/validators /data/accounts
 
         echo "Building genesis block..."
         miden-validator genesis \
           --genesis-block-directory /data/genesis \
           --accounts-directory /data/accounts \
-          $$GENESIS_CONFIG_ARGS
+          --config /genesis.toml
 
-        echo "Bootstrapping validator..."
-        miden-validator bootstrap \
-          --data-directory /data/validator \
-          --genesis /data/genesis/genesis.dat
+        for VALIDATOR in 1 2 3; do
+          echo "Bootstrapping validator $${VALIDATOR}..."
+          miden-validator bootstrap \
+            --data-directory "/data/validators/$${VALIDATOR}" \
+            --genesis /data/genesis/genesis.dat
+        done
 
-        touch /data/validator/.bootstrapped
+        touch /data/validators/.bootstrapped
 
   bootstrap-node:
     image: ${MIDEN_NODE_IMAGE:-miden-node}
@@ -101,3 +95,20 @@ services:
           --genesis /data/genesis/genesis.dat
 
         touch /data/ntx-builder/.bootstrapped
+
+configs:
+  genesis:
+    content: |
+      timestamp = 1717344256
+      version = 1
+
+      # Public keys for the three insecure development signing keys configured
+      # in validator.yml, ordered by validator service.
+      validators = [
+        "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        "02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337",
+        "03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b",
+      ]
+
+      [fee_parameters]
+      verification_base_fee = 0

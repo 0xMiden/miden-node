@@ -14,7 +14,9 @@ produces blocks, serves public RPC, and connects to the validator and network tr
 miden-node sequencer \
   --rpc.listen 0.0.0.0:57291 \
   --data-directory node-data \
-  --validator.url http://validator:50101 \
+  --validator.url http://validator-1:50101 \
+  --validator.url http://validator-2:50101 \
+  --validator.url http://validator-3:50101 \
   --ntx-builder.url http://ntx-builder:50301 \
   --rpc.network-tx-auth-header-value <network-tx-auth-secret>
 ```
@@ -52,7 +54,7 @@ block data when this occurs. See [Recovery](/network-operator/recovery) for the 
 | ------------------------------------ | ------------------------------------------------------ |
 | `--rpc.listen`                       | Public RPC socket exposed by the sequencer.            |
 | `--rpc.network-tx-auth-header-value` | Shared secret for authorized network transaction flow. |
-| `--validator.url`                    | Internal validator service URL.                        |
+| `--validator.url`                    | Internal validator service URLs (one per validator).   |
 | `--ntx-builder.url`                  | Internal network transaction builder service URL.      |
 | `--batch.interval`                   | Maximum interval between batch scheduler checks.       |
 | `--block.interval`                   | Block production interval.                             |

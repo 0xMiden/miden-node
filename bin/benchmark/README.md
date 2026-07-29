@@ -148,24 +148,27 @@ Install the binaries:
 make install-node install-validator install-ntx-builder install-remote-prover
 ```
 
-Bootstrap a fresh data directory (one-time). The validator creates the genesis block, then the node and ntx-builder
-bootstrap their storage from it:
+Bootstrap a fresh data directory (one-time). The validator creates the genesis block, then every component bootstraps
+its storage from it:
 
 ```sh
 DATA=./node-data
 
-miden-validator bootstrap \
-  --data-directory          "$DATA/validator" \
+miden-validator genesis \
   --genesis-block-directory "$DATA/genesis" \
   --accounts-directory      "$DATA/accounts"
 
+miden-validator bootstrap \
+  --data-directory "$DATA/validator" \
+  --genesis        "$DATA/genesis/genesis.dat"
+
 miden-node bootstrap \
   --data-directory "$DATA/node" \
-  --file           "$DATA/genesis/genesis.dat"
+  --genesis        "$DATA/genesis/genesis.dat"
 
 miden-ntx-builder bootstrap \
   --data-directory "$DATA/ntx-builder" \
-  --file           "$DATA/genesis/genesis.dat"
+  --genesis        "$DATA/genesis/genesis.dat"
 ```
 
 Start each component. The example runs them in the background and captures logs under `./logs/`. For an interactive run,

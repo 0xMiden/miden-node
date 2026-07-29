@@ -45,15 +45,19 @@ services:
             exit 1
           fi
 
-          GENESIS_CONFIG_ARGS="--genesis-config-file /genesis.toml"
+          GENESIS_CONFIG_ARGS="--config /genesis.toml"
         fi
+
+        echo "Building genesis block..."
+        miden-validator genesis \
+          --genesis-block-directory /data/genesis \
+          --accounts-directory /data/accounts \
+          $$GENESIS_CONFIG_ARGS
 
         echo "Bootstrapping validator..."
         miden-validator bootstrap \
           --data-directory /data/validator \
-          --genesis-block-directory /data/genesis \
-          --accounts-directory /data/accounts \
-          $$GENESIS_CONFIG_ARGS
+          --genesis /data/genesis/genesis.dat
 
         touch /data/validator/.bootstrapped
 
@@ -81,7 +85,7 @@ services:
         echo "Bootstrapping node..."
         miden-node bootstrap \
           --data-directory /data/node \
-          --file /data/genesis/genesis.dat
+          --genesis /data/genesis/genesis.dat
 
         touch /data/node/.bootstrapped
 
@@ -109,7 +113,7 @@ services:
         echo "Bootstrapping network transaction builder..."
         miden-ntx-builder bootstrap \
           --data-directory /data/ntx-builder \
-          --file /data/genesis/genesis.dat
+          --genesis /data/genesis/genesis.dat
 
         touch /data/ntx-builder/.bootstrapped
 

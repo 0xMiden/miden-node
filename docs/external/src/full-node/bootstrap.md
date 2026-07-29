@@ -28,7 +28,7 @@ For a local or custom network:
 ```bash
 miden-node bootstrap \
   --data-directory full-node-data \
-  --file genesis.dat
+  --genesis genesis.dat
 ```
 
 The data directory must be empty when bootstrapping.
@@ -56,7 +56,7 @@ docker run --rm \
   ghcr.io/0xmiden/miden-node:<release-tag> \
   miden-node bootstrap \
   --data-directory /data \
-  --file /genesis.dat
+  --genesis /genesis.dat
 ```
 
 The data volume must be empty when bootstrapping.

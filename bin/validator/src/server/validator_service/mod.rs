@@ -54,15 +54,13 @@ pub enum ValidatorError {
     #[error("no previous block header available for chain tip overwrite")]
     NoPrevBlockHeader,
     #[error(
-        "validator signing key {actual:?} does not match the block's validator key {expected:?}"
+        "validator signing key {actual:?} is not a member of the validator set authorized to sign this block"
     )]
-    ValidatorKeyMismatch { expected: PublicKey, actual: PublicKey },
+    ValidatorKeyNotInSet { actual: PublicKey },
     #[error("no chain tip exists")]
     NoChainTip,
     #[error("failed to backup block")]
     BlockBackupFailed(#[source] std::io::Error),
-    #[error("expected a single-key validator set, got {actual} keys")]
-    UnexpectedValidatorSetSize { actual: usize },
     #[error("no genesis block header exists")]
     NoGenesisHeader,
     #[error("failed to attest the transaction encryption key: {0}")]
@@ -114,26 +112,17 @@ impl ValidatorService {
         initial_tx_count: u64,
         initial_block_count: u64,
     ) -> Result<Self, ValidatorError> {
-        // The validator key is fixed at genesis and carried forward unchanged by every block, so
-        // the signing key must match the chain's validator key for this validator's lifetime.
-        // Reject a misconfigured key here.
+        // The chain tip's header commits to the validator set authorized to sign the next block, so
+        // the signing key must be a member of that set for this validator to be useful. Reject a
+        // misconfigured key here.
         let chain_tip = db
             .read("load_chain_tip", load_chain_tip)
             .await
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoChainTip)?;
         let signing_key = signer.public_key();
-        let expected_key = match chain_tip.validator_keys().as_keys() {
-            [key] => key,
-            keys => {
-                return Err(ValidatorError::UnexpectedValidatorSetSize { actual: keys.len() });
-            },
-        };
-        if &signing_key != expected_key {
-            return Err(ValidatorError::ValidatorKeyMismatch {
-                expected: expected_key.clone(),
-                actual: signing_key,
-            });
+        if !chain_tip.validator_keys().as_keys().contains(&signing_key) {
+            return Err(ValidatorError::ValidatorKeyNotInSet { actual: signing_key });
         }
 
         // Both keys are fixed for the process lifetime, so the attestation is computed once. This
@@ -244,30 +233,28 @@ impl ValidatorService {
             return Err(ValidatorError::PrevBlockCommitmentMismatch);
         }
 
-        // Check that the block's validator key is set to our own.
+        // Check that our key is a member of the validator set authorized to sign this block,
+        // which is the set committed to by the parent's header.
         //
-        // Otherwise we could be signing a block for a different key, making the
-        // signature invalid.
+        // Otherwise we would be producing a signature that cannot be placed in the block's
+        // signature set.
         let signing_key = self.signer.public_key();
-        let expected_key = match proposed_header.validator_keys().as_keys() {
-            [key] => key,
-            keys => {
-                return Err(ValidatorError::UnexpectedValidatorSetSize { actual: keys.len() });
-            },
-        };
-        if &signing_key != expected_key {
-            return Err(ValidatorError::ValidatorKeyMismatch {
-                expected: expected_key.clone(),
-                actual: signing_key,
-            });
+        if !prev.validator_keys().as_keys().contains(&signing_key) {
+            return Err(ValidatorError::ValidatorKeyNotInSet { actual: signing_key });
         }
 
         let signature = self.sign_header(&proposed_header).await?;
 
         // Back up the signed block to disk.
-        let signatures = BlockSignatures::new(vec![signature.clone()])
-            .map_err(|err| ValidatorError::BlockSigningFailed(err.to_string()))?;
-        let signed_block = SignedBlock::new_unchecked(proposed_header, proposed_body, signatures);
+        //
+        // Note that the backup only carries this validator's own signature: the complete,
+        // positionally ordered signature set exists only at the block producer once it has
+        // aggregated the responses of all validators. Consumers of the backup stream must not
+        // expect to verify the full signature set from these blocks.
+        let own_signature = BlockSignatures::new(vec![signature.clone()])
+            .expect("a single signature is within the signature set bounds");
+        let signed_block =
+            SignedBlock::new_unchecked(proposed_header, proposed_body, own_signature);
         self.block_store
             .save_block(signed_block.header().block_num(), &signed_block.to_bytes())
             .await

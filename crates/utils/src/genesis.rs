@@ -5,6 +5,14 @@ use anyhow::Context;
 use miden_protocol::block::SignedBlock;
 use miden_protocol::utils::serde::Deserializable;
 
+/// A predefined, insecure validator signing key for development purposes.
+///
+/// `miden-validator start` signs blocks with this key by default, and the default genesis
+/// configuration commits the corresponding public key as the sole genesis validator, so a locally
+/// bootstrapped chain works without any key configuration.
+pub const INSECURE_VALIDATOR_SIGNING_KEY_HEX: &str =
+    "0101010101010101010101010101010101010101010101010101010101010101";
+
 /// Official Miden networks with a hosted genesis block.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OfficialNetwork {
@@ -31,14 +39,14 @@ impl fmt::Display for OfficialNetwork {
     }
 }
 
-/// Reads a trusted, signed genesis block from disk.
-pub fn read_signed_genesis_block(path: &Path) -> anyhow::Result<SignedBlock> {
+/// Reads a trusted genesis block from disk.
+pub fn read_genesis_block(path: &Path) -> anyhow::Result<SignedBlock> {
     let bytes = fs_err::read(path).context("failed to read genesis block file")?;
-    deserialize_signed_genesis_block(&bytes)
+    deserialize_genesis_block(&bytes)
 }
 
-/// Downloads a trusted, signed genesis block for an official Miden network.
-pub async fn fetch_signed_genesis_block(network: OfficialNetwork) -> anyhow::Result<SignedBlock> {
+/// Downloads a trusted genesis block for an official Miden network.
+pub async fn fetch_genesis_block(network: OfficialNetwork) -> anyhow::Result<SignedBlock> {
     let url = network.genesis_block_url();
     let response = reqwest::get(url.as_str())
         .await
@@ -50,9 +58,9 @@ pub async fn fetch_signed_genesis_block(network: OfficialNetwork) -> anyhow::Res
         .await
         .with_context(|| format!("failed to read genesis block response from {url}"))?;
 
-    deserialize_signed_genesis_block(&bytes)
+    deserialize_genesis_block(&bytes)
 }
 
-fn deserialize_signed_genesis_block(bytes: &[u8]) -> anyhow::Result<SignedBlock> {
+fn deserialize_genesis_block(bytes: &[u8]) -> anyhow::Result<SignedBlock> {
     SignedBlock::read_from_bytes(bytes).context("failed to deserialize genesis block")
 }

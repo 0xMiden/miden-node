@@ -5,17 +5,13 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::{ArgGroup, Parser};
+use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::clap::duration_to_human_readable_string;
 use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::fs::ensure_empty_directory;
-use miden_node_utils::genesis::{
-    OfficialNetwork,
-    fetch_signed_genesis_block,
-    read_signed_genesis_block,
-};
+use miden_node_utils::genesis::{OfficialNetwork, fetch_genesis_block, read_genesis_block};
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_protocol::block::SignedBlock;
 use tokio::net::TcpListener;
 use tonic::metadata::AsciiMetadataValue;
 use url::Url;
@@ -145,7 +141,7 @@ pub enum NtxBuilderCommand {
         data_directory: PathBuf,
 
         /// Bootstrap from a trusted genesis block file.
-        #[arg(long = "file", value_name = "FILE")]
+        #[arg(long = "genesis", value_name = "FILE")]
         genesis_block_file: Option<PathBuf>,
 
         /// Bootstrap for an official Miden network.
@@ -194,7 +190,7 @@ impl NtxBuilderCommand {
                 let database_filepath = data_directory.join("ntx-builder.sqlite3");
                 let genesis =
                     read_bootstrap_genesis_block(genesis_block_file.as_deref(), network).await?;
-                let genesis_commitment = genesis.header().commitment();
+                let genesis_commitment = genesis.inner().header().commitment();
                 miden_ntx_builder::bootstrap(database_filepath, &genesis)
                     .await
                     .context("failed to bootstrap ntx-builder database")?;
@@ -288,13 +284,15 @@ impl NtxBuilderCommand {
     }
 }
 
+/// Reads the genesis block from the configured source and validates it.
 async fn read_bootstrap_genesis_block(
     genesis_block_file: Option<&Path>,
     network: Option<OfficialNetwork>,
-) -> anyhow::Result<SignedBlock> {
-    match (genesis_block_file, network) {
-        (Some(path), None) => read_signed_genesis_block(path),
-        (None, Some(network)) => fetch_signed_genesis_block(network).await,
+) -> anyhow::Result<GenesisBlock> {
+    let signed_block = match (genesis_block_file, network) {
+        (Some(path), None) => read_genesis_block(path)?,
+        (None, Some(network)) => fetch_genesis_block(network).await?,
         _ => unreachable!("clap requires exactly one genesis block source"),
-    }
+    };
+    GenesisBlock::try_from(signed_block)
 }

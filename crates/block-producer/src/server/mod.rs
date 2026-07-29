@@ -168,14 +168,6 @@ impl Sequencer {
 
         Ok(SequencerHandle { api, task })
     }
-
-    /// Serves the sequencer tasks.
-    ///
-    /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
-    /// encountered.
-    pub async fn serve(self) -> anyhow::Result<()> {
-        self.spawn(CancellationToken::new())?.wait().await
-    }
 }
 
 /// Running sequencer tasks plus the API used to submit work to them.

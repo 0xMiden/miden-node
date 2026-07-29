@@ -239,6 +239,11 @@ impl PrivateRecordSealer {
         }
     }
 
+    /// Returns the storage-key epoch used to seal records.
+    pub fn key_epoch(&self) -> StorageKeyEpoch {
+        self.key_epoch
+    }
+
     /// Encrypts a record and wraps only its fresh content key with Golden.
     pub fn seal<R: RngCore + CryptoRng>(
         &self,

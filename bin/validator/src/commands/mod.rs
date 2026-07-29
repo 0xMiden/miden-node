@@ -23,6 +23,7 @@ use miden_validator::{
     GoldenOperatorKey,
     LOG_TARGET,
     LocalX25519TransactionInputDecrypter,
+    PrivateRecordSealer,
     StorageKeyEpoch,
     TransactionInputDecrypter,
     ValidatorSigner,
@@ -281,7 +282,8 @@ impl ValidatorCommand {
                 ..
             } => {
                 let address = listen;
-                let storage_key = Arc::new(storage_key.load()?);
+                let private_record_sealer =
+                    PrivateRecordSealer::from_operator_key(&storage_key.load()?);
                 tracing::info!(
                     target: miden_validator::LOG_TARGET,
                     {
@@ -304,7 +306,7 @@ impl ValidatorCommand {
                 start::start(
                     address,
                     grpc_options,
-                    start::ValidatorKeys { signer, decrypter, storage_key },
+                    start::ValidatorKeys { signer, decrypter, private_record_sealer },
                     data_directory,
                     sqlite_connection_pool_size,
                     shutdown,

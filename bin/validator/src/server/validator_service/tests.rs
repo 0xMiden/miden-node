@@ -95,7 +95,7 @@ impl TestValidator {
             server: ValidatorService::new(
                 signer,
                 std::sync::Arc::new(test_decrypter()),
-                std::sync::Arc::new(operator_keys().remove(0)),
+                PrivateRecordSealer::from_operator_key(&operator_keys().remove(0)),
                 db,
                 block_store,
                 InitialMetrics::new(0, 0, 0),
@@ -490,7 +490,7 @@ async fn signing_key_mismatch_rejected() {
     let result = ValidatorService::new(
         rogue_signer,
         std::sync::Arc::new(test_decrypter()),
-        std::sync::Arc::new(operator_keys().remove(0)),
+        PrivateRecordSealer::from_operator_key(&operator_keys().remove(0)),
         db,
         block_store,
         InitialMetrics::new(0, 0, 0),
@@ -829,15 +829,15 @@ async fn sign_block_indexes_included_private_records() {
     );
     let tx_id = tx_header.id();
     let record_id = PrivateRecordId::for_transaction_inputs(tx_id);
-    let storage_key = &tv.server.storage_key;
+    let private_record_sealer = &tv.server.private_record_sealer;
     let context = PrivateRecordContext::new(
         tv.server.private_record_chain_id,
-        storage_key.key_epoch(),
+        private_record_sealer.key_epoch(),
         record_id,
         tx_id,
     );
     let mut rng = ChaCha20Rng::from_seed([42; 32]);
-    let record = PrivateRecordSealer::from_operator_key(storage_key)
+    let record = private_record_sealer
         .seal(&mut rng, context, b"private transaction inputs")
         .unwrap();
 

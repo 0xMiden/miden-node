@@ -22,8 +22,8 @@ use crate::db::{
 };
 use crate::{
     DataDirectory,
-    GoldenOperatorKey,
     LOG_TARGET,
+    PrivateRecordSealer,
     TransactionInputDecrypter,
     ValidatorSigner,
 };
@@ -53,8 +53,8 @@ pub struct ValidatorServer {
     /// transaction inputs.
     pub decrypter: std::sync::Arc<dyn TransactionInputDecrypter>,
 
-    /// The validated Golden storage key material for this operator.
-    pub storage_key: std::sync::Arc<GoldenOperatorKey>,
+    /// The public Golden key used to seal private records.
+    pub private_record_sealer: PrivateRecordSealer,
 
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
@@ -104,7 +104,7 @@ impl ValidatorServer {
         let service = ValidatorService::new(
             self.signer,
             self.decrypter,
-            self.storage_key,
+            self.private_record_sealer,
             db,
             block_store,
             InitialMetrics::new(initial_chain_tip, initial_tx_count, initial_block_count),

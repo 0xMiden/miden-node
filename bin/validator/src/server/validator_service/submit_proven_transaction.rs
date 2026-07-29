@@ -12,7 +12,7 @@ use tonic::Status;
 use super::ValidatorService;
 use crate::db::{insert_validated_private_transaction, transaction_storage_is_complete};
 use crate::tx_validation::validate_transaction;
-use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId, PrivateRecordSealer};
+use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId};
 
 #[tonic::async_trait]
 impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
@@ -68,11 +68,12 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         // Re-encrypt the private inputs under a fresh content key.
         let context = PrivateRecordContext::new(
             self.private_record_chain_id,
-            self.storage_key.key_epoch(),
+            self.private_record_sealer.key_epoch(),
             PrivateRecordId::for_transaction_inputs(tx_id),
             tx_id,
         );
-        let private_record = PrivateRecordSealer::from_operator_key(&self.storage_key)
+        let private_record = self
+            .private_record_sealer
             .seal(&mut OsRng, context, &private_inputs)
             .map_err(|err| {
                 Status::internal(err.as_report_context("Failed to protect transaction inputs"))

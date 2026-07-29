@@ -28,8 +28,8 @@ use crate::db::{
 };
 use crate::{
     COMPONENT,
-    GoldenOperatorKey,
     PrivateRecordChainId,
+    PrivateRecordSealer,
     TransactionInputDecrypter,
     ValidatorSigner,
 };
@@ -113,8 +113,8 @@ pub(crate) struct ValidatorService {
     decrypter: Arc<dyn TransactionInputDecrypter>,
     /// Commitment of the genesis block, loaded once at construction.
     genesis_commitment: Word,
-    /// Golden storage key material used to seal records and issue operator shares.
-    storage_key: Arc<GoldenOperatorKey>,
+    /// Public Golden key used to seal private records.
+    private_record_sealer: PrivateRecordSealer,
     /// Genesis commitment bound into every private record context.
     private_record_chain_id: PrivateRecordChainId,
     /// Public metadata of the shared encryption key, fetched once at construction.
@@ -145,7 +145,7 @@ impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
         decrypter: Arc<dyn TransactionInputDecrypter>,
-        storage_key: Arc<GoldenOperatorKey>,
+        private_record_sealer: PrivateRecordSealer,
         db: Database,
         block_store: BlockStore,
         initial_metrics: InitialMetrics,
@@ -189,7 +189,7 @@ impl ValidatorService {
             signer,
             decrypter,
             genesis_commitment,
-            storage_key,
+            private_record_sealer,
             private_record_chain_id,
             encryption_key_info,
             encryption_key_attestation,

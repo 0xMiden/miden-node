@@ -10,9 +10,9 @@ use rand_core_06::OsRng;
 use tonic::Status;
 
 use super::ValidatorService;
-use crate::db::{insert_validated_private_transaction, transaction_storage_is_complete};
+use crate::db::{insert_validated_private_transaction, transaction_exists};
 use crate::tx_validation::validate_transaction;
-use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId};
+use crate::{COMPONENT, PrivateRecordContext};
 
 #[tonic::async_trait]
 impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
@@ -45,16 +45,14 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             .try_read()
             .map_err(|_| Status::resource_exhausted("validator is busy streaming a backup"))?;
 
-        let storage_complete = self
+        let transaction_exists = self
             .db
-            .read("transaction_storage_is_complete", move |tx| {
-                transaction_storage_is_complete(tx, tx_id)
-            })
+            .read("transaction_exists", move |tx| transaction_exists(tx, tx_id))
             .await
             .map_err(|err| {
                 Status::internal(err.as_report_context("Failed to query transaction"))
             })?;
-        if storage_complete {
+        if transaction_exists {
             return Ok(());
         }
 
@@ -69,7 +67,6 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         let context = PrivateRecordContext::new(
             self.private_record_chain_id,
             self.private_record_sealer.key_epoch(),
-            PrivateRecordId::for_transaction_inputs(tx_id),
             tx_id,
         );
         let private_record = self
@@ -83,7 +80,7 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         let count = self
             .db
             .write("insert_validated_private_transaction", move |tx| {
-                insert_validated_private_transaction(tx, tx_id, &private_record)
+                insert_validated_private_transaction(tx, &private_record)
             })
             .await
             .map_err(|err| {

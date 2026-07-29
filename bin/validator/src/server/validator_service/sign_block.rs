@@ -5,11 +5,10 @@ use miden_node_utils::ErrorReport;
 use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
-use miden_protocol::transaction::TransactionHeader;
 use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::ValidatorService;
-use crate::db::{load_chain_tip, replace_private_record_block_assignments, upsert_block_header};
+use crate::db::{load_chain_tip, upsert_block_header};
 
 #[tonic::async_trait]
 impl grpc::server::validator_api::SignBlock for ValidatorService {
@@ -60,9 +59,6 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
             })?
             .ok_or_else(|| tonic::Status::internal("Chain tip not found in database"))?;
 
-        let transaction_ids =
-            proposed_block.transactions().map(TransactionHeader::id).collect::<Vec<_>>();
-
         // Validate the block against the current chain tip.
         let (signature, header) =
             self.validate_block(proposed_block, chain_tip).await.map_err(|err| {
@@ -76,19 +72,10 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
         // closure, so it can be returned to the block producer for cross-checking.
         let block_commitment = header.commitment();
 
-        // Persist the header and private-record assignments atomically. Clearing this height first
-        // removes records from a replaced chain-tip block.
+        // Persist the signed header.
         let new_block_num = header.block_num().as_u32();
         self.db
-            .write("persist_signed_block", move |tx| {
-                upsert_block_header(tx, &header)?;
-                replace_private_record_block_assignments(
-                    tx,
-                    BlockNumber::from(new_block_num),
-                    &transaction_ids,
-                )?;
-                Ok::<(), miden_node_db::DatabaseError>(())
-            })
+            .write("persist_signed_block", move |tx| upsert_block_header(tx, &header))
             .await
             .map_err(|err| {
                 tonic::Status::internal(format!(

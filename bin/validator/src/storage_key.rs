@@ -240,7 +240,7 @@ impl GoldenOperatorKey {
             return Err(PrivateRecordError::ShareDenied);
         }
 
-        let ciphertext = record.decode_wrapped_content_key()?;
+        let ciphertext = record.decode_encrypted_record_key()?;
         let context = request.context();
         let share = UnsealingShare::new(self.secret_share.clone())
             .decrypt_share_with_associated_data(

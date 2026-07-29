@@ -20,12 +20,7 @@ use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
-use crate::db::{
-    find_unprotected_transactions,
-    find_unvalidated_transactions,
-    load_block_header,
-    load_chain_tip,
-};
+use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
 use crate::{
     COMPONENT,
     PrivateRecordChainId,
@@ -50,8 +45,6 @@ mod submit_proven_transaction;
 pub enum ValidatorError {
     #[error("block contains unvalidated transactions {0:?}")]
     UnvalidatedTransactions(Vec<TransactionId>),
-    #[error("block contains transactions without protected inputs {0:?}")]
-    UnprotectedTransactions(Vec<TransactionId>),
     #[error("failed to build block")]
     BlockBuildingFailed(#[source] ProposedBlockError),
     #[error("failed to sign block: {0}")]
@@ -226,11 +219,10 @@ impl ValidatorService {
         // Search for any proposed transactions that have not previously been validated.
         let proposed_tx_ids =
             proposed_block.transactions().map(TransactionHeader::id).collect::<Vec<_>>();
-        let validation_tx_ids = proposed_tx_ids.clone();
         let unvalidated_txs = self
             .db
             .read("find_unvalidated_transactions", move |tx| {
-                find_unvalidated_transactions(tx, &validation_tx_ids)
+                find_unvalidated_transactions(tx, &proposed_tx_ids)
             })
             .await
             .map_err(ValidatorError::DatabaseError)?;
@@ -239,17 +231,6 @@ impl ValidatorService {
         if !unvalidated_txs.is_empty() {
             return Err(ValidatorError::UnvalidatedTransactions(unvalidated_txs));
         }
-        let unprotected_txs = self
-            .db
-            .read("find_unprotected_transactions", move |tx| {
-                find_unprotected_transactions(tx, &proposed_tx_ids)
-            })
-            .await
-            .map_err(ValidatorError::DatabaseError)?;
-        if !unprotected_txs.is_empty() {
-            return Err(ValidatorError::UnprotectedTransactions(unprotected_txs));
-        }
-
         // Build the block header.
         let (proposed_header, proposed_body) = proposed_block
             .into_header_and_body()

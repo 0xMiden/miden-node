@@ -2,12 +2,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use miden_validator::{
-    DataDirectory,
-    GoldenOperatorKey,
-    PrivateRecordId,
-    PrivateRecordShareRequest,
-};
+use miden_protocol::transaction::TransactionId;
+use miden_protocol::utils::serde::Deserializable;
+use miden_validator::{DataDirectory, GoldenOperatorKey, PrivateRecordShareRequest};
 use rand_core_06::OsRng;
 
 use super::PrivateRecordShareOptions;
@@ -16,22 +13,22 @@ use super::PrivateRecordShareOptions;
 pub(super) async fn issue_from_options(options: PrivateRecordShareOptions) -> anyhow::Result<()> {
     let PrivateRecordShareOptions {
         data_directory,
-        record_id,
+        transaction_id,
         output,
         storage_key,
     } = options;
     let operator_key = storage_key.load()?;
-    issue(data_directory, &record_id, output.as_deref(), &operator_key).await
+    issue(data_directory, &transaction_id, output.as_deref(), &operator_key).await
 }
 
 /// Issues this validator's canonical share for one checked private record.
 pub(super) async fn issue(
     data_directory: PathBuf,
-    encoded_record_id: &str,
+    encoded_transaction_id: &str,
     output: Option<&Path>,
     operator_key: &GoldenOperatorKey,
 ) -> anyhow::Result<()> {
-    let record_id = parse_record_id(encoded_record_id)?;
+    let transaction_id = parse_transaction_id(encoded_transaction_id)?;
     let data_directory =
         DataDirectory::load(data_directory).context("failed to load validator data directory")?;
     let database = miden_validator::db::load(data_directory.database_path())
@@ -39,11 +36,11 @@ pub(super) async fn issue(
         .context("failed to load validator database")?;
     let record = database
         .read("load_private_record_for_share", move |tx| {
-            miden_validator::db::load_private_record(tx, record_id)
+            miden_validator::db::load_private_record(tx, transaction_id)
         })
         .await
         .context("failed to load private record")?
-        .with_context(|| format!("private record {encoded_record_id} was not found"))?;
+        .with_context(|| format!("transaction {encoded_transaction_id} was not found"))?;
 
     let request = PrivateRecordShareRequest::for_record(&record);
     // Running this filesystem-restricted command is the demo's explicit release decision.
@@ -55,13 +52,10 @@ pub(super) async fn issue(
     write_share(output, &share)
 }
 
-/// Parses one fixed-width private record identifier.
-fn parse_record_id(encoded: &str) -> anyhow::Result<PrivateRecordId> {
-    let bytes = hex::decode(encoded).context("private record id is not valid hex")?;
-    let bytes = bytes.try_into().map_err(|bytes: Vec<u8>| {
-        anyhow::anyhow!("private record id has {} bytes, expected 32", bytes.len())
-    })?;
-    Ok(PrivateRecordId::new(bytes))
+/// Parses one canonical transaction identifier.
+fn parse_transaction_id(encoded: &str) -> anyhow::Result<TransactionId> {
+    let bytes = hex::decode(encoded).context("transaction id is not valid hex")?;
+    TransactionId::read_from_bytes(&bytes).context("transaction id is not canonical")
 }
 
 /// Writes canonical share bytes without adding a text encoding or delimiter.
@@ -82,11 +76,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn record_id_requires_exact_canonical_bytes() {
-        assert!(parse_record_id(&"01".repeat(32)).is_ok());
-        assert!(parse_record_id("not hex").is_err());
-        assert!(parse_record_id(&"01".repeat(31)).is_err());
-        assert!(parse_record_id(&"01".repeat(33)).is_err());
+    fn transaction_id_requires_exact_canonical_bytes() {
+        assert!(parse_transaction_id(&"01".repeat(32)).is_ok());
+        assert!(parse_transaction_id("not hex").is_err());
+        assert!(parse_transaction_id(&"01".repeat(31)).is_err());
+        assert!(parse_transaction_id(&"01".repeat(33)).is_err());
     }
 
     #[test]

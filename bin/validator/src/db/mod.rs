@@ -16,7 +16,6 @@ use crate::{
     LOG_TARGET,
     PrivateRecordChainId,
     PrivateRecordContext,
-    PrivateRecordId,
     PrivateRecordStorageFields,
     StorageKeyEpoch,
     StoredPrivateRecord,
@@ -24,21 +23,12 @@ use crate::{
 
 /// SQL statements, kept in dedicated `.sql` files (under `sql/`).
 mod sql {
-    pub(super) const CLEAR_PRIVATE_RECORD_BLOCK_NUM: &str =
-        include_str!("sql/clear_private_record_block_num.sql");
     pub(super) const INSERT_TRANSACTION: &str = include_str!("sql/insert_transaction.sql");
-    pub(super) const INSERT_PRIVATE_RECORD: &str = include_str!("sql/insert_private_record.sql");
     pub(super) const LOAD_PRIVATE_RECORD: &str = include_str!("sql/load_private_record.sql");
-    pub(super) const LOAD_PRIVATE_RECORDS_BY_BLOCK_NUM: &str =
-        include_str!("sql/load_private_records_by_block_num.sql");
     pub(super) const LOAD_PRIVATE_RECORDS_BY_KEY_EPOCH: &str =
         include_str!("sql/load_private_records_by_key_epoch.sql");
     pub(super) const LOAD_PRIVATE_RECORDS_BY_SETUP_CONTEXT: &str =
         include_str!("sql/load_private_records_by_setup_context.sql");
-    pub(super) const LOAD_PRIVATE_RECORDS_BY_TRANSACTION: &str =
-        include_str!("sql/load_private_records_by_transaction.sql");
-    pub(super) const SET_PRIVATE_RECORD_BLOCK_NUM: &str =
-        include_str!("sql/set_private_record_block_num.sql");
     pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
     pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
     pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
@@ -119,127 +109,52 @@ fn open_with_pool_size(
     Ok(db)
 }
 
-/// Inserts a validated transaction marker.
+/// Inserts a validated transaction and its encrypted private inputs.
 #[miden_instrument(
     target = COMPONENT,
     skip_all,
     fields(
-        transaction.id = %transaction_id,
+        transaction.id = %record.context().transaction_id(),
     ),
     err,
 )]
-pub(crate) fn insert_transaction(
-    tx: &WriteTx<'_>,
-    transaction_id: TransactionId,
-) -> Result<usize, DatabaseError> {
-    tx.execute(sql::INSERT_TRANSACTION, &[&transaction_id.to_bytes()])
-}
-
-/// Inserts one encrypted private record.
-#[miden_instrument(
-    target = COMPONENT,
-    skip_all,
-    fields(
-        record_id = ?record.context().record_id(),
-        tx_id = %record.context().transaction_id(),
-    ),
-    err,
-)]
-pub fn insert_private_record(
+pub fn insert_validated_private_transaction(
     tx: &WriteTx<'_>,
     record: &StoredPrivateRecord,
 ) -> Result<usize, DatabaseError> {
     let context = record.context();
-    let record_id = context.record_id().as_bytes().to_vec();
     let transaction_id = context.transaction_id().to_bytes();
     let chain_id = context.chain_id().as_bytes().to_vec();
     let key_epoch = context.key_epoch().as_bytes().to_vec();
     let setup_context_id = record.setup_context_id().to_vec();
-    let schema_version = i64::from(context.schema_version());
-    let block_num = record.block_num().map(|value| i64::from(value.as_u32()));
-    let cipher_id = i64::from(record.cipher().id());
+    let format_version = i64::from(context.format_version());
     let nonce = record.nonce().to_vec();
     let encrypted_record = record.encrypted_record().to_vec();
-    let wrapped_content_key = record.wrapped_content_key().to_vec();
+    let encrypted_record_key = record.encrypted_record_key().to_vec();
 
     tx.execute(
-        sql::INSERT_PRIVATE_RECORD,
+        sql::INSERT_TRANSACTION,
         &[
-            &record_id,
             &transaction_id,
             &chain_id,
             &key_epoch,
             &setup_context_id,
-            &schema_version,
-            &block_num,
-            &cipher_id,
+            &format_version,
             &nonce,
             &encrypted_record,
-            &wrapped_content_key,
+            &encrypted_record_key,
         ],
     )
 }
 
-/// Inserts a validated transaction and its encrypted private inputs atomically.
-pub(crate) fn insert_validated_private_transaction(
-    tx: &WriteTx<'_>,
-    transaction_id: TransactionId,
-    record: &StoredPrivateRecord,
-) -> Result<usize, DatabaseError> {
-    let transaction_inserted = insert_transaction(tx, transaction_id)?;
-    let record_inserted = insert_private_record(tx, record)?;
-    if transaction_inserted != record_inserted {
-        return Err(DatabaseError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "validated transaction and private record must be inserted together",
-        )));
-    }
-    Ok(transaction_inserted)
-}
-
-/// Returns whether a validated transaction and its private record are both stored.
-pub(crate) fn transaction_storage_is_complete(
-    tx: &ReadTx<'_>,
-    transaction_id: TransactionId,
-) -> Result<bool, DatabaseError> {
-    if !transaction_exists(tx, transaction_id)? {
-        return Ok(false);
-    }
-    let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
-    Ok(load_private_record(tx, record_id)?.is_some())
-}
-
-/// Returns validated transactions that have no checked private record.
-pub(crate) fn find_unprotected_transactions(
-    tx: &ReadTx<'_>,
-    transaction_ids: &[TransactionId],
-) -> Result<Vec<TransactionId>, DatabaseError> {
-    transaction_ids
-        .iter()
-        .copied()
-        .filter_map(|transaction_id| {
-            let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
-            match load_private_record(tx, record_id) {
-                Ok(Some(_)) => None,
-                Ok(None) => Some(Ok(transaction_id)),
-                Err(error) => Some(Err(error)),
-            }
-        })
-        .collect()
-}
-
-/// Loads one encrypted private record by its stable record id.
-#[miden_instrument(target = COMPONENT, skip_all, fields(?record_id), err)]
+/// Loads one encrypted private record by transaction ID.
+#[miden_instrument(target = COMPONENT, skip_all, fields(%transaction_id), err)]
 pub fn load_private_record(
     tx: &ReadTx<'_>,
-    record_id: PrivateRecordId,
+    transaction_id: TransactionId,
 ) -> Result<Option<StoredPrivateRecord>, DatabaseError> {
     Ok(tx
-        .query(
-            sql::LOAD_PRIVATE_RECORD,
-            &[&record_id.as_bytes().to_vec()],
-            private_record_from_row,
-        )?
+        .query(sql::LOAD_PRIVATE_RECORD, &[&transaction_id.to_bytes()], private_record_from_row)?
         .into_iter()
         .next())
 }
@@ -270,84 +185,27 @@ pub fn load_private_records_by_setup_context(
     )
 }
 
-/// Loads encrypted private records for one transaction.
-#[miden_instrument(target = COMPONENT, skip_all, fields(%transaction_id), err)]
-pub fn load_private_records_by_transaction(
-    tx: &ReadTx<'_>,
-    transaction_id: TransactionId,
-) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
-    tx.query(
-        sql::LOAD_PRIVATE_RECORDS_BY_TRANSACTION,
-        &[&transaction_id.to_bytes()],
-        private_record_from_row,
-    )
-}
-
-/// Loads encrypted private records included at one block number.
-#[miden_instrument(target = COMPONENT, skip_all, fields(%block_num), err)]
-pub fn load_private_records_by_block_num(
-    tx: &ReadTx<'_>,
-    block_num: BlockNumber,
-) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
-    tx.query(
-        sql::LOAD_PRIVATE_RECORDS_BY_BLOCK_NUM,
-        &[&i64::from(block_num.as_u32())],
-        private_record_from_row,
-    )
-}
-
-/// Replaces the private-record assignments for one block height.
-#[miden_instrument(
-    target = COMPONENT,
-    skip_all,
-    fields(%block_num, transaction_count = transaction_ids.len()),
-    err,
-)]
-pub fn replace_private_record_block_assignments(
-    tx: &WriteTx<'_>,
-    block_num: BlockNumber,
-    transaction_ids: &[TransactionId],
-) -> Result<usize, DatabaseError> {
-    let block_num = i64::from(block_num.as_u32());
-    tx.execute(sql::CLEAR_PRIVATE_RECORD_BLOCK_NUM, &[&block_num])?;
-
-    transaction_ids.iter().try_fold(0, |assigned, transaction_id| {
-        let transaction_id = transaction_id.to_bytes();
-        tx.execute(sql::SET_PRIVATE_RECORD_BLOCK_NUM, &[&block_num, &transaction_id])
-            .map(|updated| assigned + updated)
-    })
-}
-
 fn private_record_from_row(row: &Row<'_>) -> Result<StoredPrivateRecord, DatabaseError> {
     let chain_id = fixed_32(row.get(0)?, "private record chain id")?;
     let key_epoch = fixed_32(row.get(1)?, "private record key epoch")?;
-    let record_id = fixed_32(row.get(2)?, "private record id")?;
-    let transaction_id = row.get(3)?;
-    let setup_context_id = fixed_32(row.get(4)?, "private record setup context id")?;
-    let schema_version = checked_u32(row.get(5)?, "private record schema version")?;
-    let block_num = row
-        .get::<Option<i64>>(6)?
-        .map(|value| checked_u32(value, "private record block number").map(BlockNumber::from))
-        .transpose()?;
-    let cipher_id = checked_u16(row.get(7)?, "private record cipher id")?;
-    let nonce = row.get(8)?;
-    let encrypted_record = row.get(9)?;
-    let wrapped_content_key = row.get(10)?;
+    let transaction_id = row.get(2)?;
+    let setup_context_id = fixed_32(row.get(3)?, "private record setup context id")?;
+    let format_version = checked_u32(row.get(4)?, "private record format version")?;
+    let nonce = row.get(5)?;
+    let encrypted_record = row.get(6)?;
+    let encrypted_record_key = row.get(7)?;
 
     StoredPrivateRecord::from_storage_fields(PrivateRecordStorageFields {
         context: PrivateRecordContext::new(
             PrivateRecordChainId::new(chain_id),
             StorageKeyEpoch::new(key_epoch),
-            PrivateRecordId::new(record_id),
             transaction_id,
         ),
-        schema_version,
+        format_version,
         setup_context_id,
-        block_num,
-        cipher_id,
         nonce,
         encrypted_record,
-        wrapped_content_key,
+        encrypted_record_key,
     })
     .map_err(|source| DatabaseError::deserialization("private record", source))
 }
@@ -365,10 +223,6 @@ fn fixed_32(bytes: Vec<u8>, field: &'static str) -> Result<[u8; 32], DatabaseErr
 
 fn checked_u32(value: i64, field: &'static str) -> Result<u32, DatabaseError> {
     u32::try_from(value).map_err(|source| DatabaseError::deserialization(field, source))
-}
-
-fn checked_u16(value: i64, field: &'static str) -> Result<u16, DatabaseError> {
-    u16::try_from(value).map_err(|source| DatabaseError::deserialization(field, source))
 }
 
 /// Returns whether a transaction with the given id has already been validated.
@@ -511,15 +365,10 @@ mod tests {
 
     const CHAIN_ID: PrivateRecordChainId = PrivateRecordChainId::new([1; 32]);
     const KEY_EPOCH: StorageKeyEpoch = StorageKeyEpoch::new([2; 32]);
-    const RECORD_ID: PrivateRecordId = PrivateRecordId::new([3; 32]);
     const SETUP_CONTEXT_ID: [u8; 32] = [4; 32];
 
-    fn private_record(
-        record_id: PrivateRecordId,
-        transaction_id: TransactionId,
-        seed: u8,
-    ) -> StoredPrivateRecord {
-        let context = PrivateRecordContext::new(CHAIN_ID, KEY_EPOCH, record_id, transaction_id);
+    fn private_record(transaction_id: TransactionId, seed: u8) -> StoredPrivateRecord {
+        let context = PrivateRecordContext::new(CHAIN_ID, KEY_EPOCH, transaction_id);
         let mut rng = ChaCha20Rng::from_seed([seed; 32]);
         test_private_record_sealer(KEY_EPOCH, SETUP_CONTEXT_ID)
             .seal(&mut rng, context, b"private transaction inputs")
@@ -554,13 +403,10 @@ mod tests {
         let validated_id = TransactionId::from_raw(Word::try_from([1u64, 2, 3, 4]).unwrap());
         let unknown_id = TransactionId::from_raw(Word::try_from([5u64, 6, 7, 8]).unwrap());
 
-        // Insert a row keyed by `validated_id`.
-        let id = validated_id.to_bytes();
-        db.write("insert_row", move |tx| {
-            tx.execute("INSERT INTO validated_transactions (id) VALUES (?1)", &[&id])
-        })
-        .await
-        .unwrap();
+        let record = private_record(validated_id, 1);
+        db.write("insert_row", move |tx| insert_validated_private_transaction(tx, &record))
+            .await
+            .unwrap();
 
         let validated_exists = db
             .read("transaction_exists", move |tx| transaction_exists(tx, validated_id))
@@ -576,84 +422,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migration_rejects_phase_one_validated_rows() {
-        use miden_node_db::migration::Migrator;
-
+    async fn private_record_indexes_work() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir.path().join("validator.sqlite3");
-        Migrator::builder()
-            .unwrap()
-            .push_sql("001_initial", include_str!("migrations/001_initial.sql"))
-            .unwrap()
-            .push_sql(
-                "002_store_sealed_transaction_inputs",
-                include_str!("migrations/002_store_sealed_transaction_inputs.sql"),
-            )
-            .unwrap()
-            .build()
-            .unwrap()
-            .bootstrap(&db_path)
-            .unwrap();
-
-        let db = Database::new(&db_path).unwrap();
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
-        let id = transaction_id.to_bytes();
-        let empty: Vec<u8> = vec![];
-        db.write("insert_phase_one_transaction", move |tx| {
-            tx.execute(
-                "INSERT INTO validated_transactions \
-                 (id, submission_scheme, submission_key_id, sealed_transaction_inputs) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                &[&id, &1i64, &empty, &empty],
-            )
+        let record = private_record(transaction_id, 9);
+
+        let expected = record.clone();
+        db.write("insert_private_record", move |tx| {
+            insert_validated_private_transaction(tx, &record)
         })
         .await
         .unwrap();
-        drop(db);
-
-        let err = migrate(&db_path).expect_err("migration must reject Phase 1 rows");
-        assert!(matches!(err, DatabaseError::Migration(_)), "unexpected error: {err:?}");
-    }
-
-    #[tokio::test]
-    async fn validated_transaction_cannot_be_backfilled() {
-        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
-        let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
-        db.write("insert_transaction", move |tx| insert_transaction(tx, transaction_id))
-            .await
-            .unwrap();
-
-        let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
-        let record = private_record(record_id, transaction_id, 11);
-        db.write("reject_private_record_backfill", move |tx| {
-            insert_validated_private_transaction(tx, transaction_id, &record)
-        })
-        .await
-        .expect_err("a private record must not be added after its transaction marker");
-
-        let stored = db
-            .read("load_private_record", move |tx| load_private_record(tx, record_id))
-            .await
-            .unwrap();
-        assert_eq!(stored, None);
-    }
-
-    #[tokio::test]
-    async fn private_record_indexes_work_before_and_after_inclusion() {
-        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
-        let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
-        let record = private_record(RECORD_ID, transaction_id, 9);
-        let record_id = record.context().record_id();
-
-        let expected = record.clone();
-        db.write("insert_private_record", move |tx| insert_private_record(tx, &record))
-            .await
-            .unwrap();
 
         let by_record = db
-            .read("load_private_record", move |tx| load_private_record(tx, record_id))
+            .read("load_private_record", move |tx| load_private_record(tx, transaction_id))
             .await
             .unwrap();
         assert_eq!(by_record, Some(expected.clone()));
@@ -673,44 +456,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(by_setup, vec![expected.clone()]);
-
-        let by_transaction = db
-            .read("load_private_records_by_transaction", move |tx| {
-                load_private_records_by_transaction(tx, transaction_id)
-            })
-            .await
-            .unwrap();
-        assert_eq!(by_transaction, vec![expected.clone()]);
-
-        let before_inclusion = db
-            .read("load_private_records_by_block_num", move |tx| {
-                load_private_records_by_block_num(tx, BlockNumber::from(12))
-            })
-            .await
-            .unwrap();
-        assert!(before_inclusion.is_empty());
-
-        let updated = db
-            .write("replace_private_record_block_assignments", move |tx| {
-                replace_private_record_block_assignments(
-                    tx,
-                    BlockNumber::from(12),
-                    &[transaction_id],
-                )
-            })
-            .await
-            .unwrap();
-        assert_eq!(updated, 1);
-
-        let after_inclusion = db
-            .read("load_private_records_by_block_num", move |tx| {
-                load_private_records_by_block_num(tx, BlockNumber::from(12))
-            })
-            .await
-            .unwrap();
-        let mut included = expected;
-        included.set_block_num(BlockNumber::from(12));
-        assert_eq!(after_inclusion, vec![included]);
     }
 
     #[tokio::test]
@@ -719,24 +464,20 @@ mod tests {
         let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let operators = operator_keys();
         let transaction_id = TransactionId::from_raw(Word::from([9u32, 10, 11, 12]));
-        let record_id = PrivateRecordId::for_transaction_inputs(transaction_id);
-        let context = PrivateRecordContext::new(
-            CHAIN_ID,
-            operators[0].key_epoch(),
-            record_id,
-            transaction_id,
-        );
+        let context = PrivateRecordContext::new(CHAIN_ID, operators[0].key_epoch(), transaction_id);
         let plaintext = b"private transaction inputs";
         let mut seal_rng = ChaCha20Rng::from_seed([40; 32]);
         let record = PrivateRecordSealer::from_operator_key(&operators[0])
             .seal(&mut seal_rng, context, plaintext)
             .unwrap();
-        db.write("insert_threshold_record", move |tx| insert_private_record(tx, &record))
-            .await
-            .unwrap();
+        db.write("insert_threshold_record", move |tx| {
+            insert_validated_private_transaction(tx, &record)
+        })
+        .await
+        .unwrap();
 
         let stored = db
-            .read("load_threshold_record", move |tx| load_private_record(tx, record_id))
+            .read("load_threshold_record", move |tx| load_private_record(tx, transaction_id))
             .await
             .unwrap()
             .unwrap();
@@ -761,59 +502,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replacing_block_assignments_removes_orphaned_records() {
-        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
-        let old_transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
-        let new_transaction_id = TransactionId::from_raw(Word::from([8u32, 7, 6, 5]));
-        let old_record = private_record(RECORD_ID, old_transaction_id, 9);
-        let new_record_id = PrivateRecordId::new([6; 32]);
-        let new_record = private_record(new_record_id, new_transaction_id, 10);
-
-        db.write("insert_private_records", move |tx| {
-            insert_private_record(tx, &old_record)?;
-            insert_private_record(tx, &new_record)
-        })
-        .await
-        .unwrap();
-
-        db.write("assign_old_block", move |tx| {
-            replace_private_record_block_assignments(
-                tx,
-                BlockNumber::from(12),
-                &[old_transaction_id],
-            )
-        })
-        .await
-        .unwrap();
-        db.write("replace_block", move |tx| {
-            replace_private_record_block_assignments(
-                tx,
-                BlockNumber::from(12),
-                &[new_transaction_id],
-            )
-        })
-        .await
-        .unwrap();
-
-        let at_height = db
-            .read("load_replacement_block", move |tx| {
-                load_private_records_by_block_num(tx, BlockNumber::from(12))
-            })
-            .await
-            .unwrap();
-        assert_eq!(at_height.len(), 1);
-        assert_eq!(at_height[0].context().record_id(), new_record_id);
-
-        let orphaned = db
-            .read("load_orphaned_record", move |tx| load_private_record(tx, RECORD_ID))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(orphaned.block_num(), None);
-    }
-
-    #[tokio::test]
     async fn private_record_schema_has_required_indexes() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
         let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
@@ -822,7 +510,7 @@ mod tests {
             .read("private_record_schema", |tx| {
                 tx.query(
                     "SELECT sql FROM sqlite_schema \
-                     WHERE tbl_name = 'private_records' AND sql IS NOT NULL \
+                     WHERE tbl_name = 'validated_transactions' AND sql IS NOT NULL \
                      ORDER BY name",
                     &[],
                     |row| row.get::<String>(0),
@@ -832,11 +520,8 @@ mod tests {
             .unwrap()
             .join("\n");
 
-        assert!(schema.contains("PRIMARY KEY (record_id)"));
-        assert!(schema.contains("idx_private_records_key_epoch"));
-        assert!(schema.contains("idx_private_records_setup_context_id"));
-        assert!(schema.contains("idx_private_records_transaction_id"));
-        assert!(schema.contains("idx_private_records_block_num"));
-        assert!(schema.contains("WHERE block_num IS NOT NULL"));
+        assert!(schema.contains("PRIMARY KEY (id)"));
+        assert!(schema.contains("idx_validated_transactions_key_epoch"));
+        assert!(schema.contains("idx_validated_transactions_setup_context_id"));
     }
 }

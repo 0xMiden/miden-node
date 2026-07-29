@@ -25,7 +25,6 @@ use miden_protocol::transaction::{
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
-    TransactionHeader,
     TransactionId,
     TransactionInputs,
     TxAccountUpdate,
@@ -34,14 +33,11 @@ use miden_protocol::vm::ExecutionProof;
 use miden_testing::{Auth, MockChainBuilder};
 use miden_tx::LocalTransactionProver;
 use miden_tx::utils::serde::{Deserializable, Serializable};
-use rand_chacha_03::ChaCha20Rng;
-use rand_chacha_03::rand_core::SeedableRng;
 use tokio::sync::OnceCell;
 
 use super::{InitialMetrics, ValidatorError, ValidatorService};
 use crate::db::{
     count_validated_transactions,
-    insert_private_record,
     load_chain_tip,
     load_private_record,
     setup,
@@ -51,8 +47,6 @@ use crate::db::{
 use crate::storage_key::tests::operator_keys;
 use crate::{
     LocalX25519TransactionInputDecrypter,
-    PrivateRecordContext,
-    PrivateRecordId,
     PrivateRecordSealer,
     TransactionInputDecrypter,
     ValidatorSigner,
@@ -406,68 +400,6 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
         .await
 }
 
-/// Builds a block with one unchecked private transaction for validator storage tests.
-fn private_transaction_block(
-    parent_header: &BlockHeader,
-    chain: &PartialBlockchain,
-) -> (ProposedBlock, miden_protocol::transaction::TransactionId) {
-    use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-    use miden_protocol::transaction::{InputNoteCommitment, InputNotes};
-
-    let account_id = ACCOUNT_ID_SENDER.try_into().unwrap();
-    let tx_header = TransactionHeader::new(
-        account_id,
-        Word::default(),
-        Word::default(),
-        InputNotes::<InputNoteCommitment>::default(),
-        vec![],
-    );
-    let tx_id = tx_header.id();
-    (private_transaction_block_for_header(parent_header, chain, tx_header), tx_id)
-}
-
-/// Builds a block with one given transaction header.
-fn private_transaction_block_for_header(
-    parent_header: &BlockHeader,
-    chain: &PartialBlockchain,
-    tx_header: TransactionHeader,
-) -> ProposedBlock {
-    use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
-    use miden_protocol::transaction::{InputNotes, OrderedTransactionHeaders};
-    use miden_protocol::vm::ExecutionProof;
-
-    let account_id = tx_header.account_id();
-    let tx_id = tx_header.id();
-    let batch = ProvenBatch::new_unchecked(
-        BatchId::from_ids(std::iter::once((tx_id, account_id))),
-        parent_header.commitment(),
-        parent_header.block_num(),
-        BTreeMap::from([(
-            account_id,
-            BatchAccountUpdate::new_unchecked(
-                account_id,
-                Word::default(),
-                Word::default(),
-                miden_protocol::account::AccountUpdateDetails::Private,
-            ),
-        )]),
-        InputNotes::default(),
-        vec![],
-        miden_protocol::block::BlockNumber::MAX,
-        OrderedTransactionHeaders::new_unchecked(vec![tx_header]),
-        ExecutionProof::new_dummy(),
-    )
-    .unwrap();
-    let inputs = BlockInputs::new(
-        parent_header.clone(),
-        chain.clone(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-    );
-    ProposedBlock::new(inputs, vec![batch]).unwrap()
-}
-
 // TESTS
 // ================================================================================================
 
@@ -781,115 +713,6 @@ async fn unknown_transactions_rejected() {
         },
         other => panic!("expected UnvalidatedTransactions error, got: {other}"),
     }
-}
-
-/// A validator with private storage enabled rejects validated transactions that have no record.
-#[tokio::test]
-async fn validated_transaction_without_private_record_is_rejected() {
-    let tv = TestValidator::new().await;
-    let (proposed, tx_id) = private_transaction_block(&tv.chain_tip, &tv.chain);
-    let id = tx_id.to_bytes();
-    tv.server
-        .db
-        .write("seed_unprotected_transaction", move |tx| {
-            tx.execute("INSERT INTO validated_transactions (id) VALUES (?1)", &[&id])
-        })
-        .await
-        .unwrap();
-
-    let result = tv.server.validate_block(proposed, tv.chain_tip.clone()).await;
-    match result.unwrap_err() {
-        ValidatorError::UnprotectedTransactions(ids) => assert_eq!(ids, vec![tx_id]),
-        other => panic!("expected UnprotectedTransactions error, got: {other}"),
-    }
-}
-
-/// Signing a block adds its height to the indexed private records for its transactions.
-#[tokio::test]
-async fn sign_block_indexes_included_private_records() {
-    use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
-    use miden_protocol::block::BlockNumber;
-    use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-    use miden_protocol::transaction::{
-        InputNoteCommitment,
-        InputNotes,
-        OrderedTransactionHeaders,
-        TransactionHeader,
-    };
-    use miden_protocol::vm::ExecutionProof;
-
-    let tv = TestValidator::new().await;
-    let account_id = ACCOUNT_ID_SENDER.try_into().unwrap();
-    let tx_header = TransactionHeader::new(
-        account_id,
-        Word::default(),
-        Word::default(),
-        InputNotes::<InputNoteCommitment>::default(),
-        vec![],
-    );
-    let tx_id = tx_header.id();
-    let record_id = PrivateRecordId::for_transaction_inputs(tx_id);
-    let private_record_sealer = &tv.server.private_record_sealer;
-    let context = PrivateRecordContext::new(
-        tv.server.private_record_chain_id,
-        private_record_sealer.key_epoch(),
-        record_id,
-        tx_id,
-    );
-    let mut rng = ChaCha20Rng::from_seed([42; 32]);
-    let record = private_record_sealer
-        .seal(&mut rng, context, b"private transaction inputs")
-        .unwrap();
-
-    let id = tx_id.to_bytes();
-    tv.server
-        .db
-        .write("seed_validated_private_transaction", move |tx| {
-            tx.execute("INSERT INTO validated_transactions (id) VALUES (?1)", &[&id])?;
-            insert_private_record(tx, &record)
-        })
-        .await
-        .unwrap();
-
-    let batch = ProvenBatch::new_unchecked(
-        BatchId::from_ids(std::iter::once((tx_id, account_id))),
-        tv.chain_tip.commitment(),
-        BlockNumber::GENESIS,
-        BTreeMap::from([(
-            account_id,
-            BatchAccountUpdate::new_unchecked(
-                account_id,
-                Word::default(),
-                Word::default(),
-                miden_protocol::account::AccountUpdateDetails::Private,
-            ),
-        )]),
-        InputNotes::default(),
-        vec![],
-        BlockNumber::MAX,
-        OrderedTransactionHeaders::new_unchecked(vec![tx_header]),
-        ExecutionProof::new_dummy(),
-    )
-    .unwrap();
-    let inputs = BlockInputs::new(
-        tv.chain_tip.clone(),
-        tv.chain.clone(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        BTreeMap::new(),
-    );
-    let proposed = ProposedBlock::new(inputs, vec![batch]).unwrap();
-
-    tv.call_sign_block(&proposed).await.unwrap();
-
-    let stored = tv
-        .server
-        .db
-        .read("load_included_private_record", move |tx| load_private_record(tx, record_id))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.block_num(), Some(BlockNumber::from(1)));
 }
 
 /// After replacing the chain tip, a new block built against the pre-replacement tip should be
@@ -1441,11 +1264,11 @@ async fn valid_submission_stores_one_protected_record() {
     assert_ne!(first.ciphertext, second.ciphertext);
 
     tv.call_submit_proven_transaction(tx, first.clone()).await.unwrap();
-    let record_id = PrivateRecordId::for_transaction_inputs(tx.id());
+    let transaction_id = tx.id();
     let first_record = tv
         .server
         .db
-        .read("load_private_record", move |db_tx| load_private_record(db_tx, record_id))
+        .read("load_private_record", move |db_tx| load_private_record(db_tx, transaction_id))
         .await
         .unwrap()
         .unwrap();
@@ -1455,7 +1278,7 @@ async fn valid_submission_stores_one_protected_record() {
     let stored_record = tv
         .server
         .db
-        .read("load_private_record", move |db_tx| load_private_record(db_tx, record_id))
+        .read("load_private_record", move |db_tx| load_private_record(db_tx, transaction_id))
         .await
         .unwrap()
         .unwrap();

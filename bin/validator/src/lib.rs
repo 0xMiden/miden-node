@@ -8,14 +8,11 @@ mod tx_validation;
 
 pub use data_directory::DataDirectory;
 pub use private_record::{
-    PRIVATE_RECORD_CIPHER_V1,
-    PRIVATE_RECORD_SCHEMA_V1,
+    PRIVATE_RECORD_FORMAT_V1,
     PrivateRecordChainId,
-    PrivateRecordCipher,
     PrivateRecordCombiner,
     PrivateRecordContext,
     PrivateRecordError,
-    PrivateRecordId,
     PrivateRecordSealer,
     PrivateRecordSharePolicy,
     PrivateRecordShareRequest,

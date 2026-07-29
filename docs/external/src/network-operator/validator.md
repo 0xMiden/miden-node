@@ -58,9 +58,7 @@ is the supported provisioning path.
 Each validator must run inside its trusted execution environment. If transaction proving uses a remote prover, that
 prover also receives the plaintext inputs and must run inside the same trusted boundary.
 
-The Golden storage migration rejects a database with any Phase 1 validated rows. Those rows contain only client
-ciphertext and cannot be converted into threshold records. Bootstrap a fresh validator database before deploying this
-version.
+This version requires a fresh validator database. Phase 1 client ciphertext cannot be converted into Golden records.
 
 The files contain canonical Golden wire bytes. Every validator uses the same setup context and public key set, but uses
 its own secret share. The validator will not start if any storage key option is missing or the key material is invalid.
@@ -74,7 +72,7 @@ The Phase 2 demo can issue one validator's decryption share through a local admi
 ```bash
 miden-validator issue-private-record-share \
   --data-directory validator-data \
-  --record-id <32-byte-hex-record-id> \
+  --transaction-id <32-byte-hex-transaction-id> \
   --output share.bin \
   --storage-key.epoch <32-byte-hex-epoch> \
   --storage-key.setup-context <setup-context-file> \
@@ -83,8 +81,8 @@ miden-validator issue-private-record-share \
 ```
 
 The output file contains canonical Golden wire bytes. To combine shares, run each participating validator key against
-the same data directory and record id. Shares issued for independently encrypted copies of the same transaction cannot
-be combined.
+the same data directory and transaction ID. Shares issued for independently encrypted copies of the same transaction
+cannot be combined.
 
 This command relies on local filesystem access as its authorization boundary. It is for the demo only and does not
 provide release policy, remote access, or an audit log.

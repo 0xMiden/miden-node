@@ -1,14 +1,11 @@
 SELECT
     chain_id,
     key_epoch,
-    record_id,
-    transaction_id,
+    id,
     setup_context_id,
-    schema_version,
-    block_num,
-    cipher_id,
+    format_version,
     cipher_nonce,
     encrypted_record,
-    wrapped_content_key
-FROM private_records
-WHERE record_id = ?1;
+    encrypted_record_key
+FROM validated_transactions
+WHERE id = ?1;

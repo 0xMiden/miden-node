@@ -70,10 +70,9 @@ mod tests {
 
     use super::*;
 
-    const EXPECTED_SCHEMA_HASHES: [SchemaHash; 2] = [
-        SchemaHash::from_hex("68955ff3be5db1aa9967285fca66c14e56e04f22c5e9bc5729f586e09d6c0531"),
-        SchemaHash::from_hex("7f48f71cee5bc7aa436dfb19de84c684d2779bedfab5870ed0bbad1f91fdda7a"),
-    ];
+    const EXPECTED_SCHEMA_HASHES: [SchemaHash; 1] = [SchemaHash::from_hex(
+        "6365dc0e7eb7ff1a961b3c6c7fcfab913d8b92c89eece625bd7015742e882e23",
+    )];
 
     #[test]
     fn migration_schema_hashes_are_stable() -> Result<()> {

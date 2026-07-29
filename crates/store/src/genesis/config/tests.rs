@@ -116,13 +116,13 @@ fn default_config_uses_insecure_dev_key() -> TestResult {
 
 #[test]
 fn config_without_validators_is_rejected() {
-    let toml = r#"
+    let toml = r"
 version = 1
 timestamp = 1717344256
 
 [fee_parameters]
 verification_base_fee = 0
-"#;
+";
 
     let gcfg = GenesisConfig::read_toml(toml, Path::new(".")).unwrap();
     let err = gcfg.into_state().expect_err("config without validators must be rejected");

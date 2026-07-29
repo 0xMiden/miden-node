@@ -1,6 +1,8 @@
 CREATE TABLE validated_transactions (
-    -- Transaction ID and record identity.
+    -- Transaction ID, unique within this validator's database.
     id                    BLOB NOT NULL,
+    -- Signing public key of the validator that produced this record.
+    validator_id          BLOB NOT NULL,
     -- Genesis commitment of the network that produced the transaction.
     chain_id              BLOB NOT NULL,
     -- Operator-chosen epoch of the Golden storage key.
@@ -17,6 +19,7 @@ CREATE TABLE validated_transactions (
     encrypted_record_key  BLOB NOT NULL,
     PRIMARY KEY (id),
     CHECK (length(id) = 32),
+    CHECK (length(validator_id) = 33),
     CHECK (length(chain_id) = 32),
     CHECK (length(key_epoch) = 32),
     CHECK (length(setup_context_id) = 32),

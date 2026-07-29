@@ -13,6 +13,7 @@ pub use private_record::{
     PrivateRecordCombiner,
     PrivateRecordContext,
     PrivateRecordError,
+    PrivateRecordId,
     PrivateRecordSealer,
     PrivateRecordSharePolicy,
     PrivateRecordShareRequest,

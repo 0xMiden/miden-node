@@ -16,6 +16,7 @@ use crate::{
     LOG_TARGET,
     PrivateRecordChainId,
     PrivateRecordContext,
+    PrivateRecordId,
     PrivateRecordStorageFields,
     StorageKeyEpoch,
     StoredPrivateRecord,
@@ -124,6 +125,7 @@ pub fn insert_validated_private_transaction(
 ) -> Result<usize, DatabaseError> {
     let context = record.context();
     let transaction_id = context.transaction_id().to_bytes();
+    let validator_id = record.record_id().validator_id().to_vec();
     let chain_id = context.chain_id().as_bytes().to_vec();
     let key_epoch = context.key_epoch().as_bytes().to_vec();
     let setup_context_id = record.setup_context_id().to_vec();
@@ -136,6 +138,7 @@ pub fn insert_validated_private_transaction(
         sql::INSERT_TRANSACTION,
         &[
             &transaction_id,
+            &validator_id,
             &chain_id,
             &key_epoch,
             &setup_context_id,
@@ -189,13 +192,17 @@ fn private_record_from_row(row: &Row<'_>) -> Result<StoredPrivateRecord, Databas
     let chain_id = fixed_32(row.get(0)?, "private record chain id")?;
     let key_epoch = fixed_32(row.get(1)?, "private record key epoch")?;
     let transaction_id = row.get(2)?;
-    let setup_context_id = fixed_32(row.get(3)?, "private record setup context id")?;
-    let format_version = checked_u32(row.get(4)?, "private record format version")?;
-    let nonce = row.get(5)?;
-    let encrypted_record = row.get(6)?;
-    let encrypted_record_key = row.get(7)?;
+    let validator_id = fixed_33(row.get(3)?, "private record validator id")?;
+    let setup_context_id = fixed_32(row.get(4)?, "private record setup context id")?;
+    let format_version = checked_u32(row.get(5)?, "private record format version")?;
+    let nonce = row.get(6)?;
+    let encrypted_record = row.get(7)?;
+    let encrypted_record_key = row.get(8)?;
+    let record_id = PrivateRecordId::from_parts(transaction_id, validator_id)
+        .map_err(|source| DatabaseError::deserialization("private record id", source))?;
 
     StoredPrivateRecord::from_storage_fields(PrivateRecordStorageFields {
+        record_id,
         context: PrivateRecordContext::new(
             PrivateRecordChainId::new(chain_id),
             StorageKeyEpoch::new(key_epoch),
@@ -216,6 +223,17 @@ fn fixed_32(bytes: Vec<u8>, field: &'static str) -> Result<[u8; 32], DatabaseErr
         let source = std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("expected 32 bytes, got {actual_len}"),
+        );
+        DatabaseError::deserialization(field, source)
+    })
+}
+
+fn fixed_33(bytes: Vec<u8>, field: &'static str) -> Result<[u8; 33], DatabaseError> {
+    let actual_len = bytes.len();
+    bytes.try_into().map_err(|_bytes: Vec<u8>| {
+        let source = std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("expected 33 bytes, got {actual_len}"),
         );
         DatabaseError::deserialization(field, source)
     })
@@ -355,6 +373,8 @@ pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Word;
+    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+    use miden_protocol::utils::serde::Deserializable;
     use rand_chacha_03::ChaCha20Rng;
     use rand_chacha_03::rand_core::SeedableRng;
 
@@ -367,11 +387,16 @@ mod tests {
     const KEY_EPOCH: StorageKeyEpoch = StorageKeyEpoch::new([2; 32]);
     const SETUP_CONTEXT_ID: [u8; 32] = [4; 32];
 
+    fn record_id(transaction_id: TransactionId) -> PrivateRecordId {
+        let signer = SigningKey::read_from_bytes(&[7; 32]).unwrap();
+        PrivateRecordId::new(transaction_id, &signer.public_key())
+    }
+
     fn private_record(transaction_id: TransactionId, seed: u8) -> StoredPrivateRecord {
         let context = PrivateRecordContext::new(CHAIN_ID, KEY_EPOCH, transaction_id);
         let mut rng = ChaCha20Rng::from_seed([seed; 32]);
         test_private_record_sealer(KEY_EPOCH, SETUP_CONTEXT_ID)
-            .seal(&mut rng, context, b"private transaction inputs")
+            .seal(&mut rng, record_id(transaction_id), context, b"private transaction inputs")
             .unwrap()
     }
 
@@ -468,7 +493,7 @@ mod tests {
         let plaintext = b"private transaction inputs";
         let mut seal_rng = ChaCha20Rng::from_seed([40; 32]);
         let record = PrivateRecordSealer::from_operator_key(&operators[0])
-            .seal(&mut seal_rng, context, plaintext)
+            .seal(&mut seal_rng, record_id(transaction_id), context, plaintext)
             .unwrap();
         db.write("insert_threshold_record", move |tx| {
             insert_validated_private_transaction(tx, &record)

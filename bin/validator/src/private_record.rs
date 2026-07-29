@@ -3,8 +3,15 @@ use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use golden_ehtdh1::wire::{from_wire_bytes, to_wire_bytes};
 use golden_ehtdh1::{Ciphertext, Combiner, DecryptionShare, SealingKey};
 use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::transaction::TransactionId;
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use rand_core_06::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
@@ -14,9 +21,11 @@ use crate::{GoldenOperatorKey, StorageKeyEpoch};
 pub const PRIVATE_RECORD_FORMAT_V1: u32 = 1;
 
 const CONTEXT_DOMAIN_V1: &[u8] = b"miden-private-record-context-v1";
+const PRIVATE_RECORD_BUNDLE_MAGIC: &[u8] = b"miden-private-record-bundle-v1";
 const CONTENT_KEY_BYTES: usize = 32;
 const NONCE_BYTES: usize = 24;
 const TAG_BYTES: usize = 16;
+const VALIDATOR_ID_BYTES: usize = 33;
 
 type StorageGroup = Secp256k1GoldenGroup;
 
@@ -33,6 +42,44 @@ impl PrivateRecordChainId {
     /// Returns the canonical chain identifier bytes.
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+/// Global identity of one validator's encrypted record for a transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PrivateRecordId {
+    transaction_id: TransactionId,
+    validator_id: [u8; VALIDATOR_ID_BYTES],
+}
+
+impl PrivateRecordId {
+    /// Creates a record identity from a transaction and validator signing key.
+    pub fn new(transaction_id: TransactionId, validator_public_key: &PublicKey) -> Self {
+        let validator_id = validator_public_key
+            .to_bytes()
+            .try_into()
+            .expect("validator public keys have a fixed canonical length");
+        Self { transaction_id, validator_id }
+    }
+
+    /// Rebuilds a record identity from its canonical fields.
+    pub fn from_parts(
+        transaction_id: TransactionId,
+        validator_id: [u8; VALIDATOR_ID_BYTES],
+    ) -> Result<Self, PrivateRecordError> {
+        PublicKey::read_from_bytes(&validator_id)
+            .map_err(PrivateRecordError::InvalidValidatorId)?;
+        Ok(Self { transaction_id, validator_id })
+    }
+
+    /// Returns the transaction identifier.
+    pub const fn transaction_id(&self) -> TransactionId {
+        self.transaction_id
+    }
+
+    /// Returns the canonical validator signing public key bytes.
+    pub const fn validator_id(&self) -> &[u8; VALIDATOR_ID_BYTES] {
+        &self.validator_id
     }
 }
 
@@ -90,30 +137,31 @@ impl PrivateRecordContext {
 /// Exact record values that an operator must approve before issuing a share.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PrivateRecordShareRequest {
-    transaction_id: TransactionId,
+    record_id: PrivateRecordId,
     key_epoch: StorageKeyEpoch,
     context: Vec<u8>,
 }
 
 impl PrivateRecordShareRequest {
     /// Creates a request for one transaction, epoch, and canonical context.
-    pub fn new(
-        transaction_id: TransactionId,
-        key_epoch: StorageKeyEpoch,
-        context: Vec<u8>,
-    ) -> Self {
-        Self { transaction_id, key_epoch, context }
+    pub fn new(record_id: PrivateRecordId, key_epoch: StorageKeyEpoch, context: Vec<u8>) -> Self {
+        Self { record_id, key_epoch, context }
     }
 
     /// Creates a request from one checked stored record.
     pub fn for_record(record: &StoredPrivateRecord) -> Self {
         let context = record.context();
-        Self::new(context.transaction_id(), context.key_epoch(), context.to_bytes())
+        Self::new(record.record_id(), context.key_epoch(), context.to_bytes())
     }
 
     /// Returns the requested transaction identifier.
     pub const fn transaction_id(&self) -> TransactionId {
-        self.transaction_id
+        self.record_id.transaction_id()
+    }
+
+    /// Returns the requested private-record identifier.
+    pub const fn record_id(&self) -> PrivateRecordId {
+        self.record_id
     }
 
     /// Returns the requested storage key epoch.
@@ -169,11 +217,15 @@ impl PrivateRecordSealer {
     pub fn seal<R: RngCore + CryptoRng>(
         &self,
         rng: &mut R,
+        record_id: PrivateRecordId,
         context: PrivateRecordContext,
         plaintext: &[u8],
     ) -> Result<StoredPrivateRecord, PrivateRecordError> {
         if context.key_epoch() != self.key_epoch {
             return Err(PrivateRecordError::KeyEpochMismatch);
+        }
+        if record_id.transaction_id() != context.transaction_id() {
+            return Err(PrivateRecordError::RecordIdMismatch);
         }
 
         let context_bytes = context.to_bytes();
@@ -196,6 +248,7 @@ impl PrivateRecordSealer {
         }
 
         Ok(StoredPrivateRecord {
+            record_id,
             context,
             setup_context_id: self.setup_context_id,
             nonce,
@@ -289,6 +342,8 @@ pub(crate) fn test_private_record_sealer(
 /// Database fields for one versioned private record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PrivateRecordStorageFields {
+    /// Operational identity used to find and export the record.
+    pub record_id: PrivateRecordId,
     /// Values bound into both encryption layers.
     pub context: PrivateRecordContext,
     /// Version of the context and encryption format.
@@ -306,6 +361,7 @@ pub struct PrivateRecordStorageFields {
 /// Versioned encrypted private record stored by the validator.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoredPrivateRecord {
+    record_id: PrivateRecordId,
     context: PrivateRecordContext,
     setup_context_id: [u8; 32],
     nonce: [u8; NONCE_BYTES],
@@ -327,8 +383,12 @@ impl StoredPrivateRecord {
         if fields.encrypted_record.len() < TAG_BYTES {
             return Err(PrivateRecordError::InvalidRecordCiphertext);
         }
+        if fields.record_id.transaction_id() != fields.context.transaction_id() {
+            return Err(PrivateRecordError::RecordIdMismatch);
+        }
 
         let record = Self {
+            record_id: fields.record_id,
             context: fields.context,
             setup_context_id: fields.setup_context_id,
             nonce,
@@ -342,6 +402,7 @@ impl StoredPrivateRecord {
     /// Splits a checked record into the fields stored by the database.
     pub fn into_storage_fields(self) -> PrivateRecordStorageFields {
         PrivateRecordStorageFields {
+            record_id: self.record_id,
             context: self.context,
             format_version: self.context.format_version(),
             setup_context_id: self.setup_context_id,
@@ -349,6 +410,11 @@ impl StoredPrivateRecord {
             encrypted_record: self.encrypted_record,
             encrypted_record_key: self.encrypted_record_key,
         }
+    }
+
+    /// Returns the operational identity used to find and export this record.
+    pub const fn record_id(&self) -> PrivateRecordId {
+        self.record_id
     }
 
     /// Returns the values bound into both encryption layers.
@@ -403,8 +469,8 @@ impl StoredPrivateRecord {
         key_epoch: StorageKeyEpoch,
         setup_context_id: [u8; 32],
     ) -> Result<(), PrivateRecordError> {
-        if request.transaction_id() != self.context.transaction_id() {
-            return Err(PrivateRecordError::TransactionIdMismatch);
+        if request.record_id() != self.record_id {
+            return Err(PrivateRecordError::RecordIdMismatch);
         }
         if request.key_epoch() != self.context.key_epoch() || request.key_epoch() != key_epoch {
             return Err(PrivateRecordError::KeyEpochMismatch);
@@ -419,15 +485,85 @@ impl StoredPrivateRecord {
     }
 }
 
+impl Serializable for StoredPrivateRecord {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        let context = self.context();
+        target.write_bytes(PRIVATE_RECORD_BUNDLE_MAGIC);
+        target.write_u32(context.format_version());
+        target.write_bytes(context.chain_id().as_bytes());
+        target.write_bytes(context.key_epoch().as_bytes());
+        context.transaction_id().write_into(target);
+        target.write_bytes(self.record_id().validator_id());
+        target.write_bytes(self.setup_context_id());
+        target.write_bytes(self.nonce());
+        target.write_u32(
+            self.encrypted_record()
+                .len()
+                .try_into()
+                .expect("private record ciphertext exceeds the external format"),
+        );
+        target.write_bytes(self.encrypted_record());
+        target.write_u32(
+            self.encrypted_record_key()
+                .len()
+                .try_into()
+                .expect("encrypted record key exceeds the external format"),
+        );
+        target.write_bytes(self.encrypted_record_key());
+    }
+}
+
+impl Deserializable for StoredPrivateRecord {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        if source.read_vec(PRIVATE_RECORD_BUNDLE_MAGIC.len())? != PRIVATE_RECORD_BUNDLE_MAGIC {
+            return Err(DeserializationError::InvalidValue(
+                "invalid private record bundle magic".to_owned(),
+            ));
+        }
+
+        let format_version = source.read_u32()?;
+        let chain_id = source.read_array::<32>()?;
+        let key_epoch = source.read_array::<32>()?;
+        let transaction_id = TransactionId::read_from(source)?;
+        let validator_id = source.read_array::<VALIDATOR_ID_BYTES>()?;
+        let record_id = PrivateRecordId::from_parts(transaction_id, validator_id)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
+        let setup_context_id = source.read_array::<32>()?;
+        let nonce = source.read_vec(NONCE_BYTES)?;
+        let encrypted_record_len = source.read_u32()? as usize;
+        let encrypted_record = source.read_vec(encrypted_record_len)?;
+        let encrypted_record_key_len = source.read_u32()? as usize;
+        let encrypted_record_key = source.read_vec(encrypted_record_key_len)?;
+
+        Self::from_storage_fields(PrivateRecordStorageFields {
+            record_id,
+            context: PrivateRecordContext::new(
+                PrivateRecordChainId::new(chain_id),
+                StorageKeyEpoch::new(key_epoch),
+                transaction_id,
+            ),
+            format_version,
+            setup_context_id,
+            nonce,
+            encrypted_record,
+            encrypted_record_key,
+        })
+        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+    }
+}
+
 /// Error raised while sealing or reading a private record.
 #[derive(Debug, thiserror::Error)]
 pub enum PrivateRecordError {
     /// The record, request, and active storage key name different epochs.
     #[error("private record key epoch does not match")]
     KeyEpochMismatch,
-    /// The share request names a different transaction.
-    #[error("private record share request names a different transaction")]
-    TransactionIdMismatch,
+    /// The share request names a different private record.
+    #[error("private record share request names a different record")]
+    RecordIdMismatch,
+    /// The validator identity is not a canonical signing public key.
+    #[error("private record validator id is not a canonical signing public key")]
+    InvalidValidatorId(#[source] DeserializationError),
     /// The operator and record name different Golden setups.
     #[error("private record Golden setup does not match the operator")]
     SetupContextMismatch,
@@ -480,6 +616,7 @@ mod tests {
     use golden_ehtdh1::DecryptionShare;
     use miden_protocol::Word;
     use miden_protocol::account::auth::AuthScheme;
+    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use miden_protocol::transaction::TransactionInputs;
     use miden_protocol::utils::serde::Deserializable;
     use miden_testing::{Auth, MockChainBuilder};
@@ -494,6 +631,18 @@ mod tests {
 
     fn transaction_id() -> TransactionId {
         TransactionId::from_raw(Word::from([4u32, 5, 6, 7]))
+    }
+
+    fn record_id(transaction_id: TransactionId) -> PrivateRecordId {
+        record_id_for_validator(transaction_id, 7)
+    }
+
+    fn record_id_for_validator(
+        transaction_id: TransactionId,
+        validator_seed: u8,
+    ) -> PrivateRecordId {
+        let signer = SigningKey::read_from_bytes(&[validator_seed; 32]).unwrap();
+        PrivateRecordId::new(transaction_id, &signer.public_key())
     }
 
     fn context() -> PrivateRecordContext {
@@ -521,7 +670,7 @@ mod tests {
         let context = PrivateRecordContext::new(CHAIN_ID, operator_key.key_epoch(), transaction_id);
         let mut rng = ChaCha20Rng::from_seed([seed; 32]);
         PrivateRecordSealer::from_operator_key(operator_key)
-            .seal(&mut rng, context, plaintext)
+            .seal(&mut rng, record_id(transaction_id), context, plaintext)
             .unwrap()
     }
 
@@ -578,8 +727,12 @@ mod tests {
         expected_rng.fill_bytes(&mut expected_nonce);
 
         let mut rng = ChaCha20Rng::from_seed([9; 32]);
-        let first = sealer().seal(&mut rng, context(), plaintext).unwrap();
-        let second = sealer().seal(&mut rng, context(), plaintext).unwrap();
+        let first = sealer()
+            .seal(&mut rng, record_id(transaction_id()), context(), plaintext)
+            .unwrap();
+        let second = sealer()
+            .seal(&mut rng, record_id(transaction_id()), context(), plaintext)
+            .unwrap();
 
         assert_eq!(first.nonce(), &expected_nonce);
         assert_ne!(first.nonce(), second.nonce());
@@ -620,19 +773,40 @@ mod tests {
     #[test]
     fn storage_fields_round_trip() {
         let mut rng = ChaCha20Rng::from_seed([12; 32]);
-        let expected = sealer().seal(&mut rng, context(), b"record").unwrap();
+        let expected = sealer()
+            .seal(&mut rng, record_id(transaction_id()), context(), b"record")
+            .unwrap();
 
         let actual =
             StoredPrivateRecord::from_storage_fields(expected.clone().into_storage_fields())
                 .unwrap();
 
         assert_eq!(actual, expected);
+        assert_eq!(StoredPrivateRecord::read_from_bytes(&expected.to_bytes()).unwrap(), expected);
+    }
+
+    #[test]
+    fn private_record_bundle_rejects_invalid_identity_and_magic() {
+        let mut rng = ChaCha20Rng::from_seed([12; 32]);
+        let record = sealer()
+            .seal(&mut rng, record_id(transaction_id()), context(), b"record")
+            .unwrap();
+        let mut invalid_magic = record.to_bytes();
+        invalid_magic[0] ^= 1;
+        assert!(StoredPrivateRecord::read_from_bytes(&invalid_magic).is_err());
+
+        let mut invalid_validator = record.to_bytes();
+        let validator_offset = PRIVATE_RECORD_BUNDLE_MAGIC.len() + size_of::<u32>() + 3 * 32;
+        invalid_validator[validator_offset..validator_offset + VALIDATOR_ID_BYTES].fill(0);
+        assert!(StoredPrivateRecord::read_from_bytes(&invalid_validator).is_err());
     }
 
     #[test]
     fn storage_fields_reject_invalid_metadata() {
         let mut rng = ChaCha20Rng::from_seed([13; 32]);
-        let record = sealer().seal(&mut rng, context(), b"record").unwrap();
+        let record = sealer()
+            .seal(&mut rng, record_id(transaction_id()), context(), b"record")
+            .unwrap();
 
         let mut wrong_format = record.clone().into_storage_fields();
         wrong_format.format_version = 2;
@@ -663,9 +837,41 @@ mod tests {
             PrivateRecordContext::new(CHAIN_ID, StorageKeyEpoch::new([99; 32]), transaction_id());
 
         assert!(matches!(
-            sealer().seal(&mut rng, wrong_context, b"record"),
+            sealer().seal(&mut rng, record_id(transaction_id()), wrong_context, b"record",),
             Err(PrivateRecordError::KeyEpochMismatch),
         ));
+    }
+
+    #[test]
+    fn independent_writers_with_same_inputs_produce_distinct_ciphertexts() {
+        let operator_keys = operator_keys();
+        let transaction_id = transaction_id();
+        let plaintext = transaction_inputs().to_bytes();
+        let context =
+            PrivateRecordContext::new(CHAIN_ID, operator_keys[0].key_epoch(), transaction_id);
+        let first_record_id = record_id_for_validator(transaction_id, 7);
+        let second_record_id = record_id_for_validator(transaction_id, 8);
+        let mut first_rng = ChaCha20Rng::from_seed([31; 32]);
+        let mut second_rng = ChaCha20Rng::from_seed([32; 32]);
+
+        assert_eq!(operator_keys[0].sealing_key(), operator_keys[1].sealing_key());
+        assert_ne!(first_record_id, second_record_id);
+
+        let first = PrivateRecordSealer::from_operator_key(&operator_keys[0])
+            .seal(&mut first_rng, first_record_id, context, &plaintext)
+            .unwrap();
+        let second = PrivateRecordSealer::from_operator_key(&operator_keys[1])
+            .seal(&mut second_rng, second_record_id, context, &plaintext)
+            .unwrap();
+
+        assert_eq!(first.context(), second.context());
+        assert_eq!(
+            first.decode_encrypted_record_key().unwrap().associated_data(),
+            second.decode_encrypted_record_key().unwrap().associated_data(),
+        );
+        assert_ne!(first.nonce(), second.nonce());
+        assert_ne!(first.encrypted_record(), second.encrypted_record());
+        assert_ne!(first.encrypted_record_key(), second.encrypted_record_key());
     }
 
     #[test]
@@ -734,7 +940,7 @@ mod tests {
         let request = PrivateRecordShareRequest::for_record(&record);
 
         let wrong_transaction = PrivateRecordShareRequest::new(
-            TransactionId::from_raw(Word::from([99u32; 4])),
+            record_id(TransactionId::from_raw(Word::from([99u32; 4]))),
             request.key_epoch(),
             request.context().to_vec(),
         );
@@ -746,11 +952,11 @@ mod tests {
                 &record,
                 &allow_all,
             ),
-            Err(PrivateRecordError::TransactionIdMismatch),
+            Err(PrivateRecordError::RecordIdMismatch),
         ));
 
         let wrong_epoch = PrivateRecordShareRequest::new(
-            request.transaction_id(),
+            request.record_id(),
             StorageKeyEpoch::new([99; 32]),
             request.context().to_vec(),
         );
@@ -767,7 +973,7 @@ mod tests {
         let mut wrong_context_bytes = request.context().to_vec();
         wrong_context_bytes[0] ^= 1;
         let wrong_context = PrivateRecordShareRequest::new(
-            request.transaction_id(),
+            request.record_id(),
             request.key_epoch(),
             wrong_context_bytes,
         );

@@ -6,12 +6,13 @@ sidebar_position: 1
 # Local Network Development
 
 Use this guide to start a disposable Miden network for local development and testing. The provided Docker Compose setup
-includes a sequencer, three validators, a transaction prover, a network transaction builder, monitoring, and trace
-collection, so you can develop against a working environment without wiring the network services manually.
+includes a sequencer, three validators, a transaction prover, a network transaction builder, and optional block
+explorer, monitoring, and trace services, so you can develop against a working environment without wiring the network
+services manually.
 
-The Compose model lives in `docker-compose.yml` and uses profiles for optional telemetry and monitoring services. The
-guide uses `make` targets as shorthand for the underlying Docker image builds and Docker Compose commands; check the
-`Makefile` when you need the exact command.
+The Compose model lives in `docker-compose.yml` and uses profiles for optional explorer, telemetry, and monitoring
+services. The guide uses `make` targets as shorthand for the underlying Docker image builds and Docker Compose commands;
+check the `Makefile` when you need the exact command.
 
 This is not a production deployment guide and it is not the path for independent full node runners on an existing
 network.
@@ -48,11 +49,12 @@ docker compose -f "${COMPOSE_APPLICATION}" down -v
 ```
 
 The application includes an OpenTelemetry Collector that receives traces from the Miden services. Enable the optional
-Tempo, Grafana, and network monitor services with Compose profiles:
+Midenscan explorer, Tempo, Grafana, and network monitor services with Compose profiles:
 
 ```bash
 docker compose \
   -f "${COMPOSE_APPLICATION}" \
+  --profile explorer \
   --profile telemetry \
   --profile monitor \
   up -d
@@ -102,13 +104,28 @@ After `make local-network-delete`, run `make local-network-up` to bootstrap a fr
 
 Published ports are bound to `localhost`; the following services are available:
 
-| Service         | URL                      | Purpose                                          |
-| --------------- | ------------------------ | ------------------------------------------------ |
-| RPC API         | `http://localhost:57291` | Submit transactions and query local chain state. |
-| Grafana         | `http://localhost:3000`  | Inspect dashboards and traces.                   |
-| Network monitor | `http://localhost:3001`  | View local network health.                       |
-| Tempo HTTP API  | `http://localhost:3200`  | Query stored trace data.                         |
-| Tempo OTLP gRPC | `http://localhost:4317`  | Receive OpenTelemetry traces from services.      |
+| Service          | URL                             | Purpose                                          |
+| ---------------- | ------------------------------- | ------------------------------------------------ |
+| RPC API          | `http://localhost:57291`        | Submit transactions and query local chain state. |
+| Grafana          | `http://localhost:3000`         | Inspect dashboards and traces.                   |
+| Network monitor  | `http://localhost:3001`         | View local network health.                       |
+| Block explorer   | `http://localhost:8080`         | Browse locally indexed network data.             |
+| Explorer GraphQL | `http://localhost:8199/graphql` | Query the explorer backend.                      |
+| Tempo HTTP API   | `http://localhost:3200`         | Query stored trace data.                         |
+| Tempo OTLP gRPC  | `http://localhost:4317`         | Receive OpenTelemetry traces from services.      |
+
+## Block Explorer
+
+Enable the `explorer` profile to run the Gateway FM Midenscan frontend, backend, indexer, database, and database
+migration:
+
+```bash
+docker compose --profile explorer up -d
+```
+
+The indexer reads from the local sequencer and persists its state in the `explorer-data` volume. The frontend is
+available at `http://localhost:8080`, with its GraphQL API at `http://localhost:8199/graphql`. These third-party
+components are intended for local development and are not part of the Miden node implementation.
 
 ## Monitoring and Traces
 

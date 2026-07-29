@@ -1,0 +1,10 @@
+# Midenscan is a third-party block explorer built and published by Gateway FM.
+include:
+  - explorer/database.yml
+  - explorer/migration.yml
+  - explorer/indexer.yml
+  - explorer/backend.yml
+  - explorer/frontend.yml
+
+volumes:
+  explorer-data:

@@ -12,10 +12,9 @@ use diesel::{
     SqliteConnection,
 };
 use miden_crypto::Word;
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
 use miden_node_utils::tracing::miden_instrument;
-use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::block::{BlockHeader, BlockNumber, BlockSignatures};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 
 use super::DatabaseError;
@@ -63,22 +62,22 @@ pub(crate) fn select_block_header_by_block_num(
     row.map(std::convert::TryInto::try_into).transpose()
 }
 
-/// Select a [`BlockHeader`] and its [`Signature`] from the DB by its `block_num` using the given
-/// [`SqliteConnection`].
+/// Select a [`BlockHeader`] and its [`BlockSignatures`] from the DB by its `block_num` using the
+/// given [`SqliteConnection`].
 ///
 /// # Returns
 ///
-/// The block header with the given block height and its validator signature is returned.
+/// The block header with the given block height and its validator signatures is returned.
 ///
 /// ```sql
 /// SELECT block_num, block_header, signature
 /// FROM block_headers
 /// WHERE block_num = ?1
 /// ```
-pub(crate) fn select_block_header_and_signature_by_block_num(
+pub(crate) fn select_block_header_and_signatures_by_block_num(
     conn: &mut SqliteConnection,
     block_number: BlockNumber,
-) -> Result<Option<(BlockHeader, Signature)>, DatabaseError> {
+) -> Result<Option<(BlockHeader, BlockSignatures)>, DatabaseError> {
     let sel = SelectDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select());
     let row = sel
         .filter(schema::block_headers::block_num.eq(block_number.to_raw_sql()))
@@ -191,12 +190,12 @@ impl TryInto<BlockHeader> for BlockHeaderRawRow {
     }
 }
 
-impl TryInto<(BlockHeader, Signature)> for BlockHeaderRawRow {
+impl TryInto<(BlockHeader, BlockSignatures)> for BlockHeaderRawRow {
     type Error = DatabaseError;
-    fn try_into(self) -> Result<(BlockHeader, Signature), Self::Error> {
+    fn try_into(self) -> Result<(BlockHeader, BlockSignatures), Self::Error> {
         let block_header = BlockHeader::read_from_bytes(&self.block_header[..])?;
-        let signature = Signature::read_from_bytes(&self.signature[..])?;
-        Ok((block_header, signature))
+        let signatures = BlockSignatures::read_from_bytes(&self.signature[..])?;
+        Ok((block_header, signatures))
     }
 }
 
@@ -228,12 +227,12 @@ pub struct BlockHeaderInsert {
 pub(crate) fn insert_block_header(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,
-    signature: &Signature,
+    signatures: &BlockSignatures,
 ) -> Result<usize, DatabaseError> {
     let row = BlockHeaderInsert {
         block_num: block_header.block_num().to_raw_sql(),
         block_header: block_header.to_bytes(),
-        signature: signature.to_bytes(),
+        signature: signatures.to_bytes(),
         commitment: BlockHeaderCommitment::new(block_header).to_raw_sql(),
     };
     let count = diesel::insert_into(schema::block_headers::table).values(&[row]).execute(conn)?;

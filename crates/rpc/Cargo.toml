@@ -29,6 +29,7 @@ miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }
 miden-protocol            = { default-features = true, workspace = true }
 miden-tx-batch            = { workspace = true }
+rand                      = { workspace = true }
 semver                    = { workspace = true }
 thiserror                 = { workspace = true }
 tokio                     = { features = ["macros", "net", "rt-multi-thread", "time"], workspace = true }

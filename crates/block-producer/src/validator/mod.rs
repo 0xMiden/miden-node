@@ -7,7 +7,7 @@ use miden_node_proto::{decode, generated as proto};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::block::ProposedBlock;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::utils::serde::Serializable;
 use thiserror::Error;
 use tracing::info;
@@ -26,39 +26,60 @@ pub enum ValidatorError {
     Conversion(#[from] ConversionError),
 }
 
+// SIGN BLOCK RESPONSE
+// ================================================================================================
+
+/// A single validator's response to a `sign_block` request.
+#[derive(Debug, Clone)]
+pub struct SignBlockResponse {
+    pub signature: Signature,
+    pub block_commitment: Word,
+    pub public_key: PublicKey,
+}
+
 // VALIDATOR CLIENT
 // ================================================================================================
 
-/// Interface to the validator's gRPC API.
+/// Interface to the block producer's fan-out over all configured validators' gRPC APIs.
 ///
-/// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
+/// Essentially just a thin wrapper around the generated gRPC clients which improves type safety.
 #[derive(Clone, Debug)]
 pub struct BlockProducerValidatorClient {
-    client: ValidatorClient,
+    clients: Vec<ValidatorClient>,
 }
 
 impl BlockProducerValidatorClient {
-    /// Creates a new validator client with a lazy connection.
+    /// Creates a new validator client with lazy connections to every configured validator.
     ///
     /// `timeout` bounds each request (notably `sign_block`) so that a silently dropped validator
     /// connection surfaces as a fast, retryable error instead of hanging on the OS-level TCP
     /// timeout and halting block production.
-    pub fn new(validator_url: Url, timeout: Duration) -> anyhow::Result<Self> {
-        info!(target: LOG_TARGET, validator_endpoint = %validator_url, "Initializing validator client");
+    pub fn new(validator_urls: Vec<Url>, timeout: Duration) -> anyhow::Result<Self> {
+        let clients = validator_urls
+            .into_iter()
+            .map(|validator_url| {
+                info!(target: LOG_TARGET, validator_endpoint = %validator_url, "Initializing validator client");
 
-        let validator = Builder::new(validator_url)
-            .with_tls()?
-            .with_timeout(timeout)
-            .without_metadata_version()
-            .without_metadata_genesis()
-            .with_otel_context_injection()
-            .connect_lazy::<ValidatorClient>();
+                Ok(Builder::new(validator_url)
+                    .with_tls()?
+                    .with_timeout(timeout)
+                    .without_metadata_version()
+                    .without_metadata_genesis()
+                    .with_otel_context_injection()
+                    .connect_lazy::<ValidatorClient>())
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
-        Ok(Self { client: validator })
+        Ok(Self { clients })
     }
 
-    /// Signs the proposed block via the validator, returning the signature and the block commitment
-    /// that the validator reports it signed (for cross-checking against the locally built block).
+    /// Signs the proposed block via every validator concurrently, returning each validator's
+    /// signature, the block commitment it reports having signed (for cross-checking against the
+    /// locally built block), and its public key (so the caller can place the signature at the
+    /// correct position in the block's signature set).
+    ///
+    /// Fails if any validator fails to respond, since every validator in the parent's set must
+    /// sign for the block to reach quorum.
     #[miden_instrument(
         target = COMPONENT,
         name = "validator.client.validate_block",
@@ -68,19 +89,34 @@ impl BlockProducerValidatorClient {
     pub async fn sign_block(
         &self,
         proposed_block: ProposedBlock,
-    ) -> Result<(Signature, Word), ValidatorError> {
-        // Send request and receive response.
+    ) -> Result<Vec<SignBlockResponse>, ValidatorError> {
         let message = proto::blockchain::ProposedBlock {
             proposed_block: proposed_block.to_bytes(),
         };
-        let request = tonic::Request::new(message);
-        let response = self.client.clone().sign_block(request).await?.into_inner();
 
-        // Deserialize the signature and the signed block commitment.
+        let responses = futures::future::try_join_all(self.clients.iter().map(|client| {
+            let mut client = client.clone();
+            let message = message.clone();
+            async move {
+                let request = tonic::Request::new(message);
+                let response = client.sign_block(request).await?.into_inner();
+                Self::decode_response(response)
+            }
+        }))
+        .await?;
+
+        Ok(responses)
+    }
+
+    /// Decodes a single validator's `sign_block` response.
+    fn decode_response(
+        response: proto::blockchain::SignBlockResponse,
+    ) -> Result<SignBlockResponse, ValidatorError> {
         let decoder = response.decoder();
         let signature: Signature = decode!(decoder, response.signature)?;
         let block_commitment = decode!(decoder, response.block_commitment)?;
+        let public_key = decode!(decoder, response.public_key)?;
 
-        Ok((signature, block_commitment))
+        Ok(SignBlockResponse { signature, block_commitment, public_key })
     }
 }

@@ -14,21 +14,34 @@ NODE_BINARY="${MIDEN_NODE_BIN:-./target/debug/miden-node}"
 VALIDATOR_BINARY="${MIDEN_VALIDATOR_BIN:-./target/debug/miden-validator}"
 NTX_BUILDER_BINARY="${MIDEN_NTX_BUILDER_BIN:-./target/debug/miden-ntx-builder}"
 REMOTE_PROVER_BINARY="${MIDEN_REMOTE_PROVER_BIN:-./target/debug/miden-remote-prover}"
+# Runs two validators, hard-coded for local development. Genesis commits both validators' keys
+# but is not signed; both must sign every block after genesis, and the sequencer fans block
+# signing and transaction submission out to both.
 KMS_KEY_ID="${KMS_KEY_ID:-}"
-if [[ -n "$KMS_KEY_ID" ]]; then
+KMS_KEY_ID_2="${KMS_KEY_ID_2:-}"
+if [[ -n "$KMS_KEY_ID" || -n "$KMS_KEY_ID_2" ]]; then
+    KMS_KEY_ID="${KMS_KEY_ID:?error: KMS_KEY_ID and KMS_KEY_ID_2 must both be set to run two KMS-backed validators}"
+    KMS_KEY_ID_2="${KMS_KEY_ID_2:?error: KMS_KEY_ID and KMS_KEY_ID_2 must both be set to run two KMS-backed validators}"
     AWS_REGION="${AWS_REGION:?error: AWS_REGION environment variable must be set when KMS_KEY_ID is set}"
     export AWS_REGION
 fi
+# Insecure, hard-coded local dev keys used when KMS_KEY_ID is not set. Must be distinct: the
+# genesis validator set rejects duplicate keys.
+VALIDATOR_1_KEY_HEX="0101010101010101010101010101010101010101010101010101010101010101"
+VALIDATOR_2_KEY_HEX="0202020202020202020202020202020202020202020202020202020202020202"
 
 GENESIS_CONFIG="crates/store/src/genesis/config/samples/01-simple.toml"
 NODE_DIR="/tmp/node"
 FULL_NODE_1_DIR="/tmp/full-node-1"
 FULL_NODE_2_DIR="/tmp/full-node-2"
-VALIDATOR_DIR="/tmp/validator"
+VALIDATOR_1_DIR="/tmp/validator-1"
+VALIDATOR_2_DIR="/tmp/validator-2"
 NTX_BUILDER_DIR="/tmp/ntx-builder"
+GENESIS_DIR="/tmp/genesis"
 ACCOUNTS_DIR="/tmp/accounts"
 
-VALIDATOR_PORT=50101
+VALIDATOR_1_PORT=50101
+VALIDATOR_2_PORT=50102
 SEQUENCER_INTERNAL_PORT=50201
 NTX_BUILDER_PORT=50301
 RPC_PORT=57291
@@ -40,16 +53,18 @@ PIDS=()
 
 cleanup() {
     echo "Shutting down..."
-    for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
-    done
-    wait "${PIDS[@]}" 2>/dev/null || true
+    if ((${#PIDS[@]})); then
+        for pid in "${PIDS[@]}"; do
+            kill "$pid" 2>/dev/null || true
+        done
+        wait "${PIDS[@]}" 2>/dev/null || true
+    fi
     echo "All components stopped."
 }
 trap cleanup EXIT INT TERM
 
 kill_ports() {
-    local ports=("$VALIDATOR_PORT" "$SEQUENCER_INTERNAL_PORT" "$NTX_BUILDER_PORT" "$RPC_PORT" "$REMOTE_PROVER_PORT")
+    local ports=("$VALIDATOR_1_PORT" "$VALIDATOR_2_PORT" "$SEQUENCER_INTERNAL_PORT" "$NTX_BUILDER_PORT" "$RPC_PORT" "$REMOTE_PROVER_PORT")
 
     if [[ "$ENABLE_FULL_NODES" == "true" ]]; then
         ports+=("$FULL_NODE_1_RPC_PORT" "$FULL_NODE_2_RPC_PORT")
@@ -75,7 +90,7 @@ bootstrap_node_data_dir() {
     echo "Bootstrapping $label..."
     "$NODE_BINARY" bootstrap \
         --data-directory "$data_dir" \
-        --file "$VALIDATOR_DIR/genesis.dat"
+        --genesis "$GENESIS_DIR/genesis.dat"
 }
 
 bootstrap_ntx_builder() {
@@ -83,7 +98,7 @@ bootstrap_ntx_builder() {
 
     "$NTX_BUILDER_BINARY" bootstrap \
         --data-directory "$NTX_BUILDER_DIR" \
-        --file "$VALIDATOR_DIR/genesis.dat"
+        --genesis "$GENESIS_DIR/genesis.dat"
 }
 
 node_resource_attributes() {
@@ -105,20 +120,41 @@ kill_ports
 if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
     echo "=== Bootstrapping ==="
 
-    rm -rf "$VALIDATOR_DIR" "$ACCOUNTS_DIR" "$NODE_DIR" "$FULL_NODE_1_DIR" "$FULL_NODE_2_DIR" "$NTX_BUILDER_DIR"
+    rm -rf "$VALIDATOR_1_DIR" "$VALIDATOR_2_DIR" "$GENESIS_DIR" "$ACCOUNTS_DIR" \
+        "$NODE_DIR" "$FULL_NODE_1_DIR" "$FULL_NODE_2_DIR" "$NTX_BUILDER_DIR"
 
-    echo "Bootstrapping validator..."
-    KMS_BOOTSTRAP_ARGS=()
+    echo "Building the unsigned genesis block (commits both validators' public keys)..."
     if [[ -n "$KMS_KEY_ID" ]]; then
-        KMS_BOOTSTRAP_ARGS+=(--signing-key.kms-id "$KMS_KEY_ID")
+        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.kms-id "$KMS_KEY_ID")
+        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.kms-id "$KMS_KEY_ID_2")
+    else
+        VALIDATOR_1_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.hex "$VALIDATOR_1_KEY_HEX")
+        VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.hex "$VALIDATOR_2_KEY_HEX")
     fi
 
-    "$VALIDATOR_BINARY" bootstrap \
-        --data-directory "$VALIDATOR_DIR" \
-        --genesis-block-directory "$VALIDATOR_DIR" \
+    # The validator set is part of the genesis config. Prepend the top-level `validators` key to
+    # the sample config (top-level keys must precede its table sections). The sample references no
+    # account files, so resolving relative paths against /tmp is safe.
+    BOOTSTRAP_GENESIS_CONFIG="/tmp/genesis-config.toml"
+    {
+        printf 'validators = ["%s", "%s"]\n' "$VALIDATOR_1_PUBKEY" "$VALIDATOR_2_PUBKEY"
+        cat "$GENESIS_CONFIG"
+    } > "$BOOTSTRAP_GENESIS_CONFIG"
+
+    "$VALIDATOR_BINARY" genesis \
+        --genesis-block-directory "$GENESIS_DIR" \
         --accounts-directory "$ACCOUNTS_DIR" \
-        --genesis-config-file "$GENESIS_CONFIG" \
-        "${KMS_BOOTSTRAP_ARGS[@]+"${KMS_BOOTSTRAP_ARGS[@]}"}"
+        --config "$BOOTSTRAP_GENESIS_CONFIG"
+
+    echo "Bootstrapping validator 1 (seeds from the genesis block)..."
+    "$VALIDATOR_BINARY" bootstrap \
+        --data-directory "$VALIDATOR_1_DIR" \
+        --genesis "$GENESIS_DIR/genesis.dat"
+
+    echo "Bootstrapping validator 2 (seeds from the genesis block)..."
+    "$VALIDATOR_BINARY" bootstrap \
+        --data-directory "$VALIDATOR_2_DIR" \
+        --genesis "$GENESIS_DIR/genesis.dat"
 
     bootstrap_node_data_dir "sequencer node" "$NODE_DIR"
     bootstrap_ntx_builder
@@ -135,19 +171,31 @@ fi
 
 echo "=== Starting components ==="
 
-KMS_START_ARGS=()
+KMS_START_ARGS_1=()
+KMS_START_ARGS_2=()
 if [[ -n "$KMS_KEY_ID" ]]; then
-    KMS_START_ARGS+=(--signing-key.kms-id "$KMS_KEY_ID")
+    KMS_START_ARGS_1+=(--signing-key.kms-id "$KMS_KEY_ID")
+    KMS_START_ARGS_2+=(--signing-key.kms-id "$KMS_KEY_ID_2")
+else
+    KMS_START_ARGS_1+=(--signing-key.hex "$VALIDATOR_1_KEY_HEX")
+    KMS_START_ARGS_2+=(--signing-key.hex "$VALIDATOR_2_KEY_HEX")
 fi
 
-echo "Starting validator..."
-"$VALIDATOR_BINARY" start --listen "0.0.0.0:$VALIDATOR_PORT" \
-    --data-directory "$VALIDATOR_DIR" \
+echo "Starting validator 1..."
+"$VALIDATOR_BINARY" start --listen "0.0.0.0:$VALIDATOR_1_PORT" \
+    --data-directory "$VALIDATOR_1_DIR" \
     $EXTRA_ARGS \
-    "${KMS_START_ARGS[@]+"${KMS_START_ARGS[@]}"}" &
+    "${KMS_START_ARGS_1[@]}" &
 PIDS+=($!)
 
-# Give the validator a moment to bind before the sequencer starts producing blocks.
+echo "Starting validator 2..."
+"$VALIDATOR_BINARY" start --listen "0.0.0.0:$VALIDATOR_2_PORT" \
+    --data-directory "$VALIDATOR_2_DIR" \
+    $EXTRA_ARGS \
+    "${KMS_START_ARGS_2[@]}" &
+PIDS+=($!)
+
+# Give the validators a moment to bind before the sequencer starts producing blocks.
 sleep 2
 
 echo "Starting sequencer..."
@@ -156,7 +204,8 @@ OTEL_RESOURCE_ATTRIBUTES="$(node_resource_attributes sequencer)" \
     --rpc.listen "0.0.0.0:$RPC_PORT" \
     --rpc.network-tx-auth-header-value "$NETWORK_TX_AUTH" \
     --data-directory "$NODE_DIR" \
-    --validator.url "http://127.0.0.1:$VALIDATOR_PORT" \
+    --validator.url "http://127.0.0.1:$VALIDATOR_1_PORT" \
+    --validator.url "http://127.0.0.1:$VALIDATOR_2_PORT" \
     --ntx-builder.url "http://127.0.0.1:$NTX_BUILDER_PORT" \
     --internal.listen "0.0.0.0:$SEQUENCER_INTERNAL_PORT" \
     $EXTRA_ARGS &
@@ -188,7 +237,8 @@ if [[ "$ENABLE_FULL_NODES" == "true" ]]; then
         --rpc.listen "0.0.0.0:$FULL_NODE_1_RPC_PORT" \
         --sync.block-source.url "http://127.0.0.1:$RPC_PORT" \
         --data-directory "$FULL_NODE_1_DIR" \
-        --validator.url "http://127.0.0.1:$VALIDATOR_PORT" \
+        --validator.url "http://127.0.0.1:$VALIDATOR_1_PORT" \
+        --validator.url "http://127.0.0.1:$VALIDATOR_2_PORT" \
         --sequencer.internal.url "http://127.0.0.1:$SEQUENCER_INTERNAL_PORT" \
         $EXTRA_ARGS &
     PIDS+=($!)

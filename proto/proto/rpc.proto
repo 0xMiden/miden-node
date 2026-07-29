@@ -564,8 +564,9 @@ message SyncChainMmrResponse {
     // Block header for the sync target.
     blockchain.BlockHeader block_header = 3;
 
-    // Validator signature for the sync target.
-    blockchain.BlockSignature block_signature = 4;
+    // Validator signatures for the sync target, ordered positionally with respect to the
+    // validator set committed to by the parent block's header.
+    repeated blockchain.BlockSignature block_signatures = 4;
 }
 
 // SYNC ACCOUNT STORAGE MAP

@@ -39,21 +39,24 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
             forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
         }
 
-        // Nodes connected to a validator ask for it directly, otherwise the request is forwarded.
-        match &self.mode {
-            RpcMode::Sequencer { validator, .. }
-            | RpcMode::FullNode { validator: Some(validator), .. } => validator
-                .as_ref()
-                .clone()
-                .get_transaction_encryption_key(forwarded_request)
-                .await
-                .map(tonic::Response::into_inner),
-            RpcMode::FullNode { source_rpc, validator: None, .. } => source_rpc
-                .as_ref()
-                .clone()
-                .get_transaction_encryption_key(forwarded_request)
-                .await
-                .map(tonic::Response::into_inner),
-        }
+        // Nodes connected to validators ask one directly, otherwise the request is forwarded. The
+        // encryption key is shared by the whole validator set, so any single validator serves.
+        let validator = match &self.mode {
+            RpcMode::Sequencer { validators, .. } => validators.random(),
+            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => pre_auth.validators().random(),
+            RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
+                return source_rpc
+                    .as_ref()
+                    .clone()
+                    .get_transaction_encryption_key(forwarded_request)
+                    .await
+                    .map(tonic::Response::into_inner);
+            },
+        };
+        validator
+            .clone()
+            .get_transaction_encryption_key(forwarded_request)
+            .await
+            .map(tonic::Response::into_inner)
     }
 }

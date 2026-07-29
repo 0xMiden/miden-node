@@ -289,9 +289,7 @@ impl ValidatorCommand {
             Self::IssuePrivateRecordShare(options) => {
                 issue_private_record_share::issue_from_options(options)
             },
-            Self::ExportPrivateRecord(options) => {
-                export_private_record::export_from_options(options).await
-            },
+            Self::ExportPrivateRecord(options) => export_private_record::export(options).await,
             Self::Start {
                 listen,
                 grpc_options,
@@ -652,12 +650,12 @@ mod tests {
         encoded_validator_id: &str,
         output: &Path,
     ) {
-        export_private_record::export(
-            data_directory.to_path_buf(),
-            encoded_transaction_id,
-            encoded_validator_id,
-            output,
-        )
+        export_private_record::export(PrivateRecordExportOptions {
+            data_directory: data_directory.to_path_buf(),
+            transaction_id: encoded_transaction_id.to_owned(),
+            validator_id: encoded_validator_id.to_owned(),
+            output: output.to_path_buf(),
+        })
         .await
         .unwrap();
     }
@@ -885,12 +883,12 @@ mod tests {
         assert_issue_error(&target_file, &first_output, &wrong_setup, "setup does not match");
 
         let missing_validator_id = hex::encode(validator_signers[0].public_key().to_bytes());
-        let error = export_private_record::export(
-            directory.path().to_path_buf(),
-            &encoded_transaction_id,
-            &missing_validator_id,
-            &target_file,
-        )
+        let error = export_private_record::export(PrivateRecordExportOptions {
+            data_directory: directory.path().to_path_buf(),
+            transaction_id: encoded_transaction_id,
+            validator_id: missing_validator_id,
+            output: target_file,
+        })
         .await;
         assert!(format!("{:#}", error.unwrap_err()).contains("was not found"));
     }

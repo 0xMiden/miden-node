@@ -65,26 +65,4 @@ its own secret share. The validator will not start if any storage key option is 
 After validation, it stores only the transaction ID and the Golden threshold record. It does not store the client
 ciphertext.
 
-## Issue a Demo Decryption Share
-
-The Phase 2 demo can issue one validator's decryption share through a local admin command:
-
-```bash
-miden-validator issue-private-record-share \
-  --data-directory validator-data \
-  --transaction-id <32-byte-hex-transaction-id> \
-  --output share.bin \
-  --storage-key.epoch <32-byte-hex-epoch> \
-  --storage-key.setup-context <setup-context-file> \
-  --storage-key.public-key-set <public-key-set-file> \
-  --storage-key.secret-share <secret-share-file>
-```
-
-The output file contains canonical Golden wire bytes. To combine shares, run each participating validator key against
-the same data directory and transaction ID. Shares issued for independently encrypted copies of the same transaction
-cannot be combined.
-
-This command relies on local filesystem access as its authorization boundary. It is for the demo only and does not
-provide release policy, remote access, or an audit log.
-
 Use `miden-validator start --help` for the complete current option list.

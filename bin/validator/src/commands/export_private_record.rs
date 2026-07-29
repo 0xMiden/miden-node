@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-
 use anyhow::Context;
 use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -8,24 +6,14 @@ use miden_validator::{DataDirectory, PrivateRecordId};
 use super::PrivateRecordExportOptions;
 
 /// Exports one validator-qualified private-record bundle.
-pub(super) async fn export_from_options(options: PrivateRecordExportOptions) -> anyhow::Result<()> {
+pub(super) async fn export(options: PrivateRecordExportOptions) -> anyhow::Result<()> {
     let PrivateRecordExportOptions {
         data_directory,
         transaction_id,
         validator_id,
         output,
     } = options;
-    export(data_directory, &transaction_id, &validator_id, &output).await
-}
-
-/// Loads and writes the record named by one transaction and validator.
-pub(super) async fn export(
-    data_directory: PathBuf,
-    encoded_transaction_id: &str,
-    encoded_validator_id: &str,
-    output: &Path,
-) -> anyhow::Result<()> {
-    let record_id = parse_record_id(encoded_transaction_id, encoded_validator_id)?;
+    let record_id = parse_record_id(&transaction_id, &validator_id)?;
     let data_directory =
         DataDirectory::load(data_directory).context("failed to load validator data directory")?;
     let database = miden_validator::db::load(data_directory.database_path())
@@ -40,12 +28,10 @@ pub(super) async fn export(
         .context("failed to load private record")?
         .filter(|record| record.record_id() == record_id)
         .with_context(|| {
-            format!(
-                "private record ({encoded_transaction_id}, {encoded_validator_id}) was not found"
-            )
+            format!("private record ({transaction_id}, {validator_id}) was not found")
         })?;
 
-    fs_err::write(output, record.to_bytes())
+    fs_err::write(&output, record.to_bytes())
         .with_context(|| format!("failed to write private record bundle to {}", output.display()))
 }
 

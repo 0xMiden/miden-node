@@ -151,7 +151,7 @@ pub fn insert_validated_private_transaction(
 }
 
 /// Loads one encrypted private record by transaction ID.
-#[miden_instrument(target = COMPONENT, skip_all, fields(%transaction_id), err)]
+#[miden_instrument(target = COMPONENT, skip_all, fields(transaction.id = %transaction_id), err)]
 pub fn load_private_record(
     tx: &ReadTx<'_>,
     transaction_id: TransactionId,
@@ -163,7 +163,7 @@ pub fn load_private_record(
 }
 
 /// Loads encrypted private records for one storage key epoch.
-#[miden_instrument(target = COMPONENT, skip_all, fields(?key_epoch), err)]
+#[miden_instrument(target = COMPONENT, skip_all, err)]
 pub fn load_private_records_by_key_epoch(
     tx: &ReadTx<'_>,
     key_epoch: StorageKeyEpoch,
@@ -176,7 +176,7 @@ pub fn load_private_records_by_key_epoch(
 }
 
 /// Loads encrypted private records for one Golden setup context.
-#[miden_instrument(target = COMPONENT, skip_all, fields(?setup_context_id), err)]
+#[miden_instrument(target = COMPONENT, skip_all, err)]
 pub fn load_private_records_by_setup_context(
     tx: &ReadTx<'_>,
     setup_context_id: [u8; 32],

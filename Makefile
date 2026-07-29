@@ -9,6 +9,8 @@ help:
 WARNINGS=RUSTDOCFLAGS="-D warnings"
 STRESS_TEST_DATA_DIR ?= stress-test-store-$(shell date +%Y%m%d-%H%M%S)
 COMPOSE_PROFILE_ARGS = --profile telemetry --profile monitor
+COMPOSE_OVERRIDE_FILE ?=
+COMPOSE_OVERRIDE_ARGS = $(if $(COMPOSE_OVERRIDE_FILE),-f docker-compose.yml -f $(COMPOSE_OVERRIDE_FILE),)
 DOCKER_COMMAND ?= docker
 DOCKER_PLATFORM ?=
 DOCKER_PLATFORM_ARG = $(if $(DOCKER_PLATFORM),--platform $(DOCKER_PLATFORM),)
@@ -182,19 +184,19 @@ local-network-build: docker-build ## Builds Docker images used by the local deve
 
 .PHONY: local-network-up
 local-network-up: ## Starts the local development network
-	$(DOCKER_COMMAND) compose $(COMPOSE_PROFILE_ARGS) up -d
+	$(DOCKER_COMMAND) compose $(COMPOSE_OVERRIDE_ARGS) $(COMPOSE_PROFILE_ARGS) up -d
 
 .PHONY: local-network-down
 local-network-down: ## Stops the local development network, preserving volumes
-	$(DOCKER_COMMAND) compose $(COMPOSE_PROFILE_ARGS) down --remove-orphans
+	$(DOCKER_COMMAND) compose $(COMPOSE_OVERRIDE_ARGS) $(COMPOSE_PROFILE_ARGS) down --remove-orphans
 
 .PHONY: local-network-delete
 local-network-delete: ## Stops the local development network and deletes volumes
-	$(DOCKER_COMMAND) compose $(COMPOSE_PROFILE_ARGS) down -v --remove-orphans
+	$(DOCKER_COMMAND) compose $(COMPOSE_OVERRIDE_ARGS) $(COMPOSE_PROFILE_ARGS) down -v --remove-orphans
 
 .PHONY: local-network-logs
 local-network-logs: ## Follows logs for the local development network
-	$(DOCKER_COMMAND) compose $(COMPOSE_PROFILE_ARGS) logs -f
+	$(DOCKER_COMMAND) compose $(COMPOSE_OVERRIDE_ARGS) $(COMPOSE_PROFILE_ARGS) logs -f
 
 .PHONY: docker-build
 docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover docker-build-monitor ## Builds all Docker images

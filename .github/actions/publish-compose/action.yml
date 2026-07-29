@@ -1,7 +1,7 @@
 # Publishes a Compose model that uses local includes as one portable OCI
 # application. OCI Compose artifacts cannot contain local includes, so the
-# action flattens the model before applying the publication-only override while
-# leaving interpolation and project resource naming deferred to the consumer.
+# action flattens the model while leaving interpolation and project resource
+# naming deferred to the consumer.
 name: "Publish Compose application"
 description: "Flatten local Compose includes and publish the resulting OCI application"
 
@@ -21,10 +21,6 @@ inputs:
   tag:
     description: "OCI package tag"
     required: true
-  publish-override-file:
-    description: "Path to the portability override applied before publishing"
-    required: false
-    default: "compose/publish.yml"
 
 runs:
   using: "composite"
@@ -34,7 +30,6 @@ runs:
       env:
         COMPOSE_FILE: ${{ inputs.compose-file }}
         MODE: ${{ inputs.mode }}
-        PUBLISH_OVERRIDE_FILE: ${{ inputs.publish-override-file }}
       run: |
         set -euo pipefail
 
@@ -51,29 +46,15 @@ runs:
           exit 1
         fi
 
-        if [[ ! -f "${PUBLISH_OVERRIDE_FILE}" ]]; then
-          echo "::error::Compose publish override does not exist: ${PUBLISH_OVERRIDE_FILE}"
-          exit 1
-        fi
-
     - name: Build publishable Compose model
       shell: bash
       env:
         COMPOSE_FILE: ${{ inputs.compose-file }}
-        PUBLISH_OVERRIDE_FILE: ${{ inputs.publish-override-file }}
       run: |
         set -euo pipefail
 
         docker compose \
           -f "${COMPOSE_FILE}" \
-          --profile "*" \
-          config \
-          --no-interpolate \
-          --no-normalize \
-          --output "${RUNNER_TEMP}/compose.flattened.yml"
-        docker compose \
-          -f "${RUNNER_TEMP}/compose.flattened.yml" \
-          -f "${PUBLISH_OVERRIDE_FILE}" \
           --profile "*" \
           config \
           --no-interpolate \

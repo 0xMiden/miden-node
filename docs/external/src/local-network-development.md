@@ -6,8 +6,8 @@ sidebar_position: 1
 # Local Network Development
 
 Use this guide to start a disposable Miden network for local development and testing. The provided Docker Compose setup
-includes the local network, monitoring, and trace collection, so you can develop against a working environment without
-wiring the network services manually.
+includes a sequencer, three validators, a transaction prover, a network transaction builder, monitoring, and trace
+collection, so you can develop against a working environment without wiring the network services manually.
 
 The Compose model lives in `docker-compose.yml` and uses profiles for optional telemetry and monitoring services. The
 guide uses `make` targets as shorthand for the underlying Docker image builds and Docker Compose commands; check the
@@ -66,7 +66,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4317 \
 docker compose -f "${COMPOSE_APPLICATION}" up -d
 ```
 
-A repository checkout is still required to bind mount a custom genesis configuration.
+The genesis configuration can be replaced with the same Compose override used for a repository checkout.
 
 ## Local Network Commands
 
@@ -133,15 +133,33 @@ MIDEN_REMOTE_PROVER_URL=http://<prover-host>:50051 make local-network-up
 
 ## Genesis Config Override
 
-By default, the local network bootstraps from the validator's built-in genesis configuration. To bootstrap from a custom
-genesis configuration file, set `MIDEN_GENESIS_CONFIG_FILE` to the host path of the TOML file:
+By default, the local network bootstraps from the bundled `genesis` Compose config in `compose/bootstrap.yml`. It
+contains the public signing keys for the three validator services. Their corresponding private keys are insecure
+defaults defined in `compose/validator.yml` and must never be used outside local development.
 
-```bash
-MIDEN_GENESIS_CONFIG_FILE=/absolute/path/to/genesis.toml make local-network-up
+To replace it, create a Compose override file:
+
+```yaml title="genesis.override.yml"
+configs:
+  genesis: !override
+    file: /absolute/path/to/genesis.toml
 ```
 
-The override bind mounts the host file into the bootstrap validator container as `/genesis.toml` and passes that
-in-container path to `miden-validator genesis --config`.
+Use that override with either the repository model or a published application:
+
+```bash
+make local-network-up COMPOSE_OVERRIDE_FILE=/absolute/path/to/genesis.override.yml
+
+docker compose \
+  -f oci://ghcr.io/0xmiden/miden-local-network:vX.Y.Z \
+  -f /absolute/path/to/genesis.override.yml \
+  up -d
+```
+
+The custom configuration is mounted into the bootstrap validator as `/genesis.toml` and passed to
+`miden-validator genesis --config`. Its `validators` list must contain the public keys corresponding to the three
+validator private keys. Override those private keys with `MIDEN_VALIDATOR_1_SIGNING_KEY`,
+`MIDEN_VALIDATOR_2_SIGNING_KEY`, and `MIDEN_VALIDATOR_3_SIGNING_KEY`.
 
 This only affects validator bootstrap. If the local network has already been bootstrapped, delete the existing local
 chain data before starting with a different genesis configuration:

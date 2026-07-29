@@ -1,10 +1,10 @@
 # Environment variables:
 # - MIDEN_REMOTE_PROVER_URL: remote transaction prover URL. Defaults to the
 #   bundled miden-remote-prover service at http://tx-prover:50051.
-# - MIDEN_GENESIS_CONFIG_FILE: path to the genesis configuration file.
-#   By default, the local network bootstraps from the validator's built-in
-#   genesis configuration. Use this environment variable to override the
-#   built-in configuration.
+# - MIDEN_VALIDATOR_1_SIGNING_KEY, MIDEN_VALIDATOR_2_SIGNING_KEY, and
+#   MIDEN_VALIDATOR_3_SIGNING_KEY: private signing keys for the three validators.
+#   The insecure defaults correspond to the public keys in the genesis config
+#   in compose/bootstrap.yml and are intended only for local development.
 # - MIDEN_NODE_IMAGE, MIDEN_VALIDATOR_IMAGE, MIDEN_NTX_BUILDER_IMAGE,
 #   MIDEN_REMOTE_PROVER_IMAGE, and MIDEN_NETWORK_MONITOR_IMAGE: container
 #   images used by the local network. They default to the unqualified image

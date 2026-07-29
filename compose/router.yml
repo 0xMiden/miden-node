@@ -1,0 +1,60 @@
+# Caddy provides stable browser-facing hostnames while Compose service DNS
+# continues to handle container-to-container traffic.
+services:
+  router:
+    image: caddy:2.11.4-alpine
+    pull_policy: missing
+    configs:
+      - source: caddy
+        target: /etc/caddy/Caddyfile
+    ports:
+      - "127.0.0.1:80:80"
+    restart: unless-stopped
+
+configs:
+  caddy:
+    content: |
+      {
+        admin off
+        auto_https off
+      }
+
+      http://rpc.localhost {
+        reverse_proxy sequencer:57291
+      }
+
+      http://prover.localhost {
+        reverse_proxy tx-prover:50051
+      }
+
+      http://faucet.localhost {
+        handle_path /api/* {
+          reverse_proxy faucet:8000
+        }
+
+        handle {
+          reverse_proxy faucet:8080
+        }
+      }
+
+      http://explorer.localhost {
+        handle /graphql* {
+          reverse_proxy explorer-backend:8199
+        }
+
+        handle {
+          reverse_proxy explorer-frontend:3000
+        }
+      }
+
+      http://grafana.localhost {
+        reverse_proxy grafana:3000
+      }
+
+      http://monitor.localhost {
+        reverse_proxy monitor:3001
+      }
+
+      http://tempo.localhost {
+        reverse_proxy tempo:3200
+      }

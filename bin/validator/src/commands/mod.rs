@@ -1,4 +1,5 @@
 mod bootstrap;
+mod genesis;
 mod start;
 
 use std::num::NonZeroUsize;
@@ -9,11 +10,12 @@ use anyhow::Context;
 use base64::Engine;
 use clap::Parser;
 use miden_node_utils::clap::GrpcOptionsInternal;
+use miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_validator::{
     DataDirectory,
     LOG_TARGET,
@@ -28,12 +30,8 @@ const ENV_SIGNING_KEY: &str = "MIDEN_VALIDATOR_SIGNING_KEY";
 const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
-const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG_FILE";
+const ENV_GENESIS_CONFIG: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
-
-/// A predefined, insecure validator signing key for development purposes.
-pub(crate) const INSECURE_SIGNING_KEY_HEX: &str =
-    "0101010101010101010101010101010101010101010101010101010101010101";
 
 /// A predefined, insecure shared transaction encryption key for development purposes.
 pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
@@ -45,18 +43,40 @@ pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub enum ValidatorCommand {
-    /// Bootstraps the genesis block.
+    /// Builds the genesis block from a genesis configuration.
     ///
-    /// Creates accounts from the genesis configuration, builds and signs the genesis block,
-    /// and writes the signed block and account secret files to disk. Also initializes the
-    /// validator's database with the genesis block as the chain tip.
-    Bootstrap {
+    /// Creates accounts from the genesis configuration, builds the genesis block, and writes the
+    /// block and account secret files to disk.
+    ///
+    /// The genesis block is the chain's trust root and is not signed: its header commits to the
+    /// full validator set — the `validators` public keys, which a genesis configuration file must
+    /// list explicitly; only the built-in development configuration (used when `--config` is
+    /// omitted) falls back to the predefined, insecure development key — and that set is required
+    /// to sign every block after genesis. Building the genesis block needs no signing access to
+    /// any validator's key, so one operator — who need not be a validator — runs this once and
+    /// distributes the genesis block file.
+    ///
+    /// Every validator then seeds its database from the genesis block file with `bootstrap`.
+    Genesis {
         /// Directory in which to write the genesis block file.
         #[arg(long, value_name = "DIR")]
         genesis_block_directory: PathBuf,
         /// Directory to write the account secret files (.mac) to.
         #[arg(long, value_name = "DIR")]
         accounts_directory: PathBuf,
+        /// Use the given configuration file to construct the genesis state from.
+        ///
+        /// If not provided, the built-in single-validator development configuration is used.
+        #[arg(long = "config", env = ENV_GENESIS_CONFIG, value_name = "GENESIS_CONFIG")]
+        genesis_config_file: Option<PathBuf>,
+    },
+
+    /// Seeds this validator's database from a genesis block file.
+    ///
+    /// Every validator runs this once before `start`, against the genesis block file produced by
+    /// the `genesis` command. The genesis block is the chain's trust root and carries no
+    /// signatures; the file must come from a trusted source.
+    Bootstrap {
         /// Directory in which to store the validator's database.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
@@ -68,10 +88,17 @@ pub enum ValidatorCommand {
             value_name = "NUM"
         )]
         sqlite_connection_pool_size: NonZeroUsize,
-        /// Use the given configuration file to construct the genesis state from.
-        #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
-        genesis_config_file: Option<PathBuf>,
-        /// Configuration for the validator signing key used to sign the genesis block.
+        /// Genesis block file to seed this validator's database from.
+        #[arg(long = "genesis", value_name = "FILE")]
+        genesis_block_file: PathBuf,
+    },
+
+    /// Prints the hex-encoded public key for the configured validator signing key.
+    ///
+    /// Every validator operator runs this and sends the printed key to whoever composes the
+    /// genesis configuration, which commits the full set to the genesis header via its
+    /// `validators` list.
+    Pubkey {
         #[command(flatten)]
         signing_key: ValidatorSigningKey,
     },
@@ -116,7 +143,7 @@ pub enum ValidatorCommand {
             long = "signing-key.hex",
             env = ENV_SIGNING_KEY,
             value_name = "VALIDATOR_SIGNING_KEY",
-            default_value = INSECURE_SIGNING_KEY_HEX,
+            default_value = INSECURE_VALIDATOR_SIGNING_KEY_HEX,
             group = "signing_key_source"
         )]
         signing_key: String,
@@ -170,26 +197,34 @@ pub enum ValidatorCommand {
 impl ValidatorCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         match self {
-            Self::Bootstrap {
+            Self::Genesis {
                 genesis_block_directory,
                 accounts_directory,
+                genesis_config_file,
+            } => genesis::generate(
+                &genesis_block_directory,
+                &accounts_directory,
+                genesis_config_file.as_ref(),
+            ),
+            Self::Bootstrap {
                 data_directory,
                 sqlite_connection_pool_size,
-                genesis_config_file,
-                signing_key,
+                genesis_block_file,
             } => {
                 bootstrap::bootstrap(
-                    &genesis_block_directory,
-                    &accounts_directory,
                     &data_directory,
                     sqlite_connection_pool_size,
-                    genesis_config_file.as_ref(),
-                    signing_key,
+                    &genesis_block_file,
                 )
                 .await
             },
+            Self::Pubkey { signing_key } => {
+                let signer = signing_key.into_signer().await?;
+                println!("{}", hex::encode(signer.public_key().to_bytes()));
+                Ok(())
+            },
             Self::Migrate { data_directory } => {
-                let data_dir = DataDirectory::load_server(data_directory)
+                let data_dir = DataDirectory::load(data_directory)
                     .context("failed to load validator data directory")?;
                 miden_validator::db::migrate(data_dir.database_path())
                     .context("failed to apply validator database migrations")?;
@@ -220,41 +255,11 @@ impl ValidatorCommand {
                     "Starting validator",
                 );
 
-                let encryption_key_bytes = if let Some(ciphertext) = encryption_key_kms_ciphertext {
-                    let ciphertext =
-                        base64::engine::general_purpose::STANDARD
-                            .decode(ciphertext)
-                            .context("failed to decode the encryption key KMS ciphertext base64")?;
-                    miden_validator::decrypt_key_material(ciphertext)
-                        .await
-                        .context("failed to decrypt the encryption key with KMS")?
-                } else {
-                    // Unlike the signing key, whose insecure default is caught at startup against
-                    // the chain's committed validator key, nothing cross-checks the encryption key.
-                    // Warn loudly so the default never runs in production unnoticed.
-                    if encryption_key == INSECURE_ENCRYPTION_KEY_HEX {
-                        tracing::warn!(
-                            target: LOG_TARGET,
-                            "Using the predefined, insecure transaction encryption key, configure \
-                             --encryption-key.hex or --encryption-key.kms-ciphertext for \
-                             production deployments"
-                        );
-                    }
+                let decrypter =
+                    resolve_decrypter(encryption_key, encryption_key_kms_ciphertext).await?;
 
-                    hex::decode(encryption_key)
-                        .context("failed to decode the encryption key hex")?
-                };
-                let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
-                    .context("failed to construct the encryption key")?;
-                let decrypter: Arc<dyn TransactionInputDecrypter> =
-                    Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key));
-
-                let signer = if let Some(kms_key_id) = signing_key_kms_id {
-                    ValidatorSigner::new_kms(kms_key_id).await?
-                } else {
-                    let signer = SigningKey::read_from_bytes(hex::decode(signing_key)?.as_ref())?;
-                    ValidatorSigner::new_local(signer)
-                };
+                let signer =
+                    ValidatorSigningKey { signing_key, signing_key_kms_id }.into_signer().await?;
 
                 start::start(
                     address,
@@ -273,9 +278,45 @@ impl ValidatorCommand {
     pub fn open_telemetry(&self) -> OpenTelemetry {
         match self {
             Self::Start { .. } => OpenTelemetry::from_env().with_name("validator"),
-            Self::Bootstrap { .. } | Self::Migrate { .. } => OpenTelemetry::Disabled,
+            Self::Genesis { .. }
+            | Self::Bootstrap { .. }
+            | Self::Pubkey { .. }
+            | Self::Migrate { .. } => OpenTelemetry::Disabled,
         }
     }
+}
+
+/// Builds the transaction input decrypter from the configured shared encryption key: either the
+/// KMS-wrapped ciphertext, or the hex-encoded key material.
+async fn resolve_decrypter(
+    encryption_key: String,
+    encryption_key_kms_ciphertext: Option<String>,
+) -> anyhow::Result<Arc<dyn TransactionInputDecrypter>> {
+    let encryption_key_bytes = if let Some(ciphertext) = encryption_key_kms_ciphertext {
+        let ciphertext = base64::engine::general_purpose::STANDARD
+            .decode(ciphertext)
+            .context("failed to decode the encryption key KMS ciphertext base64")?;
+        miden_validator::decrypt_key_material(ciphertext)
+            .await
+            .context("failed to decrypt the encryption key with KMS")?
+    } else {
+        // Unlike the signing key, whose insecure default is caught at startup against the chain's
+        // committed validator key, nothing cross-checks the encryption key. Warn loudly so the
+        // default never runs in production unnoticed.
+        if encryption_key == INSECURE_ENCRYPTION_KEY_HEX {
+            tracing::warn!(
+                target: LOG_TARGET,
+                "Using the predefined, insecure transaction encryption key, configure \
+                 --encryption-key.hex or --encryption-key.kms-ciphertext for production \
+                 deployments"
+            );
+        }
+
+        hex::decode(encryption_key).context("failed to decode the encryption key hex")?
+    };
+    let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
+        .context("failed to construct the encryption key")?;
+    Ok(Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key)))
 }
 
 // VALIDATOR SIGNING KEY
@@ -294,7 +335,7 @@ pub struct ValidatorSigningKey {
         long = "signing-key.hex",
         env = ENV_SIGNING_KEY,
         value_name = "VALIDATOR_SIGNING_KEY",
-        default_value = INSECURE_SIGNING_KEY_HEX,
+        default_value = INSECURE_VALIDATOR_SIGNING_KEY_HEX,
     )]
     pub signing_key: String,
     /// Key ID for the KMS key used by validator to sign blocks.

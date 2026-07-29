@@ -21,6 +21,7 @@ use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use rand::RngExt;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::metadata::AsciiMetadataValue;
@@ -57,47 +58,113 @@ pub(crate) struct NetworkTxAuth(pub(crate) AsciiMetadataValue);
 
 #[derive(Clone, Debug)]
 pub enum RpcMode {
-    /// Sequencer RPC validates submissions locally, re-executes them through the validator, then
+    /// Sequencer RPC validates submissions locally, re-executes them through every validator, then
     /// forwards them to the block producer.
+    ///
+    /// Every validator must observe every transaction: a validator only signs blocks whose
+    /// transactions it has previously validated, so a submission that misses a validator would
+    /// later prevent that validator from signing the block containing it.
     Sequencer {
         block_producer: Box<BlockProducerApi>,
-        validator: Box<ValidatorClient>,
+        validators: ValidatorClients,
     },
     /// Full-node RPC.
     ///
     /// By default it forwards submissions verbatim to the source RPC (the caller is responsible for
     /// configuring this client with any request metadata the source RPC requires).
     ///
-    /// When the validator and sequencer clients are set, the full-node will, instead of forwarding,
-    /// re-execute submissions through the validator and authenticate them against its store, then
-    /// submit the authenticated result directly to the sequencer's internal API.
+    /// When the pre-authenticated submission clients are set, the full-node will, instead of
+    /// forwarding, re-execute submissions through every validator and authenticate them against its
+    /// store, then submit the authenticated result directly to the sequencer's internal API.
     FullNode {
         source_rpc: Box<SourceRpcClient>,
         readiness_threshold: u32,
-        validator: Option<Box<ValidatorClient>>,
-        sequencer: Option<Box<SequencerClient>>,
+        pre_auth: Option<PreAuthSubmission>,
     },
 }
 
+/// A non-empty set of validator clients.
+///
+/// Every submission is re-executed through every validator, and state shared by the validator set
+/// (such as the transaction encryption key) can be served by any single member, so an empty set is
+/// rejected at construction.
+#[derive(Clone, Debug)]
+pub struct ValidatorClients(Vec<ValidatorClient>);
+
+impl ValidatorClients {
+    /// # Errors
+    ///
+    /// Fails if `validators` is empty.
+    pub fn new(validators: Vec<ValidatorClient>) -> anyhow::Result<Self> {
+        anyhow::ensure!(!validators.is_empty(), "at least one validator is required");
+        Ok(Self(validators))
+    }
+
+    /// Returns a randomly chosen validator; use for state that any single validator can serve, so
+    /// the load spreads across the set.
+    pub(crate) fn random(&self) -> &ValidatorClient {
+        let index = rand::rng().random_range(0..self.0.len());
+        &self.0[index]
+    }
+
+    pub(crate) fn as_slice(&self) -> &[ValidatorClient] {
+        &self.0
+    }
+}
+
+/// Validator and sequencer clients for the full-node pre-authenticated submission path.
+///
+/// The two are only meaningful together: submissions are re-executed through every validator and
+/// the authenticated result is submitted to the sequencer's internal API, so a full node is
+/// configured with both or neither.
+#[derive(Clone, Debug)]
+pub struct PreAuthSubmission {
+    validators: ValidatorClients,
+    sequencer: Box<SequencerClient>,
+}
+
+impl PreAuthSubmission {
+    /// # Errors
+    ///
+    /// Fails if `validators` is empty; every submission must be re-executed by the validator set.
+    pub fn new(
+        validators: Vec<ValidatorClient>,
+        sequencer: SequencerClient,
+    ) -> anyhow::Result<Self> {
+        let validators = ValidatorClients::new(validators)
+            .context("pre-authenticated submission requires at least one validator")?;
+        Ok(Self {
+            validators,
+            sequencer: Box::new(sequencer),
+        })
+    }
+
+    pub(crate) fn validators(&self) -> &ValidatorClients {
+        &self.validators
+    }
+
+    pub(crate) fn sequencer(&self) -> &SequencerClient {
+        &self.sequencer
+    }
+}
+
 impl RpcMode {
-    pub fn sequencer(block_producer: BlockProducerApi, validator: ValidatorClient) -> Self {
+    pub fn sequencer(block_producer: BlockProducerApi, validators: ValidatorClients) -> Self {
         Self::Sequencer {
             block_producer: Box::new(block_producer),
-            validator: Box::new(validator),
+            validators,
         }
     }
 
     pub fn full_node(
         source_rpc: SourceRpcClient,
         readiness_threshold: u32,
-        validator: Option<ValidatorClient>,
-        sequencer: Option<SequencerClient>,
+        pre_auth: Option<PreAuthSubmission>,
     ) -> Self {
         Self::FullNode {
             source_rpc: Box::new(source_rpc),
             readiness_threshold,
-            sequencer: sequencer.map(Box::new),
-            validator: validator.map(Box::new),
+            pre_auth,
         }
     }
 

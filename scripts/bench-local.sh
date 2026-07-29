@@ -109,23 +109,28 @@ rm -f "$LOGS"/*.log "$PIDS"/*.pid
 GENESIS_FILE="$DATA/genesis/genesis.dat"
 
 # --- bootstrap ----------------------------------------------------------------
-say "bootstrapping validator (creates genesis block)"
-miden-validator bootstrap \
-    --data-directory          "$DATA/validator" \
+say "building genesis block"
+miden-validator genesis \
     --genesis-block-directory "$DATA/genesis" \
     --accounts-directory      "$DATA/accounts" \
+    > "$LOGS/genesis.log" 2>&1
+
+say "bootstrapping validator storage from genesis"
+miden-validator bootstrap \
+    --data-directory "$DATA/validator" \
+    --genesis        "$GENESIS_FILE" \
     > "$LOGS/bootstrap-validator.log" 2>&1
 
 say "bootstrapping node storage from genesis"
 miden-node bootstrap \
     --data-directory "$DATA/node" \
-    --file           "$GENESIS_FILE" \
+    --genesis        "$GENESIS_FILE" \
     > "$LOGS/bootstrap-node.log" 2>&1
 
 say "bootstrapping ntx-builder storage from genesis"
 miden-ntx-builder bootstrap \
     --data-directory "$DATA/ntx-builder" \
-    --file           "$GENESIS_FILE" \
+    --genesis        "$GENESIS_FILE" \
     > "$LOGS/bootstrap-ntx-builder.log" 2>&1
 
 # --- start stack --------------------------------------------------------------

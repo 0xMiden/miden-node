@@ -1,0 +1,16 @@
+services:
+  explorer-frontend:
+    profiles: [explorer]
+    image: gatewayfm/midenscan-frontend:v0.8.3
+    pull_policy: missing
+    environment:
+      GRAPHQL_URL: http://explorer.localhost/graphql
+      # Gateway FM currently requires a named Miden network for frontend metadata.
+      MIDEN_NETWORK: devnet
+      GOOGLE_ANALYTICS: ""
+    ports:
+      - "127.0.0.1:8080:3000"
+    depends_on:
+      explorer-backend:
+        condition: service_started
+    restart: unless-stopped

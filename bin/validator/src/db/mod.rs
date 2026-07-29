@@ -103,7 +103,7 @@ fn open_with_pool_size(
     target = COMPONENT,
     skip_all,
     fields(
-        tx_id = %tx_info.tx_id(),
+        transaction.id = %tx_info.tx_id(),
     ),
     err,
 )]

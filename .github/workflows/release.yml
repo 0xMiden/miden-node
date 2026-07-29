@@ -274,6 +274,9 @@ jobs:
           - component: network-monitor
             bin: miden-network-monitor
             port: 3000
+          - component: faucet
+            bin: miden-faucet
+            port: 8000
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -282,12 +285,28 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Resolve build inputs
+        id: build-inputs
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${COMPONENT}" == "faucet" ]]; then
+            context="$(docker compose --profile faucet config --format json | jq -er '.services.faucet.build.context')"
+            echo "context=${context}" >> "$GITHUB_OUTPUT"
+            echo "file=Dockerfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "context=." >> "$GITHUB_OUTPUT"
+            echo "file=./Dockerfile" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build Docker image
         uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
         with:
-          context: .
+          context: ${{ steps.build-inputs.outputs.context }}
           push: false
-          file: ./Dockerfile
+          file: ${{ steps.build-inputs.outputs.file }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
           pull: true
@@ -298,10 +317,42 @@ jobs:
             VERSION=${{ needs.preflight.outputs.tag }}
             COMMIT=${{ needs.preflight.outputs.commit }}
 
+  dry-run-compose:
+    name: Dry-run Compose publish
+    runs-on: ubuntu-24.04
+    needs: preflight
+    if: ${{ github.repository_owner == '0xMiden' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Dry-run Compose publishing
+        uses: ./.github/actions/publish-compose
+        env:
+          MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
+          MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
+          MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}
+          MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
+          MIDEN_NETWORK_MONITOR_IMAGE:
+            ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
+          MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-faucet:${{ needs.preflight.outputs.tag }}
+        with:
+          compose-file: docker-compose.yml
+          mode: dry-run
+          package: miden-local-network
+          registry-prefix: ${{ env.REGISTRY }}/0xmiden
+          tag: ${{ needs.preflight.outputs.tag }}
+
   publish-docker:
     name: Publish Docker ${{ matrix.component }}
     runs-on: warp-ubuntu-latest-x64-8x
-    needs: [preflight, check-crate-builds, dry-run-crates, check-msrv, dry-run-docker]
+    needs: [preflight, check-crate-builds, dry-run-crates, check-msrv, dry-run-docker, dry-run-compose]
     if: ${{ github.repository_owner == '0xMiden' }}
     environment: publish-docker
     permissions:
@@ -328,6 +379,9 @@ jobs:
           - component: network-monitor
             bin: miden-network-monitor
             port: 3000
+          - component: faucet
+            bin: miden-faucet
+            port: 8000
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -356,12 +410,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve build inputs
+        id: build-inputs
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${COMPONENT}" == "faucet" ]]; then
+            context="$(docker compose --profile faucet config --format json | jq -er '.services.faucet.build.context')"
+            echo "context=${context}" >> "$GITHUB_OUTPUT"
+            echo "file=Dockerfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "context=." >> "$GITHUB_OUTPUT"
+            echo "file=./Dockerfile" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push Docker image
         uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
         with:
-          context: .
+          context: ${{ steps.build-inputs.outputs.context }}
           push: true
-          file: ./Dockerfile
+          file: ${{ steps.build-inputs.outputs.file }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
           pull: false
@@ -373,10 +443,51 @@ jobs:
             COMMIT=${{ needs.preflight.outputs.commit }}
           tags: ${{ env.REGISTRY }}/0xmiden/miden-${{ matrix.component }}:${{ needs.preflight.outputs.tag }}
 
+  publish-compose:
+    name: Publish Compose
+    runs-on: ubuntu-24.04
+    needs: [preflight, publish-docker]
+    if: ${{ github.repository_owner == '0xMiden' }}
+    environment: publish-docker
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Compose application
+        uses: ./.github/actions/publish-compose
+        env:
+          MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
+          MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
+          MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}
+          MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
+          MIDEN_NETWORK_MONITOR_IMAGE:
+            ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
+          MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-faucet:${{ needs.preflight.outputs.tag }}
+        with:
+          compose-file: docker-compose.yml
+          mode: publish
+          package: miden-local-network
+          registry-prefix: ${{ env.REGISTRY }}/0xmiden
+          tag: ${{ needs.preflight.outputs.tag }}
+
   publish-github-release:
     name: Publish GitHub release
     runs-on: ubuntu-24.04
-    needs: [preflight, publish-docker]
+    needs: [preflight, publish-compose]
     if: ${{ github.repository_owner == '0xMiden' }}
     permissions:
       actions: write

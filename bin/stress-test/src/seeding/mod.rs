@@ -38,6 +38,7 @@ use miden_protocol::block::{
     FeeParameters,
     ProposedBlock,
     SignedBlock,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey as EcdsaSecretKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::{PublicKey, SecretKey};
@@ -223,8 +224,14 @@ pub async fn seed_store_with_readers(
     genesis_accounts.extend(genesis_benchmark_accounts);
     let fee_params = FeeParameters::new(faucet.id(), 0);
     let signer = EcdsaSecretKey::new();
-    let genesis_state = GenesisState::new(genesis_accounts, fee_params, 1, 1, signer.public_key());
-    let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
+    let genesis_state = GenesisState::new(
+        genesis_accounts,
+        fee_params,
+        1,
+        1,
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+    );
+    let genesis_block = genesis_state.into_block().expect("genesis block should be created");
     let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 

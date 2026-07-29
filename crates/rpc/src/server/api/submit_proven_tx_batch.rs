@@ -10,7 +10,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_tx_batch::BatchVerifier;
 use tonic::{Request, Status};
 
-use super::{RpcMode, RpcService};
+use super::{RpcMode, RpcService, submit_batch_to_validators};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -105,49 +105,42 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         verify_batch_proof(proven_batch, &proposed_batch).await?;
 
         match &self.mode {
-            RpcMode::Sequencer { block_producer, validator } => {
-                validator
-                    .clone()
-                    .submit_batch(&proposed_batch, &request.transaction_inputs)
-                    .await?;
+            RpcMode::Sequencer { block_producer, validators } => {
+                submit_batch_to_validators(
+                    validators.as_slice(),
+                    &proposed_batch,
+                    &request.transaction_inputs,
+                )
+                .await?;
                 block_producer
                     .submit_proven_tx_batch(proposed_batch)
                     .await
                     .map(Into::into)
                     .map_err(Into::into)
             },
-            RpcMode::FullNode { source_rpc, validator, sequencer, .. } => {
-                match (validator, sequencer) {
-                    (Some(validator), Some(sequencer)) => {
-                        // Pre-authenticated transactions: validate and authenticate locally, then
-                        // submit the authenticated batch to the sequencer's pre-authenticated API.
-                        self.submit_authenticated_batch_to_sequencer(
-                            *validator.clone(),
-                            *sequencer.clone(),
-                            proposed_batch,
-                            &request.transaction_inputs,
-                        )
-                        .await
-                    },
-                    (None, None) => {
-                        // Unauthenticated transactions: forward the request to the source verbatim.
-                        let mut forwarded_request = Request::new(request);
-                        if let Some(accept) = original_accept_header {
-                            forwarded_request
-                                .metadata_mut()
-                                .insert(http::header::ACCEPT.as_str(), accept);
-                        }
-                        source_rpc
-                            .as_ref()
-                            .clone()
-                            .submit_proven_tx_batch(forwarded_request)
-                            .await
-                            .map(tonic::Response::into_inner)
-                    },
-                    (Some(_), None) | (None, Some(_)) => {
-                        Err(Status::internal("one of validator or sequencer are not configured"))
-                    },
+            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => {
+                // Pre-authenticated transactions: validate and authenticate locally, then submit
+                // the authenticated batch to the sequencer's pre-authenticated API.
+                self.submit_authenticated_batch_to_sequencer(
+                    pre_auth.validators().as_slice(),
+                    pre_auth.sequencer().clone(),
+                    proposed_batch,
+                    &request.transaction_inputs,
+                )
+                .await
+            },
+            RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
+                // Unauthenticated transactions: forward the request to the source verbatim.
+                let mut forwarded_request = Request::new(request);
+                if let Some(accept) = original_accept_header {
+                    forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
                 }
+                source_rpc
+                    .as_ref()
+                    .clone()
+                    .submit_proven_tx_batch(forwarded_request)
+                    .await
+                    .map(tonic::Response::into_inner)
             },
         }
     }
@@ -156,17 +149,17 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
 impl RpcService {
     /// Pre-authenticated transaction submission path for a batch.
     ///
-    /// Re-executes each transaction via the validator, authenticates each against the
+    /// Re-executes each transaction via every validator, authenticates each against the
     /// local (replica) store, then submits the authenticated batch to the sequencer's
     /// pre-authenticated API.
     async fn submit_authenticated_batch_to_sequencer(
         &self,
-        mut validator: ValidatorClient,
+        validators: &[ValidatorClient],
         mut sequencer: SequencerClient,
         proposed_batch: ProposedBatch,
         transaction_inputs: &[Vec<u8>],
     ) -> tonic::Result<proto::blockchain::BlockNumber> {
-        validator.submit_batch(&proposed_batch, transaction_inputs).await?;
+        submit_batch_to_validators(validators, &proposed_batch, transaction_inputs).await?;
 
         let mut auth_inputs = Vec::with_capacity(proposed_batch.transactions().len());
         for tx in proposed_batch.transactions() {

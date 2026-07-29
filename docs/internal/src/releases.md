@@ -29,9 +29,10 @@ delete release tags.
    Debian publishing workflows.
 
 The root `docker-compose.yml` includes the component models under `compose/`, keeping direct local Compose commands and
-profiles independent of additional `-f` arguments. Local includes cannot be published directly, so the publication jobs
-first render the complete, all-profile model without interpolating its variables or normalizing project resource names.
-They then merge `compose/publish.yml` into that flattened model using the same options and publish the result.
+profiles independent of additional `-f` arguments. Local includes cannot be published directly, so the
+`.github/actions/publish-compose` action first renders the complete, all-profile model without interpolating its
+variables or normalizing project resource names. It then merges `compose/publish.yml` into that flattened model using
+the same options and either dry-runs or performs the publication.
 
 The local model supports custom genesis configuration through a bind mount, which cannot be included in a portable OCI
 artifact. `compose/publish.yml` uses Compose's `!override` tag to replace that volume list and configures the published

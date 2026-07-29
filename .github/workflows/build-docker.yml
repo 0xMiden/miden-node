@@ -97,33 +97,16 @@ jobs:
           persist-credentials: false
 
       - name: Dry-run Compose publishing
+        uses: ./.github/actions/publish-compose
         env:
           MIDEN_NODE_IMAGE: ghcr.io/0xmiden/miden-node:dry-run
           MIDEN_VALIDATOR_IMAGE: ghcr.io/0xmiden/miden-validator:dry-run
           MIDEN_NTX_BUILDER_IMAGE: ghcr.io/0xmiden/miden-ntx-builder:dry-run
           MIDEN_REMOTE_PROVER_IMAGE: ghcr.io/0xmiden/miden-remote-prover:dry-run
           MIDEN_NETWORK_MONITOR_IMAGE: ghcr.io/0xmiden/miden-network-monitor:dry-run
-        run: |
-          docker compose \
-            -f docker-compose.yml \
-            --profile "*" \
-            config \
-            --no-interpolate \
-            --no-normalize \
-            --output "${RUNNER_TEMP}/miden-local-network.yml"
-          docker compose \
-            -f "${RUNNER_TEMP}/miden-local-network.yml" \
-            -f compose/publish.yml \
-            --profile "*" \
-            config \
-            --no-interpolate \
-            --no-normalize \
-            --output "${RUNNER_TEMP}/miden-local-network.publish.yml"
-          docker compose \
-            -f "${RUNNER_TEMP}/miden-local-network.publish.yml" \
-            --profile "*" \
-            publish \
-            --with-env \
-            --yes \
-            --dry-run \
-            ghcr.io/0xmiden/miden-local-network:dry-run
+        with:
+          compose-file: docker-compose.yml
+          mode: dry-run
+          package: miden-local-network
+          registry-prefix: ghcr.io/0xmiden
+          tag: dry-run

@@ -314,24 +314,19 @@ jobs:
           persist-credentials: false
 
       - name: Dry-run Compose publishing
+        uses: ./.github/actions/publish-compose
         env:
-          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-local-network
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
           MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}
           MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
           MIDEN_NETWORK_MONITOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
-          TAG: ${{ needs.preflight.outputs.tag }}
-        run: |
-          docker compose \
-            -f docker-compose.yml \
-            -f compose/publish.yml \
-            --profile "*" \
-            publish \
-            --with-env \
-            --yes \
-            --dry-run \
-            "${COMPOSE_PACKAGE}:${TAG}"
+        with:
+          compose-file: docker-compose.yml
+          mode: dry-run
+          package: miden-local-network
+          registry-prefix: ${{ env.REGISTRY }}/0xmiden
+          tag: ${{ needs.preflight.outputs.tag }}
 
   publish-docker:
     name: Publish Docker ${{ matrix.component }}
@@ -433,24 +428,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish Compose application
+        uses: ./.github/actions/publish-compose
         env:
-          COMPOSE_PACKAGE: ${{ env.REGISTRY }}/0xmiden/miden-local-network
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-node:${{ needs.preflight.outputs.tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-validator:${{ needs.preflight.outputs.tag }}
           MIDEN_NTX_BUILDER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-ntx-builder:${{ needs.preflight.outputs.tag }}
           MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
           MIDEN_NETWORK_MONITOR_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
-          TAG: ${{ needs.preflight.outputs.tag }}
-        run: |
-          docker compose \
-            -f docker-compose.yml \
-            -f compose/publish.yml \
-            --profile "*" \
-            publish \
-            --with-env \
-            --yes \
-            --resolve-image-digests \
-            "${COMPOSE_PACKAGE}:${TAG}"
+        with:
+          compose-file: docker-compose.yml
+          mode: publish
+          package: miden-local-network
+          registry-prefix: ${{ env.REGISTRY }}/0xmiden
+          tag: ${{ needs.preflight.outputs.tag }}
 
   publish-github-release:
     name: Publish GitHub release

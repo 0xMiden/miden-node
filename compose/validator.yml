@@ -1,0 +1,18 @@
+services:
+  validator:
+    image: ${MIDEN_VALIDATOR_IMAGE:-miden-validator}
+    pull_policy: missing
+    volumes:
+      - node-data:/data
+    depends_on:
+      bootstrap-validator:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+    command:
+      - miden-validator
+      - start
+      - --listen=0.0.0.0:50101
+      - --data-directory=/data/validator
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317

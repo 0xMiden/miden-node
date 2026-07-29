@@ -1,0 +1,20 @@
+services:
+  monitor:
+    profiles: [monitor]
+    image: ${MIDEN_NETWORK_MONITOR_IMAGE:-miden-network-monitor}
+    pull_policy: missing
+    depends_on:
+      otel-collector:
+        condition: service_started
+      sequencer:
+        condition: service_started
+    command:
+      - miden-network-monitor
+      - start
+    environment:
+      MIDEN_MONITOR_RPC_URL: http://sequencer:57291
+      MIDEN_MONITOR_PORT: "3001"
+      MIDEN_MONITOR_NETWORK_NAME: Localhost
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "127.0.0.1:3001:3001"

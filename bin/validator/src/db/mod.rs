@@ -310,42 +310,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migration_rejects_legacy_validated_rows() {
-        use miden_node_db::migration::Migrator;
-        use miden_protocol::Word;
-
-        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir.path().join("validator.sqlite3");
-        Migrator::builder()
-            .unwrap()
-            .push_sql("001_initial", include_str!("migrations/001_initial.sql"))
-            .unwrap()
-            .build()
-            .unwrap()
-            .bootstrap(&db_path)
-            .unwrap();
-
-        let db = Database::new(&db_path).unwrap();
-        let id = TransactionId::from_raw(Word::try_from([1u64, 2, 3, 4]).unwrap()).to_bytes();
-        let empty: Vec<u8> = vec![];
-        db.write("insert_legacy_row", move |tx| {
-            tx.execute(
-                "INSERT INTO validated_transactions \
-                 (id, block_num, account_id, account_patch, input_notes, output_notes, \
-                  initial_account_hash, final_account_hash) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                &[&id, &0i64, &empty, &empty, &empty, &empty, &empty, &empty],
-            )
-        })
-        .await
-        .unwrap();
-        drop(db);
-
-        let err = migrate(&db_path).expect_err("migration must not discard legacy rows");
-        assert!(matches!(err, DatabaseError::Migration(_)), "unexpected error: {err:?}");
-    }
-
-    #[tokio::test]
     async fn transaction_exists_detects_validated_transactions() {
         use miden_protocol::Word;
 

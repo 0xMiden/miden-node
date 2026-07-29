@@ -32,8 +32,8 @@ pub(super) async fn issue(
     operator_key: &GoldenOperatorKey,
 ) -> anyhow::Result<()> {
     let record_id = parse_record_id(encoded_record_id)?;
-    let data_directory = DataDirectory::load_server(data_directory)
-        .context("failed to load validator data directory")?;
+    let data_directory =
+        DataDirectory::load(data_directory).context("failed to load validator data directory")?;
     let database = miden_validator::db::load(data_directory.database_path())
         .await
         .context("failed to load validator database")?;

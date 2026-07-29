@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 
 use anyhow::Context;
-use miden_node_proto::server::validator_api;
+use miden_node_proto::server::{validator_admin_api, validator_api};
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_store::BlockStore;
 use miden_node_utils::clap::GrpcOptionsInternal;
@@ -22,14 +22,17 @@ use crate::db::{
 };
 use crate::{
     DataDirectory,
+    GoldenOperatorKey,
     LOG_TARGET,
     PrivateRecordSealer,
     TransactionInputDecrypter,
     ValidatorSigner,
 };
 
+mod admin_service;
 mod validator_service;
 
+use admin_service::ValidatorAdminService;
 use validator_service::{InitialMetrics, ValidatorService};
 
 // VALIDATOR SERVER
@@ -61,6 +64,57 @@ pub struct ValidatorServer {
 
     /// Maximum number of SQLite connections in the validator database connection pool.
     pub sqlite_connection_pool_size: NonZeroUsize,
+}
+
+/// Serves the private validator administration API on a network-isolated listener.
+pub struct ValidatorAdminServer {
+    /// Address of the private administration listener.
+    pub address: SocketAddr,
+    /// gRPC request timeout.
+    pub grpc_options: GrpcOptionsInternal,
+    /// Golden key material used to issue this validator's decryption shares.
+    pub operator_key: GoldenOperatorKey,
+}
+
+impl ValidatorAdminServer {
+    /// Serves the private validator administration API.
+    pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
+        let listener = TcpListener::bind(self.address)
+            .await
+            .context("failed to bind validator admin address")?;
+        self.serve_on(listener, shutdown).await
+    }
+
+    async fn serve_on(
+        self,
+        listener: TcpListener,
+        shutdown: CancellationToken,
+    ) -> anyhow::Result<()> {
+        let endpoint =
+            listener.local_addr().context("failed to read validator admin listen address")?;
+        tracing::info!(
+            target: LOG_TARGET,
+            {
+                service.name = "miden-validator-admin",
+                validator.admin_listen = %endpoint,
+            },
+            "Validator admin server ready",
+        );
+
+        tonic::transport::Server::builder()
+            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
+            .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
+            .timeout(self.grpc_options.request_timeout)
+            .add_service(validator_admin_api::service(ValidatorAdminService::new(
+                self.operator_key,
+            )))
+            .serve_with_incoming_shutdown(
+                TcpListenerStream::new(listener),
+                shutdown.cancelled_owned(),
+            )
+            .await
+            .context("failed to serve validator admin API")
+    }
 }
 
 impl ValidatorServer {

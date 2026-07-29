@@ -20,7 +20,7 @@ pub use private_record::{
     PrivateRecordStorageFields,
     StoredPrivateRecord,
 };
-pub use server::ValidatorServer;
+pub use server::{ValidatorAdminServer, ValidatorServer};
 pub use signers::{
     KmsSigner,
     LocalX25519TransactionInputDecrypter,

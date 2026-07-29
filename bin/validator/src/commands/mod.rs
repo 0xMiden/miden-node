@@ -24,7 +24,6 @@ use miden_validator::{
     GoldenOperatorKey,
     LOG_TARGET,
     LocalX25519TransactionInputDecrypter,
-    PrivateRecordSealer,
     StorageKeyEpoch,
     TransactionInputDecrypter,
     ValidatorSigner,
@@ -32,6 +31,7 @@ use miden_validator::{
 
 const ENV_DATA_DIRECTORY: &str = "MIDEN_VALIDATOR_DATA_DIRECTORY";
 const ENV_LISTEN: &str = "MIDEN_VALIDATOR_LISTEN";
+const ENV_ADMIN_LISTEN: &str = "MIDEN_VALIDATOR_ADMIN_LISTEN";
 const ENV_SIGNING_KEY: &str = "MIDEN_VALIDATOR_SIGNING_KEY";
 const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
@@ -170,6 +170,10 @@ pub enum ValidatorCommand {
         #[arg(long = "listen", env = ENV_LISTEN, value_name = "LISTEN")]
         listen: std::net::SocketAddr,
 
+        /// Socket address at which to serve the private administration API.
+        #[arg(long = "admin-listen", env = ENV_ADMIN_LISTEN, value_name = "LISTEN")]
+        admin_listen: Option<std::net::SocketAddr>,
+
         #[command(flatten)]
         grpc_options: GrpcOptionsInternal,
 
@@ -292,6 +296,7 @@ impl ValidatorCommand {
             Self::ExportPrivateRecord(options) => export_private_record::export(options).await,
             Self::Start {
                 listen,
+                admin_listen,
                 grpc_options,
                 signing_key,
                 data_directory,
@@ -303,14 +308,17 @@ impl ValidatorCommand {
                 ..
             } => {
                 let address = listen;
-                let private_record_sealer =
-                    PrivateRecordSealer::from_operator_key(&storage_key.load()?);
+                let operator_key = storage_key.load()?;
                 tracing::info!(
                     target: miden_validator::LOG_TARGET,
                     {
                         service.name = "miden-validator",
                         service.version = env!("CARGO_PKG_VERSION"),
                         validator.listen = %address,
+                        validator.admin_listen = admin_listen.map_or_else(
+                            || "disabled".to_owned(),
+                            |address| address.to_string(),
+                        ),
                         data.directory = %data_directory.display(),
                         validator.signer = if signing_key_kms_id.is_some() { "kms" } else { "local" },
                         sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
@@ -326,8 +334,9 @@ impl ValidatorCommand {
 
                 start::start(
                     address,
+                    admin_listen,
                     grpc_options,
-                    start::ValidatorKeys { signer, decrypter, private_record_sealer },
+                    start::ValidatorKeys { signer, decrypter, operator_key },
                     data_directory,
                     sqlite_connection_pool_size,
                     shutdown,
@@ -673,6 +682,22 @@ mod tests {
         };
         assert_eq!(encryption_key, INSECURE_ENCRYPTION_KEY_HEX);
         assert_eq!(encryption_key_kms_ciphertext, None);
+    }
+
+    #[test]
+    fn admin_listener_is_opt_in() {
+        let command = parse_start(&[]).expect("start without an admin listener must parse");
+        let ValidatorCommand::Start { admin_listen, .. } = command else {
+            panic!("expected the start command");
+        };
+        assert_eq!(admin_listen, None);
+
+        let command = parse_start(&["--admin-listen", "127.0.0.1:50102"])
+            .expect("start with an admin listener must parse");
+        let ValidatorCommand::Start { admin_listen, .. } = command else {
+            panic!("expected the start command");
+        };
+        assert_eq!(admin_listen, Some("127.0.0.1:50102".parse().unwrap()));
     }
 
     #[test]

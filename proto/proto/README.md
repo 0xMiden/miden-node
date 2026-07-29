@@ -16,7 +16,8 @@ types/
 └── xxx.proto
 internal/
 ├── ntx_builder.proto
-└── validator.proto
+├── validator.proto
+└── validator_admin.proto
 ```
 
 The public-facing files should only allow the usage of the `types` directory, to avoid service reflection to internal

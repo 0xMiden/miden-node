@@ -3,6 +3,7 @@ use std::fmt;
 use golden_core::{GoldenGroup, ParticipantIndex};
 use golden_ehtdh1::wire::{from_wire_bytes, to_wire_bytes};
 use golden_ehtdh1::{
+    Ciphertext,
     PublicKeySet,
     SealingKey,
     SecretShare,
@@ -14,6 +15,7 @@ use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
 use rand_core_06::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
+use crate::private_record::CONTENT_KEY_BYTES;
 use crate::{
     PrivateRecordError,
     PrivateRecordSharePolicy,
@@ -223,6 +225,37 @@ impl GoldenOperatorKey {
         self.secret_share.participant
     }
 
+    /// Issues a canonical decryption share for one encrypted content key and exact context.
+    pub fn issue_decryption_share<R>(
+        &self,
+        rng: &mut R,
+        ciphertext_bytes: &[u8],
+        context: &[u8],
+    ) -> Result<Vec<u8>, PrivateRecordError>
+    where
+        R: RngCore + CryptoRng,
+    {
+        let ciphertext: Ciphertext<StorageGroup> =
+            from_wire_bytes(ciphertext_bytes).map_err(PrivateRecordError::InvalidGoldenEncoding)?;
+        if ciphertext.encrypted_payload.len() != CONTENT_KEY_BYTES {
+            return Err(PrivateRecordError::InvalidEncryptedRecordKey);
+        }
+        ciphertext
+            .verify_with_associated_data(context)
+            .map_err(PrivateRecordError::InvalidGoldenEncoding)?;
+
+        let share = UnsealingShare::new(self.secret_share.clone())
+            .decrypt_share_with_associated_data(
+                rng,
+                &self.setup_context,
+                &ciphertext,
+                context,
+                context,
+            )
+            .map_err(PrivateRecordError::ShareGeneration)?;
+        Ok(to_wire_bytes(&share))
+    }
+
     /// Checks one private-record request and returns a canonical decryption share.
     pub fn issue_private_record_share<R, P>(
         &self,
@@ -240,18 +273,7 @@ impl GoldenOperatorKey {
             return Err(PrivateRecordError::ShareDenied);
         }
 
-        let ciphertext = record.decode_encrypted_record_key()?;
-        let context = request.context();
-        let share = UnsealingShare::new(self.secret_share.clone())
-            .decrypt_share_with_associated_data(
-                rng,
-                &self.setup_context,
-                &ciphertext,
-                context,
-                context,
-            )
-            .map_err(PrivateRecordError::ShareGeneration)?;
-        Ok(to_wire_bytes(&share))
+        self.issue_decryption_share(rng, record.encrypted_record_key(), request.context())
     }
 }
 

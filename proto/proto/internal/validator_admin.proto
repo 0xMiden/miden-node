@@ -1,0 +1,27 @@
+// Specification of the private Validator administration API.
+//
+// This service is served on a private, network-isolated listener.
+syntax = "proto3";
+package validator_admin;
+
+// INTERNAL VALIDATOR ADMIN API
+// ================================================================================================
+
+service Api {
+    // Issues this validator's Golden decryption share for one encrypted content key and context.
+    rpc IssueDecryptionShare(IssueDecryptionShareRequest)
+        returns (IssueDecryptionShareResponse) {}
+}
+
+message IssueDecryptionShareRequest {
+    // Canonical Golden EHTDH1 ciphertext for a private record content key.
+    bytes ciphertext = 1;
+
+    // Exact context used to encrypt the content key.
+    bytes decryption_context = 2;
+}
+
+message IssueDecryptionShareResponse {
+    // Canonical Golden EHTDH1 decryption share.
+    bytes decryption_share = 1;
+}

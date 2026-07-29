@@ -22,7 +22,7 @@ pub const PRIVATE_RECORD_FORMAT_V1: u32 = 1;
 
 const CONTEXT_DOMAIN_V1: &[u8] = b"miden-private-record-context-v1";
 const PRIVATE_RECORD_BUNDLE_MAGIC: &[u8] = b"miden-private-record-bundle-v1";
-const CONTENT_KEY_BYTES: usize = 32;
+pub(crate) const CONTENT_KEY_BYTES: usize = 32;
 const NONCE_BYTES: usize = 24;
 const TAG_BYTES: usize = 16;
 const VALIDATOR_ID_BYTES: usize = 33;

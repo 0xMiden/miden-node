@@ -1,63 +1,226 @@
-mod migrations;
-
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::{DbReader, DbWriter, ReadTx, Row, WriteTx};
-use miden_node_utils::formatting::format_array;
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
-use miden_protocol::utils::serde::Serializable;
 
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
-use crate::{
-    COMPONENT,
-    LOG_TARGET,
-    PrivateRecordChainId,
-    PrivateRecordContext,
-    PrivateRecordId,
-    PrivateRecordStorageFields,
-    StorageKeyEpoch,
-    StoredPrivateRecord,
-};
+use crate::{COMPONENT, LOG_TARGET, StorageKeyEpoch, StoredPrivateRecord};
 
-/// SQL statements, kept in dedicated `.sql` files (under `sql/`).
-mod sql {
-    pub(super) const INSERT_TRANSACTION: &str = include_str!("sql/insert_transaction.sql");
-    pub(super) const LOAD_PRIVATE_RECORD: &str = include_str!("sql/load_private_record.sql");
-    pub(super) const LOAD_PRIVATE_RECORDS_BY_KEY_EPOCH: &str =
-        include_str!("sql/load_private_records_by_key_epoch.sql");
-    pub(super) const LOAD_PRIVATE_RECORDS_BY_SETUP_CONTEXT: &str =
-        include_str!("sql/load_private_records_by_setup_context.sql");
-    pub(super) const LOAD_ALL_TRANSACTIONS: &str = include_str!("sql/load_all_transactions.sql");
-    pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
-    pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
-    pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
-    pub(super) const LOAD_BLOCK_HEADER: &str = include_str!("sql/load_block_header.sql");
-    pub(super) const COUNT_VALIDATED_TRANSACTIONS: &str =
-        include_str!("sql/count_validated_transactions.sql");
-    pub(super) const COUNT_SIGNED_BLOCKS: &str = include_str!("sql/count_signed_blocks.sql");
+mod migrations;
+mod queries;
+
+// VALIDATOR DATABASE
+// ================================================================================================
+
+/// Read-only handle to the validator database.
+///
+/// Wraps the framework [`DbReader`] and exposes every read query as a method. Cloneable, and handed
+/// to read-only components (the administration API); it has no write methods, so those components
+/// cannot mutate the database.
+#[derive(Clone)]
+pub struct ValidatorDbReader {
+    reader: DbReader,
 }
 
-/// Open a connection to the DB after verifying that it is at the latest schema version.
+impl ValidatorDbReader {
+    /// Returns whether a transaction with the given id has already been validated.
+    pub(crate) async fn transaction_exists(
+        &self,
+        tx_id: TransactionId,
+    ) -> Result<bool, DatabaseError> {
+        self.reader
+            .read("transaction_exists", move |tx| queries::transaction_exists(tx, tx_id))
+            .await
+    }
+
+    /// Returns the subset of `tx_ids` that this validator has not validated yet.
+    ///
+    /// An empty result means all supplied transaction ids have been validated in the past.
+    pub(crate) async fn find_unvalidated_transactions(
+        &self,
+        tx_ids: Vec<TransactionId>,
+    ) -> Result<Vec<TransactionId>, DatabaseError> {
+        self.reader
+            .read("find_unvalidated_transactions", move |tx| {
+                queries::find_unvalidated_transactions(tx, &tx_ids)
+            })
+            .await
+    }
+
+    /// Loads the chain tip, or `None` if no block header has been persisted yet (i.e. bootstrap has
+    /// not been run).
+    pub(crate) async fn load_chain_tip(&self) -> Result<Option<BlockHeader>, DatabaseError> {
+        self.reader.read("load_chain_tip", queries::load_chain_tip).await
+    }
+
+    /// Loads the block header at the given height, or `None` if no block header is stored there.
+    pub(crate) async fn load_block_header(
+        &self,
+        block_num: BlockNumber,
+    ) -> Result<Option<BlockHeader>, DatabaseError> {
+        self.reader
+            .read("load_block_header", move |tx| queries::load_block_header(tx, block_num))
+            .await
+    }
+
+    /// Reads the values the server's in-memory counters start from, all within a single read
+    /// transaction so that they describe one consistent database state.
+    pub(crate) async fn load_initial_metrics(&self) -> Result<InitialMetrics, DatabaseError> {
+        self.reader
+            .read("load_initial_metrics", |tx| {
+                Ok(InitialMetrics {
+                    chain_tip: queries::load_chain_tip(tx)?
+                        .map_or(0, |header| header.block_num().as_u32()),
+                    validated_transactions: u64::try_from(queries::count_validated_transactions(
+                        tx,
+                    )?)
+                    .unwrap_or(0),
+                    signed_blocks: u64::try_from(queries::count_signed_blocks(tx)?).unwrap_or(0),
+                })
+            })
+            .await
+    }
+
+    /// Returns the total number of validated transactions.
+    ///
+    /// Production code seeds its counter from [`Self::load_initial_metrics`] and tracks it in
+    /// memory from there, so this standalone count only backs test assertions about what was
+    /// actually persisted.
+    #[cfg(test)]
+    pub(crate) async fn count_validated_transactions(&self) -> Result<i64, DatabaseError> {
+        self.reader
+            .read("count_validated_transactions", queries::count_validated_transactions)
+            .await
+    }
+
+    /// Loads one encrypted private record by transaction id.
+    pub async fn load_private_record(
+        &self,
+        transaction_id: TransactionId,
+    ) -> Result<Option<StoredPrivateRecord>, DatabaseError> {
+        self.reader
+            .read("load_private_record", move |tx| {
+                queries::load_private_record(tx, transaction_id)
+            })
+            .await
+    }
+
+    /// Loads the encrypted private records sealed under one storage key epoch.
+    pub async fn load_private_records_by_key_epoch(
+        &self,
+        key_epoch: StorageKeyEpoch,
+    ) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
+        self.reader
+            .read("load_private_records_by_key_epoch", move |tx| {
+                queries::load_private_records_by_key_epoch(tx, key_epoch)
+            })
+            .await
+    }
+
+    /// Loads the encrypted private records belonging to one Golden setup context.
+    pub async fn load_private_records_by_setup_context(
+        &self,
+        setup_context_id: [u8; 32],
+    ) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
+        self.reader
+            .read("load_private_records_by_setup_context", move |tx| {
+                queries::load_private_records_by_setup_context(tx, setup_context_id)
+            })
+            .await
+    }
+
+    /// Loads all validated private transactions in insertion order.
+    pub(crate) async fn load_all_transactions(
+        &self,
+    ) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
+        self.reader.read("load_all_transactions", queries::load_all_transactions).await
+    }
+}
+
+/// The persisted state the validator server's in-memory counters are seeded with on startup.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct InitialMetrics {
+    /// Block number of the chain tip, or zero if the database holds no block header.
+    pub chain_tip: u32,
+    /// Total number of validated transactions.
+    pub validated_transactions: u64,
+    /// Total number of signed blocks.
+    pub signed_blocks: u64,
+}
+
+/// Write handle to the validator database.
+///
+/// Wraps the framework [`DbWriter`] and additionally holds a [`ValidatorDbReader`], so it exposes
+/// the write queries directly and every read query through `Deref`. **Not `Clone`**: writes have a
+/// single owner, matching SQLite's single-writer model.
+pub struct ValidatorDbWriter {
+    writer: DbWriter,
+    reader: ValidatorDbReader,
+}
+
+impl std::ops::Deref for ValidatorDbWriter {
+    type Target = ValidatorDbReader;
+
+    fn deref(&self) -> &Self::Target {
+        &self.reader
+    }
+}
+
+impl ValidatorDbWriter {
+    /// Returns a read-only handle onto the same connection pool, for handing to components that
+    /// must not be able to write.
+    pub fn reader(&self) -> ValidatorDbReader {
+        self.reader.clone()
+    }
+
+    /// Inserts a validated transaction and its encrypted private inputs, returning the number of
+    /// inserted rows. The count is zero if the transaction was already recorded.
+    pub async fn insert_validated_private_transaction(
+        &self,
+        record: StoredPrivateRecord,
+    ) -> Result<usize, DatabaseError> {
+        self.writer
+            .write("insert_validated_private_transaction", move |tx| {
+                queries::insert_validated_private_transaction(tx, &record)
+            })
+            .await
+    }
+
+    /// Persists a block header, replacing any header already stored at the same height.
+    pub(crate) async fn upsert_block_header(
+        &self,
+        header: BlockHeader,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("upsert_block_header", move |tx| queries::upsert_block_header(tx, &header))
+            .await
+    }
+}
+
+// LIFECYCLE
+// ================================================================================================
+
+/// Opens a connection pool after verifying that the database is at the latest schema version.
 #[miden_instrument(
     target = COMPONENT,
 )]
-pub async fn load(database_filepath: PathBuf) -> Result<(DbWriter, DbReader), DatabaseError> {
+pub async fn load(database_filepath: PathBuf) -> Result<ValidatorDbWriter, DatabaseError> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
-/// Open a connection to the DB with a specific pool size after verifying that it is at the latest
-/// schema version.
+/// Opens a connection pool with a specific pool size after verifying that the database is at the
+/// latest schema version.
 #[miden_instrument(
     target = COMPONENT,
 )]
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<(DbWriter, DbReader), DatabaseError> {
+) -> Result<ValidatorDbWriter, DatabaseError> {
     verify_latest_schema(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -67,7 +230,7 @@ pub async fn load_with_pool_size(
 #[miden_instrument(
     target = COMPONENT,
 )]
-pub async fn setup(database_filepath: PathBuf) -> Result<(DbWriter, DbReader), DatabaseError> {
+pub async fn setup(database_filepath: PathBuf) -> Result<ValidatorDbWriter, DatabaseError> {
     setup_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -75,13 +238,32 @@ pub async fn setup(database_filepath: PathBuf) -> Result<(DbWriter, DbReader), D
 #[miden_instrument(
     target = COMPONENT,
 )]
-pub async fn setup_with_pool_size(
+async fn setup_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<(DbWriter, DbReader), DatabaseError> {
+) -> Result<ValidatorDbWriter, DatabaseError> {
     bootstrap_database(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
+}
+
+/// Creates and initializes the database, then seeds it with the genesis block header as the chain
+/// tip.
+///
+/// Returns an error if the database has already been bootstrapped.
+#[miden_instrument(
+    target = COMPONENT,
+    fields(path = %database_filepath.display()),
+    err,
+)]
+pub async fn bootstrap(
+    database_filepath: PathBuf,
+    connection_pool_size: NonZeroUsize,
+    genesis_header: BlockHeader,
+) -> Result<(), DatabaseError> {
+    let db = setup_with_pool_size(database_filepath, connection_pool_size).await?;
+
+    db.upsert_block_header(genesis_header).await
 }
 
 /// Applies all pending migrations to an existing DB.
@@ -96,7 +278,7 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError>
 fn open_with_pool_size(
     database_filepath: &Path,
     connection_pool_size: NonZeroUsize,
-) -> Result<(DbWriter, DbReader), DatabaseError> {
+) -> Result<ValidatorDbWriter, DatabaseError> {
     let (writer, reader) =
         miden_node_db::sqlite::open_with_pool_size(database_filepath, connection_pool_size)?;
     tracing::info!(
@@ -105,269 +287,10 @@ fn open_with_pool_size(
         connection_pool_size = %connection_pool_size,
         "Connected to the database"
     );
-    Ok((writer, reader))
-}
-
-/// Inserts a validated transaction and its encrypted private inputs.
-#[miden_instrument(
-    target = COMPONENT,
-    fields(
-        transaction.id = %record.context().transaction_id(),
-    ),
-    err,
-)]
-pub fn insert_validated_private_transaction(
-    tx: &WriteTx<'_>,
-    record: &StoredPrivateRecord,
-) -> Result<usize, DatabaseError> {
-    let context = record.context();
-    let transaction_id = context.transaction_id().to_bytes();
-    let validator_id = record.record_id().validator_id().to_vec();
-    let chain_id = context.chain_id().as_bytes().to_vec();
-    let key_epoch = context.key_epoch().as_bytes().to_vec();
-    let setup_context_id = record.setup_context_id().to_vec();
-    let format_version = i64::from(context.format_version());
-    let nonce = record.nonce().to_vec();
-    let encrypted_record = record.encrypted_record().to_vec();
-    let encrypted_record_key = record.encrypted_record_key().to_vec();
-
-    tx.execute(
-        sql::INSERT_TRANSACTION,
-        &[
-            &transaction_id,
-            &validator_id,
-            &chain_id,
-            &key_epoch,
-            &setup_context_id,
-            &format_version,
-            &nonce,
-            &encrypted_record,
-            &encrypted_record_key,
-        ],
-    )
-}
-
-/// Loads one encrypted private record by transaction ID.
-#[miden_instrument(target = COMPONENT, fields(transaction.id = %transaction_id), err)]
-pub fn load_private_record(
-    tx: &ReadTx<'_>,
-    transaction_id: TransactionId,
-) -> Result<Option<StoredPrivateRecord>, DatabaseError> {
-    Ok(tx
-        .query(sql::LOAD_PRIVATE_RECORD, &[&transaction_id.to_bytes()], private_record_from_row)?
-        .into_iter()
-        .next())
-}
-
-/// Loads encrypted private records for one storage key epoch.
-#[miden_instrument(target = COMPONENT, err)]
-pub fn load_private_records_by_key_epoch(
-    tx: &ReadTx<'_>,
-    key_epoch: StorageKeyEpoch,
-) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
-    tx.query(
-        sql::LOAD_PRIVATE_RECORDS_BY_KEY_EPOCH,
-        &[&key_epoch.as_bytes().to_vec()],
-        private_record_from_row,
-    )
-}
-
-/// Loads encrypted private records for one Golden setup context.
-#[miden_instrument(target = COMPONENT, err)]
-pub fn load_private_records_by_setup_context(
-    tx: &ReadTx<'_>,
-    setup_context_id: [u8; 32],
-) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
-    tx.query(
-        sql::LOAD_PRIVATE_RECORDS_BY_SETUP_CONTEXT,
-        &[&setup_context_id.to_vec()],
-        private_record_from_row,
-    )
-}
-
-/// Loads all validated private transactions in insertion order.
-pub(crate) fn load_all_transactions(
-    tx: &ReadTx<'_>,
-) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
-    tx.query(sql::LOAD_ALL_TRANSACTIONS, &[], private_record_from_row)
-}
-
-fn private_record_from_row(row: &Row<'_>) -> Result<StoredPrivateRecord, DatabaseError> {
-    let chain_id = fixed_32(row.get(0)?, "private record chain id")?;
-    let key_epoch = fixed_32(row.get(1)?, "private record key epoch")?;
-    let transaction_id = row.get(2)?;
-    let validator_id = fixed_33(row.get(3)?, "private record validator id")?;
-    let setup_context_id = fixed_32(row.get(4)?, "private record setup context id")?;
-    let format_version = checked_u32(row.get(5)?, "private record format version")?;
-    let nonce = row.get(6)?;
-    let encrypted_record = row.get(7)?;
-    let encrypted_record_key = row.get(8)?;
-    let record_id = PrivateRecordId::from_parts(transaction_id, validator_id)
-        .map_err(|source| DatabaseError::deserialization("private record id", source))?;
-
-    StoredPrivateRecord::from_storage_fields(PrivateRecordStorageFields {
-        record_id,
-        context: PrivateRecordContext::new(
-            PrivateRecordChainId::new(chain_id),
-            StorageKeyEpoch::new(key_epoch),
-            transaction_id,
-        ),
-        format_version,
-        setup_context_id,
-        nonce,
-        encrypted_record,
-        encrypted_record_key,
+    Ok(ValidatorDbWriter {
+        writer,
+        reader: ValidatorDbReader { reader },
     })
-    .map_err(|source| DatabaseError::deserialization("private record", source))
-}
-
-fn fixed_32(bytes: Vec<u8>, field: &'static str) -> Result<[u8; 32], DatabaseError> {
-    let actual_len = bytes.len();
-    bytes.try_into().map_err(|_bytes: Vec<u8>| {
-        let source = std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("expected 32 bytes, got {actual_len}"),
-        );
-        DatabaseError::deserialization(field, source)
-    })
-}
-
-fn fixed_33(bytes: Vec<u8>, field: &'static str) -> Result<[u8; 33], DatabaseError> {
-    let actual_len = bytes.len();
-    bytes.try_into().map_err(|_bytes: Vec<u8>| {
-        let source = std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("expected 33 bytes, got {actual_len}"),
-        );
-        DatabaseError::deserialization(field, source)
-    })
-}
-
-fn checked_u32(value: i64, field: &'static str) -> Result<u32, DatabaseError> {
-    u32::try_from(value).map_err(|source| DatabaseError::deserialization(field, source))
-}
-
-/// Returns whether a transaction with the given id has already been validated.
-#[miden_instrument(
-    target = COMPONENT,
-    fields(transaction.id = %tx_id),
-    err,
-)]
-pub(crate) fn transaction_exists(
-    tx: &ReadTx<'_>,
-    tx_id: TransactionId,
-) -> Result<bool, DatabaseError> {
-    let exists = tx
-        .query(sql::TRANSACTION_EXISTS, &[&tx_id.to_bytes()], |row| row.get::<i64>(0))?
-        .first()
-        .copied()
-        .unwrap_or(0)
-        != 0;
-    Ok(exists)
-}
-
-/// Scans the database for transaction Ids that do not exist.
-///
-/// If the resulting vector is empty, all supplied transaction ids have been validated in the past.
-#[miden_instrument(
-    target = COMPONENT,
-    fields(transactions.ids = %format_array(tx_ids)),
-    err,
-)]
-pub(crate) fn find_unvalidated_transactions(
-    tx: &ReadTx<'_>,
-    tx_ids: &[TransactionId],
-) -> Result<Vec<TransactionId>, DatabaseError> {
-    let mut unvalidated_tx_ids = Vec::new();
-    for tx_id in tx_ids {
-        // Check whether each transaction id exists in the database.
-        let exists = tx
-            .query(sql::TRANSACTION_EXISTS, &[&tx_id.to_bytes()], |row| row.get::<i64>(0))?
-            .first()
-            .copied()
-            .unwrap_or(0)
-            != 0;
-        // Record any transaction ids that do not exist.
-        if !exists {
-            unvalidated_tx_ids.push(*tx_id);
-        }
-    }
-    Ok(unvalidated_tx_ids)
-}
-
-/// Upserts a block header into the database.
-///
-/// Inserts a new row if no block header exists at the given block number, or replaces the
-/// existing block header if one already exists.
-#[miden_instrument(
-    target = COMPONENT,
-    err,
-)]
-pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(), DatabaseError> {
-    let block_num = i64::from(header.block_num().as_u32());
-    let block_header = header.to_bytes();
-    tx.execute(sql::UPSERT_BLOCK_HEADER, &[&block_num, &block_header])?;
-    Ok(())
-}
-
-/// Loads the chain tip (block header with the highest block number) from the database.
-///
-/// Returns `None` if no block headers have been persisted (i.e. bootstrap has not been run).
-#[miden_instrument(
-    target = COMPONENT,
-    err,
-)]
-pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseError> {
-    Ok(tx
-        .query(sql::LOAD_CHAIN_TIP, &[], |row| row.get::<BlockHeader>(0))?
-        .into_iter()
-        .next())
-}
-
-/// Loads a block header by its block number.
-///
-/// Returns `None` if no block header exists at the given block number.
-#[miden_instrument(
-    target = COMPONENT,
-    fields(block.number = %block_num),
-    err,
-)]
-pub fn load_block_header(
-    tx: &ReadTx<'_>,
-    block_num: BlockNumber,
-) -> Result<Option<BlockHeader>, DatabaseError> {
-    Ok(tx
-        .query(sql::LOAD_BLOCK_HEADER, &[&i64::from(block_num.as_u32())], |row| {
-            row.get::<BlockHeader>(0)
-        })?
-        .into_iter()
-        .next())
-}
-
-/// Returns the total number of validated transactions in the database.
-#[miden_instrument(
-    target = COMPONENT,
-    err,
-)]
-pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
-    Ok(tx
-        .query(sql::COUNT_VALIDATED_TRANSACTIONS, &[], |row| row.get::<i64>(0))?
-        .into_iter()
-        .next()
-        .unwrap_or(0))
-}
-
-/// Returns the total number of signed blocks in the database.
-#[miden_instrument(
-    target = COMPONENT,
-    err,
-)]
-pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
-    Ok(tx
-        .query(sql::COUNT_SIGNED_BLOCKS, &[], |row| row.get::<i64>(0))?
-        .into_iter()
-        .next()
-        .unwrap_or(0))
 }
 
 #[cfg(test)]
@@ -381,7 +304,14 @@ mod tests {
     use super::*;
     use crate::private_record::test_private_record_sealer;
     use crate::storage_key::tests::operator_keys;
-    use crate::{PrivateRecordCombiner, PrivateRecordSealer, PrivateRecordShareRequest};
+    use crate::{
+        PrivateRecordChainId,
+        PrivateRecordCombiner,
+        PrivateRecordContext,
+        PrivateRecordId,
+        PrivateRecordSealer,
+        PrivateRecordShareRequest,
+    };
 
     const CHAIN_ID: PrivateRecordChainId = PrivateRecordChainId::new([1; 32]);
     const KEY_EPOCH: StorageKeyEpoch = StorageKeyEpoch::new([2; 32]);
@@ -423,72 +353,87 @@ mod tests {
     #[tokio::test]
     async fn transaction_exists_detects_validated_transactions() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
 
         let validated_id = TransactionId::from_raw(Word::try_from([1u64, 2, 3, 4]).unwrap());
         let unknown_id = TransactionId::from_raw(Word::try_from([5u64, 6, 7, 8]).unwrap());
 
-        let record = private_record(validated_id, 1);
-        writer
-            .write("insert_row", move |tx| insert_validated_private_transaction(tx, &record))
+        db.insert_validated_private_transaction(private_record(validated_id, 1))
             .await
             .unwrap();
 
-        let validated_exists = reader
-            .read("transaction_exists", move |tx| transaction_exists(tx, validated_id))
-            .await
-            .unwrap();
-        assert!(validated_exists, "an inserted transaction id should be reported as existing");
+        assert!(
+            db.transaction_exists(validated_id).await.unwrap(),
+            "an inserted transaction id should be reported as existing"
+        );
+        assert!(
+            !db.transaction_exists(unknown_id).await.unwrap(),
+            "an unknown transaction id should not be reported as existing"
+        );
+    }
 
-        let unknown_exists = reader
-            .read("transaction_exists", move |tx| transaction_exists(tx, unknown_id))
+    /// The `rarray`-based lookup must return exactly the ids that are absent, preserving the order
+    /// they were supplied in.
+    #[tokio::test]
+    async fn find_unvalidated_transactions_returns_only_missing_ids() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+
+        let ids = (1u64..=4)
+            .map(|i| TransactionId::from_raw(Word::try_from([i, i, i, i]).unwrap()))
+            .collect::<Vec<_>>();
+
+        // Validate the second and fourth ids only.
+        db.insert_validated_private_transaction(private_record(ids[1], 1))
             .await
             .unwrap();
-        assert!(!unknown_exists, "an unknown transaction id should not be reported as existing");
+        db.insert_validated_private_transaction(private_record(ids[3], 2))
+            .await
+            .unwrap();
+
+        let unvalidated = db.find_unvalidated_transactions(ids.clone()).await.unwrap();
+        assert_eq!(unvalidated, vec![ids[0], ids[2]]);
+
+        // An empty request must not error and must return nothing.
+        assert!(db.find_unvalidated_transactions(vec![]).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_initial_metrics_reports_persisted_state() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+
+        // A freshly bootstrapped database is empty.
+        let metrics = db.load_initial_metrics().await.unwrap();
+        assert_eq!(metrics.chain_tip, 0);
+        assert_eq!(metrics.validated_transactions, 0);
+        assert_eq!(metrics.signed_blocks, 0);
     }
 
     #[tokio::test]
     async fn private_record_indexes_work() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
         let record = private_record(transaction_id, 9);
 
         let expected = record.clone();
-        writer
-            .write("insert_private_record", move |tx| {
-                insert_validated_private_transaction(tx, &record)
-            })
-            .await
-            .unwrap();
+        db.insert_validated_private_transaction(record).await.unwrap();
 
-        let by_record = reader
-            .read("load_private_record", move |tx| load_private_record(tx, transaction_id))
-            .await
-            .unwrap();
+        let by_record = db.load_private_record(transaction_id).await.unwrap();
         assert_eq!(by_record, Some(expected.clone()));
 
-        let by_epoch = reader
-            .read("load_private_records_by_key_epoch", move |tx| {
-                load_private_records_by_key_epoch(tx, KEY_EPOCH)
-            })
-            .await
-            .unwrap();
+        let by_epoch = db.load_private_records_by_key_epoch(KEY_EPOCH).await.unwrap();
         assert_eq!(by_epoch, vec![expected.clone()]);
 
-        let by_setup = reader
-            .read("load_private_records_by_setup_context", move |tx| {
-                load_private_records_by_setup_context(tx, SETUP_CONTEXT_ID)
-            })
-            .await
-            .unwrap();
+        let by_setup = db.load_private_records_by_setup_context(SETUP_CONTEXT_ID).await.unwrap();
         assert_eq!(by_setup, vec![expected.clone()]);
     }
 
     #[tokio::test]
     async fn validated_private_transactions_are_loaded_in_insertion_order() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let transaction_ids = [
             TransactionId::from_raw(Word::from([9u32, 0, 0, 0])),
             TransactionId::from_raw(Word::from([1u32, 0, 0, 0])),
@@ -501,15 +446,10 @@ mod tests {
             .collect::<Vec<_>>();
 
         for record in records.clone() {
-            writer
-                .write("insert private record", move |tx| {
-                    insert_validated_private_transaction(tx, &record)
-                })
-                .await
-                .unwrap();
+            db.insert_validated_private_transaction(record).await.unwrap();
         }
 
-        let loaded = reader.read("load all transactions", load_all_transactions).await.unwrap();
+        let loaded = db.load_all_transactions().await.unwrap();
 
         assert_eq!(loaded, records);
     }
@@ -517,7 +457,7 @@ mod tests {
     #[tokio::test]
     async fn stored_private_record_opens_with_threshold_shares() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let operators = operator_keys();
         let transaction_id = TransactionId::from_raw(Word::from([9u32, 10, 11, 12]));
         let context = PrivateRecordContext::new(CHAIN_ID, operators[0].key_epoch(), transaction_id);
@@ -526,18 +466,9 @@ mod tests {
         let record = PrivateRecordSealer::from_operator_key(&operators[0])
             .seal(&mut seal_rng, record_id(transaction_id), context, plaintext)
             .unwrap();
-        writer
-            .write("insert_threshold_record", move |tx| {
-                insert_validated_private_transaction(tx, &record)
-            })
-            .await
-            .unwrap();
+        db.insert_validated_private_transaction(record).await.unwrap();
 
-        let stored = reader
-            .read("load_threshold_record", move |tx| load_private_record(tx, transaction_id))
-            .await
-            .unwrap()
-            .unwrap();
+        let stored = db.load_private_record(transaction_id).await.unwrap().unwrap();
         let request = PrivateRecordShareRequest::for_record(&stored);
         let mut first_rng = ChaCha20Rng::from_seed([41; 32]);
         let mut second_rng = ChaCha20Rng::from_seed([42; 32]);
@@ -560,9 +491,11 @@ mod tests {
     #[tokio::test]
     async fn private_record_schema_has_required_indexes() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let (_writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
 
-        let schema = reader
+        let schema = db
+            .reader
+            .reader
             .read("private_record_schema", |tx| {
                 tx.query(
                     "SELECT sql FROM sqlite_schema \

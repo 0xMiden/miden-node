@@ -5,12 +5,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use miden_node_db::sqlite::DbReader;
 use miden_protocol::utils::serde::Serializable;
 use rand_core_06::OsRng;
 use serde::{Deserialize, Serialize};
 
-use crate::db::load_all_transactions;
+use crate::db::ValidatorDbReader;
 use crate::{GoldenOperatorKey, PrivateRecordError, StoredPrivateRecord};
 
 const LIST_TRANSACTIONS_PATH: &str = "/admin/transactions";
@@ -21,11 +20,11 @@ struct ValidatorAdminService {
     operator_key: Arc<GoldenOperatorKey>,
     /// Read-only handle: the administration API lists stored records and issues decryption shares,
     /// and must never mutate validator state.
-    reader: DbReader,
+    reader: ValidatorDbReader,
 }
 
 impl ValidatorAdminService {
-    fn new(operator_key: GoldenOperatorKey, reader: DbReader) -> Self {
+    fn new(operator_key: GoldenOperatorKey, reader: ValidatorDbReader) -> Self {
         Self {
             operator_key: Arc::new(operator_key),
             reader,
@@ -33,7 +32,7 @@ impl ValidatorAdminService {
     }
 }
 
-pub(super) fn router(operator_key: GoldenOperatorKey, reader: DbReader) -> Router {
+pub(super) fn router(operator_key: GoldenOperatorKey, reader: ValidatorDbReader) -> Router {
     Router::new()
         .route(LIST_TRANSACTIONS_PATH, get(list_validated_private_transactions))
         .route(ISSUE_SHARE_PATH, post(issue_decryption_share))
@@ -69,11 +68,10 @@ struct ListValidatedPrivateTransactionsResponse {
 async fn list_validated_private_transactions(
     State(service): State<ValidatorAdminService>,
 ) -> Result<Json<ListValidatedPrivateTransactionsResponse>, ApiError> {
-    let records = service
-        .reader
-        .read("list validated private transactions", load_all_transactions)
-        .await
-        .map_err(|_error| ApiError::internal("failed to list validated private transactions"))?;
+    let records =
+        service.reader.load_all_transactions().await.map_err(|_error| {
+            ApiError::internal("failed to list validated private transactions")
+        })?;
 
     Ok(Json(ListValidatedPrivateTransactionsResponse {
         transactions: records.into_iter().map(Into::into).collect(),
@@ -162,7 +160,6 @@ mod tests {
     use golden_ehtdh1::wire::{from_wire_bytes, to_wire_bytes};
     use golden_ehtdh1::{Ciphertext, Combiner, DecryptionShare};
     use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
-    use miden_node_db::sqlite::DbWriter;
     use miden_protocol::Word;
     use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -174,7 +171,7 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
-    use crate::db::insert_validated_private_transaction;
+    use crate::db::ValidatorDbWriter;
     use crate::storage_key::tests::operator_keys;
     use crate::{
         PrivateRecordChainId,
@@ -214,10 +211,10 @@ mod tests {
         builder.build().unwrap().get_transaction_inputs(&account, &[], &[]).unwrap()
     }
 
-    async fn test_database() -> (tempfile::TempDir, DbWriter, DbReader) {
+    async fn test_database() -> (tempfile::TempDir, ValidatorDbWriter, ValidatorDbReader) {
         let directory = tempfile::tempdir().unwrap();
-        let (writer, reader) =
-            crate::db::setup(directory.path().join("validator.sqlite3")).await.unwrap();
+        let writer = crate::db::setup(directory.path().join("validator.sqlite3")).await.unwrap();
+        let reader = writer.reader();
         (directory, writer, reader)
     }
 
@@ -251,13 +248,7 @@ mod tests {
         let inputs = transaction_inputs();
         let transaction_id = TransactionId::from_raw(Word::from([8u32, 7, 6, 5]));
         let record = target_record(&record_owner, transaction_id, 10, &inputs.to_bytes());
-        let stored_record = record.clone();
-        writer
-            .write("store listed private transaction", move |tx| {
-                insert_validated_private_transaction(tx, &stored_record)
-            })
-            .await
-            .unwrap();
+        writer.insert_validated_private_transaction(record.clone()).await.unwrap();
 
         let Json(response) =
             list_validated_private_transactions(State(first_service.clone())).await.unwrap();
@@ -314,12 +305,7 @@ mod tests {
         ];
         for (seed, transaction_id) in [11u8, 12, 13].into_iter().zip(transaction_ids) {
             let record = target_record(&keys[0], transaction_id, seed, b"record");
-            writer
-                .write("store private transaction", move |tx| {
-                    insert_validated_private_transaction(tx, &record)
-                })
-                .await
-                .unwrap();
+            writer.insert_validated_private_transaction(record).await.unwrap();
         }
 
         let service = ValidatorAdminService::new(keys.remove(0), reader);

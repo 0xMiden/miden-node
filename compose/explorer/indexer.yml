@@ -1,0 +1,18 @@
+services:
+  explorer-indexer:
+    profiles: [explorer]
+    image: gatewayfm/midenscan-indexer:v0.16.0
+    pull_policy: missing
+    environment:
+      POSTGRES_URL: postgres://midenscan:midenscan@explorer-database:5432/midenscan?sslmode=disable
+      RPC_URL: http://sequencer:57291
+      # Gateway FM currently requires a named Miden network even when RPC is local.
+      MIDEN_NETWORK: devnet
+    depends_on:
+      explorer-database:
+        condition: service_healthy
+      explorer-migration:
+        condition: service_completed_successfully
+      sequencer:
+        condition: service_started
+    restart: unless-stopped

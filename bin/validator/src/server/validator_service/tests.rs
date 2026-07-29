@@ -35,16 +35,22 @@ use miden_tx::LocalTransactionProver;
 use miden_tx::utils::serde::{Deserializable, Serializable};
 use tokio::sync::OnceCell;
 
-use super::{ValidatorError, ValidatorService};
+use super::{InitialMetrics, ValidatorError, ValidatorService};
 use crate::db::{
-    ValidatedTransactionRecord,
     count_validated_transactions,
     load_chain_tip,
-    load_transaction,
+    load_private_record,
     setup,
+    transaction_exists,
     upsert_block_header,
 };
-use crate::{LocalX25519TransactionInputDecrypter, TransactionInputDecrypter, ValidatorSigner};
+use crate::storage_key::tests::operator_keys;
+use crate::{
+    LocalX25519TransactionInputDecrypter,
+    PrivateRecordSealer,
+    TransactionInputDecrypter,
+    ValidatorSigner,
+};
 
 // TEST HELPERS
 // ================================================================================================
@@ -83,11 +89,10 @@ impl TestValidator {
             server: ValidatorService::new(
                 signer,
                 std::sync::Arc::new(test_decrypter()),
+                PrivateRecordSealer::from_operator_key(&operator_keys().remove(0)),
                 db,
                 block_store,
-                0,
-                0,
-                0,
+                InitialMetrics::new(0, 0, 0),
             )
             .await
             .unwrap(),
@@ -182,11 +187,11 @@ impl TestValidator {
             .expect("status should always be available")
     }
 
-    /// Loads the sealed record for `tx_id`, if validation stored one.
-    async fn load_transaction(&self, tx_id: TransactionId) -> Option<ValidatedTransactionRecord> {
+    /// Returns whether `tx_id` has a validated transaction marker.
+    async fn transaction_exists(&self, tx_id: TransactionId) -> bool {
         self.server
             .db
-            .read("load_transaction", move |tx| load_transaction(tx, tx_id))
+            .read("transaction_exists", move |tx| transaction_exists(tx, tx_id))
             .await
             .unwrap()
     }
@@ -202,7 +207,7 @@ impl TestValidator {
 
     /// Asserts that a rejected transaction did not change either validated count.
     async fn assert_transaction_absent(&self, tx_id: TransactionId, expected_count: i64) {
-        assert_eq!(self.load_transaction(tx_id).await, None);
+        assert!(!self.transaction_exists(tx_id).await);
         assert_eq!(self.validated_transaction_count().await, expected_count);
         assert_eq!(
             self.call_status().await.validated_transactions_count,
@@ -417,11 +422,10 @@ async fn signing_key_mismatch_rejected() {
     let result = ValidatorService::new(
         rogue_signer,
         std::sync::Arc::new(test_decrypter()),
+        PrivateRecordSealer::from_operator_key(&operator_keys().remove(0)),
         db,
         block_store,
-        0,
-        0,
-        0,
+        InitialMetrics::new(0, 0, 0),
     )
     .await;
     assert!(
@@ -1249,9 +1253,9 @@ async fn header_mismatch_does_not_store_inputs() {
     tv.assert_transaction_absent(tx.id(), 0).await;
 }
 
-/// A valid submission stores its exact envelope and a duplicate cannot replace it.
+/// A valid submission stores one marker and one protected record.
 #[tokio::test]
-async fn valid_submission_stores_first_sealed_inputs() {
+async fn valid_submission_stores_one_protected_record() {
     let tv = TestValidator::new().await;
     let fixture = proven_transaction_fixture().await;
     let tx = &fixture.transaction;
@@ -1260,17 +1264,25 @@ async fn valid_submission_stores_first_sealed_inputs() {
     assert_ne!(first.ciphertext, second.ciphertext);
 
     tv.call_submit_proven_transaction(tx, first.clone()).await.unwrap();
+    let transaction_id = tx.id();
+    let first_record = tv
+        .server
+        .db
+        .read("load_private_record", move |db_tx| load_private_record(db_tx, transaction_id))
+        .await
+        .unwrap()
+        .unwrap();
     tv.call_submit_proven_transaction(tx, second).await.unwrap();
 
-    assert_eq!(
-        tv.load_transaction(tx.id()).await,
-        Some(ValidatedTransactionRecord {
-            transaction_id: tx.id(),
-            submission_scheme: TransactionEncryptionScheme::X25519XChaCha20Poly1305.as_u32(),
-            submission_key_id: first.key_id,
-            sealed_transaction_inputs: first.ciphertext,
-        }),
-    );
+    assert!(tv.transaction_exists(tx.id()).await);
+    let stored_record = tv
+        .server
+        .db
+        .read("load_private_record", move |db_tx| load_private_record(db_tx, transaction_id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored_record, first_record);
     assert_eq!(tv.validated_transaction_count().await, 1);
     assert_eq!(tv.call_status().await.validated_transactions_count, 1);
 }
@@ -1297,5 +1309,5 @@ async fn failed_batch_item_does_not_store_inputs() {
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     tv.assert_transaction_absent(rejected_tx.id(), 1).await;
-    assert!(tv.load_transaction(valid_tx.id()).await.is_some());
+    assert!(tv.transaction_exists(valid_tx.id()).await);
 }

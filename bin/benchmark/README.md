@@ -182,6 +182,11 @@ drop the trailing `&` and put each command in its own terminal.
 mkdir -p logs
 DATA=./node-data
 
+export MIDEN_VALIDATOR_STORAGE_KEY_EPOCH="<32-byte-hex-epoch>"
+export MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT="<setup-context-file>"
+export MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET="<public-key-set-file>"
+export MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE="<secret-share-file>"
+
 nohup miden-validator start \
   --listen         127.0.0.1:50101 \
   --data-directory "$DATA/validator" \

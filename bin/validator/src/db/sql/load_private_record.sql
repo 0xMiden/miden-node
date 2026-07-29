@@ -1,13 +1,12 @@
-INSERT INTO validated_transactions (
-    id,
-    validator_id,
+SELECT
     chain_id,
     key_epoch,
+    id,
+    validator_id,
     setup_context_id,
     format_version,
     cipher_nonce,
     encrypted_record,
     encrypted_record_key
-)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-ON CONFLICT DO NOTHING;
+FROM validated_transactions
+WHERE id = ?1;

@@ -5,13 +5,14 @@ use miden_node_proto::generated as grpc;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::transaction::{ProvenTransaction, TransactionId, TransactionInputs};
-use miden_tx::utils::serde::Deserializable;
+use miden_tx::utils::serde::{Deserializable, Serializable};
+use rand_core_06::OsRng;
 use tonic::Status;
 
 use super::ValidatorService;
-use crate::COMPONENT;
-use crate::db::{ValidatedTransactionRecord, insert_transaction, transaction_exists};
+use crate::db::{insert_validated_private_transaction, transaction_exists};
 use crate::tx_validation::validate_transaction;
+use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId};
 
 #[tonic::async_trait]
 impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
@@ -44,34 +45,44 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             .try_read()
             .map_err(|_| Status::resource_exhausted("validator is busy streaming a backup"))?;
 
-        // Short-circuit transactions that have already been validated.
-        let already_validated = self
+        let transaction_exists = self
             .db
             .read("transaction_exists", move |tx| transaction_exists(tx, tx_id))
             .await
             .map_err(|err| {
                 Status::internal(err.as_report_context("Failed to query transaction"))
             })?;
-        if already_validated {
+        if transaction_exists {
             return Ok(());
         }
+
+        let private_inputs = inputs.to_bytes();
 
         // Validate the transaction.
         validate_transaction(tx, inputs).await.map_err(|err| {
             Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
-        // This Phase 1 record stores the accepted client envelope only after plaintext validation.
-        // Phase 2 will instead store the validated inputs under threshold encryption.
-        let record = ValidatedTransactionRecord {
-            transaction_id: tx_id,
-            submission_scheme: self.encryption_key_info.scheme.as_u32(),
-            submission_key_id: sealed.key_id,
-            sealed_transaction_inputs: sealed.ciphertext,
-        };
+        // Re-encrypt the private inputs under a fresh content key.
+        let record_id = PrivateRecordId::new(tx_id, &self.signer.public_key());
+        let context = PrivateRecordContext::new(
+            self.private_record_chain_id,
+            self.private_record_sealer.key_epoch(),
+            tx_id,
+        );
+        let private_record = self
+            .private_record_sealer
+            .seal(&mut OsRng, record_id, context, &private_inputs)
+            .map_err(|err| {
+                Status::internal(err.as_report_context("Failed to protect transaction inputs"))
+            })?;
+
+        // Store the validated transaction and private record atomically.
         let count = self
             .db
-            .write("insert_transaction", move |tx| insert_transaction(tx, &record))
+            .write("insert_validated_private_transaction", move |tx| {
+                insert_validated_private_transaction(tx, &private_record)
+            })
             .await
             .map_err(|err| {
                 Status::internal(err.as_report_context("Failed to insert transaction"))

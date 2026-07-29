@@ -286,6 +286,10 @@ jobs:
           USE_REMOTE_PROVER: "0"
           WAIT_BLOCKS: "30"
           RUN_DIR: ${{ runner.temp }}/bench-local-run
+          MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: "0909090909090909090909090909090909090909090909090909090909090909"
+          MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: ${{ github.workspace }}/scripts/testdata/insecure-golden-storage-key/setup-context.wire
+          MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: ${{ github.workspace }}/scripts/testdata/insecure-golden-storage-key/public-key-set.wire
+          MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: ${{ github.workspace }}/scripts/testdata/insecure-golden-storage-key/secret-share.wire
         run: |
           export PATH="$PWD/target/release:$PATH"
           ./scripts/bench-local.sh

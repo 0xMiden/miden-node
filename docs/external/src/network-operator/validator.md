@@ -33,7 +33,11 @@ current block.
 ```bash
 miden-validator start \
   --listen 0.0.0.0:50101 \
-  --data-directory validator-data
+  --data-directory validator-data \
+  --storage-key.epoch <32-byte-hex-epoch> \
+  --storage-key.setup-context <setup-context-file> \
+  --storage-key.public-key-set <public-key-set-file> \
+  --storage-key.secret-share <secret-share-file>
 ```
 
 For local development, the validator can use its default insecure development key. Production deployments should
@@ -51,11 +55,14 @@ so its AWS identity needs that permission on the wrapping key. Note that, unlike
 encryption key is held in validator memory: AWS KMS cannot perform X25519 key agreement itself, so envelope encryption
 is the supported provisioning path.
 
-The validator stores accepted private inputs under this shared key. Any holder of the shared secret can decrypt those
-records. Run each validator inside its trusted execution environment. If transaction proving uses a remote prover, that
+Each validator must run inside its trusted execution environment. If transaction proving uses a remote prover, that
 prover also receives the plaintext inputs and must run inside the same trusted boundary.
 
-The sealed-input storage migration cannot recover ciphertext for older validated rows. Bootstrap a fresh validator
-database before deploying a build with this schema.
+This version requires a fresh validator database. Phase 1 client ciphertext cannot be converted into Golden records.
+
+The files contain canonical Golden wire bytes. Every validator uses the same setup context and public key set, but uses
+its own secret share. The validator will not start if any storage key option is missing or the key material is invalid.
+After validation, it stores only the transaction ID and the Golden threshold record. It does not store the client
+ciphertext.
 
 Use `miden-validator start --help` for the complete current option list.

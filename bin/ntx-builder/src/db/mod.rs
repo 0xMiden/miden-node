@@ -7,7 +7,7 @@ use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
-use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock};
+use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock, ValidatorKeys};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::note::{NoteId, NoteScript, Nullifier};
 #[cfg(test)]
@@ -47,6 +47,15 @@ impl NtxDbReader {
     pub(crate) async fn select_genesis_commitment(&self) -> Result<Option<Word>, DatabaseError> {
         self.reader
             .read("select_genesis_commitment", db::queries::select_genesis_commitment)
+            .await
+    }
+
+    /// Reads the validator signing keys persisted from the genesis header.
+    pub(crate) async fn select_genesis_validator_keys(
+        &self,
+    ) -> Result<Option<ValidatorKeys>, DatabaseError> {
+        self.reader
+            .read("select_genesis_validator_keys", db::queries::select_genesis_validator_keys)
             .await
     }
 
@@ -476,8 +485,10 @@ mod tests {
     async fn bootstrap_seeds_genesis_chain_state() {
         let dir = tempfile::tempdir().expect("failed to create temp directory");
         let db_path = dir.path().join("ntx-builder.sqlite3");
+        let genesis = mock_genesis_block();
+        let expected_validator_keys = genesis.header().validator_keys().clone();
 
-        bootstrap(db_path.clone(), &mock_genesis_block())
+        bootstrap(db_path.clone(), &genesis)
             .await
             .expect("bootstrap should succeed on a fresh database");
 
@@ -489,6 +500,13 @@ mod tests {
             .expect("chain state should be present after bootstrap");
 
         assert_eq!(block_num, BlockNumber::GENESIS);
+        assert_eq!(
+            db.select_genesis_validator_keys()
+                .await
+                .expect("query should succeed")
+                .expect("genesis validator keys should be present"),
+            expected_validator_keys,
+        );
     }
 
     #[tokio::test]

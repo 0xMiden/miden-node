@@ -243,6 +243,7 @@ macro_rules! impl_blob_codec {
 // rule does not force each consumer to redeclare them.
 impl_blob_codec!(
     miden_protocol::block::BlockHeader,
+    miden_protocol::block::ValidatorKeys,
     miden_protocol::account::Account,
     miden_protocol::account::AccountId,
     miden_protocol::transaction::TransactionId,

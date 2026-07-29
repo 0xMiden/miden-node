@@ -3,8 +3,10 @@ use std::sync::atomic::AtomicU64;
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{DbReader, DbWriter};
+use miden_node_proto::domain::encryption::TransactionEncryptionKeyInfo;
 use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_protocol::Word;
 use miden_protocol::block::{
     BlockHeader,
     BlockNumber,
@@ -19,8 +21,13 @@ use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
 use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
-use crate::signers::TransactionEncryptionKeyInfo;
-use crate::{COMPONENT, TransactionInputDecrypter, ValidatorSigner};
+use crate::{
+    COMPONENT,
+    PrivateRecordChainId,
+    PrivateRecordSealer,
+    TransactionInputDecrypter,
+    ValidatorSigner,
+};
 
 #[cfg(test)]
 mod tests;
@@ -70,6 +77,26 @@ pub enum ValidatorError {
 // VALIDATOR SERVICE
 // ================================================================================
 
+pub(crate) struct InitialMetrics {
+    chain_tip: u32,
+    validated_transactions: u64,
+    signed_blocks: u64,
+}
+
+impl InitialMetrics {
+    pub(crate) const fn new(
+        chain_tip: u32,
+        validated_transactions: u64,
+        signed_blocks: u64,
+    ) -> Self {
+        Self {
+            chain_tip,
+            validated_transactions,
+            signed_blocks,
+        }
+    }
+}
+
 /// The underlying implementation of the gRPC validator server.
 ///
 /// Implements the gRPC API for the validator.
@@ -81,8 +108,13 @@ pub(crate) struct ValidatorService {
     /// gRPC handlers; writes still serialize on the single writer connection.
     writer: Arc<DbWriter>,
     /// Decrypter for transaction inputs sealed against the shared encryption key.
-    #[expect(dead_code, reason = "used by the submit path in a follow-up PR")]
     decrypter: Arc<dyn TransactionInputDecrypter>,
+    /// Commitment of the genesis block, loaded once at construction.
+    genesis_commitment: Word,
+    /// Public Golden key used to seal private records.
+    private_record_sealer: PrivateRecordSealer,
+    /// Genesis commitment bound into every private record context.
+    private_record_chain_id: PrivateRecordChainId,
     /// Public metadata of the shared encryption key, fetched once at construction.
     encryption_key_info: TransactionEncryptionKeyInfo,
     /// Signature by this validator's own signing key over the encryption key attestation
@@ -107,16 +139,14 @@ pub(crate) struct ValidatorService {
 }
 
 impl ValidatorService {
-    #[expect(clippy::too_many_arguments)]
     pub(crate) async fn new(
         signer: ValidatorSigner,
         writer: DbWriter,
         reader: DbReader,
         decrypter: Arc<dyn TransactionInputDecrypter>,
+        private_record_sealer: PrivateRecordSealer,
         block_store: BlockStore,
-        initial_chain_tip: u32,
-        initial_tx_count: u64,
-        initial_block_count: u64,
+        initial_metrics: InitialMetrics,
     ) -> Result<Self, ValidatorError> {
         // The chain tip's header commits to the validator set authorized to sign the next block, so
         // the signing key must be a member of that set for this validator to be useful. Reject a
@@ -139,6 +169,12 @@ impl ValidatorService {
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoGenesisHeader)?
             .commitment();
+        let private_record_chain_id = PrivateRecordChainId::new(
+            genesis_commitment
+                .to_bytes()
+                .try_into()
+                .expect("a Miden block commitment is always 32 bytes"),
+        );
         let encryption_key_info = decrypter
             .encryption_key()
             .await
@@ -147,10 +183,12 @@ impl ValidatorService {
             .sign_commitment(encryption_key_info.attestation_commitment(genesis_commitment))
             .await
             .map_err(|err| ValidatorError::EncryptionKeyAttestationFailed(err.to_string()))?;
-
         Ok(Self {
             signer,
             decrypter,
+            genesis_commitment,
+            private_record_sealer,
+            private_record_chain_id,
             encryption_key_info,
             encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
@@ -158,9 +196,9 @@ impl ValidatorService {
             writer: Arc::new(writer),
             block_store,
             sign_block_semaphore: Semaphore::new(1),
-            committed_tip: watch::Sender::new(BlockNumber::from(initial_chain_tip)),
-            validated_transactions_count: AtomicU64::new(initial_tx_count),
-            signed_blocks_count: AtomicU64::new(initial_block_count),
+            committed_tip: watch::Sender::new(BlockNumber::from(initial_metrics.chain_tip)),
+            validated_transactions_count: AtomicU64::new(initial_metrics.validated_transactions),
+            signed_blocks_count: AtomicU64::new(initial_metrics.signed_blocks),
         })
     }
 
@@ -199,7 +237,6 @@ impl ValidatorService {
         if !unvalidated_txs.is_empty() {
             return Err(ValidatorError::UnvalidatedTransactions(unvalidated_txs));
         }
-
         // Build the block header.
         let (proposed_header, proposed_body) = proposed_block
             .into_header_and_body()

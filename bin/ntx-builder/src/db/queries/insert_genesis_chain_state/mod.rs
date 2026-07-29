@@ -9,9 +9,13 @@ use miden_protocol::crypto::merkle::mmr::PartialMmr;
 const SQL: &str = include_str!("insert_genesis_chain_state.sql");
 
 /// Inserts the singleton chain state row at bootstrap, seeding the tip columns from the genesis
-/// block together with the genesis block commitment. The commitment satisfies the `NOT NULL`
-/// constraint at insert time and is retained across all subsequent tip updates (see
+/// block together with the genesis block commitment and the genesis validator signing keys. The
+/// commitment satisfies the `NOT NULL` constraint at insert time and, like the validator keys, is
+/// retained across all subsequent tip updates (see
 /// [`update_chain_state_tip`](super::update_chain_state_tip)).
+///
+/// The validator keys are the trust root for transaction encryption key attestations, and are kept
+/// here because the genesis header itself is overwritten once the chain tip advances.
 pub fn insert_genesis_chain_state(
     tx: &WriteTx<'_>,
     genesis_block_header: &BlockHeader,
@@ -29,6 +33,7 @@ pub fn insert_genesis_chain_state(
             genesis_block_header,
             &PartialMmr::default(),
             genesis_commitment,
+            genesis_block_header.validator_keys(),
         ],
     )?;
     Ok(())

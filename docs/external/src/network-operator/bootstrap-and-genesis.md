@@ -149,4 +149,9 @@ miden-ntx-builder bootstrap \
 The key each validator operator starts their validator with must match the public key committed for them in the genesis
 configuration's `validators` list.
 
+Bootstrap takes no transaction encryption key: that key is configured separately when the validator is started, and
+nothing cross-checks it against the genesis block. A validator started without one falls back to a publicly known
+insecure default, which after bootstrap means every submission on the network is encrypted to a key anyone can read. See
+[Validator](./validator.md) for how to provision it.
+
 <!-- markdownlint-enable MD033 MD041 -->

@@ -62,11 +62,11 @@ pub(crate) async fn submit_tx_to_validators(
 pub(crate) async fn submit_batch_to_validators(
     validators: &[miden_node_proto::clients::ValidatorClient],
     proposed_batch: &miden_protocol::batch::ProposedBatch,
-    transaction_inputs: &[Vec<u8>],
+    sealed_transaction_inputs: &[proto::transaction::SealedTransactionInputs],
 ) -> tonic::Result<()> {
     futures::future::try_join_all(validators.iter().map(|validator| {
         let mut validator = validator.clone();
-        async move { validator.submit_batch(proposed_batch, transaction_inputs).await }
+        async move { validator.submit_batch(proposed_batch, sealed_transaction_inputs).await }
     }))
     .await?;
     Ok(())

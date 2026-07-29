@@ -19,8 +19,8 @@ services:
       LOG_LEVEL: debug
       LOG_ADD_SOURCE: "false"
       GRACE_TIMEOUT: 15s
-      NETWORK_STATUS_URL: https://status.devnet.miden.io/status
-      NETWORK_STATUS_DASHBOARD_URL: https://status.devnet.miden.io
+      NETWORK_STATUS_URL: http://monitor:3001/status
+      NETWORK_STATUS_DASHBOARD_URL: http://monitor.localhost
       VERIFIED_COMPONENTS_URL: https://miden-playground-api.walnut.dev/verified-account-components/mdev
       VERIFIED_COMPONENTS_TIMEOUT: 10s
       VERIFIED_NOTES_URL: https://miden-playground-api.walnut.dev/verified-notes/mdev

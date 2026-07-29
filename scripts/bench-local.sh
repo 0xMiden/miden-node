@@ -21,6 +21,8 @@
 #   - miden-benchmark
 #
 # Usage:
+#   Export MIDEN_VALIDATOR_STORAGE_KEY_EPOCH, MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT,
+#   MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET, and MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE first.
 #   scripts/bench-local.sh                       # 5 tx pairs, local prover
 #   N_TXS=20 scripts/bench-local.sh              # 20 tx pairs
 #   USE_REMOTE_PROVER=1 scripts/bench-local.sh   # offload create-proofs to the remote-prover
@@ -35,6 +37,8 @@ USE_REMOTE_PROVER="${USE_REMOTE_PROVER:-0}"
 CONCURRENCY="${CONCURRENCY:-8}"
 WAIT_BLOCKS="${WAIT_BLOCKS:-30}"
 RUN_DIR="${RUN_DIR:-./bench-local-run}"
+# Public key for the validator's insecure default development signing key.
+VALIDATOR_SIGNING_PUBLIC_KEY="${VALIDATOR_SIGNING_PUBLIC_KEY:-031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f}"
 
 # --- ports --------------------------------------------------------------------
 VALIDATOR_PORT=50101
@@ -96,6 +100,16 @@ wait_for_port() {
 required_bins=(miden-node miden-validator miden-ntx-builder miden-remote-prover miden-benchmark)
 for bin in "${required_bins[@]}"; do
     command -v "$bin" >/dev/null || die "$bin not on PATH"
+done
+
+required_storage_key_vars=(
+    MIDEN_VALIDATOR_STORAGE_KEY_EPOCH
+    MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT
+    MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET
+    MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE
+)
+for var in "${required_storage_key_vars[@]}"; do
+    [ -n "${!var:-}" ] || die "$var is required"
 done
 
 if [ -e "$DATA/node" ] || [ -e "$DATA/validator" ] || [ -e "$DATA/genesis" ] \
@@ -196,9 +210,10 @@ miden-benchmark create-proofs \
 
 say "running run-benchmark"
 miden-benchmark run-benchmark \
-    --rpc-url     "http://127.0.0.1:$RPC_PORT" \
-    --concurrency "$CONCURRENCY" \
-    --wait-blocks "$WAIT_BLOCKS" \
+    --rpc-url                      "http://127.0.0.1:$RPC_PORT" \
+    --validator-signing-public-key "$VALIDATOR_SIGNING_PUBLIC_KEY" \
+    --concurrency                  "$CONCURRENCY" \
+    --wait-blocks                  "$WAIT_BLOCKS" \
     2>&1 | tee "$LOGS/run-benchmark.log"
 
 say "done. logs in $LOGS/"

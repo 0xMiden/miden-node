@@ -70,6 +70,9 @@ pub use select_chain_state::select_chain_state;
 mod select_genesis_commitment;
 pub use select_genesis_commitment::select_genesis_commitment;
 
+mod select_genesis_validator_keys;
+pub use select_genesis_validator_keys::select_genesis_validator_keys;
+
 mod update_chain_state_tip;
 pub use update_chain_state_tip::update_chain_state_tip;
 

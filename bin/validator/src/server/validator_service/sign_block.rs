@@ -72,7 +72,7 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
         // closure, so it can be returned to the block producer for cross-checking.
         let block_commitment = header.commitment();
 
-        // Persist the validated block header.
+        // Persist the signed header.
         let new_block_num = header.block_num().as_u32();
         self.writer
             .write("upsert_block_header", move |tx| upsert_block_header(tx, &header))

@@ -35,11 +35,13 @@ use miden_protocol::{Felt, Word};
 #[cfg(feature = "rocksdb")]
 use tracing::info;
 
+use crate::COMPONENT;
+#[cfg(feature = "rocksdb")]
+use crate::LOG_TARGET;
 use crate::account_state_forest::AccountStateForest;
 use crate::db::Db;
 use crate::db::models::queries::BlockHeaderCommitment;
 use crate::errors::{DatabaseError, StateInitializationError};
-use crate::{COMPONENT, LOG_TARGET};
 
 // CONSTANTS
 // ================================================================================================
@@ -290,7 +292,6 @@ impl TreeStorageLoader for RocksDbStorage {
     ) -> Result<AccountTree<LargeSmt<Self>>, StateInitializationError> {
         // If RocksDB storage has data, load from it directly
 
-        use crate::LOG_TARGET;
         let has_data = self
             .has_leaves()
             .map_err(|e| StateInitializationError::AccountTreeIoError(e.to_string()))?;

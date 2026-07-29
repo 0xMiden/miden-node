@@ -15,7 +15,7 @@ use tracing::{debug, warn};
 use crate::LOG_TARGET;
 use crate::config::MonitorConfig;
 use crate::counter::{CounterTrackingService, IncrementService, LatencyState, TrackedAccounts};
-use crate::deploy::create_and_deploy_accounts;
+use crate::deploy::{TransactionSubmissionClient, create_and_deploy_accounts};
 use crate::explorer::ExplorerService;
 use crate::faucet::FaucetService;
 use crate::frontend::{ServerState, serve};
@@ -253,22 +253,27 @@ async fn bootstrap_ntx(
     config: &MonitorConfig,
 ) -> Result<(IncrementService, CounterTrackingService)> {
     let prover = LocalTransactionProver::default();
-    let (wallet_account, secret_key, counter_account) =
-        create_and_deploy_accounts(&config.rpc_url, &prover).await?;
+    let trusted_validator_signing_key = config.trusted_validator_signing_key()?;
+    let submission_client = TransactionSubmissionClient::connect(
+        &config.rpc_url,
+        config.request_timeout,
+        trusted_validator_signing_key,
+    )
+    .await?;
+    let accounts = create_and_deploy_accounts(&submission_client, &prover).await?;
 
     let (accounts_tx, accounts_rx) = watch::channel(TrackedAccounts {
-        wallet: wallet_account.clone(),
-        counter: counter_account.clone(),
+        wallet: accounts.wallet.clone(),
+        counter: accounts.counter.clone(),
     });
 
     let latency_state = Arc::new(Mutex::new(LatencyState::default()));
 
     let increment_svc = IncrementService::new(
         config.clone(),
-        wallet_account,
-        secret_key,
-        counter_account,
+        accounts,
         prover,
+        submission_client,
         accounts_tx,
         latency_state.clone(),
     )

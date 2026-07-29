@@ -11,7 +11,7 @@ services:
       SERVER_WRITE_TIMEOUT: 15s
       SERVER_IDLE_TIMEOUT: 60s
       SERVER_GRAPHQL_QUERY_CACHE_SIZE: "1000"
-      CORS_ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      CORS_ALLOWED_ORIGINS: http://explorer.localhost,http://localhost:8080,http://127.0.0.1:8080
       METRICS_ADDRESS: ":8200"
       METRICS_NAMESPACE: midenscan
       METRICS_SUBSYSTEM: api

@@ -24,6 +24,7 @@ include:
   - compose/ntx-builder.yml
   - compose/tx-prover.yml
   - compose/otel-collector.yml
+  - compose/router.yml
   - compose/faucet.yml
   - compose/explorer.yml
   - compose/telemetry.yml

@@ -113,6 +113,7 @@ Existing direct ports remain available for native gRPC clients, automation, and 
 | ------------------ | ----------------------------------- | --------------------------------- |
 | RPC API (gRPC-Web) | `http://rpc.localhost`              | `localhost:57291` for native gRPC |
 | Transaction prover | `http://prover.localhost`           | Not published directly            |
+| Note transport     | `http://ntl.localhost`              | `localhost:57292` for native gRPC |
 | Faucet frontend    | `http://faucet.localhost`           | `http://localhost:8081`           |
 | Faucet API         | `http://faucet.localhost/api`       | `http://localhost:8000`           |
 | Block explorer     | `http://explorer.localhost`         | `http://localhost:8080`           |
@@ -134,6 +135,21 @@ docker compose --profile explorer up -d
 The indexer reads from the local sequencer and persists its state in the `explorer-data` volume. The frontend is
 available at `http://explorer.localhost`, with its GraphQL API at `http://explorer.localhost/graphql`. These third-party
 components are intended for local development and are not part of the Miden node implementation.
+
+## Note Transport
+
+The [Miden Note Transport service](https://github.com/0xMiden/note-transport-service) exchanges private notes between
+clients. Enable its optional profile explicitly:
+
+```bash
+docker compose --profile note-transport up -d
+```
+
+Its browser-facing gRPC-Web endpoint is `http://ntl.localhost`; native gRPC clients can use `localhost:57292`. Notes are
+persisted in the `note-transport-data` volume.
+
+The pinned Gateway FM image currently supports only `linux/amd64`. On another architecture, set
+`MIDEN_NOTE_TRANSPORT_IMAGE` to a compatible build before enabling the profile.
 
 ## Faucet
 

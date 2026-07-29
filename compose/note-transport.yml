@@ -1,0 +1,28 @@
+# The note transport service is currently published for linux/amd64 only.
+# Keep it optional and allow a compatible image to be substituted on other
+# architectures.
+services:
+  note-transport:
+    profiles: [note-transport]
+    image: ${MIDEN_NOTE_TRANSPORT_IMAGE:-gatewayfm/miden-note-transport:v0.5.0-alpha.1}
+    pull_policy: missing
+    command:
+      - miden-note-transport-node
+      - --host
+      - 0.0.0.0
+      - --database-url
+      - /data/notes.sqlite3
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_RESOURCE_ATTRIBUTES: service.instance.id=note-transport
+    volumes:
+      - note-transport-data:/data
+    ports:
+      - "127.0.0.1:57292:57292"
+    depends_on:
+      otel-collector:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  note-transport-data:

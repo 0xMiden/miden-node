@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
-use std::num::NonZeroUsize;
 
 use anyhow::Context;
+use miden_node_db::sqlite::Database;
 use miden_node_proto::server::{validator_admin_api, validator_api};
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_store::BlockStore;
@@ -14,12 +14,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::db::{
-    count_signed_blocks,
-    count_validated_transactions,
-    load_chain_tip,
-    load_with_pool_size,
-};
+use crate::db::{count_signed_blocks, count_validated_transactions, load_chain_tip};
 use crate::{
     DataDirectory,
     GoldenOperatorKey,
@@ -62,8 +57,8 @@ pub struct ValidatorServer {
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
 
-    /// Maximum number of SQLite connections in the validator database connection pool.
-    pub sqlite_connection_pool_size: NonZeroUsize,
+    /// Shared validator database.
+    pub database: Database,
 }
 
 /// Serves the private validator administration API on a network-isolated listener.
@@ -74,6 +69,8 @@ pub struct ValidatorAdminServer {
     pub grpc_options: GrpcOptionsInternal,
     /// Golden key material used to issue this validator's decryption shares.
     pub operator_key: GoldenOperatorKey,
+    /// Shared validator database.
+    pub database: Database,
 }
 
 impl ValidatorAdminServer {
@@ -107,6 +104,7 @@ impl ValidatorAdminServer {
             .timeout(self.grpc_options.request_timeout)
             .add_service(validator_admin_api::service(ValidatorAdminService::new(
                 self.operator_key,
+                self.database,
             )))
             .serve_with_incoming_shutdown(
                 TcpListenerStream::new(listener),
@@ -123,13 +121,7 @@ impl ValidatorServer {
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
     /// encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        // Initialize database connection.
-        let db = load_with_pool_size(
-            self.data_directory.database_path(),
-            self.sqlite_connection_pool_size,
-        )
-        .await
-        .context("failed to initialize validator database")?;
+        let db = self.database;
 
         // Initialize block store.
         let block_store = BlockStore::load(self.data_directory.block_store_dir())

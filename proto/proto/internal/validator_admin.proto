@@ -8,9 +8,45 @@ package validator_admin;
 // ================================================================================================
 
 service Api {
+    // Lists this validator's stored private transactions in insertion order.
+    rpc ListValidatedPrivateTransactions(ListValidatedPrivateTransactionsRequest)
+        returns (ListValidatedPrivateTransactionsResponse) {}
+
     // Issues this validator's Golden decryption share for one encrypted content key and context.
     rpc IssueDecryptionShare(IssueDecryptionShareRequest)
         returns (IssueDecryptionShareResponse) {}
+}
+
+message ListValidatedPrivateTransactionsRequest {
+    // Number of transactions to return. Zero uses the server default.
+    uint32 page_size = 1;
+
+    // Opaque cursor returned by the prior page. Empty starts at the first transaction.
+    bytes page_token = 2;
+}
+
+message ValidatedPrivateTransaction {
+    // Canonical Miden transaction ID.
+    bytes transaction_id = 1;
+
+    // XChaCha20-Poly1305 ciphertext of the validated TransactionInputs.
+    bytes final_ciphertext = 2;
+
+    // XChaCha20-Poly1305 nonce for final_ciphertext.
+    bytes cipher_nonce = 3;
+
+    // Canonical Golden EHTDH1 ciphertext for the content key.
+    bytes encrypted_record_key = 4;
+
+    // Exact associated data used by both encryption layers.
+    bytes decryption_context = 5;
+}
+
+message ListValidatedPrivateTransactionsResponse {
+    repeated ValidatedPrivateTransaction transactions = 1;
+
+    // Opaque cursor for the next page. Empty means this is the final page.
+    bytes next_page_token = 2;
 }
 
 message IssueDecryptionShareRequest {

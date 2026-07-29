@@ -1,0 +1,15 @@
+SELECT
+    chain_id,
+    key_epoch,
+    id,
+    validator_id,
+    setup_context_id,
+    format_version,
+    cipher_nonce,
+    encrypted_record,
+    encrypted_record_key,
+    insertion_sequence
+FROM validated_transactions
+WHERE insertion_sequence > ?1
+ORDER BY insertion_sequence
+LIMIT ?2;

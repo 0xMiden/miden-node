@@ -35,6 +35,12 @@ pub async fn start(
 ) -> anyhow::Result<()> {
     let data_directory =
         DataDirectory::load(data_directory).context("failed to load validator data directory")?;
+    let database = miden_validator::db::load_with_pool_size(
+        data_directory.database_path(),
+        sqlite_connection_pool_size,
+    )
+    .await
+    .context("failed to initialize validator database")?;
     let private_record_sealer = PrivateRecordSealer::from_operator_key(&keys.operator_key);
     let public_server = ValidatorServer {
         address,
@@ -43,7 +49,7 @@ pub async fn start(
         decrypter: keys.decrypter,
         private_record_sealer,
         data_directory,
-        sqlite_connection_pool_size,
+        database: database.clone(),
     };
 
     let mut tasks = Tasks::new();
@@ -53,6 +59,7 @@ pub async fn start(
             address,
             grpc_options,
             operator_key: keys.operator_key,
+            database,
         };
         tasks.spawn("validator admin API", admin_server.serve(shutdown.clone()));
     }

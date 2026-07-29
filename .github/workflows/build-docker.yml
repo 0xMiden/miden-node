@@ -106,7 +106,21 @@ jobs:
         run: |
           docker compose \
             -f docker-compose.yml \
+            --profile "*" \
+            config \
+            --no-interpolate \
+            --no-normalize \
+            --output "${RUNNER_TEMP}/miden-local-network.yml"
+          docker compose \
+            -f "${RUNNER_TEMP}/miden-local-network.yml" \
             -f compose/publish.yml \
+            --profile "*" \
+            config \
+            --no-interpolate \
+            --no-normalize \
+            --output "${RUNNER_TEMP}/miden-local-network.publish.yml"
+          docker compose \
+            -f "${RUNNER_TEMP}/miden-local-network.publish.yml" \
             --profile "*" \
             publish \
             --with-env \

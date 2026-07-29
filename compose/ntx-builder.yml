@@ -1,0 +1,25 @@
+services:
+  ntx-builder:
+    image: ${MIDEN_NTX_BUILDER_IMAGE:-miden-ntx-builder}
+    pull_policy: if_not_present
+    volumes:
+      - node-data:/data
+    depends_on:
+      bootstrap-ntx-builder:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+      sequencer:
+        condition: service_started
+      tx-prover:
+        condition: service_started
+    command:
+      - miden-ntx-builder
+      - start
+      - --listen=0.0.0.0:50301
+      - --rpc.url=http://sequencer:57291
+      - --rpc.auth-header-value=secret_value
+      - --tx-prover.url=${MIDEN_REMOTE_PROVER_URL:-http://tx-prover:50051}
+      - --data-directory=/data/ntx-builder
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317

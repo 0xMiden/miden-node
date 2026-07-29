@@ -2,7 +2,7 @@ services:
   monitor:
     profiles: [monitor]
     image: ${MIDEN_NETWORK_MONITOR_IMAGE:-miden-network-monitor}
-    pull_policy: if_not_present
+    pull_policy: missing
     depends_on:
       otel-collector:
         condition: service_started

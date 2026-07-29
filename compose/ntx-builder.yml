@@ -1,7 +1,7 @@
 services:
   ntx-builder:
     image: ${MIDEN_NTX_BUILDER_IMAGE:-miden-ntx-builder}
-    pull_policy: if_not_present
+    pull_policy: missing
     volumes:
       - node-data:/data
     depends_on:

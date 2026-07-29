@@ -1,7 +1,7 @@
 services:
   tx-prover:
     image: ${MIDEN_REMOTE_PROVER_IMAGE:-miden-remote-prover}
-    pull_policy: if_not_present
+    pull_policy: missing
     depends_on:
       otel-collector:
         condition: service_started

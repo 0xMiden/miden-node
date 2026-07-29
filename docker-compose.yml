@@ -6,11 +6,11 @@
 #   The insecure defaults correspond to the public keys in the genesis config
 #   in compose/bootstrap.yml and are intended only for local development.
 # - MIDEN_NODE_IMAGE, MIDEN_VALIDATOR_IMAGE, MIDEN_NTX_BUILDER_IMAGE,
-#   MIDEN_REMOTE_PROVER_IMAGE, MIDEN_NETWORK_MONITOR_IMAGE, and
-#   MIDEN_FAUCET_IMAGE: container images used by the local network. The core
-#   images default to the unqualified names built by the Makefile. The faucet
-#   defaults to the version built from the pinned upstream source in
-#   compose/faucet.yml.
+#   MIDEN_REMOTE_PROVER_IMAGE, MIDEN_NETWORK_MONITOR_IMAGE,
+#   MIDEN_FAUCET_IMAGE, and MIDEN_NOTE_TRANSPORT_IMAGE: container images used
+#   by the local network. The core images default to the unqualified names
+#   built by the Makefile. Optional external images default to their pinned
+#   versions in the corresponding Compose files.
 # - OTEL_EXPORTER_OTLP_ENDPOINT: optional additional OTLP/gRPC endpoint. Traces
 #   are always sent to the bundled collector, which forwards them to this
 #   endpoint and to Tempo when the telemetry profile is enabled.
@@ -23,6 +23,7 @@ include:
   - compose/node.yml
   - compose/ntx-builder.yml
   - compose/tx-prover.yml
+  - compose/note-transport.yml
   - compose/otel-collector.yml
   - compose/router.yml
   - compose/faucet.yml

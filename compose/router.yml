@@ -27,6 +27,10 @@ configs:
         reverse_proxy tx-prover:50051
       }
 
+      http://ntl.localhost {
+        reverse_proxy note-transport:57292
+      }
+
       http://faucet.localhost {
         handle_path /api/* {
           reverse_proxy faucet:8000

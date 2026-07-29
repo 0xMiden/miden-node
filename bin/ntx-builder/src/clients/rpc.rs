@@ -127,7 +127,7 @@ impl RpcClient {
         name = "rpc.client.block_subscription_with_retry",
         skip_all,
         fields(
-            %block_from,
+            block.from = %block_from,
         ),
         err,
     )]

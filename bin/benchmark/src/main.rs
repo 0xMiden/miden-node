@@ -11,8 +11,15 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use miden_node_proto::clients::{Builder, RpcClient};
+use miden_node_proto::domain::encryption::{
+    TransactionInputsSealer,
+    TrustedTransactionEncryptionState,
+    verify_transaction_encryption_key,
+};
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
+use miden_protocol::Word;
 use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use url::Url;
 
@@ -80,6 +87,10 @@ pub enum Command {
         /// many blocks to fully include.
         #[arg(long, default_value_t = 30)]
         wait_blocks: u32,
+        /// Hex-encoded validator signing public key trusted to attest the transaction encryption
+        /// key.
+        #[arg(long)]
+        validator_signing_public_key: String,
     },
 }
 
@@ -104,8 +115,16 @@ impl Cli {
                 concurrency,
                 connections,
                 wait_blocks,
+                validator_signing_public_key,
             } => {
-                submit::run(rpc_url, concurrency, connections, wait_blocks).await;
+                submit::run(
+                    rpc_url,
+                    concurrency,
+                    connections,
+                    wait_blocks,
+                    validator_signing_public_key,
+                )
+                .await;
             },
         }
     }
@@ -119,7 +138,7 @@ impl Cli {
 async fn build_rpc_client(
     rpc_url: &Url,
     timeout: Duration,
-    genesis: Option<String>,
+    genesis: Option<Word>,
 ) -> Result<RpcClient> {
     let use_tls = rpc_url.scheme() == "https";
 
@@ -141,9 +160,9 @@ async fn build_rpc_client(
         .context("Failed to connect to RPC server")
 }
 
-/// Discover the genesis commitment (hex) of the node at `rpc_url`. This is the value write RPCs
-/// such as `SubmitProvenTransaction` expect echoed back in request metadata.
-async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<String> {
+/// Discover the genesis commitment of the node at `rpc_url`. This is the value write RPCs such as
+/// `SubmitProvenTransaction` expect echoed back in request metadata.
+async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<Word> {
     let mut rpc = build_rpc_client(rpc_url, timeout, None)
         .await
         .context("Failed to create RPC client for genesis discovery")?;
@@ -161,7 +180,7 @@ async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<String> {
     let genesis_header: BlockHeader =
         genesis_block_header.try_into().context("Failed to convert block header")?;
 
-    Ok(genesis_header.commitment().to_hex())
+    Ok(genesis_header.commitment())
 }
 
 /// Create an RPC client configured with the correct genesis metadata in the `Accept` header so that
@@ -179,18 +198,35 @@ pub(crate) async fn create_genesis_aware_rpc_client(
 /// Genesis is discovered once and reused. Because every client owns a distinct channel, concurrent
 /// submissions spread across this pool ride separate HTTP/2 sockets (and, behind a load balancer,
 /// separate backend replicas) instead of multiplexing over a single connection.
+///
+/// The discovered genesis commitment is returned alongside the pool because submissions need it to
+/// seal their transaction inputs.
 pub(crate) async fn create_genesis_aware_rpc_client_pool(
     rpc_url: &Url,
     timeout: Duration,
     size: usize,
-) -> Result<Vec<RpcClient>> {
+    trusted_validator_signing_key: ValidatorPublicKey,
+) -> Result<(Vec<RpcClient>, TransactionInputsSealer)> {
     let size = size.max(1);
     let genesis = discover_genesis(rpc_url, timeout).await?;
     let mut pool = Vec::with_capacity(size);
     for _ in 0..size {
-        pool.push(build_rpc_client(rpc_url, timeout, Some(genesis.clone())).await?);
+        pool.push(build_rpc_client(rpc_url, timeout, Some(genesis)).await?);
     }
-    Ok(pool)
+    let key = pool[0]
+        .clone()
+        .get_transaction_encryption_key(())
+        .await
+        .context("Failed to fetch the transaction encryption key")?
+        .into_inner();
+    let trusted_keys = [trusted_validator_signing_key];
+    let verified = verify_transaction_encryption_key(
+        key,
+        TrustedTransactionEncryptionState::new(genesis, &trusted_keys),
+    )
+    .context("Untrusted transaction encryption key")?;
+
+    Ok((pool, TransactionInputsSealer::new(verified)))
 }
 
 pub(crate) fn get_genesis_header_request() -> BlockHeaderByNumberRequest {

@@ -1,9 +1,10 @@
 use std::sync::atomic::Ordering;
 
+use miden_node_proto::domain::encryption::transaction_inputs_associated_data;
 use miden_node_proto::generated as grpc;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
-use miden_protocol::transaction::{ProvenTransaction, TransactionInputs};
+use miden_protocol::transaction::{ProvenTransaction, TransactionId, TransactionInputs};
 use miden_tx::utils::serde::Deserializable;
 use tonic::Status;
 
@@ -29,16 +30,18 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
+        let tx_id = input.tx.id();
+        miden_span_record!(
+            transaction.id = %tx_id,
+        );
+
+        let inputs = self.unseal_transaction_inputs(&input.sealed, tx_id).await?;
+
         // Reject requests while a backup subscription is streaming.
         let _guard = self
             .serve_lock
             .try_read()
             .map_err(|_| Status::resource_exhausted("validator is busy streaming a backup"))?;
-
-        let tx_id = input.tx.id();
-        miden_span_record!(
-            transaction.id = %tx_id,
-        );
 
         // Short-circuit transactions that have already been validated.
         let already_validated = self
@@ -53,7 +56,7 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         }
 
         // Validate the transaction.
-        let tx_info = validate_transaction(input.tx, input.inputs).await.map_err(|err| {
+        let tx_info = validate_transaction(input.tx, inputs).await.map_err(|err| {
             Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
@@ -74,14 +77,17 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
             Status::invalid_argument(err.as_report_context("Invalid proven transaction"))
         })?;
-        let inputs = request
-            .transaction_inputs
-            .ok_or(Status::invalid_argument("Missing transaction inputs"))?;
-        let inputs = TransactionInputs::read_from_bytes(&inputs).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
+        let sealed = request.sealed_transaction_inputs.ok_or_else(|| {
+            Status::invalid_argument(
+                "Missing sealed transaction inputs: fetch the encryption key with \
+                 GetTransactionEncryptionKey and seal the transaction inputs against it",
+            )
         })?;
+        if sealed.ciphertext.is_empty() {
+            return Err(Status::invalid_argument("Empty sealed transaction inputs ciphertext"));
+        }
 
-        Ok(Self::Input { tx, inputs })
+        Ok(Self::Input { tx, sealed })
     }
 
     fn encode(output: Self::Output) -> tonic::Result<()> {
@@ -91,5 +97,49 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
 
 pub struct Input {
     tx: ProvenTransaction,
-    inputs: TransactionInputs,
+    sealed: grpc::transaction::SealedTransactionInputs,
+}
+
+impl ValidatorService {
+    /// Unseals transaction inputs submitted for `tx_id`.
+    async fn unseal_transaction_inputs(
+        &self,
+        sealed: &grpc::transaction::SealedTransactionInputs,
+        tx_id: TransactionId,
+    ) -> tonic::Result<TransactionInputs> {
+        // Checked ahead of the unseal purely to turn what would otherwise be an indistinguishable
+        // authentication failure into an actionable one. The key identifier is public metadata, so
+        // there is nothing to leak by comparing it. Deliberately does not echo this validator's own
+        // key id: the RPC relays this status verbatim to the submitting client.
+        if sealed.key_id != self.encryption_key_info.key_id {
+            return Err(Status::failed_precondition(
+                "Transaction inputs were sealed against an unknown encryption key: re-fetch the \
+                 key with GetTransactionEncryptionKey and seal the inputs again",
+            ));
+        }
+
+        let associated_data = transaction_inputs_associated_data(
+            self.encryption_key_info.scheme.as_u32(),
+            &self.encryption_key_info.key_id,
+            self.genesis_commitment,
+            tx_id,
+        );
+        let plaintext = self
+            .decrypter
+            .decrypt_transaction_inputs(&sealed.ciphertext, &associated_data)
+            .await
+            .map_err(|err| {
+                // The underlying scheme collapses a wrong key, tampered ciphertext, mismatched
+                // associated data and corrupt framing into one error, so this cannot be any more
+                // specific than "it did not authenticate". `{:#}` renders the anyhow context chain,
+                // which `ErrorReport` cannot because it is not a `std::error::Error`.
+                Status::invalid_argument(format!(
+                    "Failed to unseal the transaction inputs: {err:#}"
+                ))
+            })?;
+
+        TransactionInputs::read_from_bytes(&plaintext).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
+        })
+    }
 }

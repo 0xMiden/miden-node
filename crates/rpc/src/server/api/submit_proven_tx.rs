@@ -49,7 +49,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
         let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
-        tracing::trace!(target: LOG_TARGET, ?request);
+        tracing::trace!(target: LOG_TARGET, "Received transaction submission");
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
             Status::invalid_argument(err.as_report_context("invalid transaction"))

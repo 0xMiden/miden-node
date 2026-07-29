@@ -47,10 +47,14 @@ Writes the bundle to `./benchmark-proofs/`:
 
 ```sh
 miden-benchmark run-benchmark \
-  --rpc-url http://127.0.0.1:57291 \
-  --concurrency 32 \
-  --wait-blocks 3
+  --rpc-url                      http://127.0.0.1:57291 \
+  --validator-signing-public-key <HEX> \
+  --concurrency                  32 \
+  --wait-blocks                  3
 ```
+
+The signing public key must match the validator key that signs transaction encryption key attestations. The benchmark
+will not submit transactions unless it can verify the advertised encryption key.
 
 Mints go in sequentially, then consumes with the requested concurrency, then the run waits `--wait-blocks` blocks before
 scanning for inclusion. Per-phase ack rate, RPC latency percentiles, inclusion rate, and inclusion TPS are printed at

@@ -417,7 +417,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
             .without_tls()
             .with_timeout(Duration::from_secs(5))
             .without_metadata_version()
-            .with_metadata_genesis(genesis.to_hex())
+            .with_metadata_genesis(genesis)
             .without_otel_context_injection()
             .connect_lazy::<miden_node_proto::clients::RpcClient>();
 
@@ -437,7 +437,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx_bytes,
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -465,7 +465,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
             .without_tls()
             .with_timeout(Duration::from_secs(5))
             .without_metadata_version()
-            .with_metadata_genesis(genesis.to_hex())
+            .with_metadata_genesis(genesis)
             .without_otel_context_injection()
             .connect_lazy::<miden_node_proto::clients::RpcClient>();
 
@@ -476,7 +476,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -515,7 +515,7 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
     let tx = build_test_proven_tx_with_id(network_account_id, &account, genesis);
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let service = RpcService::new(
@@ -883,6 +883,16 @@ async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
 
     assert_eq!(response, expected);
     assert_eq!(validator_call_count.load(Ordering::SeqCst), 1);
+
+    full_node
+        .get_transaction_encryption_key(Request::new(()))
+        .await
+        .expect("each encryption key request should reach the validator");
+    assert_eq!(
+        validator_call_count.load(Ordering::SeqCst),
+        2,
+        "the public RPC must not cache transaction encryption keys",
+    );
 }
 
 #[tokio::test]
@@ -1045,7 +1055,7 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;

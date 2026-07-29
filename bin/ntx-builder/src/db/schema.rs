@@ -15,6 +15,7 @@ diesel::table! {
         block_header -> Binary,
         chain_mmr -> Binary,
         genesis_commitment -> Binary,
+        genesis_validator_keys -> Nullable<Binary>,
     }
 }
 

@@ -381,22 +381,33 @@ impl NtxBuilderConfig {
             "failed to read genesis commitment; \
              run `miden-ntx-builder bootstrap` first",
         )?;
+        let genesis_validator_keys = db
+            .get_genesis_validator_keys()
+            .await
+            .context("failed to read genesis validator keys")?
+            .context("genesis validator keys are missing; re-bootstrap the NTX builder database")?;
+        let trusted_validator_signing_keys = genesis_validator_keys.as_keys().to_vec();
 
         let rpc = match self.rpc_auth_header.clone() {
             Some(rpc_auth_header_value) => RpcClient::new_with_auth(
                 self.rpc_url.clone(),
                 Some(rpc_auth_header_value),
                 genesis_commitment,
+                trusted_validator_signing_keys,
                 self.request_backoff_initial,
                 self.request_backoff_max,
             ),
             None => RpcClient::new(
                 self.rpc_url.clone(),
                 genesis_commitment,
+                trusted_validator_signing_keys,
                 self.request_backoff_initial,
                 self.request_backoff_max,
             ),
         }?;
+        rpc.sealer()
+            .await
+            .context("failed to initialize the transaction inputs sealer")?;
 
         // The database is bootstrapped with the genesis block before startup (see
         // `miden-ntx-builder bootstrap`), so a persisted chain state is always present. Load it and

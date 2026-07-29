@@ -20,6 +20,7 @@ workspace = true
 anyhow           = { workspace = true }
 clap             = { features = ["env", "string"], workspace = true }
 fs-err           = { workspace = true }
+hex              = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-protocol   = { features = ["std", "testing"], workspace = true }

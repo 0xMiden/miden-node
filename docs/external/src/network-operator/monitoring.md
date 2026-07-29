@@ -14,6 +14,10 @@ validator status, prover status, and related infrastructure.
 configuration, it can check RPC freshness, validator health, remote prover status, faucet availability, explorer
 availability, note transport, and end-to-end network transaction flows.
 
+End-to-end transaction checks require the validator's signing public key. Set
+`MIDEN_MONITOR_VALIDATOR_SIGNING_PUBLIC_KEY` to its hex encoding. The monitor uses this key to verify the validator's
+transaction encryption key before it submits private inputs.
+
 Use the binary help output for the current configuration surface:
 
 ```bash

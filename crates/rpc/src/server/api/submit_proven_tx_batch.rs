@@ -42,7 +42,11 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
         let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
-        tracing::trace!(target: LOG_TARGET, ?request);
+        tracing::trace!(
+            target: LOG_TARGET,
+            { batch.size = request.sealed_transaction_inputs.len() },
+            "Received transaction batch",
+        );
 
         let proven_batch = ProvenBatch::read_from_bytes(&request.batch_proof).map_err(|err| {
             Status::invalid_argument(err.as_report_context("invalid proven_batch"))
@@ -76,10 +80,10 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
 
         // Perform this check here since its cheap. If this passes we can safely zip inputs and
         // transactions.
-        if request.transaction_inputs.len() != proposed_batch.transactions().len() {
+        if request.sealed_transaction_inputs.len() != proposed_batch.transactions().len() {
             return Err(Status::invalid_argument(format!(
                 "Number of inputs {} does not match number of transaction {} in batch",
-                request.transaction_inputs.len(),
+                request.sealed_transaction_inputs.len(),
                 proposed_batch.transactions().len()
             )));
         }
@@ -109,7 +113,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                 submit_batch_to_validators(
                     validators.as_slice(),
                     &proposed_batch,
-                    &request.transaction_inputs,
+                    &request.sealed_transaction_inputs,
                 )
                 .await?;
                 block_producer
@@ -125,7 +129,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                     pre_auth.validators().as_slice(),
                     pre_auth.sequencer().clone(),
                     proposed_batch,
-                    &request.transaction_inputs,
+                    &request.sealed_transaction_inputs,
                 )
                 .await
             },
@@ -157,9 +161,9 @@ impl RpcService {
         validators: &[ValidatorClient],
         mut sequencer: SequencerClient,
         proposed_batch: ProposedBatch,
-        transaction_inputs: &[Vec<u8>],
+        sealed_transaction_inputs: &[proto::transaction::SealedTransactionInputs],
     ) -> tonic::Result<proto::blockchain::BlockNumber> {
-        submit_batch_to_validators(validators, &proposed_batch, transaction_inputs).await?;
+        submit_batch_to_validators(validators, &proposed_batch, sealed_transaction_inputs).await?;
 
         let mut auth_inputs = Vec::with_capacity(proposed_batch.transactions().len());
         for tx in proposed_batch.transactions() {

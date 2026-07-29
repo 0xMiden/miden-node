@@ -4,7 +4,7 @@ use miden_node_proto::generated as grpc;
 use miden_node_utils::ErrorReport;
 use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProposedBlock};
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::ValidatorService;
@@ -13,7 +13,7 @@ use crate::db::{load_chain_tip, upsert_block_header};
 #[tonic::async_trait]
 impl grpc::server::validator_api::SignBlock for ValidatorService {
     type Input = ProposedBlock;
-    type Output = (Signature, Word);
+    type Output = (Signature, Word, PublicKey);
 
     fn decode(request: grpc::blockchain::ProposedBlock) -> tonic::Result<Self::Input> {
         ProposedBlock::read_from_bytes(&request.proposed_block).map_err(|err| {
@@ -24,10 +24,11 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
     }
 
     fn encode(output: Self::Output) -> tonic::Result<grpc::blockchain::SignBlockResponse> {
-        let (signature, block_commitment) = output;
+        let (signature, block_commitment, public_key) = output;
         Ok(grpc::blockchain::SignBlockResponse {
             signature: Some(grpc::blockchain::BlockSignature { signature: signature.to_bytes() }),
             block_commitment: Some(block_commitment.into()),
+            public_key: Some((&public_key).into()),
         })
     }
 
@@ -71,10 +72,10 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
         // closure, so it can be returned to the block producer for cross-checking.
         let block_commitment = header.commitment();
 
-        // Persist the validated block header.
+        // Persist the signed header.
         let new_block_num = header.block_num().as_u32();
         self.db
-            .write("upsert_block_header", move |tx| upsert_block_header(tx, &header))
+            .write("persist_signed_block", move |tx| upsert_block_header(tx, &header))
             .await
             .map_err(|err| {
                 tonic::Status::internal(format!(
@@ -89,6 +90,6 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
         self.committed_tip.send_replace(BlockNumber::from(new_block_num));
         self.signed_blocks_count.fetch_add(1, Ordering::Relaxed);
 
-        Ok((signature, block_commitment))
+        Ok((signature, block_commitment, self.signer.public_key()))
     }
 }

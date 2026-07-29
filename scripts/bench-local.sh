@@ -21,6 +21,8 @@
 #   - miden-benchmark
 #
 # Usage:
+#   Export MIDEN_VALIDATOR_STORAGE_KEY_EPOCH, MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT,
+#   MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET, and MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE first.
 #   scripts/bench-local.sh                       # 5 tx pairs, local prover
 #   N_TXS=20 scripts/bench-local.sh              # 20 tx pairs
 #   USE_REMOTE_PROVER=1 scripts/bench-local.sh   # offload create-proofs to the remote-prover
@@ -35,6 +37,8 @@ USE_REMOTE_PROVER="${USE_REMOTE_PROVER:-0}"
 CONCURRENCY="${CONCURRENCY:-8}"
 WAIT_BLOCKS="${WAIT_BLOCKS:-30}"
 RUN_DIR="${RUN_DIR:-./bench-local-run}"
+# Public key for the validator's insecure default development signing key.
+VALIDATOR_SIGNING_PUBLIC_KEY="${VALIDATOR_SIGNING_PUBLIC_KEY:-031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f}"
 
 # --- ports --------------------------------------------------------------------
 VALIDATOR_PORT=50101
@@ -98,6 +102,16 @@ for bin in "${required_bins[@]}"; do
     command -v "$bin" >/dev/null || die "$bin not on PATH"
 done
 
+required_storage_key_vars=(
+    MIDEN_VALIDATOR_STORAGE_KEY_EPOCH
+    MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT
+    MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET
+    MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE
+)
+for var in "${required_storage_key_vars[@]}"; do
+    [ -n "${!var:-}" ] || die "$var is required"
+done
+
 if [ -e "$DATA/node" ] || [ -e "$DATA/validator" ] || [ -e "$DATA/genesis" ] \
     || [ -e "$DATA/ntx-builder" ]; then
     say "wiping previous data dir $DATA"
@@ -109,23 +123,28 @@ rm -f "$LOGS"/*.log "$PIDS"/*.pid
 GENESIS_FILE="$DATA/genesis/genesis.dat"
 
 # --- bootstrap ----------------------------------------------------------------
-say "bootstrapping validator (creates genesis block)"
-miden-validator bootstrap \
-    --data-directory          "$DATA/validator" \
+say "building genesis block"
+miden-validator genesis \
     --genesis-block-directory "$DATA/genesis" \
     --accounts-directory      "$DATA/accounts" \
+    > "$LOGS/genesis.log" 2>&1
+
+say "bootstrapping validator storage from genesis"
+miden-validator bootstrap \
+    --data-directory "$DATA/validator" \
+    --genesis        "$GENESIS_FILE" \
     > "$LOGS/bootstrap-validator.log" 2>&1
 
 say "bootstrapping node storage from genesis"
 miden-node bootstrap \
     --data-directory "$DATA/node" \
-    --file           "$GENESIS_FILE" \
+    --genesis        "$GENESIS_FILE" \
     > "$LOGS/bootstrap-node.log" 2>&1
 
 say "bootstrapping ntx-builder storage from genesis"
 miden-ntx-builder bootstrap \
     --data-directory "$DATA/ntx-builder" \
-    --file           "$GENESIS_FILE" \
+    --genesis        "$GENESIS_FILE" \
     > "$LOGS/bootstrap-ntx-builder.log" 2>&1
 
 # --- start stack --------------------------------------------------------------
@@ -191,9 +210,10 @@ miden-benchmark create-proofs \
 
 say "running run-benchmark"
 miden-benchmark run-benchmark \
-    --rpc-url     "http://127.0.0.1:$RPC_PORT" \
-    --concurrency "$CONCURRENCY" \
-    --wait-blocks "$WAIT_BLOCKS" \
+    --rpc-url                      "http://127.0.0.1:$RPC_PORT" \
+    --validator-signing-public-key "$VALIDATOR_SIGNING_PUBLIC_KEY" \
+    --concurrency                  "$CONCURRENCY" \
+    --wait-blocks                  "$WAIT_BLOCKS" \
     2>&1 | tee "$LOGS/run-benchmark.log"
 
 say "done. logs in $LOGS/"

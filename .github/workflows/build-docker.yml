@@ -2,19 +2,39 @@ name: Docker Build Check
 
 on:
   push:
-    branches: [main, next]
+    branches: [next, "release/v*"]
   pull_request:
     types: [opened, reopened, synchronize]
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   DOCKER_PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
+  verify-ruleset:
+    name: Verify protected branch ruleset
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Verify protected branch ruleset target
+        uses: ./.github/actions/verify-ruleset-target
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ruleset-name: "Protected branches"
+          expected-patterns: '["next", "release/v*"]'
+
   docker-build:
+    needs: verify-ruleset
+    permissions:
+      contents: read
+      id-token: write
     runs-on: warp-ubuntu-latest-x64-8x
     strategy:
       matrix:
@@ -34,6 +54,9 @@ jobs:
           - component: network-monitor
             bin: miden-network-monitor
             port: 3000
+          - component: faucet
+            bin: miden-faucet
+            port: 8000
     name: Build ${{ matrix.component }}
     steps:
       - name: Checkout repo
@@ -48,12 +71,28 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "version=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve build inputs
+        id: build-inputs
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${COMPONENT}" == "faucet" ]]; then
+            context="$(docker compose --profile faucet config --format json | jq -er '.services.faucet.build.context')"
+            echo "context=${context}" >> "$GITHUB_OUTPUT"
+            echo "file=Dockerfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "context=." >> "$GITHUB_OUTPUT"
+            echo "file=./Dockerfile" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build
         uses: WarpBuilds/build-push-action@ec038a9f4b87a7c7ccb50ac7a26a90d46a610a81 # v6.0.9
         with:
-          context: .
+          context: ${{ steps.build-inputs.outputs.context }}
           push: false
-          file: ./Dockerfile
+          file: ${{ steps.build-inputs.outputs.file }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
           pull: true
@@ -63,3 +102,31 @@ jobs:
             CREATED=${{ steps.metadata.outputs.created }}
             VERSION=${{ steps.metadata.outputs.version }}
             COMMIT=${{ steps.metadata.outputs.commit }}
+
+  compose-publish-check:
+    name: Dry-run docker compose publishing
+    needs: verify-ruleset
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Dry-run Compose publishing
+        uses: ./.github/actions/publish-compose
+        env:
+          MIDEN_NODE_IMAGE: ghcr.io/0xmiden/miden-node:dry-run
+          MIDEN_VALIDATOR_IMAGE: ghcr.io/0xmiden/miden-validator:dry-run
+          MIDEN_NTX_BUILDER_IMAGE: ghcr.io/0xmiden/miden-ntx-builder:dry-run
+          MIDEN_REMOTE_PROVER_IMAGE: ghcr.io/0xmiden/miden-remote-prover:dry-run
+          MIDEN_NETWORK_MONITOR_IMAGE: ghcr.io/0xmiden/miden-network-monitor:dry-run
+          MIDEN_FAUCET_IMAGE: ghcr.io/0xmiden/miden-faucet:dry-run
+        with:
+          compose-file: docker-compose.yml
+          mode: dry-run
+          package: miden-local-network
+          registry-prefix: ghcr.io/0xmiden
+          tag: dry-run

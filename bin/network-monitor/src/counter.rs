@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
-use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::auth::AuthSecretKey;
@@ -51,7 +50,9 @@ use crate::config::MonitorConfig;
 use crate::deploy::counter::COUNTER_SLOT_NAME;
 use crate::deploy::wallet::WALLET_COUNTER_SLOT_NAME;
 use crate::deploy::{
+    DeployedMonitorAccounts,
     MonitorDataStore,
+    TransactionSubmissionClient,
     create_and_deploy_accounts,
     create_genesis_aware_rpc_client,
 };
@@ -164,6 +165,8 @@ pub struct IncrementService {
     /// whenever the increment task regenerates accounts after persistent failures, so the tracker
     /// can switch to the new account IDs without polling disk.
     accounts_sender: watch::Sender<TrackedAccounts>,
+    /// Shared client for attestation verification, sealing, and transaction submission.
+    submission_client: TransactionSubmissionClient,
 }
 
 impl IncrementService {
@@ -173,18 +176,20 @@ impl IncrementService {
 
     pub async fn new(
         config: MonitorConfig,
-        wallet_account: Account,
-        secret_key: SecretKey,
-        counter_account: Account,
+        accounts: DeployedMonitorAccounts,
         prover: LocalTransactionProver,
+        submission_client: TransactionSubmissionClient,
         accounts_sender: watch::Sender<TrackedAccounts>,
         latency_state: Arc<Mutex<LatencyState>>,
     ) -> Result<Self> {
-        let mut rpc_client =
-            create_genesis_aware_rpc_client(&config.rpc_url, config.request_timeout).await?;
-        let (tx, details) =
-            setup_increment_task(wallet_account, secret_key, counter_account, &mut rpc_client)
-                .await?;
+        let mut rpc_client = submission_client.rpc_client();
+        let (tx, details) = setup_increment_task(
+            accounts.wallet,
+            accounts.secret_key,
+            accounts.counter,
+            &mut rpc_client,
+        )
+        .await?;
         Ok(Self {
             config,
             rpc_client,
@@ -194,6 +199,7 @@ impl IncrementService {
             details,
             latency_state,
             accounts_sender,
+            submission_client,
         })
     }
 
@@ -284,18 +290,21 @@ impl IncrementService {
         err,
     )]
     async fn try_regenerate_accounts(&mut self) -> Result<()> {
-        let (wallet_account, secret_key, counter_account) =
-            create_and_deploy_accounts(&self.config.rpc_url, &self.prover)
-                .await
-                .context("failed to regenerate accounts")?;
+        let accounts = create_and_deploy_accounts(&self.submission_client, &self.prover)
+            .await
+            .context("failed to regenerate accounts")?;
 
         let tracked = TrackedAccounts {
-            wallet: wallet_account.clone(),
-            counter: counter_account.clone(),
+            wallet: accounts.wallet.clone(),
+            counter: accounts.counter.clone(),
         };
-        let (tx, details) =
-            setup_increment_task(wallet_account, secret_key, counter_account, &mut self.rpc_client)
-                .await?;
+        let (tx, details) = setup_increment_task(
+            accounts.wallet,
+            accounts.secret_key,
+            accounts.counter,
+            &mut self.rpc_client,
+        )
+        .await?;
         self.tx = tx;
         self.details = details;
 
@@ -368,19 +377,7 @@ impl IncrementService {
         .await
         .context("counter increment task failed")??;
 
-        let request = ProvenTransaction {
-            transaction: proven_tx.to_bytes(),
-            transaction_inputs: Some(tx_inputs),
-        };
-
-        let block_height: BlockNumber = self
-            .rpc_client
-            .submit_proven_tx(request)
-            .await
-            .context("Failed to submit proven transaction to RPC")?
-            .into_inner()
-            .block_num
-            .into();
+        let block_height = self.submission_client.submit(&proven_tx, &tx_inputs).await?;
 
         info!(target: LOG_TARGET, "Submitted proven transaction to RPC");
 
@@ -487,7 +484,7 @@ impl CounterTrackingService {
         accounts_receiver: watch::Receiver<TrackedAccounts>,
         latency_state: Arc<Mutex<LatencyState>>,
     ) -> Result<Self> {
-        let mut rpc_client =
+        let (mut rpc_client, _) =
             create_genesis_aware_rpc_client(&config.rpc_url, config.request_timeout).await?;
         let TrackedAccounts {
             wallet: wallet_account,

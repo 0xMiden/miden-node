@@ -68,7 +68,7 @@ impl grpc::server::validator_api::GetTransactionEncryptionKey for ValidatorServi
 /// Encodes one encryption key in wire format.
 fn encode_key(key: &TransactionEncryptionKeyInfo) -> grpc::transaction::TransactionEncryptionKey {
     grpc::transaction::TransactionEncryptionKey {
-        scheme: i32::try_from(key.scheme).expect("scheme identifier must fit in i32"),
+        scheme: key.scheme.as_i32(),
         key_id: key.key_id.clone(),
         public_key: key.public_key.clone(),
     }

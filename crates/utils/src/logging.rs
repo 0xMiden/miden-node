@@ -107,8 +107,14 @@ impl TracingConfig {
     pub fn from_env(open_telemetry: OpenTelemetry) -> Self {
         Self {
             open_telemetry,
-            stdout_filter: filter_env_or_default("MIDEN_STDOUT_FILTER", "info,user=debug"),
-            otel_filter: filter_env_or_default("MIDEN_OTEL_FILTER", "info,axum::rejection=trace"),
+            stdout_filter: filter_env_or_default(
+                "MIDEN_STDOUT_FILTER",
+                "info,user=debug,miden_prover=warn",
+            ),
+            otel_filter: filter_env_or_default(
+                "MIDEN_OTEL_FILTER",
+                "info,axum::rejection=trace,miden_prover=warn",
+            ),
         }
     }
 }
@@ -149,9 +155,9 @@ impl Drop for OtelGuard {
 
 /// Initializes tracing to stdout and optionally an open-telemetry exporter.
 ///
-/// Stdout trace filtering is configured with `MIDEN_STDOUT_FILTER`, then `RUST_LOG`, then `info,user=debug`.
+/// Stdout trace filtering is configured with `MIDEN_STDOUT_FILTER`, then `RUST_LOG`, then `info,user=debug,miden_prover=warn`.
 /// OpenTelemetry export filtering is configured with `MIDEN_OTEL_FILTER`, then `RUST_LOG`, then
-/// `info,axum::rejection=trace`.
+/// `info,axum::rejection=trace,miden_prover=warn`.
 ///
 /// The open-telemetry configuration is controlled via environment variables as defined in the
 /// [specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/exporter.md#opentelemetry-protocol-exporter)

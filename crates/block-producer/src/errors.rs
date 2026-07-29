@@ -140,10 +140,14 @@ pub enum BuildBlockError {
     ProposeBlockFailed(#[source] ProposedBlockError),
     #[error("failed to validate block")]
     ValidateBlockFailed(#[source] Box<ValidatorError>),
-    #[error("block signature is invalid")]
+    #[error("block signatures are invalid")]
     InvalidSignature,
     #[error(
-        "block commitment signed by the validator {validator} does not match the block proposed by the sequencer {sequencer}"
+        "no signature received for the validator key at position {position} of the parent's validator set"
+    )]
+    MissingValidatorSignature { position: usize },
+    #[error(
+        "block commitment signed by a validator {validator} does not match the block proposed by the sequencer {sequencer}"
     )]
     BlockCommitmentMismatch { validator: Word, sequencer: Word },
 

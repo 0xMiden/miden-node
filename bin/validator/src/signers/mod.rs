@@ -1,21 +1,24 @@
 mod kms;
 
-pub use miden_node_proto::domain::transaction_encryption::{
+pub use kms::{KmsSigner, decrypt_key_material};
+pub use miden_node_proto::domain::encryption::{
     NextTransactionEncryptionKey,
     TransactionEncryptionKeyInfo,
     TransactionEncryptionKeySchedule,
+    TransactionEncryptionScheme,
 };
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_protocol::Word;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
-use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
+use miden_protocol::crypto::dsa::eddsa_25519_sha512::{
+    KeyExchangeKey,
+    PublicKey as EncryptionPublicKey,
+};
 #[cfg(test)]
 use miden_protocol::crypto::ies::SealingKey;
-use miden_protocol::crypto::ies::{IesScheme, SealedMessage, UnsealingKey};
+use miden_protocol::crypto::ies::{SealedMessage, UnsealingKey};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-
-pub use self::kms::{KmsSigner, decrypt_key_material};
 
 // VALIDATOR SIGNER
 // =================================================================================================
@@ -40,7 +43,7 @@ impl ValidatorSigner {
         Ok(Self::Kms(kms_signer))
     }
 
-    /// Constructs a signer which uses a local secret key.
+    /// Constructs a signer which uses a local secret key for signing.
     pub fn new_local(secret_key: SigningKey) -> Self {
         Self::Local(secret_key)
     }
@@ -90,9 +93,16 @@ impl ValidatorSigner {
 
 /// Operation-only provider for transaction input encryption keys.
 ///
-/// Implementations own key identifiers, scheduling, grace policy, and secret storage. The
-/// validator only requests public schedule metadata and asks the provider to decrypt with the key
-/// identifier carried by a submission.
+/// Unlike the signing key, the key material behind an implementation must be identical across every
+/// validator in the set. This lets any validator unseal an encrypted submission, regardless of which
+/// validator attested the encryption key schedule to the client.
+///
+/// Implementations own key identifiers, scheduling, grace policy, and secret storage. The validator
+/// only requests public schedule metadata and asks the provider to decrypt with the key identifier
+/// carried by a submission. The interface deliberately does not assume that secret key bytes exist
+/// in the validator process: an implementation may hold a local secret (see
+/// [`LocalX25519TransactionInputDecrypter`]) or delegate decryption to an external system such as a
+/// TEE that only exposes a decrypt operation.
 #[tonic::async_trait]
 pub trait TransactionInputDecrypter: Send + Sync {
     /// Returns the schedule effective at `chain_tip`.
@@ -107,8 +117,8 @@ pub trait TransactionInputDecrypter: Send + Sync {
 
     /// Decrypts inputs using the caller-supplied opaque key identifier.
     ///
-    /// The provider must distinguish an announced key that is not active yet, an expired grace
-    /// key, and an identifier it does not own.
+    /// The ciphertext is a serialized [`SealedMessage`]. The provider must distinguish an announced
+    /// key that is not active yet, an expired grace key, and an identifier it does not own.
     async fn decrypt_transaction_inputs(
         &self,
         key_id: &[u8],
@@ -118,6 +128,7 @@ pub trait TransactionInputDecrypter: Send + Sync {
     ) -> Result<Vec<u8>, TransactionInputDecryptionError>;
 }
 
+/// Failure to decrypt sealed transaction inputs.
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionInputDecryptionError {
     #[error("transaction encryption key {key_id} does not activate until block {activation}")]
@@ -142,8 +153,8 @@ impl LocalEncryptionKey {
     fn new(secret_key: KeyExchangeKey) -> Self {
         let public_key = secret_key.public_key();
         let info = TransactionEncryptionKeyInfo {
-            scheme: LocalX25519TransactionInputDecrypter::scheme_id(),
-            key_id: public_key.to_commitment().to_bytes(),
+            scheme: LocalX25519TransactionInputDecrypter::SCHEME,
+            key_id: key_id_of(&public_key),
             public_key: public_key.to_bytes(),
         };
         Self { secret_key, info }
@@ -169,7 +180,8 @@ pub struct LocalX25519TransactionInputDecrypter {
 
 impl LocalX25519TransactionInputDecrypter {
     /// The IES scheme used for transaction input encryption.
-    pub const SCHEME: IesScheme = IesScheme::X25519XChaCha20Poly1305;
+    pub const SCHEME: TransactionEncryptionScheme =
+        TransactionEncryptionScheme::X25519XChaCha20Poly1305;
 
     /// Constructs a provider with one key active since genesis and no scheduled rotation.
     pub fn new(secret_key: KeyExchangeKey) -> Self {
@@ -253,13 +265,19 @@ impl LocalX25519TransactionInputDecrypter {
         Ok(self)
     }
 
-    /// Returns the wire representation of [`Self::SCHEME`].
-    pub fn scheme_id() -> u32 {
-        u32::from(u8::from(Self::SCHEME))
+    /// Returns the public key of the key currently configured as current.
+    pub fn public_key(&self) -> EncryptionPublicKey {
+        self.current.key.secret_key.public_key()
     }
 
+    /// Returns the opaque identifier of the key currently configured as current.
+    pub fn key_id(&self) -> Vec<u8> {
+        self.current.key.info.key_id.clone()
+    }
+
+    /// Returns the sealing key that clients use to encrypt messages to the validator set.
     #[cfg(test)]
-    fn sealing_key(&self) -> SealingKey {
+    pub(crate) fn sealing_key(&self) -> SealingKey {
         SealingKey::X25519XChaCha20Poly1305(self.current.key.secret_key.public_key())
     }
 
@@ -271,7 +289,7 @@ impl LocalX25519TransactionInputDecrypter {
     }
 
     #[cfg(test)]
-    fn next_sealing_key(&self) -> Option<SealingKey> {
+    pub(crate) fn next_sealing_key(&self) -> Option<SealingKey> {
         self.next
             .as_ref()
             .map(|next| SealingKey::X25519XChaCha20Poly1305(next.key.secret_key.public_key()))
@@ -435,6 +453,12 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
     }
 }
 
+/// Returns the opaque identifier of an encryption key: the first 4 bytes of its public key
+/// commitment.
+fn key_id_of(public_key: &EncryptionPublicKey) -> Vec<u8> {
+    public_key.to_commitment().to_bytes()[..4].to_vec()
+}
+
 fn scheduled_local_key(
     secret_key: KeyExchangeKey,
     activation_block_num: BlockNumber,
@@ -551,20 +575,24 @@ mod tests {
         ));
     }
 
+    /// Loading the same shared secret must yield the same schedule on every validator instance,
+    /// regardless of where in an epoch the chain tip sits.
     #[tokio::test]
     async fn same_key_yields_same_public_material() {
         let a = decrypter(7).encryption_key_schedule(BlockNumber::from(1)).await.unwrap();
         let b = decrypter(7).encryption_key_schedule(BlockNumber::from_epoch(4)).await.unwrap();
 
         assert_eq!(a, b);
-        assert_eq!(a.current_key.key_id.len(), 32);
+        assert_eq!(a.current_key.key_id.len(), 4);
     }
 
+    /// Different secrets must yield different public keys and key ids.
     #[tokio::test]
     async fn different_keys_yield_different_provider_owned_ids() {
         let a = decrypter(7).encryption_key_schedule(BlockNumber::GENESIS).await.unwrap();
         let b = decrypter(8).encryption_key_schedule(BlockNumber::GENESIS).await.unwrap();
 
+        assert_eq!(a.current_key.scheme, b.current_key.scheme);
         assert_ne!(a.current_key.public_key, b.current_key.public_key);
         assert_ne!(a.current_key.key_id, b.current_key.key_id);
     }
@@ -636,12 +664,7 @@ mod tests {
         let activation = BlockNumber::from_epoch(1);
         assert_eq!(
             decrypter
-                .decrypt_transaction_inputs(
-                    &next_id,
-                    activation,
-                    &next_ciphertext,
-                    associated_data,
-                )
+                .decrypt_transaction_inputs(&next_id, activation, &next_ciphertext, associated_data)
                 .await
                 .unwrap(),
             b"next"

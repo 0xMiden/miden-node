@@ -28,6 +28,23 @@ fn records_with_default_instrument_args() {
 
 #[miden_instrument(
     skip_all,
+    fields(
+        transaction.id = %"0x1234",
+        account.updated,
+    ),
+)]
+fn records_allowed_instrument_fields() {}
+
+#[miden_instrument(
+    skip_all,
+    fields(
+        %dice_roll,
+    ),
+)]
+fn records_allowed_shorthand_instrument_field(dice_roll: f64) {}
+
+#[miden_instrument(
+    skip_all,
 )]
 fn records_same_field_more_than_once() {
     let value = 1;
@@ -130,6 +147,8 @@ fn records_allowed_canonical_fields() {
 fn main() {
     records_fields();
     records_with_default_instrument_args();
+    records_allowed_instrument_fields();
+    records_allowed_shorthand_instrument_field(0.5);
     records_same_field_more_than_once();
     records_allowed_canonical_fields();
 }

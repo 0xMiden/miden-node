@@ -15,7 +15,12 @@ use miden_standards::note::AccountTargetNetworkNote;
 #[derive(Clone, Debug)]
 pub struct TransactionCandidate {
     /// The current inflight state of the account.
-    pub account: Account,
+    ///
+    /// Wrapped in `Arc` so building a candidate shares the actor's resident account instead of
+    /// deep-cloning it (which, for accounts with large storage maps, is expensive). The account is
+    /// only ever read during execution; the actor advances its own copy via `Arc::make_mut` once
+    /// the candidate has been consumed.
+    pub account: Arc<Account>,
 
     /// A set of notes addressed to this network account.
     pub notes: Vec<AccountTargetNetworkNote>,

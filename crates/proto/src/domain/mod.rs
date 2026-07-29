@@ -2,12 +2,12 @@ pub mod account;
 pub mod batch;
 pub mod block;
 pub mod digest;
+pub mod encryption;
 pub mod merkle;
 pub mod note;
 pub mod nullifier;
 pub mod proof_request;
 pub mod transaction;
-pub mod transaction_encryption;
 
 // UTILITIES
 // ================================================================================================

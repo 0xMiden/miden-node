@@ -10,35 +10,50 @@ import "types/primitives.proto";
 
 // A proven transaction.
 //
-// Note that we currently require full transaction transparency for the network operator.
-// This is a temporary measure while Miden stabilizes its protocol and proof systems. To
-// this end, a transaction submission includes its **private** inputs which the operator
-// can use to verify the transaction execution and proofs are correct.
+// Note that we currently require full transaction transparency for the validator set. This is a
+// temporary measure while Miden stabilizes its protocol and proof systems. To this end, a
+// transaction submission includes its **private** inputs, which a validator uses to verify that
+// the transaction execution and proofs are correct.
 //
-// This means the transaction is _not_ private wrt the network operator (but it is still
-// private onchain). This requirement will be lifted as Miden matures.
+// Those inputs are sealed against the validator set's shared transaction encryption key, so the
+// nodes that relay a submission cannot read them: only a validator can. Submissions carrying
+// unsealed inputs are rejected. This requirement will be lifted as Miden matures.
 message ProvenTransaction {
   // The transaction proof.
   //
   // Encoded using [miden_protocol::transaction::ProvenTransaction::to_bytes].
   bytes transaction = 1;
-  // The private inputs used for the transaction proof.
-  //
-  // Encoded using [miden_protocol::transaction::TransactionInputs::to_bytes].
+
+  // The sealed private inputs used for the transaction proof.
   //
   // Transactions missing this field will be rejected as per the message description.
-  optional bytes transaction_inputs = 2;
+  SealedTransactionInputs sealed_transaction_inputs = 2;
+}
+
+// Transaction inputs sealed against the validator set's shared transaction encryption key.
+//
+// Obtain the key with `GetTransactionEncryptionKey` before submitting.
+message SealedTransactionInputs {
+  // Opaque identifier of the encryption key the inputs were sealed against, copied from
+  // [TransactionEncryptionKey.key_id].
+  bytes key_id = 1;
+
+  // The transaction inputs sealed with [miden_protocol::crypto::ies::SealingKey], encoded using
+  // the [miden_protocol::crypto::utils::Serializable] implementation for
+  // [miden_protocol::crypto::ies::SealedMessage].
+  bytes ciphertext = 2;
 }
 
 // A proven batch of transactions.
 //
-// Note that we currently require full transaction transparency for the network operator.
-// This is a temporary measure while Miden stabilizes its protocol and proof systems. To
-// this end, each transaction includes its **private** inputs which the operator can use
-// to verify the transaction execution and proofs are correct.
+// Note that we currently require full transaction transparency for the validator set. This is a
+// temporary measure while Miden stabilizes its protocol and proof systems. To this end, each
+// transaction includes its **private** inputs, which a validator uses to verify that the
+// transaction execution and proofs are correct.
 //
-// This means the transaction is _not_ private wrt the network operator (but it is still
-// private onchain). This requirement will be lifted as Miden matures.
+// Those inputs are sealed against the validator set's shared transaction encryption key, so the
+// nodes that relay a submission cannot read them: only a validator can. Batches carrying unsealed
+// inputs are rejected. This requirement will be lifted as Miden matures.
 //
 // In addition, in order to verify the batch itself, we also require the proposed batch.
 message TransactionBatch {
@@ -52,14 +67,15 @@ message TransactionBatch {
   //
   // Batches missing this field will be rejected as per the message description.
   optional bytes proposed_batch = 2;
-  // The transaction inputs for each transaction in the batch.
+
+  // The sealed transaction inputs for each transaction in the batch.
   //
-  // Must match the transaction ordering in the batch.
-  //
-  // Encoded using [miden_protocol::transaction::TransactionInputs::to_bytes].
+  // Must match the transaction ordering in the batch. Each entry is sealed independently against
+  // its own transaction's id, because the batch is fanned out into one validator submission per
+  // transaction.
   //
   // Batch will be rejected if any transaction's input is missing as per the method description.
-  repeated bytes transaction_inputs = 3;
+  repeated SealedTransactionInputs sealed_transaction_inputs = 3;
 }
 
 // IES scheme used for transaction input encryption.
@@ -78,18 +94,26 @@ message ValidatorKeyAttestation {
   // validator signing key committed in block headers to be trusted.
   bytes validator_public_key = 1;
 
-  // The validator's signature over the complete response schedule. The commitment binds the
-  // genesis commitment, attestation epoch, current key and activation block, and the presence or
-  // absence and contents of the optional next key. The canonical construction and verifier live
-  // in `miden_node_proto::domain::transaction_encryption`.
+  // The validator's signature over the attestation commitment: the Poseidon2 byte-mode hash of
+  // `domain_tag || genesis_commitment || attestation_epoch || current_activation || current_key ||
+  // next_key_present || next_key_transcript`, where `domain_tag` is the ASCII string
+  // `MIDEN_TX_ENCRYPTION_KEY_SCHEDULE_ATTESTATION_V2` and the genesis block commitment ties the
+  // attestation to one network.
+  //
+  // Each key contributes `scheme || len(key_id) || key_id || len(public_key) || public_key`, with
+  // the scheme, the epoch, the block numbers and the length prefixes encoded as 4 bytes
+  // little-endian. `next_key_present` is a single byte, followed by the scheduled key's
+  // `activation_block_num || key` when it is set, so a scheduled rotation can neither be stripped
+  // nor injected without invalidating the signature. The canonical construction and verifier live
+  // in `miden_node_proto::domain::encryption`.
   bytes signature = 2;
 }
 
-// The shared transaction encryption key, attested by validators.
+// One shared transaction encryption key.
 //
-// The public key is shared across the whole validator set, while each attesting signature is
-// specific to one validator. Verifying an attestation against a chain-recognized validator
-// signing key proves the encryption key was vouched for by a legitimate validator.
+// The public key is shared across the whole validator set. Attestations are not carried here but
+// on `TransactionEncryptionKeyResponse`, because a validator signs the complete schedule rather
+// than any single key.
 message TransactionEncryptionKey {
   // IES scheme the encryption key belongs to.
   //

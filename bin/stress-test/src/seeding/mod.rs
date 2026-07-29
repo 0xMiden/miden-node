@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -37,6 +38,7 @@ use miden_protocol::block::{
     FeeParameters,
     ProposedBlock,
     SignedBlock,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey as EcdsaSecretKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::{PublicKey, SecretKey};
@@ -142,6 +144,34 @@ pub async fn seed_store(
     vault_entries: usize,
     account_update_blocks: usize,
 ) {
+    seed_store_with_readers(
+        data_directory,
+        num_accounts,
+        public_accounts_percentage,
+        storage_map_entries,
+        vault_entries,
+        account_update_blocks,
+        0,
+    )
+    .await;
+}
+
+/// Seeds the store while `readers` concurrent tasks measure read latency against the same state.
+///
+/// This is the mixed read/write benchmark: seeding provides a continuous block-application load,
+/// and each reader loops `get_block_header` (latest header plus MMR proof) against the live state,
+/// so the reported latencies capture how reads behave while blocks are being committed. With
+/// `readers == 0` this is plain seeding.
+#[expect(clippy::too_many_lines)]
+pub async fn seed_store_with_readers(
+    data_directory: PathBuf,
+    num_accounts: usize,
+    public_accounts_percentage: u8,
+    storage_map_entries: u32,
+    vault_entries: usize,
+    account_update_blocks: usize,
+    readers: usize,
+) {
     let start = Instant::now();
     assert!(num_accounts > 0, "--num-accounts must be greater than zero");
     assert!(vault_entries > 0, "--vault-entries must be greater than zero");
@@ -194,8 +224,14 @@ pub async fn seed_store(
     genesis_accounts.extend(genesis_benchmark_accounts);
     let fee_params = FeeParameters::new(faucet.id(), 0);
     let signer = EcdsaSecretKey::new();
-    let genesis_state = GenesisState::new(genesis_accounts, fee_params, 1, 1, signer.public_key());
-    let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
+    let genesis_state = GenesisState::new(
+        genesis_accounts,
+        fee_params,
+        1,
+        1,
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+    );
+    let genesis_block = genesis_state.into_block().expect("genesis block should be created");
     let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 
@@ -217,6 +253,17 @@ pub async fn seed_store(
     } else {
         plan_account_batches(num_accounts, public_accounts_percentage, ACCOUNT_UPDATES_PER_BLOCK)
     };
+
+    // Spawn the benchmark readers before block generation starts so they observe the store under
+    // continuous write load for the whole run.
+    let stop_readers = Arc::new(AtomicBool::new(false));
+    let reader_tasks: Vec<_> = (0..readers)
+        .map(|_| {
+            let state = Arc::clone(&store_state);
+            let stop = Arc::clone(&stop_readers);
+            tokio::spawn(async move { read_latest_header_until(&state, &stop).await })
+        })
+        .collect();
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
@@ -243,8 +290,59 @@ pub async fn seed_store(
     ))
     .await;
 
+    // Stop the readers and report their latencies; they hold state references and the read phase
+    // should not include post-write quiescence.
+    let write_load_elapsed = start.elapsed();
+    stop_readers.store(true, Ordering::Relaxed);
+    let mut read_latencies = Vec::new();
+    for task in reader_tasks {
+        read_latencies.extend(task.await.expect("benchmark reader should not panic"));
+    }
+    if readers > 0 {
+        report_read_latencies(&read_latencies, readers, write_load_elapsed);
+    }
+
     println!("Total time: {:.3} seconds", start.elapsed().as_secs_f64());
     println!("{metrics}");
+}
+
+/// Loops `get_block_header` (latest header with MMR proof) against the state until `stop` is set,
+/// returning the latency of every request.
+///
+/// The request combines an in-memory read (opening the latest block's MMR proof, which contends
+/// with the writer's lock during block application) with a database header lookup, so it exercises
+/// the read path most exposed to concurrent block application.
+async fn read_latest_header_until(
+    state: &Arc<State>,
+    stop: &AtomicBool,
+) -> Vec<std::time::Duration> {
+    let mut latencies = Vec::new();
+    while !stop.load(Ordering::Relaxed) {
+        let start = Instant::now();
+        let (header, proof) = state
+            .get_block_header(None, true)
+            .await
+            .expect("get_block_header should succeed during seeding");
+        latencies.push(start.elapsed());
+        assert!(
+            header.is_some() && proof.is_some(),
+            "latest block header and MMR proof should exist"
+        );
+    }
+    latencies
+}
+
+/// Prints read-side statistics for the mixed read/write benchmark.
+#[expect(clippy::cast_precision_loss)]
+fn report_read_latencies(
+    latencies: &[std::time::Duration],
+    readers: usize,
+    elapsed: std::time::Duration,
+) {
+    println!("Concurrent read statistics ({readers} readers during seeding):");
+    println!("  Total reads: {}", latencies.len());
+    println!("  Reads per second: {:.0}", latencies.len() as f64 / elapsed.as_secs_f64());
+    crate::store::metrics::print_summary(latencies);
 }
 
 /// Generates batches of transactions to be inserted into the store.

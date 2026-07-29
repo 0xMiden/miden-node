@@ -8,10 +8,10 @@ use builder::BlockStream;
 use chain_state::SharedChainState;
 use clients::{RemoteTransactionProver, RpcClient};
 use db::Db;
+use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_protocol::block::{BlockNumber, SignedBlock};
 use tokio::sync::mpsc;
 use tonic::metadata::AsciiMetadataValue;
 use url::Url;
@@ -44,11 +44,9 @@ pub use builder::NetworkTransactionBuilder;
 /// [`NtxBuilderConfig`] startup can always resume from a persisted chain state instead of consuming
 /// the genesis block from the subscription.
 ///
-/// Returns an error if the block is not a valid genesis block or if the database has already been
-/// bootstrapped.
-pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> anyhow::Result<()> {
-    validate_genesis_block(genesis).context("genesis block validation failed")?;
-    db::Db::bootstrap(database_filepath, genesis).await
+/// Returns an error if the database has already been bootstrapped.
+pub async fn bootstrap(database_filepath: PathBuf, genesis: &GenesisBlock) -> anyhow::Result<()> {
+    db::Db::bootstrap(database_filepath, genesis.inner()).await
 }
 
 /// Applies pending migrations to the ntx-builder database at `database_filepath`.
@@ -56,34 +54,28 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> anyhow::Result<()> {
     db::Db::migrate(database_filepath).context("failed to apply ntx-builder database migrations")
 }
 
-fn validate_genesis_block(block: &SignedBlock) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        block.header().block_num() == BlockNumber::GENESIS,
-        "expected genesis block number (0), got {}",
-        block.header().block_num(),
-    );
-
-    block
-        .signatures()
-        .verify_against(block.header().commitment(), block.header().validator_keys())
-        .context("genesis block signature verification failed")?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod bootstrap_tests {
-    use super::*;
+    use miden_node_store::genesis::GenesisBlock;
+    use miden_protocol::block::{BlockSignatures, SignedBlock};
+    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 
     #[test]
-    fn validate_genesis_block_rejects_invalid_signature() {
+    fn genesis_block_accepts_unsigned_block() {
         let block = crate::test_utils::mock_genesis_block();
-        let err = validate_genesis_block(&block).expect_err("invalid signature should fail");
+        GenesisBlock::try_from(block).expect("unsigned genesis block should validate");
+    }
 
-        assert!(
-            err.to_string().contains("signature verification failed"),
-            "unexpected error: {err}",
-        );
+    #[test]
+    fn genesis_block_rejects_signed_block() {
+        let (header, body, _) = crate::test_utils::mock_genesis_block().into_parts();
+        let signature = SigningKey::new().sign(header.commitment());
+        let signatures = BlockSignatures::new(vec![signature]).unwrap();
+        let block = SignedBlock::new_unchecked(header, body, signatures);
+
+        let err = GenesisBlock::try_from(block).expect_err("signed genesis block should fail");
+
+        assert!(err.to_string().contains("must not carry signatures"), "unexpected error: {err}");
     }
 }
 
@@ -93,7 +85,7 @@ mod bootstrap_tests {
 const COMPONENT: &str = "miden-ntx-builder";
 
 // Tracing target used for user-visible events.
-const LOG_TARGET: &str = "user::miden-ntx-builder";
+pub const LOG_TARGET: &str = "user::miden-ntx-builder";
 
 /// Default maximum number of network notes a network transaction is allowed to consume.
 const DEFAULT_MAX_NOTES_PER_TX: NonZeroUsize = NonZeroUsize::new(20).expect("literal is non-zero");
@@ -389,22 +381,33 @@ impl NtxBuilderConfig {
             "failed to read genesis commitment; \
              run `miden-ntx-builder bootstrap` first",
         )?;
+        let genesis_validator_keys = db
+            .get_genesis_validator_keys()
+            .await
+            .context("failed to read genesis validator keys")?
+            .context("genesis validator keys are missing; re-bootstrap the NTX builder database")?;
+        let trusted_validator_signing_keys = genesis_validator_keys.as_keys().to_vec();
 
         let rpc = match self.rpc_auth_header.clone() {
             Some(rpc_auth_header_value) => RpcClient::new_with_auth(
                 self.rpc_url.clone(),
                 Some(rpc_auth_header_value),
                 genesis_commitment,
+                trusted_validator_signing_keys,
                 self.request_backoff_initial,
                 self.request_backoff_max,
             ),
             None => RpcClient::new(
                 self.rpc_url.clone(),
                 genesis_commitment,
+                trusted_validator_signing_keys,
                 self.request_backoff_initial,
                 self.request_backoff_max,
             ),
         }?;
+        rpc.sealer()
+            .await
+            .context("failed to initialize the transaction inputs sealer")?;
 
         // The database is bootstrapped with the genesis block before startup (see
         // `miden-ntx-builder bootstrap`), so a persisted chain state is always present. Load it and

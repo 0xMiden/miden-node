@@ -18,7 +18,8 @@ the sequencer or full-node replicas lose data.
 
 The validator is also a temporary training-wheels layer while the proof and VM systems mature. It receives the private
 inputs needed to independently check proposed blocks, which gives the network another place to detect bugs before a
-block is committed.
+block is committed. Those inputs arrive encrypted against the shared transaction encryption key, so the validator is the
+only component that can read them, and submissions that are not encrypted are rejected.
 
 ## Key Rotation
 
@@ -32,7 +33,11 @@ current block.
 ```bash
 miden-validator start \
   --listen 0.0.0.0:50101 \
-  --data-directory validator-data
+  --data-directory validator-data \
+  --storage-key.epoch <32-byte-hex-epoch> \
+  --storage-key.setup-context <setup-context-file> \
+  --storage-key.public-key-set <public-key-set-file> \
+  --storage-key.secret-share <secret-share-file>
 ```
 
 For local development, the validator can use its default insecure development key. Production deployments should
@@ -41,7 +46,8 @@ configure validator signing explicitly, either with a local key or with KMS-back
 In addition to its signing key, every validator holds the shared transaction encryption key, configured with
 `--encryption-key.hex` or `MIDEN_VALIDATOR_ENCRYPTION_KEY`. Unlike the signing key, this value must be identical across
 every validator in the set. The validator does not derive replacement keys or rotate it automatically. The validator
-logs a warning at startup if the insecure development default is in use.
+logs a warning at startup if the insecure development default is in use, and another if a key was loaded from plain hex
+rather than a KMS ciphertext.
 
 The validator accepts an optional previous key for grace decryption and an optional next key for a planned rotation.
 Each key has an activation block, which must be an epoch boundary. Configure these with `--encryption-key.previous.*`,
@@ -61,4 +67,14 @@ KMS-backed signing, the decrypted encryption key is held in validator memory: AW
 agreement itself, so envelope encryption is the supported provisioning path. Other providers may keep the secret outside
 the validator process because the provider contract requires only public schedule metadata and a decrypt operation.
 
-Use `miden-validator start --help` for the complete option list.
+Each validator must run inside its trusted execution environment. If transaction proving uses a remote prover, that
+prover also receives the plaintext inputs and must run inside the same trusted boundary.
+
+This version requires a fresh validator database. Phase 1 client ciphertext cannot be converted into Golden records.
+
+The files contain canonical Golden wire bytes. Every validator uses the same setup context and public key set, but uses
+its own secret share. The validator will not start if any storage key option is missing or the key material is invalid.
+After validation, it stores only the transaction ID and the Golden threshold record. It does not store the client
+ciphertext.
+
+Use `miden-validator start --help` for the complete current option list.

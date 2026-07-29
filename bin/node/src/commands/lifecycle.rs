@@ -5,12 +5,7 @@ use clap::ArgGroup;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_store::{DataDirectory, Db, State};
 use miden_node_utils::fs::ensure_empty_directory;
-use miden_node_utils::genesis::{
-    OfficialNetwork,
-    fetch_signed_genesis_block,
-    read_signed_genesis_block,
-};
-use miden_protocol::block::SignedBlock;
+use miden_node_utils::genesis::{OfficialNetwork, fetch_genesis_block, read_genesis_block};
 
 use super::ENV_DATA_DIRECTORY;
 
@@ -30,7 +25,7 @@ pub struct BootstrapCommand {
     data_directory: PathBuf,
 
     /// Bootstrap from a trusted genesis block file.
-    #[arg(long = "file", value_name = "FILE")]
+    #[arg(long = "genesis", value_name = "FILE")]
     genesis_block_file: Option<PathBuf>,
 
     /// Bootstrap for an official Miden network.
@@ -40,30 +35,52 @@ pub struct BootstrapCommand {
 
 impl BootstrapCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
+        tracing::info!(
+            target: crate::LOG_TARGET,
+            {
+                service.name = "miden-node",
+                service.version = env!("CARGO_PKG_VERSION"),
+                genesis.source.kind =
+                    if self.genesis_block_file.is_some() { "file" } else { "network" },
+                genesis.source = %self.genesis_block_file.as_ref().map_or_else(
+                    || self.network.map_or_else(
+                        || "custom".to_owned(),
+                        |network| network.to_string(),
+                    ),
+                    |path| path.display().to_string(),
+                ),
+                data.directory = %self.data_directory.display(),
+            },
+            "Bootstrapping node",
+        );
         ensure_empty_directory(&self.data_directory)?;
-        let signed_block =
+        let genesis_block =
             read_bootstrap_genesis_block(self.genesis_block_file.as_deref(), self.network).await?;
-        bootstrap_store(&self.data_directory, signed_block)
+        let genesis_commitment = genesis_block.inner().header().commitment();
+        State::bootstrap(genesis_block, &self.data_directory)?;
+        tracing::info!(
+            target: crate::LOG_TARGET,
+            {
+                genesis.commitment = %genesis_commitment,
+                data.directory = %self.data_directory.display(),
+            },
+            "Node bootstrap complete",
+        );
+        Ok(())
     }
 }
 
+/// Reads the genesis block from the configured source and validates it.
 async fn read_bootstrap_genesis_block(
     genesis_block_file: Option<&Path>,
     network: Option<OfficialNetwork>,
-) -> anyhow::Result<SignedBlock> {
-    match (genesis_block_file, network) {
-        (Some(path), None) => read_signed_genesis_block(path),
-        (None, Some(network)) => fetch_signed_genesis_block(network).await,
+) -> anyhow::Result<GenesisBlock> {
+    let signed_block = match (genesis_block_file, network) {
+        (Some(path), None) => read_genesis_block(path)?,
+        (None, Some(network)) => fetch_genesis_block(network).await?,
         _ => unreachable!("clap requires exactly one genesis block source"),
-    }
-}
-
-/// Validates a signed genesis block and bootstraps the store.
-pub fn bootstrap_store(data_directory: &Path, signed_block: SignedBlock) -> anyhow::Result<()> {
-    let genesis_block =
-        GenesisBlock::try_from(signed_block).context("genesis block validation failed")?;
-
-    State::bootstrap(genesis_block, data_directory)
+    };
+    GenesisBlock::try_from(signed_block)
 }
 
 // MIGRATE

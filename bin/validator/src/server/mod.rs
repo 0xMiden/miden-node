@@ -20,11 +20,17 @@ use crate::db::{
     load_chain_tip,
     load_with_pool_size,
 };
-use crate::{DataDirectory, LOG_TARGET, TransactionInputDecrypter, ValidatorSigner};
+use crate::{
+    DataDirectory,
+    LOG_TARGET,
+    PrivateRecordSealer,
+    TransactionInputDecrypter,
+    ValidatorSigner,
+};
 
 mod validator_service;
 
-use validator_service::ValidatorService;
+use validator_service::{InitialMetrics, ValidatorService};
 
 // VALIDATOR SERVER
 // ================================================================================
@@ -47,6 +53,9 @@ pub struct ValidatorServer {
     /// transaction inputs.
     pub decrypter: std::sync::Arc<dyn TransactionInputDecrypter>,
 
+    /// The public Golden key used to seal private records.
+    pub private_record_sealer: PrivateRecordSealer,
+
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
 
@@ -60,8 +69,6 @@ impl ValidatorServer {
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
     /// encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        tracing::info!(target: LOG_TARGET, endpoint=?self.address, "Initializing server");
-
         // Initialize database connection.
         let db = load_with_pool_size(
             self.data_directory.database_path(),
@@ -97,14 +104,24 @@ impl ValidatorServer {
         let service = ValidatorService::new(
             self.signer,
             self.decrypter,
+            self.private_record_sealer,
             db,
             block_store,
-            initial_chain_tip,
-            initial_tx_count,
-            initial_block_count,
+            InitialMetrics::new(initial_chain_tip, initial_tx_count, initial_block_count),
         )
         .await
         .context("failed to initialize validator server")?;
+        let endpoint = listener.local_addr().context("failed to read validator listen address")?;
+        tracing::info!(
+            target: LOG_TARGET,
+            {
+                service.name = "miden-validator",
+                service.version = env!("CARGO_PKG_VERSION"),
+                validator.listen = %endpoint,
+                block.number = initial_chain_tip,
+            },
+            "Validator ready",
+        );
 
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()

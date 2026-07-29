@@ -18,9 +18,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use miden_node_proto::clients::RpcClient;
+use miden_node_proto::domain::encryption::TransactionInputsSealer;
 use miden_node_proto::generated as proto;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::transaction::{ProvenTransaction, TransactionId};
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tokio::sync::Semaphore;
 use url::Url;
 
@@ -31,7 +33,13 @@ use crate::{PROOFS_DIR, create_genesis_aware_rpc_client_pool, read_from_file};
 // ORCHESTRATOR
 // ================================================================================================
 
-pub(crate) async fn run(rpc_url: Url, concurrency: usize, connections: usize, wait_blocks: u32) {
+pub(crate) async fn run(
+    rpc_url: Url,
+    concurrency: usize,
+    connections: usize,
+    wait_blocks: u32,
+    validator_signing_public_key: String,
+) {
     let in_dir = PathBuf::from(PROOFS_DIR);
 
     println!("Loading mint txs from {}", in_dir.join("mint_txs.bin").display());
@@ -49,10 +57,21 @@ pub(crate) async fn run(rpc_url: Url, concurrency: usize, connections: usize, wa
     let consume_ids: Vec<TransactionId> = consume_txs.iter().map(ProvenTransaction::id).collect();
 
     println!("Connecting to {rpc_url} ({connections} connection(s))...");
-    let pool = create_genesis_aware_rpc_client_pool(&rpc_url, Duration::from_secs(30), connections)
-        .await
-        .expect("failed to create RPC client pool");
+    let trusted_validator_signing_key = ValidatorPublicKey::read_from_bytes(
+        &hex::decode(validator_signing_public_key)
+            .expect("validator signing public key must be a hex-encoded K256 public key"),
+    )
+    .expect("validator signing public key must be a valid K256 public key");
+    let (pool, sealer) = create_genesis_aware_rpc_client_pool(
+        &rpc_url,
+        Duration::from_secs(30),
+        connections,
+        trusted_validator_signing_key,
+    )
+    .await
+    .expect("failed to create RPC client pool");
     let pool = Arc::new(pool);
+    let sealer = Arc::new(sealer);
 
     let h_start = current_block_height(pool[0].clone()).await;
     println!("Chain height at start: {h_start}");
@@ -62,7 +81,7 @@ pub(crate) async fn run(rpc_url: Url, concurrency: usize, connections: usize, wa
          submits must be serialized for the mempool to chain them)...",
         mint_txs.len()
     );
-    let mint_stats = submit_sequential(pool[0].clone(), mint_txs, mint_tx_inputs).await;
+    let mint_stats = submit_sequential(pool[0].clone(), mint_txs, mint_tx_inputs, &sealer).await;
     print_phase_progress("mint", &mint_stats);
 
     println!(
@@ -70,7 +89,8 @@ pub(crate) async fn run(rpc_url: Url, concurrency: usize, connections: usize, wa
         consume_txs.len(),
         pool.len(),
     );
-    let consume_stats = submit_all(pool.clone(), consume_txs, consume_tx_inputs, concurrency).await;
+    let consume_stats =
+        submit_all(pool.clone(), consume_txs, consume_tx_inputs, concurrency, &sealer).await;
     print_phase_progress("consume", &consume_stats);
 
     let ack_by_id = build_ack_map(&consume_ids, &consume_stats);
@@ -142,6 +162,7 @@ async fn submit_all(
     txs: Vec<ProvenTransaction>,
     tx_inputs: Vec<Vec<u8>>,
     concurrency: usize,
+    sealer: &Arc<TransactionInputsSealer>,
 ) -> PhaseStats {
     /// How many distinct error messages to surface to the console as they happen. The full failure
     /// breakdown still appears in the summary.
@@ -162,10 +183,13 @@ async fn submit_all(
         // sockets instead of multiplexing over one channel.
         let mut client = pool[i % pool.len()].clone();
         let printed = printed.clone();
+        let sealer = sealer.clone();
         set.spawn(async move {
+            let sealed_inputs =
+                sealer.seal(tx.id(), &inputs).expect("failed to seal transaction inputs");
             let request = proto::transaction::ProvenTransaction {
                 transaction: tx.to_bytes(),
-                transaction_inputs: Some(inputs),
+                sealed_transaction_inputs: Some(sealed_inputs),
             };
             let t0 = Instant::now();
             let outcome = match client.submit_proven_tx(request).await {
@@ -213,15 +237,18 @@ async fn submit_sequential(
     mut client: RpcClient,
     txs: Vec<ProvenTransaction>,
     tx_inputs: Vec<Vec<u8>>,
+    sealer: &Arc<TransactionInputsSealer>,
 ) -> PhaseStats {
     let start = Instant::now();
     let total = txs.len();
     let mut outcomes = Vec::with_capacity(total);
 
     for (i, (tx, inputs)) in txs.into_iter().zip(tx_inputs).enumerate() {
+        let sealed_inputs =
+            sealer.seal(tx.id(), &inputs).expect("failed to seal transaction inputs");
         let request = proto::transaction::ProvenTransaction {
             transaction: tx.to_bytes(),
-            transaction_inputs: Some(inputs),
+            sealed_transaction_inputs: Some(sealed_inputs),
         };
 
         let t0 = Instant::now();

@@ -1,9 +1,8 @@
 use std::ops::RangeInclusive;
 
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::AccountId;
-use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::block::{BlockHeader, BlockNumber, BlockSignatures};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrProof};
 
 use super::State;
@@ -36,15 +35,15 @@ impl State {
     pub async fn sync_chain_mmr(
         &self,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<(MmrDelta, BlockHeader, Signature), StateSyncError> {
+    ) -> Result<(MmrDelta, BlockHeader, BlockSignatures), StateSyncError> {
         let block_from = *block_range.start();
         let block_to = *block_range.end();
 
         // SAFETY: block_to has been validated to be <= the effective tip (chain tip or latest
         // proven block) by the caller, so it must exist in the database.
-        let (block_header, signature) = self
+        let (block_header, signatures) = self
             .db
-            .select_block_header_and_signature_by_block_num(block_to)
+            .select_block_header_and_signatures_by_block_num(block_to)
             .await?
             .expect("block_to should exist in the database");
 
@@ -55,7 +54,7 @@ impl State {
                     data: vec![],
                 },
                 block_header,
-                signature,
+                signatures,
             ));
         }
 
@@ -83,7 +82,7 @@ impl State {
             )
             .map_err(StateSyncError::FailedToBuildMmrDelta)?;
 
-        Ok((mmr_delta, block_header, signature))
+        Ok((mmr_delta, block_header, signatures))
     }
 
     /// Loads data to synchronize a client's notes.

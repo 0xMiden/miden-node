@@ -103,19 +103,24 @@ After `make local-network-delete`, run `make local-network-up` to bootstrap a fr
 
 ## Exposed Endpoints
 
-Published ports are bound to `localhost`; the following services are available:
+The bundled Caddy router listens on port 80 and routes `.localhost` host names to services on the Compose network. Names
+under `.localhost` resolve to the local loopback address, so they require no hosts-file or external DNS changes. Port 80
+must be available on the host.
 
-| Service          | URL                             | Purpose                                          |
-| ---------------- | ------------------------------- | ------------------------------------------------ |
-| RPC API          | `http://localhost:57291`        | Submit transactions and query local chain state. |
-| Grafana          | `http://localhost:3000`         | Inspect dashboards and traces.                   |
-| Network monitor  | `http://localhost:3001`         | View local network health.                       |
-| Block explorer   | `http://localhost:8080`         | Browse locally indexed network data.             |
-| Faucet API       | `http://localhost:8000`         | Request tokens programmatically.                 |
-| Faucet frontend  | `http://localhost:8081`         | Request tokens through the faucet UI.            |
-| Explorer GraphQL | `http://localhost:8199/graphql` | Query the explorer backend.                      |
-| Tempo HTTP API   | `http://localhost:3200`         | Query stored trace data.                         |
-| Tempo OTLP gRPC  | `http://localhost:4317`         | Receive OpenTelemetry traces from services.      |
+Existing direct ports remain available for native gRPC clients, automation, and compatibility:
+
+| Service            | Routed URL                          | Direct address                    |
+| ------------------ | ----------------------------------- | --------------------------------- |
+| RPC API (gRPC-Web) | `http://rpc.localhost`              | `localhost:57291` for native gRPC |
+| Transaction prover | `http://prover.localhost`           | Not published directly            |
+| Faucet frontend    | `http://faucet.localhost`           | `http://localhost:8081`           |
+| Faucet API         | `http://faucet.localhost/api`       | `http://localhost:8000`           |
+| Block explorer     | `http://explorer.localhost`         | `http://localhost:8080`           |
+| Explorer GraphQL   | `http://explorer.localhost/graphql` | `http://localhost:8199/graphql`   |
+| Grafana            | `http://grafana.localhost`          | `http://localhost:3000`           |
+| Network monitor    | `http://monitor.localhost`          | `http://localhost:3001`           |
+| Tempo HTTP API     | `http://tempo.localhost`            | `http://localhost:3200`           |
+| Tempo OTLP gRPC    | Not routed                          | `localhost:4317`                  |
 
 ## Block Explorer
 
@@ -127,7 +132,7 @@ docker compose --profile explorer up -d
 ```
 
 The indexer reads from the local sequencer and persists its state in the `explorer-data` volume. The frontend is
-available at `http://localhost:8080`, with its GraphQL API at `http://localhost:8199/graphql`. These third-party
+available at `http://explorer.localhost`, with its GraphQL API at `http://explorer.localhost/graphql`. These third-party
 components are intended for local development and are not part of the Miden node implementation.
 
 ## Faucet
@@ -136,7 +141,8 @@ The faucet is maintained in the separate [0xMiden/faucet](https://github.com/0xM
 behind the node's protocol version. It is therefore excluded from the default stack. Enable its profile explicitly:
 
 ```bash
-docker compose --profile faucet up -d --build
+docker compose --profile faucet build faucet
+docker compose --profile faucet up -d
 ```
 
 For a repository checkout, the first run builds the exact upstream commit pinned in `compose/faucet.yml`. Node releases
@@ -144,8 +150,8 @@ publish an image built from the same pin, so the published Compose application c
 build.
 
 On its first successful start, the service creates a fungible faucet account and stores it in the `faucet-data` volume.
-Later starts reuse that account. The API is available at `http://localhost:8000` and the frontend at
-`http://localhost:8081`.
+Later starts reuse that account. The API is available at `http://faucet.localhost/api` and the frontend at
+`http://faucet.localhost`.
 
 The default token symbol is `MIDEN`, with 6 decimals and a maximum supply of `100000000000000000` base units. Override
 these before the first successful start with `MIDEN_FAUCET_TOKEN_SYMBOL`, `MIDEN_FAUCET_DECIMALS`, and
@@ -154,13 +160,13 @@ these before the first successful start with `MIDEN_FAUCET_TOKEN_SYMBOL`, `MIDEN
 ## Monitoring and Traces
 
 The bundled OpenTelemetry Collector receives traces from the local network. With the telemetry profile enabled, it
-forwards traces to Tempo. Grafana is preconfigured with Tempo as a data source, so use `http://localhost:3000` to
+forwards traces to Tempo. Grafana is preconfigured with Tempo as a data source, so use `http://grafana.localhost` to
 inspect traces when a request fails, stalls, or behaves differently than expected.
 
 Container logs are still useful for startup failures and quick checks, but traces usually provide a better view of how a
 request moved through the local network.
 
-The network monitor at `http://localhost:3001` provides a compact health view for the running local network.
+The network monitor at `http://monitor.localhost` provides a compact health view for the running local network.
 
 ## Prover Override
 

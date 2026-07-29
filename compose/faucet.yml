@@ -27,7 +27,7 @@ services:
 
         exec /usr/local/bin/entrypoint.sh start
     environment:
-      MIDEN_FAUCET_API_PUBLIC_URL: http://localhost:8000
+      MIDEN_FAUCET_API_PUBLIC_URL: http://faucet.localhost/api
       MIDEN_FAUCET_DECIMALS: ${MIDEN_FAUCET_DECIMALS:-6}
       MIDEN_FAUCET_ENABLE_OTEL: "true"
       MIDEN_FAUCET_MAX_SUPPLY: ${MIDEN_FAUCET_MAX_SUPPLY:-100000000000000000}

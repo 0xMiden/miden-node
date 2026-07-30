@@ -3,6 +3,7 @@ use std::fmt;
 use golden_core::{GoldenGroup, ParticipantIndex};
 use golden_ehtdh1::wire::{from_wire_bytes, to_wire_bytes};
 use golden_ehtdh1::{
+    Ciphertext,
     PublicKeySet,
     SealingKey,
     SecretShare,
@@ -14,12 +15,8 @@ use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
 use rand_core_06::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
-use crate::{
-    PrivateRecordError,
-    PrivateRecordSharePolicy,
-    PrivateRecordShareRequest,
-    StoredPrivateRecord,
-};
+use crate::private_record::CONTENT_KEY_BYTES;
+use crate::{PrivateRecordError, PrivateRecordShareRequest, StoredPrivateRecord};
 
 /// Golden group used for validator storage keys.
 type StorageGroup = Secp256k1GoldenGroup;
@@ -223,25 +220,25 @@ impl GoldenOperatorKey {
         self.secret_share.participant
     }
 
-    /// Checks one private-record request and returns a canonical decryption share.
-    pub fn issue_private_record_share<R, P>(
+    /// Issues a canonical decryption share for one encrypted content key and exact context.
+    pub(crate) fn issue_decryption_share<R>(
         &self,
         rng: &mut R,
-        request: &PrivateRecordShareRequest,
-        record: &StoredPrivateRecord,
-        policy: &P,
+        ciphertext_bytes: &[u8],
+        context: &[u8],
     ) -> Result<Vec<u8>, PrivateRecordError>
     where
         R: RngCore + CryptoRng,
-        P: PrivateRecordSharePolicy + ?Sized,
     {
-        record.validate_share_request(request, self.key_epoch, self.setup_context_id())?;
-        if !policy.allows(request, record) {
-            return Err(PrivateRecordError::ShareDenied);
+        let ciphertext: Ciphertext<StorageGroup> =
+            from_wire_bytes(ciphertext_bytes).map_err(PrivateRecordError::InvalidGoldenEncoding)?;
+        if ciphertext.encrypted_payload.len() != CONTENT_KEY_BYTES {
+            return Err(PrivateRecordError::InvalidEncryptedRecordKey);
         }
+        ciphertext
+            .verify_with_associated_data(context)
+            .map_err(PrivateRecordError::InvalidGoldenEncoding)?;
 
-        let ciphertext = record.decode_encrypted_record_key()?;
-        let context = request.context();
         let share = UnsealingShare::new(self.secret_share.clone())
             .decrypt_share_with_associated_data(
                 rng,
@@ -252,6 +249,20 @@ impl GoldenOperatorKey {
             )
             .map_err(PrivateRecordError::ShareGeneration)?;
         Ok(to_wire_bytes(&share))
+    }
+
+    /// Checks one private-record request and returns a canonical decryption share.
+    pub fn issue_private_record_share<R>(
+        &self,
+        rng: &mut R,
+        request: &PrivateRecordShareRequest,
+        record: &StoredPrivateRecord,
+    ) -> Result<Vec<u8>, PrivateRecordError>
+    where
+        R: RngCore + CryptoRng,
+    {
+        record.validate_share_request(request, self.key_epoch, self.setup_context_id())?;
+        self.issue_decryption_share(rng, record.encrypted_record_key(), request.context())
     }
 }
 
@@ -384,6 +395,44 @@ pub(crate) mod tests {
 
     fn operator_key() -> GoldenOperatorKey {
         operator_keys().remove(0)
+    }
+
+    /// Regenerates the committed insecure Golden storage-key fixture under
+    /// `scripts/testdata/insecure-golden-storage-key/`.
+    ///
+    /// The fixture holds a full two-of-three setup: one shared
+    /// `setup-context.wire` and `public-key-set.wire`, plus a *distinct*
+    /// `validator-<n>/secret-share.wire` for each participant. This lets the
+    /// docker-compose network give every validator its own share, which is
+    /// required for a real threshold recovery — mounting the same share into
+    /// all three validators makes any 2-of-3 combine collapse to a single
+    /// participant and fail.
+    ///
+    /// Ignored by default so it never runs in CI; regenerate the fixture with:
+    ///
+    /// ```text
+    /// cargo test -p miden-validator --lib storage_key::tests::write_insecure_golden_fixture -- --ignored
+    /// ```
+    #[test]
+    #[ignore = "writes fixture files; run explicitly to regenerate"]
+    fn write_insecure_golden_fixture() {
+        use std::path::Path;
+
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scripts/testdata/insecure-golden-storage-key");
+        fs_err::create_dir_all(&dir).unwrap();
+
+        let (setup_context, public_key_set, _) = values_for(participant(1));
+        fs_err::write(dir.join("setup-context.wire"), to_wire_bytes(&setup_context)).unwrap();
+        fs_err::write(dir.join("public-key-set.wire"), to_wire_bytes(&public_key_set)).unwrap();
+
+        for index in [1u32, 2, 3] {
+            let (.., secret_share) = values_for(participant(index));
+            let validator_dir = dir.join(format!("validator-{index}"));
+            fs_err::create_dir_all(&validator_dir).unwrap();
+            fs_err::write(validator_dir.join("secret-share.wire"), to_wire_bytes(&secret_share))
+                .unwrap();
+        }
     }
 
     #[test]

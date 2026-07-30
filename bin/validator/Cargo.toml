@@ -21,6 +21,7 @@ doctest = false
 anyhow                 = { workspace = true }
 aws-config             = { version = "1.8.14" }
 aws-sdk-kms            = { version = "1.100" }
+axum                   = { workspace = true }
 base64                 = { version = "0.22" }
 chacha20poly1305       = { workspace = true }
 clap                   = { features = ["env", "string"], workspace = true }
@@ -37,6 +38,7 @@ miden-node-utils       = { features = ["testing"], workspace = true }
 miden-protocol         = { workspace = true }
 miden-tx               = { features = ["concurrent"], workspace = true }
 rand_core_06           = { workspace = true }
+serde                  = { workspace = true }
 thiserror              = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
@@ -60,3 +62,4 @@ rand             = { workspace = true }
 rand_chacha_03   = { workspace = true }
 tempfile         = { workspace = true }
 tokio            = { features = ["macros", "rt-multi-thread", "sync"], workspace = true }
+tower            = { features = ["util"], workspace = true }

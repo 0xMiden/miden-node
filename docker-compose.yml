@@ -5,16 +5,18 @@
 #   MIDEN_VALIDATOR_3_SIGNING_KEY: private signing keys for the three validators.
 #   The insecure defaults correspond to the public keys in the genesis config
 #   in compose/bootstrap.yml and are intended only for local development.
-# - MIDEN_VALIDATOR_STORAGE_KEY_DIRECTORY: host directory containing
-#   setup-context.wire, public-key-set.wire, and secret-share.wire. Defaults to
-#   the committed insecure test fixture.
 # - MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: hex-encoded 32-byte Golden key epoch.
+# - MIDEN_SEED_RPC_URL and MIDEN_SEED_VALIDATOR_1_SIGNING_PUBLIC_KEY through
+#   MIDEN_SEED_VALIDATOR_3_SIGNING_PUBLIC_KEY: overrides used by the on-demand
+#   seed service.
 # - MIDEN_NODE_IMAGE, MIDEN_VALIDATOR_IMAGE, MIDEN_NTX_BUILDER_IMAGE,
 #   MIDEN_REMOTE_PROVER_IMAGE, MIDEN_NETWORK_MONITOR_IMAGE,
-#   MIDEN_FAUCET_IMAGE, and MIDEN_NOTE_TRANSPORT_IMAGE: container images used
-#   by the local network. The core images default to the unqualified names
-#   built by the Makefile. Optional external images default to their pinned
-#   versions in the corresponding Compose files.
+#   MIDEN_BENCHMARK_IMAGE, MIDEN_FAUCET_IMAGE, and MIDEN_NOTE_TRANSPORT_IMAGE:
+#   container images used by the local network. The core images default to the
+#   unqualified names built by the Makefile. Optional external images default
+#   to their pinned versions in the corresponding Compose files.
+# - MIDEN_NOTE_TRANSPORT_PLATFORM: platform used by the note transport image.
+#   Defaults to linux/amd64 because the pinned image is not multi-architecture.
 # - OTEL_EXPORTER_OTLP_ENDPOINT: optional additional OTLP/gRPC endpoint. Traces
 #   are always sent to the bundled collector, which forwards them to this
 #   endpoint and to Tempo when the telemetry profile is enabled.
@@ -27,6 +29,7 @@ include:
   - compose/node.yml
   - compose/ntx-builder.yml
   - compose/tx-prover.yml
+  - compose/seed.yml
   - compose/note-transport.yml
   - compose/otel-collector.yml
   - compose/router.yml

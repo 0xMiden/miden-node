@@ -14,6 +14,12 @@ COMPOSE_OVERRIDE_ARGS = $(if $(COMPOSE_OVERRIDE_FILE),-f docker-compose.yml -f $
 DOCKER_COMMAND ?= docker
 DOCKER_PLATFORM ?=
 DOCKER_PLATFORM_ARG = $(if $(DOCKER_PLATFORM),--platform $(DOCKER_PLATFORM),)
+# Dockerfile builder stage to compile binaries in. The default `builder-ci`
+# compiles one binary per image with per-BIN cache mounts (matches CI);
+# local-network-build overrides it with `builder-local`, which compiles all
+# binaries once and shares the result across every image build.
+DOCKER_BUILDER ?= builder-ci
+DOCKER_PULL_ARG ?= --pull
 DOCKER_VERSION ?= $(shell awk -F '"' '/^version[[:space:]]*=/ { print $$2; exit }' Cargo.toml)
 CONFIG_DIR = .config
 EXISTING_TRACKED_FILES = while IFS= read -r file; do [ -f "$$file" ] && printf '%s\n' "$$file"; done
@@ -180,6 +186,11 @@ install-benchmark: ## Installs the benchmark binary
 # --- docker --------------------------------------------------------------------------------------
 
 .PHONY: local-network-build
+# Local builds are sequential on one machine, so compile all binaries in one
+# shared builder stage (see builder-local in the Dockerfile) instead of once
+# per image, and skip re-pulling base images on every build.
+local-network-build: DOCKER_BUILDER = builder-local
+local-network-build: DOCKER_PULL_ARG =
 local-network-build: docker-build ## Builds Docker images used by the local development network
 
 .PHONY: local-network-up
@@ -199,17 +210,18 @@ local-network-logs: ## Follows logs for the local development network
 	$(DOCKER_COMMAND) compose $(COMPOSE_OVERRIDE_ARGS) $(COMPOSE_PROFILE_ARGS) logs -f
 
 .PHONY: docker-build
-docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover docker-build-monitor ## Builds all Docker images
+docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover docker-build-benchmark ## Builds all Docker images
 
 .PHONY: docker-build-node
 docker-build-node: ## Builds the Miden node using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
                  --build-arg BIN=miden-node \
                  --build-arg PORT=57291 \
                  -t miden-node .
@@ -219,10 +231,11 @@ docker-build-validator: ## Builds the Miden validator using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
                  --build-arg BIN=miden-validator \
                  --build-arg PORT=50101 \
                  -t miden-validator .
@@ -232,10 +245,11 @@ docker-build-ntx-builder: ## Builds the Miden network transaction builder using 
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
                  --build-arg BIN=miden-ntx-builder \
                  --build-arg PORT=50301 \
                  -t miden-ntx-builder .
@@ -245,10 +259,11 @@ docker-build-monitor: ## Builds the network monitor using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
                  --build-arg BIN=miden-network-monitor \
                  --build-arg PORT=3000 \
                  -t miden-network-monitor .
@@ -258,13 +273,28 @@ docker-build-remote-prover: ## Builds the remote prover using Docker
 	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
 	VERSION="$(DOCKER_VERSION)" && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	$(DOCKER_COMMAND) build --pull $(DOCKER_PLATFORM_ARG) \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
                  --build-arg CREATED="$$CREATED" \
                  --build-arg VERSION="$$VERSION" \
                  --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
                  --build-arg BIN=miden-remote-prover \
                  --build-arg PORT=50051 \
                  -t miden-remote-prover .
+
+.PHONY: docker-build-benchmark
+docker-build-benchmark: ## Builds the benchmark and seed tool image using Docker
+	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
+	VERSION="$(DOCKER_VERSION)" && \
+	COMMIT=$$(git rev-parse HEAD) && \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
+                 --build-arg CREATED="$$CREATED" \
+                 --build-arg VERSION="$$VERSION" \
+                 --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
+                 --build-arg BIN=miden-benchmark \
+                 --target runtime-tool \
+                 -t miden-node-tps-benchmark .
 
 ## --- setup --------------------------------------------------------------------------------------
 

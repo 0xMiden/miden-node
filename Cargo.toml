@@ -68,6 +68,7 @@ miden-crypto = { version = "0.28" }
 anyhow             = { version = "1.0" }
 arc-swap           = { version = "1.7" }
 assert_matches     = { version = "1.5" }
+axum               = { version = "0.8" }
 backon             = { version = "1.6" }
 build-rs           = { version = "0.3" }
 chacha20poly1305   = { version = "0.11" }

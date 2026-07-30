@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use miden_node_store::state::{Finality, State};
+use miden_node_store::state::{BlockWriter, Finality, ProofWriter, State};
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
@@ -69,8 +69,12 @@ impl BlockProducerApiConfig {
 ///
 /// Specifies how to connect to the batch prover and block prover components.
 pub struct Sequencer {
-    /// The store state shared with the block producer.
-    pub store: Arc<State>,
+    /// The read-only store state shared with the block producer.
+    pub state: Arc<State>,
+    /// The store's block-write capability, handed to the block builder.
+    pub block_writer: BlockWriter,
+    /// The store's proof-write capability, handed to the proof scheduler.
+    pub proof_writer: ProofWriter,
     /// The address of the validator component.
     pub validator_url: Url,
     /// The request timeout for calls to the validator component.
@@ -104,17 +108,17 @@ impl Sequencer {
     /// Spawns the sequencer tasks and returns its in-process API.
     pub fn spawn(self, shutdown: CancellationToken) -> Result<SequencerHandle> {
         tracing::info!(target: LOG_TARGET, "Initializing sequencer");
-        let store = self.store;
+        let state = self.state;
         let validator =
             BlockProducerValidatorClient::new(self.validator_url.clone(), self.validator_timeout)?;
-        let chain_tip = store.chain_tip(Finality::Committed);
+        let chain_tip = state.chain_tip(Finality::Committed);
 
         tracing::info!(target: LOG_TARGET, "Sequencer initialized");
 
-        let block_builder = BlockBuilder::new(Arc::clone(&store), validator, self.block_interval);
+        let block_builder = BlockBuilder::new(self.block_writer, validator, self.block_interval);
         let batch_intervals = BatchIntervals::derive_from(self.block_interval, self.batch_interval);
         let batch_builder = BatchBuilder::new(
-            Arc::clone(&store),
+            Arc::clone(&state),
             self.batch_workers,
             self.batch_prover_url,
             batch_intervals,
@@ -125,13 +129,13 @@ impl Sequencer {
             mempool_tx_capacity: self.mempool_tx_capacity,
         };
         let mempool = Mempool::shared(chain_tip, api_config.mempool_config());
-        let api = BlockProducerApi::from_shared_mempool(mempool.clone(), store, shutdown.clone());
+        let api = BlockProducerApi::from_shared_mempool(mempool.clone(), state, shutdown.clone());
         let block_prover = if let Some(url) = self.block_prover_url {
             Arc::new(BlockProver::remote(url)?)
         } else {
             Arc::new(BlockProver::local())
         };
-        let chain_tip_rx = api.store.subscribe_committed_tip();
+        let chain_tip_rx = api.state.subscribe_committed_tip();
 
         // Spawn batch builder, block builder, and proof scheduler. The builders communicate
         // indirectly via a shared mempool.
@@ -151,12 +155,12 @@ impl Sequencer {
             async { block_builder.run(mempool, shutdown).await }
         });
         tasks.spawn("proof-scheduler", {
-            let store = Arc::clone(&api.store);
+            let proof_writer = self.proof_writer;
             let shutdown = shutdown.clone();
             async move {
                 proof_scheduler::run(
                     block_prover,
-                    store,
+                    proof_writer,
                     chain_tip_rx,
                     self.max_concurrent_proofs,
                     shutdown,
@@ -202,7 +206,7 @@ pub struct BlockProducerApi {
     /// the block-producers usage of the mempool.
     mempool: Arc<Mutex<SharedMempool>>,
 
-    store: Arc<State>,
+    state: Arc<State>,
 
     /// Cached mempool statistics that are updated periodically to avoid locking the mempool for
     /// each status request.
@@ -230,17 +234,17 @@ pub struct BlockProducerStatus {
 
 impl BlockProducerApi {
     /// Creates an API backed by a fresh mempool.
-    pub fn new(store: Arc<State>, chain_tip: BlockNumber, config: BlockProducerApiConfig) -> Self {
+    pub fn new(state: Arc<State>, chain_tip: BlockNumber, config: BlockProducerApiConfig) -> Self {
         Self::from_shared_mempool(
             Mempool::shared(chain_tip, config.mempool_config()),
-            store,
+            state,
             CancellationToken::new(),
         )
     }
 
     fn from_shared_mempool(
         mempool: SharedMempool,
-        store: Arc<State>,
+        state: Arc<State>,
         shutdown: CancellationToken,
     ) -> Self {
         let cached_mempool_stats = mempool
@@ -249,7 +253,7 @@ impl BlockProducerApi {
             .unwrap_or_default();
         let api = Self {
             mempool: Arc::new(Mutex::new(mempool)),
-            store,
+            state,
             cached_mempool_stats: Arc::new(RwLock::new(cached_mempool_stats)),
         };
         api.spawn_mempool_stats_updater(shutdown);
@@ -321,7 +325,7 @@ impl BlockProducerApi {
         tracing::debug!(target: COMPONENT, proof = ?tx.proof());
 
         // Authenticate against the local store, then add to the mempool.
-        let inputs = get_tx_inputs(&self.store, &tx)
+        let inputs = get_tx_inputs(&self.state, &tx)
             .await
             .map_err(MempoolSubmissionError::StoreStateReadFailed)?;
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
@@ -368,7 +372,7 @@ impl BlockProducerApi {
         let mut inputs = Vec::with_capacity(batch.transactions().len());
         for tx in batch.transactions() {
             inputs.push(
-                get_tx_inputs(&self.store, tx)
+                get_tx_inputs(&self.state, tx)
                     .await
                     .map_err(MempoolSubmissionError::StoreStateReadFailed)?,
             );

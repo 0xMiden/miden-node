@@ -170,7 +170,7 @@ async fn seed_store_persists_one_public_account_and_applies_one_map_update() {
     assert_eq!(account_ids.len(), 1);
     let account_id = AccountId::from_hex(account_ids[0]).unwrap();
 
-    let (state, writer_task) = load_state(data_directory).await;
+    let (state, block_writer, writer_task) = load_state(data_directory).await;
     let response = state
         .get_account(AccountRequest {
             account_id,
@@ -200,10 +200,8 @@ async fn seed_store_persists_one_public_account_and_applies_one_map_update() {
     );
 
     // Release the backing storage before the temporary directory is deleted.
-    assert!(
-        state.stop(writer_task).await.is_ok(),
-        "no other references to the store state should remain"
-    );
+    drop(state);
+    block_writer.stop(writer_task).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -219,7 +217,7 @@ async fn seed_store_handles_map_larger_than_transaction_account_update_limit() {
     assert_eq!(account_ids.len(), 1);
     let account_id = AccountId::from_hex(account_ids[0]).unwrap();
 
-    let (state, writer_task) = load_state(data_directory).await;
+    let (state, block_writer, writer_task) = load_state(data_directory).await;
     let response = state
         .get_account(AccountRequest {
             account_id,
@@ -231,8 +229,6 @@ async fn seed_store_handles_map_larger_than_transaction_account_update_limit() {
     assert_ne!(response.witness.state_commitment(), Word::empty());
 
     // Release the backing storage before the temporary directory is deleted.
-    assert!(
-        state.stop(writer_task).await.is_ok(),
-        "no other references to the store state should remain"
-    );
+    drop(state);
+    block_writer.stop(writer_task).await;
 }

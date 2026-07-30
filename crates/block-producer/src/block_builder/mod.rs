@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context;
-use miden_node_store::state::State;
+use miden_node_store::state::BlockWriter;
 use miden_node_utils::formatting::format_array;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
@@ -31,23 +31,24 @@ pub struct BlockBuilder {
     /// The frequency at which blocks are produced.
     pub block_interval: Duration,
 
-    /// The store state for committing blocks.
-    pub store: Arc<State>,
+    /// The store's block-write capability, used for committing blocks.
+    pub block_writer: BlockWriter,
 
     /// The validator RPC client for validating blocks.
     pub validator: BlockProducerValidatorClient,
 }
 
 impl BlockBuilder {
-    /// Creates a new [`BlockBuilder`] with the given store state and optional block prover URL.
+    /// Creates a new [`BlockBuilder`] with the given block-write capability and optional block
+    /// prover URL.
     ///
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
-        store: Arc<State>,
+        block_writer: BlockWriter,
         validator: BlockProducerValidatorClient,
         block_interval: Duration,
     ) -> Self {
-        Self { block_interval, store, validator }
+        Self { block_interval, block_writer, validator }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
     ///
@@ -213,7 +214,7 @@ impl BlockBuilder {
             batch_iter.map(Deref::deref).flat_map(ProvenBatch::created_nullifiers);
 
         let inputs = self
-            .store
+            .block_writer
             .get_block_inputs(
                 account_ids_iter.collect(),
                 created_nullifiers_iter.collect(),
@@ -351,7 +352,7 @@ impl BlockBuilder {
             tracing::debug!(target: LOG_TARGET, transactions = %format_array(transaction_ids), "Included transactions");
         }
 
-        self.store
+        self.block_writer
             .apply_block_with_proving_inputs(ordered_batches, block_inputs, signed_block)
             .await
             .map_err(StoreError::ApplyBlockFailed)

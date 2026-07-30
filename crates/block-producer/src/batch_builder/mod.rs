@@ -45,7 +45,7 @@ pub struct BatchBuilder {
     ///
     /// If not provided, a local batch prover is used.
     batch_prover: BatchProver,
-    store: Arc<State>,
+    state: Arc<State>,
 }
 
 pub(crate) struct BatchIntervals {
@@ -79,7 +79,7 @@ impl BatchBuilder {
     ///
     /// If no batch prover URL is provided, a local batch prover is used instead.
     pub fn new(
-        store: Arc<State>,
+        state: Arc<State>,
         num_workers: NonZeroUsize,
         batch_prover_url: Option<Url>,
         intervals: BatchIntervals,
@@ -92,7 +92,7 @@ impl BatchBuilder {
             num_workers,
             intervals,
             batch_prover,
-            store,
+            state,
         })
     }
 
@@ -160,7 +160,7 @@ impl BatchBuilder {
             transactions.unauthenticated_notes.count = telemetry.unauthenticated_notes_count,
         );
         let job = BatchJob {
-            store: self.store.clone(),
+            state: self.state.clone(),
             mempool,
             batch_prover: self.batch_prover.clone(),
         };
@@ -240,7 +240,7 @@ impl BatchBuilder {
 ///
 /// Recoverable errors are handled internally. Mempool poison is propagated as a fatal error.
 struct BatchJob {
-    store: Arc<State>,
+    state: Arc<State>,
     batch_prover: BatchProver,
     mempool: SharedMempool,
 }
@@ -305,7 +305,7 @@ impl BatchJob {
             .map(Deref::deref)
             .flat_map(AuthenticatedTransaction::unauthenticated_note_ids);
 
-        self.store
+        self.state
             .get_batch_inputs(
                 block_references.map(|(block_num, _)| block_num).collect(),
                 unauthenticated_notes.collect(),

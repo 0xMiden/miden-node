@@ -4,9 +4,9 @@ use miden_protocol::block::{BlockNumber, BlockProof};
 use miden_protocol::utils::serde::Deserializable;
 
 use crate::COMPONENT;
-use crate::state::{Finality, ProofNotification, State};
+use crate::state::{Finality, ProofNotification, ProofWriter};
 
-impl State {
+impl ProofWriter {
     /// Saves a block proof, advances the proven-in-sequence tip, and notifies replica subscribers.
     ///
     /// # Errors

@@ -75,7 +75,7 @@ impl From<InvalidBlockRange> for RpcInvalidBlockRange {
 // ================================================================================================
 
 pub struct RpcService {
-    store: Arc<State>,
+    state: Arc<State>,
     mode: RpcMode,
     ntx_builder: Option<NtxBuilderClient>,
     network_tx_auth: Option<NetworkTxAuth>,
@@ -88,14 +88,14 @@ pub struct RpcService {
 
 impl RpcService {
     pub(crate) fn new(
-        store: Arc<State>,
+        state: Arc<State>,
         mode: RpcMode,
         ntx_builder: Option<NtxBuilderClient>,
         commitment_cache_capacity: NonZeroUsize,
         network_tx_auth: Option<NetworkTxAuth>,
     ) -> Self {
         Self {
-            store,
+            state,
             mode,
             ntx_builder,
             network_tx_auth,
@@ -167,7 +167,7 @@ impl RpcService {
         }
 
         let header = self
-            .store
+            .state
             .get_block_header(Some(block), false)
             .await
             .map_err(get_block_header_error_to_status)?
@@ -205,7 +205,7 @@ impl RpcService {
         &self,
         range: &RangeInclusive<BlockNumber>,
     ) -> Result<BlockNumber, Status> {
-        let chain_tip = self.store.chain_tip(Finality::Committed);
+        let chain_tip = self.state.chain_tip(Finality::Committed);
         if *range.end() > chain_tip {
             return Err(Status::invalid_argument(format!(
                 "block_to ({}) is greater than chain tip ({chain_tip})",
@@ -228,7 +228,7 @@ impl RpcService {
         }
 
         let network_accounts =
-            self.store.filter_network_accounts(&account_ids).await.map_err(|err| {
+            self.state.filter_network_accounts(&account_ids).await.map_err(|err| {
                 Status::internal(format!("network-account classification failed: {err}"))
             })?;
 

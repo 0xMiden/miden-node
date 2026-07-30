@@ -12,7 +12,7 @@ use miden_node_proto::clients::{
     ValidatorClient,
 };
 use miden_node_rpc::{Rpc, RpcMode, SequencerInternal};
-use miden_node_store::{State, WriterTask};
+use miden_node_store::{BlockWriter, ProofWriter, State, WriterTask};
 use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
 use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::shutdown::CancellationToken;
@@ -57,11 +57,14 @@ impl SequencerCommand {
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let (state, writer_task) = load_state(&runtime, shutdown.clone()).await?;
+        let (state, block_writer, proof_writer, writer_task) =
+            load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let sequencer = Sequencer {
-            store: Arc::clone(&state),
+            state: Arc::clone(&state),
+            block_writer,
+            proof_writer,
             validator_url: self.external_services.validator_url.clone(),
             validator_timeout: self.external_services.validator_timeout,
             batch_prover_url: self.block_producer.batch.prover_url,
@@ -80,11 +83,12 @@ impl SequencerCommand {
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: state,
+            state,
             mode: RpcMode::sequencer(
                 block_producer.clone(),
                 self.external_services.validator_client()?,
             ),
+            sync_writers: None,
             ntx_builder: Some(self.external_services.ntx_builder_client()?),
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
@@ -213,18 +217,20 @@ impl FullNodeCommand {
         let validator_client = self.validator_client();
         let sequencer_client = self.sequencer_client();
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let (state, writer_task) = load_state(&runtime, shutdown.clone()).await?;
+        let (state, block_writer, proof_writer, writer_task) =
+            load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: state,
+            state,
             mode: RpcMode::full_node(
                 source_rpc,
                 self.sync.readiness_threshold,
                 validator_client,
                 sequencer_client,
             ),
+            sync_writers: Some((block_writer, proof_writer)),
             ntx_builder: None,
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
@@ -303,7 +309,7 @@ impl SyncOptions {
 async fn load_state(
     runtime: &RuntimeConfig,
     shutdown: CancellationToken,
-) -> anyhow::Result<(Arc<State>, WriterTask)> {
+) -> anyhow::Result<(Arc<State>, BlockWriter, ProofWriter, WriterTask)> {
     let loaded = State::load_with_database_options(
         &runtime.data_directory,
         runtime.storage_options.clone(),
@@ -316,7 +322,7 @@ async fn load_state(
     Ok(loaded.start())
 }
 
-/// Supervises the store's block writer task.
+/// Supervises the store's write worker task.
 ///
 /// On shutdown the task-drain loop waits for the writer to finish any in-flight block write and
 /// close its storage; an early exit or panic surfaces through the task set like any other task

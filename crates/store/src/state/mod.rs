@@ -32,7 +32,7 @@ mod inputs;
 pub use inputs::TransactionInputs;
 
 mod lifecycle;
-pub use lifecycle::{LoadedState, WriterTask};
+pub use lifecycle::{BlockWriter, LoadedState, ProofWriter, WriterTask};
 
 mod queries;
 
@@ -40,7 +40,6 @@ mod snapshot;
 pub(crate) use snapshot::{InMemoryState, SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard};
 
 mod writer;
-use writer::WriteHandle;
 
 // FINALITY
 // ================================================================================================
@@ -57,7 +56,10 @@ pub enum Finality {
 // CHAIN STATE
 // ================================================================================================
 
-/// The rollup state.
+/// The rollup state, read-only.
+///
+/// Mutations go through the [`BlockWriter`] and [`ProofWriter`] capabilities returned by
+/// [`LoadedState::start`]; every holder of this type can only query and subscribe.
 pub struct State {
     /// Root directory containing the store's on-disk data.
     data_directory: PathBuf,
@@ -72,12 +74,9 @@ pub struct State {
     /// Atomically swappable pointer to the latest in-memory state snapshot.
     ///
     /// Readers load the snapshot wait-free via [`ArcSwap::load_full`]; the
-    /// [`BlockWriter`](writer::BlockWriter) task atomically replaces the pointer after each
+    /// [`WriteWorker`](writer::WriteWorker) task atomically replaces the pointer after each
     /// committed block. Readers holding an old snapshot are unaffected by the swap.
     in_memory: Arc<ArcSwap<InMemoryState>>,
-
-    /// Handle for sending block-write requests to the [`BlockWriter`](writer::BlockWriter) task.
-    write_handle: WriteHandle,
 
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,

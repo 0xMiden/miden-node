@@ -1,6 +1,6 @@
 //! Serialized block-write path for the store state.
 //!
-//! A single [`BlockWriter`] task owns the mutable trees and processes incoming [`WriteRequest`]s
+//! A single [`WriteWorker`] task owns the mutable trees and processes incoming [`WriteRequest`]s
 //! one at a time via an mpsc channel. After each successful commit it publishes a new
 //! [`InMemoryState`] snapshot via an [`ArcSwap`], making the updated trees immediately visible to
 //! wait-free readers.
@@ -38,10 +38,10 @@ use crate::state::loader::TreeStorage;
 use crate::state::{
     BlockCache,
     BlockNotification,
+    BlockWriter,
     InMemoryState,
     SNAPSHOTS_LIVE_WARN_THRESHOLD,
     SnapshotGuard,
-    State,
 };
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
@@ -54,37 +54,10 @@ pub(super) struct WriteRequest {
     result_tx: oneshot::Sender<Result<(), ApplyBlockError>>,
 }
 
-// WRITE HANDLE
-// ================================================================================================
-
-/// Handle for sending block-write requests to the [`BlockWriter`] task.
-pub(super) struct WriteHandle {
-    tx: mpsc::Sender<WriteRequest>,
-}
-
-impl WriteHandle {
-    pub(super) fn new(tx: mpsc::Sender<WriteRequest>) -> Self {
-        Self { tx }
-    }
-
-    /// Sends a block to the writer task and awaits its result.
-    pub(super) async fn apply_block(
-        &self,
-        signed_block: SignedBlock,
-    ) -> Result<(), ApplyBlockError> {
-        let (result_tx, result_rx) = oneshot::channel();
-        self.tx
-            .send(WriteRequest { signed_block, result_tx })
-            .await
-            .map_err(|e| ApplyBlockError::WriterTaskSendFailed(e.as_report()))?;
-        result_rx.await?
-    }
-}
-
-impl State {
+impl BlockWriter {
     /// Apply changes of a new block to the DB and in-memory data structures.
     ///
-    /// Blocks are forwarded to the [`BlockWriter`] task, which processes them one at a time.
+    /// Blocks are forwarded to the [`WriteWorker`] task, which processes them one at a time.
     /// Readers are unaffected while a block is being applied: they keep reading from the previous
     /// in-memory snapshot until the writer atomically publishes the new one.
     #[miden_instrument(
@@ -93,11 +66,16 @@ impl State {
         err,
     )]
     pub async fn apply_block(&self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
-        self.write_handle.apply_block(signed_block).await
+        let (result_tx, result_rx) = oneshot::channel();
+        self.write_tx
+            .send(WriteRequest { signed_block, result_tx })
+            .await
+            .map_err(|e| ApplyBlockError::WriterTaskSendFailed(e.as_report()))?;
+        result_rx.await?
     }
 }
 
-// BLOCK WRITER
+// WRITE WORKER
 // ================================================================================================
 
 /// Single-task owner of the mutable trees. Processes [`WriteRequest`]s serially.
@@ -105,7 +83,7 @@ impl State {
 /// The writer owns the writable trees directly, so no locks are held at any point: validation and
 /// mutation-computation read the owned trees, the DB commit runs without touching them, and the
 /// new [`InMemoryState`] snapshot is published atomically at the end.
-pub(super) struct BlockWriter {
+pub(super) struct WriteWorker {
     pub db: Arc<Db>,
     pub block_store: Arc<BlockStore>,
     /// Atomically swappable pointer through which new snapshots are published.
@@ -135,9 +113,9 @@ struct PreparedBlockUpdate {
     account_forest_update: PreparedAccountStateForestBlockUpdate<AccountStateForestBackend>,
 }
 
-impl BlockWriter {
-    /// Runs the writer loop, processing requests until shutdown is signalled or all write handles
-    /// are dropped.
+impl WriteWorker {
+    /// Runs the writer loop, processing requests until shutdown is signalled or the
+    /// [`BlockWriter`] (holding the only request sender) is dropped.
     ///
     /// Cancellation is only observed between requests: an in-flight block write always runs to
     /// completion, so shutdown never leaves the trees lagging the committed database state.

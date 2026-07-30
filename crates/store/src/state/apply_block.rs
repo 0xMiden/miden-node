@@ -6,9 +6,9 @@ use miden_protocol::utils::serde::Serializable;
 
 use crate::COMPONENT;
 use crate::errors::ApplyBlockWithProvingInputsError;
-use crate::state::State;
+use crate::state::BlockWriter;
 
-impl State {
+impl BlockWriter {
     /// Saves proving inputs for a signed block and applies it to the state.
     ///
     /// Used by the in-process block producer after it has built and signed a block.

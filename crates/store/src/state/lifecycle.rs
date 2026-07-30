@@ -1,4 +1,4 @@
-//! Store lifecycle: loading the state, starting its block writer, and stopping the store.
+//! Store lifecycle: loading the state, starting its write worker, and stopping the store.
 
 use std::future::Future;
 use std::num::NonZeroUsize;
@@ -14,7 +14,7 @@ use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use crate::account_state_forest::AccountStateForestBackend;
 use crate::accounts::AccountTreeWithHistory;
@@ -33,7 +33,7 @@ use crate::state::loader::{
     verify_account_state_forest_consistency,
     verify_tree_consistency,
 };
-use crate::state::writer::{BlockWriter, WriteHandle};
+use crate::state::writer::{WriteRequest, WriteWorker};
 use crate::state::{BlockCache, InMemoryState, ProofCache, SnapshotGuard, State};
 use crate::{COMPONENT, DataDirectory, DatabaseOptions};
 
@@ -46,45 +46,135 @@ const PROOF_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(512).unwrap();
 // LOADED STATE
 // ================================================================================================
 
-/// A loaded store state whose block writer has not been started yet.
+/// A loaded store state whose write worker has not been started yet.
 ///
-/// Returned by [`State::load`]. [`Self::start`] spawns the writer and yields the usable
-/// [`State`]; since this is the only way to obtain one, [`State::apply_block`] can always make
-/// progress.
-#[must_use = "call `start` to spawn the block writer and obtain the state"]
+/// Returned by [`State::load`]. [`Self::start`] spawns the writer and yields the read-only
+/// [`State`] together with the write capabilities; since this is the only way to obtain a
+/// [`BlockWriter`], [`BlockWriter::apply_block`] can always make progress.
+#[must_use = "call `start` to spawn the write worker and obtain the state"]
 pub struct LoadedState {
     state: State,
-    writer: BlockWriter,
+    writer: WriteWorker,
+    write_tx: mpsc::Sender<WriteRequest>,
 }
 
 impl LoadedState {
-    /// Spawns the block writer onto the current runtime and returns the state together with the
-    /// writer task's handle.
+    /// Spawns the write worker onto the current runtime and returns the read-only state together
+    /// with the write capabilities and the writer task's handle.
     ///
-    /// The writer exits once the shutdown token passed to [`State::load`] is cancelled or the last
-    /// state reference (holding the only write handle) is dropped — an in-flight block write
+    /// [`Arc<State>`] is the read-only view shared with every component that queries or
+    /// subscribes; it exposes no mutating methods. [`BlockWriter`] and [`ProofWriter`] are the
+    /// only handles able to mutate the store — hand them to the single task driving each write
+    /// path (block production or sync, and proof scheduling or sync respectively).
+    ///
+    /// The writer exits once the shutdown token passed to [`State::load`] is cancelled or the
+    /// [`BlockWriter`] (holding the only request sender) is dropped — an in-flight block write
     /// always completes first. Awaiting the returned handle after either event guarantees the
     /// writer has released the tree storage it owns; a join error carries a writer panic.
     ///
-    /// Callers without a token to cancel should stop the store via [`State::stop`] rather than
-    /// dropping and joining by hand.
-    pub fn start(self) -> (Arc<State>, WriterTask) {
+    /// Callers without a token to cancel should stop the store via [`BlockWriter::stop`] rather
+    /// than dropping and joining by hand.
+    pub fn start(self) -> (Arc<State>, BlockWriter, ProofWriter, WriterTask) {
         let writer_task = tokio::spawn(self.writer.run());
-        (Arc::new(self.state), WriterTask(writer_task))
+        let state = Arc::new(self.state);
+        let block_writer = BlockWriter {
+            state: Arc::clone(&state),
+            write_tx: self.write_tx,
+        };
+        let proof_writer = ProofWriter { state: Arc::clone(&state) };
+        (state, block_writer, proof_writer, WriterTask(writer_task))
+    }
+}
+
+// WRITE CAPABILITIES
+// ================================================================================================
+
+/// The store's block-write capability.
+///
+/// Only handle able to apply blocks; obtained exactly once from [`LoadedState::start`] and
+/// deliberately not cloneable, so granting it to a single task (the block builder in sequencer
+/// mode, the block sync loop in full-node mode) statically prevents every other component from
+/// writing blocks. Dereferences to [`State`] for read access.
+pub struct BlockWriter {
+    state: Arc<State>,
+    /// Sender for block-write requests to the [`WriteWorker`](crate::state::writer::WriteWorker)
+    /// task. Never cloned out of this struct: the writer exits once it is dropped.
+    pub(super) write_tx: mpsc::Sender<WriteRequest>,
+}
+
+impl std::ops::Deref for BlockWriter {
+    type Target = State;
+
+    fn deref(&self) -> &State {
+        &self.state
+    }
+}
+
+impl BlockWriter {
+    /// Returns the shared read-only state.
+    pub fn state(&self) -> &Arc<State> {
+        &self.state
+    }
+
+    /// Stops the store, waiting until the write worker has released the tree storage it owns.
+    ///
+    /// Consumes the capability — closing the write channel the write worker listens on — and then
+    /// joins the writer task returned by [`LoadedState::start`]. The drop must precede the join
+    /// or the write worker never observes the closed channel; doing both here keeps that ordering
+    /// out of caller hands. Read-only [`State`] references may outlive the stop.
+    ///
+    /// Callers that need the storage released deterministically must use this method instead of
+    /// dropping: the node's `recover` command stops the store before the process exits, and the
+    /// stress-test's store seeding stops it so the same data directory can be re-loaded (or its
+    /// temporary directory deleted) immediately afterwards. The running node does not use this
+    /// method — its writer exits via the shutdown token passed to [`State::load`] and is joined
+    /// through the node's task set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the writer task panicked.
+    pub async fn stop(self, writer_task: WriterTask) {
+        drop(self);
+        writer_task.await.expect("write worker task should not panic");
+    }
+}
+
+/// The store's proof-write capability.
+///
+/// Only handle able to commit block proofs and advance the proven tip; obtained exactly once from
+/// [`LoadedState::start`] and deliberately not cloneable, so granting it to a single task (the
+/// proof scheduler in sequencer mode, the proof sync loop in full-node mode) statically prevents
+/// every other component from writing proofs. Dereferences to [`State`] for read access.
+pub struct ProofWriter {
+    state: Arc<State>,
+}
+
+impl std::ops::Deref for ProofWriter {
+    type Target = State;
+
+    fn deref(&self) -> &State {
+        &self.state
+    }
+}
+
+impl ProofWriter {
+    /// Returns the shared read-only state.
+    pub fn state(&self) -> &Arc<State> {
+        &self.state
     }
 }
 
 // WRITER TASK
 // ================================================================================================
 
-/// Handle of the store's block writer task, returned by [`LoadedState::start`].
+/// Handle of the store's write worker task, returned by [`LoadedState::start`].
 ///
 /// Awaiting it resolves once the writer has exited and released the tree storage it owns; a join
-/// error carries a writer panic. The newtype ensures [`State::stop`] can only be given the store's
-/// own writer task, and deliberately does not expose [`tokio::task::JoinHandle::abort`]: aborting
-/// the writer mid-write could leave the trees lagging the committed database state, voiding the
-/// guarantee that an in-flight block write always completes.
-#[must_use = "await the writer task to observe its exit, or pass it to `State::stop`"]
+/// error carries a writer panic. The newtype ensures [`BlockWriter::stop`] can only be given the
+/// store's own writer task, and deliberately does not expose [`tokio::task::JoinHandle::abort`]:
+/// aborting the writer mid-write could leave the trees lagging the committed database state,
+/// voiding the guarantee that an in-flight block write always completes.
+#[must_use = "await the writer task to observe its exit, or pass it to `BlockWriter::stop`"]
 pub struct WriterTask(tokio::task::JoinHandle<()>);
 
 impl Future for WriterTask {
@@ -222,12 +312,12 @@ impl State {
         });
         let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
 
-        // Assemble the block writer. It owns the writable trees and processes write requests
+        // Assemble the write worker. It owns the writable trees and processes write requests
         // serially, publishing a new snapshot after each committed block. The caller runs it; it
-        // exits when the shutdown token is cancelled or all write handles are dropped.
-        let (write_tx, write_rx) = tokio::sync::mpsc::channel(1);
-        let write_handle = WriteHandle::new(write_tx);
-        let block_writer = BlockWriter {
+        // exits when the shutdown token is cancelled or the `BlockWriter` (holding the only request
+        // sender) is dropped.
+        let (write_tx, write_rx) = mpsc::channel(1);
+        let block_writer = WriteWorker {
             db: Arc::clone(&db),
             block_store: Arc::clone(&block_store),
             in_memory: Arc::clone(&in_memory),
@@ -246,68 +336,32 @@ impl State {
             db,
             block_store,
             in_memory,
-            write_handle,
             proven_tip,
             committed_tip_tx,
             block_cache,
             proof_cache,
         };
 
-        Ok(LoadedState { state, writer: block_writer })
+        Ok(LoadedState { state, writer: block_writer, write_tx })
     }
 
-    /// Loads the state with default options and starts its block writer, detaching the writer
+    /// Loads the state with default options and starts its write worker, detaching the worker
     /// task.
     ///
     /// Test-only helper for tests in sibling crates that don't manage the writer's lifecycle:
-    /// the detached writer exits once the returned state (holding the only write handle) is
-    /// dropped. Hidden from public docs and not part of the stable API.
+    /// the detached writer exits once the returned [`BlockWriter`] is dropped. Hidden from public
+    /// docs and not part of the stable API.
     ///
     /// # Panics
     ///
     /// Panics if the state fails to load.
     #[doc(hidden)]
-    pub async fn for_tests(data_path: &Path) -> Arc<Self> {
-        let (state, _writer_task) =
+    pub async fn for_tests(data_path: &Path) -> (Arc<Self>, BlockWriter, ProofWriter) {
+        let (state, block_writer, proof_writer, _writer_task) =
             Self::load(data_path, StorageOptions::default(), CancellationToken::new())
                 .await
                 .expect("state should load")
                 .start();
-        state
-    }
-
-    /// Stops the store, waiting until the block writer has released the tree storage it owns.
-    ///
-    /// Consumes the last state reference — closing the write channel the writer listens on — and
-    /// then joins the writer task returned by [`LoadedState::start`]. The drop must precede the
-    /// join or the writer never observes the closed channel; doing both here keeps that ordering
-    /// out of caller hands.
-    ///
-    /// Callers that need the storage released deterministically must use this method instead of
-    /// dropping: the node's `recover` command stops the store before the process exits, and the
-    /// stress-test's store seeding stops it so the same data directory can be re-loaded (or its
-    /// temporary directory deleted) immediately afterwards. The running node does not use this
-    /// method — its writer exits via the shutdown token passed to [`State::load`] and is joined
-    /// through the node's task set.
-    ///
-    /// # Errors
-    ///
-    /// Returns both pieces unchanged if other references to the state are still alive.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the writer task panicked.
-    pub async fn stop(
-        self: Arc<Self>,
-        writer_task: WriterTask,
-    ) -> Result<(), (Arc<Self>, WriterTask)> {
-        match Arc::try_unwrap(self) {
-            Ok(state) => {
-                drop(state);
-                writer_task.await.expect("block writer task should not panic");
-                Ok(())
-            },
-            Err(state) => Err((state, writer_task)),
-        }
+        (state, block_writer, proof_writer)
     }
 }

@@ -61,7 +61,7 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
         let chain_tip = self.range_bounds_check(&block_range)?;
 
         let (nullifiers, block_num) = self
-            .store
+            .state
             .sync_nullifiers(request.prefix_len, request.nullifiers, block_range)
             .await
             .map_err(|err| database_error_to_status(&err))?;

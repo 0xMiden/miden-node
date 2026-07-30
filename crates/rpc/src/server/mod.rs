@@ -13,7 +13,7 @@ use miden_node_proto::clients::{
 };
 use miden_node_proto::server::{rpc_api, sequencer_api};
 use miden_node_proto_build::rpc_api_descriptor;
-use miden_node_store::state::{Finality, State};
+use miden_node_store::state::{BlockWriter, Finality, ProofWriter, State};
 use miden_node_utils::clap::{GrpcOptionsExternal, GrpcOptionsInternal};
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_node_utils::grpc;
@@ -44,8 +44,13 @@ mod health;
 /// It uses the supplied store state and mode-specific submission handling.
 pub struct Rpc {
     pub listener: TcpListener,
-    pub store: Arc<State>,
+    pub state: Arc<State>,
     pub mode: RpcMode,
+    /// Store write capabilities consumed by the full-node sync loop.
+    ///
+    /// Must be provided in full-node mode and omitted in sequencer mode. The RPC service itself
+    /// only ever reads through `store`; these are passed through untouched to the sync tasks.
+    pub sync_writers: Option<(BlockWriter, ProofWriter)>,
     pub ntx_builder: Option<NtxBuilderClient>,
     pub grpc_options: GrpcOptionsExternal,
     pub network_tx_auth: Option<AsciiMetadataValue>,
@@ -121,7 +126,7 @@ impl Rpc {
         let endpoint = self.listener.local_addr().context("failed to read RPC listen address")?;
         let mode = self.mode.as_str();
         let mut api = api::RpcService::new(
-            self.store.clone(),
+            self.state.clone(),
             self.mode.clone(),
             self.ntx_builder.clone(),
             NonZeroUsize::new(1_000_000).unwrap(),
@@ -149,7 +154,7 @@ impl Rpc {
                         tonic_health::ServingStatus::Serving,
                     )
                     .await;
-                let chain_tip = self.store.chain_tip(Finality::Committed);
+                let chain_tip = self.state.chain_tip(Finality::Committed);
                 log_node_ready(mode, endpoint, chain_tip);
             },
             RpcMode::FullNode { source_rpc, readiness_threshold, .. } => {
@@ -160,10 +165,14 @@ impl Rpc {
                     )
                     .await;
                 let readiness = RpcReadiness::new(health_reporter, readiness_threshold);
+                let (block_writer, proof_writer) = self.sync_writers.context(
+                    "full-node RPC requires the store write capabilities for its sync loop",
+                )?;
                 tasks.spawn(
                     "RPC sync",
                     RpcSync {
-                        state: Arc::clone(&self.store),
+                        block_writer,
+                        proof_writer,
                         source_rpc: *source_rpc,
                         readiness,
                     }

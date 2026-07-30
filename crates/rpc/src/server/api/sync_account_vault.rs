@@ -60,7 +60,7 @@ impl proto::server::rpc_api::SyncAccountVault for RpcService {
             .map_err(invalid_block_range_to_status)?;
         let chain_tip = self.range_bounds_check(&block_range)?;
         let (last_included_block, updates) = self
-            .store
+            .state
             .sync_account_vault(account_id, block_range)
             .await
             .map_err(|err| database_error_to_status(&err))?;

@@ -1,12 +1,11 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated::validator::BlockSubscriptionRequest;
 use miden_node_store::state::Finality;
-use miden_node_store::{State, WriterTask};
+use miden_node_store::{BlockWriter, State, WriterTask};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use miden_protocol::utils::serde::Deserializable;
@@ -37,20 +36,17 @@ pub struct RecoverCommand {
 
 impl RecoverCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let (state, writer_task) = self.load_state().await?;
+        let (block_writer, writer_task) = self.load_state().await?;
         let validator = self.validator_client()?;
-        let result = recover_from_validator(&state, validator).await;
+        let result = recover_from_validator(&block_writer, validator).await;
         // Wait for the writer to drain and release the backing storage before the process exits.
-        state
-            .stop(writer_task)
-            .await
-            .map_err(|_| anyhow::anyhow!("store state still referenced; cannot stop the store"))?;
+        block_writer.stop(writer_task).await;
         result
     }
 
-    async fn load_state(&self) -> anyhow::Result<(Arc<State>, WriterTask)> {
-        // Recovery is not wired into the node's shutdown token; the writer exits once the state
-        // (holding the only write handle) is dropped after recovery completes.
+    async fn load_state(&self) -> anyhow::Result<(BlockWriter, WriterTask)> {
+        // Recovery is not wired into the node's shutdown token; the writer exits once the
+        // `BlockWriter` (holding the only write handle) is dropped after recovery completes.
         let loaded = State::load_with_database_options(
             &self.data_directory,
             self.store.storage.clone().into(),
@@ -60,7 +56,8 @@ impl RecoverCommand {
         .await
         .context("failed to load state")?;
 
-        Ok(loaded.start())
+        let (_state, block_writer, _proof_writer, writer_task) = loaded.start();
+        Ok((block_writer, writer_task))
     }
 
     fn validator_client(&self) -> anyhow::Result<ValidatorClient> {
@@ -76,7 +73,7 @@ impl RecoverCommand {
 
 /// Streams blocks from the validator into the local store until the chain tip is reached.
 async fn recover_from_validator(
-    state: &Arc<State>,
+    block_writer: &BlockWriter,
     mut validator: ValidatorClient,
 ) -> anyhow::Result<()> {
     // Capture the validator's chain tip as the recovery target. The validator's block stream
@@ -91,7 +88,7 @@ async fn recover_from_validator(
             .chain_tip,
     );
 
-    let local_tip = state.chain_tip(Finality::Committed);
+    let local_tip = block_writer.chain_tip(Finality::Committed);
     if local_tip >= validator_tip {
         info!(
             target: LOG_TARGET,
@@ -121,7 +118,10 @@ async fn recover_from_validator(
         let block = SignedBlock::read_from_bytes(&event.block)
             .context("failed to deserialize block from validator")?;
         let block_num = block.header().block_num();
-        state.apply_block(block).await.context("failed to apply recovered block")?;
+        block_writer
+            .apply_block(block)
+            .await
+            .context("failed to apply recovered block")?;
         info!(target: LOG_TARGET, block_number = %block_num.as_u32(), "Applied recovered block");
 
         // Stop once we reach the tip captured at the start of recovery.
@@ -131,7 +131,7 @@ async fn recover_from_validator(
     }
 
     // The stream can end before reaching the tip if the validator restarts or drops the connection.
-    let final_tip = state.chain_tip(Finality::Committed);
+    let final_tip = block_writer.chain_tip(Finality::Committed);
     anyhow::ensure!(
         final_tip >= validator_tip,
         "validator block stream ended at block {} before reaching the chain tip {}",

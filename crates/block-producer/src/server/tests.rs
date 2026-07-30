@@ -21,10 +21,12 @@ use crate::{
 async fn block_producer_starts_with_store_state() {
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
     bootstrap_store(data_directory.path());
-    let store = State::for_tests(data_directory.path()).await;
+    let (state, block_writer, proof_writer) = State::for_tests(data_directory.path()).await;
 
     let block_producer = Sequencer {
-        store,
+        state,
+        block_writer,
+        proof_writer,
         validator_url: Url::parse("http://127.0.0.1:0").unwrap(),
         validator_timeout: DEFAULT_VALIDATOR_TIMEOUT,
         batch_prover_url: None,

@@ -64,7 +64,7 @@ impl proto::server::rpc_api::SyncTransactions for RpcService {
         let chain_tip = self.range_bounds_check(&block_range)?;
         let account_ids = read_account_ids::<Status, _>(request.account_ids)?;
         let (last_block_included, transaction_records_db) = self
-            .store
+            .state
             .sync_transactions(account_ids, block_range)
             .await
             .map_err(|err| database_error_to_status(&err))?;

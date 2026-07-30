@@ -1,0 +1,61 @@
+x-validator: &validator
+  image: ${MIDEN_VALIDATOR_IMAGE:-miden-validator}
+  pull_policy: missing
+  volumes:
+    - node-data:/data
+    - type: bind
+      source: ${MIDEN_VALIDATOR_STORAGE_KEY_DIRECTORY:-../scripts/testdata/insecure-golden-storage-key}
+      target: /storage-key
+      read_only: true
+  depends_on:
+    bootstrap-validator:
+      condition: service_completed_successfully
+    otel-collector:
+      condition: service_started
+  command:
+    - miden-validator
+    - start
+    - --listen=0.0.0.0:50101
+
+services:
+  validator-1:
+    <<: *validator
+    environment:
+      MIDEN_VALIDATOR_ENCRYPTION_KEY:
+      MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT:
+      MIDEN_VALIDATOR_DATA_DIRECTORY: /data/validators/1
+      MIDEN_VALIDATOR_SIGNING_KEY: ${MIDEN_VALIDATOR_1_SIGNING_KEY:-0101010101010101010101010101010101010101010101010101010101010101}
+      MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
+      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/secret-share.wire
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-1
+
+  validator-2:
+    <<: *validator
+    environment:
+      MIDEN_VALIDATOR_ENCRYPTION_KEY:
+      MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT:
+      MIDEN_VALIDATOR_DATA_DIRECTORY: /data/validators/2
+      MIDEN_VALIDATOR_SIGNING_KEY: ${MIDEN_VALIDATOR_2_SIGNING_KEY:-0303030303030303030303030303030303030303030303030303030303030303}
+      MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
+      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/secret-share.wire
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-2
+
+  validator-3:
+    <<: *validator
+    environment:
+      MIDEN_VALIDATOR_ENCRYPTION_KEY:
+      MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT:
+      MIDEN_VALIDATOR_DATA_DIRECTORY: /data/validators/3
+      MIDEN_VALIDATOR_SIGNING_KEY: ${MIDEN_VALIDATOR_3_SIGNING_KEY:-0404040404040404040404040404040404040404040404040404040404040404}
+      MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
+      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/secret-share.wire
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-3

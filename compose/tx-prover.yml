@@ -1,0 +1,13 @@
+services:
+  tx-prover:
+    image: ${MIDEN_REMOTE_PROVER_IMAGE:-miden-remote-prover}
+    pull_policy: missing
+    depends_on:
+      otel-collector:
+        condition: service_started
+    command:
+      - miden-remote-prover
+      - --kind=transaction
+      - --port=50051
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317

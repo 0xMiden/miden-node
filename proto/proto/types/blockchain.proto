@@ -122,6 +122,8 @@ message SignBlockResponse {
     BlockSignature signature = 1;
     // Commitment of the block header that the validator signed.
     primitives.Digest block_commitment = 2;
+    // The validator's public key, identifying this validator.
+    ValidatorPublicKey public_key = 3;
 }
 
 

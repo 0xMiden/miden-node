@@ -13,7 +13,7 @@ use miden_node_proto::clients::{
     ValidatorClient,
     WantsConnection,
 };
-use miden_node_rpc::{Rpc, RpcMode, SequencerInternal};
+use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
 use miden_node_store::State;
 use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
 use miden_node_utils::formatting::format_endpoint;
@@ -59,8 +59,8 @@ impl SequencerCommand {
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let (validator_client, validator_monitor) =
-            self.external_services.validator_client_and_monitor()?;
+        let (validator_clients, validator_monitors) =
+            self.external_services.validator_clients_and_monitors()?;
         let (ntx_builder_client, ntx_builder_monitor) =
             self.external_services.ntx_builder_client_and_monitor()?;
         let batch_prover_monitor =
@@ -72,7 +72,7 @@ impl SequencerCommand {
 
         let sequencer = Sequencer {
             store: Arc::clone(&state),
-            validator_url: self.external_services.validator_url.clone(),
+            validator_urls: self.external_services.validator_urls.clone(),
             validator_timeout: self.external_services.validator_timeout,
             batch_prover_url: self.block_producer.batch.prover_url,
             block_prover_url: self.block_producer.block_prover.url,
@@ -92,7 +92,7 @@ impl SequencerCommand {
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
             store: state,
-            mode: RpcMode::sequencer(block_producer.clone(), validator_client),
+            mode: RpcMode::sequencer(block_producer.clone(), validator_clients),
             ntx_builder: Some(ntx_builder_client),
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
@@ -100,10 +100,12 @@ impl SequencerCommand {
         let mut tasks = Tasks::new();
         tasks.spawn("sequencer", sequencer.wait());
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
-        tasks.spawn_infallible(
-            "validator connection monitor",
-            validator_monitor.monitor::<ValidatorClient>("validator", shutdown.clone()),
-        );
+        for (index, validator_monitor) in validator_monitors.into_iter().enumerate() {
+            tasks.spawn_infallible(
+                format!("validator {index} connection monitor"),
+                validator_monitor.monitor::<ValidatorClient>("validator", shutdown.clone()),
+            );
+        }
         tasks.spawn_infallible(
             "ntx-builder connection monitor",
             ntx_builder_monitor.monitor::<NtxBuilderClient>("ntx-builder", shutdown.clone()),
@@ -147,7 +149,13 @@ impl SequencerCommand {
                     |address| address.to_string(),
                 ),
                 data.directory = %self.runtime.data_directory.display(),
-                validator.endpoint = %format_endpoint(&self.external_services.validator_url),
+                validator.endpoints = %self
+                    .external_services
+                    .validator_urls
+                    .iter()
+                    .map(format_endpoint)
+                    .collect::<Vec<_>>()
+                    .join(","),
                 ntx_builder.endpoint = %format_endpoint(&self.external_services.ntx_builder_url),
                 block.interval = %humantime::Duration::from(self.block_producer.block.interval),
                 batch.interval = %humantime::Duration::from(self.block_producer.batch.interval),
@@ -160,9 +168,19 @@ impl SequencerCommand {
 
 #[derive(clap::Args, Clone, Debug)]
 pub struct SequencerExternalServiceOptions {
-    /// The validator service gRPC URL.
-    #[arg(long = "validator.url", env = "MIDEN_NODE_VALIDATOR_URL", value_name = "URL")]
-    pub validator_url: Url,
+    /// The validator service gRPC URLs.
+    ///
+    /// Repeat the flag once per validator (`--validator.url <URL> --validator.url <URL>`); the
+    /// environment variable takes a comma-separated list. Transactions are submitted to, and
+    /// blocks are signed by, every validator.
+    #[arg(
+        long = "validator.url",
+        env = "MIDEN_NODE_VALIDATOR_URL",
+        value_name = "URL",
+        value_delimiter = ',',
+        required = true
+    )]
+    pub validator_urls: Vec<Url>,
 
     /// Request timeout for calls to the validator service.
     ///
@@ -183,17 +201,25 @@ pub struct SequencerExternalServiceOptions {
 }
 
 impl SequencerExternalServiceOptions {
-    fn validator_client_and_monitor(
+    fn validator_clients_and_monitors(
         &self,
-    ) -> anyhow::Result<(ValidatorClient, Builder<WantsConnection>)> {
-        let builder = Builder::new(self.validator_url.clone())
-            .with_tls()?
-            .with_timeout(self.validator_timeout)
-            .without_metadata_version()
-            .without_metadata_genesis()
-            .with_otel_context_injection();
-        let client = builder.clone().connect_lazy::<ValidatorClient>();
-        Ok((client, builder))
+    ) -> anyhow::Result<(ValidatorClients, Vec<Builder<WantsConnection>>)> {
+        let builders = self
+            .validator_urls
+            .iter()
+            .map(|url| {
+                Ok(Builder::new(url.clone())
+                    .with_tls()?
+                    .with_timeout(self.validator_timeout)
+                    .without_metadata_version()
+                    .without_metadata_genesis()
+                    .with_otel_context_injection())
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let clients =
+            builders.iter().cloned().map(Builder::connect_lazy::<ValidatorClient>).collect();
+        let clients = ValidatorClients::new(clients)?;
+        Ok((clients, builders))
     }
 
     fn ntx_builder_client_and_monitor(
@@ -221,21 +247,26 @@ pub struct FullNodeCommand {
     #[command(flatten)]
     pub store: StoreOptions,
 
-    /// The validator service gRPC URL.
+    /// The validator service gRPC URLs.
+    ///
+    /// Repeat the flag once per validator (`--validator.url <URL> --validator.url <URL>`); the
+    /// environment variable takes a comma-separated list. Transactions are submitted to every
+    /// validator.
     #[arg(
         long = "validator.url",
         env = "MIDEN_NODE_VALIDATOR_URL",
         value_name = "URL",
+        value_delimiter = ',',
         requires = "sequencer_url"
     )]
-    pub validator_url: Option<Url>,
+    pub validator_urls: Vec<Url>,
 
     /// The sequencer's internal service gRPC URL.
     #[arg(
         long = "sequencer.internal.url",
         env = "MIDEN_NODE_SEQUENCER_INTERNAL_URL",
         value_name = "URL",
-        requires = "validator_url"
+        requires = "validator_urls"
     )]
     pub sequencer_url: Option<Url>,
 }
@@ -245,12 +276,8 @@ impl FullNodeCommand {
         self.log_starting();
         let runtime = self.runtime.runtime_config(&self.store);
         let source_rpc = self.sync.source_rpc_client()?;
-        let (validator_client, validator_monitor) = self
-            .validator_client_and_monitor()
-            .map_or((None, None), |(client, monitor)| (Some(client), Some(monitor)));
-        let (sequencer_client, sequencer_monitor) = self
-            .sequencer_client_and_monitor()
-            .map_or((None, None), |(client, monitor)| (Some(client), Some(monitor)));
+        let (pre_auth, validator_monitors, sequencer_monitor) =
+            self.pre_auth_submission_and_monitors()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
         let state = load_state(&runtime).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
@@ -258,21 +285,16 @@ impl FullNodeCommand {
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
             store: state,
-            mode: RpcMode::full_node(
-                source_rpc,
-                self.sync.readiness_threshold,
-                validator_client,
-                sequencer_client,
-            ),
+            mode: RpcMode::full_node(source_rpc, self.sync.readiness_threshold, pre_auth),
             ntx_builder: None,
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
         };
         let mut tasks = Tasks::new();
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
-        if let Some(validator_monitor) = validator_monitor {
+        for (index, validator_monitor) in validator_monitors.into_iter().enumerate() {
             tasks.spawn_infallible(
-                "validator connection monitor",
+                format!("validator {index} connection monitor"),
                 validator_monitor.monitor::<ValidatorClient>("validator", shutdown.clone()),
             );
         }
@@ -286,6 +308,47 @@ impl FullNodeCommand {
         tasks.join_next_or_cancelled(shutdown).await
     }
 
+    fn pre_auth_submission_and_monitors(
+        &self,
+    ) -> anyhow::Result<(
+        Option<PreAuthSubmission>,
+        Vec<Builder<WantsConnection>>,
+        Option<Builder<WantsConnection>>,
+    )> {
+        // Clap enforces that the sequencer URL and at least one validator URL come together.
+        let Some(sequencer_url) = self.sequencer_url.as_ref() else {
+            return Ok((None, Vec::new(), None));
+        };
+        let sequencer_builder = Builder::new(sequencer_url.clone())
+            .with_tls()
+            .expect("TLS is enabled")
+            .with_timeout(Duration::from_secs(5))
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .with_otel_context_injection();
+        let sequencer = sequencer_builder.clone().connect_lazy::<SequencerClient>();
+        let validator_builders = self
+            .validator_urls
+            .iter()
+            .map(|url| {
+                Builder::new(url.clone())
+                    .with_tls()
+                    .expect("TLS is enabled")
+                    .with_timeout(Duration::from_secs(5))
+                    .without_metadata_version()
+                    .without_metadata_genesis()
+                    .with_otel_context_injection()
+            })
+            .collect::<Vec<_>>();
+        let validators = validator_builders
+            .iter()
+            .cloned()
+            .map(Builder::connect_lazy::<ValidatorClient>)
+            .collect();
+        let pre_auth = PreAuthSubmission::new(validators, sequencer)?;
+        Ok((Some(pre_auth), validator_builders, Some(sequencer_builder)))
+    }
+
     fn log_starting(&self) {
         tracing::info!(
             target: crate::LOG_TARGET,
@@ -297,10 +360,11 @@ impl FullNodeCommand {
                 data.directory = %self.runtime.data_directory.display(),
                 sync.block_source.endpoint = %format_endpoint(&self.sync.block_source_url),
                 sync.ready_threshold = self.sync.readiness_threshold,
-                validator.endpoint = %self.validator_url.as_ref().map_or_else(
-                    || "disabled".to_owned(),
-                    format_endpoint,
-                ),
+                validator.endpoints = %if self.validator_urls.is_empty() {
+                    "disabled".to_owned()
+                } else {
+                    self.validator_urls.iter().map(format_endpoint).collect::<Vec<_>>().join(",")
+                },
                 sequencer.endpoint = %self.sequencer_url.as_ref().map_or_else(
                     || "disabled".to_owned(),
                     format_endpoint,
@@ -309,34 +373,6 @@ impl FullNodeCommand {
             },
             "Starting node",
         );
-    }
-
-    fn sequencer_client_and_monitor(&self) -> Option<(SequencerClient, Builder<WantsConnection>)> {
-        self.sequencer_url.as_ref().map(|url| {
-            let builder = Builder::new(url.clone())
-                .with_tls()
-                .expect("TLS is enabled")
-                .with_timeout(Duration::from_secs(5))
-                .without_metadata_version()
-                .without_metadata_genesis()
-                .with_otel_context_injection();
-            let client = builder.clone().connect_lazy::<SequencerClient>();
-            (client, builder)
-        })
-    }
-
-    fn validator_client_and_monitor(&self) -> Option<(ValidatorClient, Builder<WantsConnection>)> {
-        self.validator_url.as_ref().map(|url| {
-            let builder = Builder::new(url.clone())
-                .with_tls()
-                .expect("TLS is enabled")
-                .with_timeout(Duration::from_secs(5))
-                .without_metadata_version()
-                .without_metadata_genesis()
-                .with_otel_context_injection();
-            let client = builder.clone().connect_lazy::<ValidatorClient>();
-            (client, builder)
-        })
     }
 }
 

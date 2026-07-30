@@ -98,12 +98,9 @@ pub fn mock_block_header(block_num: BlockNumber) -> miden_protocol::block::Block
 
 /// Creates a mock genesis [`SignedBlock`] with an empty body.
 ///
-/// The signature is produced by a throwaway key over the header commitment; it is not expected to
-/// verify against the header's validator key, which is fine for tests that exercise database-level
-/// bootstrap (signature validation happens in the CLI handler, not in `Db::bootstrap`).
+/// Like a real genesis block, it carries no signatures.
 pub fn mock_genesis_block() -> miden_protocol::block::SignedBlock {
     use miden_protocol::block::{BlockBody, BlockSignatures, SignedBlock};
-    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use miden_protocol::transaction::OrderedTransactionHeaders;
 
     let header = mock_block_header(BlockNumber::GENESIS);
@@ -113,8 +110,7 @@ pub fn mock_genesis_block() -> miden_protocol::block::SignedBlock {
         Vec::new(),
         OrderedTransactionHeaders::new_unchecked(Vec::new()),
     );
-    let signature = SigningKey::new().sign(header.commitment());
-    let signatures = BlockSignatures::new(vec![signature]).unwrap();
+    let signatures = BlockSignatures::new(Vec::new()).unwrap();
     SignedBlock::new_unchecked(header, body, signatures)
 }
 
@@ -141,11 +137,10 @@ pub fn mock_network_account_update() -> (Account, miden_protocol::account::Accou
 /// Creates a mock genesis [`SignedBlock`] that seeds a single network account and contains no
 /// transactions. Returns the block and the seeded account id.
 ///
-/// See [`mock_genesis_block`] for the signature caveat.
+/// Like a real genesis block, it carries no signatures.
 pub fn mock_genesis_block_with_network_account() -> (miden_protocol::block::SignedBlock, AccountId)
 {
     use miden_protocol::block::{BlockAccountUpdate, BlockBody, BlockSignatures, SignedBlock};
-    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
     use miden_protocol::transaction::OrderedTransactionHeaders;
 
     let (account, details) = mock_network_account_update();
@@ -159,7 +154,6 @@ pub fn mock_genesis_block_with_network_account() -> (miden_protocol::block::Sign
         Vec::new(),
         OrderedTransactionHeaders::new_unchecked(Vec::new()),
     );
-    let signature = SigningKey::new().sign(header.commitment());
-    let signatures = BlockSignatures::new(vec![signature]).unwrap();
+    let signatures = BlockSignatures::new(Vec::new()).unwrap();
     (SignedBlock::new_unchecked(header, body, signatures), account_id)
 }

@@ -47,10 +47,14 @@ Writes the bundle to `./benchmark-proofs/`:
 
 ```sh
 miden-benchmark run-benchmark \
-  --rpc-url http://127.0.0.1:57291 \
-  --concurrency 32 \
-  --wait-blocks 3
+  --rpc-url                      http://127.0.0.1:57291 \
+  --validator-signing-public-key <HEX> \
+  --concurrency                  32 \
+  --wait-blocks                  3
 ```
+
+The signing public key must match the validator key that signs transaction encryption key attestations. The benchmark
+will not submit transactions unless it can verify the advertised encryption key.
 
 Mints go in sequentially, then consumes with the requested concurrency, then the run waits `--wait-blocks` blocks before
 scanning for inclusion. Per-phase ack rate, RPC latency percentiles, inclusion rate, and inclusion TPS are printed at
@@ -148,24 +152,27 @@ Install the binaries:
 make install-node install-validator install-ntx-builder install-remote-prover
 ```
 
-Bootstrap a fresh data directory (one-time). The validator creates the genesis block, then the node and ntx-builder
-bootstrap their storage from it:
+Bootstrap a fresh data directory (one-time). The validator creates the genesis block, then every component bootstraps
+its storage from it:
 
 ```sh
 DATA=./node-data
 
-miden-validator bootstrap \
-  --data-directory          "$DATA/validator" \
+miden-validator genesis \
   --genesis-block-directory "$DATA/genesis" \
   --accounts-directory      "$DATA/accounts"
 
+miden-validator bootstrap \
+  --data-directory "$DATA/validator" \
+  --genesis        "$DATA/genesis/genesis.dat"
+
 miden-node bootstrap \
   --data-directory "$DATA/node" \
-  --file           "$DATA/genesis/genesis.dat"
+  --genesis        "$DATA/genesis/genesis.dat"
 
 miden-ntx-builder bootstrap \
   --data-directory "$DATA/ntx-builder" \
-  --file           "$DATA/genesis/genesis.dat"
+  --genesis        "$DATA/genesis/genesis.dat"
 ```
 
 Start each component. The example runs them in the background and captures logs under `./logs/`. For an interactive run,
@@ -174,6 +181,11 @@ drop the trailing `&` and put each command in its own terminal.
 ```sh
 mkdir -p logs
 DATA=./node-data
+
+export MIDEN_VALIDATOR_STORAGE_KEY_EPOCH="<32-byte-hex-epoch>"
+export MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT="<setup-context-file>"
+export MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET="<public-key-set-file>"
+export MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE="<secret-share-file>"
 
 nohup miden-validator start \
   --listen         127.0.0.1:50101 \

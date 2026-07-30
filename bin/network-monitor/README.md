@@ -24,6 +24,10 @@ configured.
 The monitor is an observer and test client, not a node component required for block production. Its network transaction
 checks create fresh in-memory accounts on startup and do not persist account state to disk.
 
+Network transaction checks also require `MIDEN_MONITOR_VALIDATOR_SIGNING_PUBLIC_KEY`. It must contain the hex-encoded
+validator key that signs transaction encryption key attestations. The monitor will not submit a transaction unless it
+can verify the advertised encryption key.
+
 Use the binary help output for the current command and configuration surface. The help output is the source of truth for
 flags and environment variables.
 

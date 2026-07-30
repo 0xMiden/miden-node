@@ -13,6 +13,7 @@ use miden_node_proto::clients::{
     Interceptor,
     NtxBuilderClient,
     RpcClient,
+    SequencerClient,
     ValidatorClient,
 };
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
@@ -42,7 +43,6 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AssetCallbackFlag,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
 use miden_protocol::utils::serde::Serializable;
@@ -57,7 +57,7 @@ use tonic::metadata::MetadataMap;
 use url::Url;
 
 use crate::server::api::RpcService;
-use crate::{Rpc, RpcMode};
+use crate::{PreAuthSubmission, Rpc, RpcMode, ValidatorClients};
 
 /// Global registry of temp directories. Held for the lifetime of the test binary so that `RocksDB`
 /// can always flush on drop regardless of test outcome or drop ordering.
@@ -104,12 +104,9 @@ impl TestStore {
 
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
-        let signer = SigningKey::new();
-        let (genesis_state, _) = config.into_state(signer.public_key()).unwrap();
-        let genesis_block = genesis_state
-            .clone()
-            .into_block(&signer)
-            .expect("genesis block should be created");
+        let (genesis_state, _) = config.into_state().unwrap();
+        let genesis_block =
+            genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
 
         State::bootstrap(genesis_block, path).expect("store should bootstrap");
@@ -420,7 +417,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
             .without_tls()
             .with_timeout(Duration::from_secs(5))
             .without_metadata_version()
-            .with_metadata_genesis(genesis.to_hex())
+            .with_metadata_genesis(genesis)
             .without_otel_context_injection()
             .connect_lazy::<miden_node_proto::clients::RpcClient>();
 
@@ -440,7 +437,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx_bytes,
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -468,7 +465,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
             .without_tls()
             .with_timeout(Duration::from_secs(5))
             .without_metadata_version()
-            .with_metadata_genesis(genesis.to_hex())
+            .with_metadata_genesis(genesis)
             .without_otel_context_injection()
             .connect_lazy::<miden_node_proto::clients::RpcClient>();
 
@@ -479,7 +476,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -518,12 +515,12 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
     let tx = build_test_proven_tx_with_id(network_account_id, &account, genesis);
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let service = RpcService::new(
         Arc::clone(&store.state),
-        RpcMode::full_node(source_rpc_client(), 100, None, None),
+        RpcMode::full_node(source_rpc_client(), 100, None),
         None,
         NonZeroUsize::new(1_000_000).unwrap(),
         None,
@@ -648,7 +645,7 @@ async fn start_source_rpc(
         );
         let source_rpc = RpcService::new(
             store_state,
-            RpcMode::sequencer(block_producer, validator),
+            RpcMode::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
             Some(ntx_builder),
             NonZeroUsize::new(1_000_000).unwrap(),
             None,
@@ -865,7 +862,14 @@ async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(dummy_client::<RpcClient>(), 100, Some(validator), None),
+        RpcMode::full_node(
+            dummy_client::<RpcClient>(),
+            100,
+            Some(
+                PreAuthSubmission::new(vec![validator], dummy_client::<SequencerClient>())
+                    .expect("one validator is configured"),
+            ),
+        ),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -879,6 +883,16 @@ async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
 
     assert_eq!(response, expected);
     assert_eq!(validator_call_count.load(Ordering::SeqCst), 1);
+
+    full_node
+        .get_transaction_encryption_key(Request::new(()))
+        .await
+        .expect("each encryption key request should reach the validator");
+    assert_eq!(
+        validator_call_count.load(Ordering::SeqCst),
+        2,
+        "the public RPC must not cache transaction encryption keys",
+    );
 }
 
 #[tokio::test]
@@ -890,7 +904,7 @@ async fn full_node_forwards_get_transaction_encryption_key_to_source_rpc() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None, None),
+        RpcMode::full_node(source_rpc, 100, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -915,7 +929,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding_encryption
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None, None),
+        RpcMode::full_node(source_rpc, 100, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -957,7 +971,7 @@ async fn full_node_forwards_get_network_note_status_to_source_rpc() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None, None),
+        RpcMode::full_node(source_rpc, 100, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -988,7 +1002,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None, None),
+        RpcMode::full_node(source_rpc, 100, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -1041,7 +1055,7 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
 
     let request = proto::transaction::ProvenTransaction {
         transaction: tx.to_bytes(),
-        transaction_inputs: None,
+        sealed_transaction_inputs: None,
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -1118,7 +1132,10 @@ async fn start_rpc_with_options(
         Rpc {
             listener: rpc_listener,
             store: store_state,
-            mode: RpcMode::sequencer(block_producer, validator),
+            mode: RpcMode::sequencer(
+                block_producer,
+                ValidatorClients::new(vec![validator]).unwrap(),
+            ),
             ntx_builder: None,
             grpc_options,
             network_tx_auth: None,

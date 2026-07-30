@@ -10,7 +10,7 @@ use miden_protocol::utils::serde::Serializable;
 use rand_core_06::OsRng;
 use serde::{Deserialize, Serialize};
 
-use crate::db::load_validated_private_transactions;
+use crate::db::load_all_transactions;
 use crate::{GoldenOperatorKey, PrivateRecordError, StoredPrivateRecord};
 
 const LIST_TRANSACTIONS_PATH: &str = "/admin/transactions";
@@ -69,7 +69,7 @@ async fn list_validated_private_transactions(
 ) -> Result<Json<ListValidatedPrivateTransactionsResponse>, ApiError> {
     let records = service
         .database
-        .read("list validated private transactions", load_validated_private_transactions)
+        .read("list validated private transactions", load_all_transactions)
         .await
         .map_err(|_error| ApiError::internal("failed to list validated private transactions"))?;
 

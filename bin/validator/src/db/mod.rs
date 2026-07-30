@@ -30,8 +30,7 @@ mod sql {
         include_str!("sql/load_private_records_by_key_epoch.sql");
     pub(super) const LOAD_PRIVATE_RECORDS_BY_SETUP_CONTEXT: &str =
         include_str!("sql/load_private_records_by_setup_context.sql");
-    pub(super) const LOAD_VALIDATED_PRIVATE_TRANSACTIONS: &str =
-        include_str!("sql/load_validated_private_transactions.sql");
+    pub(super) const LOAD_ALL_TRANSACTIONS: &str = include_str!("sql/load_all_transactions.sql");
     pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
     pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
     pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
@@ -191,10 +190,10 @@ pub fn load_private_records_by_setup_context(
 }
 
 /// Loads all validated private transactions in insertion order.
-pub(crate) fn load_validated_private_transactions(
+pub(crate) fn load_all_transactions(
     tx: &ReadTx<'_>,
 ) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
-    tx.query(sql::LOAD_VALIDATED_PRIVATE_TRANSACTIONS, &[], private_record_from_row)
+    tx.query(sql::LOAD_ALL_TRANSACTIONS, &[], private_record_from_row)
 }
 
 fn private_record_from_row(row: &Row<'_>) -> Result<StoredPrivateRecord, DatabaseError> {
@@ -515,10 +514,7 @@ mod tests {
             .unwrap();
         }
 
-        let loaded = db
-            .read("load validated private transactions", load_validated_private_transactions)
-            .await
-            .unwrap();
+        let loaded = db.read("load all transactions", load_all_transactions).await.unwrap();
 
         assert_eq!(loaded, records);
     }
@@ -547,15 +543,14 @@ mod tests {
             .unwrap()
             .unwrap();
         let request = PrivateRecordShareRequest::for_record(&stored);
-        let allow = |_: &PrivateRecordShareRequest, _: &StoredPrivateRecord| true;
         let mut first_rng = ChaCha20Rng::from_seed([41; 32]);
         let mut second_rng = ChaCha20Rng::from_seed([42; 32]);
         let shares = [
             operators[0]
-                .issue_private_record_share(&mut first_rng, &request, &stored, &allow)
+                .issue_private_record_share(&mut first_rng, &request, &stored)
                 .unwrap(),
             operators[1]
-                .issue_private_record_share(&mut second_rng, &request, &stored, &allow)
+                .issue_private_record_share(&mut second_rng, &request, &stored)
                 .unwrap(),
         ];
 

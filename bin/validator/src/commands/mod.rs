@@ -171,7 +171,7 @@ pub enum ValidatorCommand {
         listen: std::net::SocketAddr,
 
         /// Socket address at which to serve the private administration API.
-        #[arg(long = "admin-listen", env = ENV_ADMIN_LISTEN, value_name = "LISTEN")]
+        #[arg(long = "admin.listen", env = ENV_ADMIN_LISTEN, value_name = "LISTEN")]
         admin_listen: Option<std::net::SocketAddr>,
 
         #[command(flatten)]
@@ -692,7 +692,7 @@ mod tests {
         };
         assert_eq!(admin_listen, None);
 
-        let command = parse_start(&["--admin-listen", "127.0.0.1:50102"])
+        let command = parse_start(&["--admin.listen", "127.0.0.1:50102"])
             .expect("start with an admin listener must parse");
         let ValidatorCommand::Start { admin_listen, .. } = command else {
             panic!("expected the start command");

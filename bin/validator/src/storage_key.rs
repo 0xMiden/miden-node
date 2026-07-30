@@ -16,12 +16,7 @@ use rand_core_06::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::private_record::CONTENT_KEY_BYTES;
-use crate::{
-    PrivateRecordError,
-    PrivateRecordSharePolicy,
-    PrivateRecordShareRequest,
-    StoredPrivateRecord,
-};
+use crate::{PrivateRecordError, PrivateRecordShareRequest, StoredPrivateRecord};
 
 /// Golden group used for validator storage keys.
 type StorageGroup = Secp256k1GoldenGroup;
@@ -226,7 +221,7 @@ impl GoldenOperatorKey {
     }
 
     /// Issues a canonical decryption share for one encrypted content key and exact context.
-    pub fn issue_decryption_share<R>(
+    pub(crate) fn issue_decryption_share<R>(
         &self,
         rng: &mut R,
         ciphertext_bytes: &[u8],
@@ -257,22 +252,16 @@ impl GoldenOperatorKey {
     }
 
     /// Checks one private-record request and returns a canonical decryption share.
-    pub fn issue_private_record_share<R, P>(
+    pub fn issue_private_record_share<R>(
         &self,
         rng: &mut R,
         request: &PrivateRecordShareRequest,
         record: &StoredPrivateRecord,
-        policy: &P,
     ) -> Result<Vec<u8>, PrivateRecordError>
     where
         R: RngCore + CryptoRng,
-        P: PrivateRecordSharePolicy + ?Sized,
     {
         record.validate_share_request(request, self.key_epoch, self.setup_context_id())?;
-        if !policy.allows(request, record) {
-            return Err(PrivateRecordError::ShareDenied);
-        }
-
         self.issue_decryption_share(rng, record.encrypted_record_key(), request.context())
     }
 }

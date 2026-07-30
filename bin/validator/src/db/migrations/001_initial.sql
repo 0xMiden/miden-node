@@ -1,5 +1,5 @@
 CREATE TABLE validated_transactions (
-    -- Local insertion order used by the private administration API.
+    -- Rowid-backed local insertion order used by the private administration API.
     insertion_sequence    INTEGER PRIMARY KEY AUTOINCREMENT,
     -- Transaction ID, unique within this validator's database.
     id                    BLOB NOT NULL UNIQUE,

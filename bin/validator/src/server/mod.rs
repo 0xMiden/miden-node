@@ -73,9 +73,8 @@ pub struct ValidatorAdminServer {
 impl ValidatorAdminServer {
     /// Serves the private validator administration API.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let listener = TcpListener::bind(self.address)
-            .await
-            .context("failed to bind validator admin address")?;
+        let listener =
+            TcpListener::bind(self.address).await.context("failed to bind admin address")?;
         self.serve_on(listener, shutdown).await
     }
 

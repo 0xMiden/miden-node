@@ -15,7 +15,6 @@ pub use private_record::{
     PrivateRecordError,
     PrivateRecordId,
     PrivateRecordSealer,
-    PrivateRecordSharePolicy,
     PrivateRecordShareRequest,
     PrivateRecordStorageFields,
     StoredPrivateRecord,

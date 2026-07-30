@@ -175,21 +175,6 @@ impl PrivateRecordShareRequest {
     }
 }
 
-/// Decides whether an operator may issue a decryption share.
-pub trait PrivateRecordSharePolicy {
-    /// Returns `true` when the request may receive a share.
-    fn allows(&self, request: &PrivateRecordShareRequest, record: &StoredPrivateRecord) -> bool;
-}
-
-impl<F> PrivateRecordSharePolicy for F
-where
-    F: Fn(&PrivateRecordShareRequest, &StoredPrivateRecord) -> bool,
-{
-    fn allows(&self, request: &PrivateRecordShareRequest, record: &StoredPrivateRecord) -> bool {
-        self(request, record)
-    }
-}
-
 /// Public Golden key used to seal private records for one epoch.
 #[derive(Clone, Debug)]
 pub struct PrivateRecordSealer {
@@ -570,9 +555,6 @@ pub enum PrivateRecordError {
     /// The request does not carry the record's exact canonical context.
     #[error("private record decryption context does not match the record")]
     DecryptionContextMismatch,
-    /// Policy denied the share request.
-    #[error("private record share request was denied")]
-    ShareDenied,
     /// The authenticated record cipher failed.
     #[error("failed to encrypt private record")]
     RecordEncryption,
@@ -653,14 +635,6 @@ mod tests {
         test_private_record_sealer(EPOCH, [8; 32])
     }
 
-    fn allow_all(_request: &PrivateRecordShareRequest, _record: &StoredPrivateRecord) -> bool {
-        true
-    }
-
-    fn deny_all(_request: &PrivateRecordShareRequest, _record: &StoredPrivateRecord) -> bool {
-        false
-    }
-
     fn threshold_record(
         operator_key: &GoldenOperatorKey,
         transaction_id: TransactionId,
@@ -681,9 +655,7 @@ mod tests {
         seed: u8,
     ) -> Vec<u8> {
         let mut rng = ChaCha20Rng::from_seed([seed; 32]);
-        operator_key
-            .issue_private_record_share(&mut rng, request, record, &allow_all)
-            .unwrap()
+        operator_key.issue_private_record_share(&mut rng, request, record).unwrap()
     }
 
     fn transaction_inputs() -> TransactionInputs {
@@ -881,17 +853,6 @@ mod tests {
         let plaintext = inputs.to_bytes();
         let record = threshold_record(&operator_keys[0], transaction_id(), 20, &plaintext);
         let request = PrivateRecordShareRequest::for_record(&record);
-        let mut denied_rng = ChaCha20Rng::from_seed([21; 32]);
-
-        assert!(matches!(
-            operator_keys[0].issue_private_record_share(
-                &mut denied_rng,
-                &request,
-                &record,
-                &deny_all,
-            ),
-            Err(PrivateRecordError::ShareDenied),
-        ));
 
         let shares = [
             issue_share(&operator_keys[0], &request, &record, 22),
@@ -946,12 +907,7 @@ mod tests {
         );
         let mut rng = ChaCha20Rng::from_seed([25; 32]);
         assert!(matches!(
-            operator_keys[0].issue_private_record_share(
-                &mut rng,
-                &wrong_transaction,
-                &record,
-                &allow_all,
-            ),
+            operator_keys[0].issue_private_record_share(&mut rng, &wrong_transaction, &record,),
             Err(PrivateRecordError::RecordIdMismatch),
         ));
 
@@ -961,12 +917,7 @@ mod tests {
             request.context().to_vec(),
         );
         assert!(matches!(
-            operator_keys[0].issue_private_record_share(
-                &mut rng,
-                &wrong_epoch,
-                &record,
-                &allow_all,
-            ),
+            operator_keys[0].issue_private_record_share(&mut rng, &wrong_epoch, &record,),
             Err(PrivateRecordError::KeyEpochMismatch),
         ));
 
@@ -978,12 +929,7 @@ mod tests {
             wrong_context_bytes,
         );
         assert!(matches!(
-            operator_keys[0].issue_private_record_share(
-                &mut rng,
-                &wrong_context,
-                &record,
-                &allow_all,
-            ),
+            operator_keys[0].issue_private_record_share(&mut rng, &wrong_context, &record,),
             Err(PrivateRecordError::DecryptionContextMismatch),
         ));
 
@@ -991,12 +937,7 @@ mod tests {
         wrong_setup_fields.setup_context_id = [99; 32];
         let wrong_setup = StoredPrivateRecord::from_storage_fields(wrong_setup_fields).unwrap();
         assert!(matches!(
-            operator_keys[0].issue_private_record_share(
-                &mut rng,
-                &request,
-                &wrong_setup,
-                &allow_all,
-            ),
+            operator_keys[0].issue_private_record_share(&mut rng, &request, &wrong_setup,),
             Err(PrivateRecordError::SetupContextMismatch),
         ));
     }

@@ -271,13 +271,22 @@ pub struct FullNodeCommand {
     pub sequencer_url: Option<Url>,
 }
 
+struct PreAuthComponents {
+    submission: Option<PreAuthSubmission>,
+    validator_monitors: Vec<Builder<WantsConnection>>,
+    sequencer_monitor: Option<Builder<WantsConnection>>,
+}
+
 impl FullNodeCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         self.log_starting();
         let runtime = self.runtime.runtime_config(&self.store);
         let source_rpc = self.sync.source_rpc_client()?;
-        let (pre_auth, validator_monitors, sequencer_monitor) =
-            self.pre_auth_submission_and_monitors()?;
+        let PreAuthComponents {
+            submission: pre_auth,
+            validator_monitors,
+            sequencer_monitor,
+        } = self.pre_auth_components()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
         let state = load_state(&runtime).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
@@ -308,16 +317,14 @@ impl FullNodeCommand {
         tasks.join_next_or_cancelled(shutdown).await
     }
 
-    fn pre_auth_submission_and_monitors(
-        &self,
-    ) -> anyhow::Result<(
-        Option<PreAuthSubmission>,
-        Vec<Builder<WantsConnection>>,
-        Option<Builder<WantsConnection>>,
-    )> {
+    fn pre_auth_components(&self) -> anyhow::Result<PreAuthComponents> {
         // Clap enforces that the sequencer URL and at least one validator URL come together.
         let Some(sequencer_url) = self.sequencer_url.as_ref() else {
-            return Ok((None, Vec::new(), None));
+            return Ok(PreAuthComponents {
+                submission: None,
+                validator_monitors: Vec::new(),
+                sequencer_monitor: None,
+            });
         };
         let sequencer_builder = Builder::new(sequencer_url.clone())
             .with_tls()
@@ -346,7 +353,11 @@ impl FullNodeCommand {
             .map(Builder::connect_lazy::<ValidatorClient>)
             .collect();
         let pre_auth = PreAuthSubmission::new(validators, sequencer)?;
-        Ok((Some(pre_auth), validator_builders, Some(sequencer_builder)))
+        Ok(PreAuthComponents {
+            submission: Some(pre_auth),
+            validator_monitors: validator_builders,
+            sequencer_monitor: Some(sequencer_builder),
+        })
     }
 
     fn log_starting(&self) {

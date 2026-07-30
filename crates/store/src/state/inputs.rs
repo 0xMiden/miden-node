@@ -22,7 +22,7 @@ use miden_protocol::transaction::PartialBlockchain;
 use crate::COMPONENT;
 use crate::db::NullifierInfo;
 use crate::errors::{DatabaseError, GetBatchInputsError, GetBlockInputsError};
-use crate::state::State;
+use crate::state::StateView;
 
 // STRUCTURES
 // ================================================================================================
@@ -45,7 +45,7 @@ type BlockInputWitnesses = (
 // INPUT QUERIES
 // ================================================================================================
 
-impl State {
+impl StateView {
     /// Fetches the inputs for a transaction batch from the database.
     ///
     /// ## Inputs
@@ -77,7 +77,7 @@ impl State {
         // note was included in a given block. We then also need to prove that each of those blocks
         // is included in the chain.
         let note_proofs = self
-            .db
+            .db()
             .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBatchInputsError::SelectNoteInclusionProofError)?;
@@ -91,44 +91,40 @@ impl State {
         let mut blocks: BTreeSet<BlockNumber> = tx_reference_blocks;
         blocks.extend(note_blocks);
 
-        let (batch_reference_block, partial_mmr) = {
-            let snapshot = self.snapshot();
+        let latest_block_num = self.tip();
 
-            let latest_block_num = snapshot.latest_block_num();
+        let highest_block_num =
+            *blocks.last().expect("we should have checked for empty block references");
+        if highest_block_num > latest_block_num {
+            return Err(GetBatchInputsError::UnknownTransactionBlockReference {
+                highest_block_num,
+                latest_block_num,
+            });
+        }
 
-            let highest_block_num =
-                *blocks.last().expect("we should have checked for empty block references");
-            if highest_block_num > latest_block_num {
-                return Err(GetBatchInputsError::UnknownTransactionBlockReference {
-                    highest_block_num,
-                    latest_block_num,
-                });
-            }
+        // Remove the latest block from the to-be-tracked blocks as it will be the reference
+        // block for the batch itself and thus added to the MMR within the batch kernel, so
+        // there is no need to prove its inclusion.
+        blocks.remove(&latest_block_num);
 
-            // Remove the latest block from the to-be-tracked blocks as it will be the reference
-            // block for the batch itself and thus added to the MMR within the batch kernel, so
-            // there is no need to prove its inclusion.
-            blocks.remove(&latest_block_num);
+        // SAFETY:
+        // - The latest block num was retrieved from the view's blockchain from which we will
+        //   also retrieve the proofs, so it is guaranteed to exist in that chain.
+        // - We have checked that no block number in the blocks set is greater than latest block
+        //   number *and* latest block num was removed from the set. Therefore only block
+        //   numbers smaller than latest block num remain in the set. Therefore all the block
+        //   numbers are guaranteed to exist in the chain state at latest block num.
+        let partial_mmr =
+            self.blockchain().partial_mmr_from_blocks(&blocks, latest_block_num).expect(
+                "latest block num should exist and all blocks in set should be < than latest block",
+            );
 
-            // SAFETY:
-            // - The latest block num was retrieved from the inner blockchain from which we will
-            //   also retrieve the proofs, so it is guaranteed to exist in that chain.
-            // - We have checked that no block number in the blocks set is greater than latest block
-            //   number *and* latest block num was removed from the set. Therefore only block
-            //   numbers smaller than latest block num remain in the set. Therefore all the block
-            //   numbers are guaranteed to exist in the chain state at latest block num.
-            let partial_mmr = snapshot
-                .blockchain
-                .partial_mmr_from_blocks(&blocks, latest_block_num)
-                .expect("latest block num should exist and all blocks in set should be < than latest block");
-
-            (latest_block_num, partial_mmr)
-        };
+        let batch_reference_block = latest_block_num;
 
         // Fetch the reference block of the batch as part of this query, so we can avoid looking it
         // up in a separate DB access.
         let mut headers = self
-            .db
+            .db()
             .select_block_headers(blocks.into_iter().chain(std::iter::once(batch_reference_block)))
             .await
             .map_err(GetBatchInputsError::SelectBlockHeaderError)?;
@@ -175,7 +171,7 @@ impl State {
         // lock to the state just once. There we need the reference blocks of the note proofs to get
         // their authentication paths in the chain MMR.
         let unauthenticated_note_proofs = self
-            .db
+            .db()
             .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBlockInputsError::SelectNoteInclusionProofError)?;
@@ -194,7 +190,7 @@ impl State {
         // Fetch the block headers for all blocks in the partial MMR plus the latest one which will
         // be used as the previous block header of the block being built.
         let mut headers = self
-            .db
+            .db()
             .select_block_headers(blocks.into_iter().chain(std::iter::once(latest_block_number)))
             .await
             .map_err(GetBlockInputsError::SelectBlockHeaderError)?;
@@ -235,9 +231,6 @@ impl State {
     /// Get account and nullifier witnesses for the requested account IDs and nullifier as well as
     /// the [`PartialMmr`] for the given blocks. The MMR won't contain the latest block and its
     /// number is removed from `blocks` and returned separately.
-    ///
-    /// This method acquires the lock to the inner state and does not access the DB so we release
-    /// the lock asap.
     fn get_block_inputs_witnesses(
         &self,
         blocks: &mut BTreeSet<BlockNumber>,
@@ -335,28 +328,22 @@ impl State {
                 })
                 .collect();
 
-            ControlFlow::Continue((
-                account_commitment,
-                nullifiers,
-                new_account_id_prefix_is_unique,
-                inner.latest_block_num(),
-            ))
+            ControlFlow::Continue((account_commitment, nullifiers, new_account_id_prefix_is_unique))
         });
         // `Break` carries a complete response (duplicate account ID prefix), so it is returned
         // as-is without the note lookup below; `Continue` carries the tree reads needed to build
         // the full response.
-        let (account_commitment, nullifiers, new_account_id_prefix_is_unique, latest_block_num) =
-            match tree_inputs {
-                ControlFlow::Continue(inputs) => inputs,
-                ControlFlow::Break(response) => return Ok(response),
-            };
+        let (account_commitment, nullifiers, new_account_id_prefix_is_unique) = match tree_inputs {
+            ControlFlow::Continue(inputs) => inputs,
+            ControlFlow::Break(response) => return Ok(response),
+        };
 
-        // Scope the note lookup by the snapshot's tip so the result is consistent with the tree
-        // reads above: mid-apply, the DB may already contain notes from a block the snapshot does
-        // not include yet.
+        // Scope the note lookup by the view's tip so the result is consistent with the tree reads
+        // above: mid-apply, the DB may already contain notes from a block the snapshot does not
+        // include yet.
         let found_unauthenticated_notes = self
-            .db
-            .select_existing_note_commitments(unauthenticated_note_commitments, latest_block_num)
+            .db()
+            .select_existing_note_commitments(unauthenticated_note_commitments, self.tip())
             .await?;
 
         Ok(TransactionInputs {

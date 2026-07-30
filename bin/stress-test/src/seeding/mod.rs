@@ -325,6 +325,7 @@ async fn read_latest_header_until(
     while !stop.load(Ordering::Relaxed) {
         let start = Instant::now();
         let (header, proof) = state
+            .view()
             .get_block_header(None, true)
             .await
             .expect("get_block_header should succeed during seeding");
@@ -1077,6 +1078,7 @@ async fn get_batch_inputs(
     // Mark every note as unauthenticated, so that the store returns the inclusion proofs for all of
     // them
     let batch_inputs = state
+        .view()
         .get_batch_inputs(
             [block_ref.block_num()].into_iter().collect(),
             notes.iter().map(|note| note.id().as_word()).collect(),
@@ -1095,6 +1097,7 @@ async fn get_block_inputs(
 ) -> BlockInputs {
     let start = Instant::now();
     let inputs = state
+        .view()
         .get_block_inputs(
             batches.iter().flat_map(ProvenBatch::updated_accounts).collect(),
             batches.iter().flat_map(ProvenBatch::created_nullifiers).collect(),

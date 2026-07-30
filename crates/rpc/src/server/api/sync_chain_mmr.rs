@@ -1,4 +1,5 @@
 use miden_node_proto::generated as proto;
+use miden_node_store::StateSyncError;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
 use tonic::Status;
@@ -39,11 +40,17 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         debug!(target: LOG_TARGET, "Syncing chain MMR");
 
         let current_client_block_height = BlockNumber::from(request.current_client_block_height);
+        let view = self.state.view();
         let sync_target = match request.finality_level() {
             proto::rpc::FinalityLevel::Committed | proto::rpc::FinalityLevel::Unspecified => {
-                self.state.chain_tip(Finality::Committed)
+                view.tip()
             },
-            proto::rpc::FinalityLevel::Proven => self.state.chain_tip(Finality::Proven),
+            // The proven tip is read from a watch channel, not the view's snapshot, so clamp it to
+            // the view's tip: a block could be committed and proven between taking the view and
+            // reading the proven tip, and the view cannot serve blocks beyond its snapshot.
+            proto::rpc::FinalityLevel::Proven => {
+                self.state.chain_tip(Finality::Proven).min(view.tip())
+            },
         };
 
         if current_client_block_height > sync_target {
@@ -53,11 +60,11 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         }
 
         let block_range = current_client_block_height..=sync_target;
-        let (mmr_delta, block_header, block_signatures) = self
-            .state
-            .sync_chain_mmr(block_range.clone())
-            .await
-            .map_err(|err| Status::internal(err.to_string()))?;
+        let (mmr_delta, block_header, block_signatures) =
+            view.sync_chain_mmr(block_range.clone()).await.map_err(|err| match err {
+                StateSyncError::RangeBeyondTip(_) => Status::invalid_argument(err.to_string()),
+                _ => Status::internal(err.to_string()),
+            })?;
 
         Ok(proto::rpc::SyncChainMmrResponse {
             block_range: Some(proto::rpc::BlockRange {

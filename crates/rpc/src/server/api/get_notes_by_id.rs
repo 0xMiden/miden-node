@@ -46,6 +46,7 @@ impl proto::server::rpc_api::GetNotesById for RpcService {
 
         let notes = self
             .state
+            .view()
             .get_notes_by_id(note_ids)
             .await
             .map_err(|err| database_error_to_status(&err))?

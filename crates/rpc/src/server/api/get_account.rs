@@ -58,8 +58,12 @@ impl proto::server::rpc_api::GetAccount for RpcService {
             validate_storage_request(&details.storage_request)?;
         }
 
-        let account_data =
-            self.state.get_account(request).await.map_err(get_account_error_to_status)?;
+        let account_data = self
+            .state
+            .view()
+            .get_account(request)
+            .await
+            .map_err(get_account_error_to_status)?;
         Ok(account_data)
     }
 }

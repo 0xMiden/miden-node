@@ -1,5 +1,4 @@
 use std::num::NonZeroUsize;
-use std::ops::RangeInclusive;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
@@ -205,6 +204,7 @@ impl RpcService {
 
         let header = self
             .state
+            .view()
             .get_block_header(Some(block), false)
             .await
             .map_err(get_block_header_error_to_status)?
@@ -234,25 +234,6 @@ impl RpcService {
         Ok(())
     }
 
-    /// Fetches the committed chain tip and ensures the requested range does not extend beyond it.
-    ///
-    /// Returns the chain tip so callers can reuse it (e.g. in the response's pagination info)
-    /// without issuing a second query.
-    fn range_bounds_check(
-        &self,
-        range: &RangeInclusive<BlockNumber>,
-    ) -> Result<BlockNumber, Status> {
-        let chain_tip = self.state.chain_tip(Finality::Committed);
-        if *range.end() > chain_tip {
-            return Err(Status::invalid_argument(format!(
-                "block_to ({}) is greater than chain tip ({chain_tip})",
-                range.end()
-            )));
-        }
-
-        Ok(chain_tip)
-    }
-
     /// Errors if any of `candidate_ids` is classified as a network account by the store. Callers
     /// should pre-filter to post-deployment, public-account ids; `Ok(())` on empty.
     async fn reject_if_any_network_accounts(
@@ -265,7 +246,7 @@ impl RpcService {
         }
 
         let network_accounts =
-            self.state.filter_network_accounts(&account_ids).await.map_err(|err| {
+            self.state.view().filter_network_accounts(&account_ids).await.map_err(|err| {
                 Status::internal(format!("network-account classification failed: {err}"))
             })?;
 
@@ -311,6 +292,7 @@ fn database_error_to_status(err: &DatabaseError) -> Status {
         | DatabaseError::AccountsNotFoundInDb(_)
         | DatabaseError::AccountNotPublic(_) => Status::not_found(message),
         DatabaseError::TransactionPageExceedsPayloadLimit { .. } => Status::out_of_range(message),
+        DatabaseError::RangeBeyondTip(_) => Status::invalid_argument(message),
         _ => Status::internal(message),
     }
 }

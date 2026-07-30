@@ -34,7 +34,7 @@ use crate::state::loader::{
     verify_tree_consistency,
 };
 use crate::state::writer::{WriteRequest, WriteWorker};
-use crate::state::{BlockCache, InMemoryState, ProofCache, SnapshotGuard, State};
+use crate::state::{BlockCache, ProofCache, SnapshotGuard, State, StateSnapshot};
 use crate::{COMPONENT, DataDirectory, DatabaseOptions};
 
 /// Number of recent committed blocks held in the in-memory cache for replica subscriptions.
@@ -299,7 +299,7 @@ impl State {
         let snapshots_live = Arc::new(AtomicUsize::new(0));
 
         // Create the initial snapshot from reader views of the just-loaded trees.
-        let initial_snapshot = Arc::new(InMemoryState {
+        let initial_snapshot = Arc::new(StateSnapshot {
             nullifier_tree: nullifier_tree
                 .reader()
                 .map_err(|e| StateInitializationError::NullifierTreeIoError(e.as_report()))?,

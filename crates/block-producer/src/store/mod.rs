@@ -7,7 +7,7 @@ use miden_node_proto::decode;
 use miden_node_proto::decode::GrpcDecodeExt;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::sequencer;
-use miden_node_store::state::{Finality, State, TransactionInputs as StoreTransactionInputs};
+use miden_node_store::state::{State, TransactionInputs as StoreTransactionInputs};
 use miden_node_utils::formatting::format_opt;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
@@ -185,7 +185,9 @@ pub async fn get_tx_inputs(
     let unauthenticated_note_commitments =
         proven_tx.unauthenticated_notes().map(|header| header.id().as_word()).collect();
 
-    let store_inputs = state
+    // A single view scopes both the input query and the block height below to one snapshot.
+    let view = state.view();
+    let store_inputs = view
         .get_transaction_inputs(
             proven_tx.account_id(),
             &nullifiers,
@@ -202,7 +204,7 @@ pub async fn get_tx_inputs(
         return Err(StoreError::DuplicateAccountIdPrefix(proven_tx.account_id()));
     }
 
-    let current_block_height = state.chain_tip(Finality::Committed);
+    let current_block_height = view.tip();
     let tx_inputs = TransactionInputs::from_store_inputs(
         proven_tx.account_id(),
         store_inputs,

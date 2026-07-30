@@ -58,10 +58,10 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let chain_tip = self.range_bounds_check(&block_range)?;
+        let view = self.state.view();
+        let chain_tip = view.tip();
 
-        let (nullifiers, block_num) = self
-            .state
+        let (nullifiers, block_num) = view
             .sync_nullifiers(request.prefix_len, request.nullifiers, block_range)
             .await
             .map_err(|err| database_error_to_status(&err))?;

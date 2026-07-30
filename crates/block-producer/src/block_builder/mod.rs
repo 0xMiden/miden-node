@@ -215,6 +215,7 @@ impl BlockBuilder {
 
         let inputs = self
             .block_writer
+            .view()
             .get_block_inputs(
                 account_ids_iter.collect(),
                 created_nullifiers_iter.collect(),

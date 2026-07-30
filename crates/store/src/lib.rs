@@ -35,10 +35,11 @@ pub use errors::{
     GetBlockHeaderError,
     GetBlockInputsError,
     NoteSyncError,
+    RangeBeyondTip,
     StateSyncError,
 };
 pub use genesis::GenesisState;
-pub use state::{BlockWriter, LoadedState, ProofWriter, State, WriterTask};
+pub use state::{BlockWriter, LoadedState, ProofWriter, State, StateView, WriterTask};
 
 /// Returns the store crate version.
 pub fn version() -> &'static str {

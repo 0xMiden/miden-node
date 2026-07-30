@@ -2,7 +2,7 @@
 //!
 //! A single [`WriteWorker`] task owns the mutable trees and processes incoming [`WriteRequest`]s
 //! one at a time via an mpsc channel. After each successful commit it publishes a new
-//! [`InMemoryState`] snapshot via an [`ArcSwap`], making the updated trees immediately visible to
+//! [`StateSnapshot`] snapshot via an [`ArcSwap`], making the updated trees immediately visible to
 //! wait-free readers.
 
 use std::fmt::Display;
@@ -39,9 +39,9 @@ use crate::state::{
     BlockCache,
     BlockNotification,
     BlockWriter,
-    InMemoryState,
     SNAPSHOTS_LIVE_WARN_THRESHOLD,
     SnapshotGuard,
+    StateSnapshot,
 };
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
@@ -82,12 +82,12 @@ impl BlockWriter {
 ///
 /// The writer owns the writable trees directly, so no locks are held at any point: validation and
 /// mutation-computation read the owned trees, the DB commit runs without touching them, and the
-/// new [`InMemoryState`] snapshot is published atomically at the end.
+/// new [`StateSnapshot`] snapshot is published atomically at the end.
 pub(super) struct WriteWorker {
     pub db: Arc<Db>,
     pub block_store: Arc<BlockStore>,
     /// Atomically swappable pointer through which new snapshots are published.
-    pub in_memory: Arc<ArcSwap<InMemoryState>>,
+    pub in_memory: Arc<ArcSwap<StateSnapshot>>,
     pub committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
     pub block_cache: BlockCache,
     pub rx: mpsc::Receiver<WriteRequest>,
@@ -306,7 +306,7 @@ impl WriteWorker {
         nullifier_tree_update: NullifierMutationSet,
         account_tree_update: AccountMutationSet,
         account_forest_update: PreparedAccountStateForestBlockUpdate<AccountStateForestBackend>,
-    ) -> Arc<InMemoryState> {
+    ) -> Arc<StateSnapshot> {
         self.nullifier_tree
             .apply_mutations(nullifier_tree_update)
             .unwrap_or_else(|error| {
@@ -325,7 +325,7 @@ impl WriteWorker {
                 Self::abort_after_post_commit_failure("account-state forest", &error)
             });
 
-        Arc::new(InMemoryState {
+        Arc::new(StateSnapshot {
             nullifier_tree: self
                 .nullifier_tree
                 .reader()

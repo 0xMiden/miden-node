@@ -37,7 +37,10 @@ pub use lifecycle::{BlockWriter, LoadedState, ProofWriter, WriterTask};
 mod queries;
 
 mod snapshot;
-pub(crate) use snapshot::{InMemoryState, SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard};
+pub(crate) use snapshot::{SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot};
+
+mod view;
+pub use view::StateView;
 
 mod writer;
 
@@ -60,6 +63,10 @@ pub enum Finality {
 ///
 /// Mutations go through the [`BlockWriter`] and [`ProofWriter`] capabilities returned by
 /// [`LoadedState::start`]; every holder of this type can only query and subscribe.
+///
+/// All tree and database reads go through a request-scoped [`StateView`] obtained from
+/// [`State::view`]; this type itself only exposes chain-tip queries, subscriptions, and
+/// block-store access.
 pub struct State {
     /// Root directory containing the store's on-disk data.
     data_directory: PathBuf,
@@ -76,7 +83,7 @@ pub struct State {
     /// Readers load the snapshot wait-free via [`ArcSwap::load_full`]; the
     /// [`WriteWorker`](writer::WriteWorker) task atomically replaces the pointer after each
     /// committed block. Readers holding an old snapshot are unaffected by the swap.
-    in_memory: Arc<ArcSwap<InMemoryState>>,
+    in_memory: Arc<ArcSwap<StateSnapshot>>,
 
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,

@@ -26,12 +26,12 @@ use miden_protocol::account::{
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 
-use super::State;
+use super::StateView;
 use crate::COMPONENT;
 use crate::account_state_forest::AccountStorageMapResult;
 use crate::errors::{DatabaseError, GetAccountError};
 
-impl State {
+impl StateView {
     /// Returns an account witness and optionally account details at a specific block.
     ///
     /// The witness is a Merkle proof of inclusion in the account tree, proving the account's
@@ -147,7 +147,7 @@ impl State {
         account_id: AccountId,
         block_num: BlockNumber,
     ) -> Result<AccountVaultDetails, DatabaseError> {
-        let assets = self.db.select_account_vault_at_block(account_id, block_num).await?;
+        let assets = self.db().select_account_vault_at_block(account_id, block_num).await?;
 
         if assets.len() > AccountVaultDetails::MAX_RETURN_ENTRIES {
             return Ok(AccountVaultDetails::LimitExceeded);
@@ -174,7 +174,7 @@ impl State {
         block_num: BlockNumber,
     ) -> Result<AccountStorageMapDetails, DatabaseError> {
         let details = self
-            .db
+            .db()
             .reconstruct_storage_map_from_db(
                 account_id,
                 slot_name,
@@ -223,18 +223,16 @@ impl State {
             return Err(GetAccountError::AccountNotPublic(account_id));
         }
 
-        // Validate block exists in the blockchain before querying the database
-        {
-            let latest_block_num = self.snapshot().latest_block_num();
-
-            if block_num > latest_block_num {
-                return Err(GetAccountError::UnknownBlock(block_num));
-            }
+        // Validate block exists in the blockchain before querying the database. The view's tip is
+        // the same snapshot the witness was resolved against, so the witness and the DB reads
+        // below observe a single consistent block height.
+        if block_num > self.tip() {
+            return Err(GetAccountError::UnknownBlock(block_num));
         }
 
         // Query account header and storage header together in a single DB call
         let (account_header, storage_header) = self
-            .db
+            .db()
             .select_account_header_with_storage_header_at_block(account_id, block_num)
             .await?
             .ok_or(GetAccountError::AccountNotFound(account_id, block_num))?;
@@ -246,7 +244,7 @@ impl State {
         let account_code = match code_commitment {
             Some(commitment) if commitment == account_header.code_commitment() => None,
             Some(_) => {
-                self.db
+                self.db()
                     .select_account_code_by_commitment(account_header.code_commitment())
                     .await?
             },

@@ -44,6 +44,7 @@ impl proto::server::rpc_api::GetNoteScriptByRoot for RpcService {
 
         let script = self
             .state
+            .view()
             .get_note_script_by_root(root)
             .await
             .map_err(|err| database_error_to_status(&err))?;

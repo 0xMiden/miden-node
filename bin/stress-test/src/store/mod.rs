@@ -128,7 +128,8 @@ async fn get_account(
 
     let start = Instant::now();
     let request = AccountRequest::try_from(request).expect("request should be valid");
-    let response: proto::rpc::AccountResponse = state.get_account(request).await.unwrap().into();
+    let response: proto::rpc::AccountResponse =
+        state.view().get_account(request).await.unwrap().into();
     let duration = start.elapsed();
 
     let details = response.details;
@@ -269,6 +270,7 @@ pub async fn sync_notes(
         .collect::<Vec<_>>();
     let start = Instant::now();
     state
+        .view()
         .sync_notes(note_tags, BlockNumber::from(0)..=BlockNumber::from(chain_tip))
         .await
         .unwrap();
@@ -317,6 +319,7 @@ pub async fn bench_sync_nullifiers(
             .map(|id| u32::from(NoteTag::with_account_target(*id)))
             .collect();
         let (blocks, last_block_checked) = store_state
+            .view()
             .sync_notes(
                 note_tags,
                 BlockNumber::from(current_block_num)..=BlockNumber::from(chain_tip),
@@ -339,6 +342,7 @@ pub async fn bench_sync_nullifiers(
             note_ids.iter().take(NOTE_IDS_PER_NULLIFIERS_CHECK).copied().collect();
         if !note_ids_to_fetch.is_empty() {
             let notes = store_state
+                .view()
                 .get_notes_by_id(note_ids_to_fetch)
                 .await
                 .unwrap()
@@ -394,6 +398,7 @@ async fn sync_nullifiers(
 ) -> (Duration, usize) {
     let start = Instant::now();
     let (nullifiers, _) = state
+        .view()
         .sync_nullifiers(
             16,
             nullifiers_prefixes,
@@ -513,11 +518,12 @@ pub async fn sync_transactions(
     block_to: u32,
 ) -> (Duration, proto::rpc::SyncTransactionsResponse) {
     let start = Instant::now();
-    let (last_block_included, records) = state
+    let view = state.view();
+    let (last_block_included, records) = view
         .sync_transactions(account_ids, BlockNumber::from(block_from)..=BlockNumber::from(block_to))
         .await
         .unwrap();
-    let chain_tip = state.chain_tip(Finality::Committed);
+    let chain_tip = view.tip();
     let response = proto::rpc::SyncTransactionsResponse {
         pagination_info: Some(proto::rpc::PaginationInfo {
             chain_tip: chain_tip.as_u32(),
@@ -629,9 +635,9 @@ pub async fn bench_sync_chain_mmr(data_directory: PathBuf, iterations: usize, co
 /// - the response.
 async fn sync_chain_mmr(state: &Arc<State>, current_client_block_height: u32) -> SyncChainMmrRun {
     let start = Instant::now();
-    let chain_tip = state.chain_tip(Finality::Committed);
-    state
-        .sync_chain_mmr(BlockNumber::from(current_client_block_height)..=chain_tip)
+    let view = state.view();
+    let chain_tip = view.tip();
+    view.sync_chain_mmr(BlockNumber::from(current_client_block_height)..=chain_tip)
         .await
         .unwrap();
     let elapsed = start.elapsed();

@@ -1,6 +1,6 @@
 //! In-memory snapshot machinery for lock-free reads.
 //!
-//! Readers access the store's tree state through immutable [`InMemoryState`] snapshots published
+//! Readers access the store's tree state through immutable [`StateSnapshot`] snapshots published
 //! by the block writer after each committed block. [`SnapshotGuard`] tracks how many snapshot
 //! generations are pinned by readers, since each generation pins a `RocksDB` snapshot.
 
@@ -11,12 +11,10 @@ use std::time::{Duration, Instant};
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockNumber, Blockchain};
 use miden_protocol::crypto::merkle::smt::LargeSmt;
-use tracing::Span;
 
 use crate::COMPONENT;
 use crate::account_state_forest::{AccountStateForest, AccountStateForestBackendReader};
 use crate::accounts::AccountTreeWithHistory;
-use crate::state::State;
 use crate::state::loader::TreeStorageReader;
 
 /// Snapshot lifetime above which [`SnapshotGuard`] logs a warning on release.
@@ -36,9 +34,9 @@ pub(crate) const SNAPSHOTS_LIVE_WARN_THRESHOLD: u64 = 4;
 // SNAPSHOT GUARD
 // ================================================================================================
 
-/// RAII member of [`InMemoryState`] that tracks the number of live snapshot generations.
+/// RAII member of [`StateSnapshot`] that tracks the number of live snapshot generations.
 ///
-/// [`InMemoryState`] is dropped exactly when the last [`Arc`] reference to it is released, so the
+/// [`StateSnapshot`] is dropped exactly when the last [`Arc`] reference to it is released, so the
 /// shared counter reports how many distinct snapshot generations are currently pinned by readers.
 /// A sustained count above 1-2 means slow readers are holding old generations alive. Each
 /// generation pins a `RocksDB` snapshot, which delays garbage collection of superseded key
@@ -90,15 +88,15 @@ impl Drop for SnapshotGuard {
     }
 }
 
-// IN-MEMORY STATE
+// STATE SNAPSHOT
 // ================================================================================================
 
-/// Immutable snapshot of the in-memory tree state published after each committed block.
+/// Immutable snapshot of the store's tree state published after each committed block.
 ///
 /// The trees are backed by read-only snapshot storage ([`TreeStorageReader`] /
 /// [`AccountStateForestBackendReader`]), so any number of readers can access the data concurrently
 /// without holding a lock and without blocking the writer.
-pub(crate) struct InMemoryState {
+pub(crate) struct StateSnapshot {
     pub(crate) nullifier_tree: NullifierTree<LargeSmt<TreeStorageReader>>,
     pub(crate) blockchain: Blockchain,
     pub(crate) account_tree: AccountTreeWithHistory<TreeStorageReader>,
@@ -107,51 +105,11 @@ pub(crate) struct InMemoryState {
     pub(crate) _guard: SnapshotGuard,
 }
 
-impl InMemoryState {
+impl StateSnapshot {
     /// Returns the latest block number.
     pub(crate) fn latest_block_num(&self) -> BlockNumber {
         self.blockchain
             .chain_tip()
             .expect("chain should always have at least the genesis block")
-    }
-}
-
-// SNAPSHOT HELPERS
-// ================================================================================================
-
-impl State {
-    /// Returns the current in-memory state snapshot (wait-free, no lock required).
-    ///
-    /// The returned snapshot is a frozen view: it is unaffected if the writer publishes a new
-    /// snapshot while it is held.
-    pub(super) fn snapshot(&self) -> Arc<InMemoryState> {
-        self.in_memory.load_full()
-    }
-
-    /// Runs a synchronous read-only operation over the current in-memory state snapshot on Tokio's
-    /// blocking path.
-    ///
-    /// The account and nullifier trees may be backed by `RocksDB`, so tree access must not run on
-    /// an async worker thread directly. This helper preserves the current tracing span while
-    /// moving the closure body into `block_in_place`.
-    pub(super) fn with_inner_read_blocking<R>(&self, f: impl FnOnce(&InMemoryState) -> R) -> R {
-        let span = Span::current();
-        tokio::task::block_in_place(|| {
-            span.in_scope(|| {
-                let snapshot = self.snapshot();
-                f(&snapshot)
-            })
-        })
-    }
-
-    /// Runs a synchronous read-only operation over the account state forest snapshot on Tokio's
-    /// blocking path.
-    ///
-    /// See [`Self::with_inner_read_blocking`] for why this uses `block_in_place`.
-    pub(super) fn with_forest_read_blocking<R>(
-        &self,
-        f: impl FnOnce(&AccountStateForest<AccountStateForestBackendReader>) -> R,
-    ) -> R {
-        self.with_inner_read_blocking(|snapshot| f(&snapshot.forest))
     }
 }

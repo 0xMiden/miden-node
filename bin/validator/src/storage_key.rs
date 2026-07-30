@@ -386,6 +386,44 @@ pub(crate) mod tests {
         operator_keys().remove(0)
     }
 
+    /// Regenerates the committed insecure Golden storage-key fixture under
+    /// `scripts/testdata/insecure-golden-storage-key/`.
+    ///
+    /// The fixture holds a full two-of-three setup: one shared
+    /// `setup-context.wire` and `public-key-set.wire`, plus a *distinct*
+    /// `validator-<n>/secret-share.wire` for each participant. This lets the
+    /// docker-compose network give every validator its own share, which is
+    /// required for a real threshold recovery — mounting the same share into
+    /// all three validators makes any 2-of-3 combine collapse to a single
+    /// participant and fail.
+    ///
+    /// Ignored by default so it never runs in CI; regenerate the fixture with:
+    ///
+    /// ```text
+    /// cargo test -p miden-validator --lib storage_key::tests::write_insecure_golden_fixture -- --ignored
+    /// ```
+    #[test]
+    #[ignore = "writes fixture files; run explicitly to regenerate"]
+    fn write_insecure_golden_fixture() {
+        use std::path::Path;
+
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scripts/testdata/insecure-golden-storage-key");
+        fs_err::create_dir_all(&dir).unwrap();
+
+        let (setup_context, public_key_set, _) = values_for(participant(1));
+        fs_err::write(dir.join("setup-context.wire"), to_wire_bytes(&setup_context)).unwrap();
+        fs_err::write(dir.join("public-key-set.wire"), to_wire_bytes(&public_key_set)).unwrap();
+
+        for index in [1u32, 2, 3] {
+            let (.., secret_share) = values_for(participant(index));
+            let validator_dir = dir.join(format!("validator-{index}"));
+            fs_err::create_dir_all(&validator_dir).unwrap();
+            fs_err::write(validator_dir.join("secret-share.wire"), to_wire_bytes(&secret_share))
+                .unwrap();
+        }
+    }
+
     #[test]
     fn restart_bundle_round_trips() {
         let expected = operator_key();

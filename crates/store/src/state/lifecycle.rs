@@ -256,6 +256,26 @@ impl State {
         Ok(LoadedState { state, writer: block_writer })
     }
 
+    /// Loads the state with default options and starts its block writer, detaching the writer
+    /// task.
+    ///
+    /// Test-only helper for tests in sibling crates that don't manage the writer's lifecycle:
+    /// the detached writer exits once the returned state (holding the only write handle) is
+    /// dropped. Hidden from public docs and not part of the stable API.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the state fails to load.
+    #[doc(hidden)]
+    pub async fn for_tests(data_path: &Path) -> Arc<Self> {
+        let (state, _writer_task) =
+            Self::load(data_path, StorageOptions::default(), CancellationToken::new())
+                .await
+                .expect("state should load")
+                .start();
+        state
+    }
+
     /// Stops the store, waiting until the block writer has released the tree storage it owns.
     ///
     /// Consumes the last state reference — closing the write channel the writer listens on — and

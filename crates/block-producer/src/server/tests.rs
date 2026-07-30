@@ -1,12 +1,9 @@
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::time::Duration;
 
 use miden_node_store::GenesisState;
 use miden_node_store::state::State;
-use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::fee::test_fee_params;
-use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use url::Url;
@@ -24,7 +21,7 @@ use crate::{
 async fn block_producer_starts_with_store_state() {
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
     bootstrap_store(data_directory.path());
-    let store = load_state(data_directory.path()).await;
+    let store = State::for_tests(data_directory.path()).await;
 
     let block_producer = Sequencer {
         store,
@@ -54,13 +51,4 @@ fn bootstrap_store(path: &std::path::Path) {
     let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
 
     State::bootstrap(genesis_block, path).expect("store should bootstrap");
-}
-
-async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let (state, _writer_task) =
-        State::load(path, StorageOptions::default(), CancellationToken::new())
-            .await
-            .expect("state should load")
-            .start();
-    state
 }

@@ -21,7 +21,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_store::state::State;
-use miden_node_utils::clap::{GrpcOptionsExternal, StorageOptions};
+use miden_node_utils::clap::GrpcOptionsExternal;
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
@@ -31,7 +31,6 @@ use miden_node_utils::limiter::{
     QueryParamStorageMapKeyTotalLimit,
     QueryParamStorageMapSlotLimit,
 };
-use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -95,7 +94,7 @@ impl TestStore {
     async fn start() -> Self {
         let data_directory = new_tempdir();
         let genesis_commitment = Self::bootstrap(&data_directory);
-        let state = load_state(&data_directory).await;
+        let state = State::for_tests(&data_directory).await;
         Self {
             state,
             genesis_commitment,
@@ -117,15 +116,6 @@ impl TestStore {
 
         genesis_commitment
     }
-}
-
-async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let (state, _writer_task) =
-        State::load(path, StorageOptions::default(), CancellationToken::new())
-            .await
-            .expect("state should load")
-            .start();
-    state
 }
 
 /// Byte offset of the account delta commitment in serialized `ProvenTransaction`. Layout:
@@ -639,7 +629,7 @@ async fn start_source_rpc(
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
-    let block_producer_state = load_state(&block_producer_dir).await;
+    let block_producer_state = State::for_tests(&block_producer_dir).await;
     let store_state = Arc::clone(&store.state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind source RPC");
@@ -1099,7 +1089,7 @@ async fn start_rpc_with_options(
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
-    let block_producer_state = load_state(&block_producer_dir).await;
+    let block_producer_state = State::for_tests(&block_producer_dir).await;
     let store_state = Arc::clone(&store.state);
 
     // Start the rpc component.

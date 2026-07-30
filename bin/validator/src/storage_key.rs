@@ -409,21 +409,18 @@ pub(crate) mod tests {
 
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../scripts/testdata/insecure-golden-storage-key");
-        std::fs::create_dir_all(&dir).unwrap();
+        fs_err::create_dir_all(&dir).unwrap();
 
         let (setup_context, public_key_set, _) = values_for(participant(1));
-        std::fs::write(dir.join("setup-context.wire"), to_wire_bytes(&setup_context)).unwrap();
-        std::fs::write(dir.join("public-key-set.wire"), to_wire_bytes(&public_key_set)).unwrap();
+        fs_err::write(dir.join("setup-context.wire"), to_wire_bytes(&setup_context)).unwrap();
+        fs_err::write(dir.join("public-key-set.wire"), to_wire_bytes(&public_key_set)).unwrap();
 
         for index in [1u32, 2, 3] {
             let (.., secret_share) = values_for(participant(index));
             let validator_dir = dir.join(format!("validator-{index}"));
-            std::fs::create_dir_all(&validator_dir).unwrap();
-            std::fs::write(
-                validator_dir.join("secret-share.wire"),
-                to_wire_bytes(&secret_share),
-            )
-            .unwrap();
+            fs_err::create_dir_all(&validator_dir).unwrap();
+            fs_err::write(validator_dir.join("secret-share.wire"), to_wire_bytes(&secret_share))
+                .unwrap();
         }
     }
 

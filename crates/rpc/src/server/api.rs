@@ -35,6 +35,43 @@ use crate::server::api::subscription::{IpBanList, MAX_REPLICA_SUBSCRIPTIONS};
 use crate::server::{NetworkTxAuth, RpcMode};
 use crate::{COMPONENT, LOG_TARGET};
 
+// VALIDATOR FAN-OUT
+// ================================================================================================
+
+/// Submits the proven transaction to every validator concurrently.
+///
+/// Every validator must observe every transaction, since a validator only signs blocks whose
+/// transactions it has previously validated. A single failed submission therefore fails the whole
+/// call.
+pub(crate) async fn submit_tx_to_validators(
+    validators: &[miden_node_proto::clients::ValidatorClient],
+    request: &proto::transaction::ProvenTransaction,
+) -> tonic::Result<()> {
+    futures::future::try_join_all(validators.iter().map(|validator| {
+        let mut validator = validator.clone();
+        let request = request.clone();
+        async move { validator.submit_proven_transaction(request).await }
+    }))
+    .await?;
+    Ok(())
+}
+
+/// Submits each transaction in the batch to every validator concurrently.
+///
+/// See [`submit_tx_to_validators`] for why every validator must receive the submission.
+pub(crate) async fn submit_batch_to_validators(
+    validators: &[miden_node_proto::clients::ValidatorClient],
+    proposed_batch: &miden_protocol::batch::ProposedBatch,
+    sealed_transaction_inputs: &[proto::transaction::SealedTransactionInputs],
+) -> tonic::Result<()> {
+    futures::future::try_join_all(validators.iter().map(|validator| {
+        let mut validator = validator.clone();
+        async move { validator.submit_batch(proposed_batch, sealed_transaction_inputs).await }
+    }))
+    .await?;
+    Ok(())
+}
+
 // API METHODS
 // ================================================================================================
 

@@ -92,7 +92,7 @@ impl BlockStore {
         skip(self, data),
         err,
         fields(
-            block_size = data.len(),
+            block.size = data.len(),
         ),
     )]
     pub async fn save_block(&self, block_num: BlockNumber, data: &[u8]) -> std::io::Result<()> {

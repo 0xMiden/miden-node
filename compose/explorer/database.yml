@@ -1,0 +1,16 @@
+services:
+  explorer-database:
+    profiles: [explorer]
+    image: postgres:18
+    pull_policy: missing
+    environment:
+      POSTGRES_USER: midenscan
+      POSTGRES_PASSWORD: midenscan
+      POSTGRES_DB: midenscan
+    volumes:
+      - explorer-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "midenscan", "-d", "midenscan"]
+      interval: 5s
+      timeout: 2s
+      retries: 10

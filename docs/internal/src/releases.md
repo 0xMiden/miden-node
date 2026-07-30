@@ -28,10 +28,14 @@ delete release tags.
 4. After those checks pass, the workflow creates the GitHub release and release notes, then starts the crates.io and
    Debian publishing workflows.
 
-The Compose publication jobs merge `docker-compose.yml` with `compose/publish.yml`. The main model supports custom
-genesis configuration through a local bind mount, which cannot be included in a portable OCI artifact.
-`compose/publish.yml` uses Compose's `!override` tag to replace that volume list and configures the published
-application to use the validator's built-in genesis configuration.
+The root `docker-compose.yml` includes the component models under `compose/`, keeping direct local Compose commands and
+profiles independent of additional `-f` arguments. Local includes cannot be published directly, so the
+`.github/actions/publish-compose` action first renders the complete, all-profile model without interpolating its
+variables or normalizing project resource names. It then either dry-runs or publishes that flattened model.
+
+The bundled three-validator development genesis is an inline Compose config named `genesis`. Consumers replace that
+resource with a file through a Compose override when they need a custom genesis configuration. The same override works
+with the repository model and the published OCI application.
 
 The workflow uses a broad `v*` trigger because GitHub Actions does not use the same pattern language as repository
 rulesets. Its preflight step verifies that this trigger still matches the target of the `Release tags` ruleset, while

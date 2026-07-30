@@ -1,5 +1,9 @@
 mod kms;
 pub use kms::{KmsSigner, decrypt_key_material};
+use miden_node_proto::domain::encryption::{
+    TransactionEncryptionKeyInfo,
+    TransactionEncryptionScheme,
+};
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_protocol::Word;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
@@ -9,7 +13,7 @@ use miden_protocol::crypto::dsa::eddsa_25519_sha512::{
 };
 #[cfg(test)]
 use miden_protocol::crypto::ies::SealingKey;
-use miden_protocol::crypto::ies::{IesScheme, SealedMessage, UnsealingKey};
+use miden_protocol::crypto::ies::{SealedMessage, UnsealingKey};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 
 // VALIDATOR SIGNER
@@ -63,10 +67,6 @@ impl ValidatorSigner {
 // TRANSACTION INPUT DECRYPTER
 // =================================================================================================
 
-/// Domain tag prefixed to the attestation payload, separating key attestations from block header
-/// signatures made with the same validator key.
-pub const ATTESTATION_DOMAIN: &[u8] = b"MIDEN_TX_ENCRYPTION_KEY_ATTESTATION_V1";
-
 /// Decryption counterpart to [`ValidatorSigner`] for the shared transaction encryption
 /// (submission) key.
 ///
@@ -93,113 +93,6 @@ pub trait TransactionInputDecrypter: Send + Sync {
     ) -> anyhow::Result<Vec<u8>>;
 }
 
-/// Public metadata of the shared transaction encryption key, in wire format.
-///
-/// These are the attested fields served by the `GetTransactionEncryptionKey` endpoint.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransactionEncryptionKeyInfo {
-    /// Wire identifier of the encryption scheme.
-    pub scheme: u32,
-    /// Opaque identifier of the current encryption key.
-    pub key_id: Vec<u8>,
-    /// Raw public key bytes of the shared encryption key.
-    pub public_key: Vec<u8>,
-    /// The next encryption key when a rotation is scheduled. Not populated yet; key rotation is not
-    /// implemented.
-    pub next_key: Option<NextEncryptionKeyInfo>,
-}
-
-/// Public metadata of the next transaction encryption key, announced ahead of a scheduled rotation,
-/// in wire format.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NextEncryptionKeyInfo {
-    /// Wire identifier of the next key's encryption scheme.
-    pub scheme: u32,
-    /// Opaque identifier of the next encryption key.
-    pub key_id: Vec<u8>,
-    /// Raw public key bytes of the next encryption key.
-    pub public_key: Vec<u8>,
-    /// Block number at which the next key replaces the current one.
-    pub rotation_block_num: u32,
-}
-
-impl TransactionEncryptionKeyInfo {
-    /// Returns the commitment signed by a validator to attest the encryption key.
-    pub fn attestation_commitment(&self, genesis_commitment: Word) -> Word {
-        attestation_commitment(
-            self.scheme,
-            &self.key_id,
-            genesis_commitment,
-            &self.public_key,
-            self.next_key.as_ref(),
-        )
-    }
-}
-
-/// Computes the attestation commitment over explicit wire-format fields.
-///
-/// This is the single definition of the attestation payload. Verifiers (and tests) recompute the
-/// commitment from response fields through this function, so any change to the payload layout
-/// applies to both sides.
-///
-/// Computed as the Poseidon2 hash of `ATTESTATION_DOMAIN || scheme || len(key_id) || key_id ||
-/// genesis_commitment || len(public_key) || public_key || next_key_transcript`, binding every
-/// field of the attested response to the signature. The scheme, the rotation block number, and
-/// the length prefixes are encoded as 4 bytes little-endian, and the length prefixes on the
-/// variable-width fields ensure no two field combinations map to the same payload. Including the
-/// genesis commitment ties the attestation to one chain, so it cannot be replayed on another
-/// network whose validator reuses the same signing key.
-///
-/// `next_key_transcript` is empty when no rotation is scheduled, or the next key's `scheme ||
-/// len(key_id) || key_id || len(public_key) || public_key || rotation_block_num` otherwise. All
-/// fields ahead of it are fixed-width or length-prefixed, so the transcript's presence and
-/// content are unambiguous and a scheduled rotation cannot be stripped from or injected into an
-/// attested response.
-pub fn attestation_commitment(
-    scheme: u32,
-    key_id: &[u8],
-    genesis_commitment: Word,
-    public_key: &[u8],
-    next_key: Option<&NextEncryptionKeyInfo>,
-) -> Word {
-    let genesis_commitment = genesis_commitment.to_bytes();
-    let next_key_size = next_key
-        .map(|next| 3 * size_of::<u32>() + next.key_id.len() + next.public_key.len())
-        .unwrap_or_default();
-    let mut payload = Vec::with_capacity(
-        ATTESTATION_DOMAIN.len()
-            + 3 * size_of::<u32>()
-            + key_id.len()
-            + genesis_commitment.len()
-            + public_key.len()
-            + next_key_size,
-    );
-    payload.extend_from_slice(ATTESTATION_DOMAIN);
-    payload.extend_from_slice(&scheme.to_le_bytes());
-    extend_with_length_prefixed(&mut payload, key_id, "key id");
-    payload.extend_from_slice(&genesis_commitment);
-    extend_with_length_prefixed(&mut payload, public_key, "public key");
-    if let Some(next) = next_key {
-        payload.extend_from_slice(&next.scheme.to_le_bytes());
-        extend_with_length_prefixed(&mut payload, &next.key_id, "next key id");
-        extend_with_length_prefixed(&mut payload, &next.public_key, "next public key");
-        payload.extend_from_slice(&next.rotation_block_num.to_le_bytes());
-    }
-    miden_protocol::Hasher::hash(&payload)
-}
-
-/// Appends a field to the attestation payload prefixed with its length as 4 bytes little-endian.
-///
-/// The length prefixes on variable-width fields keep the transcript injective: no two field
-/// combinations map to the same payload.
-fn extend_with_length_prefixed(payload: &mut Vec<u8>, field: &[u8], name: &str) {
-    let len = u32::try_from(field.len())
-        .unwrap_or_else(|_| panic!("{name} length must fit in u32"))
-        .to_le_bytes();
-    payload.extend_from_slice(&len);
-    payload.extend_from_slice(field);
-}
-
 /// [`TransactionInputDecrypter`] backed by a locally provisioned X25519 shared secret.
 pub struct LocalX25519TransactionInputDecrypter {
     secret_key: KeyExchangeKey,
@@ -207,16 +100,12 @@ pub struct LocalX25519TransactionInputDecrypter {
 
 impl LocalX25519TransactionInputDecrypter {
     /// The IES scheme used for transaction input encryption.
-    pub const SCHEME: IesScheme = IesScheme::X25519XChaCha20Poly1305;
+    pub const SCHEME: TransactionEncryptionScheme =
+        TransactionEncryptionScheme::X25519XChaCha20Poly1305;
 
     /// Constructs a decrypter from a locally provisioned shared secret.
     pub fn new(secret_key: KeyExchangeKey) -> Self {
         Self { secret_key }
-    }
-
-    /// Returns the wire representation of [`Self::SCHEME`].
-    pub fn scheme_id() -> u32 {
-        u32::from(u8::from(Self::SCHEME))
     }
 
     /// Returns the public key of the shared encryption key.
@@ -241,7 +130,7 @@ impl LocalX25519TransactionInputDecrypter {
 impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
     async fn encryption_key(&self) -> anyhow::Result<TransactionEncryptionKeyInfo> {
         Ok(TransactionEncryptionKeyInfo {
-            scheme: Self::scheme_id(),
+            scheme: Self::SCHEME,
             key_id: self.key_id(),
             public_key: self.public_key().to_bytes(),
             next_key: None,
@@ -257,9 +146,16 @@ impl TransactionInputDecrypter for LocalX25519TransactionInputDecrypter {
 
         let message = SealedMessage::read_from_bytes(ciphertext)
             .context("failed to deserialize the sealed message")?;
-        UnsealingKey::X25519XChaCha20Poly1305(self.secret_key.clone())
-            .unseal_bytes_with_associated_data(message, associated_data)
-            .context("failed to unseal the transaction inputs")
+
+        let secret_key = self.secret_key.clone();
+        let associated_data = associated_data.to_vec();
+        spawn_blocking_in_current_span(move || {
+            UnsealingKey::X25519XChaCha20Poly1305(secret_key)
+                .unseal_bytes_with_associated_data(message, &associated_data)
+                .context("AEAD authentication failed")
+        })
+        .await
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
     }
 }
 

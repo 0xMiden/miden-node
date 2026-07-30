@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
-use miden_node_utils::tracing::miden_instrument;
-
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use tokio::sync::RwLock;
 
 use backon::ExponentialBuilder;
 use futures::stream::{BoxStream, TryStreamExt};
@@ -10,6 +12,11 @@ use miden_node_proto::clients::{Builder, RpcClient as InnerRpcClient};
 use miden_node_proto::domain::account::{
     AccountDetails, AccountResponse, AccountVaultDetails, StorageMapEntries
 };
+use miden_node_proto::domain::encryption::{
+    TransactionInputsSealer,
+    TrustedTransactionEncryptionState,
+    verify_transaction_encryption_key,
+};
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::account_request::account_detail_request::{StorageMapDetailRequest, StorageMapDetailRequests, StorageRequest, storage_map_detail_request};
 use miden_node_proto::generated::rpc::account_request::account_detail_request::storage_map_detail_request::MapKeys;
@@ -17,6 +24,7 @@ use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, BlockSubscripti
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
 use miden_node_utils::retry::{self, Retryable};
+use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -29,6 +37,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, AssetVault, AssetId, AssetWitness, PartialVault};
 use miden_protocol::block::{BlockNumber, SignedBlock};
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::{AccountInputs, ProvenTransaction, TransactionInputs};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -70,6 +79,13 @@ pub struct RpcClient {
     /// Backoff schedule applied to repeated `block_subscription` connection attempts. Built once at
     /// construction time and cloned cheaply on each retry loop.
     backoff: ExponentialBuilder,
+    /// Genesis commitment of the network being submitted to, bound into the associated data of
+    /// sealed transaction inputs.
+    genesis_commitment: Word,
+    /// Cached sealer for transaction inputs, fetched on first submission.
+    sealer: Arc<RwLock<Option<TransactionInputsSealer>>>,
+    /// Validator signing keys read from the genesis block at bootstrap.
+    trusted_validator_signing_keys: Arc<[ValidatorPublicKey]>,
 }
 
 impl RpcClient {
@@ -80,10 +96,18 @@ impl RpcClient {
     pub fn new(
         rpc_url: Url,
         genesis_commitment: Word,
+        trusted_validator_signing_keys: Vec<ValidatorPublicKey>,
         backoff_initial: Duration,
         backoff_max: Duration,
     ) -> anyhow::Result<Self> {
-        Self::new_with_auth(rpc_url, None, genesis_commitment, backoff_initial, backoff_max)
+        Self::new_with_auth(
+            rpc_url,
+            None,
+            genesis_commitment,
+            trusted_validator_signing_keys,
+            backoff_initial,
+            backoff_max,
+        )
     }
 
     /// Creates a new client with an optional metadata header for internal RPC authentication.
@@ -94,6 +118,7 @@ impl RpcClient {
         rpc_url: Url,
         rpc_auth_header_value: Option<AsciiMetadataValue>,
         genesis_commitment: Word,
+        trusted_validator_signing_keys: Vec<ValidatorPublicKey>,
         backoff_initial: Duration,
         backoff_max: Duration,
     ) -> anyhow::Result<Self> {
@@ -103,7 +128,7 @@ impl RpcClient {
             .with_tls()?
             .without_timeout()
             .without_metadata_version()
-            .with_metadata_genesis(genesis_commitment.to_hex());
+            .with_metadata_genesis(genesis_commitment);
         let builder = match rpc_auth_header_value {
             Some(value) => builder.with_auth_header_value(value),
             None => builder.without_auth_header(),
@@ -112,7 +137,42 @@ impl RpcClient {
 
         let backoff = retry::exponential(backoff_initial, backoff_max);
 
-        Ok(Self { inner: rpc, backoff })
+        Ok(Self {
+            inner: rpc,
+            backoff,
+            genesis_commitment,
+            sealer: Arc::new(RwLock::new(None)),
+            trusted_validator_signing_keys: trusted_validator_signing_keys.into(),
+        })
+    }
+
+    /// Returns a sealer for transaction inputs, fetching the encryption key if the cache is empty.
+    pub(crate) async fn sealer(&self) -> Result<TransactionInputsSealer, Status> {
+        if let Some(sealer) = self.sealer.read().await.clone() {
+            return Ok(sealer);
+        }
+
+        let key = self.inner.clone().get_transaction_encryption_key(()).await?.into_inner();
+        let verified = verify_transaction_encryption_key(
+            key,
+            TrustedTransactionEncryptionState::new(
+                self.genesis_commitment,
+                &self.trusted_validator_signing_keys,
+            ),
+        )
+        .map_err(|err| {
+            Status::failed_precondition(
+                err.as_report_context("Untrusted transaction encryption key"),
+            )
+        })?;
+        let sealer = TransactionInputsSealer::new(verified);
+
+        let mut cached = self.sealer.write().await;
+        if let Some(sealer) = cached.clone() {
+            return Ok(sealer);
+        }
+        *cached = Some(sealer.clone());
+        Ok(sealer)
     }
 
     /// Opens a committed-block subscription starting at `block_from`, retrying indefinitely with
@@ -127,7 +187,7 @@ impl RpcClient {
         name = "rpc.client.block_subscription_with_retry",
         skip_all,
         fields(
-            %block_from,
+            block.from = %block_from,
         ),
         err,
     )]
@@ -270,14 +330,48 @@ impl RpcClient {
         proven_tx: &ProvenTransaction,
         tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
-        let request = proto::transaction::ProvenTransaction {
-            transaction: proven_tx.to_bytes(),
-            transaction_inputs: Some(tx_inputs.to_bytes()),
-        };
+        let transaction = proven_tx.to_bytes();
+        let transaction_inputs = tx_inputs.to_bytes();
+        let tx_id = proven_tx.id();
+        let stale_key = AtomicBool::new(false);
 
-        self.inner.clone().submit_proven_tx(request).await?;
+        (|| {
+            let mut client = self.inner.clone();
+            let transaction = transaction.clone();
+            let transaction_inputs = transaction_inputs.clone();
+            let stale_key = &stale_key;
+            async move {
+                if stale_key.swap(false, Ordering::Relaxed) {
+                    *self.sealer.write().await = None;
+                }
 
-        Ok(())
+                let sealer = self.sealer().await?;
+                let sealed = sealer.seal(tx_id, &transaction_inputs).map_err(|err| {
+                    Status::failed_precondition(
+                        err.as_report_context("Failed to seal the transaction inputs"),
+                    )
+                })?;
+                client
+                    .submit_proven_tx(proto::transaction::ProvenTransaction {
+                        transaction,
+                        sealed_transaction_inputs: Some(sealed),
+                    })
+                    .await
+            }
+        })
+        .retry(retry::constant(Duration::ZERO, Some(1)))
+        .when(|status: &Status| status.code() == tonic::Code::FailedPrecondition)
+        .notify(|status: &Status, _| {
+            stale_key.store(true, Ordering::Relaxed);
+            tracing::warn!(
+                target: COMPONENT,
+                %tx_id,
+                err = %status.message(),
+                "Transaction inputs rejected as stale, refreshing the encryption key and retrying",
+            );
+        })
+        .await
+        .map(|_| ())
     }
 }
 

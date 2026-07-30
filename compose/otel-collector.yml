@@ -1,0 +1,91 @@
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.157.0
+    configs:
+      - source: otel-collector
+        target: /etc/otelcol-contrib/config.yaml
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+
+configs:
+  otel-collector:
+    content: |
+      receivers:
+        # Miden services always send traces to this stable in-stack endpoint.
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+        # An unset caller endpoint loops back through this sink receiver. This
+        # gives the upstream exporter a valid, quiet default destination.
+        otlp/null:
+          protocols:
+            grpc:
+              endpoint: 127.0.0.1:14317
+
+      processors:
+        batch:
+
+      exporters:
+        otlp_grpc/tempo:
+          endpoint: tempo:4317
+          tls:
+            insecure: true
+          retry_on_failure:
+            enabled: false
+          sending_queue:
+            enabled: false
+        otlp_grpc/upstream:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:-127.0.0.1:14317}
+          tls:
+            insecure: true
+          retry_on_failure:
+            enabled: false
+          sending_queue:
+            enabled: false
+        file/null:
+          path: /dev/null
+
+      connectors:
+        # Each destination fails over independently. Unavailable destinations
+        # drop traces through file/null and are retried every five seconds.
+        failover/tempo:
+          priority_levels:
+            - [traces/tempo]
+            - [traces/null-tempo]
+          retry_interval: 5s
+        failover/upstream:
+          priority_levels:
+            - [traces/upstream]
+            - [traces/null-upstream]
+          retry_interval: 5s
+
+      service:
+        pipelines:
+          traces:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [failover/tempo, failover/upstream]
+          traces/tempo:
+            receivers: [failover/tempo]
+            exporters: [otlp_grpc/tempo]
+          traces/null-tempo:
+            receivers: [failover/tempo]
+            exporters: [file/null]
+          traces/upstream:
+            receivers: [failover/upstream]
+            exporters: [otlp_grpc/upstream]
+          traces/null-upstream:
+            receivers: [failover/upstream]
+            exporters: [file/null]
+          traces/local-null:
+            receivers: [otlp/null]
+            exporters: [file/null]
+          # The note transport service exports metrics whenever OTLP is
+          # enabled. Accept and discard them until this stack has a metrics
+          # backend, rather than returning an unimplemented response.
+          metrics/local-null:
+            receivers: [otlp]
+            exporters: [file/null]
+        telemetry:
+          logs:
+            level: error

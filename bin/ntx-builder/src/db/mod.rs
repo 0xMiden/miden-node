@@ -6,7 +6,7 @@ use miden_node_db::DatabaseError;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
-use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock};
+use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock, ValidatorKeys};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::note::{NoteId, NoteScript, Nullifier};
 // Only the test-only `upsert_account_for_test` helper names `TransactionId` directly.
@@ -96,7 +96,7 @@ impl Db {
         Ok(Db { inner })
     }
 
-    /// Creates and initializes the database, then seeds it with the signed genesis block.
+    /// Creates and initializes the database, then seeds it with the genesis block.
     ///
     /// Mirrors the store's bootstrap (`Db::bootstrap`): after this completes the singleton
     /// `chain_state` row exists at [`BlockNumber::GENESIS`], so [`crate::NtxBuilderConfig::build`]
@@ -145,6 +145,13 @@ impl Db {
     pub async fn get_genesis_commitment(&self) -> Result<Word> {
         self.inner
             .query("get_genesis_commitment", queries::select_genesis_commitment)
+            .await
+    }
+
+    /// Reads the validator signing keys persisted from the genesis header.
+    pub async fn get_genesis_validator_keys(&self) -> Result<Option<ValidatorKeys>> {
+        self.inner
+            .query("get_genesis_validator_keys", queries::select_genesis_validator_keys)
             .await
     }
 
@@ -435,8 +442,10 @@ mod tests {
     async fn bootstrap_seeds_genesis_chain_state() {
         let dir = tempfile::tempdir().expect("failed to create temp directory");
         let db_path = dir.path().join("ntx-builder.sqlite3");
+        let genesis = mock_genesis_block();
+        let expected_validator_keys = genesis.header().validator_keys().clone();
 
-        Db::bootstrap(db_path.clone(), &mock_genesis_block())
+        Db::bootstrap(db_path.clone(), &genesis)
             .await
             .expect("bootstrap should succeed on a fresh database");
 
@@ -448,6 +457,13 @@ mod tests {
             .expect("chain state should be present after bootstrap");
 
         assert_eq!(block_num, BlockNumber::GENESIS);
+        assert_eq!(
+            db.get_genesis_validator_keys()
+                .await
+                .expect("query should succeed")
+                .expect("genesis validator keys should be present"),
+            expected_validator_keys,
+        );
     }
 
     #[tokio::test]

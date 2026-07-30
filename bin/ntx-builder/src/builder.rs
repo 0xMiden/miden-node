@@ -251,8 +251,8 @@ impl NetworkTransactionBuilder {
         name = "ntx.builder.apply_committed_block",
         skip(self, loop_db, block),
         fields(
-            block_num = %block.header().block_num(),
-            %committed_tip,
+            block.number = %block.header().block_num(),
+            tip.number = %committed_tip,
         ),
     )]
     async fn apply_committed_block_with_effects(

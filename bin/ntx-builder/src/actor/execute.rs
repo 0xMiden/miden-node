@@ -565,7 +565,8 @@ fn partition_cycle_limited(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<Fai
 ///
 /// This is sufficient for executing a network transaction.
 struct NtxDataStore {
-    account: Account,
+    /// The native account, shared with the actor via `Arc` to avoid a deep clone per transaction.
+    account: Arc<Account>,
     reference_block: BlockHeader,
     /// The chain MMR, wrapped in `Arc` to avoid expensive clones when reading the chain state.
     chain_mmr: Arc<PartialBlockchain>,
@@ -608,7 +609,7 @@ struct NtxDataStore {
 impl NtxDataStore {
     /// Creates a new `NtxDataStore` with default cache size.
     fn new(
-        account: Account,
+        account: Arc<Account>,
         reference_block: BlockHeader,
         chain_mmr: Arc<PartialBlockchain>,
         rpc: RpcClient,
@@ -687,7 +688,7 @@ impl DataStore for NtxDataStore {
             // Register slot names from the native account for later use.
             self.register_storage_map_slots(account_id, &self.account.storage().to_header());
 
-            let partial_account = PartialAccount::from(&self.account);
+            let partial_account = PartialAccount::from(self.account.as_ref());
             Ok((partial_account, self.reference_block.clone(), (*self.chain_mmr).clone()))
         }
     }

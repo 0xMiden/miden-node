@@ -53,7 +53,7 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         }
 
         let block_range = current_client_block_height..=sync_target;
-        let (mmr_delta, block_header, block_signature) = self
+        let (mmr_delta, block_header, block_signatures) = self
             .state
             .sync_chain_mmr(block_range.clone())
             .await
@@ -66,7 +66,7 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
             }),
             mmr_delta: Some(mmr_delta.into()),
             block_header: Some(block_header.into()),
-            block_signature: Some(block_signature.into()),
+            block_signatures: block_signatures.as_signatures().iter().map(Into::into).collect(),
         })
     }
 }

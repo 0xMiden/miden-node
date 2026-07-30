@@ -57,16 +57,7 @@ pub(crate) fn apply_block(
 ) -> Result<usize, DatabaseError> {
     let mut count = 0;
     // Note: ordering here is important as the relevant tables have FK dependencies.
-    let signature = match block.signatures().as_signatures() {
-        [signature] => signature,
-        signatures => {
-            return Err(DatabaseError::DataCorrupted(format!(
-                "expected exactly one block signature, got {}",
-                signatures.len()
-            )));
-        },
-    };
-    count += insert_block_header(conn, block.header(), signature)?;
+    count += insert_block_header(conn, block.header(), block.signatures())?;
     count += upsert_accounts(
         conn,
         block.body().updated_accounts(),

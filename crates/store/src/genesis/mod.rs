@@ -1,4 +1,3 @@
-use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountPatch, AccountUpdateDetails};
 use miden_protocol::block::account_tree::{AccountIdKey, AccountTree};
@@ -13,7 +12,6 @@ use miden_protocol::block::{
     SignedBlock,
     ValidatorKeys,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks};
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::AccountError;
@@ -32,33 +30,13 @@ pub struct GenesisState {
     pub fee_parameters: FeeParameters,
     pub version: u32,
     pub timestamp: u32,
-    pub validator_key: PublicKey,
+    pub validator_keys: ValidatorKeys,
 }
 
 /// A type-safety wrapper ensuring that genesis block data can only be created from [`GenesisState`]
 /// or validated from a [`SignedBlock`] via [`GenesisBlock::try_from`].
+#[derive(Debug)]
 pub struct GenesisBlock(SignedBlock);
-
-/// A genesis block with all data except the validator signature.
-pub struct UnsignedGenesisBlock {
-    header: BlockHeader,
-    body: BlockBody,
-}
-
-impl UnsignedGenesisBlock {
-    pub fn header(&self) -> &BlockHeader {
-        &self.header
-    }
-
-    pub fn into_block(self, signature: Signature) -> anyhow::Result<GenesisBlock> {
-        let signatures = BlockSignatures::new(vec![signature])?;
-        signatures
-            .verify_against(self.header.commitment(), self.header.validator_keys())
-            .context("genesis block signature verification failed")?;
-
-        Ok(GenesisBlock(SignedBlock::new(self.header, self.body, signatures)?))
-    }
-}
 
 impl GenesisBlock {
     pub fn inner(&self) -> &SignedBlock {
@@ -80,10 +58,14 @@ impl TryFrom<SignedBlock> for GenesisBlock {
             block.header().block_num(),
         );
 
-        block
-            .signatures()
-            .verify_against(block.header().commitment(), block.header().validator_keys())
-            .context("genesis block signature verification failed")?;
+        // The genesis block has no parent and is not signed: it acts as the chain's trust root and
+        // must be obtained from a trusted source. Its header commits to the validator set, which is
+        // required to sign every block after genesis.
+        anyhow::ensure!(
+            block.signatures().is_empty(),
+            "genesis block must not carry signatures, got {}",
+            block.signatures().len(),
+        );
 
         Ok(Self(block))
     }
@@ -95,19 +77,23 @@ impl GenesisState {
         fee_parameters: FeeParameters,
         version: u32,
         timestamp: u32,
-        validator_key: PublicKey,
+        validator_keys: ValidatorKeys,
     ) -> Self {
         Self {
             accounts,
             fee_parameters,
             version,
             timestamp,
-            validator_key,
+            validator_keys,
         }
     }
 
-    /// Returns the unsigned genesis block.
-    pub fn into_unsigned_block(self) -> anyhow::Result<UnsignedGenesisBlock> {
+    /// Builds the genesis block.
+    ///
+    /// The genesis block has no parent and is not signed: it acts as the chain's trust root and
+    /// must be obtained from a trusted source. Its header commits to the validator set, which is
+    /// required to sign every block after genesis.
+    pub fn into_block(self) -> anyhow::Result<GenesisBlock> {
         let accounts: Vec<BlockAccountUpdate> = self
             .accounts
             .iter()
@@ -147,7 +133,7 @@ impl GenesisState {
 
         let empty_transactions = OrderedTransactionHeaders::new_unchecked(Vec::new());
 
-        let validator_keys = ValidatorKeys::new(vec![self.validator_key])?;
+        let validator_keys = self.validator_keys;
 
         let header = BlockHeader::new(
             self.version,
@@ -171,13 +157,9 @@ impl GenesisState {
             empty_transactions,
         );
 
-        Ok(UnsignedGenesisBlock { header, body })
-    }
+        let signatures = BlockSignatures::new(Vec::new())
+            .map_err(|err| anyhow::anyhow!("failed to build empty genesis signatures: {err}"))?;
 
-    /// Builds and signs the genesis block with a local secret key.
-    pub fn into_block(self, signer: &SigningKey) -> anyhow::Result<GenesisBlock> {
-        let unsigned_block = self.into_unsigned_block()?;
-        let signature = signer.sign(unsigned_block.header().commitment());
-        unsigned_block.into_block(signature)
+        Ok(GenesisBlock(SignedBlock::new(header, body, signatures)?))
     }
 }

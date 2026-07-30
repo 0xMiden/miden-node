@@ -75,9 +75,9 @@ pub struct Sequencer {
     pub block_writer: BlockWriter,
     /// The store's proof-write capability, handed to the proof scheduler.
     pub proof_writer: ProofWriter,
-    /// The address of the validator component.
-    pub validator_url: Url,
-    /// The request timeout for calls to the validator component.
+    /// The addresses of the validator components.
+    pub validator_urls: Vec<Url>,
+    /// The request timeout for calls to the validator components.
     pub validator_timeout: Duration,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
@@ -110,7 +110,7 @@ impl Sequencer {
         tracing::info!(target: LOG_TARGET, "Initializing sequencer");
         let state = self.state;
         let validator =
-            BlockProducerValidatorClient::new(self.validator_url.clone(), self.validator_timeout)?;
+            BlockProducerValidatorClient::new(self.validator_urls.clone(), self.validator_timeout)?;
         let chain_tip = state.chain_tip(Finality::Committed);
 
         tracing::info!(target: LOG_TARGET, "Sequencer initialized");

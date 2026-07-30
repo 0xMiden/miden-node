@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use diesel::{Connection, SqliteConnection};
-use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_node_proto::domain::account::AccountInfo;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
@@ -18,7 +17,13 @@ use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetId};
-use miden_protocol::block::{BlockHeader, BlockNoteIndex, BlockNumber, SignedBlock};
+use miden_protocol::block::{
+    BlockHeader,
+    BlockNoteIndex,
+    BlockNumber,
+    BlockSignatures,
+    SignedBlock,
+};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     NoteAttachments,
@@ -343,19 +348,20 @@ impl Db {
         .await
     }
 
-    /// Search for a [`BlockHeader`] and its [`Signature`] from the database by its `block_num`.
+    /// Search for a [`BlockHeader`] and its [`BlockSignatures`] from the database by its
+    /// `block_num`.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
         skip_all,
         err,
     )]
-    pub async fn select_block_header_and_signature_by_block_num(
+    pub async fn select_block_header_and_signatures_by_block_num(
         &self,
         block_number: BlockNumber,
-    ) -> Result<Option<(BlockHeader, Signature)>> {
-        self.transact("block headers and signature by block number", move |conn| {
-            let val = queries::select_block_header_and_signature_by_block_num(conn, block_number)?;
+    ) -> Result<Option<(BlockHeader, BlockSignatures)>> {
+        self.transact("block headers and signatures by block number", move |conn| {
+            let val = queries::select_block_header_and_signatures_by_block_num(conn, block_number)?;
             Ok(val)
         })
         .await

@@ -53,6 +53,18 @@ conflict, and use the detail byte when a client needs stable branching between b
 
 `CapacityExceeded` means the mempool capacity has been exhausted and is under load.
 
+### Encrypted input errors
+
+Rejections caused by the sealed transaction inputs happen before the mempool, so they carry no Miden detail code and
+fall into the ordinary-gRPC-status bucket described above:
+
+- `INVALID_ARGUMENT` when the sealed inputs are absent, empty, or fail to authenticate. Failing to authenticate is
+  deliberately indistinguishable between a wrong key, tampered ciphertext, a blob sealed for a different transaction or
+  network, and corrupt framing.
+- `FAILED_PRECONDITION` when the inputs were sealed against a key the validator does not hold. This is the one case a
+  client can act on: re-fetch `GetTransactionEncryptionKey` and seal again. Treat it as non-retryable without
+  re-sealing, and back off rather than retrying in a tight loop, since the key fetch is itself rate limited.
+
 ## Request Limits
 
 Use `GetLimits` to discover method-specific request limits before sending large sync requests. Methods such as

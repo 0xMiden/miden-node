@@ -33,8 +33,7 @@ impl grpc::server::validator_api::GetTransactionEncryptionKey for ValidatorServi
         // Built entirely from state fixed at construction, so the endpoint stays available while a
         // backup subscription holds the serve lock.
         Ok(grpc::transaction::TransactionEncryptionKey {
-            scheme: i32::try_from(self.encryption_key_info.scheme)
-                .expect("scheme identifier must fit in i32"),
+            scheme: self.encryption_key_info.scheme.as_i32(),
             key_id: self.encryption_key_info.key_id.clone(),
             public_key: self.encryption_key_info.public_key.clone(),
             attestations: vec![grpc::transaction::ValidatorKeyAttestation {
@@ -43,7 +42,7 @@ impl grpc::server::validator_api::GetTransactionEncryptionKey for ValidatorServi
             }],
             next_key: self.encryption_key_info.next_key.as_ref().map(|next| {
                 grpc::transaction::NextTransactionEncryptionKey {
-                    scheme: i32::try_from(next.scheme).expect("scheme identifier must fit in i32"),
+                    scheme: next.scheme.as_i32(),
                     key_id: next.key_id.clone(),
                     public_key: next.public_key.clone(),
                     rotation_block_num: next.rotation_block_num,

@@ -3,7 +3,7 @@
 use diesel::prelude::*;
 use miden_node_db::DatabaseError;
 use miden_protocol::Word;
-use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::block::{BlockHeader, BlockNumber, ValidatorKeys};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 
@@ -23,6 +23,7 @@ pub struct ChainStateInsert {
     pub block_header: Vec<u8>,
     pub chain_mmr: Vec<u8>,
     pub genesis_commitment: Vec<u8>,
+    pub genesis_validator_keys: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -91,6 +92,7 @@ pub fn insert_genesis_chain_state(
         block_header: conversions::block_header_to_bytes(genesis_block_header),
         chain_mmr: PartialMmr::default().to_bytes(),
         genesis_commitment: conversions::word_to_bytes(genesis_commitment),
+        genesis_validator_keys: Some(genesis_block_header.validator_keys().to_bytes()),
     };
     diesel::insert_into(schema::chain_state::table).values(&row).execute(conn)?;
     Ok(())
@@ -115,6 +117,33 @@ pub fn select_genesis_commitment(conn: &mut SqliteConnection) -> Result<Word, Da
 
     Word::read_from_bytes(&commitment)
         .map_err(|e| DatabaseError::deserialization("genesis commitment", e))
+}
+
+/// Reads the validator signing keys retained from the genesis header.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT genesis_validator_keys FROM chain_state WHERE id = 0
+/// ```
+///
+/// # Errors
+///
+/// - If the database predates this field and must be re-bootstrapped
+/// - If the stored validator keys cannot be decoded
+pub fn select_genesis_validator_keys(
+    conn: &mut SqliteConnection,
+) -> Result<Option<ValidatorKeys>, DatabaseError> {
+    let keys: Option<Vec<u8>> = schema::chain_state::table
+        .find(0i32)
+        .select(schema::chain_state::genesis_validator_keys)
+        .first(conn)?;
+
+    keys.map(|keys| {
+        ValidatorKeys::read_from_bytes(&keys)
+            .map_err(|e| DatabaseError::deserialization("genesis validator keys", e))
+    })
+    .transpose()
 }
 
 /// Reads the singleton chain state row, returning the persisted block number, header, and chain

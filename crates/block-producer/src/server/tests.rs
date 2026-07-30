@@ -4,7 +4,7 @@ use std::time::Duration;
 use miden_node_store::GenesisState;
 use miden_node_store::state::State;
 use miden_node_utils::fee::test_fee_params;
-use miden_protocol::block::BlockNumber;
+use miden_protocol::block::{BlockNumber, ValidatorKeys};
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use url::Url;
 
@@ -27,7 +27,7 @@ async fn block_producer_starts_with_store_state() {
         state,
         block_writer,
         proof_writer,
-        validator_url: Url::parse("http://127.0.0.1:0").unwrap(),
+        validator_urls: vec![Url::parse("http://127.0.0.1:0").unwrap()],
         validator_timeout: DEFAULT_VALIDATOR_TIMEOUT,
         batch_prover_url: None,
         block_prover_url: None,
@@ -49,8 +49,14 @@ async fn block_producer_starts_with_store_state() {
 
 fn bootstrap_store(path: &std::path::Path) {
     let signer = random_secret_key();
-    let genesis_state = GenesisState::new(vec![], test_fee_params(), 1, 1, signer.public_key());
-    let genesis_block = genesis_state.into_block(&signer).expect("genesis block should be created");
+    let genesis_state = GenesisState::new(
+        vec![],
+        test_fee_params(),
+        1,
+        1,
+        ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
+    );
+    let genesis_block = genesis_state.into_block().expect("genesis block should be created");
 
     State::bootstrap(genesis_block, path).expect("store should bootstrap");
 }

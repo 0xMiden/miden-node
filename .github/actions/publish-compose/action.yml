@@ -1,0 +1,97 @@
+# Publishes a Compose model that uses local includes as one portable OCI
+# application. OCI Compose artifacts cannot contain local includes, so the
+# action flattens the model while leaving interpolation and project resource
+# naming deferred to the consumer.
+name: "Publish Compose application"
+description: "Flatten local Compose includes and publish the resulting OCI application"
+
+inputs:
+  compose-file:
+    description: "Path to the root Compose file"
+    required: true
+  mode:
+    description: "Publication mode: dry-run or publish"
+    required: true
+  registry-prefix:
+    description: "Registry hostname and namespace, for example ghcr.io/0xmiden"
+    required: true
+  package:
+    description: "OCI package name"
+    required: true
+  tag:
+    description: "OCI package tag"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        COMPOSE_FILE: ${{ inputs.compose-file }}
+        MODE: ${{ inputs.mode }}
+      run: |
+        set -euo pipefail
+
+        case "${MODE}" in
+          dry-run | publish) ;;
+          *)
+            echo "::error::Unsupported Compose publication mode: ${MODE}"
+            exit 1
+            ;;
+        esac
+
+        if [[ ! -f "${COMPOSE_FILE}" ]]; then
+          echo "::error::Compose file does not exist: ${COMPOSE_FILE}"
+          exit 1
+        fi
+
+    - name: Build publishable Compose model
+      shell: bash
+      env:
+        COMPOSE_FILE: ${{ inputs.compose-file }}
+      run: |
+        set -euo pipefail
+
+        docker compose \
+          -f "${COMPOSE_FILE}" \
+          --profile "*" \
+          config \
+          --no-interpolate \
+          --no-normalize \
+          --output "${RUNNER_TEMP}/compose.publish.yml"
+
+    - name: Publish Compose application
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        PACKAGE: ${{ inputs.package }}
+        REGISTRY_PREFIX: ${{ inputs.registry-prefix }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        set -euo pipefail
+
+        artifact_destination="${REGISTRY_PREFIX}/${PACKAGE}:${TAG}"
+
+        case "${MODE}" in
+          dry-run)
+            docker compose \
+              -f "${RUNNER_TEMP}/compose.publish.yml" \
+              --profile "*" \
+              publish \
+              --with-env \
+              --yes \
+              --dry-run \
+              "${artifact_destination}"
+            ;;
+          publish)
+            docker compose \
+              -f "${RUNNER_TEMP}/compose.publish.yml" \
+              --profile "*" \
+              publish \
+              --with-env \
+              --yes \
+              --resolve-image-digests \
+              "${artifact_destination}"
+            ;;
+        esac

@@ -151,6 +151,7 @@ impl AccountActorContext {
 
         let url = Url::parse("http://127.0.0.1:1").unwrap();
         let block_header = mock_block_header(0_u32.into());
+        let trusted_validator_signing_keys = block_header.validator_keys().as_keys().to_vec();
         let chain_mmr = PartialMmr::from_peaks(
             MmrPeaks::new(Forest::new(0).expect("forest 0 is valid"), vec![]).unwrap(),
         );
@@ -163,6 +164,7 @@ impl AccountActorContext {
                 rpc: RpcClient::new(
                     url.clone(),
                     miden_protocol::Word::default(),
+                    trusted_validator_signing_keys,
                     Duration::from_millis(100),
                     Duration::from_secs(30),
                 )
@@ -296,14 +298,19 @@ impl AccountActor {
 
         // Load the account once and keep it in memory for the actor's lifetime, advancing it from
         // the delta of each transaction the actor itself lands. The coordinator only spawns actors
-        // for accounts whose creation has been committed, so the account must exist.
-        let mut account = self
-            .state
-            .db
-            .get_account(account_id)
-            .await
-            .context("failed to load committed account")?
-            .context("no committed state for the account; the coordinator must only spawn actors for committed accounts")?;
+        // for accounts whose creation has been committed, so the account must exist. Held in an
+        // `Arc` so building a transaction candidate shares this account rather than deep-cloning it
+        // (expensive for large storage maps). The actor is the sole writer and advances it via
+        // `Arc::make_mut`, which is cheap because the account is never mutated while a candidate is
+        // in flight (execution is awaited to completion before any patch/reload).
+        let mut account = Arc::new(
+            self.state
+                .db
+                .get_account(account_id)
+                .await
+                .context("failed to load committed account")?
+                .context("no committed state for the account; the coordinator must only spawn actors for committed accounts")?,
+        );
 
         // Determine initial mode by querying the DB for available notes. `next_retry_block` records
         // when a currently-ineligible note (awaiting backoff or an execution-hint window) becomes
@@ -413,7 +420,7 @@ impl AccountActor {
     ///   - Otherwise keep waiting.
     async fn reevaluate_mode(
         &self,
-        account: &mut Account,
+        account: &mut Arc<Account>,
         mode: ActorMode,
         view: &AccountView,
         notes_cursor: &mut u64,
@@ -444,8 +451,10 @@ impl AccountActor {
                 let elapsed = view.chain_tip.checked_sub(submitted_at.as_u32()).unwrap_or_default();
                 if view.last_committed_tx == Some(submitted_tx_id) {
                     // The landed transaction is the one we executed, so the committed state is our
-                    // in-memory account plus the patch it produced.
-                    account
+                    // in-memory account plus the patch it produced. `make_mut` does not clone here:
+                    // the candidate that shared this `Arc` was dropped when its execution
+                    // completed, so the actor holds the only reference.
+                    Arc::make_mut(account)
                         .apply_patch(&pending_patch)
                         .context("failed to apply landed transaction patch to in-memory account")?;
                     tracing::info!(
@@ -473,7 +482,7 @@ impl AccountActor {
                         .await
                         .context("failed to reload account after submission expiry")?
                     {
-                        *account = latest;
+                        *account = Arc::new(latest);
                     }
                     ActorMode::NotesAvailable
                 } else {
@@ -501,7 +510,7 @@ impl AccountActor {
     /// block. `None` for that block means the account has no pending notes awaiting a window.
     async fn select_candidate(
         &self,
-        account: &Account,
+        account: &Arc<Account>,
         chain_state: ChainState,
     ) -> anyhow::Result<(Option<TransactionCandidate>, Option<BlockNumber>)> {
         let account_id = self.account_id;
@@ -516,7 +525,7 @@ impl AccountActor {
             .context("failed to query DB for available notes")?;
         let next_retry_block = availability.next_retry_block;
 
-        let partitioned_notes = partition_by_allowlist(account, availability.eligible)
+        let partitioned_notes = partition_by_allowlist(account.as_ref(), availability.eligible)
             .context("failed to read network account note allowlist")?;
 
         let rejected_any = !partitioned_notes.rejected.is_empty();
@@ -556,7 +565,8 @@ impl AccountActor {
         let (chain_tip_header, chain_mmr) = chain_state.into_parts();
         Ok((
             Some(TransactionCandidate {
-                account: account.clone(),
+                // Cheap: bumps the `Arc` refcount instead of deep-copying the account/storage.
+                account: Arc::clone(account),
                 notes,
                 chain_tip_header,
                 chain_mmr,
@@ -583,7 +593,7 @@ impl AccountActor {
         &self,
         account_id: AccountId,
         tx_candidate: TransactionCandidate,
-        account: &mut Account,
+        account: &mut Arc<Account>,
     ) -> anyhow::Result<ActorMode> {
         let block_num = tx_candidate.chain_tip_header.block_num();
 
@@ -712,7 +722,7 @@ impl AccountActor {
                             %account_id,
                             "reloaded account from the database after a rejected submission",
                         );
-                        *account = latest;
+                        *account = Arc::new(latest);
                     }
                 }
 
@@ -912,7 +922,7 @@ mod tests {
         expected.apply_patch(&patch).unwrap();
 
         let actor = test_actor(&db, &account);
-        let mut in_memory = account.clone();
+        let mut in_memory = Arc::new(account.clone());
         let mut notes_cursor = 0;
         // The view reports our submission as the account's latest committed transaction.
         let view = view(1, Some(submitted), 0);
@@ -949,7 +959,7 @@ mod tests {
         // The view shows no committed tx for the account (submission has not landed) and a tip well
         // within `tx_expiration_delta` of the submission block, so it has not expired either.
         let actor = test_actor(&db, &account);
-        let mut in_memory = account.clone();
+        let mut in_memory = Arc::new(account.clone());
         let mut notes_cursor = 0;
         let submitted = mock_transaction_id(7);
         let view = view(1, None, 0);
@@ -988,7 +998,7 @@ mod tests {
         let (db, _dir) = Db::test_setup().await;
         let account = mock_account(mock_network_account_id());
         let actor = test_actor(&db, &account);
-        let mut in_memory = account.clone();
+        let mut in_memory = Arc::new(account.clone());
         let mut notes_cursor = 3;
 
         // notes_seen matches the cursor (no new notes) and there is no pending retry.
@@ -1017,7 +1027,7 @@ mod tests {
         let (db, _dir) = Db::test_setup().await;
         let account = mock_account(mock_network_account_id());
         let actor = test_actor(&db, &account);
-        let mut in_memory = account.clone();
+        let mut in_memory = Arc::new(account.clone());
         let mut notes_cursor = 3;
 
         let view = view(10, None, 4);
@@ -1043,7 +1053,7 @@ mod tests {
         let (db, _dir) = Db::test_setup().await;
         let account = mock_account(mock_network_account_id());
         let actor = test_actor(&db, &account);
-        let mut in_memory = account.clone();
+        let mut in_memory = Arc::new(account.clone());
 
         // Tip below the retry block: stay idle.
         let mut notes_cursor = 0;

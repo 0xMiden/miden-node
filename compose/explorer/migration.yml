@@ -1,0 +1,11 @@
+services:
+  explorer-migration:
+    profiles: [explorer]
+    image: gatewayfm/midenscan-db-migration:v0.8.5
+    pull_policy: missing
+    environment:
+      POSTGRES_URL: postgres://midenscan:midenscan@explorer-database:5432/midenscan?sslmode=disable
+    depends_on:
+      explorer-database:
+        condition: service_healthy
+    restart: "no"

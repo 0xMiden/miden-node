@@ -275,12 +275,12 @@ impl BlockBuilder {
     ) -> Result<BlockCommit, BuildBlockError> {
         let ProposedBlockAndInputs { proposed_block, block_inputs } = proposal;
 
-        // Concurrently build the block and validate it via the validator.
+        // Concurrently build the block and validate it via the validators.
         let build_result = spawn_blocking_in_current_span({
             let proposed_block = proposed_block.clone();
             move || proposed_block.into_header_and_body()
         });
-        let (signature, signed_commitment) = self
+        let responses = self
             .validator
             .sign_block(proposed_block.clone())
             .await
@@ -290,29 +290,49 @@ impl BlockBuilder {
             .map_err(|err| BuildBlockError::other(format!("task join error: {err}")))?
             .map_err(BuildBlockError::ProposeBlockFailed)?;
 
-        // The validator and the block producer must derive the same block from the same proposed
-        // block. Comparing the commitment the validator signed against the locally built one
+        // Every validator and the block producer must derive the same block from the same proposed
+        // block. Comparing the commitment each validator signed against the locally built one
         // isolates a block-hash mismatch from a key/algorithm problem in the signature check below.
-        if signed_commitment != header.commitment() {
-            return Err(BuildBlockError::BlockCommitmentMismatch {
-                validator: signed_commitment,
-                sequencer: header.commitment(),
-            });
+        for response in &responses {
+            if response.block_commitment != header.commitment() {
+                return Err(BuildBlockError::BlockCommitmentMismatch {
+                    validator: response.block_commitment,
+                    sequencer: header.commitment(),
+                });
+            }
         }
 
-        // Verify the signature against the built block to ensure that the validator has provided a
-        // valid signature for the relevant block.
-        let signatures =
-            BlockSignatures::new(vec![signature]).map_err(|_| BuildBlockError::InvalidSignature)?;
+        // Place each validator's signature at its position in the block's signature set. The
+        // signature at position `i` must be produced by the key at index `i` of the validator set
+        // committed to by the parent block's header.
+        let parent_header = block_inputs.prev_block_header();
+        let signatures = parent_header
+            .validator_keys()
+            .as_keys()
+            .iter()
+            .enumerate()
+            .map(|(position, key)| {
+                responses
+                    .iter()
+                    .find(|response| &response.public_key == key)
+                    .map(|response| response.signature.clone())
+                    .ok_or(BuildBlockError::MissingValidatorSignature { position })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let signatures = BlockSignatures::new(signatures)
+            .map_err(|err| BuildBlockError::other(format!("invalid signature set: {err}")))?;
+
+        // Verify the signatures against the built block to ensure that every validator has provided
+        // a valid signature for the relevant block.
         signatures
-            .verify_against(header.commitment(), header.validator_keys())
+            .verify_against(header.commitment(), parent_header.validator_keys())
             .map_err(|_| BuildBlockError::InvalidSignature)?;
 
         let (ordered_batches, ..) = proposed_block.into_parts();
 
-        // SAFETY: The header, body, and signature are known to correspond to each other because the
-        // header and body are derived from the proposed block and the signature is verified against
-        // the corresponding commitment.
+        // SAFETY: The header, body, and signatures are known to correspond to each other because
+        // the header and body are derived from the proposed block and the signatures are verified
+        // against the corresponding commitment.
         let signed_block = SignedBlock::new_unchecked(header, body, signatures);
         Ok(BlockCommit {
             ordered_batches,

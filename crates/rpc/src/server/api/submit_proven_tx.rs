@@ -17,7 +17,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tonic::{Request, Status};
 use tracing::debug;
 
-use super::{COMPONENT, RpcMode, RpcService};
+use super::{COMPONENT, RpcMode, RpcService, submit_tx_to_validators};
 use crate::LOG_TARGET;
 
 #[tonic::async_trait]
@@ -49,7 +49,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
         let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
-        tracing::trace!(target: LOG_TARGET, ?request);
+        tracing::trace!(target: LOG_TARGET, "Received transaction submission");
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
             Status::invalid_argument(err.as_report_context("invalid transaction"))
@@ -120,47 +120,37 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         })??;
 
         match &self.mode {
-            RpcMode::Sequencer { block_producer, validator } => {
-                validator.clone().submit_proven_transaction(request.clone()).await?;
+            RpcMode::Sequencer { block_producer, validators } => {
+                submit_tx_to_validators(validators.as_slice(), &request).await?;
                 block_producer
                     .submit_proven_tx(rebuilt_tx)
                     .await
                     .map(Into::into)
                     .map_err(Into::into)
             },
-            RpcMode::FullNode { source_rpc, validator, sequencer, .. } => {
-                match (validator, sequencer) {
-                    (Some(validator), Some(sequencer)) => {
-                        // Pre-authenticated transactions: validate and authenticate locally, then
-                        // submit the authenticated transaction to the sequencer's pre-authenticated
-                        // API.
-                        self.submit_authenticated_to_sequencer(
-                            *validator.clone(),
-                            *sequencer.clone(),
-                            request,
-                            rebuilt_tx,
-                        )
-                        .await
-                    },
-                    (None, None) => {
-                        // Unauthenticated transactions: forward the request to the source verbatim.
-                        let mut forwarded_request = Request::new(request);
-                        if let Some(accept) = original_accept_header {
-                            forwarded_request
-                                .metadata_mut()
-                                .insert(http::header::ACCEPT.as_str(), accept);
-                        }
-                        source_rpc
-                            .as_ref()
-                            .clone()
-                            .submit_proven_tx(forwarded_request)
-                            .await
-                            .map(tonic::Response::into_inner)
-                    },
-                    (Some(_), None) | (None, Some(_)) => {
-                        Err(Status::internal("one of validator or sequencer are not configured"))
-                    },
+            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => {
+                // Pre-authenticated transactions: validate and authenticate locally, then submit
+                // the authenticated transaction to the sequencer's pre-authenticated API.
+                self.submit_authenticated_to_sequencer(
+                    pre_auth.validators().as_slice(),
+                    pre_auth.sequencer().clone(),
+                    request,
+                    rebuilt_tx,
+                )
+                .await
+            },
+            RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
+                // Unauthenticated transactions: forward the request to the source verbatim.
+                let mut forwarded_request = Request::new(request);
+                if let Some(accept) = original_accept_header {
+                    forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
                 }
+                source_rpc
+                    .as_ref()
+                    .clone()
+                    .submit_proven_tx(forwarded_request)
+                    .await
+                    .map(tonic::Response::into_inner)
             },
         }
     }
@@ -169,12 +159,12 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
 impl RpcService {
     /// Pre-authenticated transaction submission path for a single transaction.
     ///
-    /// Re-executes the transaction via the validator, authenticates it against the local
+    /// Re-executes the transaction via every validator, authenticates it against the local
     /// (replica) store, then submits the authenticated transaction to the sequencer's
     /// pre-authenticated API.
     async fn submit_authenticated_to_sequencer(
         &self,
-        validator: ValidatorClient,
+        validators: &[ValidatorClient],
         sequencer: SequencerClient,
         request: proto::transaction::ProvenTransaction,
         rebuilt_tx: ProvenTransaction,
@@ -188,9 +178,8 @@ impl RpcService {
                 |err| Status::internal(err.as_report_context("failed to authenticate transaction")),
             )?;
 
-        // Submit to validator.
-        let mut validator = validator;
-        validator.submit_proven_transaction(request).await?;
+        // Submit to every validator.
+        submit_tx_to_validators(validators, &request).await?;
 
         // Submit to sequencer.
         let mut sequencer = sequencer;

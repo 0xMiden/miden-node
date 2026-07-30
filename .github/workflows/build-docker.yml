@@ -54,6 +54,10 @@ jobs:
           - component: network-monitor
             bin: miden-network-monitor
             port: 3000
+          # The benchmark is a one-shot CLI, so build the portless runtime-tool stage.
+          - component: node-tps-benchmark
+            bin: miden-benchmark
+            target: runtime-tool
           - component: faucet
             bin: miden-faucet
             port: 8000
@@ -93,6 +97,7 @@ jobs:
           context: ${{ steps.build-inputs.outputs.context }}
           push: false
           file: ${{ steps.build-inputs.outputs.file }}
+          target: ${{ matrix.target }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
           pull: true
@@ -123,6 +128,7 @@ jobs:
           MIDEN_NTX_BUILDER_IMAGE: ghcr.io/0xmiden/miden-ntx-builder:dry-run
           MIDEN_REMOTE_PROVER_IMAGE: ghcr.io/0xmiden/miden-remote-prover:dry-run
           MIDEN_NETWORK_MONITOR_IMAGE: ghcr.io/0xmiden/miden-network-monitor:dry-run
+          MIDEN_BENCHMARK_IMAGE: ghcr.io/0xmiden/miden-node-tps-benchmark:dry-run
           MIDEN_FAUCET_IMAGE: ghcr.io/0xmiden/miden-faucet:dry-run
         with:
           compose-file: docker-compose.yml

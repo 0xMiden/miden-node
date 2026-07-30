@@ -110,13 +110,15 @@ RUN --mount=type=cache,sharing=shared,id=cargo-registry-local-${TARGETARCH},targ
         --bin miden-validator \
         --bin miden-ntx-builder \
         --bin miden-network-monitor \
-        --bin miden-remote-prover && \
+        --bin miden-remote-prover \
+        --bin miden-benchmark && \
     mkdir -p /app/bin && \
     cp /app/target/release/miden-node \
         /app/target/release/miden-validator \
         /app/target/release/miden-ntx-builder \
         /app/target/release/miden-network-monitor \
         /app/target/release/miden-remote-prover \
+        /app/target/release/miden-benchmark \
         /app/bin/
 
 # Alias stage so the runtime COPY below can select a builder via build arg.
@@ -130,9 +132,8 @@ RUN apt-get update && \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-FROM runtime-base AS runtime
+FROM runtime-base AS runtime-common
 ARG BIN
-ARG PORT
 COPY --from=build-result /app/bin/${BIN} /usr/local/bin/${BIN}
 LABEL org.opencontainers.image.authors=devops@miden.team \
     org.opencontainers.image.url=https://0xMiden.github.io/ \
@@ -146,7 +147,14 @@ ARG COMMIT
 LABEL org.opencontainers.image.created=$CREATED \
     org.opencontainers.image.version=$VERSION \
     org.opencontainers.image.revision=$COMMIT
-EXPOSE ${PORT}
 # Use exec to replace the shell so the binary runs as PID 1.
 ENV MIDEN_BIN=${BIN}
 CMD ["/bin/sh", "-c", "exec /usr/local/bin/$MIDEN_BIN"]
+
+# Command-line tools do not listen on a port.
+FROM runtime-common AS runtime-tool
+
+# Keep the default final target for the network's long-running services.
+FROM runtime-common AS runtime
+ARG PORT
+EXPOSE ${PORT}

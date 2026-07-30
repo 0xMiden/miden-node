@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
-use std::num::NonZeroUsize;
 
 use anyhow::Context;
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_proto::server::validator_api;
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_store::BlockStore;
@@ -14,20 +14,17 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::db::{
-    count_signed_blocks,
-    count_validated_transactions,
-    load_chain_tip,
-    load_with_pool_size,
-};
+use crate::db::{count_signed_blocks, count_validated_transactions, load_chain_tip};
 use crate::{
     DataDirectory,
+    GoldenOperatorKey,
     LOG_TARGET,
     PrivateRecordSealer,
     TransactionInputDecrypter,
     ValidatorSigner,
 };
 
+mod admin_service;
 mod validator_service;
 
 use validator_service::{InitialMetrics, ValidatorService};
@@ -59,8 +56,53 @@ pub struct ValidatorServer {
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
 
-    /// Maximum number of SQLite connections in the validator database connection pool.
-    pub sqlite_connection_pool_size: NonZeroUsize,
+    /// Write handle to the shared validator database, owned solely by the public API.
+    pub writer: DbWriter,
+
+    /// Read handle to the shared validator database.
+    pub reader: DbReader,
+}
+
+/// Serves the private validator administration API on a network-isolated listener.
+pub struct ValidatorAdminServer {
+    /// Address of the private administration listener.
+    pub address: SocketAddr,
+    /// Golden key material used to issue this validator's decryption shares.
+    pub operator_key: GoldenOperatorKey,
+    /// Read handle to the shared validator database. The administration API only ever reads, so it
+    /// holds a [`DbReader`] and cannot mutate validator state.
+    pub reader: DbReader,
+}
+
+impl ValidatorAdminServer {
+    /// Serves the private validator administration API.
+    pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
+        let listener =
+            TcpListener::bind(self.address).await.context("failed to bind admin address")?;
+        self.serve_on(listener, shutdown).await
+    }
+
+    async fn serve_on(
+        self,
+        listener: TcpListener,
+        shutdown: CancellationToken,
+    ) -> anyhow::Result<()> {
+        let endpoint =
+            listener.local_addr().context("failed to read validator admin listen address")?;
+        tracing::info!(
+            target: LOG_TARGET,
+            {
+                service.name = "miden-validator-admin",
+                validator.admin_listen = %endpoint,
+            },
+            "Validator admin server ready",
+        );
+
+        axum::serve(listener, admin_service::router(self.operator_key, self.reader))
+            .with_graceful_shutdown(shutdown.cancelled_owned())
+            .await
+            .context("failed to serve validator admin API")
+    }
 }
 
 impl ValidatorServer {
@@ -69,13 +111,9 @@ impl ValidatorServer {
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
     /// encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        // Initialize database connection.
-        let (writer, reader) = load_with_pool_size(
-            self.data_directory.database_path(),
-            self.sqlite_connection_pool_size,
-        )
-        .await
-        .context("failed to initialize validator database")?;
+        // The database pool is opened once by the caller and shared with the admin server, so this
+        // takes the handles rather than opening its own connection.
+        let (writer, reader) = (self.writer, self.reader);
 
         // Initialize block store.
         let block_store = BlockStore::load(self.data_directory.block_store_dir())

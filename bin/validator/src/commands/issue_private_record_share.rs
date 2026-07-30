@@ -27,10 +27,8 @@ pub(super) fn issue(
         .context("private record bundle is invalid")?;
 
     let request = PrivateRecordShareRequest::for_record(&record);
-    // Running this filesystem-restricted command is the demo's explicit release decision.
-    let allow = |_: &PrivateRecordShareRequest, _: &miden_validator::StoredPrivateRecord| true;
     let share = operator_key
-        .issue_private_record_share(&mut OsRng, &request, &record, &allow)
+        .issue_private_record_share(&mut OsRng, &request, &record)
         .context("failed to issue private record share")?;
 
     write_share(output, &share)

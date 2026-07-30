@@ -7,7 +7,7 @@ services:
     image: ${MIDEN_FAUCET_IMAGE:-miden-faucet:0.16.0-alpha.1}
     pull_policy: missing
     build:
-      context: https://github.com/0xMiden/faucet.git#9fe3dc6c4fb419a67b1065a5f9c45411b92e3c31
+      context: https://github.com/0xMiden/faucet.git#48d3af2c58ffe16a585314208c8ed93fc3dfea35
     volumes:
       - faucet-data:/faucet
     entrypoint: ["/bin/sh", "-c"]
@@ -32,7 +32,7 @@ services:
       MIDEN_FAUCET_ENABLE_OTEL: "true"
       MIDEN_FAUCET_MAX_SUPPLY: ${MIDEN_FAUCET_MAX_SUPPLY:-100000000000000000}
       MIDEN_FAUCET_NETWORK: localhost
-      MIDEN_FAUCET_NODE_URL: http://sequencer:57291
+      MIDEN_FAUCET_NODE_URL: http://rpc.localhost
       MIDEN_FAUCET_REMOTE_TX_PROVER_URL: http://tx-prover:50051
       MIDEN_FAUCET_STORE: /faucet/store.sqlite
       MIDEN_FAUCET_TOKEN_SYMBOL: ${MIDEN_FAUCET_TOKEN_SYMBOL:-MIDEN}

@@ -7,7 +7,7 @@ services:
     image: ${MIDEN_FAUCET_IMAGE:-miden-faucet:0.16.0-alpha.1}
     pull_policy: missing
     build:
-      context: https://github.com/0xMiden/faucet.git#9fe3dc6c4fb419a67b1065a5f9c45411b92e3c31
+      context: https://github.com/0xMiden/faucet.git#48d3af2c58ffe16a585314208c8ed93fc3dfea35
     volumes:
       - faucet-data:/faucet
     entrypoint: ["/bin/sh", "-c"]

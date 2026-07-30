@@ -4073,7 +4073,6 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "serde",
- "serde_json",
  "tempfile",
  "thiserror 2.0.19",
  "tokio",

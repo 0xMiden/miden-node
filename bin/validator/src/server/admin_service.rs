@@ -421,9 +421,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers().get("content-type").unwrap(), "application/json",);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let response: ListValidatedPrivateTransactionsResponse =
-            serde_json::from_slice(&body).unwrap();
-        assert!(response.transactions.is_empty());
+        assert_eq!(body.as_ref(), br#"{"transactions":[]}"#);
 
         let response = app
             .clone()

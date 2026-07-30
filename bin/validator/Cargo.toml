@@ -60,7 +60,6 @@ miden-testing    = { workspace = true }
 miden-tx         = { features = ["concurrent", "testing"], workspace = true }
 rand             = { workspace = true }
 rand_chacha_03   = { workspace = true }
-serde_json       = { workspace = true }
 tempfile         = { workspace = true }
 tokio            = { features = ["macros", "rt-multi-thread", "sync"], workspace = true }
 tower            = { features = ["util"], workspace = true }

@@ -1,10 +1,11 @@
-# The note transport service is currently published for linux/amd64 only.
-# Keep it optional and allow a compatible image to be substituted on other
-# architectures.
+# The default image is currently published for linux/amd64 only. Pin its
+# platform so Docker uses emulation on other architectures. Both the image and
+# platform remain overridable for compatible native builds.
 services:
   note-transport:
     profiles: [note-transport]
     image: ${MIDEN_NOTE_TRANSPORT_IMAGE:-gatewayfm/miden-note-transport:v0.5.0-alpha.1}
+    platform: ${MIDEN_NOTE_TRANSPORT_PLATFORM:-linux/amd64}
     pull_policy: missing
     command:
       - miden-note-transport-node

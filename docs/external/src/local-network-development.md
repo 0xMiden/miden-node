@@ -148,8 +148,9 @@ docker compose --profile note-transport up -d
 Its browser-facing gRPC-Web endpoint is `http://ntl.localhost`; native gRPC clients can use `localhost:57292`. Notes are
 persisted in the `note-transport-data` volume.
 
-The pinned Gateway FM image currently supports only `linux/amd64`. On another architecture, set
-`MIDEN_NOTE_TRANSPORT_IMAGE` to a compatible build before enabling the profile.
+The pinned Gateway FM image currently supports only `linux/amd64`. Compose selects that platform explicitly, allowing
+Docker to run it through emulation on ARM hosts. To use a compatible native build instead, set both
+`MIDEN_NOTE_TRANSPORT_IMAGE` and `MIDEN_NOTE_TRANSPORT_PLATFORM`.
 
 ## Faucet
 

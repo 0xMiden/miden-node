@@ -57,7 +57,6 @@ pub async fn start(
     if let Some(address) = admin_address {
         let admin_server = ValidatorAdminServer {
             address,
-            grpc_options,
             operator_key: keys.operator_key,
             database,
         };

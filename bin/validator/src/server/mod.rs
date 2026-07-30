@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Context;
 use miden_node_db::sqlite::Database;
-use miden_node_proto::server::{validator_admin_api, validator_api};
+use miden_node_proto::server::validator_api;
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_store::BlockStore;
 use miden_node_utils::clap::GrpcOptionsInternal;
@@ -27,7 +27,6 @@ use crate::{
 mod admin_service;
 mod validator_service;
 
-use admin_service::ValidatorAdminService;
 use validator_service::{InitialMetrics, ValidatorService};
 
 // VALIDATOR SERVER
@@ -65,8 +64,6 @@ pub struct ValidatorServer {
 pub struct ValidatorAdminServer {
     /// Address of the private administration listener.
     pub address: SocketAddr,
-    /// gRPC request timeout.
-    pub grpc_options: GrpcOptionsInternal,
     /// Golden key material used to issue this validator's decryption shares.
     pub operator_key: GoldenOperatorKey,
     /// Shared validator database.
@@ -98,18 +95,8 @@ impl ValidatorAdminServer {
             "Validator admin server ready",
         );
 
-        tonic::transport::Server::builder()
-            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
-            .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
-            .timeout(self.grpc_options.request_timeout)
-            .add_service(validator_admin_api::service(ValidatorAdminService::new(
-                self.operator_key,
-                self.database,
-            )))
-            .serve_with_incoming_shutdown(
-                TcpListenerStream::new(listener),
-                shutdown.cancelled_owned(),
-            )
+        axum::serve(listener, admin_service::router(self.operator_key, self.database))
+            .with_graceful_shutdown(shutdown.cancelled_owned())
             .await
             .context("failed to serve validator admin API")
     }

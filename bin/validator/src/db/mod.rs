@@ -30,8 +30,8 @@ mod sql {
         include_str!("sql/load_private_records_by_key_epoch.sql");
     pub(super) const LOAD_PRIVATE_RECORDS_BY_SETUP_CONTEXT: &str =
         include_str!("sql/load_private_records_by_setup_context.sql");
-    pub(super) const LOAD_VALIDATED_PRIVATE_TRANSACTIONS_PAGE: &str =
-        include_str!("sql/load_validated_private_transactions_page.sql");
+    pub(super) const LOAD_VALIDATED_PRIVATE_TRANSACTIONS: &str =
+        include_str!("sql/load_validated_private_transactions.sql");
     pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
     pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
     pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
@@ -39,15 +39,6 @@ mod sql {
     pub(super) const COUNT_VALIDATED_TRANSACTIONS: &str =
         include_str!("sql/count_validated_transactions.sql");
     pub(super) const COUNT_SIGNED_BLOCKS: &str = include_str!("sql/count_signed_blocks.sql");
-}
-
-/// One insertion-ordered page of validated private transactions.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ValidatedPrivateTransactionsPage {
-    /// Stored private records in insertion order.
-    pub(crate) records: Vec<StoredPrivateRecord>,
-    /// Last insertion sequence in this page when another page exists.
-    pub(crate) next_cursor: Option<i64>,
 }
 
 /// Open a connection to the DB after verifying that it is at the latest schema version.
@@ -199,32 +190,11 @@ pub fn load_private_records_by_setup_context(
     )
 }
 
-/// Loads validated private transactions after an insertion-sequence cursor.
-pub(crate) fn load_validated_private_transactions_page(
+/// Loads all validated private transactions in insertion order.
+pub(crate) fn load_validated_private_transactions(
     tx: &ReadTx<'_>,
-    page_size: u32,
-    after_sequence: i64,
-) -> Result<ValidatedPrivateTransactionsPage, DatabaseError> {
-    let limit = i64::from(page_size) + 1;
-    let mut rows = tx.query(
-        sql::LOAD_VALIDATED_PRIVATE_TRANSACTIONS_PAGE,
-        &[&after_sequence, &limit],
-        |row| {
-            let record = private_record_from_row(row)?;
-            let insertion_sequence = row.get::<i64>(9)?;
-            Ok((insertion_sequence, record))
-        },
-    )?;
-
-    let next_cursor = if rows.len() > page_size as usize {
-        rows.pop();
-        rows.last().map(|(sequence, _record)| *sequence)
-    } else {
-        None
-    };
-    let records = rows.into_iter().map(|(_sequence, record)| record).collect();
-
-    Ok(ValidatedPrivateTransactionsPage { records, next_cursor })
+) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
+    tx.query(sql::LOAD_VALIDATED_PRIVATE_TRANSACTIONS, &[], private_record_from_row)
 }
 
 fn private_record_from_row(row: &Row<'_>) -> Result<StoredPrivateRecord, DatabaseError> {
@@ -523,7 +493,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validated_private_transactions_are_paginated_in_insertion_order() {
+    async fn validated_private_transactions_are_loaded_in_insertion_order() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
         let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let transaction_ids = [
@@ -538,91 +508,19 @@ mod tests {
             .collect::<Vec<_>>();
 
         for record in records.clone() {
-            db.write("insert paginated private record", move |tx| {
+            db.write("insert private record", move |tx| {
                 insert_validated_private_transaction(tx, &record)
             })
             .await
             .unwrap();
         }
 
-        let first_page = db
-            .read("load first private record page", |tx| {
-                load_validated_private_transactions_page(tx, 2, 0)
-            })
-            .await
-            .unwrap();
-        assert_eq!(first_page.records, records[..2]);
-        let cursor = first_page.next_cursor.expect("another page must exist");
-
-        let second_page = db
-            .read("load second private record page", move |tx| {
-                load_validated_private_transactions_page(tx, 2, cursor)
-            })
-            .await
-            .unwrap();
-        assert_eq!(second_page.records, records[2..]);
-        assert_eq!(second_page.next_cursor, None);
-    }
-
-    #[tokio::test]
-    async fn migration_assigns_existing_records_a_stable_order() {
-        const LEGACY_INSERT: &str = "\
-            INSERT INTO validated_transactions (\
-                id, validator_id, chain_id, key_epoch, setup_context_id, format_version,\
-                cipher_nonce, encrypted_record, encrypted_record_key\
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
-
-        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let database_path = temp_dir.path().join("validator.sqlite3");
-        miden_node_db::migration::Migrator::builder()
-            .unwrap()
-            .push_sql("001_initial", include_str!("migrations/001_initial.sql"))
-            .unwrap()
-            .build()
-            .unwrap()
-            .bootstrap(&database_path)
-            .unwrap();
-        let legacy_database = Database::new(&database_path).unwrap();
-        let mut records = [
-            private_record(TransactionId::from_raw(Word::from([9u32, 0, 0, 0])), 1),
-            private_record(TransactionId::from_raw(Word::from([1u32, 0, 0, 0])), 2),
-        ];
-        for record in records.clone() {
-            legacy_database
-                .write("insert legacy private record", move |tx| {
-                    let context = record.context();
-                    tx.execute(
-                        LEGACY_INSERT,
-                        &[
-                            &context.transaction_id().to_bytes(),
-                            &record.record_id().validator_id().to_vec(),
-                            &context.chain_id().as_bytes().to_vec(),
-                            &context.key_epoch().as_bytes().to_vec(),
-                            &record.setup_context_id().to_vec(),
-                            &i64::from(context.format_version()),
-                            &record.nonce().to_vec(),
-                            &record.encrypted_record().to_vec(),
-                            &record.encrypted_record_key().to_vec(),
-                        ],
-                    )
-                })
-                .await
-                .unwrap();
-        }
-        drop(legacy_database);
-
-        migrate(&database_path).unwrap();
-        let database = load(database_path).await.unwrap();
-        records.sort_by_key(|record| record.context().transaction_id().to_bytes());
-        let page = database
-            .read("load migrated private records", |tx| {
-                load_validated_private_transactions_page(tx, 10, 0)
-            })
+        let loaded = db
+            .read("load validated private transactions", load_validated_private_transactions)
             .await
             .unwrap();
 
-        assert_eq!(page.records, records);
-        assert_eq!(page.next_cursor, None);
+        assert_eq!(loaded, records);
     }
 
     #[tokio::test]
@@ -687,9 +585,9 @@ mod tests {
             .unwrap()
             .join("\n");
 
-        assert!(schema.contains("PRIMARY KEY (id)"));
+        assert!(schema.contains("insertion_sequence    INTEGER PRIMARY KEY AUTOINCREMENT"));
+        assert!(schema.contains("id                    BLOB NOT NULL UNIQUE"));
         assert!(schema.contains("idx_validated_transactions_key_epoch"));
         assert!(schema.contains("idx_validated_transactions_setup_context_id"));
-        assert!(schema.contains("idx_validated_transactions_insertion_sequence"));
     }
 }

@@ -7,19 +7,7 @@ INSERT INTO validated_transactions (
     format_version,
     cipher_nonce,
     encrypted_record,
-    encrypted_record_key,
-    insertion_sequence
+    encrypted_record_key
 )
-VALUES (
-    ?1,
-    ?2,
-    ?3,
-    ?4,
-    ?5,
-    ?6,
-    ?7,
-    ?8,
-    ?9,
-    (SELECT COALESCE(MAX(insertion_sequence), 0) + 1 FROM validated_transactions)
-)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
 ON CONFLICT DO NOTHING;

@@ -9,7 +9,6 @@ use miden_node_proto_build::{
     remote_prover_api_descriptor,
     rpc_api_descriptor,
     sequencer_api_descriptor,
-    validator_admin_api_descriptor,
     validator_api_descriptor,
 };
 use miette::{Context, IntoDiagnostic};
@@ -30,7 +29,6 @@ fn main() -> miette::Result<()> {
         rpc_api_descriptor(),
         remote_prover_api_descriptor(),
         validator_api_descriptor(),
-        validator_admin_api_descriptor(),
         ntx_builder_api_descriptor(),
         sequencer_api_descriptor(),
     ];

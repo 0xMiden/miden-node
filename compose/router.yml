@@ -7,6 +7,8 @@ services:
     configs:
       - source: caddy
         target: /etc/caddy/Caddyfile
+      - source: caddy-routes-default
+        target: /etc/caddy/routes/default.caddy
     ports:
       - "127.0.0.1:80:80"
     restart: unless-stopped
@@ -62,3 +64,9 @@ configs:
       http://tempo.localhost {
         reverse_proxy tempo:3200
       }
+
+      # Out-of-tree Compose overrides can mount additional routes here.
+      import routes/*.caddy
+  caddy-routes-default:
+    content: |
+      # Additional route files are supplied by out-of-tree Compose overrides.

@@ -16,6 +16,7 @@ x-validator: &validator
     - miden-validator
     - start
     - --listen=0.0.0.0:50101
+    - --admin.listen=0.0.0.0:50102
 
 services:
   validator-1:

@@ -30,6 +30,7 @@ mod sql {
         include_str!("sql/load_private_records_by_key_epoch.sql");
     pub(super) const LOAD_PRIVATE_RECORDS_BY_SETUP_CONTEXT: &str =
         include_str!("sql/load_private_records_by_setup_context.sql");
+    pub(super) const LOAD_ALL_TRANSACTIONS: &str = include_str!("sql/load_all_transactions.sql");
     pub(super) const TRANSACTION_EXISTS: &str = include_str!("sql/transaction_exists.sql");
     pub(super) const UPSERT_BLOCK_HEADER: &str = include_str!("sql/upsert_block_header.sql");
     pub(super) const LOAD_CHAIN_TIP: &str = include_str!("sql/load_chain_tip.sql");
@@ -186,6 +187,13 @@ pub fn load_private_records_by_setup_context(
         &[&setup_context_id.to_vec()],
         private_record_from_row,
     )
+}
+
+/// Loads all validated private transactions in insertion order.
+pub(crate) fn load_all_transactions(
+    tx: &ReadTx<'_>,
+) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
+    tx.query(sql::LOAD_ALL_TRANSACTIONS, &[], private_record_from_row)
 }
 
 fn private_record_from_row(row: &Row<'_>) -> Result<StoredPrivateRecord, DatabaseError> {
@@ -484,6 +492,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn validated_private_transactions_are_loaded_in_insertion_order() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
+        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let transaction_ids = [
+            TransactionId::from_raw(Word::from([9u32, 0, 0, 0])),
+            TransactionId::from_raw(Word::from([1u32, 0, 0, 0])),
+            TransactionId::from_raw(Word::from([5u32, 0, 0, 0])),
+        ];
+        let records = transaction_ids
+            .into_iter()
+            .zip([1u8, 2, 3])
+            .map(|(transaction_id, seed)| private_record(transaction_id, seed))
+            .collect::<Vec<_>>();
+
+        for record in records.clone() {
+            db.write("insert private record", move |tx| {
+                insert_validated_private_transaction(tx, &record)
+            })
+            .await
+            .unwrap();
+        }
+
+        let loaded = db.read("load all transactions", load_all_transactions).await.unwrap();
+
+        assert_eq!(loaded, records);
+    }
+
+    #[tokio::test]
     async fn stored_private_record_opens_with_threshold_shares() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
         let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
@@ -507,15 +543,14 @@ mod tests {
             .unwrap()
             .unwrap();
         let request = PrivateRecordShareRequest::for_record(&stored);
-        let allow = |_: &PrivateRecordShareRequest, _: &StoredPrivateRecord| true;
         let mut first_rng = ChaCha20Rng::from_seed([41; 32]);
         let mut second_rng = ChaCha20Rng::from_seed([42; 32]);
         let shares = [
             operators[0]
-                .issue_private_record_share(&mut first_rng, &request, &stored, &allow)
+                .issue_private_record_share(&mut first_rng, &request, &stored)
                 .unwrap(),
             operators[1]
-                .issue_private_record_share(&mut second_rng, &request, &stored, &allow)
+                .issue_private_record_share(&mut second_rng, &request, &stored)
                 .unwrap(),
         ];
 
@@ -545,7 +580,8 @@ mod tests {
             .unwrap()
             .join("\n");
 
-        assert!(schema.contains("PRIMARY KEY (id)"));
+        assert!(schema.contains("insertion_sequence    INTEGER PRIMARY KEY AUTOINCREMENT"));
+        assert!(schema.contains("id                    BLOB NOT NULL UNIQUE"));
         assert!(schema.contains("idx_validated_transactions_key_epoch"));
         assert!(schema.contains("idx_validated_transactions_setup_context_id"));
     }

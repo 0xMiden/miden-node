@@ -1,6 +1,8 @@
 CREATE TABLE validated_transactions (
+    -- Rowid-backed local insertion order used by the private administration API.
+    insertion_sequence    INTEGER PRIMARY KEY AUTOINCREMENT,
     -- Transaction ID, unique within this validator's database.
-    id                    BLOB NOT NULL,
+    id                    BLOB NOT NULL UNIQUE,
     -- Signing public key of the validator that produced this record.
     validator_id          BLOB NOT NULL,
     -- Genesis commitment of the network that produced the transaction.
@@ -17,7 +19,6 @@ CREATE TABLE validated_transactions (
     encrypted_record      BLOB NOT NULL,
     -- Golden EHTDH1 encryption of the key for encrypted_record.
     encrypted_record_key  BLOB NOT NULL,
-    PRIMARY KEY (id),
     CHECK (length(id) = 32),
     CHECK (length(validator_id) = 33),
     CHECK (length(chain_id) = 32),
@@ -27,7 +28,7 @@ CREATE TABLE validated_transactions (
     CHECK (length(cipher_nonce) = 24),
     CHECK (length(encrypted_record) >= 16),
     CHECK (length(encrypted_record_key) > 0)
-) WITHOUT ROWID;
+);
 
 CREATE INDEX idx_validated_transactions_key_epoch
 ON validated_transactions(key_epoch);

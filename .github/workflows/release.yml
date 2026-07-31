@@ -248,8 +248,11 @@ jobs:
     needs: preflight
     if: ${{ github.repository_owner == '0xMiden' }}
     permissions:
+      # Reusable-workflow permission ceiling; dry-run jobs do not receive these writes.
+      attestations: write
       contents: read
       id-token: write
+      packages: write
     uses: ./.github/workflows/docker.yml
     with:
       mode: dry-run

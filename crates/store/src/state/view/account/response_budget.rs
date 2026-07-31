@@ -1,406 +1,25 @@
+//! Response-size budgeting for `all-storage-maps` account detail responses.
+//!
+//! Even with the per-slot entry limit, an `all-storage-maps` request can exceed the response
+//! payload cap. The budget below keeps the encoded response within the cap by replacing map
+//! contents with "limit exceeded" markers once the budget is spent, reserving space for those
+//! markers up front.
+
 use miden_node_proto::domain::account::{
-    AccountDetailRequest,
     AccountDetails,
-    AccountRequest,
     AccountResponse,
     AccountStorageDetails,
     AccountStorageMapDetails,
-    AccountStorageRequest,
     AccountVaultDetails,
-    SlotData,
     StorageMapEntries,
-    StorageMapRequest,
 };
 use miden_node_proto::generated as proto;
 use miden_node_proto::prost::Message as _;
 use miden_node_proto::prost::encoding::{encoded_len_varint, key_len};
 use miden_node_utils::limiter::MAX_RESPONSE_PAYLOAD_BYTES;
-use miden_node_utils::tracing::miden_instrument;
-use miden_protocol::account::{
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    StorageSlotName,
-    StorageSlotType,
-};
+use miden_protocol::account::{AccountHeader, AccountStorageHeader, StorageSlotName};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
-
-use super::StateView;
-use crate::COMPONENT;
-use crate::account_state_forest::AccountStorageMapResult;
-use crate::errors::{DatabaseError, GetAccountError};
-
-impl StateView {
-    /// Returns an account witness and optionally account details at a specific block.
-    ///
-    /// The witness is a Merkle proof of inclusion in the account tree, proving the account's
-    /// state commitment. If `details` is requested, the method also returns the account's code,
-    /// vault assets, and storage data. Account details are only available for public accounts.
-    ///
-    /// If `block_num` is provided, returns the state at that historical block; otherwise, returns
-    /// the latest state. Note that historical states are only available for recent blocks close
-    /// to the chain tip.
-    #[miden_instrument(
-        target = COMPONENT,
-        skip_all,
-    )]
-    pub async fn get_account(
-        &self,
-        account_request: AccountRequest,
-    ) -> Result<AccountResponse, GetAccountError> {
-        let AccountRequest { block_num, account_id, details } = account_request;
-
-        if details.is_some() && !account_id.is_public() {
-            return Err(GetAccountError::AccountNotPublic(account_id));
-        }
-
-        let (block_num, witness) = self.get_account_witness(block_num, account_id).await?;
-
-        let details = if let Some(request) = details {
-            Some(
-                self.fetch_public_account_details(account_id, block_num, &witness, request)
-                    .await?,
-            )
-        } else {
-            None
-        };
-
-        Ok(AccountResponse { block_num, witness, details })
-    }
-
-    /// Returns an account witness (Merkle proof of inclusion in the account tree).
-    ///
-    /// If `block_num` is provided, returns the witness at that historical block;
-    /// otherwise, returns the witness at the latest block.
-    #[miden_instrument(
-        target = COMPONENT,
-        skip_all,
-    )]
-    async fn get_account_witness(
-        &self,
-        block_num: Option<BlockNumber>,
-        account_id: AccountId,
-    ) -> Result<(BlockNumber, AccountWitness), GetAccountError> {
-        self.with_inner_read_blocking(|inner_state| {
-            // Determine which block to query
-            let (block_num, witness) = if let Some(requested_block) = block_num {
-                // Historical query: use the account tree with history
-                let witness = inner_state
-                    .account_tree
-                    .open_at(account_id, requested_block)
-                    .ok_or_else(|| {
-                        let latest_block = inner_state.account_tree.block_number_latest();
-                        if requested_block > latest_block {
-                            GetAccountError::UnknownBlock(requested_block)
-                        } else {
-                            GetAccountError::BlockPruned(requested_block)
-                        }
-                    })?;
-                (requested_block, witness)
-            } else {
-                // Latest query: use the latest state
-                let block_num = inner_state.account_tree.block_number_latest();
-                let witness = inner_state.account_tree.open_latest(account_id);
-                (block_num, witness)
-            };
-
-            Ok((block_num, witness))
-        })
-    }
-
-    /// Returns storage map details from the forest for a specific account and storage slot.
-    ///
-    /// The forest can only be used if all hashed keys in the storage map are known in the
-    /// reverse-key LRU cache. If any hashed key is unknown, the method returns `Ok(None)` to signal
-    /// that the caller should fall back to reconstructing the storage map details from the
-    /// database.
-    #[miden_instrument(
-        target = COMPONENT,
-        skip_all,
-    )]
-    fn get_storage_map_details_from_forest(
-        &self,
-        account_id: AccountId,
-        slot_name: &StorageSlotName,
-        block_num: BlockNumber,
-    ) -> Result<Option<AccountStorageMapDetails>, DatabaseError> {
-        self.with_forest_read_blocking(|forest| {
-            match forest
-                .get_storage_map_details_for_all_entries(account_id, slot_name.clone(), block_num)
-                .map_err(DatabaseError::MerkleError)?
-            {
-                AccountStorageMapResult::NotFound => Err(DatabaseError::StorageRootNotFound {
-                    account_id,
-                    slot_name: slot_name.to_string(),
-                    block_num,
-                }),
-                AccountStorageMapResult::Details(details) => Ok(Some(details)),
-                AccountStorageMapResult::CannotReconstructKeysFromCache => Ok(None),
-            }
-        })
-    }
-
-    /// Returns vault details by reconstructing the vault from the database.
-    async fn reconstruct_vault_details_from_db(
-        &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountVaultDetails, DatabaseError> {
-        let assets = self.db().select_account_vault_at_block(account_id, block_num).await?;
-
-        if assets.len() > AccountVaultDetails::MAX_RETURN_ENTRIES {
-            return Ok(AccountVaultDetails::LimitExceeded);
-        }
-
-        let keys = assets.iter().map(miden_protocol::asset::Asset::id);
-
-        // The reverse-key caches are shared between the writer and all snapshots, so caching via
-        // the current snapshot's forest is visible everywhere.
-        self.with_forest_read_blocking(|forest| {
-            forest
-                .vault_key_cache
-                .put_many(keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
-        });
-
-        Ok(AccountVaultDetails::from_assets(assets))
-    }
-
-    /// Returns storage map details by reconstructing the storage map from the database.
-    async fn reconstruct_storage_map_details_from_db(
-        &self,
-        account_id: AccountId,
-        slot_name: StorageSlotName,
-        block_num: BlockNumber,
-    ) -> Result<AccountStorageMapDetails, DatabaseError> {
-        let details = self
-            .db()
-            .reconstruct_storage_map_from_db(
-                account_id,
-                slot_name,
-                block_num,
-                Some(AccountStorageMapDetails::MAX_RETURN_ENTRIES),
-            )
-            .await?;
-
-        if let StorageMapEntries::AllEntries(entries) = &details.entries {
-            self.with_forest_read_blocking(|forest| {
-                forest.cache_storage_map_keys(entries.iter().map(|(raw_key, _)| *raw_key));
-            });
-        }
-
-        Ok(details)
-    }
-
-    /// Fetches the account details (code, vault, storage) for a public account at the specified
-    /// block.
-    ///
-    /// This method queries the database to fetch the account state and processes the detail
-    /// request to return only the requested information.
-    ///
-    /// For specific key queries (`SlotData::MapKeys`), the forest is used to provide SMT proofs.
-    /// Returns an error if the forest doesn't have data for the requested slot.
-    /// All-entries queries (`SlotData::All`) use the forest when all hashed keys are known in the
-    /// reverse-key LRU cache, otherwise they fall back to database reconstruction.
-    #[miden_instrument(
-        target = COMPONENT,
-        skip_all,
-    )]
-    async fn fetch_public_account_details(
-        &self,
-        account_id: AccountId,
-        block_num: BlockNumber,
-        witness: &AccountWitness,
-        detail_request: AccountDetailRequest,
-    ) -> Result<AccountDetails, GetAccountError> {
-        let AccountDetailRequest {
-            code_commitment,
-            asset_vault_commitment,
-            storage_request,
-        } = detail_request;
-
-        if !account_id.is_public() {
-            return Err(GetAccountError::AccountNotPublic(account_id));
-        }
-
-        // Validate block exists in the blockchain before querying the database. The view's tip is
-        // the same snapshot the witness was resolved against, so the witness and the DB reads
-        // below observe a single consistent block height.
-        if block_num > self.tip() {
-            return Err(GetAccountError::UnknownBlock(block_num));
-        }
-
-        // Query account header and storage header together in a single DB call
-        let (account_header, storage_header) = self
-            .db()
-            .select_account_header_with_storage_header_at_block(account_id, block_num)
-            .await?
-            .ok_or(GetAccountError::AccountNotFound(account_id, block_num))?;
-
-        let should_apply_response_budget =
-            matches!(&storage_request, AccountStorageRequest::AllStorageMaps);
-        let storage_requests = expand_account_storage_request(storage_request, &storage_header);
-
-        let account_code = match code_commitment {
-            Some(commitment) if commitment == account_header.code_commitment() => None,
-            Some(_) => {
-                self.db()
-                    .select_account_code_by_commitment(account_header.code_commitment())
-                    .await?
-            },
-            None => None,
-        };
-
-        // Query account state forest for vault details on commitment mismatch.
-        //
-        // The forest can only reconstruct the vault if all hashed vault keys are known in the
-        // reverse-key LRU cache. If any hashed key is unknown, the forest returns `None` and we
-        // fall back to reconstructing the vault details from the database.
-        let vault_details = match asset_vault_commitment {
-            Some(commitment) if commitment == account_header.vault_root() => {
-                AccountVaultDetails::empty()
-            },
-            Some(_) => {
-                let forest_details = self.with_forest_read_blocking(|forest| {
-                    forest.get_vault_details(account_id, block_num).map_err(|err| {
-                        DatabaseError::DataCorrupted(format!(
-                            "failed to reconstruct vault for account {account_id} at block {block_num}: {err}"
-                        ))
-                    })
-                })?;
-
-                match forest_details {
-                    Some(details) => details,
-                    None => self.reconstruct_vault_details_from_db(account_id, block_num).await?,
-                }
-            },
-            None => AccountVaultDetails::empty(),
-        };
-
-        // Split storage map requests into two categories:
-        // - slots with explicit keys (including proofs)
-        // - slots with "all entries"
-        let mut storage_map_details =
-            Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
-        let mut map_keys_requests = Vec::new();
-        let mut all_entries_requests = Vec::new();
-        let mut storage_request_slots = Vec::with_capacity(storage_requests.len());
-
-        for (index, StorageMapRequest { slot_name, slot_data }) in
-            storage_requests.into_iter().enumerate()
-        {
-            storage_request_slots.push(slot_name.clone());
-            match slot_data {
-                SlotData::MapKeys(keys) => {
-                    map_keys_requests.push((index, slot_name, keys));
-                },
-                SlotData::All => {
-                    all_entries_requests.push((index, slot_name));
-                },
-            }
-        }
-
-        let mut storage_map_details_by_index = vec![None; storage_request_slots.len()];
-
-        // Handle slots with explicit key requests
-        if !map_keys_requests.is_empty() {
-            self.with_forest_read_blocking(|forest| {
-                for (index, slot_name, keys) in map_keys_requests {
-                    let details = forest
-                        .get_storage_map_details_for_keys(
-                            account_id,
-                            slot_name.clone(),
-                            block_num,
-                            &keys,
-                        )
-                        .ok_or_else(|| DatabaseError::StorageRootNotFound {
-                            account_id,
-                            slot_name: slot_name.to_string(),
-                            block_num,
-                        })?
-                        .map_err(DatabaseError::MerkleError)?;
-                    storage_map_details_by_index[index] = Some(details);
-                }
-                Ok::<(), DatabaseError>(())
-            })?;
-        }
-
-        // Handle slots with "all entries" requests
-        for (index, slot_name) in all_entries_requests {
-            let details = match self
-                .get_storage_map_details_from_forest(account_id, &slot_name, block_num)?
-            {
-                Some(details) => details,
-                None => {
-                    self.reconstruct_storage_map_details_from_db(account_id, slot_name, block_num)
-                        .await?
-                },
-            };
-            storage_map_details_by_index[index] = Some(details);
-        }
-
-        for (details, slot_name) in
-            storage_map_details_by_index.into_iter().zip(storage_request_slots.iter())
-        {
-            let details = details.ok_or_else(|| DatabaseError::StorageRootNotFound {
-                account_id,
-                slot_name: slot_name.to_string(),
-                block_num,
-            })?;
-            storage_map_details.push(details);
-        }
-
-        // In case of an "all storage maps" request we have to be careful: even with the per-slot
-        // limit of [`AccountStorageMapDetails::MAX_RETURN_ENTRIES`] we might go over the response
-        // size limit. Here we make sure that we're within that limit by potentially truncating the
-        // response.
-        if should_apply_response_budget {
-            return Ok(apply_all_storage_maps_response_budget(
-                block_num,
-                witness,
-                account_header,
-                account_code,
-                vault_details,
-                storage_header,
-                storage_map_details,
-                storage_request_slots,
-                MAX_ALL_STORAGE_MAPS_RESPONSE_PAYLOAD_WITH_BUDGET_RESERVED_FOR_LIMIT_EXCEEDED_SLOTS,
-            ));
-        }
-
-        Ok(AccountDetails {
-            account_header,
-            account_code,
-            vault_details,
-            storage_details: AccountStorageDetails {
-                header: storage_header,
-                map_details: storage_map_details,
-            },
-        })
-    }
-}
-
-// HELPERS
-// ================================================================================================
-
-/// Expand [`AccountStorageRequest`] to a vector of slot requests.
-fn expand_account_storage_request(
-    storage_request: AccountStorageRequest,
-    storage_header: &AccountStorageHeader,
-) -> Vec<StorageMapRequest> {
-    match storage_request {
-        AccountStorageRequest::None => Vec::new(),
-        AccountStorageRequest::Explicit(requests) => requests,
-        AccountStorageRequest::AllStorageMaps => storage_header
-            .slots()
-            .filter(|slot| slot.slot_type() == StorageSlotType::Map)
-            .map(|slot| StorageMapRequest {
-                slot_name: slot.name().clone(),
-                slot_data: SlotData::All,
-            })
-            .collect(),
-    }
-}
 
 // This is intentionally conservative. Storage slot names can be up to u8::MAX bytes, and a
 // `limit_exceeded` map detail stores only the slot name plus the `too_many_entries` flag.
@@ -408,7 +27,7 @@ const STORAGE_MAP_LIMIT_EXCEEDED_FIELD_MAX_LEN: usize = 263;
 
 // A conservative limit that makes sure that limit exceeded messages can be appended for all slots
 // in the response.
-const MAX_ALL_STORAGE_MAPS_RESPONSE_PAYLOAD_WITH_BUDGET_RESERVED_FOR_LIMIT_EXCEEDED_SLOTS: usize =
+pub(super) const MAX_ALL_STORAGE_MAPS_RESPONSE_PAYLOAD_WITH_BUDGET_RESERVED_FOR_LIMIT_EXCEEDED_SLOTS: usize =
     MAX_RESPONSE_PAYLOAD_BYTES - 256 * STORAGE_MAP_LIMIT_EXCEEDED_FIELD_MAX_LEN - 8192;
 
 // Conservative max length for storage map entries: key-value pairs, each one is four `fixed64`
@@ -448,7 +67,7 @@ fn estimate_storage_map_details_field_len(details: &AccountStorageMapDetails) ->
 /// We reserve space for the "limit exceeded" responses in advance so we're safe to start appending
 /// "limit exceeded" at any point during iteration.
 #[expect(clippy::too_many_arguments)]
-fn apply_all_storage_maps_response_budget(
+pub(super) fn apply_all_storage_maps_response_budget(
     block_num: BlockNumber,
     witness: &AccountWitness,
     account_header: AccountHeader,
@@ -505,7 +124,6 @@ fn apply_all_storage_maps_response_budget(
         },
     }
 }
-
 // TESTS
 // ================================================================================================
 
@@ -537,7 +155,8 @@ mod tests {
     use miden_protocol::testing::account_id::AccountIdBuilder;
     use miden_protocol::{EMPTY_WORD, Felt, Word};
 
-    use super::{apply_all_storage_maps_response_budget, expand_account_storage_request};
+    use super::super::expand_account_storage_request;
+    use super::apply_all_storage_maps_response_budget;
 
     fn storage_header() -> AccountStorageHeader {
         AccountStorageHeader::new(vec![

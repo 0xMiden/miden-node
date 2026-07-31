@@ -4,6 +4,12 @@
 //! one at a time via an mpsc channel. After each successful commit it publishes a new
 //! [`StateSnapshot`] snapshot via an [`ArcSwap`], making the updated trees immediately visible to
 //! wait-free readers.
+//!
+//! The submodules hold the [`BlockWriter`] and [`ProofWriter`](crate::state::ProofWriter)
+//! capability entry points that feed this worker.
+
+mod apply_block;
+mod apply_proof;
 
 use std::fmt::Display;
 use std::sync::Arc;
@@ -35,14 +41,8 @@ use crate::db::{Db, NoteRecord};
 use crate::errors::{ApplyBlockError, InvalidBlockError};
 use crate::state::block_lifecycle::{BlockLifecycle, lifecycle_events_enabled};
 use crate::state::loader::TreeStorage;
-use crate::state::{
-    BlockCache,
-    BlockNotification,
-    BlockWriter,
-    SNAPSHOTS_LIVE_WARN_THRESHOLD,
-    SnapshotGuard,
-    StateSnapshot,
-};
+use crate::state::view::{SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot};
+use crate::state::{BlockCache, BlockNotification, BlockWriter};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
 // WRITE REQUEST
@@ -57,7 +57,8 @@ pub(super) struct WriteRequest {
 impl BlockWriter {
     /// Apply changes of a new block to the DB and in-memory data structures.
     ///
-    /// Blocks are forwarded to the [`WriteWorker`] task, which processes them one at a time.
+    /// Blocks are forwarded to the store's write worker task, which processes them one at a
+    /// time.
     /// Readers are unaffected while a block is being applied: they keep reading from the previous
     /// in-memory snapshot until the writer atomically publishes the new one.
     #[miden_instrument(
@@ -84,25 +85,25 @@ impl BlockWriter {
 /// mutation-computation read the owned trees, the DB commit runs without touching them, and the
 /// new [`StateSnapshot`] snapshot is published atomically at the end.
 pub(super) struct WriteWorker {
-    pub db: Arc<Db>,
-    pub block_store: Arc<BlockStore>,
+    pub(in crate::state) db: Arc<Db>,
+    pub(in crate::state) block_store: Arc<BlockStore>,
     /// Atomically swappable pointer through which new snapshots are published.
-    pub in_memory: Arc<ArcSwap<StateSnapshot>>,
-    pub committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
-    pub block_cache: BlockCache,
-    pub rx: mpsc::Receiver<WriteRequest>,
+    pub(in crate::state) in_memory: Arc<ArcSwap<StateSnapshot>>,
+    pub(in crate::state) committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
+    pub(in crate::state) block_cache: BlockCache,
+    pub(in crate::state) rx: mpsc::Receiver<WriteRequest>,
     /// Token signalling node shutdown; the writer stops accepting new requests once cancelled.
-    pub shutdown: CancellationToken,
+    pub(in crate::state) shutdown: CancellationToken,
     /// The mutable nullifier tree owned by this writer.
-    pub nullifier_tree: NullifierTree<LargeSmt<TreeStorage>>,
+    pub(in crate::state) nullifier_tree: NullifierTree<LargeSmt<TreeStorage>>,
     /// The mutable account tree owned by this writer.
-    pub account_tree: AccountTreeWithHistory<TreeStorage>,
+    pub(in crate::state) account_tree: AccountTreeWithHistory<TreeStorage>,
     /// The blockchain MMR owned by this writer.
-    pub blockchain: Blockchain,
+    pub(in crate::state) blockchain: Blockchain,
     /// The mutable account state forest owned by this writer.
-    pub forest: AccountStateForest<AccountStateForestBackend>,
+    pub(in crate::state) forest: AccountStateForest<AccountStateForestBackend>,
     /// Shared counter of live snapshot generations, for observability.
-    pub snapshots_live: Arc<AtomicUsize>,
+    pub(in crate::state) snapshots_live: Arc<AtomicUsize>,
 }
 
 /// Note records and state mutations computed from a validated block, before any modifications.
@@ -325,16 +326,15 @@ impl WriteWorker {
                 Self::abort_after_post_commit_failure("account-state forest", &error)
             });
 
-        Arc::new(StateSnapshot {
-            nullifier_tree: self
-                .nullifier_tree
+        Arc::new(StateSnapshot::new(
+            self.nullifier_tree
                 .reader()
                 .expect("nullifier tree snapshot creation should not fail"),
-            account_tree: self.account_tree.reader(),
-            blockchain: self.blockchain.clone(),
-            forest: self.forest.reader().expect("forest snapshot creation should not fail"),
-            _guard: SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
-        })
+            self.blockchain.clone(),
+            self.account_tree.reader(),
+            self.forest.reader().expect("forest snapshot creation should not fail"),
+            SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
+        ))
     }
 
     /// Terminates after a persistent state failure that occurred after the canonical DB commit.

@@ -29,7 +29,7 @@ const SNAPSHOT_LIFETIME_WARN_THRESHOLD: Duration = Duration::from_secs(10);
 /// Steady state is 1-2 generations: the just-published snapshot plus predecessors briefly pinned
 /// by in-flight requests. A sustained higher count means slow or leaked readers are holding old
 /// generations alive (see [`SnapshotGuard`]).
-pub(crate) const SNAPSHOTS_LIVE_WARN_THRESHOLD: u64 = 4;
+pub(in crate::state) const SNAPSHOTS_LIVE_WARN_THRESHOLD: u64 = 4;
 
 // SNAPSHOT GUARD
 // ================================================================================================
@@ -45,14 +45,14 @@ pub(crate) const SNAPSHOTS_LIVE_WARN_THRESHOLD: u64 = 4;
 ///
 /// Readers are expected to be request-scoped, so snapshot lifetimes should be well under a block
 /// interval. A lifetime exceeding [`SNAPSHOT_LIFETIME_WARN_THRESHOLD`] is logged at warn level.
-pub(crate) struct SnapshotGuard {
+pub(in crate::state) struct SnapshotGuard {
     live: Arc<AtomicUsize>,
     created_at: Instant,
     block_num: BlockNumber,
 }
 
 impl SnapshotGuard {
-    pub(crate) fn new(live: Arc<AtomicUsize>, block_num: BlockNumber) -> Self {
+    pub(in crate::state) fn new(live: Arc<AtomicUsize>, block_num: BlockNumber) -> Self {
         live.fetch_add(1, Ordering::Relaxed);
         Self {
             live,
@@ -96,18 +96,39 @@ impl Drop for SnapshotGuard {
 /// The trees are backed by read-only snapshot storage ([`TreeStorageReader`] /
 /// [`AccountStateForestBackendReader`]), so any number of readers can access the data concurrently
 /// without holding a lock and without blocking the writer.
-pub(crate) struct StateSnapshot {
-    pub(crate) nullifier_tree: NullifierTree<LargeSmt<TreeStorageReader>>,
-    pub(crate) blockchain: Blockchain,
-    pub(crate) account_tree: AccountTreeWithHistory<TreeStorageReader>,
-    pub(crate) forest: AccountStateForest<AccountStateForestBackendReader>,
+///
+/// The writer and lifecycle can *construct* snapshots via [`Self::new`], but the fields are only
+/// readable within the view module tree: every read outside it must go through
+/// [`StateView`](super::StateView).
+pub(in crate::state) struct StateSnapshot {
+    pub(super) nullifier_tree: NullifierTree<LargeSmt<TreeStorageReader>>,
+    pub(super) blockchain: Blockchain,
+    pub(super) account_tree: AccountTreeWithHistory<TreeStorageReader>,
+    pub(super) forest: AccountStateForest<AccountStateForestBackendReader>,
     /// Keeps the live-snapshot count accurate; see [`SnapshotGuard`].
-    pub(crate) _guard: SnapshotGuard,
+    _guard: SnapshotGuard,
 }
 
 impl StateSnapshot {
+    /// Assembles a snapshot from reader views of the trees and the guard tracking its generation.
+    pub(in crate::state) fn new(
+        nullifier_tree: NullifierTree<LargeSmt<TreeStorageReader>>,
+        blockchain: Blockchain,
+        account_tree: AccountTreeWithHistory<TreeStorageReader>,
+        forest: AccountStateForest<AccountStateForestBackendReader>,
+        guard: SnapshotGuard,
+    ) -> Self {
+        Self {
+            nullifier_tree,
+            blockchain,
+            account_tree,
+            forest,
+            _guard: guard,
+        }
+    }
+
     /// Returns the latest block number.
-    pub(crate) fn latest_block_num(&self) -> BlockNumber {
+    pub(super) fn latest_block_num(&self) -> BlockNumber {
         self.blockchain
             .chain_tip()
             .expect("chain should always have at least the genesis block")

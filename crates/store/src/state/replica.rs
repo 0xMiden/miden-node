@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use miden_node_utils::block_cache::BlockOrderedCache;
 use miden_protocol::block::BlockNumber;
-use tokio::sync::watch;
 
 use crate::errors::DatabaseError;
 use crate::state::{Finality, State};
@@ -74,16 +73,6 @@ pub type ProofCache = BlockOrderedCache<ProofNotification>;
 // ================================================================================================
 
 impl State {
-    /// Returns a watch receiver that wakes every time a new block is committed.
-    pub fn subscribe_committed_tip(&self) -> watch::Receiver<BlockNumber> {
-        self.committed_tip_tx.subscribe()
-    }
-
-    /// Returns a watch receiver that wakes every time the proven-in-sequence tip advances.
-    pub fn subscribe_proven_tip(&self) -> watch::Receiver<BlockNumber> {
-        self.proven_tip.subscribe()
-    }
-
     /// Loads a block from the in-memory replica cache or block store. Return `Ok(None)` if the
     /// block is not found.
     pub async fn load_block(

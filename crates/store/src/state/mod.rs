@@ -14,47 +14,25 @@ use crate::blocks::BlockStore;
 use crate::db::Db;
 use crate::proven_tip::ProvenTipWriter;
 
-mod loader;
-
-mod replica;
-pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
-
-mod account;
-
-mod apply_block;
-mod apply_proof;
 mod block_lifecycle;
 mod bootstrap;
 mod disk_monitor;
-mod sync_state;
-
-mod inputs;
-pub use inputs::TransactionInputs;
+mod loader;
 
 mod lifecycle;
 pub use lifecycle::{BlockWriter, LoadedState, ProofWriter, WriterTask};
 
-mod queries;
+mod replica;
+pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
 
-mod snapshot;
-pub(crate) use snapshot::{SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot};
+mod tip;
+pub use tip::Finality;
 
 mod view;
-pub use view::StateView;
+use view::{SnapshotGuard, StateSnapshot};
+pub use view::{StateView, TransactionInputs};
 
 mod writer;
-
-// FINALITY
-// ================================================================================================
-
-/// The finality level for chain tip queries.
-#[derive(Debug, Clone, Copy)]
-pub enum Finality {
-    /// The latest committed (but not necessarily proven) block.
-    Committed,
-    /// The latest block that has been proven in an unbroken sequence from genesis.
-    Proven,
-}
 
 // CHAIN STATE
 // ================================================================================================

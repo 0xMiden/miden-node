@@ -48,8 +48,8 @@ impl StateView {
         let block_from = *block_range.start();
         let block_to = *block_range.end();
 
-        // SAFETY: block_to <= this view's tip (checked above), so it is committed and must exist
-        // in the database.
+        // SAFETY: block_to <= this view's tip (checked above), so it is committed and must exist in
+        // the database.
         let (block_header, signatures) = self
             .db()
             .select_block_header_and_signatures_by_block_num(block_to)

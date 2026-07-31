@@ -299,17 +299,17 @@ impl State {
         let snapshots_live = Arc::new(AtomicUsize::new(0));
 
         // Create the initial snapshot from reader views of the just-loaded trees.
-        let initial_snapshot = Arc::new(StateSnapshot {
-            nullifier_tree: nullifier_tree
+        let initial_snapshot = Arc::new(StateSnapshot::new(
+            nullifier_tree
                 .reader()
                 .map_err(|e| StateInitializationError::NullifierTreeIoError(e.as_report()))?,
-            account_tree: account_tree.reader(),
-            forest: forest
+            blockchain.clone(),
+            account_tree.reader(),
+            forest
                 .reader()
                 .map_err(|e| StateInitializationError::AccountStateForestIoError(e.as_report()))?,
-            blockchain: blockchain.clone(),
-            _guard: SnapshotGuard::new(Arc::clone(&snapshots_live), latest_block_num),
-        });
+            SnapshotGuard::new(Arc::clone(&snapshots_live), latest_block_num),
+        ));
         let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
 
         // Assemble the write worker. It owns the writable trees and processes write requests

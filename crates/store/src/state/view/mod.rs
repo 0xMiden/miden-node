@@ -1,10 +1,13 @@
 //! Request-scoped, consistent read view of the store.
 //!
-//! All store reads go through [`StateView`]: it pins one in-memory snapshot for its whole
-//! lifetime, and every database query it exposes is scoped by that snapshot's block height. This
-//! makes it impossible to implement a read whose tree and database halves observe different chain
-//! tips — mid-apply, the database may already contain rows for a block the snapshot cannot prove
-//! yet.
+//! All store reads go through [`StateView`]: it pins one state snapshot for its whole lifetime,
+//! and every database query it exposes is scoped by that snapshot's block height. This makes it
+//! impossible to implement a read whose tree and database halves observe different chain tips —
+//! mid-apply, the database may already contain rows for a block the snapshot cannot prove yet.
+//!
+//! The submodules hold the read endpoints, all `impl StateView`; the snapshot internals
+//! ([`StateSnapshot`]) are only visible within this module tree, so no other part of the store
+//! can reach the trees directly.
 
 use std::ops::RangeInclusive;
 use std::sync::Arc;
@@ -16,7 +19,19 @@ use crate::account_state_forest::{AccountStateForest, AccountStateForestBackendR
 use crate::db::Db;
 use crate::errors::RangeBeyondTip;
 use crate::state::State;
-use crate::state::snapshot::StateSnapshot;
+
+mod snapshot;
+pub(in crate::state) use snapshot::{SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot};
+
+mod account;
+mod batch_inputs;
+mod block;
+mod block_inputs;
+mod note;
+mod sync;
+
+mod transaction_inputs;
+pub use transaction_inputs::TransactionInputs;
 
 // STATE VIEW
 // ================================================================================================
@@ -60,7 +75,7 @@ impl StateView {
     /// access directly on an async worker thread. The account and nullifier trees may be backed
     /// by `RocksDB` and are deliberately not reachable here — they must be accessed through
     /// [`Self::with_inner_read_blocking`].
-    pub(super) fn blockchain(&self) -> &Blockchain {
+    fn blockchain(&self) -> &Blockchain {
         &self.snapshot.blockchain
     }
 
@@ -68,7 +83,7 @@ impl StateView {
     ///
     /// Queries whose results depend on the chain tip must be scoped by [`Self::tip`] (or a block
     /// number validated against it), never by a tip obtained elsewhere.
-    pub(super) fn db(&self) -> &Db {
+    fn db(&self) -> &Db {
         &self.db
     }
 
@@ -76,10 +91,7 @@ impl StateView {
     ///
     /// Every range-scoped read on this type calls this before touching the database, so callers
     /// never need to pre-validate ranges themselves.
-    pub(super) fn check_range(
-        &self,
-        range: &RangeInclusive<BlockNumber>,
-    ) -> Result<(), RangeBeyondTip> {
+    fn check_range(&self, range: &RangeInclusive<BlockNumber>) -> Result<(), RangeBeyondTip> {
         let tip = self.tip();
         if *range.end() > tip {
             return Err(RangeBeyondTip { chain_tip: tip, block_to: *range.end() });
@@ -87,13 +99,13 @@ impl StateView {
         Ok(())
     }
 
-    /// Runs a synchronous read-only operation over the pinned in-memory snapshot on Tokio's
-    /// blocking path.
+    /// Runs a synchronous read-only operation over the pinned state snapshot on Tokio's blocking
+    /// path.
     ///
     /// The account and nullifier trees may be backed by `RocksDB`, so tree access must not run on
     /// an async worker thread directly. This helper preserves the current tracing span while
     /// moving the closure body into `block_in_place`.
-    pub(super) fn with_inner_read_blocking<R>(&self, f: impl FnOnce(&StateSnapshot) -> R) -> R {
+    fn with_inner_read_blocking<R>(&self, f: impl FnOnce(&StateSnapshot) -> R) -> R {
         let span = Span::current();
         tokio::task::block_in_place(|| span.in_scope(|| f(&self.snapshot)))
     }
@@ -102,7 +114,7 @@ impl StateView {
     /// blocking path.
     ///
     /// See [`Self::with_inner_read_blocking`] for why this uses `block_in_place`.
-    pub(super) fn with_forest_read_blocking<R>(
+    fn with_forest_read_blocking<R>(
         &self,
         f: impl FnOnce(&AccountStateForest<AccountStateForestBackendReader>) -> R,
     ) -> R {

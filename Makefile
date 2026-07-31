@@ -210,7 +210,7 @@ local-network-logs: ## Follows logs for the local development network
 	$(DOCKER_COMMAND) compose $(COMPOSE_OVERRIDE_ARGS) $(COMPOSE_PROFILE_ARGS) logs -f
 
 .PHONY: docker-build
-docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover ## Builds all Docker images
+docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover docker-build-benchmark ## Builds all Docker images
 
 .PHONY: docker-build-node
 docker-build-node: ## Builds the Miden node using Docker
@@ -281,6 +281,20 @@ docker-build-remote-prover: ## Builds the remote prover using Docker
                  --build-arg BIN=miden-remote-prover \
                  --build-arg PORT=50051 \
                  -t miden-remote-prover .
+
+.PHONY: docker-build-benchmark
+docker-build-benchmark: ## Builds the benchmark and seed tool image using Docker
+	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
+	VERSION="$(DOCKER_VERSION)" && \
+	COMMIT=$$(git rev-parse HEAD) && \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
+                 --build-arg CREATED="$$CREATED" \
+                 --build-arg VERSION="$$VERSION" \
+                 --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
+                 --build-arg BIN=miden-benchmark \
+                 --target runtime-tool \
+                 -t miden-node-tps-benchmark .
 
 ## --- setup --------------------------------------------------------------------------------------
 

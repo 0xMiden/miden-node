@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, ProofSubscriptionRequest};
-use miden_node_store::state::{BlockWriter, Finality, ProofWriter};
+use miden_node_store::state::{BlockWriter, ProofWriter, State};
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
@@ -130,6 +130,8 @@ impl RpcReadiness {
 
 /// Synchronizes local state from an upstream RPC service.
 pub struct RpcSync {
+    /// Read-only store state, used by both loops to read tips and subscribe to commits.
+    pub state: Arc<State>,
     /// The store's block-write capability, consumed by the block sync loop.
     pub block_writer: BlockWriter,
     /// The store's proof-write capability, consumed by the proof sync loop.
@@ -143,11 +145,13 @@ impl RpcSync {
     pub async fn run(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         let mut tasks = Tasks::new();
         let block_sync = BlockSync {
+            state: Arc::clone(&self.state),
             writer: self.block_writer,
             source_rpc: self.source_rpc.clone(),
             readiness: self.readiness,
         };
         let proof_sync = ProofSync {
+            state: self.state,
             writer: self.proof_writer,
             source_rpc: self.source_rpc,
         };
@@ -163,6 +167,7 @@ impl RpcSync {
 // ================================================================================================
 
 struct BlockSync {
+    state: Arc<State>,
     writer: BlockWriter,
     source_rpc: RpcClient,
     readiness: RpcReadiness,
@@ -197,7 +202,7 @@ impl BlockSync {
         err,
     )]
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let local_tip = self.writer.chain_tip(Finality::Committed);
+        let local_tip = self.state.committed_tip();
         let mut client = self.source_rpc.clone();
         let upstream_tip =
             BlockNumber::from(client.status(tonic::Request::new(())).await?.into_inner().chain_tip);
@@ -225,13 +230,14 @@ impl BlockSync {
                 .context("failed to deserialize block from upstream")?;
             self.writer.apply_block(block).await?;
 
-            let local_tip = self.writer.chain_tip(Finality::Committed);
+            let local_tip = self.state.committed_tip();
             self.readiness.update(upstream_tip, local_tip).await;
         }
     }
 }
 
 struct ProofSync {
+    state: Arc<State>,
     writer: ProofWriter,
     source_rpc: RpcClient,
 }
@@ -267,7 +273,7 @@ impl ProofSync {
 
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
         // Subscribe from next proven tip.
-        let starting_block = self.writer.chain_tip(Finality::Proven).child();
+        let starting_block = self.state.proven_tip().child();
         info!(
             target: LOG_TARGET,
             block_from = %starting_block,
@@ -280,7 +286,7 @@ impl ProofSync {
             .into_inner();
 
         let mut expected = starting_block;
-        let mut committed_tip_rx = self.writer.subscribe_committed_tip();
+        let mut committed_tip_rx = self.state.subscribe_committed_tip();
         loop {
             let result = tokio::select! {
                 () = shutdown.cancelled() => return Ok(()),

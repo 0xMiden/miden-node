@@ -34,7 +34,7 @@ use crate::state::loader::{
     verify_tree_consistency,
 };
 use crate::state::writer::{WriteRequest, WriteWorker};
-use crate::state::{BlockCache, InMemoryState, ProofCache, SnapshotGuard, State};
+use crate::state::{BlockCache, ProofCache, SnapshotGuard, State, StateSnapshot};
 use crate::{COMPONENT, DataDirectory, DatabaseOptions};
 
 /// Number of recent committed blocks held in the in-memory cache for replica subscriptions.
@@ -65,7 +65,9 @@ impl LoadedState {
     /// [`Arc<State>`] is the read-only view shared with every component that queries or
     /// subscribes; it exposes no mutating methods. [`BlockWriter`] and [`ProofWriter`] are the
     /// only handles able to mutate the store — hand them to the single task driving each write
-    /// path (block production or sync, and proof scheduling or sync respectively).
+    /// path (block production or sync, and proof scheduling or sync respectively). The
+    /// capabilities expose no read access: tasks that both read and write receive the
+    /// [`Arc<State>`] alongside their capability.
     ///
     /// The writer exits once the shutdown token passed to [`State::load`] is cancelled or the
     /// [`BlockWriter`] (holding the only request sender) is dropped — an in-flight block write
@@ -78,7 +80,7 @@ impl LoadedState {
         let writer_task = tokio::spawn(self.writer.run());
         let state = Arc::new(self.state);
         let block_writer = BlockWriter {
-            state: Arc::clone(&state),
+            block_store: Arc::clone(&state.block_store),
             write_tx: self.write_tx,
         };
         let proof_writer = ProofWriter { state: Arc::clone(&state) };
@@ -94,28 +96,19 @@ impl LoadedState {
 /// Only handle able to apply blocks; obtained exactly once from [`LoadedState::start`] and
 /// deliberately not cloneable, so granting it to a single task (the block builder in sequencer
 /// mode, the block sync loop in full-node mode) statically prevents every other component from
-/// writing blocks. Dereferences to [`State`] for read access.
+/// writing blocks.
+///
+/// Exposes no read access: holders that also need to query the store receive the [`Arc<State>`]
+/// returned alongside this capability by [`LoadedState::start`].
 pub struct BlockWriter {
-    state: Arc<State>,
+    /// The block store, used to persist proving inputs alongside applied blocks.
+    pub(super) block_store: Arc<BlockStore>,
     /// Sender for block-write requests to the [`WriteWorker`](crate::state::writer::WriteWorker)
     /// task. Never cloned out of this struct: the writer exits once it is dropped.
     pub(super) write_tx: mpsc::Sender<WriteRequest>,
 }
 
-impl std::ops::Deref for BlockWriter {
-    type Target = State;
-
-    fn deref(&self) -> &State {
-        &self.state
-    }
-}
-
 impl BlockWriter {
-    /// Returns the shared read-only state.
-    pub fn state(&self) -> &Arc<State> {
-        &self.state
-    }
-
     /// Stops the store, waiting until the write worker has released the tree storage it owns.
     ///
     /// Consumes the capability — closing the write channel the write worker listens on — and then
@@ -144,24 +137,13 @@ impl BlockWriter {
 /// Only handle able to commit block proofs and advance the proven tip; obtained exactly once from
 /// [`LoadedState::start`] and deliberately not cloneable, so granting it to a single task (the
 /// proof scheduler in sequencer mode, the proof sync loop in full-node mode) statically prevents
-/// every other component from writing proofs. Dereferences to [`State`] for read access.
+/// every other component from writing proofs.
+///
+/// Exposes no read access: the held state is only used internally to commit proofs and advance
+/// the proven tip. Holders that also need to query the store receive the [`Arc<State>`] returned
+/// alongside this capability by [`LoadedState::start`].
 pub struct ProofWriter {
-    state: Arc<State>,
-}
-
-impl std::ops::Deref for ProofWriter {
-    type Target = State;
-
-    fn deref(&self) -> &State {
-        &self.state
-    }
-}
-
-impl ProofWriter {
-    /// Returns the shared read-only state.
-    pub fn state(&self) -> &Arc<State> {
-        &self.state
-    }
+    pub(super) state: Arc<State>,
 }
 
 // WRITER TASK
@@ -299,18 +281,18 @@ impl State {
         let snapshots_live = Arc::new(AtomicUsize::new(0));
 
         // Create the initial snapshot from reader views of the just-loaded trees.
-        let initial_snapshot = Arc::new(InMemoryState {
-            nullifier_tree: nullifier_tree
+        let initial_snapshot = Arc::new(StateSnapshot::new(
+            nullifier_tree
                 .reader()
                 .map_err(|e| StateInitializationError::NullifierTreeIoError(e.as_report()))?,
-            account_tree: account_tree.reader(),
-            forest: forest
+            blockchain.clone(),
+            account_tree.reader(),
+            forest
                 .reader()
                 .map_err(|e| StateInitializationError::AccountStateForestIoError(e.as_report()))?,
-            blockchain: blockchain.clone(),
-            _guard: SnapshotGuard::new(Arc::clone(&snapshots_live), latest_block_num),
-        });
-        let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
+            SnapshotGuard::new(Arc::clone(&snapshots_live), latest_block_num),
+        ));
+        let latest_snapshot = Arc::new(ArcSwap::from(initial_snapshot));
 
         // Assemble the write worker. It owns the writable trees and processes write requests
         // serially, publishing a new snapshot after each committed block. The caller runs it; it
@@ -320,7 +302,7 @@ impl State {
         let block_writer = WriteWorker {
             db: Arc::clone(&db),
             block_store: Arc::clone(&block_store),
-            in_memory: Arc::clone(&in_memory),
+            latest_snapshot: Arc::clone(&latest_snapshot),
             committed_tip_tx: Arc::clone(&committed_tip_tx),
             block_cache: block_cache.clone(),
             rx: write_rx,
@@ -335,7 +317,7 @@ impl State {
             data_directory: data_path.to_path_buf(),
             db,
             block_store,
-            in_memory,
+            latest_snapshot,
             proven_tip,
             committed_tip_tx,
             block_cache,

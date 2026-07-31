@@ -306,6 +306,7 @@ impl BatchJob {
             .flat_map(AuthenticatedTransaction::unauthenticated_note_ids);
 
         self.state
+            .view()
             .get_batch_inputs(
                 block_references.map(|(block_num, _)| block_num).collect(),
                 unauthenticated_notes.collect(),

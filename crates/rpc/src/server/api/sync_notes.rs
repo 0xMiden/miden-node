@@ -47,10 +47,10 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let chain_tip = self.range_bounds_check(&block_range)?;
+        let view = self.state.view();
+        let chain_tip = view.tip();
 
-        let (results, last_block_checked) = self
-            .state
+        let (results, last_block_checked) = view
             .sync_notes(request.note_tags, block_range)
             .await
             .map_err(note_sync_error_to_status)?;
@@ -94,7 +94,7 @@ fn note_sync_error_to_status(err: NoteSyncError) -> Status {
     match err {
         NoteSyncError::DatabaseError(err) => super::database_error_to_status(&err),
         NoteSyncError::InvalidBlockRange(_)
-        | NoteSyncError::FutureBlock { .. }
+        | NoteSyncError::RangeBeyondTip(_)
         | NoteSyncError::DeserializationFailed(_) => Status::invalid_argument(message),
         NoteSyncError::UnderlyingDatabaseError(_)
         | NoteSyncError::EmptyBlockHeadersTable

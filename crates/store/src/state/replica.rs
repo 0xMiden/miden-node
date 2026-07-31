@@ -1,11 +1,23 @@
+//! Block and proof serving for replica subscriptions.
+//!
+//! Replica subscribers stream committed blocks and block proofs from this node. The writer pushes
+//! each freshly committed block (and the proof path each proven block) into a FIFO cache here, so
+//! subscribers keeping up with the tip are served from memory; a subscriber that has fallen
+//! behind the cache window falls back to reading the block store.
+//!
+//! These reads serve raw block/proof bytes from the caches and the block store — they never touch
+//! the database or tree state, which is why they live on [`State`] directly rather than on a
+//! [`StateView`](super::StateView). The tip checks gating them are live availability checks
+//! ("is this block committed/proven yet?"), deliberately race-tolerant: a `None` for a block that
+//! commits an instant later is corrected by the next tip-watch wakeup.
+
 use std::sync::Arc;
 
 use miden_node_utils::block_cache::BlockOrderedCache;
 use miden_protocol::block::BlockNumber;
-use tokio::sync::watch;
 
 use crate::errors::DatabaseError;
-use crate::state::{Finality, State};
+use crate::state::State;
 
 // BLOCK NOTIFICATION
 // ================================================================================================
@@ -74,23 +86,13 @@ pub type ProofCache = BlockOrderedCache<ProofNotification>;
 // ================================================================================================
 
 impl State {
-    /// Returns a watch receiver that wakes every time a new block is committed.
-    pub fn subscribe_committed_tip(&self) -> watch::Receiver<BlockNumber> {
-        self.committed_tip_tx.subscribe()
-    }
-
-    /// Returns a watch receiver that wakes every time the proven-in-sequence tip advances.
-    pub fn subscribe_proven_tip(&self) -> watch::Receiver<BlockNumber> {
-        self.proven_tip.subscribe()
-    }
-
     /// Loads a block from the in-memory replica cache or block store. Return `Ok(None)` if the
     /// block is not found.
     pub async fn load_block(
         &self,
         block_num: BlockNumber,
     ) -> Result<Option<Vec<u8>>, DatabaseError> {
-        if block_num > self.chain_tip(Finality::Committed) {
+        if block_num > self.committed_tip() {
             return Ok(None);
         }
         if let Some(block) = self.block_cache.get(block_num) {
@@ -105,7 +107,7 @@ impl State {
         &self,
         block_num: BlockNumber,
     ) -> Result<Option<Vec<u8>>, DatabaseError> {
-        if block_num > self.chain_tip(Finality::Proven) {
+        if block_num > self.proven_tip() {
             return Ok(None);
         }
         if let Some(proof) = self.proof_cache.get(block_num) {

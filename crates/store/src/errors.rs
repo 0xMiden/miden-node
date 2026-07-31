@@ -81,6 +81,8 @@ pub enum DatabaseError {
     Diesel(#[from] diesel::result::Error),
     #[error(transparent)]
     QueryParamLimit(#[from] QueryLimitError),
+    #[error(transparent)]
+    RangeBeyondTip(#[from] RangeBeyondTip),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -251,6 +253,14 @@ pub enum ApplyBlockWithProvingInputsError {
     ApplyBlock(#[source] ApplyBlockError),
 }
 
+/// A requested block range extends beyond the chain tip of the state view serving the request.
+#[derive(Error, Debug)]
+#[error("block_to ({block_to}) is greater than chain tip ({chain_tip})")]
+pub struct RangeBeyondTip {
+    pub chain_tip: BlockNumber,
+    pub block_to: BlockNumber,
+}
+
 #[derive(Error, Debug)]
 pub enum GetBlockHeaderError {
     #[error("database error")]
@@ -282,6 +292,8 @@ pub enum StateSyncError {
     EmptyBlockHeadersTable,
     #[error("failed to build MMR delta")]
     FailedToBuildMmrDelta(#[from] MmrError),
+    #[error(transparent)]
+    RangeBeyondTip(#[from] RangeBeyondTip),
 }
 
 impl From<diesel::result::Error> for StateSyncError {
@@ -302,11 +314,8 @@ pub enum NoteSyncError {
     MmrError(#[from] MmrError),
     #[error("invalid block range")]
     InvalidBlockRange(#[from] InvalidBlockRange),
-    #[error("block_to ({block_to}) is greater than chain tip ({chain_tip})")]
-    FutureBlock {
-        chain_tip: BlockNumber,
-        block_to: BlockNumber,
-    },
+    #[error(transparent)]
+    RangeBeyondTip(#[from] RangeBeyondTip),
     #[error("malformed note tags")]
     DeserializationFailed(#[from] ConversionError),
 }

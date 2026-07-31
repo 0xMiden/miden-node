@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::BlockProofRequest;
-use miden_node_store::state::{Finality, ProofWriter, State};
+use miden_node_store::state::{ProofWriter, State};
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
@@ -107,6 +107,7 @@ impl ProofTaskJoinSet {
 /// Transient errors are retried internally.
 pub(crate) async fn run(
     block_prover: Arc<BlockProver>,
+    state: Arc<State>,
     proof_writer: ProofWriter,
     mut chain_tip_rx: watch::Receiver<BlockNumber>,
     max_concurrent_proofs: NonZeroUsize,
@@ -119,7 +120,7 @@ pub(crate) async fn run(
 
     // Next block number to schedule. Initialized from the proven tip's child so we skip
     // already-proven blocks on restart.
-    let mut next_to_prove = proof_writer.chain_tip(Finality::Proven).child();
+    let mut next_to_prove = state.proven_tip().child();
 
     // Completed proofs waiting to be committed in order.
     let mut pending: BTreeMap<BlockNumber, Vec<u8>> = BTreeMap::new();
@@ -128,7 +129,7 @@ pub(crate) async fn run(
         // Schedule blocks up to chain_tip that haven't been scheduled yet.
         let chain_tip = *chain_tip_rx.borrow();
         while proving_tasks.len() < max_concurrent_proofs.get() && next_to_prove <= chain_tip {
-            proving_tasks.spawn(proof_writer.state(), &block_prover, next_to_prove);
+            proving_tasks.spawn(&state, &block_prover, next_to_prove);
             next_to_prove = next_to_prove.child();
         }
 
@@ -145,7 +146,7 @@ pub(crate) async fn run(
 
                 // Drain completed proofs in ascending order so the proven tip advances without
                 // gaps.
-                let mut next = proof_writer.chain_tip(Finality::Proven).child();
+                let mut next = state.proven_tip().child();
                 while let Some(proof_bytes) = pending.remove(&next) {
                     proof_writer.apply_proof(next, proof_bytes).await?;
                     next = next.child();

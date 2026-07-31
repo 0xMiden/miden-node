@@ -271,6 +271,7 @@ pub async fn seed_store_with_readers(
     let data_directory =
         miden_node_store::DataDirectory::load(data_directory).expect("data directory should exist");
     let metrics = Box::pin(generate_blocks(
+        &state,
         account_batches,
         initial_accounts,
         if seed_public_accounts_at_genesis {
@@ -325,6 +326,7 @@ async fn read_latest_header_until(
     while !stop.load(Ordering::Relaxed) {
         let start = Instant::now();
         let (header, proof) = state
+            .view()
             .get_block_header(None, true)
             .await
             .expect("get_block_header should succeed during seeding");
@@ -358,6 +360,7 @@ fn report_read_latencies(
 #[expect(clippy::too_many_arguments)]
 #[expect(clippy::too_many_lines)]
 async fn generate_blocks(
+    state: &State,
     account_batches: Vec<AccountBatch>,
     initial_accounts: Vec<Account>,
     first_account_index: u64,
@@ -444,7 +447,7 @@ async fn generate_blocks(
             .collect();
 
         // create the block and send it to the store
-        let block_inputs = get_block_inputs(block_writer, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
 
         // update blocks
         let block_kind = if has_pending_account_creations {
@@ -466,8 +469,7 @@ async fn generate_blocks(
             .extend(pending_consumed_accounts.into_iter().map(|account| (account.id(), account)));
 
         // create the consume notes txs to be used in the next block
-        let batch_inputs =
-            get_batch_inputs(block_writer, &prev_block_header, &notes, &mut metrics).await;
+        let batch_inputs = get_batch_inputs(state, &prev_block_header, &notes, &mut metrics).await;
         (pending_consumed_accounts, consume_notes_txs) = create_consume_note_txs(
             &prev_block_header,
             accounts,
@@ -491,7 +493,7 @@ async fn generate_blocks(
             .par_chunks(TRANSACTIONS_PER_BATCH)
             .map(|txs| create_batch(txs, &prev_block_header))
             .collect();
-        let block_inputs = get_block_inputs(block_writer, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
         prev_block_header = apply_block(
             batches,
             block_inputs,
@@ -531,7 +533,7 @@ async fn generate_blocks(
         let emit_note_tx = create_emit_note_tx(&prev_block_header, &mut faucet, notes.clone());
         let batches = vec![create_batch(std::slice::from_ref(&emit_note_tx), &prev_block_header)];
 
-        let block_inputs = get_block_inputs(block_writer, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
         prev_block_header = apply_block(
             batches,
             block_inputs,
@@ -543,8 +545,7 @@ async fn generate_blocks(
         )
         .await;
 
-        let batch_inputs =
-            get_batch_inputs(block_writer, &prev_block_header, &notes, &mut metrics).await;
+        let batch_inputs = get_batch_inputs(state, &prev_block_header, &notes, &mut metrics).await;
         let accounts = selected_account_ids
             .iter()
             .map(|account_id| {
@@ -567,7 +568,7 @@ async fn generate_blocks(
             .par_chunks(TRANSACTIONS_PER_BATCH)
             .map(|txs| create_batch(txs, &prev_block_header))
             .collect();
-        let block_inputs = get_block_inputs(block_writer, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
         prev_block_header = apply_block(
             batches,
             block_inputs,
@@ -1077,6 +1078,7 @@ async fn get_batch_inputs(
     // Mark every note as unauthenticated, so that the store returns the inclusion proofs for all of
     // them
     let batch_inputs = state
+        .view()
         .get_batch_inputs(
             [block_ref.block_num()].into_iter().collect(),
             notes.iter().map(|note| note.id().as_word()).collect(),
@@ -1095,6 +1097,7 @@ async fn get_block_inputs(
 ) -> BlockInputs {
     let start = Instant::now();
     let inputs = state
+        .view()
         .get_block_inputs(
             batches.iter().flat_map(ProvenBatch::updated_accounts).collect(),
             batches.iter().flat_map(ProvenBatch::created_nullifiers).collect(),

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use miden_node_store::state::{BlockWriter, Finality, ProofWriter, State};
+use miden_node_store::state::{BlockWriter, ProofWriter, State};
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
@@ -111,11 +111,16 @@ impl Sequencer {
         let state = self.state;
         let validator =
             BlockProducerValidatorClient::new(self.validator_urls.clone(), self.validator_timeout)?;
-        let chain_tip = state.chain_tip(Finality::Committed);
+        let chain_tip = state.committed_tip();
 
         tracing::info!(target: LOG_TARGET, "Sequencer initialized");
 
-        let block_builder = BlockBuilder::new(self.block_writer, validator, self.block_interval);
+        let block_builder = BlockBuilder::new(
+            Arc::clone(&state),
+            self.block_writer,
+            validator,
+            self.block_interval,
+        );
         let batch_intervals = BatchIntervals::derive_from(self.block_interval, self.batch_interval);
         let batch_builder = BatchBuilder::new(
             Arc::clone(&state),
@@ -155,11 +160,13 @@ impl Sequencer {
             async { block_builder.run(mempool, shutdown).await }
         });
         tasks.spawn("proof-scheduler", {
+            let state = Arc::clone(&api.state);
             let proof_writer = self.proof_writer;
             let shutdown = shutdown.clone();
             async move {
                 proof_scheduler::run(
                     block_prover,
+                    state,
                     proof_writer,
                     chain_tip_rx,
                     self.max_concurrent_proofs,

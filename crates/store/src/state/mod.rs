@@ -14,44 +14,24 @@ use crate::blocks::BlockStore;
 use crate::db::Db;
 use crate::proven_tip::ProvenTipWriter;
 
-mod loader;
-
-mod replica;
-pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
-
-mod account;
-
-mod apply_block;
-mod apply_proof;
 mod block_lifecycle;
 mod bootstrap;
 mod disk_monitor;
-mod sync_state;
-
-mod inputs;
-pub use inputs::TransactionInputs;
+mod loader;
 
 mod lifecycle;
 pub use lifecycle::{BlockWriter, LoadedState, ProofWriter, WriterTask};
 
-mod queries;
+mod replica;
+pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
 
-mod snapshot;
-pub(crate) use snapshot::{InMemoryState, SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard};
+mod tip;
+
+mod view;
+use view::{SnapshotGuard, StateSnapshot};
+pub use view::{StateView, TransactionInputs};
 
 mod writer;
-
-// FINALITY
-// ================================================================================================
-
-/// The finality level for chain tip queries.
-#[derive(Debug, Clone, Copy)]
-pub enum Finality {
-    /// The latest committed (but not necessarily proven) block.
-    Committed,
-    /// The latest block that has been proven in an unbroken sequence from genesis.
-    Proven,
-}
 
 // CHAIN STATE
 // ================================================================================================
@@ -60,6 +40,10 @@ pub enum Finality {
 ///
 /// Mutations go through the [`BlockWriter`] and [`ProofWriter`] capabilities returned by
 /// [`LoadedState::start`]; every holder of this type can only query and subscribe.
+///
+/// All tree and database reads go through a request-scoped [`StateView`] obtained from
+/// [`State::view`]; this type itself only exposes chain-tip queries, subscriptions, and
+/// block-store access.
 pub struct State {
     /// Root directory containing the store's on-disk data.
     data_directory: PathBuf,
@@ -76,7 +60,7 @@ pub struct State {
     /// Readers load the snapshot wait-free via [`ArcSwap::load_full`]; the
     /// [`WriteWorker`](writer::WriteWorker) task atomically replaces the pointer after each
     /// committed block. Readers holding an old snapshot are unaffected by the swap.
-    in_memory: Arc<ArcSwap<InMemoryState>>,
+    latest_snapshot: Arc<ArcSwap<StateSnapshot>>,
 
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,

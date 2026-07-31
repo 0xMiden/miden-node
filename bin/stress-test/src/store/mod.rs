@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use futures::{StreamExt, stream};
 use miden_node_proto::domain::account::AccountRequest;
 use miden_node_proto::generated::{self as proto};
-use miden_node_store::state::{Finality, State};
+use miden_node_store::state::State;
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
@@ -128,7 +128,8 @@ async fn get_account(
 
     let start = Instant::now();
     let request = AccountRequest::try_from(request).expect("request should be valid");
-    let response: proto::rpc::AccountResponse = state.get_account(request).await.unwrap().into();
+    let response: proto::rpc::AccountResponse =
+        state.view().get_account(request).await.unwrap().into();
     let duration = start.elapsed();
 
     let details = response.details;
@@ -233,7 +234,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
     let store_state = start_store(data_directory).await;
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     // each request will have `ACCOUNTS_PER_SYNC_NOTES` note tags and will be sent with block number
     // 0.
@@ -269,6 +270,7 @@ pub async fn sync_notes(
         .collect::<Vec<_>>();
     let start = Instant::now();
     state
+        .view()
         .sync_notes(note_tags, BlockNumber::from(0)..=BlockNumber::from(chain_tip))
         .await
         .unwrap();
@@ -305,7 +307,7 @@ pub async fn bench_sync_nullifiers(
         .collect();
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     // Get all nullifier prefixes from the store using sync_notes
     let mut nullifier_prefixes: Vec<u32> = vec![];
@@ -317,6 +319,7 @@ pub async fn bench_sync_nullifiers(
             .map(|id| u32::from(NoteTag::with_account_target(*id)))
             .collect();
         let (blocks, last_block_checked) = store_state
+            .view()
             .sync_notes(
                 note_tags,
                 BlockNumber::from(current_block_num)..=BlockNumber::from(chain_tip),
@@ -339,6 +342,7 @@ pub async fn bench_sync_nullifiers(
             note_ids.iter().take(NOTE_IDS_PER_NULLIFIERS_CHECK).copied().collect();
         if !note_ids_to_fetch.is_empty() {
             let notes = store_state
+                .view()
                 .get_notes_by_id(note_ids_to_fetch)
                 .await
                 .unwrap()
@@ -394,6 +398,7 @@ async fn sync_nullifiers(
 ) -> (Duration, usize) {
     let start = Instant::now();
     let (nullifiers, _) = state
+        .view()
         .sync_nullifiers(
             16,
             nullifiers_prefixes,
@@ -439,7 +444,7 @@ pub async fn bench_sync_transactions(
     let store_state = start_store(data_directory).await;
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     // each request will have `accounts_per_request` account ids and will query a range of blocks
     let request = |_| {
@@ -513,11 +518,12 @@ pub async fn sync_transactions(
     block_to: u32,
 ) -> (Duration, proto::rpc::SyncTransactionsResponse) {
     let start = Instant::now();
-    let (last_block_included, records) = state
+    let view = state.view();
+    let (last_block_included, records) = view
         .sync_transactions(account_ids, BlockNumber::from(block_from)..=BlockNumber::from(block_to))
         .await
         .unwrap();
-    let chain_tip = state.chain_tip(Finality::Committed);
+    let chain_tip = view.tip();
     let response = proto::rpc::SyncTransactionsResponse {
         pagination_info: Some(proto::rpc::PaginationInfo {
             chain_tip: chain_tip.as_u32(),
@@ -600,7 +606,7 @@ async fn sync_transactions_paginated(
 pub async fn bench_sync_chain_mmr(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     let store_state = start_store(data_directory).await;
 
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     let request = |_| {
         let state = Arc::clone(&store_state);
@@ -629,9 +635,9 @@ pub async fn bench_sync_chain_mmr(data_directory: PathBuf, iterations: usize, co
 /// - the response.
 async fn sync_chain_mmr(state: &Arc<State>, current_client_block_height: u32) -> SyncChainMmrRun {
     let start = Instant::now();
-    let chain_tip = state.chain_tip(Finality::Committed);
-    state
-        .sync_chain_mmr(BlockNumber::from(current_client_block_height)..=chain_tip)
+    let view = state.view();
+    let chain_tip = view.tip();
+    view.sync_chain_mmr(BlockNumber::from(current_client_block_height)..=chain_tip)
         .await
         .unwrap();
     let elapsed = start.elapsed();

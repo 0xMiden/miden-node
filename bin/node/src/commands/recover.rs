@@ -4,7 +4,6 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated::validator::BlockSubscriptionRequest;
-use miden_node_store::state::Finality;
 use miden_node_store::{BlockWriter, State, WriterTask};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::block::{BlockNumber, SignedBlock};
@@ -88,7 +87,7 @@ async fn recover_from_validator(
             .chain_tip,
     );
 
-    let local_tip = block_writer.chain_tip(Finality::Committed);
+    let local_tip = block_writer.committed_tip();
     if local_tip >= validator_tip {
         info!(
             target: LOG_TARGET,
@@ -131,7 +130,7 @@ async fn recover_from_validator(
     }
 
     // The stream can end before reaching the tip if the validator restarts or drops the connection.
-    let final_tip = block_writer.chain_tip(Finality::Committed);
+    let final_tip = block_writer.committed_tip();
     anyhow::ensure!(
         final_tip >= validator_tip,
         "validator block stream ended at block {} before reaching the chain tip {}",

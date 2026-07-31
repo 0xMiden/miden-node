@@ -10,34 +10,27 @@ use tokio::sync::watch;
 
 use super::State;
 
-// FINALITY
-// ================================================================================================
-
-/// The finality level for chain tip queries.
-#[derive(Debug, Clone, Copy)]
-pub enum Finality {
-    /// The latest committed (but not necessarily proven) block.
-    Committed,
-    /// The latest block that has been proven in an unbroken sequence from genesis.
-    Proven,
-}
-
 // TIP QUERIES & SUBSCRIPTIONS
 // ================================================================================================
 
 impl State {
-    /// Returns the effective chain tip for the given finality level.
+    /// Returns the latest committed (but not necessarily proven) block number.
     ///
     /// This is a live value: it advances independently of any [`StateView`](super::StateView).
     /// Reads that must be consistent with data must use a view's tip instead.
     ///
     /// The committed tip is published after the corresponding state snapshot, so it never reports
     /// a block that a freshly created view cannot serve.
-    pub fn chain_tip(&self, finality: Finality) -> BlockNumber {
-        match finality {
-            Finality::Committed => *self.committed_tip_tx.borrow(),
-            Finality::Proven => self.proven_tip.read(),
-        }
+    pub fn committed_tip(&self) -> BlockNumber {
+        *self.committed_tip_tx.borrow()
+    }
+
+    /// Returns the latest block number proven in an unbroken sequence from genesis.
+    ///
+    /// This is a live value published by the proof scheduler (sequencer mode) or the proof sync
+    /// loop (full-node mode); it is always at or behind the committed tip.
+    pub fn proven_tip(&self) -> BlockNumber {
+        self.proven_tip.read()
     }
 
     /// Returns a watch receiver that wakes every time a new block is committed.

@@ -13,7 +13,7 @@ use miden_node_proto::clients::{
 };
 use miden_node_proto::server::{rpc_api, sequencer_api};
 use miden_node_proto_build::rpc_api_descriptor;
-use miden_node_store::state::{BlockWriter, Finality, ProofWriter, State};
+use miden_node_store::state::{BlockWriter, ProofWriter, State};
 use miden_node_utils::clap::{GrpcOptionsExternal, GrpcOptionsInternal};
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_node_utils::grpc;
@@ -221,7 +221,7 @@ impl Rpc {
                         tonic_health::ServingStatus::Serving,
                     )
                     .await;
-                let chain_tip = self.state.chain_tip(Finality::Committed);
+                let chain_tip = self.state.committed_tip();
                 log_node_ready(mode, endpoint, chain_tip);
             },
             RpcMode::FullNode { source_rpc, readiness_threshold, .. } => {

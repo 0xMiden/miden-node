@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, ProofSubscriptionRequest};
-use miden_node_store::state::{BlockWriter, Finality, ProofWriter};
+use miden_node_store::state::{BlockWriter, ProofWriter};
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
@@ -197,7 +197,7 @@ impl BlockSync {
         err,
     )]
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let local_tip = self.writer.chain_tip(Finality::Committed);
+        let local_tip = self.writer.committed_tip();
         let mut client = self.source_rpc.clone();
         let upstream_tip =
             BlockNumber::from(client.status(tonic::Request::new(())).await?.into_inner().chain_tip);
@@ -225,7 +225,7 @@ impl BlockSync {
                 .context("failed to deserialize block from upstream")?;
             self.writer.apply_block(block).await?;
 
-            let local_tip = self.writer.chain_tip(Finality::Committed);
+            let local_tip = self.writer.committed_tip();
             self.readiness.update(upstream_tip, local_tip).await;
         }
     }
@@ -267,7 +267,7 @@ impl ProofSync {
 
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
         // Subscribe from next proven tip.
-        let starting_block = self.writer.chain_tip(Finality::Proven).child();
+        let starting_block = self.writer.proven_tip().child();
         info!(
             target: LOG_TARGET,
             block_from = %starting_block,

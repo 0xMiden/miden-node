@@ -26,7 +26,6 @@ mod replica;
 pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
 
 mod tip;
-pub use tip::Finality;
 
 mod view;
 use view::{SnapshotGuard, StateSnapshot};

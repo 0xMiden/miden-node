@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::BlockProofRequest;
-use miden_node_store::state::{Finality, ProofWriter, State};
+use miden_node_store::state::{ProofWriter, State};
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
@@ -119,7 +119,7 @@ pub(crate) async fn run(
 
     // Next block number to schedule. Initialized from the proven tip's child so we skip
     // already-proven blocks on restart.
-    let mut next_to_prove = proof_writer.chain_tip(Finality::Proven).child();
+    let mut next_to_prove = proof_writer.proven_tip().child();
 
     // Completed proofs waiting to be committed in order.
     let mut pending: BTreeMap<BlockNumber, Vec<u8>> = BTreeMap::new();
@@ -145,7 +145,7 @@ pub(crate) async fn run(
 
                 // Drain completed proofs in ascending order so the proven tip advances without
                 // gaps.
-                let mut next = proof_writer.chain_tip(Finality::Proven).child();
+                let mut next = proof_writer.proven_tip().child();
                 while let Some(proof_bytes) = pending.remove(&next) {
                     proof_writer.apply_proof(next, proof_bytes).await?;
                     next = next.child();

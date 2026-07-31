@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use miden_node_store::state::{BlockWriter, Finality, ProofWriter, State};
+use miden_node_store::state::{BlockWriter, ProofWriter, State};
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
@@ -111,7 +111,7 @@ impl Sequencer {
         let state = self.state;
         let validator =
             BlockProducerValidatorClient::new(self.validator_urls.clone(), self.validator_timeout)?;
-        let chain_tip = state.chain_tip(Finality::Committed);
+        let chain_tip = state.committed_tip();
 
         tracing::info!(target: LOG_TARGET, "Sequencer initialized");
 

@@ -9,7 +9,7 @@ use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::generated::rpc::MempoolStats as ProtoMempoolStats;
 use miden_node_proto::generated::rpc::api_server::Api;
 use miden_node_proto::generated::{self as proto};
-use miden_node_store::state::{Finality, State};
+use miden_node_store::state::State;
 use miden_node_store::{DatabaseError, GetBlockHeaderError};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,

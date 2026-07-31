@@ -4,7 +4,7 @@ use miden_node_utils::block_cache::BlockOrderedCache;
 use miden_protocol::block::BlockNumber;
 
 use crate::errors::DatabaseError;
-use crate::state::{Finality, State};
+use crate::state::State;
 
 // BLOCK NOTIFICATION
 // ================================================================================================
@@ -79,7 +79,7 @@ impl State {
         &self,
         block_num: BlockNumber,
     ) -> Result<Option<Vec<u8>>, DatabaseError> {
-        if block_num > self.chain_tip(Finality::Committed) {
+        if block_num > self.committed_tip() {
             return Ok(None);
         }
         if let Some(block) = self.block_cache.get(block_num) {
@@ -94,7 +94,7 @@ impl State {
         &self,
         block_num: BlockNumber,
     ) -> Result<Option<Vec<u8>>, DatabaseError> {
-        if block_num > self.chain_tip(Finality::Proven) {
+        if block_num > self.proven_tip() {
             return Ok(None);
         }
         if let Some(proof) = self.proof_cache.get(block_num) {

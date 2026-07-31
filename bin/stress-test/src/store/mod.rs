@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use futures::{StreamExt, stream};
 use miden_node_proto::domain::account::AccountRequest;
 use miden_node_proto::generated::{self as proto};
-use miden_node_store::state::{Finality, State};
+use miden_node_store::state::State;
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
@@ -234,7 +234,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
     let store_state = start_store(data_directory).await;
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     // each request will have `ACCOUNTS_PER_SYNC_NOTES` note tags and will be sent with block number
     // 0.
@@ -307,7 +307,7 @@ pub async fn bench_sync_nullifiers(
         .collect();
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     // Get all nullifier prefixes from the store using sync_notes
     let mut nullifier_prefixes: Vec<u32> = vec![];
@@ -444,7 +444,7 @@ pub async fn bench_sync_transactions(
     let store_state = start_store(data_directory).await;
 
     // Get the latest block number to determine the range
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     // each request will have `accounts_per_request` account ids and will query a range of blocks
     let request = |_| {
@@ -606,7 +606,7 @@ async fn sync_transactions_paginated(
 pub async fn bench_sync_chain_mmr(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     let store_state = start_store(data_directory).await;
 
-    let chain_tip = store_state.chain_tip(Finality::Committed).as_u32();
+    let chain_tip = store_state.committed_tip().as_u32();
 
     let request = |_| {
         let state = Arc::clone(&store_state);

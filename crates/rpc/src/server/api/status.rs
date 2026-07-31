@@ -3,7 +3,7 @@ use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::miden_instrument;
 use tracing::debug;
 
-use super::{Finality, ProtoMempoolStats, Request, RpcMode, RpcService};
+use super::{ProtoMempoolStats, Request, RpcMode, RpcService};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -48,7 +48,7 @@ impl proto::server::rpc_api::Status for RpcService {
 
         Ok(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            chain_tip: self.state.chain_tip(Finality::Committed).as_u32(),
+            chain_tip: self.state.committed_tip().as_u32(),
             block_producer: block_producer_status.or(Some(proto::rpc::BlockProducerStatus {
                 status: "unreachable".to_string(),
                 version: "-".to_string(),

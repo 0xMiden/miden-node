@@ -5,7 +5,7 @@ use miden_protocol::block::BlockNumber;
 use tonic::Status;
 use tracing::debug;
 
-use super::{Finality, RpcService};
+use super::RpcService;
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -48,9 +48,7 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
             // The proven tip is read from a watch channel, not the view's snapshot, so clamp it to
             // the view's tip: a block could be committed and proven between taking the view and
             // reading the proven tip, and the view cannot serve blocks beyond its snapshot.
-            proto::rpc::FinalityLevel::Proven => {
-                self.state.chain_tip(Finality::Proven).min(view.tip())
-            },
+            proto::rpc::FinalityLevel::Proven => self.state.proven_tip().min(view.tip()),
         };
 
         if current_client_block_height > sync_target {

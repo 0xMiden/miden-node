@@ -18,7 +18,7 @@ use miden_protocol::account::{AccountId, AccountStorageHeader, StorageSlotName, 
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
 
-use super::StateView;
+use super::{ScopedBlockNum, StateView};
 use crate::COMPONENT;
 use crate::account_state_forest::AccountStorageMapResult;
 use crate::errors::{DatabaseError, GetAccountError};
@@ -137,7 +137,7 @@ impl StateView {
     async fn reconstruct_vault_details_from_db(
         &self,
         account_id: AccountId,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
     ) -> Result<AccountVaultDetails, DatabaseError> {
         let assets = self.db().select_account_vault_at_block(account_id, block_num).await?;
 
@@ -163,7 +163,7 @@ impl StateView {
         &self,
         account_id: AccountId,
         slot_name: StorageSlotName,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
     ) -> Result<AccountStorageMapDetails, DatabaseError> {
         let details = self
             .db()
@@ -218,14 +218,13 @@ impl StateView {
         // Validate block exists in the blockchain before querying the database. The view's tip is
         // the same snapshot the witness was resolved against, so the witness and the DB reads below
         // observe a single consistent block height.
-        if block_num > self.tip() {
-            return Err(GetAccountError::UnknownBlock(block_num));
-        }
+        let scoped_block =
+            self.scope_block(block_num).ok_or(GetAccountError::UnknownBlock(block_num))?;
 
         // Query account header and storage header together in a single DB call
         let (account_header, storage_header) = self
             .db()
-            .select_account_header_with_storage_header_at_block(account_id, block_num)
+            .select_account_header_with_storage_header_at_block(account_id, scoped_block)
             .await?
             .ok_or(GetAccountError::AccountNotFound(account_id, block_num))?;
 
@@ -263,7 +262,9 @@ impl StateView {
 
                 match forest_details {
                     Some(details) => details,
-                    None => self.reconstruct_vault_details_from_db(account_id, block_num).await?,
+                    None => {
+                        self.reconstruct_vault_details_from_db(account_id, scoped_block).await?
+                    },
                 }
             },
             None => AccountVaultDetails::empty(),
@@ -324,8 +325,12 @@ impl StateView {
             {
                 Some(details) => details,
                 None => {
-                    self.reconstruct_storage_map_details_from_db(account_id, slot_name, block_num)
-                        .await?
+                    self.reconstruct_storage_map_details_from_db(
+                        account_id,
+                        slot_name,
+                        scoped_block,
+                    )
+                    .await?
                 },
             };
             storage_map_details_by_index[index] = Some(details);

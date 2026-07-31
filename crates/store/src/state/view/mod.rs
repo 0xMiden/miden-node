@@ -20,6 +20,9 @@ use crate::db::Db;
 use crate::errors::RangeBeyondTip;
 use crate::state::State;
 
+mod scoped;
+pub use scoped::{ScopedBlockNum, ScopedBlockRange};
+
 mod snapshot;
 pub(in crate::state) use snapshot::{SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot};
 
@@ -87,16 +90,31 @@ impl StateView {
         &self.db
     }
 
-    /// Ensures the given block range does not extend beyond this view's chain tip.
+    /// Returns this view's tip as a scoped block number for tip-bounded database queries.
+    fn scoped_tip(&self) -> ScopedBlockNum {
+        ScopedBlockNum::new(self.tip())
+    }
+
+    /// Validates that `block_num` does not exceed this view's chain tip, returning the scoped block
+    /// number required by block-bounded database queries.
+    fn scope_block(&self, block_num: BlockNumber) -> Option<ScopedBlockNum> {
+        (block_num <= self.tip()).then(|| ScopedBlockNum::new(block_num))
+    }
+
+    /// Validates that `range` does not extend beyond this view's chain tip, returning the scoped
+    /// range required by range-bounded database queries.
     ///
     /// Every range-scoped read on this type calls this before touching the database, so callers
     /// never need to pre-validate ranges themselves.
-    fn check_range(&self, range: &RangeInclusive<BlockNumber>) -> Result<(), RangeBeyondTip> {
+    fn scope_range(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> Result<ScopedBlockRange, RangeBeyondTip> {
         let tip = self.tip();
         if *range.end() > tip {
             return Err(RangeBeyondTip { chain_tip: tip, block_to: *range.end() });
         }
-        Ok(())
+        Ok(ScopedBlockRange::new(range))
     }
 
     /// Runs a synchronous read-only operation over the pinned state snapshot on Tokio's blocking

@@ -39,7 +39,16 @@ pub use errors::{
     StateSyncError,
 };
 pub use genesis::GenesisState;
-pub use state::{BlockWriter, LoadedState, ProofWriter, State, StateView, WriterTask};
+pub use state::{
+    BlockWriter,
+    LoadedState,
+    ProofWriter,
+    ScopedBlockNum,
+    ScopedBlockRange,
+    State,
+    StateView,
+    WriterTask,
+};
 
 /// Returns the store crate version.
 pub fn version() -> &'static str {

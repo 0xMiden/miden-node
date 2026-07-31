@@ -1614,7 +1614,12 @@ async fn reconstruct_storage_map_from_db_pages_until_latest() {
     .unwrap();
 
     let details = db
-        .reconstruct_storage_map_from_db(account_id, slot_name.clone(), block3, Some(1))
+        .reconstruct_storage_map_from_db(
+            account_id,
+            slot_name.clone(),
+            crate::state::ScopedBlockNum::new_unchecked(block3),
+            Some(1),
+        )
         .await
         .unwrap();
 
@@ -1672,7 +1677,12 @@ async fn reconstruct_storage_map_from_db_returns_limit_exceeded_for_single_block
     // Use limit=1 so that 3 entries in a single block exceed the limit. block_range_start is block5
     // (the first block with data), and the target is also block5.
     let details = db
-        .reconstruct_storage_map_from_db(account_id, slot_name.clone(), block5, Some(1))
+        .reconstruct_storage_map_from_db(
+            account_id,
+            slot_name.clone(),
+            crate::state::ScopedBlockNum::new_unchecked(block5),
+            Some(1),
+        )
         .await
         .unwrap();
 

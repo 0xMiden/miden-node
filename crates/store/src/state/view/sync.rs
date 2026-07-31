@@ -25,7 +25,7 @@ impl StateView {
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
-        self.check_range(&block_range)?;
+        let block_range = self.scope_range(block_range)?;
         self.db().select_transactions_records(account_ids, block_range).await
     }
 
@@ -43,10 +43,10 @@ impl StateView {
         &self,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(MmrDelta, BlockHeader, BlockSignatures), StateSyncError> {
-        self.check_range(&block_range)?;
+        let block_range = self.scope_range(block_range)?;
 
-        let block_from = *block_range.start();
-        let block_to = *block_range.end();
+        let block_from = block_range.start();
+        let block_to = block_range.end();
 
         // SAFETY: block_to <= this view's tip (checked above), so it is committed and must exist in
         // the database.
@@ -113,9 +113,9 @@ impl StateView {
         note_tags: Vec<u32>,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<(NoteSyncUpdate, MmrProof)>, BlockNumber), NoteSyncError> {
-        self.check_range(&block_range)?;
+        let block_range = self.scope_range(block_range)?;
 
-        let block_end = *block_range.end();
+        let block_end = block_range.end();
         // The MMR at forest N contains proofs for blocks 0..N-1, so we use block_end + 1 to include
         // the proof for block_end. SAFETY: block_end <= this view's tip (checked above), and the
         // view's blockchain MMR always has at least tip + 1 leaves.
@@ -148,7 +148,7 @@ impl StateView {
         nullifier_prefixes: Vec<u32>,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
-        self.check_range(&block_range)?;
+        let block_range = self.scope_range(block_range)?;
         self.db()
             .select_nullifiers_by_prefix(prefix_len, nullifier_prefixes, block_range)
             .await
@@ -166,7 +166,7 @@ impl StateView {
         account_id: AccountId,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
-        self.check_range(&block_range)?;
+        let block_range = self.scope_range(block_range)?;
         self.db().get_account_vault_sync(account_id, block_range).await
     }
 
@@ -179,7 +179,7 @@ impl StateView {
         account_id: AccountId,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<StorageMapValuesPage, DatabaseError> {
-        self.check_range(&block_range)?;
+        let block_range = self.scope_range(block_range)?;
         self.db().select_storage_map_sync_values(account_id, block_range, None).await
     }
 }

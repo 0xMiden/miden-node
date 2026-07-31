@@ -28,8 +28,8 @@ pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
 mod tip;
 
 mod view;
+pub use view::{ScopedBlockNum, ScopedBlockRange, StateView, TransactionInputs};
 use view::{SnapshotGuard, StateSnapshot};
-pub use view::{StateView, TransactionInputs};
 
 mod writer;
 

@@ -54,6 +54,7 @@ use crate::db::models::queries::{
 };
 use crate::errors::{DatabaseError, NoteSyncError};
 use crate::genesis::GenesisBlock;
+use crate::state::{ScopedBlockNum, ScopedBlockRange};
 use crate::{COMPONENT, LOG_TARGET};
 
 const STORAGE_MAP_VALUE_PER_ROW_BYTES: usize =
@@ -311,8 +312,9 @@ impl Db {
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
     ) -> Result<(Vec<NullifierInfo>, BlockNumber)> {
+        let block_range = block_range.into_inner();
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.transact("nullifieres by prefix", move |conn| {
@@ -511,8 +513,9 @@ impl Db {
     pub async fn select_account_header_with_storage_header_at_block(
         &self,
         account_id: AccountId,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
     ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
+        let block_num = block_num.get();
         self.transact("Get account header with storage header at block", move |conn| {
             queries::select_account_header_with_storage_header_at_block(conn, account_id, block_num)
         })
@@ -527,9 +530,10 @@ impl Db {
     )]
     pub async fn get_note_sync_multi(
         &self,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
         note_tags: Arc<[u32]>,
     ) -> Result<Vec<NoteSyncUpdate>, NoteSyncError> {
+        let block_range = block_range.into_inner();
         self.transact("notes sync task", move |conn| {
             queries::get_note_sync_multi(conn, &note_tags, block_range, MAX_RESPONSE_PAYLOAD_BYTES)
         })
@@ -562,8 +566,9 @@ impl Db {
     pub async fn select_existing_note_commitments(
         &self,
         note_commitments: Vec<Word>,
-        up_to_block: BlockNumber,
+        up_to_block: ScopedBlockNum,
     ) -> Result<HashSet<Word>> {
+        let up_to_block = up_to_block.get();
         self.transact("note by commitment", move |conn| {
             queries::select_existing_note_commitments(
                 conn,
@@ -645,6 +650,18 @@ impl Db {
     pub(crate) async fn select_storage_map_sync_values(
         &self,
         account_id: AccountId,
+        block_range: ScopedBlockRange,
+        entries_limit: Option<usize>,
+    ) -> Result<StorageMapValuesPage> {
+        self.select_storage_map_sync_values_raw(account_id, block_range.into_inner(), entries_limit)
+            .await
+    }
+
+    /// Raw variant of [`Self::select_storage_map_sync_values`] for internal pagination, where
+    /// sub-ranges are derived from a bound that was already validated by the caller.
+    async fn select_storage_map_sync_values_raw(
+        &self,
+        account_id: AccountId,
         block_range: RangeInclusive<BlockNumber>,
         entries_limit: Option<usize>,
     ) -> Result<StorageMapValuesPage> {
@@ -677,11 +694,13 @@ impl Db {
         &self,
         account_id: AccountId,
         slot_name: miden_protocol::account::StorageSlotName,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
         entries_limit: Option<usize>,
     ) -> Result<miden_node_proto::domain::account::AccountStorageMapDetails> {
         use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
         use miden_protocol::EMPTY_WORD;
+
+        let block_num = block_num.get();
 
         // TODO this remains expensive with a large history until we implement pruning for DB
         // columns
@@ -690,7 +709,7 @@ impl Db {
         let entries_limit = entries_limit.unwrap_or_else(default_storage_map_entries_limit);
 
         let mut page = self
-            .select_storage_map_sync_values(
+            .select_storage_map_sync_values_raw(
                 account_id,
                 block_range_start..=block_num,
                 Some(entries_limit),
@@ -714,7 +733,7 @@ impl Db {
 
             block_range_start = page.last_block_included.child();
             page = self
-                .select_storage_map_sync_values(
+                .select_storage_map_sync_values_raw(
                     account_id,
                     block_range_start..=block_num,
                     Some(entries_limit),
@@ -767,8 +786,9 @@ impl Db {
     pub async fn select_account_vault_at_block(
         &self,
         account_id: AccountId,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
     ) -> Result<Vec<Asset>, DatabaseError> {
+        let block_num = block_num.get();
         self.transact("select account vault at block", move |conn| {
             queries::select_account_vault_at_block(conn, account_id, block_num)
         })
@@ -778,8 +798,9 @@ impl Db {
     pub async fn get_account_vault_sync(
         &self,
         account_id: AccountId,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
+        let block_range = block_range.into_inner();
         self.transact("account vault sync", move |conn| {
             queries::select_account_vault_assets(conn, account_id, block_range)
         })
@@ -803,8 +824,9 @@ impl Db {
     pub async fn select_transactions_records(
         &self,
         account_ids: Vec<AccountId>,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
     ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
+        let block_range = block_range.into_inner();
         self.transact("full transactions records", move |conn| {
             queries::select_transactions_records(conn, &account_ids, block_range)
         })

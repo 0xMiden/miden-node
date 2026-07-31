@@ -80,7 +80,7 @@ impl StateView {
         // include yet.
         let found_unauthenticated_notes = self
             .db()
-            .select_existing_note_commitments(unauthenticated_note_commitments, self.tip())
+            .select_existing_note_commitments(unauthenticated_note_commitments, self.scoped_tip())
             .await?;
 
         Ok(TransactionInputs {

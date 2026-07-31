@@ -1,3 +1,16 @@
+//! Block and proof serving for replica subscriptions.
+//!
+//! Replica subscribers stream committed blocks and block proofs from this node. The writer pushes
+//! each freshly committed block (and the proof path each proven block) into a FIFO cache here, so
+//! subscribers keeping up with the tip are served from memory; a subscriber that has fallen
+//! behind the cache window falls back to reading the block store.
+//!
+//! These reads serve raw block/proof bytes from the caches and the block store — they never touch
+//! the database or tree state, which is why they live on [`State`] directly rather than on a
+//! [`StateView`](super::StateView). The tip checks gating them are live availability checks
+//! ("is this block committed/proven yet?"), deliberately race-tolerant: a `None` for a block that
+//! commits an instant later is corrected by the next tip-watch wakeup.
+
 use std::sync::Arc;
 
 use miden_node_utils::block_cache::BlockOrderedCache;

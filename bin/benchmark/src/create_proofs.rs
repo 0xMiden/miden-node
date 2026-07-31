@@ -429,7 +429,7 @@ fn create_faucet() -> (Account, SecretKey) {
                 .active_burn_policy(BurnPolicy::allow_all())
                 .build(),
         )
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             key_pair.public_key().into(),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -447,7 +447,7 @@ fn create_wallet(
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
     AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::Private)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             public_key.clone().into(),
             AuthScheme::Falcon512Poseidon2,
         )))

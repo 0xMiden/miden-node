@@ -763,7 +763,7 @@ fn create_account(
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
     let mut builder = AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(account_type)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             public_key.into(),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -862,7 +862,7 @@ fn create_faucet_with_seed(index: u64) -> Account {
                 .active_burn_policy(BurnPolicy::allow_all())
                 .build(),
         )
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             key_pair.public_key().into(),
             AuthScheme::Falcon512Poseidon2,
         )))

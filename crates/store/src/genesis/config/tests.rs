@@ -231,7 +231,7 @@ fn parsing_native_faucet_from_file() -> TestResult {
 
     let faucet_account = AccountBuilder::new(init_seed)
         .account_type(AccountType::Public)
-        .with_auth_component(auth)
+        .with_component(auth)
         .with_component(faucet)
         .with_components(
             TokenPolicyManager::builder()

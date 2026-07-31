@@ -131,7 +131,7 @@ fn build_test_account(seed: [u8; 32]) -> (Account, AccountPatch) {
         .account_type(AccountType::Public)
         .with_assets(vec![])
         .with_component(BasicWallet)
-        .with_auth_component(NoopAuthComponent)
+        .with_component(NoopAuthComponent)
         .build_existing()
         .unwrap();
 
@@ -448,7 +448,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Assert that the error is due to the invalid account delta commitment.
     let err = response.as_ref().unwrap_err().message();
     assert!(
-        err.contains("failed to validate account patch in transaction account update"),
+        err.contains("expected account patch commitment"),
         "expected error message to contain patch commitment error but got: {err}"
     );
 }

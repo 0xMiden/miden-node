@@ -9,13 +9,12 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use miden_node_proto::clients::RpcClient;
-use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::auth::AuthSecretKey;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountPatch};
 use miden_protocol::asset::AssetVault;
-use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::note::{
     Note,
@@ -29,14 +28,10 @@ use miden_protocol::note::{
     PartialNote,
     PartialNoteMetadata,
 };
-use miden_protocol::transaction::{
-    InputNotes,
-    PartialBlockchain,
-    TransactionArgs,
-    TransactionScript,
-};
+use miden_protocol::transaction::{InputNotes, TransactionArgs, TransactionScript};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{Felt, Word};
+use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_tx::auth::BasicAuthenticator;
@@ -50,6 +45,7 @@ use crate::config::MonitorConfig;
 use crate::deploy::counter::COUNTER_SLOT_NAME;
 use crate::deploy::wallet::WALLET_COUNTER_SLOT_NAME;
 use crate::deploy::{
+    CounterAnchor,
     DeployedMonitorAccounts,
     MonitorDataStore,
     TransactionSubmissionClient,
@@ -72,8 +68,11 @@ const RESYNC_FAILURE_THRESHOLD: usize = 3;
 /// Number of consecutive increment failures before regenerating accounts from scratch.
 const REGENERATE_FAILURE_THRESHOLD: usize = 10;
 
-/// Minimum time between account regeneration attempts.
+/// Minimum time between account regeneration attempts once one has succeeded.
 const REGENERATE_COOLDOWN: Duration = Duration::from_hours(1);
+
+/// Minimum time before retrying a regeneration attempt that *failed*.
+const REGENERATE_RETRY_COOLDOWN: Duration = Duration::from_mins(1);
 
 /// Number of consecutive polls observing the pending-increments gap above
 /// [`MonitorConfig::counter_pending_unhealthy_threshold`] before flipping the Network Transactions
@@ -109,10 +108,10 @@ pub struct TrackedAccounts {
 /// Produced by [`setup_increment_task`].
 struct TxBuilder {
     wallet_account: Account,
-    counter_account: Account,
+    counter_id: AccountId,
     secret_key: SecretKey,
     increment_script: NoteScript,
-    block_header: BlockHeader,
+    counter_anchor: Arc<CounterAnchor>,
     rng: ChaCha20Rng,
 }
 
@@ -120,10 +119,22 @@ struct TxBuilder {
 // ================================================================================================
 
 /// Tracks consecutive increment failures and gates re-sync / regeneration actions.
-#[derive(Default)]
 struct FailureTracker {
     consecutive_failures: usize,
-    last_regeneration: Option<Instant>,
+    resynced_this_streak: bool,
+    last_regeneration_attempt: Option<Instant>,
+    regeneration_cooldown: Duration,
+}
+
+impl Default for FailureTracker {
+    fn default() -> Self {
+        Self {
+            consecutive_failures: 0,
+            resynced_this_streak: false,
+            last_regeneration_attempt: None,
+            regeneration_cooldown: REGENERATE_COOLDOWN,
+        }
+    }
 }
 
 impl FailureTracker {
@@ -133,19 +144,35 @@ impl FailureTracker {
 
     fn reset(&mut self) {
         self.consecutive_failures = 0;
+        self.resynced_this_streak = false;
     }
 
     fn should_resync(&self) -> bool {
-        self.consecutive_failures >= RESYNC_FAILURE_THRESHOLD
+        self.consecutive_failures >= RESYNC_FAILURE_THRESHOLD && !self.resynced_this_streak
+    }
+
+    fn mark_resynced(&mut self) {
+        self.resynced_this_streak = true;
     }
 
     fn should_regenerate(&self) -> bool {
         self.consecutive_failures >= REGENERATE_FAILURE_THRESHOLD
-            && self.last_regeneration.is_none_or(|t| t.elapsed() >= REGENERATE_COOLDOWN)
+            && self
+                .last_regeneration_attempt
+                .is_none_or(|t| t.elapsed() >= self.regeneration_cooldown)
     }
 
-    fn mark_regenerated(&mut self) {
-        self.last_regeneration = Some(Instant::now());
+    /// Records that a regeneration attempt is starting.
+    fn mark_regeneration_attempt(&mut self) {
+        self.last_regeneration_attempt = Some(Instant::now());
+        self.regeneration_cooldown = REGENERATE_COOLDOWN;
+    }
+
+    /// Records that the regeneration attempt failed: shorten its cooldown and re-arm the re-sync
+    /// path, so the streak is not left with both recovery paths disabled.
+    fn mark_regeneration_failed(&mut self) {
+        self.regeneration_cooldown = REGENERATE_RETRY_COOLDOWN;
+        self.resynced_this_streak = false;
     }
 }
 
@@ -174,7 +201,7 @@ impl IncrementService {
     /// [`crate::monitor::tasks`].
     pub const NAME: &'static str = "Local Transactions";
 
-    pub async fn new(
+    pub fn new(
         config: MonitorConfig,
         accounts: DeployedMonitorAccounts,
         prover: LocalTransactionProver,
@@ -182,14 +209,13 @@ impl IncrementService {
         accounts_sender: watch::Sender<TrackedAccounts>,
         latency_state: Arc<Mutex<LatencyState>>,
     ) -> Result<Self> {
-        let mut rpc_client = submission_client.rpc_client();
+        let rpc_client = submission_client.rpc_client();
         let (tx, details) = setup_increment_task(
             accounts.wallet,
             accounts.secret_key,
-            accounts.counter,
-            &mut rpc_client,
-        )
-        .await?;
+            accounts.counter.id(),
+            accounts.counter_anchor,
+        )?;
         Ok(Self {
             config,
             rpc_client,
@@ -301,10 +327,9 @@ impl IncrementService {
         let (tx, details) = setup_increment_task(
             accounts.wallet,
             accounts.secret_key,
-            accounts.counter,
-            &mut self.rpc_client,
-        )
-        .await?;
+            accounts.counter.id(),
+            accounts.counter_anchor,
+        )?;
         self.tx = tx;
         self.details = details;
 
@@ -329,7 +354,7 @@ impl IncrementService {
     async fn submit_increment(&mut self) -> Result<(String, AccountPatch, BlockNumber)> {
         let (network_note, note_recipient) = create_network_note(
             &self.tx.wallet_account,
-            &self.tx.counter_account,
+            self.tx.counter_id,
             self.tx.increment_script.clone(),
             &mut self.tx.rng,
         )?;
@@ -340,19 +365,25 @@ impl IncrementService {
         let script = create_increment_tx_script(&network_note)?;
 
         let mut tx_args = TransactionArgs::default().with_tx_script(script);
+        let (auth_args, conversion_info_preimage) = fee_conversion_auth_args(
+            self.tx.counter_anchor.block_header.fee_parameters().fee_faucet_id(),
+            &mut self.tx.rng,
+        );
+        tx_args = tx_args.with_auth_args(auth_args);
+        tx_args.extend_advice_map([(auth_args, conversion_info_preimage)]);
         tx_args.add_output_note_recipient(Box::new(note_recipient));
 
         let wallet_account = self.tx.wallet_account.clone();
-        let counter_account = self.tx.counter_account.clone();
-        let block_header = self.tx.block_header.clone();
+        let anchor = self.tx.counter_anchor.clone();
         let secret_key = self.tx.secret_key.clone();
         let prover = self.prover.clone();
         let (proven_tx, tx_inputs, account_patch) = spawn_blocking_in_current_span(move || {
             let account_id = wallet_account.id();
-            let block_num = block_header.block_num();
-            let mut data_store = MonitorDataStore::new(block_header, PartialBlockchain::default());
+            let block_num = anchor.block_header.block_num();
+            let mut data_store =
+                MonitorDataStore::new(anchor.block_header.clone(), anchor.blockchain.clone());
             data_store.add_account(wallet_account);
-            data_store.add_account(counter_account);
+            data_store.add_foreign_account(anchor.counter_account.clone(), anchor.witness.clone());
 
             let authenticator =
                 BasicAuthenticator::new(&[AuthSecretKey::Falcon512Poseidon2(secret_key)]);
@@ -423,20 +454,23 @@ impl Service for IncrementService {
                 self.failures.record_failure();
                 last_error = Some(format!("create/submit note failed: {e}"));
 
-                if self.failures.should_resync() && self.try_resync_wallet_account().await.is_ok() {
-                    self.failures.reset();
+                let resynced_now =
+                    self.failures.should_resync() && self.try_resync_wallet_account().await.is_ok();
+                if resynced_now {
+                    self.failures.mark_resynced();
                 }
 
-                if self.failures.should_regenerate() {
+                if !resynced_now && self.failures.should_regenerate() {
                     warn!(
                         target: LOG_TARGET,
                         consecutive_failures = self.failures.consecutive_failures,
                         "re-sync ineffective, regenerating accounts from scratch"
                     );
-                    self.failures.mark_regenerated();
+                    self.failures.mark_regeneration_attempt();
                     match self.try_regenerate_accounts().await {
                         Ok(()) => self.failures.reset(),
                         Err(regen_err) => {
+                            self.failures.mark_regeneration_failed();
                             error!(target: LOG_TARGET, error = ?regen_err, "Account regeneration failed");
                         },
                     }
@@ -702,25 +736,23 @@ impl CounterTrackingService {
 // SETUP
 // ================================================================================================
 
-/// Fetch the genesis block header and build the data store + increment script needed to produce
-/// network notes from a freshly-created wallet/counter pair. The accounts are passed in already
-/// constructed by [`create_and_deploy_accounts`]; there is no file I/O.
-async fn setup_increment_task(
+/// Build the increment script and transaction state needed to produce network notes from a
+/// freshly-created wallet/counter pair. The accounts and the counter's FPI anchor are passed in
+/// already constructed by [`create_and_deploy_accounts`]; there is no file I/O.
+fn setup_increment_task(
     wallet_account: Account,
     secret_key: SecretKey,
-    counter_account: Account,
-    rpc_client: &mut RpcClient,
+    counter_id: AccountId,
+    counter_anchor: CounterAnchor,
 ) -> Result<(TxBuilder, IncrementDetails)> {
-    let block_header = get_genesis_block_header(rpc_client).await?;
-
     let increment_script = create_increment_script()?;
 
     let tx = TxBuilder {
         wallet_account,
-        counter_account,
+        counter_id,
         secret_key,
         increment_script,
-        block_header,
+        counter_anchor: Arc::new(counter_anchor),
         rng: ChaCha20Rng::from_rng(&mut rand::rng()),
     };
 
@@ -840,29 +872,6 @@ fn update_expected_and_pending(
 
 // RPC HELPERS
 // ================================================================================================
-
-/// Get the genesis block header.
-async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHeader> {
-    let block_header_request = BlockHeaderByNumberRequest {
-        block_num: Some(BlockNumber::GENESIS.as_u32()),
-        include_mmr_proof: None,
-    };
-
-    let response = rpc_client
-        .get_block_header_by_number(block_header_request)
-        .await
-        .context("Failed to get genesis block header from RPC")?
-        .into_inner();
-
-    let genesis_block_header = response
-        .block_header
-        .ok_or_else(|| anyhow::anyhow!("No block header in response"))?;
-
-    let block_header: BlockHeader =
-        genesis_block_header.try_into().context("Failed to convert block header")?;
-
-    Ok(block_header)
-}
 
 /// Fetch the storage header of the given account from RPC.
 ///
@@ -1180,7 +1189,7 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
     );
 
     let mut code_builder = CodeBuilder::new()
-        .with_dynamically_linked_library(&wallet_component)
+        .with_dynamically_linked_package(&wallet_component)
         .context("Failed to dynamically link wallet counter component")?;
 
     // The note's attachments (e.g. the network-account target) are resolved at runtime from the
@@ -1196,26 +1205,40 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
     Ok(tx_script)
 }
 
+/// Build the auth args committing to paying the transaction fee in the chain's native fee asset at
+/// rate 1/1, together with the advice-map preimage `miden::standards::fee::load_conversion_info`
+/// verifies against them in-VM.
+fn fee_conversion_auth_args(fee_faucet_id: AccountId, rng: &mut ChaCha20Rng) -> (Word, Vec<Felt>) {
+    // The salt keeps the auth args usable as a per-transaction unique value for replay protection.
+    let salt = random_word(rng);
+    commit_fee_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id), salt)
+}
+
+/// Draw a random [`Word`] from `rng`.
+fn random_word(rng: &mut ChaCha20Rng) -> Word {
+    Word::new([
+        Felt::new_unchecked(rng.random()),
+        Felt::new_unchecked(rng.random()),
+        Felt::new_unchecked(rng.random()),
+        Felt::new_unchecked(rng.random()),
+    ])
+}
+
 /// Create a network note that targets the counter account.
 fn create_network_note(
     wallet_account: &Account,
-    counter_account: &Account,
+    counter_account_id: AccountId,
     script: NoteScript,
     rng: &mut ChaCha20Rng,
 ) -> Result<(Note, NoteRecipient)> {
-    let target = NetworkAccountTarget::new(counter_account.id(), NoteExecutionHint::Always)
+    let target = NetworkAccountTarget::new(counter_account_id, NoteExecutionHint::Always)
         .context("Failed to create NetworkAccountTarget for counter account")?;
     let attachment: NoteAttachment = target.into();
     let attachments = NoteAttachments::from(attachment);
 
     let partial_metadata = PartialNoteMetadata::new(wallet_account.id(), NoteType::Public);
 
-    let serial_num = Word::new([
-        Felt::new_unchecked(rng.random()),
-        Felt::new_unchecked(rng.random()),
-        Felt::new_unchecked(rng.random()),
-        Felt::new_unchecked(rng.random()),
-    ]);
+    let serial_num = random_word(rng);
 
     let recipient = NoteRecipient::new(serial_num, script, NoteStorage::new(vec![])?);
 
@@ -1244,21 +1267,212 @@ async fn fetch_chain_tip(rpc_client: &mut RpcClient) -> Result<u32> {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::Account;
+    use miden_protocol::account::auth::AuthSecretKey;
+    use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::transaction::{InputNotes, TransactionArgs};
+    use miden_testing::MockChain;
+    use miden_tx::TransactionExecutor;
+    use miden_tx::auth::BasicAuthenticator;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
     use crate::counter::{
+        FailureTracker,
         PENDING_UNHEALTHY_CONFIRMATION_POLLS,
+        REGENERATE_FAILURE_THRESHOLD,
+        RESYNC_FAILURE_THRESHOLD,
         build_tracking_status,
         create_increment_script,
         create_increment_tx_script,
         create_network_note,
+        fee_conversion_auth_args,
     };
     use crate::deploy::counter::create_counter_account;
-    use crate::deploy::wallet::create_wallet_account;
+    use crate::deploy::wallet::{WALLET_COUNTER_SLOT_NAME, create_wallet_account};
+    use crate::deploy::{MonitorDataStore, execute_counter_genesis_tx};
     use crate::status::{CounterTrackingDetails, Status};
 
     const THRESHOLD: u64 = 5;
+
+    /// Executes one increment transaction end to end against a chain that holds the deployed
+    /// counter account.
+    #[tokio::test]
+    async fn increment_transaction_executes_against_the_committed_counter() -> anyhow::Result<()> {
+        let fee_faucet_id = FungibleAsset::mock_issuer();
+        let (wallet, secret_key) = create_wallet_account()?;
+        let counter = create_counter_account(wallet.id(), fee_faucet_id)?;
+
+        // The counter reaches the chain through its own creation transaction, so the chain must
+        // hold the committed (post-creation) state, exactly as `resolve_counter_anchor` requires
+        // on-chain.
+        let bootstrap_chain = MockChain::builder().fee_faucet_id(fee_faucet_id).build()?;
+        let creation_tx =
+            execute_counter_genesis_tx(&counter, &bootstrap_chain.genesis_block_header()).await?;
+        let committed_counter = Account::try_from(creation_tx.account_patch())?;
+
+        let mut builder = MockChain::builder().fee_faucet_id(fee_faucet_id);
+        builder.add_account(committed_counter.clone())?;
+        let chain = builder.build()?;
+
+        let block_header = chain.latest_block_header();
+        let witness = chain
+            .account_witnesses([committed_counter.id()])
+            .remove(&committed_counter.id())
+            .expect("a witness was requested for the counter");
+        assert_eq!(
+            witness.state_commitment(),
+            committed_counter.to_commitment(),
+            "the chain must hold the counter in the state fed to the executor"
+        );
+
+        let increment_script = create_increment_script()?;
+        let mut rng = ChaCha20Rng::from_seed([11u8; 32]);
+        let (network_note, note_recipient) =
+            create_network_note(&wallet, committed_counter.id(), increment_script, &mut rng)?;
+        let script = create_increment_tx_script(&network_note)?;
+
+        let mut tx_args = TransactionArgs::default().with_tx_script(script);
+        let (auth_args, preimage) =
+            fee_conversion_auth_args(block_header.fee_parameters().fee_faucet_id(), &mut rng);
+        tx_args = tx_args.with_auth_args(auth_args);
+        tx_args.extend_advice_map([(auth_args, preimage)]);
+        tx_args.add_output_note_recipient(Box::new(note_recipient));
+
+        let mut data_store =
+            MonitorDataStore::new(block_header.clone(), chain.latest_partial_blockchain());
+        data_store.add_account(wallet.clone());
+        data_store.add_foreign_account(committed_counter, witness);
+
+        let authenticator =
+            BasicAuthenticator::new(&[AuthSecretKey::Falcon512Poseidon2(secret_key)]);
+        let executor = TransactionExecutor::new(&data_store).with_authenticator(&authenticator);
+
+        let executed_tx = executor
+            .execute_transaction(
+                wallet.id(),
+                block_header.block_num(),
+                InputNotes::default(),
+                tx_args,
+            )
+            .await?;
+
+        // The wallet's own procedure emits the increment note and bumps its counter slot
+        // atomically, so a successful execution must show both.
+        assert_eq!(
+            executed_tx.output_notes().num_notes(),
+            1,
+            "the increment transaction must emit exactly the network note"
+        );
+        let updated_wallet = Account::try_from(executed_tx.account_patch())?;
+        let counter_slot = updated_wallet.storage().get_item(&WALLET_COUNTER_SLOT_NAME)?;
+        assert_eq!(
+            counter_slot.as_elements()[0].as_canonical_u64(),
+            1,
+            "the wallet's expected-value slot must be bumped by the same transaction"
+        );
+
+        Ok(())
+    }
+
+    /// A failed regeneration must not park the service with both recovery paths disabled: the full
+    /// cooldown only applies once an attempt has succeeded, and the re-sync path is re-armed so the
+    /// streak keeps trying to recover.
+    #[test]
+    fn failed_regeneration_leaves_a_recovery_path_open() {
+        let mut failures = FailureTracker::default();
+        for _ in 0..REGENERATE_FAILURE_THRESHOLD {
+            failures.record_failure();
+        }
+        failures.mark_resynced();
+        assert!(failures.should_regenerate());
+
+        failures.mark_regeneration_attempt();
+        failures.mark_regeneration_failed();
+
+        assert!(
+            failures.should_resync(),
+            "a failed regeneration must re-arm the cheaper re-sync path"
+        );
+        assert_eq!(
+            failures.regeneration_cooldown,
+            super::REGENERATE_RETRY_COOLDOWN,
+            "a failed regeneration must be retried on the short cooldown, not the hourly one"
+        );
+    }
+
+    /// A successful regeneration keeps the hourly cooldown: it deploys a new counter account and
+    /// restarts the on-chain count, so it must not be repeated while its accounts are settling.
+    #[test]
+    fn successful_regeneration_keeps_the_full_cooldown() {
+        let mut failures = FailureTracker::default();
+        for _ in 0..REGENERATE_FAILURE_THRESHOLD {
+            failures.record_failure();
+        }
+
+        failures.mark_regeneration_attempt();
+        failures.reset();
+
+        assert_eq!(failures.regeneration_cooldown, super::REGENERATE_COOLDOWN);
+        assert!(!failures.should_regenerate(), "a cleared streak must not regenerate");
+
+        for _ in 0..REGENERATE_FAILURE_THRESHOLD {
+            failures.record_failure();
+        }
+        assert!(
+            !failures.should_regenerate(),
+            "a fresh failure streak must still wait out the hourly cooldown"
+        );
+    }
+
+    /// Recovery must escalate: re-sync the wallet, then regenerate if failures keep coming. A
+    /// re-sync that reset the counter would cap it below the regeneration threshold forever,
+    /// leaving no recovery path for a counter account or FPI anchor invalidated by a chain reset.
+    #[test]
+    fn recovery_escalates_from_resync_to_regeneration() {
+        let mut failures = FailureTracker::default();
+
+        for _ in 0..RESYNC_FAILURE_THRESHOLD {
+            failures.record_failure();
+        }
+        assert!(failures.should_resync(), "a re-sync should be attempted at the threshold");
+        assert!(!failures.should_regenerate());
+
+        // A re-sync that succeeded must not repeat, so the counter can climb.
+        failures.mark_resynced();
+        failures.record_failure();
+        assert!(!failures.should_resync(), "a successful re-sync must not repeat");
+
+        while failures.consecutive_failures < REGENERATE_FAILURE_THRESHOLD {
+            failures.record_failure();
+        }
+        assert!(failures.should_regenerate(), "regeneration must become reachable");
+
+        // A successful increment clears the escalation.
+        failures.reset();
+        assert!(!failures.should_resync());
+        assert!(!failures.should_regenerate());
+    }
+
+    /// A re-sync that *fails* must be retried, since the transient RPC errors that make a re-sync
+    /// fail are the same ones that make increments fail. Gating on the attempt rather than on its
+    /// success would forfeit re-sync for the whole streak after one blip.
+    #[test]
+    fn failed_resync_is_retried_on_the_next_failure() {
+        let mut failures = FailureTracker::default();
+
+        for _ in 0..RESYNC_FAILURE_THRESHOLD {
+            failures.record_failure();
+        }
+        assert!(failures.should_resync());
+
+        // The re-sync attempt errored, so nothing is marked.
+        failures.record_failure();
+        assert!(failures.should_resync(), "a failed re-sync must be retried");
+
+        failures.mark_resynced();
+        assert!(!failures.should_resync());
+    }
 
     /// The wallet's self-counter component, the increment note script, and the combined increment
     /// transaction script must all assemble, and the tx script must link against the wallet's
@@ -1267,12 +1481,13 @@ mod tests {
     #[test]
     fn increment_masm_assembles_and_links() {
         let (wallet, _secret_key) = create_wallet_account().expect("wallet account should build");
-        let counter = create_counter_account(wallet.id()).expect("counter account should build");
+        let counter = create_counter_account(wallet.id(), FungibleAsset::mock_issuer())
+            .expect("counter account should build");
         let note_script = create_increment_script().expect("note script should compile");
 
         let mut rng = ChaCha20Rng::from_seed([7u8; 32]);
         let (network_note, _recipient) =
-            create_network_note(&wallet, &counter, note_script, &mut rng)
+            create_network_note(&wallet, counter.id(), note_script, &mut rng)
                 .expect("network note should build");
 
         create_increment_tx_script(&network_note)

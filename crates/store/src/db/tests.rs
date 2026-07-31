@@ -1718,7 +1718,7 @@ fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
     AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1867,7 +1867,7 @@ fn mock_account_code_and_storage(
         .account_type(account_type)
         .with_assets(assets)
         .with_component(account_component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2033,7 +2033,7 @@ async fn genesis_with_account_assets() {
         .account_type(AccountType::Public)
         .with_component(account_component)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2105,7 +2105,7 @@ async fn genesis_with_account_storage_map() {
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2170,7 +2170,7 @@ async fn genesis_with_account_assets_and_storage() {
         .account_type(AccountType::Public)
         .with_component(account_component)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2214,7 +2214,7 @@ async fn genesis_with_multiple_accounts() {
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component1)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2238,7 +2238,7 @@ async fn genesis_with_multiple_accounts() {
         .account_type(AccountType::Public)
         .with_component(account_component2)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2271,7 +2271,7 @@ async fn genesis_with_multiple_accounts() {
     let account3 = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component3)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2771,7 +2771,7 @@ fn db_roundtrip_account_storage_with_maps() {
     let account = AccountBuilder::new([50u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))

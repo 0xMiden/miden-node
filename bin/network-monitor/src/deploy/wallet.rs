@@ -87,7 +87,7 @@ pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::Public)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(counter_component)
         .build()
         .context("failed to build wallet account")?;

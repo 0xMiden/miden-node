@@ -67,7 +67,9 @@ pub fn partition_by_allowlist(
 mod tests {
     use std::collections::BTreeSet;
 
+    use miden_protocol::asset::FungibleAsset;
     use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccountNoteAllowlistError};
+    use miden_standards::account::fees::FeePolicyManager;
 
     use super::*;
     use crate::test_utils::{
@@ -90,8 +92,11 @@ end";
         let note = mock_single_target_note(account_id, 10);
         let root = note.as_note().script().root();
         let account = mock_account_with_auth_component(
-            AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root]))
-                .expect("non-empty allowlist should construct"),
+            AuthNetworkAccount::new(
+                BTreeSet::from_iter([root]),
+                FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+            )
+            .expect("non-empty allowlist should construct"),
         );
 
         let partitioned_notes =
@@ -113,8 +118,11 @@ end";
         assert_ne!(allowed_root, rejected_root);
 
         let account = mock_account_with_auth_component(
-            AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([allowed_root]))
-                .expect("non-empty allowlist should construct"),
+            AuthNetworkAccount::new(
+                BTreeSet::from_iter([allowed_root]),
+                FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+            )
+            .expect("non-empty allowlist should construct"),
         );
 
         let partitioned_notes = partition_by_allowlist(&account, vec![rejected_note.clone()])
@@ -138,8 +146,11 @@ end";
         assert_ne!(allowed_root, rejected_root);
 
         let account = mock_account_with_auth_component(
-            AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([allowed_root]))
-                .expect("non-empty allowlist should construct"),
+            AuthNetworkAccount::new(
+                BTreeSet::from_iter([allowed_root]),
+                FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+            )
+            .expect("non-empty allowlist should construct"),
         );
 
         let partitioned_notes =

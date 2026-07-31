@@ -46,7 +46,12 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_standards::account::auth::{NetworkAccount, NetworkAccountNoteAllowlist};
+use miden_standards::account::auth::{
+    NetworkAccount,
+    NetworkAccountNoteAllowlist,
+    NetworkAccountTxScriptAllowlist,
+};
+use miden_standards::tx_script::ExpirationTransactionScript;
 
 use crate::COMPONENT;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
@@ -1178,13 +1183,24 @@ fn prepare_precomputed_full_account_update(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let is_network_account = account_id.is_public()
-        && patch
+    let allowlist_entries = |slot_name: &StorageSlotName| {
+        patch
             .storage()
             .maps()
-            .find(|(slot_name, _)| *slot_name == NetworkAccountNoteAllowlist::slot_name())
+            .find(|(candidate, _)| *candidate == slot_name)
             .and_then(|(_slot_name, map_patch)| map_patch.entries())
-            .is_some_and(|entries| !entries.is_empty());
+    };
+    let has_allowed_notes = allowlist_entries(NetworkAccountNoteAllowlist::slot_name())
+        .is_some_and(|entries| entries.as_map().values().any(|value| *value != Word::empty()));
+    let allows_expiration_tx_script =
+        allowlist_entries(NetworkAccountTxScriptAllowlist::slot_name()).is_some_and(|entries| {
+            entries
+                .as_map()
+                .get(&StorageMapKey::new(ExpirationTransactionScript::script_root().as_word()))
+                .is_some_and(|value| *value != Word::empty())
+        });
+    let is_network_account =
+        account_id.is_public() && has_allowed_notes && allows_expiration_tx_script;
     let state = PrecomputedFullAccountState {
         nonce,
         code,

@@ -73,20 +73,22 @@ pub fn mock_account(_account_id: AccountId) -> miden_protocol::account::Account 
     AccountBuilder::new([0u8; 32])
         .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_slots(vec![]))
-        .with_auth_component(NoopAuthComponent)
+        .with_component(NoopAuthComponent)
         .build_existing()
         .unwrap()
 }
 
-/// Creates a mock network [`Account`] with the provided auth component.
-pub fn mock_account_with_auth_component(auth_component: impl Into<AccountComponent>) -> Account {
+/// Creates a mock network [`Account`] with the provided auth components.
+pub fn mock_account_with_auth_component(
+    auth_components: impl IntoIterator<Item = impl Into<AccountComponent>>,
+) -> Account {
     use miden_protocol::account::AccountBuilder;
     use miden_standards::testing::account_component::MockAccountComponent;
 
     AccountBuilder::new([0u8; 32])
         .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_slots(vec![]))
-        .with_auth_component(auth_component)
+        .with_components(auth_components)
         .build_existing()
         .unwrap()
 }
@@ -120,13 +122,18 @@ pub fn mock_network_account_update() -> (Account, miden_protocol::account::Accou
     use std::collections::BTreeSet;
 
     use miden_protocol::account::{AccountPatch, AccountUpdateDetails};
+    use miden_protocol::asset::FungibleAsset;
     use miden_standards::account::auth::AuthNetworkAccount;
+    use miden_standards::account::fees::FeePolicyManager;
 
     // The allowlist content is irrelevant here; any non-empty set yields a valid network account.
     let root = mock_single_target_note(mock_network_account_id(), 1).as_note().script().root();
     let account = mock_account_with_auth_component(
-        AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root]))
-            .expect("non-empty allowlist should construct"),
+        AuthNetworkAccount::new(
+            BTreeSet::from_iter([root]),
+            FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        )
+        .expect("non-empty allowlist should construct"),
     );
     let details = AccountUpdateDetails::Public(
         AccountPatch::try_from(account.clone()).expect("full-state patch should build"),

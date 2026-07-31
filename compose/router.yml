@@ -9,6 +9,11 @@ services:
         target: /etc/caddy/Caddyfile
       - source: caddy-routes-default
         target: /etc/caddy/routes/default.caddy
+    # The faucet uses the public browser URL from inside the Compose network.
+    networks:
+      default:
+        aliases:
+          - rpc.localhost
     ports:
       - "127.0.0.1:80:80"
     restart: unless-stopped
@@ -22,15 +27,15 @@ configs:
       }
 
       http://rpc.localhost {
-        reverse_proxy sequencer:57291
+        reverse_proxy h2c://sequencer:57291
       }
 
       http://prover.localhost {
-        reverse_proxy tx-prover:50051
+        reverse_proxy h2c://tx-prover:50051
       }
 
       http://ntl.localhost {
-        reverse_proxy note-transport:57292
+        reverse_proxy h2c://note-transport:57292
       }
 
       http://faucet.localhost {

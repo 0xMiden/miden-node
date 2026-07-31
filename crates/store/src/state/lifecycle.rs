@@ -65,7 +65,9 @@ impl LoadedState {
     /// [`Arc<State>`] is the read-only view shared with every component that queries or
     /// subscribes; it exposes no mutating methods. [`BlockWriter`] and [`ProofWriter`] are the
     /// only handles able to mutate the store — hand them to the single task driving each write
-    /// path (block production or sync, and proof scheduling or sync respectively).
+    /// path (block production or sync, and proof scheduling or sync respectively). The
+    /// capabilities expose no read access: tasks that both read and write receive the
+    /// [`Arc<State>`] alongside their capability.
     ///
     /// The writer exits once the shutdown token passed to [`State::load`] is cancelled or the
     /// [`BlockWriter`] (holding the only request sender) is dropped — an in-flight block write
@@ -78,7 +80,7 @@ impl LoadedState {
         let writer_task = tokio::spawn(self.writer.run());
         let state = Arc::new(self.state);
         let block_writer = BlockWriter {
-            state: Arc::clone(&state),
+            block_store: Arc::clone(&state.block_store),
             write_tx: self.write_tx,
         };
         let proof_writer = ProofWriter { state: Arc::clone(&state) };
@@ -94,28 +96,19 @@ impl LoadedState {
 /// Only handle able to apply blocks; obtained exactly once from [`LoadedState::start`] and
 /// deliberately not cloneable, so granting it to a single task (the block builder in sequencer
 /// mode, the block sync loop in full-node mode) statically prevents every other component from
-/// writing blocks. Dereferences to [`State`] for read access.
+/// writing blocks.
+///
+/// Exposes no read access: holders that also need to query the store receive the [`Arc<State>`]
+/// returned alongside this capability by [`LoadedState::start`].
 pub struct BlockWriter {
-    state: Arc<State>,
+    /// The block store, used to persist proving inputs alongside applied blocks.
+    pub(super) block_store: Arc<BlockStore>,
     /// Sender for block-write requests to the [`WriteWorker`](crate::state::writer::WriteWorker)
     /// task. Never cloned out of this struct: the writer exits once it is dropped.
     pub(super) write_tx: mpsc::Sender<WriteRequest>,
 }
 
-impl std::ops::Deref for BlockWriter {
-    type Target = State;
-
-    fn deref(&self) -> &State {
-        &self.state
-    }
-}
-
 impl BlockWriter {
-    /// Returns the shared read-only state.
-    pub fn state(&self) -> &Arc<State> {
-        &self.state
-    }
-
     /// Stops the store, waiting until the write worker has released the tree storage it owns.
     ///
     /// Consumes the capability — closing the write channel the write worker listens on — and then
@@ -144,24 +137,13 @@ impl BlockWriter {
 /// Only handle able to commit block proofs and advance the proven tip; obtained exactly once from
 /// [`LoadedState::start`] and deliberately not cloneable, so granting it to a single task (the
 /// proof scheduler in sequencer mode, the proof sync loop in full-node mode) statically prevents
-/// every other component from writing proofs. Dereferences to [`State`] for read access.
+/// every other component from writing proofs.
+///
+/// Exposes no read access: the held state is only used internally to commit proofs and advance
+/// the proven tip. Holders that also need to query the store receive the [`Arc<State>`] returned
+/// alongside this capability by [`LoadedState::start`].
 pub struct ProofWriter {
-    state: Arc<State>,
-}
-
-impl std::ops::Deref for ProofWriter {
-    type Target = State;
-
-    fn deref(&self) -> &State {
-        &self.state
-    }
-}
-
-impl ProofWriter {
-    /// Returns the shared read-only state.
-    pub fn state(&self) -> &Arc<State> {
-        &self.state
-    }
+    pub(super) state: Arc<State>,
 }
 
 // WRITER TASK

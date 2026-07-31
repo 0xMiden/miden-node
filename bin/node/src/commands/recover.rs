@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -35,15 +36,15 @@ pub struct RecoverCommand {
 
 impl RecoverCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let (block_writer, writer_task) = self.load_state().await?;
+        let (state, block_writer, writer_task) = self.load_state().await?;
         let validator = self.validator_client()?;
-        let result = recover_from_validator(&block_writer, validator).await;
+        let result = recover_from_validator(&state, &block_writer, validator).await;
         // Wait for the writer to drain and release the backing storage before the process exits.
         block_writer.stop(writer_task).await;
         result
     }
 
-    async fn load_state(&self) -> anyhow::Result<(BlockWriter, WriterTask)> {
+    async fn load_state(&self) -> anyhow::Result<(Arc<State>, BlockWriter, WriterTask)> {
         // Recovery is not wired into the node's shutdown token; the writer exits once the
         // `BlockWriter` (holding the only write handle) is dropped after recovery completes.
         let loaded = State::load_with_database_options(
@@ -55,8 +56,8 @@ impl RecoverCommand {
         .await
         .context("failed to load state")?;
 
-        let (_state, block_writer, _proof_writer, writer_task) = loaded.start();
-        Ok((block_writer, writer_task))
+        let (state, block_writer, _proof_writer, writer_task) = loaded.start();
+        Ok((state, block_writer, writer_task))
     }
 
     fn validator_client(&self) -> anyhow::Result<ValidatorClient> {
@@ -72,6 +73,7 @@ impl RecoverCommand {
 
 /// Streams blocks from the validator into the local store until the chain tip is reached.
 async fn recover_from_validator(
+    state: &State,
     block_writer: &BlockWriter,
     mut validator: ValidatorClient,
 ) -> anyhow::Result<()> {
@@ -87,7 +89,7 @@ async fn recover_from_validator(
             .chain_tip,
     );
 
-    let local_tip = block_writer.committed_tip();
+    let local_tip = state.committed_tip();
     if local_tip >= validator_tip {
         info!(
             target: LOG_TARGET,
@@ -130,7 +132,7 @@ async fn recover_from_validator(
     }
 
     // The stream can end before reaching the tip if the validator restarts or drops the connection.
-    let final_tip = block_writer.committed_tip();
+    let final_tip = state.committed_tip();
     anyhow::ensure!(
         final_tip >= validator_tip,
         "validator block stream ended at block {} before reaching the chain tip {}",

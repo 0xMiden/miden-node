@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context;
-use miden_node_store::state::BlockWriter;
+use miden_node_store::state::{BlockWriter, State};
 use miden_node_utils::formatting::format_array;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
@@ -31,6 +31,9 @@ pub struct BlockBuilder {
     /// The frequency at which blocks are produced.
     pub block_interval: Duration,
 
+    /// Read-only store state, used to fetch block inputs.
+    pub state: Arc<State>,
+
     /// The store's block-write capability, used for committing blocks.
     pub block_writer: BlockWriter,
 
@@ -44,11 +47,17 @@ impl BlockBuilder {
     ///
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
+        state: Arc<State>,
         block_writer: BlockWriter,
         validator: BlockProducerValidatorClient,
         block_interval: Duration,
     ) -> Self {
-        Self { block_interval, block_writer, validator }
+        Self {
+            block_interval,
+            state,
+            block_writer,
+            validator,
+        }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
     ///
@@ -214,7 +223,7 @@ impl BlockBuilder {
             batch_iter.map(Deref::deref).flat_map(ProvenBatch::created_nullifiers);
 
         let inputs = self
-            .block_writer
+            .state
             .view()
             .get_block_inputs(
                 account_ids_iter.collect(),

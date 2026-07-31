@@ -238,6 +238,7 @@ impl Rpc {
                 tasks.spawn(
                     "RPC sync",
                     RpcSync {
+                        state: Arc::clone(&self.state),
                         block_writer,
                         proof_writer,
                         source_rpc: *source_rpc,

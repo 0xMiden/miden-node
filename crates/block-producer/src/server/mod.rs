@@ -115,7 +115,12 @@ impl Sequencer {
 
         tracing::info!(target: LOG_TARGET, "Sequencer initialized");
 
-        let block_builder = BlockBuilder::new(self.block_writer, validator, self.block_interval);
+        let block_builder = BlockBuilder::new(
+            Arc::clone(&state),
+            self.block_writer,
+            validator,
+            self.block_interval,
+        );
         let batch_intervals = BatchIntervals::derive_from(self.block_interval, self.batch_interval);
         let batch_builder = BatchBuilder::new(
             Arc::clone(&state),
@@ -155,11 +160,13 @@ impl Sequencer {
             async { block_builder.run(mempool, shutdown).await }
         });
         tasks.spawn("proof-scheduler", {
+            let state = Arc::clone(&api.state);
             let proof_writer = self.proof_writer;
             let shutdown = shutdown.clone();
             async move {
                 proof_scheduler::run(
                     block_prover,
+                    state,
                     proof_writer,
                     chain_tip_rx,
                     self.max_concurrent_proofs,

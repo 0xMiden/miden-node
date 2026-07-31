@@ -1,12 +1,9 @@
 //! Store lifecycle: loading the state, starting its write worker, and stopping the store.
 
-use std::future::Future;
 use std::num::NonZeroUsize;
 use std::path::Path;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
-use std::task::{Context, Poll};
 
 use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
@@ -33,8 +30,16 @@ use crate::state::loader::{
     verify_account_state_forest_consistency,
     verify_tree_consistency,
 };
-use crate::state::writer::{WriteRequest, WriteWorker};
-use crate::state::{BlockCache, ProofCache, SnapshotGuard, State, StateSnapshot};
+use crate::state::writer::{WriteRequest, WriteWorker, WriterTask};
+use crate::state::{
+    BlockCache,
+    BlockWriter,
+    ProofCache,
+    ProofWriter,
+    SnapshotGuard,
+    State,
+    StateSnapshot,
+};
 use crate::{COMPONENT, DataDirectory, DatabaseOptions};
 
 /// Number of recent committed blocks held in the in-memory cache for replica subscriptions.
@@ -88,86 +93,7 @@ impl LoadedState {
     }
 }
 
-// WRITE CAPABILITIES
-// ================================================================================================
-
-/// The store's block-write capability.
-///
-/// Only handle able to apply blocks; obtained exactly once from [`LoadedState::start`] and
-/// deliberately not cloneable, so granting it to a single task (the block builder in sequencer
-/// mode, the block sync loop in full-node mode) statically prevents every other component from
-/// writing blocks.
-///
-/// Exposes no read access: holders that also need to query the store receive the [`Arc<State>`]
-/// returned alongside this capability by [`LoadedState::start`].
-pub struct BlockWriter {
-    /// The block store, used to persist proving inputs alongside applied blocks.
-    pub(super) block_store: Arc<BlockStore>,
-    /// Sender for block-write requests to the [`WriteWorker`](crate::state::writer::WriteWorker)
-    /// task. Never cloned out of this struct: the writer exits once it is dropped.
-    pub(super) write_tx: mpsc::Sender<WriteRequest>,
-}
-
-impl BlockWriter {
-    /// Stops the store, waiting until the write worker has released the tree storage it owns.
-    ///
-    /// Consumes the capability — closing the write channel the write worker listens on — and then
-    /// joins the writer task returned by [`LoadedState::start`]. The drop must precede the join
-    /// or the write worker never observes the closed channel; doing both here keeps that ordering
-    /// out of caller hands. Read-only [`State`] references may outlive the stop.
-    ///
-    /// Callers that need the storage released deterministically must use this method instead of
-    /// dropping: the node's `recover` command stops the store before the process exits, and the
-    /// stress-test's store seeding stops it so the same data directory can be re-loaded (or its
-    /// temporary directory deleted) immediately afterwards. The running node does not use this
-    /// method — its writer exits via the shutdown token passed to [`State::load`] and is joined
-    /// through the node's task set.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the writer task panicked.
-    pub async fn stop(self, writer_task: WriterTask) {
-        drop(self);
-        writer_task.await.expect("write worker task should not panic");
-    }
-}
-
-/// The store's proof-write capability.
-///
-/// Only handle able to commit block proofs and advance the proven tip; obtained exactly once from
-/// [`LoadedState::start`] and deliberately not cloneable, so granting it to a single task (the
-/// proof scheduler in sequencer mode, the proof sync loop in full-node mode) statically prevents
-/// every other component from writing proofs.
-///
-/// Exposes no read access: the held state is only used internally to commit proofs and advance
-/// the proven tip. Holders that also need to query the store receive the [`Arc<State>`] returned
-/// alongside this capability by [`LoadedState::start`].
-pub struct ProofWriter {
-    pub(super) state: Arc<State>,
-}
-
-// WRITER TASK
-// ================================================================================================
-
-/// Handle of the store's write worker task, returned by [`LoadedState::start`].
-///
-/// Awaiting it resolves once the writer has exited and released the tree storage it owns; a join
-/// error carries a writer panic. The newtype ensures [`BlockWriter::stop`] can only be given the
-/// store's own writer task, and deliberately does not expose [`tokio::task::JoinHandle::abort`]:
-/// aborting the writer mid-write could leave the trees lagging the committed database state,
-/// voiding the guarantee that an in-flight block write always completes.
-#[must_use = "await the writer task to observe its exit, or pass it to `BlockWriter::stop`"]
-pub struct WriterTask(tokio::task::JoinHandle<()>);
-
-impl Future for WriterTask {
-    type Output = Result<(), tokio::task::JoinError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx)
-    }
-}
-
-// LOAD & STOP
+// LOAD
 // ================================================================================================
 
 impl State {
@@ -299,20 +225,20 @@ impl State {
         // exits when the shutdown token is cancelled or the `BlockWriter` (holding the only request
         // sender) is dropped.
         let (write_tx, write_rx) = mpsc::channel(1);
-        let block_writer = WriteWorker {
-            db: Arc::clone(&db),
-            block_store: Arc::clone(&block_store),
-            latest_snapshot: Arc::clone(&latest_snapshot),
-            committed_tip_tx: Arc::clone(&committed_tip_tx),
-            block_cache: block_cache.clone(),
-            rx: write_rx,
+        let block_writer = WriteWorker::new(
+            Arc::clone(&db),
+            Arc::clone(&block_store),
+            Arc::clone(&latest_snapshot),
+            Arc::clone(&committed_tip_tx),
+            block_cache.clone(),
+            write_rx,
             shutdown,
             nullifier_tree,
             account_tree,
             blockchain,
             forest,
             snapshots_live,
-        };
+        );
         let state = Self {
             data_directory: data_path.to_path_buf(),
             db,

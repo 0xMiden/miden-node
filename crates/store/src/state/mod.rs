@@ -20,7 +20,7 @@ mod disk_monitor;
 mod loader;
 
 mod lifecycle;
-pub use lifecycle::{BlockWriter, LoadedState, ProofWriter, WriterTask};
+pub use lifecycle::LoadedState;
 
 mod replica;
 pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
@@ -32,6 +32,7 @@ pub use view::{ScopedBlockNum, ScopedBlockRange, StateView, TransactionInputs};
 use view::{SnapshotGuard, StateSnapshot};
 
 mod writer;
+pub use writer::{BlockWriter, ProofWriter, WriterTask};
 
 // CHAIN STATE
 // ================================================================================================

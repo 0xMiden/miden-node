@@ -88,7 +88,7 @@ pub(super) struct WriteWorker {
     pub(in crate::state) db: Arc<Db>,
     pub(in crate::state) block_store: Arc<BlockStore>,
     /// Atomically swappable pointer through which new snapshots are published.
-    pub(in crate::state) in_memory: Arc<ArcSwap<StateSnapshot>>,
+    pub(in crate::state) latest_snapshot: Arc<ArcSwap<StateSnapshot>>,
     pub(in crate::state) committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
     pub(in crate::state) block_cache: BlockCache,
     pub(in crate::state) rx: mpsc::Receiver<WriteRequest>,
@@ -221,7 +221,7 @@ impl WriteWorker {
 
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
         // see the updated state. Readers holding the old snapshot continue unaffected.
-        self.in_memory.store(snapshot);
+        self.latest_snapshot.store(snapshot);
 
         let snapshots_live = self.check_live_snapshots(block_num);
         miden_span_record!(snapshots.live = snapshots_live);

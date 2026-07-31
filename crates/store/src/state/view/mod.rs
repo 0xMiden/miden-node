@@ -57,7 +57,7 @@ impl State {
     /// held.
     pub fn view(&self) -> StateView {
         StateView {
-            snapshot: self.in_memory.load_full(),
+            snapshot: self.latest_snapshot.load_full(),
             db: Arc::clone(&self.db),
         }
     }

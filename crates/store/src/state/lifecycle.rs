@@ -310,7 +310,7 @@ impl State {
                 .map_err(|e| StateInitializationError::AccountStateForestIoError(e.as_report()))?,
             SnapshotGuard::new(Arc::clone(&snapshots_live), latest_block_num),
         ));
-        let in_memory = Arc::new(ArcSwap::from(initial_snapshot));
+        let latest_snapshot = Arc::new(ArcSwap::from(initial_snapshot));
 
         // Assemble the write worker. It owns the writable trees and processes write requests
         // serially, publishing a new snapshot after each committed block. The caller runs it; it
@@ -320,7 +320,7 @@ impl State {
         let block_writer = WriteWorker {
             db: Arc::clone(&db),
             block_store: Arc::clone(&block_store),
-            in_memory: Arc::clone(&in_memory),
+            latest_snapshot: Arc::clone(&latest_snapshot),
             committed_tip_tx: Arc::clone(&committed_tip_tx),
             block_cache: block_cache.clone(),
             rx: write_rx,
@@ -335,7 +335,7 @@ impl State {
             data_directory: data_path.to_path_buf(),
             db,
             block_store,
-            in_memory,
+            latest_snapshot,
             proven_tip,
             committed_tip_tx,
             block_cache,

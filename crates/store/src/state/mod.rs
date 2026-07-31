@@ -61,7 +61,7 @@ pub struct State {
     /// Readers load the snapshot wait-free via [`ArcSwap::load_full`]; the
     /// [`WriteWorker`](writer::WriteWorker) task atomically replaces the pointer after each
     /// committed block. Readers holding an old snapshot are unaffected by the swap.
-    in_memory: Arc<ArcSwap<StateSnapshot>>,
+    latest_snapshot: Arc<ArcSwap<StateSnapshot>>,
 
     /// The latest proven-in-sequence block number, updated by the proof scheduler or `apply_proof`.
     proven_tip: ProvenTipWriter,

@@ -19,8 +19,10 @@ impl State {
     /// This is a live value: it advances independently of any [`StateView`](super::StateView).
     /// Reads that must be consistent with data must use a view's tip instead.
     ///
-    /// The committed tip is published after the corresponding state snapshot, so it never reports
-    /// a block that a freshly created view cannot serve.
+    /// Ordering matters when combining this with a view: read the tip *before* creating the view.
+    /// Tips are monotonic and the committed tip is published after its snapshot, so a view
+    /// created afterwards can always serve a tip read earlier. Reading a live tip *after*
+    /// creating a view is racy — the tip may have advanced past the view's pinned snapshot.
     pub fn committed_tip(&self) -> BlockNumber {
         *self.committed_tip_tx.borrow()
     }
@@ -29,6 +31,12 @@ impl State {
     ///
     /// This is a live value published by the proof scheduler (sequencer mode) or the proof sync
     /// loop (full-node mode); it is always at or behind the committed tip.
+    ///
+    /// Ordering matters when combining this with a view: read the tip *before* creating the view.
+    /// Proofs are only applied to committed blocks and each committed tip is published after its
+    /// snapshot, so a view created afterwards can always serve a proven tip read earlier. Reading
+    /// it *after* creating a view is racy — a block may commit and prove concurrently, putting
+    /// the proven tip past the view's pinned snapshot.
     pub fn proven_tip(&self) -> BlockNumber {
         self.proven_tip.read()
     }

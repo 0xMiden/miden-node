@@ -40,39 +40,31 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         debug!(target: LOG_TARGET, "Syncing chain MMR");
 
         let current_client_block_height = BlockNumber::from(request.current_client_block_height);
-        let finality_level = request.finality_level();
-        let (block_range, sync_result) = self
-            .state
-            .with_view(async |view| {
-                let sync_target = match finality_level {
-                    proto::rpc::FinalityLevel::Committed
-                    | proto::rpc::FinalityLevel::Unspecified => view.tip(),
-                    // The proven tip is read from a watch channel, not the view's snapshot, so
-                    // clamp it to the view's tip: a block could be committed and proven between
-                    // taking the view and reading the proven tip, and the view cannot serve blocks
-                    // beyond its snapshot.
-                    proto::rpc::FinalityLevel::Proven => self.state.proven_tip().min(view.tip()),
-                };
-                let block_range = current_client_block_height..=sync_target;
-                let result = if current_client_block_height > sync_target {
-                    None
-                } else {
-                    Some(view.sync_chain_mmr(block_range.clone()).await)
-                };
-                (block_range, result)
-            })
-            .await;
 
-        let Some(sync_result) = sync_result else {
-            return Err(Status::invalid_argument(format!(
-                "start block is not known: current client block height {current_client_block_height} is greater than chain tip {}",
-                block_range.end(),
-            )));
+        // Read the target tip before creating the view: tips are monotonic and each committed tip
+        // is published after its snapshot, so the view below is guaranteed to be able to serve
+        // `sync_target`.
+        let sync_target = match request.finality_level() {
+            proto::rpc::FinalityLevel::Committed | proto::rpc::FinalityLevel::Unspecified => {
+                self.state.committed_tip()
+            },
+            proto::rpc::FinalityLevel::Proven => self.state.proven_tip(),
         };
-        let (mmr_delta, block_header, block_signatures) = sync_result.map_err(|err| match err {
-            StateSyncError::RangeBeyondTip(_) => Status::invalid_argument(err.to_string()),
-            _ => Status::internal(err.to_string()),
-        })?;
+
+        if current_client_block_height > sync_target {
+            return Err(Status::invalid_argument(format!(
+                "start block is not known: current client block height {current_client_block_height} is greater than chain tip {sync_target}"
+            )));
+        }
+
+        let block_range = current_client_block_height..=sync_target;
+        let (mmr_delta, block_header, block_signatures) =
+            self.state.view().sync_chain_mmr(block_range.clone()).await.map_err(
+                |err| match err {
+                    StateSyncError::RangeBeyondTip(_) => Status::invalid_argument(err.to_string()),
+                    _ => Status::internal(err.to_string()),
+                },
+            )?;
 
         Ok(proto::rpc::SyncChainMmrResponse {
             block_range: Some(proto::rpc::BlockRange {

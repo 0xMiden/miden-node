@@ -518,18 +518,17 @@ pub async fn sync_transactions(
     block_to: u32,
 ) -> (Duration, proto::rpc::SyncTransactionsResponse) {
     let start = Instant::now();
-    let (chain_tip, sync_result) = state
+    let (chain_tip, (last_block_included, records)) = state
         .with_view(async |view| {
-            let result = view
-                .sync_transactions(
-                    account_ids,
-                    BlockNumber::from(block_from)..=BlockNumber::from(block_to),
-                )
-                .await;
-            (view.tip(), result)
+            view.sync_transactions(
+                account_ids,
+                BlockNumber::from(block_from)..=BlockNumber::from(block_to),
+            )
+            .await
+            .map(|records| (view.tip(), records))
+            .unwrap()
         })
         .await;
-    let (last_block_included, records) = sync_result.unwrap();
     let response = proto::rpc::SyncTransactionsResponse {
         pagination_info: Some(proto::rpc::PaginationInfo {
             chain_tip: chain_tip.as_u32(),

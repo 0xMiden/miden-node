@@ -62,14 +62,15 @@ impl proto::server::rpc_api::SyncTransactions for RpcService {
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
         let account_ids = read_account_ids::<Status, _>(request.account_ids)?;
-        let (chain_tip, sync_result) = self
+        let (chain_tip, (last_block_included, transaction_records_db)) = self
             .state
             .with_view(async |view| {
-                (view.tip(), view.sync_transactions(account_ids, block_range).await)
+                view.sync_transactions(account_ids, block_range)
+                    .await
+                    .map(|records| (view.tip(), records))
+                    .map_err(|err| database_error_to_status(&err))
             })
-            .await;
-        let (last_block_included, transaction_records_db) =
-            sync_result.map_err(|err| database_error_to_status(&err))?;
+            .await?;
         let transactions =
             transaction_records_db.into_iter().map(transaction_record_to_proto).collect();
 

@@ -58,15 +58,15 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let (chain_tip, sync_result) = self
+        let (chain_tip, (nullifiers, block_num)) = self
             .state
             .with_view(async |view| {
-                let result =
-                    view.sync_nullifiers(request.prefix_len, request.nullifiers, block_range).await;
-                (view.tip(), result)
+                view.sync_nullifiers(request.prefix_len, request.nullifiers, block_range)
+                    .await
+                    .map(|nullifiers| (view.tip(), nullifiers))
+                    .map_err(|err| database_error_to_status(&err))
             })
-            .await;
-        let (nullifiers, block_num) = sync_result.map_err(|err| database_error_to_status(&err))?;
+            .await?;
         let nullifiers = nullifiers
             .into_iter()
             .map(|nullifier_info| proto::rpc::sync_nullifiers_response::NullifierUpdate {

@@ -189,17 +189,16 @@ pub async fn get_tx_inputs(
     // released as soon as the query completes.
     let (current_block_height, store_inputs) = state
         .with_view(async |view| {
-            let inputs = view
-                .get_transaction_inputs(
-                    proven_tx.account_id(),
-                    &nullifiers,
-                    unauthenticated_note_commitments,
-                )
-                .await;
-            (view.tip(), inputs)
+            view.get_transaction_inputs(
+                proven_tx.account_id(),
+                &nullifiers,
+                unauthenticated_note_commitments,
+            )
+            .await
+            .map(|inputs| (view.tip(), inputs))
+            .map_err(StoreError::GetTransactionInputsFailed)
         })
-        .await;
-    let store_inputs = store_inputs.map_err(StoreError::GetTransactionInputsFailed)?;
+        .await?;
 
     if !store_inputs.new_account_id_prefix_is_unique.unwrap_or(true) {
         debug_assert!(

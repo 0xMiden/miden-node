@@ -58,14 +58,15 @@ impl proto::server::rpc_api::SyncAccountVault for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let (chain_tip, sync_result) = self
+        let (chain_tip, (last_included_block, updates)) = self
             .state
             .with_view(async |view| {
-                (view.tip(), view.sync_account_vault(account_id, block_range).await)
+                view.sync_account_vault(account_id, block_range)
+                    .await
+                    .map(|updates| (view.tip(), updates))
+                    .map_err(|err| database_error_to_status(&err))
             })
-            .await;
-        let (last_included_block, updates) =
-            sync_result.map_err(|err| database_error_to_status(&err))?;
+            .await?;
         let updates = updates
             .into_iter()
             .map(|update| {

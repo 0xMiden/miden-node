@@ -518,12 +518,18 @@ pub async fn sync_transactions(
     block_to: u32,
 ) -> (Duration, proto::rpc::SyncTransactionsResponse) {
     let start = Instant::now();
-    let view = state.view();
-    let (last_block_included, records) = view
-        .sync_transactions(account_ids, BlockNumber::from(block_from)..=BlockNumber::from(block_to))
-        .await
-        .unwrap();
-    let chain_tip = view.tip();
+    let (chain_tip, sync_result) = state
+        .with_view(async |view| {
+            let result = view
+                .sync_transactions(
+                    account_ids,
+                    BlockNumber::from(block_from)..=BlockNumber::from(block_to),
+                )
+                .await;
+            (view.tip(), result)
+        })
+        .await;
+    let (last_block_included, records) = sync_result.unwrap();
     let response = proto::rpc::SyncTransactionsResponse {
         pagination_info: Some(proto::rpc::PaginationInfo {
             chain_tip: chain_tip.as_u32(),
@@ -635,11 +641,13 @@ pub async fn bench_sync_chain_mmr(data_directory: PathBuf, iterations: usize, co
 /// - the response.
 async fn sync_chain_mmr(state: &Arc<State>, current_client_block_height: u32) -> SyncChainMmrRun {
     let start = Instant::now();
-    let view = state.view();
-    let chain_tip = view.tip();
-    view.sync_chain_mmr(BlockNumber::from(current_client_block_height)..=chain_tip)
-        .await
-        .unwrap();
+    state
+        .with_view(async |view| {
+            view.sync_chain_mmr(BlockNumber::from(current_client_block_height)..=view.tip())
+                .await
+                .unwrap();
+        })
+        .await;
     let elapsed = start.elapsed();
     SyncChainMmrRun { duration: elapsed }
 }

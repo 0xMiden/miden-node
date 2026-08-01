@@ -47,13 +47,13 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let view = self.state.view();
-        let chain_tip = view.tip();
-
-        let (results, last_block_checked) = view
-            .sync_notes(request.note_tags, block_range)
-            .await
-            .map_err(note_sync_error_to_status)?;
+        let (chain_tip, sync_result) = self
+            .state
+            .with_view(async |view| {
+                (view.tip(), view.sync_notes(request.note_tags, block_range).await)
+            })
+            .await;
+        let (results, last_block_checked) = sync_result.map_err(note_sync_error_to_status)?;
         let blocks = results
             .into_iter()
             .map(|(state, mmr_proof)| proto::rpc::sync_notes_response::NoteSyncBlock {

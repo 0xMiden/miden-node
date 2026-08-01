@@ -185,16 +185,21 @@ pub async fn get_tx_inputs(
     let unauthenticated_note_commitments =
         proven_tx.unauthenticated_notes().map(|header| header.id().as_word()).collect();
 
-    // A single view scopes both the input query and the block height below to one snapshot.
-    let view = state.view();
-    let store_inputs = view
-        .get_transaction_inputs(
-            proven_tx.account_id(),
-            &nullifiers,
-            unauthenticated_note_commitments,
-        )
-        .await
-        .map_err(StoreError::GetTransactionInputsFailed)?;
+    // A single view scopes both the input query and the block height to one snapshot; the view is
+    // released as soon as the query completes.
+    let (current_block_height, store_inputs) = state
+        .with_view(async |view| {
+            let inputs = view
+                .get_transaction_inputs(
+                    proven_tx.account_id(),
+                    &nullifiers,
+                    unauthenticated_note_commitments,
+                )
+                .await;
+            (view.tip(), inputs)
+        })
+        .await;
+    let store_inputs = store_inputs.map_err(StoreError::GetTransactionInputsFailed)?;
 
     if !store_inputs.new_account_id_prefix_is_unique.unwrap_or(true) {
         debug_assert!(
@@ -204,7 +209,6 @@ pub async fn get_tx_inputs(
         return Err(StoreError::DuplicateAccountIdPrefix(proven_tx.account_id()));
     }
 
-    let current_block_height = view.tip();
     let tx_inputs = TransactionInputs::from_store_inputs(
         proven_tx.account_id(),
         store_inputs,

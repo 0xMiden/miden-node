@@ -58,11 +58,30 @@ impl State {
     ///
     /// The view is frozen: it is unaffected if the writer publishes a new snapshot while it is
     /// held.
+    ///
+    /// Use this only for single-expression reads (`state.view().get_account(..)`), where the
+    /// temporary view drops at the end of the statement. Binding the view to a variable keeps its
+    /// snapshot generation pinned until the end of the scope; for reads spanning multiple
+    /// statements use [`Self::with_view`] instead, which releases the view as soon as the read
+    /// completes.
     pub fn view(&self) -> StateView {
         StateView {
             snapshot: self.latest_snapshot.load_full(),
             db: Arc::clone(&self.db),
         }
+    }
+
+    /// Runs a read operation over a view pinned at the current chain tip, dropping the view — and
+    /// releasing its snapshot generation — as soon as the operation completes.
+    ///
+    /// The closure receives a shared reference, so the view cannot escape the call. Prefer this
+    /// over [`Self::view`] whenever a read spans multiple statements: it keeps the snapshot from
+    /// being pinned through unrelated work that follows (e.g. response encoding). Single-expression
+    /// reads (`state.view().get_account(..)`) don't need it — the temporary view already drops at
+    /// the end of the statement.
+    pub async fn with_view<R>(&self, f: impl AsyncFnOnce(&StateView) -> R) -> R {
+        let view = self.view();
+        f(&view).await
     }
 }
 

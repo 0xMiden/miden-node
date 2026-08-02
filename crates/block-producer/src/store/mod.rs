@@ -185,8 +185,6 @@ pub async fn get_tx_inputs(
     let unauthenticated_note_commitments =
         proven_tx.unauthenticated_notes().map(|header| header.id().as_word()).collect();
 
-    // A single view scopes both the input query and the block height to one snapshot; the view is
-    // released as soon as the query completes.
     let (current_block_height, store_inputs) = state
         .with_view(async |view| {
             view.get_transaction_inputs(

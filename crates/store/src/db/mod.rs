@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::mem::size_of;
 use std::num::NonZeroUsize;
-use std::ops::{Deref, DerefMut, RangeInclusive};
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -653,18 +653,7 @@ impl Db {
         block_range: ScopedBlockRange,
         entries_limit: Option<usize>,
     ) -> Result<StorageMapValuesPage> {
-        self.select_storage_map_sync_values_raw(account_id, block_range.into_inner(), entries_limit)
-            .await
-    }
-
-    /// Raw variant of [`Self::select_storage_map_sync_values`] for internal pagination, where
-    /// sub-ranges are derived from a bound that was already validated by the caller.
-    async fn select_storage_map_sync_values_raw(
-        &self,
-        account_id: AccountId,
-        block_range: RangeInclusive<BlockNumber>,
-        entries_limit: Option<usize>,
-    ) -> Result<StorageMapValuesPage> {
+        let block_range = block_range.into_inner();
         let entries_limit = entries_limit.unwrap_or_else(default_storage_map_entries_limit);
 
         self.transact("select storage map sync values", move |conn| {
@@ -700,19 +689,19 @@ impl Db {
         use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
         use miden_protocol::EMPTY_WORD;
 
-        let block_num = block_num.get();
+        let scoped_block = block_num;
+        let block_num = scoped_block.get();
 
         // TODO this remains expensive with a large history until we implement pruning for DB
         // columns
         let mut values = Vec::new();
         let mut block_range_start = BlockNumber::GENESIS;
-        let entries_limit = entries_limit.unwrap_or_else(default_storage_map_entries_limit);
 
         let mut page = self
-            .select_storage_map_sync_values_raw(
+            .select_storage_map_sync_values(
                 account_id,
-                block_range_start..=block_num,
-                Some(entries_limit),
+                scoped_block.range_from(block_range_start),
+                entries_limit,
             )
             .await?;
 
@@ -733,10 +722,10 @@ impl Db {
 
             block_range_start = page.last_block_included.child();
             page = self
-                .select_storage_map_sync_values_raw(
+                .select_storage_map_sync_values(
                     account_id,
-                    block_range_start..=block_num,
-                    Some(entries_limit),
+                    scoped_block.range_from(block_range_start),
+                    entries_limit,
                 )
                 .await?;
 

@@ -33,6 +33,17 @@ impl ScopedBlockNum {
     pub(crate) fn get(self) -> BlockNumber {
         self.0
     }
+
+    /// Derives a scoped range ending at this validated block number.
+    ///
+    /// Sound for any `start` because only a range's upper bound carries the proof obligation.
+    /// A `start` beyond this block number would however produce an empty range, which the range
+    /// queries reject as an invalid block range. Used for paginating over a validated bound in
+    /// sub-ranges.
+    pub(crate) fn range_from(self, start: BlockNumber) -> ScopedBlockRange {
+        debug_assert!(start <= self.0, "derived range start {start} exceeds its end {}", self.0);
+        ScopedBlockRange(start..=self.0)
+    }
 }
 
 /// A block range whose upper bound is proven to be at or below the issuing view's chain tip.

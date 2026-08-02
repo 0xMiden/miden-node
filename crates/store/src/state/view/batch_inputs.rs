@@ -61,27 +61,33 @@ impl StateView {
 
         let latest_block_num = self.tip();
 
-        let highest_block_num =
-            *blocks.last().expect("we should have checked for empty block references");
-        if highest_block_num > latest_block_num {
-            return Err(GetBatchInputsError::UnknownTransactionBlockReference {
-                highest_block_num,
-                latest_block_num,
-            });
-        }
-
         // Remove the latest block from the to-be-tracked blocks as it will be the reference block
         // for the batch itself and thus added to the MMR within the batch kernel, so there is no
         // need to prove its inclusion.
         blocks.remove(&latest_block_num);
 
+        // Scoping the blocks doubles as the validation that none lies beyond the view's tip. Scoped
+        // in descending order, so the first failure carries the highest block number.
+        let scoped_blocks = blocks
+            .iter()
+            .rev()
+            .map(|&block| {
+                self.scope_block(block).ok_or(
+                    GetBatchInputsError::UnknownTransactionBlockReference {
+                        highest_block_num: block,
+                        latest_block_num,
+                    },
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         // SAFETY:
         // - The latest block num was retrieved from the view's blockchain from which we will
         //   also retrieve the proofs, so it is guaranteed to exist in that chain.
-        // - We have checked that no block number in the blocks set is greater than latest block
-        //   number *and* latest block num was removed from the set. Therefore only block
-        //   numbers smaller than latest block num remain in the set. Therefore all the block
-        //   numbers are guaranteed to exist in the chain state at latest block num.
+        // - Scoping above proved that no block in the set is greater than the latest block number
+        //   *and* the latest block num was removed from the set. Therefore only block numbers
+        //   smaller than latest block num remain in the set. Therefore all the block numbers are
+        //   guaranteed to exist in the chain state at latest block num.
         let partial_mmr =
             self.blockchain().partial_mmr_from_blocks(&blocks, latest_block_num).expect(
                 "latest block num should exist and all blocks in set should be < than latest block",
@@ -89,19 +95,13 @@ impl StateView {
 
         let batch_reference_block = latest_block_num;
 
-        // Every block left in the set was validated against the tip above, and the reference block
-        // is the tip itself.
-        let scoped_blocks: Vec<_> = blocks
-            .into_iter()
-            .map(|block| self.scope_block(block).expect("blocks were validated against the tip"))
-            .chain(std::iter::once(self.scoped_tip()))
-            .collect();
-
         // Fetch the reference block of the batch as part of this query, so we can avoid looking it
         // up in a separate DB access.
         let mut headers = self
             .db()
-            .select_block_headers(scoped_blocks.into_iter())
+            .select_block_headers(
+                scoped_blocks.into_iter().chain(std::iter::once(self.scoped_tip())),
+            )
             .await
             .map_err(GetBatchInputsError::SelectBlockHeaderError)?;
 

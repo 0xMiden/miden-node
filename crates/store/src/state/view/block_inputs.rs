@@ -14,11 +14,12 @@ use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::PartialBlockchain;
 
-use super::StateView;
+use super::{ScopedBlockNum, StateView};
 use crate::errors::GetBlockInputsError;
 
 type BlockInputWitnesses = (
-    BlockNumber,
+    ScopedBlockNum,
+    Vec<ScopedBlockNum>,
     BTreeMap<AccountId, AccountWitness>,
     BTreeMap<Nullifier, NullifierWitness>,
     PartialMmr,
@@ -49,22 +50,15 @@ impl StateView {
         let mut blocks = reference_blocks;
         blocks.extend(note_proof_reference_blocks);
 
-        let (latest_block_number, account_witnesses, nullifier_witnesses, partial_mmr) =
-            self.get_block_inputs_witnesses(&mut blocks, &account_ids, &nullifiers)?;
-
-        // Every block left in the set was validated against the latest block number by the witness
-        // fetch above, and the latest block number is the view's tip itself.
-        let scoped_blocks: Vec<_> = blocks
-            .into_iter()
-            .chain(std::iter::once(latest_block_number))
-            .map(|block| self.scope_block(block).expect("blocks were validated against the tip"))
-            .collect();
+        let (scoped_latest, scoped_blocks, account_witnesses, nullifier_witnesses, partial_mmr) =
+            self.get_block_inputs_witnesses(blocks, &account_ids, &nullifiers)?;
+        let latest_block_number = scoped_latest.get();
 
         // Fetch the block headers for all blocks in the partial MMR plus the latest one which will
         // be used as the previous block header of the block being built.
         let mut headers = self
             .db()
-            .select_block_headers(scoped_blocks.into_iter())
+            .select_block_headers(scoped_blocks.into_iter().chain(std::iter::once(scoped_latest)))
             .await
             .map_err(GetBlockInputsError::SelectBlockHeaderError)?;
 
@@ -101,30 +95,37 @@ impl StateView {
         ))
     }
 
-    /// Get account and nullifier witnesses for the requested account IDs and nullifier as well as
-    /// the [`PartialMmr`] for the given blocks. The MMR won't contain the latest block and its
-    /// number is removed from `blocks` and returned separately.
+    /// Get account and nullifier witnesses for the requested account IDs and nullifiers, the
+    /// [`PartialMmr`] for the given blocks, and the blocks as scoped block numbers alongside the
+    /// scoped latest block. The MMR and the returned blocks won't contain the latest block.
     fn get_block_inputs_witnesses(
         &self,
-        blocks: &mut BTreeSet<BlockNumber>,
+        mut blocks: BTreeSet<BlockNumber>,
         account_ids: &[AccountId],
         nullifiers: &[Nullifier],
     ) -> Result<BlockInputWitnesses, GetBlockInputsError> {
         self.with_inner_read_blocking(|inner| {
             let latest_block_number = inner.latest_block_num();
 
-            // If `blocks` is empty, use the latest block number which will never trigger the error.
-            let highest_block_number = blocks.last().copied().unwrap_or(latest_block_number);
-            if highest_block_number > latest_block_number {
-                return Err(GetBlockInputsError::UnknownBatchBlockReference {
-                    highest_block_number,
-                    latest_block_number,
-                });
-            }
-
             // The latest block is not yet in the chain MMR, so we can't (and don't need to) prove
             // its inclusion in the chain.
             blocks.remove(&latest_block_number);
+
+            // Scoping the blocks doubles as the validation that none lies beyond the view's tip
+            // (which equals the latest block number of this pinned snapshot). Scoped in descending
+            // order, so the first failure carries the highest block number.
+            let scoped_blocks = blocks
+                .iter()
+                .rev()
+                .map(|&block| {
+                    self.scope_block(block).ok_or(
+                        GetBlockInputsError::UnknownBatchBlockReference {
+                            highest_block_number: block,
+                            latest_block_number,
+                        },
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
             // Fetch the partial MMR at the state of the latest block with authentication paths for
             // the provided set of blocks.
@@ -132,12 +133,12 @@ impl StateView {
             // SAFETY:
             // - The latest block num was retrieved from the inner blockchain from which we will
             //   also retrieve the proofs, so it is guaranteed to exist in that chain.
-            // - We have checked that no block number in the blocks set is greater than latest block
-            //   number *and* latest block num was removed from the set. Therefore only block
+            // - Scoping above proved that no block in the set is greater than the latest block
+            //   number *and* the latest block num was removed from the set. Therefore only block
             //   numbers smaller than latest block num remain in the set. Therefore all the block
             //   numbers are guaranteed to exist in the chain state at latest block num.
             let partial_mmr =
-                inner.blockchain.partial_mmr_from_blocks(blocks, latest_block_number).expect(
+                inner.blockchain.partial_mmr_from_blocks(&blocks, latest_block_number).expect(
                     "latest block num should exist and all blocks in set should be < than latest block",
                 );
 
@@ -156,7 +157,13 @@ impl StateView {
                 .map(|nullifier| (nullifier, inner.nullifier_tree.open(&nullifier)))
                 .collect();
 
-            Ok((latest_block_number, account_witnesses, nullifier_witnesses, partial_mmr))
+            Ok((
+                self.scoped_tip(),
+                scoped_blocks,
+                account_witnesses,
+                nullifier_witnesses,
+                partial_mmr,
+            ))
         })
     }
 }

@@ -89,11 +89,19 @@ impl StateView {
 
         let batch_reference_block = latest_block_num;
 
+        // Every block left in the set was validated against the tip above, and the reference block
+        // is the tip itself.
+        let scoped_blocks: Vec<_> = blocks
+            .into_iter()
+            .map(|block| self.scope_block(block).expect("blocks were validated against the tip"))
+            .chain(std::iter::once(self.scoped_tip()))
+            .collect();
+
         // Fetch the reference block of the batch as part of this query, so we can avoid looking it
         // up in a separate DB access.
         let mut headers = self
             .db()
-            .select_block_headers(blocks.into_iter().chain(std::iter::once(batch_reference_block)))
+            .select_block_headers(scoped_blocks.into_iter())
             .await
             .map_err(GetBatchInputsError::SelectBlockHeaderError)?;
 

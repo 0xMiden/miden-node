@@ -341,8 +341,9 @@ impl Db {
     )]
     pub async fn select_block_header_by_block_num(
         &self,
-        maybe_block_number: Option<BlockNumber>,
+        maybe_block_number: Option<ScopedBlockNum>,
     ) -> Result<Option<BlockHeader>> {
+        let maybe_block_number = maybe_block_number.map(ScopedBlockNum::get);
         self.transact("block headers by block number", move |conn| {
             let val = queries::select_block_header_by_block_num(conn, maybe_block_number)?;
             Ok(val)
@@ -379,10 +380,10 @@ impl Db {
     )]
     pub async fn select_block_headers(
         &self,
-        blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
+        blocks: impl Iterator<Item = ScopedBlockNum> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
         self.transact("block headers from given block numbers", move |conn| {
-            let raw = queries::select_block_headers(conn, blocks)?;
+            let raw = queries::select_block_headers(conn, blocks.map(ScopedBlockNum::get))?;
             Ok(raw)
         })
         .await

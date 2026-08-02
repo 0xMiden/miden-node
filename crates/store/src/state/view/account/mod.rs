@@ -47,18 +47,22 @@ impl StateView {
             return Err(GetAccountError::AccountNotPublic(account_id));
         }
 
-        let (block_num, witness) = self.get_account_witness(block_num, account_id).await?;
+        let (scoped_block, witness) = self.get_account_witness(block_num, account_id).await?;
 
         let details = if let Some(request) = details {
             Some(
-                self.fetch_public_account_details(account_id, block_num, &witness, request)
+                self.fetch_public_account_details(account_id, scoped_block, &witness, request)
                     .await?,
             )
         } else {
             None
         };
 
-        Ok(AccountResponse { block_num, witness, details })
+        Ok(AccountResponse {
+            block_num: scoped_block.get(),
+            witness,
+            details,
+        })
     }
 
     /// Returns an account witness (Merkle proof of inclusion in the account tree).
@@ -73,8 +77,8 @@ impl StateView {
         &self,
         block_num: Option<BlockNumber>,
         account_id: AccountId,
-    ) -> Result<(BlockNumber, AccountWitness), GetAccountError> {
-        self.with_inner_read_blocking(|inner_state| {
+    ) -> Result<(ScopedBlockNum, AccountWitness), GetAccountError> {
+        let (block_num, witness) = self.with_inner_read_blocking(|inner_state| {
             // Determine which block to query
             let (block_num, witness) = if let Some(requested_block) = block_num {
                 // Historical query: use the account tree with history
@@ -97,8 +101,14 @@ impl StateView {
                 (block_num, witness)
             };
 
-            Ok((block_num, witness))
-        })
+            Ok::<_, GetAccountError>((block_num, witness))
+        })?;
+
+        // The tree resolution above is the validation: both branches yield a block at or below the
+        // tree's latest block, which equals this view's tip.
+        let scoped_block =
+            self.scope_block(block_num).ok_or(GetAccountError::UnknownBlock(block_num))?;
+        Ok((scoped_block, witness))
     }
 
     /// Returns storage map details from the forest for a specific account and storage slot.
@@ -115,8 +125,9 @@ impl StateView {
         &self,
         account_id: AccountId,
         slot_name: &StorageSlotName,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
     ) -> Result<Option<AccountStorageMapDetails>, DatabaseError> {
+        let block_num = block_num.get();
         self.with_forest_read_blocking(|forest| {
             match forest
                 .get_storage_map_details_for_all_entries(account_id, slot_name.clone(), block_num)
@@ -201,7 +212,7 @@ impl StateView {
     async fn fetch_public_account_details(
         &self,
         account_id: AccountId,
-        block_num: BlockNumber,
+        scoped_block: ScopedBlockNum,
         witness: &AccountWitness,
         detail_request: AccountDetailRequest,
     ) -> Result<AccountDetails, GetAccountError> {
@@ -215,11 +226,9 @@ impl StateView {
             return Err(GetAccountError::AccountNotPublic(account_id));
         }
 
-        // Validate block exists in the blockchain before querying the database. The view's tip is
-        // the same snapshot the witness was resolved against, so the witness and the DB reads below
-        // observe a single consistent block height.
-        let scoped_block =
-            self.scope_block(block_num).ok_or(GetAccountError::UnknownBlock(block_num))?;
+        // The scoped block was resolved against this view's snapshot, so the witness and the DB
+        // reads below observe a single consistent block height.
+        let block_num = scoped_block.get();
 
         // Query account header and storage header together in a single DB call
         let (account_header, storage_header) = self
@@ -320,9 +329,11 @@ impl StateView {
 
         // Handle slots with "all entries" requests
         for (index, slot_name) in all_entries_requests {
-            let details = match self
-                .get_storage_map_details_from_forest(account_id, &slot_name, block_num)?
-            {
+            let details = match self.get_storage_map_details_from_forest(
+                account_id,
+                &slot_name,
+                scoped_block,
+            )? {
                 Some(details) => details,
                 None => {
                     self.reconstruct_storage_map_details_from_db(

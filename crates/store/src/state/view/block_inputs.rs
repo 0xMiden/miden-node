@@ -52,11 +52,19 @@ impl StateView {
         let (latest_block_number, account_witnesses, nullifier_witnesses, partial_mmr) =
             self.get_block_inputs_witnesses(&mut blocks, &account_ids, &nullifiers)?;
 
+        // Every block left in the set was validated against the latest block number by the witness
+        // fetch above, and the latest block number is the view's tip itself.
+        let scoped_blocks: Vec<_> = blocks
+            .into_iter()
+            .chain(std::iter::once(latest_block_number))
+            .map(|block| self.scope_block(block).expect("blocks were validated against the tip"))
+            .collect();
+
         // Fetch the block headers for all blocks in the partial MMR plus the latest one which will
         // be used as the previous block header of the block being built.
         let mut headers = self
             .db()
-            .select_block_headers(blocks.into_iter().chain(std::iter::once(latest_block_number)))
+            .select_block_headers(scoped_blocks.into_iter())
             .await
             .map_err(GetBlockInputsError::SelectBlockHeaderError)?;
 

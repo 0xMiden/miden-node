@@ -27,13 +27,12 @@ impl StateView {
         // Resolve "latest" against the view's snapshot rather than the DB: mid-apply, the DB may
         // already contain a block that the snapshot's blockchain cannot prove yet. Scoping the DB
         // query by the view's tip keeps the header and MMR proof consistent.
-        let latest_block_num = self.tip();
-        let block_num = block_num.unwrap_or(latest_block_num);
-        if block_num > latest_block_num {
+        let block_num = block_num.unwrap_or_else(|| self.tip());
+        let Some(scoped_block) = self.scope_block(block_num) else {
             return Ok((None, None));
-        }
+        };
 
-        let block_header = self.db().select_block_header_by_block_num(Some(block_num)).await?;
+        let block_header = self.db().select_block_header_by_block_num(Some(scoped_block)).await?;
         if let Some(header) = block_header {
             let mmr_proof = if include_mmr_proof {
                 let mmr_proof = self.blockchain().open(header.block_num())?;

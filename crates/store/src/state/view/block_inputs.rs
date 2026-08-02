@@ -33,9 +33,8 @@ impl StateView {
         unauthenticated_note_commitments: BTreeSet<Word>,
         reference_blocks: BTreeSet<BlockNumber>,
     ) -> Result<BlockInputs, GetBlockInputsError> {
-        // Get the note inclusion proofs from the DB. We do this first so we have to acquire the
-        // lock to the state just once. There we need the reference blocks of the note proofs to get
-        // their authentication paths in the chain MMR.
+        // Get the note inclusion proofs from the DB first: the reference blocks of the note proofs
+        // are needed below to fetch their authentication paths in the chain MMR.
         let unauthenticated_note_proofs = self
             .db()
             .select_note_inclusion_proofs(unauthenticated_note_commitments)

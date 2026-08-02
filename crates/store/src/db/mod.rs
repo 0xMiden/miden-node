@@ -360,8 +360,9 @@ impl Db {
     )]
     pub async fn select_block_header_and_signatures_by_block_num(
         &self,
-        block_number: BlockNumber,
+        block_number: ScopedBlockNum,
     ) -> Result<Option<(BlockHeader, BlockSignatures)>> {
+        let block_number = block_number.get();
         self.transact("block headers and signatures by block number", move |conn| {
             let val = queries::select_block_header_and_signatures_by_block_num(conn, block_number)?;
             Ok(val)

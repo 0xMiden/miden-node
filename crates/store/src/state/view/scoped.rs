@@ -66,6 +66,13 @@ impl ScopedBlockRange {
         *self.0.end()
     }
 
+    /// Returns the end of the validated range as a scoped block number.
+    ///
+    /// Sound because the range's upper bound is exactly what its proof covers.
+    pub(crate) fn scoped_end(&self) -> ScopedBlockNum {
+        ScopedBlockNum(*self.0.end())
+    }
+
     /// Returns the validated range.
     pub(crate) fn into_inner(self) -> RangeInclusive<BlockNumber> {
         self.0

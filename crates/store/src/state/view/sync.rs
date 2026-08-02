@@ -29,7 +29,8 @@ impl StateView {
         self.db().select_transactions_records(account_ids, block_range).await
     }
 
-    /// Returns the chain MMR delta and the `block_to` block header for the specified block range.
+    /// Returns the chain MMR delta and the block header at the range's end for the specified
+    /// block range.
     ///
     /// Returns [`RangeBeyondTip`](crate::errors::RangeBeyondTip) if the range extends beyond this
     /// view's chain tip.
@@ -48,13 +49,13 @@ impl StateView {
         let block_from = block_range.start();
         let block_to = block_range.end();
 
-        // SAFETY: block_to <= this view's tip (checked above), so it is committed and must exist in
-        // the database.
+        // The scoped range's end is committed (at or below this view's tip), so its header must
+        // exist in the database.
         let (block_header, signatures) = self
             .db()
-            .select_block_header_and_signatures_by_block_num(block_to)
+            .select_block_header_and_signatures_by_block_num(block_range.scoped_end())
             .await?
-            .expect("block_to should exist in the database");
+            .expect("the range-end header should exist in the database");
 
         if block_from == block_to {
             return Ok((

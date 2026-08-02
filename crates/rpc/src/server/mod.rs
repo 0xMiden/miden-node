@@ -50,7 +50,7 @@ pub struct Rpc {
     /// Store write capabilities consumed by the full-node sync loop.
     ///
     /// Must be provided in full-node mode and omitted in sequencer mode. The RPC service itself
-    /// only ever reads through `store`; these are passed through untouched to the sync tasks.
+    /// only ever reads through `state`; these are passed through untouched to the sync tasks.
     pub sync_writers: Option<(BlockWriter, ProofWriter)>,
     pub ntx_builder: Option<NtxBuilderClient>,
     pub grpc_options: GrpcOptionsExternal,

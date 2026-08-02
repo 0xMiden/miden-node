@@ -145,8 +145,8 @@ impl RpcService {
 
     /// Sets the genesis commitment, returning an error if it is already set.
     ///
-    /// Required since the store client is used to fetch the `genesis_commitment` after
-    /// `RpcService` construction.
+    /// Required since the genesis header is fetched through the store state after `RpcService`
+    /// construction.
     pub fn set_genesis_commitment(&mut self, commitment: Word) -> anyhow::Result<()> {
         if self.genesis_commitment.is_some() {
             return Err(anyhow::anyhow!("genesis commitment already set"));

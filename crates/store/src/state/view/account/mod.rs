@@ -65,10 +65,12 @@ impl StateView {
         })
     }
 
-    /// Returns an account witness (Merkle proof of inclusion in the account tree).
+    /// Returns an account witness (Merkle proof of inclusion in the account tree) together with
+    /// the resolved block as a scoped block number.
     ///
-    /// If `block_num` is provided, returns the witness at that historical block;
-    /// otherwise, returns the witness at the latest block.
+    /// If `block_num` is provided, returns the witness at that historical block; otherwise,
+    /// returns the witness at the latest block. The tree resolution doubles as the tip
+    /// validation, so the returned block is ready for block-bounded database queries.
     #[miden_instrument(
         target = COMPONENT,
         skip_all,

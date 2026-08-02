@@ -13,8 +13,9 @@ use crate::errors::DatabaseError;
 impl StateView {
     /// Queries a list of notes from the database.
     ///
-    /// If the provided list of [`NoteId`] given is empty or no note matches the provided
-    /// [`NoteId`] an empty list is returned.
+    /// If the provided list of [`NoteId`]s is empty or no note matches, an empty list is
+    /// returned. This lookup is deliberately not bounded by this view's tip (latest-wins): a note
+    /// committed while a block is being applied may be returned before the snapshot advances.
     pub async fn get_notes_by_id(
         &self,
         note_ids: Vec<NoteId>,

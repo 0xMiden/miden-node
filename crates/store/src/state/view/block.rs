@@ -12,7 +12,7 @@ impl StateView {
     /// Queries a [BlockHeader] from the database, and returns it alongside its inclusion proof.
     ///
     /// If [None] is given as the value of `block_num`, the data for the latest [BlockHeader] is
-    /// returned.
+    /// returned. Returns `(None, None)` for blocks beyond this view's chain tip.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,

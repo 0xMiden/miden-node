@@ -1,9 +1,11 @@
 //! Request-scoped, consistent read view of the store.
 //!
 //! All store reads go through [`StateView`]: it pins one state snapshot for its whole lifetime,
-//! and every database query it exposes is scoped by that snapshot's block height. This makes it
-//! impossible to implement a read whose tree and database halves observe different chain tips —
-//! mid-apply, the database may already contain rows for a block the snapshot cannot prove yet.
+//! and every block-scoped database query it exposes is bounded by that snapshot's height (via the
+//! [`scoped`] proof types). This makes it impossible to implement a read whose tree and database
+//! halves observe different chain tips — mid-apply, the database may already contain rows for a
+//! block the snapshot cannot prove yet. The only deliberately unscoped reads are the
+//! content-addressed note lookups and the network-account classification.
 //!
 //! The submodules hold the read endpoints, all `impl StateView`; the snapshot internals
 //! ([`StateSnapshot`]) are only visible within this module tree, so no other part of the store
@@ -59,7 +61,7 @@ impl State {
     /// The view is frozen: it is unaffected if the writer publishes a new snapshot while it is
     /// held.
     ///
-    /// Use this only for a *single* single-expression read (`state.view().get_account(..)`),
+    /// Use this only for one single-expression read (`state.view().get_account(..)`),
     /// where the temporary view drops at the end of the statement. Two `view()` calls observe
     /// potentially *different* snapshots — a block can commit between them — so reads that must
     /// be mutually consistent (e.g. a query and the tip it was served at) must share one view via
@@ -108,8 +110,9 @@ impl StateView {
 
     /// Returns the database handle.
     ///
-    /// Queries whose results depend on the chain tip must be scoped by [`Self::tip`] (or a block
-    /// number validated against it), never by a tip obtained elsewhere.
+    /// Block-scoped queries take the [`ScopedBlockNum`] / [`ScopedBlockRange`] proof types issued
+    /// by this view ([`Self::scoped_tip`], [`Self::scope_block`], [`Self::scope_range`]), so their
+    /// bounds are always validated against this view's tip, never a tip obtained elsewhere.
     fn db(&self) -> &Db {
         &self.db
     }

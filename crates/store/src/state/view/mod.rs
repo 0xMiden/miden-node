@@ -59,11 +59,12 @@ impl State {
     /// The view is frozen: it is unaffected if the writer publishes a new snapshot while it is
     /// held.
     ///
-    /// Use this only for single-expression reads (`state.view().get_account(..)`), where the
-    /// temporary view drops at the end of the statement. Binding the view to a variable keeps its
-    /// snapshot generation pinned until the end of the scope; for reads spanning multiple
-    /// statements use [`Self::with_view`] instead, which releases the view as soon as the read
-    /// completes.
+    /// Use this only for a *single* single-expression read (`state.view().get_account(..)`),
+    /// where the temporary view drops at the end of the statement. Two `view()` calls observe
+    /// potentially *different* snapshots — a block can commit between them — so reads that must
+    /// be mutually consistent (e.g. a query and the tip it was served at) must share one view via
+    /// [`Self::with_view`]. Binding a view to a variable is also discouraged: it keeps the
+    /// snapshot generation pinned until the end of the scope.
     pub fn view(&self) -> StateView {
         StateView {
             snapshot: self.latest_snapshot.load_full(),
@@ -74,10 +75,14 @@ impl State {
     /// Runs a read operation over a view pinned at the current chain tip, dropping the view — and
     /// releasing its snapshot generation — as soon as the operation completes.
     ///
-    /// The closure receives a shared reference, so the view cannot escape the call. Prefer this
-    /// over [`Self::view`] whenever a read spans multiple statements: it keeps the snapshot from
-    /// being pinned through unrelated work that follows (e.g. response encoding). Single-expression
-    /// reads (`state.view().get_account(..)`) don't need it — the temporary view already drops at
+    /// This is the required form whenever multiple reads must observe the *same* snapshot: the
+    /// closure's view is one consistent generation, whereas consecutive [`Self::view`] calls may
+    /// straddle a commit. The typical case is pairing a query with [`StateView::tip`] so a
+    /// response reports exactly the height it was served at.
+    ///
+    /// The closure receives a shared reference, so the view cannot escape the call, and the
+    /// snapshot is not pinned through unrelated work that follows (e.g. response encoding). A
+    /// *single* read doesn't need it — `state.view().get_account(..)` drops its temporary view at
     /// the end of the statement.
     pub async fn with_view<R>(&self, f: impl AsyncFnOnce(&StateView) -> R) -> R {
         let view = self.view();

@@ -224,7 +224,10 @@ impl WriteWorker {
         self.block_cache
             .push(block_num, BlockNotification::new(block_num, cache_bytes))
             .expect("block cache receives sequential block numbers");
-        let _ = self.committed_tip_tx.send(block_num);
+        // `send` is a no-op (and reports an error) when there are no subscribers, which would leave
+        // `committed_tip()` stuck reporting a stale value. Use `send_replace` so the tip is always
+        // updated regardless of whether anything is currently subscribed.
+        self.committed_tip_tx.send_replace(block_num);
 
         if let Some(block_lifecycle) = block_lifecycle {
             block_lifecycle.emit(&resolved_note_ids);

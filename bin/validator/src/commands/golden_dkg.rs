@@ -303,13 +303,13 @@ fn read_validated_registrations(
             path.display(),
         );
         ensure!(
-            validator_key.verify(
+            signature.verify(
                 registration_signature_commitment(
                     genesis_commitment,
                     &validator_key,
                     &identity_key,
                 ),
-                &signature,
+                &validator_key,
             ),
             "invalid validator signature in {}",
             path.display(),
@@ -538,9 +538,9 @@ mod tests {
         let genesis_commitment = read_trusted_genesis(&genesis.path)?.inner().header().commitment();
         assert_eq!(StorageGroup::mul_generator(&secret), public_key);
         assert_eq!(registration.validator_public_key, hex::encode(validator_key.to_bytes()));
-        assert!(validator_key.verify(
+        assert!(signature.verify(
             registration_signature_commitment(genesis_commitment, &validator_key, &public_key),
-            &signature,
+            &validator_key,
         ));
 
         #[cfg(unix)]

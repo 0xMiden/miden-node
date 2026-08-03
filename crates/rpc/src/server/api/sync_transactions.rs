@@ -1,6 +1,7 @@
 use miden_node_proto::decode::{read_account_ids, read_block_range};
 use miden_node_proto::generated as proto;
 use miden_node_store::{NoteSyncRecord, TransactionRecord};
+use miden_node_utils::formatting::format_array;
 use miden_node_utils::limiter::QueryParamAccountIdLimit;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use tonic::Status;
@@ -50,7 +51,7 @@ impl proto::server::rpc_api::SyncTransactions for RpcService {
         miden_span_record!(
             block_range.from = range.block_from,
             block_range.to = range.block_to,
-            account.ids = ?account_ids,
+            account.ids = %format_array(&account_ids),
             account.ids.count = n_accounts,
         );
 

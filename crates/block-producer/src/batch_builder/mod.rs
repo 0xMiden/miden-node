@@ -6,6 +6,7 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::state::State;
+use miden_node_utils::formatting::format_array;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
@@ -154,7 +155,7 @@ impl BatchBuilder {
         miden_span_record!(
             batch.id = %telemetry.batch_id,
             transactions.count = telemetry.transactions_count,
-            transactions.ids = ?telemetry.transaction_ids,
+            transactions.ids = %format_array(&telemetry.transaction_ids),
             transactions.input_notes.count = telemetry.input_notes_count,
             transactions.output_notes.count = telemetry.output_notes_count,
             transactions.unauthenticated_notes.count = telemetry.unauthenticated_notes_count,

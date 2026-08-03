@@ -119,7 +119,7 @@ impl BlockBuilder {
             block.number = %telemetry.block_number,
             block.batches.count = telemetry.batches_count,
             block.batch.ids = %format_array(telemetry.batch_ids),
-            block.transactions.ids = ?telemetry.transaction_ids,
+            block.transactions.ids = %format_array(&telemetry.transaction_ids),
             block.transactions.count = telemetry.transactions_count,
         );
         let block_num = selected.block_number;

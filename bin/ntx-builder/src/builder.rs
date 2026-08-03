@@ -249,7 +249,7 @@ impl NetworkTransactionBuilder {
     /// block.
     #[miden_instrument(
         name = "ntx.builder.apply_committed_block",
-        skip(self, loop_db, block),
+        skip_all,
         fields(
             block.number = %block.header().block_num(),
             tip.number = %committed_tip,

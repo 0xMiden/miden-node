@@ -89,9 +89,10 @@ impl BlockStore {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.block_store.save_block",
-        skip(self, data),
+        skip_all,
         err,
         fields(
+            block.number = %block_num,
             block.size = data.len(),
         ),
     )]

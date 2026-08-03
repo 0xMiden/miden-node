@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{Database, ReadTx, Row, WriteTx};
+use miden_node_utils::formatting::format_array;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
@@ -254,7 +255,8 @@ fn checked_u32(value: i64, field: &'static str) -> Result<u32, DatabaseError> {
 /// Returns whether a transaction with the given id has already been validated.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    skip_all,
+    fields(transaction.id = %tx_id),
     err,
 )]
 pub(crate) fn transaction_exists(
@@ -275,7 +277,8 @@ pub(crate) fn transaction_exists(
 /// If the resulting vector is empty, all supplied transaction ids have been validated in the past.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    skip_all,
+    fields(transactions.ids = %format_array(tx_ids)),
     err,
 )]
 pub(crate) fn find_unvalidated_transactions(
@@ -305,7 +308,7 @@ pub(crate) fn find_unvalidated_transactions(
 /// existing block header if one already exists.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx, header),
+    skip_all,
     err,
 )]
 pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(), DatabaseError> {
@@ -320,7 +323,7 @@ pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(),
 /// Returns `None` if no block headers have been persisted (i.e. bootstrap has not been run).
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    skip_all,
     err,
 )]
 pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseError> {
@@ -335,7 +338,8 @@ pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseEr
 /// Returns `None` if no block header exists at the given block number.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    skip_all,
+    fields(block.number = %block_num),
     err,
 )]
 pub fn load_block_header(
@@ -353,7 +357,7 @@ pub fn load_block_header(
 /// Returns the total number of validated transactions in the database.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    skip_all,
     err,
 )]
 pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
@@ -367,7 +371,7 @@ pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseErro
 /// Returns the total number of signed blocks in the database.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    skip_all,
     err,
 )]
 pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {

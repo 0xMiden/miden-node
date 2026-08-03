@@ -588,7 +588,11 @@ impl AccountActor {
     /// DB before returning: the rejection usually means the in-memory account diverged from the
     /// committed chain, so the next selection must build on the authoritative state rather than
     /// re-declaring the stale commitment.
-    #[miden_instrument(name = "ntx.actor.execute_transactions", skip(self, tx_candidate, account))]
+    #[miden_instrument(
+        name = "ntx.actor.execute_transactions",
+        skip_all,
+        fields(account.id = %account_id),
+    )]
     async fn execute_transactions(
         &self,
         account_id: AccountId,

@@ -16,18 +16,24 @@ use golden_ehtdh1::derive_context_session_id;
 use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::genesis::read_genesis_block;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
+use miden_protocol::Word;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
+use miden_protocol::crypto::hash::rpo::Rpo256;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_validator::ValidatorSigner;
 use rand_core_06::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
+
+use super::ValidatorSigningKey;
 
 type StorageGroup = Secp256k1GoldenGroup;
 type StorageScalar = <StorageGroup as GoldenGroup>::Scalar;
 
 const REGISTRATION_VERSION: &str = "miden-golden-dkg-registration-v1";
 const MANIFEST_VERSION: &str = "miden-golden-dkg-manifest-v1";
+const REGISTRATION_SIGNATURE_DOMAIN: &[u8] = b"miden-golden-dkg-registration-signature-v1";
 const IDENTITY_SECRET_MAGIC: &[u8] = b"miden-golden-dkg-identity-v1\0";
 const IDENTITY_SECRET_FILE: &str = "identity-secret.wire";
 const REGISTRATION_FILE: &str = "registration.toml";
@@ -47,9 +53,13 @@ pub struct GoldenDkgOptions {
 enum GoldenDkgCommand {
     /// Generates this validator's DKG identity and public registration.
     Identity {
-        /// Hex-encoded validator signing public key committed by genesis.
-        #[arg(long, value_name = "HEX")]
-        validator_public_key: String,
+        /// Trusted genesis block for the network.
+        #[arg(long, value_name = "FILE")]
+        genesis: PathBuf,
+
+        /// Validator signing key committed by genesis.
+        #[command(flatten)]
+        signing_key: ValidatorSigningKey,
 
         /// New directory that receives the identity and registration files.
         #[arg(long, value_name = "DIR")]
@@ -83,8 +93,10 @@ enum GoldenDkgCommand {
 #[derive(Debug, Deserialize, Serialize)]
 struct Registration {
     version: String,
+    genesis_commitment: String,
     validator_public_key: String,
     dkg_identity_public_key: String,
+    validator_signature: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -109,10 +121,11 @@ struct ManifestParticipant {
 }
 
 /// Runs one Golden DKG ceremony command.
-pub fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
+pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
     match options.command {
-        GoldenDkgCommand::Identity { validator_public_key, output_directory } => {
-            generate_identity(&validator_public_key, &output_directory)
+        GoldenDkgCommand::Identity { genesis, signing_key, output_directory } => {
+            let signer = signing_key.into_signer().await?;
+            generate_identity(&genesis, &signer, &output_directory).await
         },
         GoldenDkgCommand::Prepare {
             genesis,
@@ -125,16 +138,42 @@ pub fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
 }
 
 /// Generates one validator's private DKG identity and public registration.
-fn generate_identity(validator_public_key: &str, output_directory: &Path) -> anyhow::Result<()> {
-    let validator_public_key = decode_validator_public_key(validator_public_key)?;
+async fn generate_identity(
+    genesis_path: &Path,
+    signer: &ValidatorSigner,
+    output_directory: &Path,
+) -> anyhow::Result<()> {
+    let genesis = read_trusted_genesis(genesis_path)?;
+    let genesis_commitment = genesis.inner().header().commitment();
+    let validator_public_key = signer.public_key();
+    ensure!(
+        genesis
+            .inner()
+            .header()
+            .validator_keys()
+            .as_keys()
+            .contains(&validator_public_key),
+        "validator signing key is not committed by genesis",
+    );
     let identity_secret = StorageScalar::random(&mut OsRng);
     ensure!(!bool::from(identity_secret.is_zero()), "generated a zero DKG identity secret");
     let identity_public_key = StorageGroup::mul_generator(&identity_secret);
+    let signature_commitment = registration_signature_commitment(
+        genesis_commitment,
+        &validator_public_key,
+        &identity_public_key,
+    );
+    let validator_signature = signer
+        .sign_commitment(signature_commitment)
+        .await
+        .context("failed to sign DKG registration")?;
 
     let registration = Registration {
         version: REGISTRATION_VERSION.to_owned(),
+        genesis_commitment: hex::encode(genesis_commitment.to_bytes()),
         validator_public_key: hex::encode(validator_public_key.to_bytes()),
         dkg_identity_public_key: hex::encode(StorageGroup::encode_element(&identity_public_key)),
+        validator_signature: hex::encode(validator_signature.to_bytes()),
     };
     let registration =
         toml::to_string_pretty(&registration).context("failed to encode DKG registration")?;
@@ -158,8 +197,8 @@ fn prepare(
     output_directory: &Path,
 ) -> anyhow::Result<()> {
     let epoch = decode_fixed_hex::<32>(epoch, "storage-key epoch")?;
-    let genesis = GenesisBlock::try_from(read_genesis_block(genesis_path)?)
-        .context("failed to validate genesis block")?;
+    let genesis = read_trusted_genesis(genesis_path)?;
+    let genesis_commitment = genesis.inner().header().commitment();
     let validator_keys = genesis.inner().header().validator_keys().as_keys();
 
     ensure!(
@@ -169,34 +208,13 @@ fn prepare(
         registration_paths.len(),
     );
 
-    let mut registrations = BTreeMap::new();
-    let mut identity_keys = BTreeSet::new();
-    for path in registration_paths {
-        let registration = read_registration(path)?;
-        let validator_key = decode_validator_public_key(&registration.validator_public_key)?;
-        let validator_key_bytes = validator_key.to_bytes();
-        let identity_key = decode_identity_public_key(&registration.dkg_identity_public_key)?;
-        let identity_key_bytes = StorageGroup::encode_element(&identity_key).as_ref().to_vec();
-
-        ensure!(
-            identity_keys.insert(identity_key_bytes),
-            "duplicate DKG identity public key in {}",
-            path.display(),
-        );
-        ensure!(
-            registrations
-                .insert(validator_key_bytes, (registration, identity_key))
-                .is_none(),
-            "duplicate validator registration in {}",
-            path.display(),
-        );
-    }
+    let mut registrations = read_validated_registrations(registration_paths, genesis_commitment)?;
 
     let mut registry_entries = Vec::with_capacity(validator_keys.len());
     let mut participants = Vec::with_capacity(validator_keys.len());
     for (offset, validator_key) in validator_keys.iter().enumerate() {
         let validator_key_hex = hex::encode(validator_key.to_bytes());
-        let (_, identity_key) =
+        let identity_key =
             registrations.remove(validator_key.to_bytes().as_slice()).with_context(|| {
                 format!("missing registration for genesis validator {validator_key_hex}")
             })?;
@@ -230,7 +248,7 @@ fn prepare(
 
     let manifest = Manifest {
         version: MANIFEST_VERSION.to_owned(),
-        genesis_commitment: hex::encode(genesis.inner().header().commitment().to_bytes()),
+        genesis_commitment: hex::encode(genesis_commitment.to_bytes()),
         threshold,
         epoch: hex::encode(epoch),
         beta: hex::encode(beta.to_repr()),
@@ -266,12 +284,88 @@ fn read_registration(path: &Path) -> anyhow::Result<Registration> {
     Ok(registration)
 }
 
+/// Reads registrations and verifies their genesis binding and validator signatures.
+fn read_validated_registrations(
+    paths: &[PathBuf],
+    genesis_commitment: Word,
+) -> anyhow::Result<BTreeMap<Vec<u8>, <StorageGroup as GoldenGroup>::Element>> {
+    let mut registrations = BTreeMap::new();
+    let mut identity_keys = BTreeSet::new();
+    for path in paths {
+        let registration = read_registration(path)?;
+        let validator_key = decode_validator_public_key(&registration.validator_public_key)?;
+        let identity_key = decode_identity_public_key(&registration.dkg_identity_public_key)?;
+        let signature = decode_validator_signature(&registration.validator_signature)?;
+
+        ensure!(
+            registration.genesis_commitment == hex::encode(genesis_commitment.to_bytes()),
+            "registration in {} belongs to a different genesis block",
+            path.display(),
+        );
+        ensure!(
+            validator_key.verify(
+                registration_signature_commitment(
+                    genesis_commitment,
+                    &validator_key,
+                    &identity_key,
+                ),
+                &signature,
+            ),
+            "invalid validator signature in {}",
+            path.display(),
+        );
+        ensure!(
+            identity_keys.insert(StorageGroup::encode_element(&identity_key).as_ref().to_vec()),
+            "duplicate DKG identity public key in {}",
+            path.display(),
+        );
+        ensure!(
+            registrations.insert(validator_key.to_bytes(), identity_key).is_none(),
+            "duplicate validator registration in {}",
+            path.display(),
+        );
+    }
+    Ok(registrations)
+}
+
+/// Reads and validates the trusted genesis block used by the ceremony.
+fn read_trusted_genesis(path: &Path) -> anyhow::Result<GenesisBlock> {
+    GenesisBlock::try_from(read_genesis_block(path)?).context("failed to validate genesis block")
+}
+
+/// Commits a validator signature to one genesis-bound DKG identity registration.
+fn registration_signature_commitment(
+    genesis_commitment: Word,
+    validator_public_key: &PublicKey,
+    identity_public_key: &<StorageGroup as GoldenGroup>::Element,
+) -> Word {
+    let mut bytes = Vec::with_capacity(
+        REGISTRATION_SIGNATURE_DOMAIN.len()
+            + Word::SERIALIZED_SIZE
+            + validator_public_key.to_bytes().len()
+            + StorageGroup::ELEMENT_REPR_BYTES,
+    );
+    bytes.extend_from_slice(REGISTRATION_SIGNATURE_DOMAIN);
+    bytes.extend_from_slice(&genesis_commitment.to_bytes());
+    bytes.extend_from_slice(&validator_public_key.to_bytes());
+    bytes.extend_from_slice(StorageGroup::encode_element(identity_public_key).as_ref());
+    Rpo256::hash(&bytes)
+}
+
 /// Parses a validator public key and requires its canonical hex form.
 fn decode_validator_public_key(value: &str) -> anyhow::Result<PublicKey> {
     let bytes = decode_hex(value, "validator public key")?;
     let public_key = PublicKey::read_from_bytes(&bytes).context("invalid validator public key")?;
     ensure!(public_key.to_bytes() == bytes, "non-canonical validator public key");
     Ok(public_key)
+}
+
+/// Parses a canonical validator registration signature.
+fn decode_validator_signature(value: &str) -> anyhow::Result<Signature> {
+    let bytes = decode_hex(value, "validator signature")?;
+    let signature = Signature::read_from_bytes(&bytes).context("invalid validator signature")?;
+    ensure!(signature.to_bytes() == bytes, "non-canonical validator signature");
+    Ok(signature)
 }
 
 /// Parses a non-identity Golden DKG public key.
@@ -329,8 +423,8 @@ fn publish_directory(
         .tempdir_in(parent)
         .context("failed to create temporary output directory")?;
     write(temporary.path())?;
-    let temporary = temporary.keep();
-    fs_err::rename(&temporary, output_directory).context("failed to publish output directory")?;
+    fs_err::rename(temporary.path(), output_directory)
+        .context("failed to publish output directory")?;
     Ok(())
 }
 
@@ -384,9 +478,15 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-    /// Creates a genesis block for three validators and returns their canonical public keys.
-    fn write_genesis(root: &Path) -> TestResultWith<Vec<PublicKey>> {
-        let signing_keys = [SigningKey::new(), SigningKey::new(), SigningKey::new()];
+    struct TestGenesis {
+        path: PathBuf,
+        signing_keys: Vec<SigningKey>,
+        validator_keys: Vec<PublicKey>,
+    }
+
+    /// Creates a genesis block for three validators.
+    fn write_genesis(root: &Path) -> TestResultWith<TestGenesis> {
+        let signing_keys = vec![SigningKey::new(), SigningKey::new(), SigningKey::new()];
         let config = format!(
             concat!(
                 "version = 1\n",
@@ -410,25 +510,38 @@ mod tests {
         )?;
         let genesis =
             GenesisBlock::try_from(read_genesis_block(&genesis_directory.join("genesis.dat"))?)?;
-        Ok(genesis.inner().header().validator_keys().as_keys().to_vec())
+        Ok(TestGenesis {
+            path: genesis_directory.join("genesis.dat"),
+            signing_keys,
+            validator_keys: genesis.inner().header().validator_keys().as_keys().to_vec(),
+        })
     }
 
     type TestResultWith<T> = Result<T, Box<dyn std::error::Error>>;
 
-    #[test]
-    fn identity_round_trip_matches_public_registration() -> TestResult {
+    #[tokio::test]
+    async fn identity_round_trip_matches_public_registration() -> TestResult {
         let root = tempfile::tempdir()?;
-        let validator_key = SigningKey::new().public_key();
+        let genesis = write_genesis(root.path())?;
+        let signing_key = genesis.signing_keys[0].clone();
+        let validator_key = signing_key.public_key();
+        let signer = ValidatorSigner::new_local(signing_key);
         let output = root.path().join("identity");
 
-        generate_identity(&hex::encode(validator_key.to_bytes()), &output)?;
+        generate_identity(&genesis.path, &signer, &output).await?;
 
         let registration = read_registration(&output.join(REGISTRATION_FILE))?;
         let secret_bytes = Zeroizing::new(fs_err::read(output.join(IDENTITY_SECRET_FILE))?);
         let secret = decode_identity_secret(&secret_bytes)?;
         let public_key = decode_identity_public_key(&registration.dkg_identity_public_key)?;
+        let signature = decode_validator_signature(&registration.validator_signature)?;
+        let genesis_commitment = read_trusted_genesis(&genesis.path)?.inner().header().commitment();
         assert_eq!(StorageGroup::mul_generator(&secret), public_key);
         assert_eq!(registration.validator_public_key, hex::encode(validator_key.to_bytes()));
+        assert!(validator_key.verify(
+            registration_signature_commitment(genesis_commitment, &validator_key, &public_key),
+            &signature,
+        ));
 
         #[cfg(unix)]
         {
@@ -450,21 +563,25 @@ mod tests {
         assert!(decode_identity_secret(&zero).is_err());
     }
 
-    #[test]
-    fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
+    #[tokio::test]
+    async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
         let root = tempfile::tempdir()?;
-        let validator_keys = write_genesis(root.path())?;
+        let genesis = write_genesis(root.path())?;
         let mut registrations = Vec::new();
-        for (position, validator_key) in validator_keys.iter().rev().enumerate() {
+        for (position, signing_key) in genesis.signing_keys.iter().rev().enumerate() {
             let directory = root.path().join(format!("identity-{position}"));
-            generate_identity(&hex::encode(validator_key.to_bytes()), &directory)?;
+            generate_identity(
+                &genesis.path,
+                &ValidatorSigner::new_local(signing_key.clone()),
+                &directory,
+            )
+            .await?;
             registrations.push(directory.join(REGISTRATION_FILE));
         }
         let output = root.path().join("ceremony");
-        let genesis_path = root.path().join("genesis/genesis.dat");
         let epoch = "11".repeat(32);
 
-        prepare(&genesis_path, 2, &epoch, &registrations, &output)?;
+        prepare(&genesis.path, 2, &epoch, &registrations, &output)?;
 
         let manifest: Manifest =
             toml::from_str(&fs_err::read_to_string(output.join(MANIFEST_FILE))?)?;
@@ -482,7 +599,7 @@ mod tests {
         assert_eq!(decryption.registry, context.registry);
         assert_eq!(context.session_id, derive_context_session_id(decryption.session_id));
         for ((position, participant), validator_key) in
-            manifest.participants.iter().enumerate().zip(&validator_keys)
+            manifest.participants.iter().enumerate().zip(&genesis.validator_keys)
         {
             assert_eq!(participant.participant_index, u32::try_from(position + 1)?);
             assert_eq!(participant.validator_public_key, hex::encode(validator_key.to_bytes()));
@@ -490,29 +607,53 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn prepare_rejects_registration_outside_genesis() -> TestResult {
+    #[tokio::test]
+    async fn identity_rejects_signer_outside_genesis() -> TestResult {
         let root = tempfile::tempdir()?;
-        let validator_keys = write_genesis(root.path())?;
+        let genesis = write_genesis(root.path())?;
+        let outsider = ValidatorSigner::new_local(SigningKey::new());
+
+        let error = generate_identity(&genesis.path, &outsider, &root.path().join("identity"))
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("not committed by genesis"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn prepare_rejects_substituted_dkg_identity() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let genesis = write_genesis(root.path())?;
         let mut registrations = Vec::new();
-        for (position, validator_key) in validator_keys.iter().take(2).enumerate() {
+        for (position, signing_key) in genesis.signing_keys.iter().enumerate() {
             let directory = root.path().join(format!("identity-{position}"));
-            generate_identity(&hex::encode(validator_key.to_bytes()), &directory)?;
+            generate_identity(
+                &genesis.path,
+                &ValidatorSigner::new_local(signing_key.clone()),
+                &directory,
+            )
+            .await?;
             registrations.push(directory.join(REGISTRATION_FILE));
         }
-        let outsider = root.path().join("identity-outsider");
-        generate_identity(&hex::encode(SigningKey::new().public_key().to_bytes()), &outsider)?;
-        registrations.push(outsider.join(REGISTRATION_FILE));
 
+        let mut registration = read_registration(&registrations[0])?;
+        let replacement_secret = StorageScalar::random(&mut OsRng);
+        registration.dkg_identity_public_key = hex::encode(StorageGroup::encode_element(
+            &StorageGroup::mul_generator(&replacement_secret),
+        ));
+        fs_err::write(&registrations[0], toml::to_string_pretty(&registration)?)?;
+
+        let error = prepare(
+            &genesis.path,
+            2,
+            &"22".repeat(32),
+            &registrations,
+            &root.path().join("ceremony"),
+        )
+        .unwrap_err();
         assert!(
-            prepare(
-                &root.path().join("genesis/genesis.dat"),
-                2,
-                &"22".repeat(32),
-                &registrations,
-                &root.path().join("ceremony"),
-            )
-            .is_err(),
+            format!("{error:#}").contains("invalid validator signature"),
+            "unexpected error: {error:#}",
         );
         Ok(())
     }

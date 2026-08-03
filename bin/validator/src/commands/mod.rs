@@ -294,7 +294,7 @@ impl ValidatorCommand {
                     .context("failed to apply validator database migrations")?;
                 Ok(())
             },
-            Self::GoldenDkg(options) => golden_dkg::run(options),
+            Self::GoldenDkg(options) => golden_dkg::run(options).await,
             Self::IssuePrivateRecordShare(options) => {
                 issue_private_record_share::issue_from_options(options)
             },

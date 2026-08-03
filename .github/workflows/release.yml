@@ -274,6 +274,10 @@ jobs:
           - component: network-monitor
             bin: miden-network-monitor
             port: 3000
+          # The benchmark is a one-shot CLI, so build the portless runtime-tool stage.
+          - component: node-tps-benchmark
+            bin: miden-benchmark
+            target: runtime-tool
           - component: faucet
             bin: miden-faucet
             port: 8000
@@ -307,6 +311,7 @@ jobs:
           context: ${{ steps.build-inputs.outputs.context }}
           push: false
           file: ${{ steps.build-inputs.outputs.file }}
+          target: ${{ matrix.target }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
           pull: true
@@ -341,6 +346,8 @@ jobs:
           MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
           MIDEN_NETWORK_MONITOR_IMAGE:
             ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
+          MIDEN_BENCHMARK_IMAGE:
+            ${{ env.REGISTRY }}/0xmiden/miden-node-tps-benchmark:${{ needs.preflight.outputs.tag }}
           MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-faucet:${{ needs.preflight.outputs.tag }}
         with:
           compose-file: docker-compose.yml
@@ -379,6 +386,10 @@ jobs:
           - component: network-monitor
             bin: miden-network-monitor
             port: 3000
+          # The benchmark is a one-shot CLI, so build the portless runtime-tool stage.
+          - component: node-tps-benchmark
+            bin: miden-benchmark
+            target: runtime-tool
           - component: faucet
             bin: miden-faucet
             port: 8000
@@ -432,6 +443,7 @@ jobs:
           context: ${{ steps.build-inputs.outputs.context }}
           push: true
           file: ${{ steps.build-inputs.outputs.file }}
+          target: ${{ matrix.target }}
           platforms: ${{ env.DOCKER_PLATFORMS }}
           profile-name: ${{ vars.WARPBUILD_DOCKER_BUILDER_PROFILE }}
           pull: false
@@ -476,6 +488,8 @@ jobs:
           MIDEN_REMOTE_PROVER_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-remote-prover:${{ needs.preflight.outputs.tag }}
           MIDEN_NETWORK_MONITOR_IMAGE:
             ${{ env.REGISTRY }}/0xmiden/miden-network-monitor:${{ needs.preflight.outputs.tag }}
+          MIDEN_BENCHMARK_IMAGE:
+            ${{ env.REGISTRY }}/0xmiden/miden-node-tps-benchmark:${{ needs.preflight.outputs.tag }}
           MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY }}/0xmiden/miden-faucet:${{ needs.preflight.outputs.tag }}
         with:
           compose-file: docker-compose.yml

@@ -148,8 +148,9 @@ docker compose --profile note-transport up -d
 Its browser-facing gRPC-Web endpoint is `http://ntl.localhost`; native gRPC clients can use `localhost:57292`. Notes are
 persisted in the `note-transport-data` volume.
 
-The pinned Gateway FM image currently supports only `linux/amd64`. On another architecture, set
-`MIDEN_NOTE_TRANSPORT_IMAGE` to a compatible build before enabling the profile.
+The pinned Gateway FM image currently supports only `linux/amd64`. Compose selects that platform explicitly, allowing
+Docker to run it through emulation on ARM hosts. To use a compatible native build instead, set both
+`MIDEN_NOTE_TRANSPORT_IMAGE` and `MIDEN_NOTE_TRANSPORT_PLATFORM`.
 
 ## Faucet
 
@@ -165,13 +166,9 @@ For a repository checkout, the first run builds the exact upstream commit pinned
 publish an image built from the same pin, so the published Compose application can pull it without requiring a source
 build.
 
-On its first successful start, the service creates a fungible faucet account and stores it in the `faucet-data` volume.
-Later starts reuse that account. The API is available at `http://faucet.localhost/api` and the frontend at
-`http://faucet.localhost`.
-
-The default token symbol is `MIDEN`, with 6 decimals and a maximum supply of `100000000000000000` base units. Override
-these before the first successful start with `MIDEN_FAUCET_TOKEN_SYMBOL`, `MIDEN_FAUCET_DECIMALS`, and
-`MIDEN_FAUCET_MAX_SUPPLY`. Delete `faucet-data` before changing these initialization settings for an existing stack.
+On its first successful start, the service imports the native `MIDEN` faucet account created at genesis and stores its
+client state in the `faucet-data` volume. Later starts reuse that state. The API is available at
+`http://faucet.localhost/api` and the frontend at `http://faucet.localhost`.
 
 ## Monitoring and Traces
 

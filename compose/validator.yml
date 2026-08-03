@@ -3,10 +3,17 @@ x-validator: &validator
   pull_policy: missing
   volumes:
     - node-data:/data
-    - type: bind
-      source: ${MIDEN_VALIDATOR_STORAGE_KEY_DIRECTORY:-../scripts/testdata/insecure-golden-storage-key}
-      target: /storage-key
-      read_only: true
+  configs:
+    - source: validator-storage-key-setup-context
+      target: /storage-key/setup-context.wire
+    - source: validator-storage-key-public-set
+      target: /storage-key/public-key-set.wire
+    - source: validator-1-storage-key-secret-share
+      target: /storage-key/validator-1/secret-share.wire
+    - source: validator-2-storage-key-secret-share
+      target: /storage-key/validator-2/secret-share.wire
+    - source: validator-3-storage-key-secret-share
+      target: /storage-key/validator-3/secret-share.wire
   depends_on:
     bootstrap-validator:
       condition: service_completed_successfully
@@ -16,6 +23,7 @@ x-validator: &validator
     - miden-validator
     - start
     - --listen=0.0.0.0:50101
+    - --admin.listen=0.0.0.0:50102
 
 services:
   validator-1:
@@ -28,7 +36,7 @@ services:
       MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
       MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
       MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/secret-share.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/validator-1/secret-share.wire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-1
 
@@ -42,7 +50,7 @@ services:
       MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
       MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
       MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/secret-share.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/validator-2/secret-share.wire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-2
 
@@ -56,6 +64,41 @@ services:
       MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
       MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
       MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/secret-share.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/validator-3/secret-share.wire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-3
+
+# Keep the deterministic fixture inside the Compose model so an OCI-published
+# application contains the exact wire files instead of host bind declarations.
+configs:
+  validator-storage-key-setup-context:
+    content: !!binary |
+      Z29sZGVuLWRrZy13aXJlLXYzIAAAAAAAAAAXZWh0ZGgxLXNldHVwLWNvbnRleHQtdjEAAAAAAAAA
+      GGhhbG8yY3VydmVzLXNlY3AyNTZrMS12MQAAAAAAAAACAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB
+      AQEBAQEBAQEAAAAAAAAAAwAAAAEAAAACAAAAAwICAgICAgICAgICAgICAgICAgICAgICAgICAgIC
+      AgICtaDoZ74NkWKEuOTpnChdjjyGQrgJrp2verzqgHEiiIQDAwMDAwMDAwMDAwMDAwMDAwMDAwMD
+      AwMDAwMDAwMDAwQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQECQkJCQkJCQkJCQkJCQkJ
+      CQkJCQkJCQkJCQkJCQkJCQk=
+  validator-storage-key-public-set:
+    content: !!binary |
+      Z29sZGVuLWRrZy13aXJlLXYzIQAAAAAAAAAYZWh0ZGgxLXB1YmxpYy1rZXktc2V0LXYxAAAAAAAA
+      ABhoYWxvMmN1cnZlcy1zZWNwMjU2azEtdjEAAAAAAAAAAoDLCKBdiRfsu5F4weULmElWrFrGcGsk
+      9F4eQalY+OdKdwAAAAAAAAADAAAAAQDMp01EosJVz+f1GaPRKLrzoA+ZStuGAiuNI3+0DFcBVoCo
+      WkAZj9/t3s1YDmHG+3WwUYZ0wwXS0ceLKHXZwnOH8gAAAAIAFDdF9dcMymnicpXghD08JoPa7Waw
+      qSGrjda0CZsnSJIAikwMcYGtXF6IQLirsuE/wJcJ5MjvvQz0WNVQtrXNh2YAAAADgGU+FAfU29B1
+      HaYEmbj8z9rOePPiVOC2Ry2itU/XmQHTAG+LMIYvXFVeQouba/XpUCxr5QjEBktb3tonDwTQCsaA
+  validator-1-storage-key-secret-share:
+    content: !!binary |
+      Z29sZGVuLWRrZy13aXJlLXYzIwAAAAAAAAAWZWh0ZGgxLXNlY3JldC1zaGFyZS12MQAAAAAAAAAY
+      aGFsbzJjdXJ2ZXMtc2VjcDI1NmsxLXYxAAAAARIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+      AAAADQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  validator-2-storage-key-secret-share:
+    content: !!binary |
+      Z29sZGVuLWRrZy13aXJlLXYzIwAAAAAAAAAWZWh0ZGgxLXNlY3JldC1zaGFyZS12MQAAAAAAAAAY
+      aGFsbzJjdXJ2ZXMtc2VjcDI1NmsxLXYxAAAAAhkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+      AAAAGgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  validator-3-storage-key-secret-share:
+    content: !!binary |
+      Z29sZGVuLWRrZy13aXJlLXYzIwAAAAAAAAAWZWh0ZGgxLXNlY3JldC1zaGFyZS12MQAAAAAAAAAY
+      aGFsbzJjdXJ2ZXMtc2VjcDI1NmsxLXYxAAAAAyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+      AAAAJwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

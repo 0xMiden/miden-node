@@ -4,12 +4,16 @@ ARG RUST_VERSION=1.96
 ARG DEBIAN_RELEASE=bookworm
 ARG BIN
 ARG PORT
+# Builder stage the runtime binary is copied from: `builder-ci` compiles one
+# binary per image (concurrent CI matrix builds), `builder-local` compiles
+# every binary in one invocation (sequential local builds).
+ARG BUILDER=builder-ci
 
-FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS builder
-ARG BIN
-# Disable incremental compilation: Docker normalises COPY timestamps, which
-# breaks Rust's mtime-based fingerprinting and causes stale .rlib reuse.
-# The /app/target cache still accelerates builds via pre-compiled dep .rlibs.
+FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS build-base
+# Disable incremental compilation: its reuse depends on the same mtime-based
+# fingerprinting that the shared CI target cache cannot make safe (see
+# builder-ci below), and release builds gain nothing from it anyway. Dep
+# .rlibs in the /app/target cache mount still accelerate builds.
 ENV CARGO_INCREMENTAL=0
 # Install build dependencies. RocksDB is compiled from source by librocksdb-sys.
 RUN apt-get update && \
@@ -24,62 +28,42 @@ RUN apt-get update && \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-# Automatic per-platform arg (no manual wiring needed for multi-platform
-# buildx builds). Used, together with BIN, to key the cache mounts below so
-# that amd64 and arm64 builds never share compiled objects or checkouts —
-# artifacts from one architecture cannot be reused for another. The compiled
-# /app/target mount is additionally keyed by BIN: different binaries in this
-# workspace enable different feature sets on shared deps, so giving each
-# binary its own target dir avoids matrix builds serializing on (and
-# invalidating) a shared, lock-guarded mount for artifacts they can't reuse
-# anyway.
+
+FROM build-base AS builder-ci
+ARG BIN
+# All cache mounts are keyed by BIN and TARGETARCH. The arch keying keeps
+# amd64/arm64 artifacts apart. The BIN keying serves two purposes: for the
+# target mount, each binary enables different feature sets on shared deps, so
+# a shared locked mount would only serialize matrix builds on artifacts they
+# cannot reuse; for the registry/git-db mounts, two concurrent cargo processes
+# extracting the same crate race on creating `.cargo-ok`, and the loser fails
+# the build ("failed to open .cargo-ok ... File exists") — keying by BIN
+# removes all concurrency on a mount, since builds of the same binary are
+# already serialized by the locked target mount. The cost is one registry
+# copy per binary per arch.
 #
-# The registry/git-db mounts are also keyed by BIN, even though raw sources
-# have no feature dependence. Sharing one registry mount across concurrent
-# matrix jobs corrupts it: Cargo permits concurrent downloads across
-# processes, and two cargo processes extracting the same newly-downloaded
-# crate race on creating `.cargo-ok` — the loser fails the whole build with
-# "failed to open .cargo-ok ... File exists". Keying by BIN removes all
-# concurrency on a registry mount: jobs for different binaries use different
-# mounts, and builds of the same binary are already serialized by the locked
-# target mount below (every RUN that touches the registry also holds that
-# lock). The cost is one registry copy per binary per arch.
-#
-# Sharing modes: the target mount is sharing=locked because the correctness
-# of the touch-then-build sequence below requires that no other build can
-# write artifacts into it between the touch and the build. The registry and
-# git-db mounts stay sharing=shared; the BIN+arch keying plus the target
-# lock already guarantee exclusive access, so BuildKit-level locking on
-# them would be redundant.
+# The target mount is sharing=locked because the touch-then-build sequence
+# below must not interleave with another build's writes; the registry/git-db
+# mounts stay sharing=shared since the keying already guarantees exclusivity.
 ARG TARGETARCH
-# Build application
 COPY . .
-# Cargo's fingerprinting for workspace path crates is mtime-based: a crate is
-# rebuilt only if a source file is newer than the cached artifact. The
-# /app/target cache mount below is shared across branches and PRs on the
-# persistent builder, so its artifacts may come from source that differs from
-# this build context, and any source mtime older than those artifacts (local
-# checkouts, git-derived timestamps) makes Cargo silently link a stale,
-# incompatible .rlib. Touch all sources to the current time so every
-# workspace crate is always rebuilt; external dependencies are unaffected
-# (they are fingerprinted by checksum, not mtime, and stay cached in the
-# mounted target dir across builds).
+# Cargo fingerprints workspace path crates by mtime: a crate is rebuilt only
+# if a source file is newer than the cached artifact. The /app/target mount is
+# shared across branches and PRs on the persistent builder, so a source mtime
+# older than another build's artifacts (warm checkouts, git-derived
+# timestamps) makes Cargo silently link a stale, incompatible .rlib. Touch all
+# sources so workspace crates always rebuild; external deps are fingerprinted
+# by checksum and stay cached. The touch must happen after the locked target
+# mount is acquired — a concurrent build of another branch could otherwise
+# write artifacts newer than our sources after we touch them — and prunes
+# ./target from the walk so cached artifacts keep their mtimes.
 #
-# Cache Cargo's git DB, but leave checkout worktrees ephemeral; shared checkout
-# caches are fragile when concurrent CI builds race or a build is interrupted.
+# Cargo's git DB is cached but checkout worktrees stay ephemeral; shared
+# checkouts are fragile under concurrent or interrupted builds.
 #
-# The touch must happen inside the locked RUN below, after the target cache
-# mount is acquired: a concurrent build of another branch can hold the mount
-# and write artifacts into it, and a touch performed before lock acquisition
-# would leave those artifacts newer than our sources, making Cargo treat them
-# as fresh. Touching while holding the lock guarantees sources are newer than
-# anything already in the cache. The mounted ./target is pruned from the walk
-# so cached fingerprints and artifacts keep their original mtimes.
-# An interrupted build (e.g. a cancelled CI job) can leave a partially
-# extracted crate in the cached registry: the source dir exists but
-# `.cargo-ok` is missing or empty. Cargo does not recover from this — every
-# subsequent build fails with "failed to open .cargo-ok ... File exists" —
-# so drop any such partial extraction before building.
+# An interrupted build can leave a partially extracted crate in the cached
+# registry (source dir present, `.cargo-ok` missing or empty). Cargo never
+# recovers from this, so drop any such partial extraction before building.
 RUN --mount=type=cache,sharing=shared,id=cargo-registry-${BIN}-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=shared,id=cargo-git-${BIN}-${TARGETARCH},target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,id=app-target-${BIN}-${TARGETARCH},target=/app/target \
@@ -92,6 +76,54 @@ RUN --mount=type=cache,sharing=shared,id=cargo-registry-${BIN}-${TARGETARCH},tar
     mkdir -p /app/bin && \
     cp /app/target/release/${BIN} /app/bin/${BIN}
 
+# Local builder: compiles every image's binary in one cargo invocation. Local
+# images are built sequentially on one machine, so the per-BIN mount keying
+# above would only multiply work (each binary compiling its own copy of the
+# dependency tree, including RocksDB). This stage never references BIN, so its
+# layers are identical across all image builds: the first build compiles and
+# the rest hit cache.
+#
+# Sources are not touched here: a local context preserves real mtimes and git
+# updates the mtime of anything it changes, so Cargo's fingerprinting is sound
+# and rebuilds are genuinely incremental. The `.cargo-ok` heal is kept — an
+# interrupted (Ctrl-C) build corrupts the cached registry just like in CI.
+#
+# Parallelism is capped at ~2GiB of memory per job: the release profile
+# carries full debug info, and an uncapped build OOMs the default ~8GiB
+# Docker Desktop VM. Pass CARGO_BUILD_JOBS to override.
+FROM build-base AS builder-local
+ARG TARGETARCH
+ARG CARGO_BUILD_JOBS
+COPY . .
+RUN --mount=type=cache,sharing=shared,id=cargo-registry-local-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=shared,id=cargo-git-local-${TARGETARCH},target=/usr/local/cargo/git/db \
+    --mount=type=cache,sharing=locked,id=app-target-local-${TARGETARCH},target=/app/target \
+    if [ -d /usr/local/cargo/registry/src ]; then \
+        find /usr/local/cargo/registry/src -mindepth 2 -maxdepth 2 -type d \
+            '!' -exec test -s '{}/.cargo-ok' ';' -exec rm -rf '{}' +; \
+    fi && \
+    JOBS="${CARGO_BUILD_JOBS:-$(awk -v ncpu="$(nproc)" \
+        '/MemTotal/ { j = int($2 / (2 * 1024 * 1024)); if (j < 1) j = 1; if (j > ncpu) j = ncpu; print j }' \
+        /proc/meminfo)}" && \
+    cargo build --release --locked --jobs "$JOBS" \
+        --bin miden-node \
+        --bin miden-validator \
+        --bin miden-ntx-builder \
+        --bin miden-network-monitor \
+        --bin miden-remote-prover \
+        --bin miden-benchmark && \
+    mkdir -p /app/bin && \
+    cp /app/target/release/miden-node \
+        /app/target/release/miden-validator \
+        /app/target/release/miden-ntx-builder \
+        /app/target/release/miden-network-monitor \
+        /app/target/release/miden-remote-prover \
+        /app/target/release/miden-benchmark \
+        /app/bin/
+
+# Alias stage so the runtime COPY below can select a builder via build arg.
+FROM ${BUILDER} AS build-result
+
 # Baseline runtime image with runtime dependencies installed.
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime-base
 RUN apt-get update && \
@@ -100,10 +132,9 @@ RUN apt-get update && \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-FROM runtime-base AS runtime
+FROM runtime-base AS runtime-common
 ARG BIN
-ARG PORT
-COPY --from=builder /app/bin/${BIN} /usr/local/bin/${BIN}
+COPY --from=build-result /app/bin/${BIN} /usr/local/bin/${BIN}
 LABEL org.opencontainers.image.authors=devops@miden.team \
     org.opencontainers.image.url=https://0xMiden.github.io/ \
     org.opencontainers.image.documentation=https://github.com/0xMiden/node \
@@ -116,7 +147,14 @@ ARG COMMIT
 LABEL org.opencontainers.image.created=$CREATED \
     org.opencontainers.image.version=$VERSION \
     org.opencontainers.image.revision=$COMMIT
-EXPOSE ${PORT}
 # Use exec to replace the shell so the binary runs as PID 1.
 ENV MIDEN_BIN=${BIN}
 CMD ["/bin/sh", "-c", "exec /usr/local/bin/$MIDEN_BIN"]
+
+# Command-line tools do not listen on a port.
+FROM runtime-common AS runtime-tool
+
+# Keep the default final target for the network's long-running services.
+FROM runtime-common AS runtime
+ARG PORT
+EXPOSE ${PORT}

@@ -59,7 +59,7 @@ impl StateView {
         };
 
         Ok(AccountResponse {
-            block_num: scoped_block.get(),
+            block_num: *scoped_block,
             witness,
             details,
         })
@@ -80,37 +80,25 @@ impl StateView {
         block_num: Option<BlockNumber>,
         account_id: AccountId,
     ) -> Result<(ScopedBlockNum, AccountWitness), GetAccountError> {
-        let (block_num, witness) = self.with_inner_read_blocking(|inner_state| {
-            // Determine which block to query
-            let (block_num, witness) = if let Some(requested_block) = block_num {
-                // Historical query: use the account tree with history
-                let witness = inner_state
-                    .account_tree
-                    .open_at(account_id, requested_block)
-                    .ok_or_else(|| {
-                        let latest_block = inner_state.account_tree.block_number_latest();
-                        if requested_block > latest_block {
-                            GetAccountError::UnknownBlock(requested_block)
-                        } else {
-                            GetAccountError::BlockPruned(requested_block)
-                        }
-                    })?;
-                (requested_block, witness)
-            } else {
-                // Latest query: use the latest state
-                let block_num = inner_state.account_tree.block_number_latest();
-                let witness = inner_state.account_tree.open_latest(account_id);
-                (block_num, witness)
-            };
-
-            Ok::<_, GetAccountError>((block_num, witness))
-        })?;
-
-        // The tree resolution above is the validation: both branches yield a block at or below the
-        // tree's latest block, which equals this view's tip.
-        let scoped_block =
-            self.scope_block(block_num).ok_or(GetAccountError::UnknownBlock(block_num))?;
-        Ok((scoped_block, witness))
+        // Historical query: scope the requested block up front — a block beyond this view's tip is
+        // unknown, so a missing tree entry below can only mean it was pruned.
+        if let Some(requested_block) = block_num {
+            let scoped_block = self
+                .scope_block(requested_block)
+                .ok_or(GetAccountError::UnknownBlock(requested_block))?;
+            let witness = self
+                .with_inner_read_blocking(|inner_state| {
+                    inner_state.account_tree.open_at(account_id, *scoped_block)
+                })
+                .ok_or(GetAccountError::BlockPruned(*scoped_block))?;
+            Ok((scoped_block, witness))
+        } else {
+            // Latest query: the tree's latest state is the view's tip.
+            let witness = self.with_inner_read_blocking(|inner_state| {
+                inner_state.account_tree.open_latest(account_id)
+            });
+            Ok((self.scoped_tip(), witness))
+        }
     }
 
     /// Returns storage map details from the forest for a specific account and storage slot.
@@ -129,16 +117,15 @@ impl StateView {
         slot_name: &StorageSlotName,
         block_num: ScopedBlockNum,
     ) -> Result<Option<AccountStorageMapDetails>, DatabaseError> {
-        let block_num = block_num.get();
         self.with_forest_read_blocking(|forest| {
             match forest
-                .get_storage_map_details_for_all_entries(account_id, slot_name.clone(), block_num)
+                .get_storage_map_details_for_all_entries(account_id, slot_name.clone(), *block_num)
                 .map_err(DatabaseError::MerkleError)?
             {
                 AccountStorageMapResult::NotFound => Err(DatabaseError::StorageRootNotFound {
                     account_id,
                     slot_name: slot_name.to_string(),
-                    block_num,
+                    block_num: *block_num,
                 }),
                 AccountStorageMapResult::Details(details) => Ok(Some(details)),
                 AccountStorageMapResult::CannotReconstructKeysFromCache => Ok(None),
@@ -228,16 +215,12 @@ impl StateView {
             return Err(GetAccountError::AccountNotPublic(account_id));
         }
 
-        // The scoped block was resolved against this view's snapshot, so the witness and the DB
-        // reads below observe a single consistent block height.
-        let block_num = scoped_block.get();
-
         // Query account header and storage header together in a single DB call
         let (account_header, storage_header) = self
             .db()
             .select_account_header_with_storage_header_at_block(account_id, scoped_block)
             .await?
-            .ok_or(GetAccountError::AccountNotFound(account_id, block_num))?;
+            .ok_or(GetAccountError::AccountNotFound(account_id, *scoped_block))?;
 
         let should_apply_response_budget =
             matches!(&storage_request, AccountStorageRequest::AllStorageMaps);
@@ -264,9 +247,10 @@ impl StateView {
             },
             Some(_) => {
                 let forest_details = self.with_forest_read_blocking(|forest| {
-                    forest.get_vault_details(account_id, block_num).map_err(|err| {
+                    forest.get_vault_details(account_id, *scoped_block).map_err(|err| {
                         DatabaseError::DataCorrupted(format!(
-                            "failed to reconstruct vault for account {account_id} at block {block_num}: {err}"
+                            "failed to reconstruct vault for account {account_id} at block {}: {err}",
+                            *scoped_block,
                         ))
                     })
                 })?;
@@ -314,13 +298,13 @@ impl StateView {
                         .get_storage_map_details_for_keys(
                             account_id,
                             slot_name.clone(),
-                            block_num,
+                            *scoped_block,
                             &keys,
                         )
                         .ok_or_else(|| DatabaseError::StorageRootNotFound {
                             account_id,
                             slot_name: slot_name.to_string(),
-                            block_num,
+                            block_num: *scoped_block,
                         })?
                         .map_err(DatabaseError::MerkleError)?;
                     storage_map_details_by_index[index] = Some(details);
@@ -355,7 +339,7 @@ impl StateView {
             let details = details.ok_or_else(|| DatabaseError::StorageRootNotFound {
                 account_id,
                 slot_name: slot_name.to_string(),
-                block_num,
+                block_num: *scoped_block,
             })?;
             storage_map_details.push(details);
         }
@@ -366,7 +350,7 @@ impl StateView {
         // response.
         if should_apply_response_budget {
             return Ok(apply_all_storage_maps_response_budget(
-                block_num,
+                *scoped_block,
                 witness,
                 account_header,
                 account_code,

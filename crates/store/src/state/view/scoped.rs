@@ -7,7 +7,7 @@
 //! Chain tips are monotonic, so a value issued by an older view remains valid for any later
 //! state — holding one across view lifetimes is sound, if pointless.
 
-use std::ops::RangeInclusive;
+use std::ops::{Deref, RangeInclusive};
 
 use miden_protocol::block::BlockNumber;
 
@@ -29,11 +29,6 @@ impl ScopedBlockNum {
         Self(block_num)
     }
 
-    /// Returns the validated block number.
-    pub(crate) fn get(self) -> BlockNumber {
-        self.0
-    }
-
     /// Derives a scoped range ending at this validated block number.
     ///
     /// Sound for any `start` because only a range's upper bound carries the proof obligation.
@@ -43,6 +38,18 @@ impl ScopedBlockNum {
     pub(crate) fn range_from(self, start: BlockNumber) -> ScopedBlockRange {
         debug_assert!(start <= self.0, "derived range start {start} exceeds its end {}", self.0);
         ScopedBlockRange(start..=self.0)
+    }
+}
+
+/// The validated block number is read by dereferencing (`*scoped`); [`DerefMut`] is deliberately
+/// not implemented, as mutating the inner value would invalidate the proof.
+///
+/// [`DerefMut`]: std::ops::DerefMut
+impl Deref for ScopedBlockNum {
+    type Target = BlockNumber;
+
+    fn deref(&self) -> &BlockNumber {
+        &self.0
     }
 }
 

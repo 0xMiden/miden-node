@@ -343,9 +343,11 @@ impl Db {
         &self,
         maybe_block_number: Option<ScopedBlockNum>,
     ) -> Result<Option<BlockHeader>> {
-        let maybe_block_number = maybe_block_number.map(ScopedBlockNum::get);
         self.transact("block headers by block number", move |conn| {
-            let val = queries::select_block_header_by_block_num(conn, maybe_block_number)?;
+            let val = queries::select_block_header_by_block_num(
+                conn,
+                maybe_block_number.map(|block_number| *block_number),
+            )?;
             Ok(val)
         })
         .await
@@ -363,9 +365,9 @@ impl Db {
         &self,
         block_number: ScopedBlockNum,
     ) -> Result<Option<(BlockHeader, BlockSignatures)>> {
-        let block_number = block_number.get();
         self.transact("block headers and signatures by block number", move |conn| {
-            let val = queries::select_block_header_and_signatures_by_block_num(conn, block_number)?;
+            let val =
+                queries::select_block_header_and_signatures_by_block_num(conn, *block_number)?;
             Ok(val)
         })
         .await
@@ -383,7 +385,7 @@ impl Db {
         blocks: impl Iterator<Item = ScopedBlockNum> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
         self.transact("block headers from given block numbers", move |conn| {
-            let raw = queries::select_block_headers(conn, blocks.map(ScopedBlockNum::get))?;
+            let raw = queries::select_block_headers(conn, blocks.map(|block| *block))?;
             Ok(raw)
         })
         .await
@@ -517,9 +519,10 @@ impl Db {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
-        let block_num = block_num.get();
         self.transact("Get account header with storage header at block", move |conn| {
-            queries::select_account_header_with_storage_header_at_block(conn, account_id, block_num)
+            queries::select_account_header_with_storage_header_at_block(
+                conn, account_id, *block_num,
+            )
         })
         .await
     }
@@ -570,12 +573,11 @@ impl Db {
         note_commitments: Vec<Word>,
         up_to_block: ScopedBlockNum,
     ) -> Result<HashSet<Word>> {
-        let up_to_block = up_to_block.get();
         self.transact("note by commitment", move |conn| {
             queries::select_existing_note_commitments(
                 conn,
                 note_commitments.as_slice(),
-                up_to_block,
+                *up_to_block,
             )
         })
         .await
@@ -691,9 +693,6 @@ impl Db {
         use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
         use miden_protocol::EMPTY_WORD;
 
-        let scoped_block = block_num;
-        let block_num = scoped_block.get();
-
         // TODO this remains expensive with a large history until we implement pruning for DB
         // columns
         let mut values = Vec::new();
@@ -702,7 +701,7 @@ impl Db {
         let mut page = self
             .select_storage_map_sync_values(
                 account_id,
-                scoped_block.range_from(block_range_start),
+                block_num.range_from(block_range_start),
                 entries_limit,
             )
             .await?;
@@ -717,7 +716,8 @@ impl Db {
         }
 
         loop {
-            if page.last_block_included == block_num || page.last_block_included < block_range_start
+            if page.last_block_included == *block_num
+                || page.last_block_included < block_range_start
             {
                 break;
             }
@@ -726,7 +726,7 @@ impl Db {
             page = self
                 .select_storage_map_sync_values(
                     account_id,
-                    scoped_block.range_from(block_range_start),
+                    block_num.range_from(block_range_start),
                     entries_limit,
                 )
                 .await?;
@@ -739,7 +739,7 @@ impl Db {
             values.extend(page.values);
         }
 
-        if page.last_block_included != block_num {
+        if page.last_block_included != *block_num {
             return Ok(AccountStorageMapDetails::limit_exceeded(slot_name));
         }
 
@@ -779,9 +779,8 @@ impl Db {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Vec<Asset>, DatabaseError> {
-        let block_num = block_num.get();
         self.transact("select account vault at block", move |conn| {
-            queries::select_account_vault_at_block(conn, account_id, block_num)
+            queries::select_account_vault_at_block(conn, account_id, *block_num)
         })
         .await
     }

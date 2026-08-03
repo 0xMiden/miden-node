@@ -52,7 +52,6 @@ impl StateView {
 
         let (scoped_latest, scoped_blocks, account_witnesses, nullifier_witnesses, partial_mmr) =
             self.get_block_inputs_witnesses(blocks, &account_ids, &nullifiers)?;
-        let latest_block_number = scoped_latest.get();
 
         // Fetch the block headers for all blocks in the partial MMR plus the latest one which will
         // be used as the previous block header of the block being built.
@@ -67,9 +66,7 @@ impl StateView {
         let latest_block_header_index = headers
             .iter()
             .enumerate()
-            .find_map(|(index, header)| {
-                (header.block_num() == latest_block_number).then_some(index)
-            })
+            .find_map(|(index, header)| (header.block_num() == *scoped_latest).then_some(index))
             .expect("DB should have returned the header of the latest block header");
 
         // The order doesn't matter for PartialBlockchain::new, so swap remove is fine.

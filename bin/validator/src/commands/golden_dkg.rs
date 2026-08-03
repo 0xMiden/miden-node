@@ -16,12 +16,18 @@ use golden_core::{
     ParticipantRegistry,
     SessionId,
     Share,
+    TranscriptBuilder,
     complete,
     create_dealing,
     create_dealing_with_secret,
 };
 use golden_ehtdh1::wire::to_wire_bytes as to_ehtdh1_wire_bytes;
-use golden_ehtdh1::{SetupContext, derive_context_session_id, material_from_dkg_outputs};
+use golden_ehtdh1::{
+    Ehtdh1Material,
+    SetupContext,
+    derive_context_session_id,
+    material_from_dkg_outputs,
+};
 use golden_evrf::paper::secp_secq::SecpSecqBackend;
 use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
 use miden_node_store::genesis::GenesisBlock;
@@ -58,6 +64,12 @@ const EPOCH_FILE: &str = "epoch.hex";
 const SETUP_CONTEXT_FILE: &str = "setup-context.wire";
 const PUBLIC_KEY_SET_FILE: &str = "public-key-set.wire";
 const SECRET_SHARE_FILE: &str = "secret-share.wire";
+const TRANSCRIPT_VERSION: &str = "miden-golden-dkg-transcript-v1";
+const TRANSCRIPT_ACCEPTANCE_VERSION: &str = "miden-golden-dkg-transcript-acceptance-v1";
+const TRANSCRIPT_SIGNATURE_DOMAIN: &[u8] = b"miden-golden-dkg-transcript-signature-v1";
+const TRANSCRIPT_FILE: &str = "transcript.toml";
+const TRANSCRIPT_ACCEPTANCE_FILE: &str = "transcript-acceptance.toml";
+const TRANSCRIPT_ACCEPTANCES_FILE: &str = "transcript-acceptances.toml";
 
 /// Inputs for one Golden DKG ceremony command.
 #[derive(clap::Args)]
@@ -126,6 +138,33 @@ enum GoldenDkgCommand {
         output_directory: PathBuf,
     },
 
+    /// Signs the common manifest and dealing transcript.
+    Accept {
+        /// Trusted genesis block for the network.
+        #[arg(long, value_name = "FILE")]
+        genesis: PathBuf,
+
+        /// Directory containing the shared ceremony manifest and configurations.
+        #[arg(long, value_name = "DIR")]
+        ceremony_directory: PathBuf,
+
+        /// Validator signing key committed by genesis.
+        #[command(flatten)]
+        signing_key: ValidatorSigningKey,
+
+        /// Public decryption-round dealing. Repeat once per genesis validator.
+        #[arg(long, required = true, value_name = "FILE")]
+        decryption_dealing: Vec<PathBuf>,
+
+        /// Public context-round dealing. Repeat once per genesis validator.
+        #[arg(long, required = true, value_name = "FILE")]
+        context_dealing: Vec<PathBuf>,
+
+        /// New directory that receives the transcript and this validator's acceptance.
+        #[arg(long, value_name = "DIR")]
+        output_directory: PathBuf,
+    },
+
     /// Completes both DKG rounds and writes this validator's startup bundle.
     Finalize {
         /// Trusted genesis block for the network.
@@ -151,6 +190,14 @@ enum GoldenDkgCommand {
         /// Public context-round dealing. Repeat once per genesis validator.
         #[arg(long, required = true, value_name = "FILE")]
         context_dealing: Vec<PathBuf>,
+
+        /// Canonical transcript accepted by every genesis validator.
+        #[arg(long, value_name = "FILE")]
+        transcript: PathBuf,
+
+        /// Signed transcript acceptance. Repeat once per genesis validator.
+        #[arg(long, required = true, value_name = "FILE")]
+        transcript_acceptance: Vec<PathBuf>,
 
         /// New directory that receives this validator's startup bundle.
         #[arg(long, value_name = "DIR")]
@@ -209,6 +256,8 @@ struct ManifestParticipant {
 
 struct Ceremony {
     manifest: Manifest,
+    manifest_sha256: [u8; 32],
+    genesis_commitment: Word,
     decryption_config: DkgConfig<StorageGroup>,
     context_config: DkgConfig<StorageGroup>,
 }
@@ -221,6 +270,35 @@ struct PrivateState {
     context_message_sha256: [u8; 32],
     decryption_private_share: StorageScalar,
     context_private_share: StorageScalar,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CeremonyTranscript {
+    version: String,
+    manifest_sha256: String,
+    decryption_transcript_root: String,
+    context_transcript_root: String,
+    decryption_dealings: Vec<TranscriptDealing>,
+    context_dealings: Vec<TranscriptDealing>,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct TranscriptDealing {
+    participant_index: u32,
+    sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct TranscriptAcceptance {
+    version: String,
+    validator_public_key: String,
+    transcript_sha256: String,
+    validator_signature: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct TranscriptAcceptances {
+    acceptances: Vec<TranscriptAcceptance>,
 }
 
 /// Runs one Golden DKG ceremony command.
@@ -249,6 +327,25 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             &output_directory,
             &mut OsRng,
         ),
+        GoldenDkgCommand::Accept {
+            genesis,
+            ceremony_directory,
+            signing_key,
+            decryption_dealing,
+            context_dealing,
+            output_directory,
+        } => {
+            let signer = signing_key.into_signer().await?;
+            accept_transcript::<SecpSecqBackend>(
+                &genesis,
+                &ceremony_directory,
+                &signer,
+                &decryption_dealing,
+                &context_dealing,
+                &output_directory,
+            )
+            .await
+        },
         GoldenDkgCommand::Finalize {
             genesis,
             ceremony_directory,
@@ -256,6 +353,8 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             private_state,
             decryption_dealing,
             context_dealing,
+            transcript,
+            transcript_acceptance,
             output_directory,
         } => finalize::<SecpSecqBackend>(
             &genesis,
@@ -264,6 +363,8 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             &private_state,
             &decryption_dealing,
             &context_dealing,
+            &transcript,
+            &transcript_acceptance,
             &output_directory,
         ),
         GoldenDkgCommand::Validate {
@@ -484,7 +585,63 @@ where
     Ok(())
 }
 
+/// Signs the exact manifest and public dealings accepted by one validator.
+async fn accept_transcript<B>(
+    genesis_path: &Path,
+    ceremony_directory: &Path,
+    signer: &ValidatorSigner,
+    decryption_dealing_paths: &[PathBuf],
+    context_dealing_paths: &[PathBuf],
+    output_directory: &Path,
+) -> anyhow::Result<()>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
+    let validator_public_key = signer.public_key();
+    ensure!(
+        ceremony
+            .manifest
+            .participants
+            .iter()
+            .any(|participant| participant.validator_public_key
+                == hex::encode(validator_public_key.to_bytes())),
+        "validator signing key is not part of this ceremony",
+    );
+    let (transcript, transcript_bytes) =
+        build_transcript::<B>(&ceremony, decryption_dealing_paths, context_dealing_paths)?;
+    let transcript_sha256 = sha256(&transcript_bytes);
+    let signature = signer
+        .sign_commitment(transcript_signature_commitment(
+            ceremony.genesis_commitment,
+            transcript_sha256,
+        ))
+        .await
+        .context("failed to sign DKG transcript")?;
+    let acceptance = TranscriptAcceptance {
+        version: TRANSCRIPT_ACCEPTANCE_VERSION.to_owned(),
+        validator_public_key: hex::encode(validator_public_key.to_bytes()),
+        transcript_sha256: hex::encode(transcript_sha256),
+        validator_signature: hex::encode(signature.to_bytes()),
+    };
+    let acceptance =
+        toml::to_string_pretty(&acceptance).context("failed to encode transcript acceptance")?;
+    debug_assert_eq!(transcript.manifest_sha256, hex::encode(ceremony.manifest_sha256));
+
+    publish_directory(output_directory, |directory| {
+        write_new_file(&directory.join(TRANSCRIPT_FILE), &transcript_bytes, false)?;
+        write_new_file(&directory.join(TRANSCRIPT_ACCEPTANCE_FILE), acceptance.as_bytes(), false)
+    })?;
+    println!("Golden DKG transcript accepted in {}.", output_directory.display());
+    Ok(())
+}
+
 /// Completes both DKG rounds and publishes one validated operator bundle.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the ceremony files stay explicit at the CLI boundary"
+)]
 fn finalize<B>(
     genesis_path: &Path,
     ceremony_directory: &Path,
@@ -492,6 +649,8 @@ fn finalize<B>(
     private_state_path: &Path,
     decryption_dealing_paths: &[PathBuf],
     context_dealing_paths: &[PathBuf],
+    transcript_path: &Path,
+    transcript_acceptance_paths: &[PathBuf],
     output_directory: &Path,
 ) -> anyhow::Result<()>
 where
@@ -512,10 +671,29 @@ where
     let private_state = decode_private_state(&private_state_bytes)?;
     validate_private_state(&private_state, participant, &ceremony)?;
 
+    let (transcript, transcript_bytes) = read_transcript(transcript_path, &ceremony)?;
+    let acceptances = read_transcript_acceptances(
+        transcript_acceptance_paths,
+        &ceremony,
+        sha256(&transcript_bytes),
+    )?;
+
     let decryption_dealings =
         read_dealings::<B>(decryption_dealing_paths, ceremony.manifest.participants.len())?;
     let context_dealings =
         read_dealings::<B>(context_dealing_paths, ceremony.manifest.participants.len())?;
+    validate_dealings_against_transcript::<B>(
+        &decryption_dealings,
+        decryption_dealing_paths,
+        &transcript.decryption_dealings,
+        &transcript.decryption_transcript_root,
+    )?;
+    validate_dealings_against_transcript::<B>(
+        &context_dealings,
+        context_dealing_paths,
+        &transcript.context_dealings,
+        &transcript.context_transcript_root,
+    )?;
 
     println!(
         "Completing Golden decryption round for participant {} with {} dealings.",
@@ -568,6 +746,26 @@ where
         epoch,
     )
     .context("failed to bridge DKG outputs to EHTDH1")?;
+    publish_operator_bundle(
+        &material,
+        &ceremony,
+        &transcript_bytes,
+        &acceptances,
+        output_directory,
+    )?;
+    println!("Golden storage key bundle written to {}.", output_directory.display());
+    Ok(())
+}
+
+/// Validates and publishes one final Golden operator key bundle.
+fn publish_operator_bundle(
+    material: &Ehtdh1Material<StorageGroup>,
+    ceremony: &Ceremony,
+    transcript_bytes: &[u8],
+    acceptances: &TranscriptAcceptances,
+    output_directory: &Path,
+) -> anyhow::Result<()> {
+    let epoch = decode_fixed_hex::<32>(&ceremony.manifest.epoch, "storage-key epoch")?;
     let setup_context = to_ehtdh1_wire_bytes(&material.setup_context);
     let public_key_set = to_ehtdh1_wire_bytes(&material.public_key_set);
     let secret_share = Zeroizing::new(to_ehtdh1_wire_bytes(&material.secret_share));
@@ -584,9 +782,14 @@ where
         write_new_file(&directory.join(EPOCH_FILE), ceremony.manifest.epoch.as_bytes(), false)?;
         write_new_file(&directory.join(SETUP_CONTEXT_FILE), &setup_context, false)?;
         write_new_file(&directory.join(PUBLIC_KEY_SET_FILE), &public_key_set, false)?;
-        write_new_file(&directory.join(SECRET_SHARE_FILE), &secret_share, true)
+        write_new_file(&directory.join(SECRET_SHARE_FILE), &secret_share, true)?;
+        write_new_file(&directory.join(TRANSCRIPT_FILE), transcript_bytes, false)?;
+        write_new_file(
+            &directory.join(TRANSCRIPT_ACCEPTANCES_FILE),
+            toml::to_string_pretty(acceptances)?.as_bytes(),
+            false,
+        )
     })?;
-    println!("Golden storage key bundle written to {}.", output_directory.display());
     Ok(())
 }
 
@@ -598,6 +801,14 @@ fn validate_bundle(
     bundle_directory: &Path,
 ) -> anyhow::Result<()> {
     let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
+    let transcript_path = bundle_directory.join(TRANSCRIPT_FILE);
+    let (transcript, transcript_bytes) = read_transcript(&transcript_path, &ceremony)?;
+    let acceptance_text =
+        fs_err::read_to_string(bundle_directory.join(TRANSCRIPT_ACCEPTANCES_FILE))
+            .context("failed to read transcript acceptances")?;
+    let acceptances: TranscriptAcceptances =
+        toml::from_str(&acceptance_text).context("failed to decode transcript acceptances")?;
+    validate_transcript_acceptances(&acceptances, &ceremony, sha256(&transcript_bytes))?;
     let validator_public_key = decode_validator_public_key(validator_public_key)?;
     let expected = ceremony
         .manifest
@@ -628,6 +839,19 @@ fn validate_bundle(
         expected_participant.get(),
     );
     validate_setup_context(operator_key.setup_context(), &ceremony)?;
+    ensure!(
+        operator_key.setup_context().decryption_transcript_root
+            == decode_fixed_hex::<32>(
+                &transcript.decryption_transcript_root,
+                "decryption transcript root",
+            )?
+            && operator_key.setup_context().context_transcript_root
+                == decode_fixed_hex::<32>(
+                    &transcript.context_transcript_root,
+                    "context transcript root",
+                )?,
+        "bundle transcript roots do not match accepted transcript",
+    );
     println!(
         "Golden storage key bundle is valid for participant {}.",
         expected_participant.get(),
@@ -774,6 +998,8 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
 
     Ok(Ceremony {
         manifest,
+        manifest_sha256: sha256(manifest_text.as_bytes()),
+        genesis_commitment,
         decryption_config,
         context_config,
     })
@@ -819,6 +1045,211 @@ where
     }
     ensure!(dealings.len() == expected, "dealing set is incomplete");
     Ok(dealings)
+}
+
+/// Builds the canonical transcript over one manifest and both dealing rounds.
+fn build_transcript<B>(
+    ceremony: &Ceremony,
+    decryption_paths: &[PathBuf],
+    context_paths: &[PathBuf],
+) -> anyhow::Result<(CeremonyTranscript, Vec<u8>)>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    let expected = ceremony.manifest.participants.len();
+    let decryption_dealings = read_dealings::<B>(decryption_paths, expected)?;
+    let context_dealings = read_dealings::<B>(context_paths, expected)?;
+    let transcript = CeremonyTranscript {
+        version: TRANSCRIPT_VERSION.to_owned(),
+        manifest_sha256: hex::encode(ceremony.manifest_sha256),
+        decryption_transcript_root: hex::encode(completion_root(&decryption_dealings)),
+        context_transcript_root: hex::encode(completion_root(&context_dealings)),
+        decryption_dealings: dealing_hashes::<B>(decryption_paths, expected)?,
+        context_dealings: dealing_hashes::<B>(context_paths, expected)?,
+    };
+    let bytes = toml::to_string_pretty(&transcript)
+        .context("failed to encode DKG transcript")?
+        .into_bytes();
+    Ok((transcript, bytes))
+}
+
+/// Reads one canonical transcript and checks its manifest binding.
+fn read_transcript(
+    path: &Path,
+    ceremony: &Ceremony,
+) -> anyhow::Result<(CeremonyTranscript, Vec<u8>)> {
+    let bytes = fs_err::read(path)
+        .with_context(|| format!("failed to read DKG transcript {}", path.display()))?;
+    let text = std::str::from_utf8(&bytes).context("DKG transcript is not UTF-8")?;
+    let transcript: CeremonyTranscript =
+        toml::from_str(text).context("failed to decode DKG transcript")?;
+    ensure!(transcript.version == TRANSCRIPT_VERSION, "unsupported DKG transcript version");
+    ensure!(
+        transcript.manifest_sha256 == hex::encode(ceremony.manifest_sha256),
+        "DKG transcript belongs to another manifest",
+    );
+    decode_fixed_hex::<32>(&transcript.decryption_transcript_root, "decryption transcript root")?;
+    decode_fixed_hex::<32>(&transcript.context_transcript_root, "context transcript root")?;
+    let canonical =
+        toml::to_string_pretty(&transcript).context("failed to encode DKG transcript")?;
+    ensure!(canonical.as_bytes() == bytes, "non-canonical DKG transcript");
+    Ok((transcript, bytes))
+}
+
+/// Reads, sorts, and verifies every validator's transcript acceptance.
+fn read_transcript_acceptances(
+    paths: &[PathBuf],
+    ceremony: &Ceremony,
+    transcript_sha256: [u8; 32],
+) -> anyhow::Result<TranscriptAcceptances> {
+    let mut acceptances = Vec::with_capacity(paths.len());
+    for path in paths {
+        let text = fs_err::read_to_string(path)
+            .with_context(|| format!("failed to read transcript acceptance {}", path.display()))?;
+        acceptances.push(toml::from_str(&text).with_context(|| {
+            format!("failed to decode transcript acceptance {}", path.display())
+        })?);
+    }
+    let acceptances = TranscriptAcceptances { acceptances };
+    validate_transcript_acceptances(&acceptances, ceremony, transcript_sha256)?;
+
+    let by_key = acceptances
+        .acceptances
+        .into_iter()
+        .map(|acceptance| (acceptance.validator_public_key.clone(), acceptance))
+        .collect::<BTreeMap<_, _>>();
+    let mut ordered = Vec::with_capacity(by_key.len());
+    for participant in &ceremony.manifest.participants {
+        ordered.push(
+            by_key
+                .get(&participant.validator_public_key)
+                .context("missing transcript acceptance")?
+                .to_owned(),
+        );
+    }
+    Ok(TranscriptAcceptances { acceptances: ordered })
+}
+
+/// Verifies unanimous genesis-validator acceptance of one exact transcript.
+fn validate_transcript_acceptances(
+    acceptances: &TranscriptAcceptances,
+    ceremony: &Ceremony,
+    transcript_sha256: [u8; 32],
+) -> anyhow::Result<()> {
+    ensure!(
+        acceptances.acceptances.len() == ceremony.manifest.participants.len(),
+        "expected {} transcript acceptances, got {}",
+        ceremony.manifest.participants.len(),
+        acceptances.acceptances.len(),
+    );
+    let expected_digest = hex::encode(transcript_sha256);
+    let commitment =
+        transcript_signature_commitment(ceremony.genesis_commitment, transcript_sha256);
+    let mut accepted = BTreeSet::new();
+    for acceptance in &acceptances.acceptances {
+        ensure!(
+            acceptance.version == TRANSCRIPT_ACCEPTANCE_VERSION,
+            "unsupported transcript acceptance version",
+        );
+        ensure!(
+            acceptance.transcript_sha256 == expected_digest,
+            "transcript acceptance belongs to another transcript",
+        );
+        let validator_key = decode_validator_public_key(&acceptance.validator_public_key)?;
+        let signature = decode_validator_signature(&acceptance.validator_signature)?;
+        ensure!(
+            signature.verify(commitment, &validator_key),
+            "invalid transcript acceptance signature",
+        );
+        ensure!(
+            accepted.insert(acceptance.validator_public_key.clone()),
+            "duplicate transcript acceptance",
+        );
+    }
+    let expected = ceremony
+        .manifest
+        .participants
+        .iter()
+        .map(|participant| participant.validator_public_key.clone())
+        .collect::<BTreeSet<_>>();
+    ensure!(accepted == expected, "transcript acceptances do not match genesis validators");
+    Ok(())
+}
+
+/// Recomputes one round's canonical dealing hashes and completion root.
+fn validate_dealings_against_transcript<B>(
+    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, B::Proof>>,
+    paths: &[PathBuf],
+    expected_hashes: &[TranscriptDealing],
+    expected_root: &str,
+) -> anyhow::Result<()>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    ensure!(
+        dealing_hashes::<B>(paths, dealings.len())? == expected_hashes,
+        "dealings do not match accepted transcript",
+    );
+    ensure!(
+        hex::encode(completion_root(dealings)) == expected_root,
+        "dealing roots do not match accepted transcript",
+    );
+    Ok(())
+}
+
+/// Returns canonical hashes for dealing files sorted by participant.
+fn dealing_hashes<B>(paths: &[PathBuf], expected: usize) -> anyhow::Result<Vec<TranscriptDealing>>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    let mut hashes = BTreeMap::new();
+    for path in paths {
+        let bytes = fs_err::read(path)
+            .with_context(|| format!("failed to read dealing {}", path.display()))?;
+        let message = from_core_wire_bytes::<DealerMessage<StorageGroup, B::Proof>>(&bytes)
+            .with_context(|| format!("invalid dealing {}", path.display()))?;
+        ensure!(
+            hashes.insert(message.dealer, sha256_hex(&bytes)).is_none(),
+            "duplicate dealing from participant {}",
+            message.dealer.get(),
+        );
+    }
+    ensure!(hashes.len() == expected, "dealing set is incomplete");
+    Ok(hashes
+        .into_iter()
+        .map(|(participant, sha256)| TranscriptDealing {
+            participant_index: participant.get(),
+            sha256,
+        })
+        .collect())
+}
+
+/// Reproduces Golden's completion transcript root from public dealings.
+fn completion_root<P>(
+    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, P>>,
+) -> [u8; 32] {
+    let mut transcript = TranscriptBuilder::with_prefix(b"golden-core-v1", b"completion");
+    transcript.bytes(b"backend", StorageGroup::BACKEND_ID.as_bytes());
+    transcript.usize(b"dealings-len", dealings.len());
+    for (dealer, message) in dealings {
+        transcript.participant(b"dealer", *dealer);
+        transcript.bytes(b"dealing-root", &message.transcript_root);
+    }
+    transcript.root()
+}
+
+/// Commits a validator signature to one exact public ceremony transcript.
+fn transcript_signature_commitment(genesis_commitment: Word, transcript_sha256: [u8; 32]) -> Word {
+    let mut bytes = Vec::with_capacity(
+        TRANSCRIPT_SIGNATURE_DOMAIN.len() + Word::SERIALIZED_SIZE + transcript_sha256.len(),
+    );
+    bytes.extend_from_slice(TRANSCRIPT_SIGNATURE_DOMAIN);
+    bytes.extend_from_slice(&genesis_commitment.to_bytes());
+    bytes.extend_from_slice(&transcript_sha256);
+    Rpo256::hash(&bytes)
 }
 
 /// Completes one DKG round from public messages and the local self share.
@@ -1120,6 +1551,7 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
+    #[derive(Clone)]
     struct TestGenesis {
         path: PathBuf,
         signing_keys: Vec<SigningKey>,
@@ -1311,6 +1743,7 @@ mod tests {
         Ok(())
     }
 
+    #[derive(Clone)]
     struct TestCeremony {
         genesis: TestGenesis,
         ceremony: PathBuf,
@@ -1365,11 +1798,57 @@ mod tests {
         outputs.iter().map(|directory| directory.join(name)).collect()
     }
 
+    struct AcceptedTranscript {
+        transcript: PathBuf,
+        acceptances: Vec<PathBuf>,
+    }
+
+    /// Has every genesis validator sign the same public transcript.
+    async fn accept_for_all<B>(
+        root: &Path,
+        ceremony: &TestCeremony,
+        dealings: &[PathBuf],
+    ) -> TestResultWith<AcceptedTranscript>
+    where
+        B: EvrfProofBackend<StorageGroup>,
+        B::Proof: WireMessage,
+    {
+        let mut outputs = Vec::new();
+        for (position, signing_key) in ceremony.genesis.signing_keys.iter().enumerate() {
+            let output = root.join(format!("accept-{position}"));
+            accept_transcript::<B>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &ValidatorSigner::new_local(signing_key.clone()),
+                &dealing_paths(dealings, DECRYPTION_DEALING_FILE),
+                &dealing_paths(dealings, CONTEXT_DEALING_FILE),
+                &output,
+            )
+            .await?;
+            outputs.push(output);
+        }
+        let transcript = outputs[0].join(TRANSCRIPT_FILE);
+        let expected = fs_err::read(&transcript)?;
+        assert!(
+            outputs
+                .iter()
+                .all(|output| fs_err::read(output.join(TRANSCRIPT_FILE)).unwrap() == expected)
+        );
+        Ok(AcceptedTranscript {
+            transcript,
+            acceptances: outputs
+                .iter()
+                .map(|output| output.join(TRANSCRIPT_ACCEPTANCE_FILE))
+                .collect(),
+        })
+    }
+
     /// Completes one startup bundle with the fast proof backend.
     fn finalize_test_bundle(
         root: &Path,
         ceremony: &TestCeremony,
         dealings: &[PathBuf],
+        accepted: &AcceptedTranscript,
         position: usize,
     ) -> TestResultWith<PathBuf> {
         let output = root.join(format!("bundle-{position}"));
@@ -1380,6 +1859,8 @@ mod tests {
             &dealings[position].join(PRIVATE_STATE_FILE),
             &dealing_paths(dealings, DECRYPTION_DEALING_FILE),
             &dealing_paths(dealings, CONTEXT_DEALING_FILE),
+            &accepted.transcript,
+            &accepted.acceptances,
             &output,
         )?;
         Ok(output)
@@ -1390,9 +1871,12 @@ mod tests {
         let root = tempfile::tempdir()?;
         let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
         let dealings = deal_for_all(root.path(), &ceremony)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
         let mut bundles = Vec::new();
         for position in 0..3 {
-            let bundle = finalize_test_bundle(root.path(), &ceremony, &dealings, position)?;
+            let bundle =
+                finalize_test_bundle(root.path(), &ceremony, &dealings, &accepted, position)?;
             validate_bundle(
                 &ceremony.genesis.path,
                 &ceremony.ceremony,
@@ -1457,6 +1941,8 @@ mod tests {
         let root = tempfile::tempdir()?;
         let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
         let dealings = deal_for_all(root.path(), &ceremony)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
         let decryption = dealing_paths(&dealings, DECRYPTION_DEALING_FILE);
         let context = dealing_paths(&dealings, CONTEXT_DEALING_FILE);
         let output = root.path().join("bundle");
@@ -1469,6 +1955,8 @@ mod tests {
                 &dealings[0].join(PRIVATE_STATE_FILE),
                 &decryption[..2],
                 &context,
+                &accepted.transcript,
+                &accepted.acceptances,
                 &output,
             )
             .is_err()
@@ -1484,6 +1972,8 @@ mod tests {
                 &dealings[0].join(PRIVATE_STATE_FILE),
                 &duplicate,
                 &context,
+                &accepted.transcript,
+                &accepted.acceptances,
                 &output,
             )
             .is_err()
@@ -1497,6 +1987,8 @@ mod tests {
         let root = tempfile::tempdir()?;
         let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
         let dealings = deal_for_all(root.path(), &ceremony)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
         let tampered = root.path().join("tampered.wire");
         let mut bytes = fs_err::read(dealings[1].join(DECRYPTION_DEALING_FILE))?;
         let offset = bytes.len() / 2;
@@ -1514,10 +2006,106 @@ mod tests {
                 &dealings[0].join(PRIVATE_STATE_FILE),
                 &decryption,
                 &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+                &accepted.transcript,
+                &accepted.acceptances,
                 &output,
             )
             .is_err()
         );
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalize_rejects_valid_dealer_equivocation() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+        let dealings = deal_for_all(root.path(), &ceremony)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
+
+        let alternate = root.path().join("alternate-deal");
+        let mut rng = ChaCha20Rng::from_seed([99; 32]);
+        deal::<ShareOpeningBackend>(
+            &ceremony.genesis.path,
+            &ceremony.ceremony,
+            &ceremony.identities[1].join(IDENTITY_SECRET_FILE),
+            &alternate,
+            &mut rng,
+        )?;
+        let mut decryption = dealing_paths(&dealings, DECRYPTION_DEALING_FILE);
+        decryption[1] = alternate.join(DECRYPTION_DEALING_FILE);
+        let output = root.path().join("bundle");
+
+        let error = finalize::<ShareOpeningBackend>(
+            &ceremony.genesis.path,
+            &ceremony.ceremony,
+            &ceremony.identities[0].join(IDENTITY_SECRET_FILE),
+            &dealings[0].join(PRIVATE_STATE_FILE),
+            &decryption,
+            &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+            &accepted.transcript,
+            &accepted.acceptances,
+            &output,
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("accepted transcript"));
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalize_requires_every_transcript_acceptance() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+        let dealings = deal_for_all(root.path(), &ceremony)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
+        let output = root.path().join("bundle");
+
+        let error = finalize::<ShareOpeningBackend>(
+            &ceremony.genesis.path,
+            &ceremony.ceremony,
+            &ceremony.identities[0].join(IDENTITY_SECRET_FILE),
+            &dealings[0].join(PRIVATE_STATE_FILE),
+            &dealing_paths(&dealings, DECRYPTION_DEALING_FILE),
+            &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+            &accepted.transcript,
+            &accepted.acceptances[..2],
+            &output,
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("expected 3 transcript acceptances"));
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalize_rejects_manifest_changed_after_acceptance() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+        let dealings = deal_for_all(root.path(), &ceremony)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
+        let manifest_path = ceremony.ceremony.join(MANIFEST_FILE);
+        let mut manifest: Manifest = toml::from_str(&fs_err::read_to_string(&manifest_path)?)?;
+        manifest.epoch = "55".repeat(32);
+        fs_err::write(&manifest_path, toml::to_string_pretty(&manifest)?)?;
+        let output = root.path().join("bundle");
+
+        let error = finalize::<ShareOpeningBackend>(
+            &ceremony.genesis.path,
+            &ceremony.ceremony,
+            &ceremony.identities[0].join(IDENTITY_SECRET_FILE),
+            &dealings[0].join(PRIVATE_STATE_FILE),
+            &dealing_paths(&dealings, DECRYPTION_DEALING_FILE),
+            &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+            &accepted.transcript,
+            &accepted.acceptances,
+            &output,
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("another manifest"));
         assert!(!output.exists());
         Ok(())
     }
@@ -1539,14 +2127,24 @@ mod tests {
             .collect::<Vec<_>>();
         let second_ceremony = second_root.join("ceremony");
         prepare(&first.genesis.path, 2, &"44".repeat(32), &registrations, &second_ceremony)?;
+        let second = TestCeremony {
+            genesis: first.genesis.clone(),
+            ceremony: second_ceremony,
+            identities: first.identities.clone(),
+        };
+        let second_dealings = deal_for_all(&second_root, &second)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(&second_root, &second, &second_dealings).await?;
         let output = second_root.join("bundle");
         let error = finalize::<ShareOpeningBackend>(
             &first.genesis.path,
-            &second_ceremony,
+            &second.ceremony,
             &first.identities[0].join(IDENTITY_SECRET_FILE),
             &first_dealings[0].join(PRIVATE_STATE_FILE),
-            &dealing_paths(&first_dealings, DECRYPTION_DEALING_FILE),
-            &dealing_paths(&first_dealings, CONTEXT_DEALING_FILE),
+            &dealing_paths(&second_dealings, DECRYPTION_DEALING_FILE),
+            &dealing_paths(&second_dealings, CONTEXT_DEALING_FILE),
+            &accepted.transcript,
+            &accepted.acceptances,
             &output,
         )
         .unwrap_err();
@@ -1607,6 +2205,7 @@ mod tests {
             )?;
             dealings.push(output);
         }
+        let accepted = accept_for_all::<SecpSecqBackend>(root.path(), &ceremony, &dealings).await?;
         for position in 0..2 {
             let output = root.path().join(format!("paper-bundle-{position}"));
             finalize::<SecpSecqBackend>(
@@ -1616,6 +2215,8 @@ mod tests {
                 &dealings[position].join(PRIVATE_STATE_FILE),
                 &dealing_paths(&dealings, DECRYPTION_DEALING_FILE),
                 &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+                &accepted.transcript,
+                &accepted.acceptances,
                 &output,
             )?;
         }

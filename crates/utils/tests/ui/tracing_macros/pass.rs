@@ -1,9 +1,10 @@
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 
+struct NotDebug;
+
 #[miden_instrument(
     target = "miden-node-utils-test",
     name = "records_fields",
-    skip_all,
 )]
 fn records_fields() {
     let display_value = "display";
@@ -18,7 +19,8 @@ fn records_fields() {
 }
 
 #[miden_instrument]
-fn records_with_default_instrument_args() {
+fn records_with_default_instrument_args(not_debug: NotDebug) {
+    let _ = not_debug;
     let value = 1;
 
     miden_span_record!(
@@ -27,7 +29,6 @@ fn records_with_default_instrument_args() {
 }
 
 #[miden_instrument(
-    skip_all,
     fields(
         transaction.id = %"0x1234",
         account.updated,
@@ -36,16 +37,13 @@ fn records_with_default_instrument_args() {
 fn records_allowed_instrument_fields() {}
 
 #[miden_instrument(
-    skip_all,
     fields(
         %dice_roll,
     ),
 )]
 fn records_allowed_shorthand_instrument_field(dice_roll: f64) {}
 
-#[miden_instrument(
-    skip_all,
-)]
+#[miden_instrument]
 fn records_same_field_more_than_once() {
     let value = 1;
     let updated = 2;
@@ -58,9 +56,7 @@ fn records_same_field_more_than_once() {
     );
 }
 
-#[miden_instrument(
-    skip_all,
-)]
+#[miden_instrument]
 fn records_allowed_canonical_fields() {
     let tx_id = "0x1234";
     let account_id = "0xabcd";
@@ -146,7 +142,7 @@ fn records_allowed_canonical_fields() {
 
 fn main() {
     records_fields();
-    records_with_default_instrument_args();
+    records_with_default_instrument_args(NotDebug);
     records_allowed_instrument_fields();
     records_allowed_shorthand_instrument_field(0.5);
     records_same_field_more_than_once();

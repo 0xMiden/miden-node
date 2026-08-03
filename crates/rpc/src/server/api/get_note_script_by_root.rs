@@ -24,7 +24,6 @@ impl proto::server::rpc_api::GetNoteScriptByRoot for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_note_script_by_root",
-        skip_all,
         err,
     )]
     async fn handle(

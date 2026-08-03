@@ -1313,7 +1313,6 @@ pub(crate) fn select_network_accounts_subset(
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub(crate) fn upsert_accounts(
@@ -1668,7 +1667,6 @@ pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 /// A tuple of `(vault_assets_deleted, storage_map_values_deleted, account_codes_deleted)`
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
     fields(
         cutoff_block,
@@ -1689,7 +1687,6 @@ pub(crate) fn prune_history(
 
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
     fields(
         cutoff_block,
@@ -1712,7 +1709,6 @@ fn prune_account_vault_assets(
 
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
     fields(
         cutoff_block,
@@ -1745,7 +1741,6 @@ fn prune_account_storage_map_values(
 /// history table has millions of public rows.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
     fields(
         cutoff_block,

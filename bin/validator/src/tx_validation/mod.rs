@@ -41,7 +41,6 @@ pub enum TransactionValidationError {
 ///
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub async fn validate_transaction(

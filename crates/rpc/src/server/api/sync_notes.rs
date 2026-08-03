@@ -25,7 +25,6 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "sync_notes",
-        skip_all,
         err,
     )]
     async fn handle(

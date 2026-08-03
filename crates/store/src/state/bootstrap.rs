@@ -15,7 +15,6 @@ impl State {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.bootstrap",
-        skip_all,
         err,
     )]
     pub fn bootstrap(genesis: GenesisBlock, data_directory: &Path) -> anyhow::Result<()> {

@@ -43,7 +43,6 @@ impl Service for ValidatorService {
     #[miden_instrument(
         target = COMPONENT,
         name = "check-status.validator",
-        skip_all,
         ret(level = "info"),
     )]
     async fn check(&mut self) -> ServiceStatus {

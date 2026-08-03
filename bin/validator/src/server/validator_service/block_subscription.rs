@@ -48,7 +48,6 @@ impl grpc::server::validator_api::BlockSubscription for ValidatorService {
     #[miden_instrument(
         target = COMPONENT,
         name = "validator.block_subscription",
-        skip_all,
         err,
     )]
     async fn handle(

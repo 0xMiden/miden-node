@@ -209,7 +209,6 @@ impl Db {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.database.bootstrap",
-        skip_all,
         fields(path=%database_filepath.display())
         err,
     )]
@@ -241,7 +240,6 @@ impl Db {
     /// Open a connection to the DB after verifying that it is at the latest schema version.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseError> {
         Self::load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size())
@@ -252,7 +250,6 @@ impl Db {
     /// latest schema version.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn load_with_pool_size(
         database_filepath: PathBuf,
@@ -274,7 +271,6 @@ impl Db {
     /// Applies all pending migrations to an existing DB.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError> {
         migrate_database(database_filepath.as_ref())?;
@@ -285,7 +281,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_nullifiers_paged(
@@ -303,7 +298,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         fields(
             prefix_len,
             prefixes = nullifier_prefixes.len(),
@@ -337,7 +331,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_block_header_by_block_num(
@@ -356,7 +349,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_block_header_and_signatures_by_block_num(
@@ -374,7 +366,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_block_headers(
@@ -392,7 +383,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_all_block_header_commitments(&self) -> Result<Vec<BlockHeaderCommitment>> {
@@ -407,7 +397,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_account_commitments_paged(
@@ -425,7 +414,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_public_account_ids_paged(
@@ -443,7 +431,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_public_account_state_roots_paged(
@@ -461,7 +448,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
@@ -473,7 +459,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_network_accounts_subset(
@@ -491,7 +476,6 @@ impl Db {
     /// Returns `None` if no code exists with that commitment.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn select_account_code_by_commitment(
         &self,
@@ -509,7 +493,6 @@ impl Db {
     /// Returns `None` if the account doesn't exist at that block.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn select_account_header_with_storage_header_at_block(
         &self,
@@ -525,7 +508,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn get_note_sync_multi(
@@ -544,7 +526,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
@@ -558,7 +539,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_existing_note_commitments(
@@ -575,7 +555,6 @@ impl Db {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn select_note_inclusion_proofs(
@@ -600,7 +579,6 @@ impl Db {
     // TODO: This span is logged in a root span, we should connect it to the parent one.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub(crate) async fn apply_block(
@@ -686,7 +664,6 @@ impl Db {
     ///     - `::AllEntries` if the size is less than or equal given `entries_limit`, if any
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub(crate) async fn reconstruct_storage_map_from_db(
         &self,
@@ -777,7 +754,6 @@ impl Db {
     /// queries). Returns the latest asset for each vault key at or before `block_num`.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn select_account_vault_at_block(
         &self,

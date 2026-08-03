@@ -731,7 +731,6 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRawRow {
 /// transaction.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub(crate) fn insert_notes(
@@ -761,7 +760,6 @@ pub(crate) fn insert_notes(
 /// transaction.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub(crate) fn insert_scripts<'a>(

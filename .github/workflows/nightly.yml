@@ -12,6 +12,30 @@ permissions:
   contents: read
 
 jobs:
+  golden-dkg:
+    name: Golden DKG production backend
+    runs-on: warp-ubuntu-latest-x64-8x
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: "next"
+          persist-credentials: false
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
+      - uses: ./.github/actions/install-rocksdb
+      - uses: ./.github/actions/install-protobuf-compiler
+      - name: Install rust
+        run: rustup toolchain install --no-self-update
+      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: nextest@0.9.122
+      - name: Run the paper-backed ceremony
+        run: |
+          cargo nextest run -p miden-validator \
+            paper_backend_completes_two_round_ceremony \
+            --run-ignored only
+
   # Run tests on the beta channel to provide feedback for Rust team.
   beta-test:
     name: test on beta channel

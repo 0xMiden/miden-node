@@ -7,8 +7,7 @@ Layout:
 
 - `setup-context.wire`, `public-key-set.wire` — the shared public setup, the same for every validator.
 - `validator-1/secret-share.wire`, `validator-2/secret-share.wire`, `validator-3/secret-share.wire` — each participant's
-  **distinct** secret share. `compose/validator.yml` mounts this directory into all three validators and points each at
-  its own share.
+  **distinct** secret share. The Compose bootstrap service stages only the matching share in each validator's bundle.
 - `secret-share.wire` — participant 1's share (identical to `validator-1/secret-share.wire`), kept at the top level so
   single-validator tooling such as the CI benchmark smoke test keeps working unchanged.
 
@@ -17,6 +16,10 @@ recovery collapse to a single participant, which the combiner rejects — so thr
 impossible even though each validator stores encrypted records.
 
 This key is public and must not be used outside tests.
+
+Compose checks each staged bundle with `miden-validator golden-dkg validate-fixture` before it marks the local network
+as bootstrapped. This fixture-only check binds the secret share to its expected participant index. Production bundles
+must use `miden-validator golden-dkg validate`, which also checks genesis, the ceremony manifest, and signed transcript.
 
 ## Regenerating
 

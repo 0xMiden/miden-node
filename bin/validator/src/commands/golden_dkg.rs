@@ -226,6 +226,17 @@ enum GoldenDkgCommand {
         #[arg(long, value_name = "DIR")]
         bundle_directory: PathBuf,
     },
+
+    /// Checks a committed local-development fixture against one participant index.
+    ValidateFixture {
+        /// Directory containing the four storage-key fixture files.
+        #[arg(long, value_name = "DIR")]
+        bundle_directory: PathBuf,
+
+        /// Golden participant index that must own the secret share.
+        #[arg(long, value_name = "NUM")]
+        expected_participant: u32,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -379,6 +390,9 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             bundle_directory,
         } => {
             validate_bundle(&genesis, &ceremony_directory, &validator_public_key, &bundle_directory)
+        },
+        GoldenDkgCommand::ValidateFixture { bundle_directory, expected_participant } => {
+            validate_fixture_bundle(&bundle_directory, expected_participant)
         },
     }
 }
@@ -870,6 +884,36 @@ fn validate_bundle(
     );
     println!(
         "Golden storage key bundle is valid for participant {}.",
+        expected_participant.get(),
+    );
+    Ok(())
+}
+
+/// Validates the four-file bundle used by local development fixtures.
+fn validate_fixture_bundle(
+    bundle_directory: &Path,
+    expected_participant: u32,
+) -> anyhow::Result<()> {
+    let expected_participant = ParticipantIndex::new(expected_participant)?;
+    let epoch = fs_err::read_to_string(bundle_directory.join(EPOCH_FILE))
+        .context("failed to read storage-key epoch file")?;
+    let epoch = decode_fixed_hex::<32>(&epoch, "storage-key epoch")?;
+    let operator_key = EncodedGoldenOperatorKey::new(
+        StorageKeyEpoch::new(epoch),
+        fs_err::read(bundle_directory.join(SETUP_CONTEXT_FILE))?,
+        fs_err::read(bundle_directory.join(PUBLIC_KEY_SET_FILE))?,
+        fs_err::read(bundle_directory.join(SECRET_SHARE_FILE))?,
+    )
+    .decode()
+    .context("invalid Golden operator key fixture")?;
+    ensure!(
+        operator_key.participant() == expected_participant,
+        "fixture belongs to participant {}, expected {}",
+        operator_key.participant().get(),
+        expected_participant.get(),
+    );
+    println!(
+        "Golden storage key fixture is valid for participant {}.",
         expected_participant.get(),
     );
     Ok(())
@@ -1637,6 +1681,33 @@ mod tests {
     /// Creates a genesis block for three validators.
     fn write_genesis(root: &Path) -> TestResultWith<TestGenesis> {
         write_genesis_with_validator_count(root, 3)
+    }
+
+    #[test]
+    fn committed_fixture_has_one_valid_share_per_participant() -> TestResult {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scripts/testdata/insecure-golden-storage-key");
+        let root = tempfile::tempdir()?;
+        let mut shares = Vec::new();
+
+        for participant in 1..=3 {
+            let bundle = root.path().join(format!("validator-{participant}"));
+            fs_err::create_dir(&bundle)?;
+            fs_err::write(bundle.join(EPOCH_FILE), "09".repeat(32))?;
+            fs_err::copy(fixture.join(SETUP_CONTEXT_FILE), bundle.join(SETUP_CONTEXT_FILE))?;
+            fs_err::copy(fixture.join(PUBLIC_KEY_SET_FILE), bundle.join(PUBLIC_KEY_SET_FILE))?;
+            fs_err::copy(
+                fixture.join(format!("validator-{participant}/{SECRET_SHARE_FILE}")),
+                bundle.join(SECRET_SHARE_FILE),
+            )?;
+            validate_fixture_bundle(&bundle, participant)?;
+            shares.push(fs_err::read(bundle.join(SECRET_SHARE_FILE))?);
+        }
+
+        assert_ne!(shares[0], shares[1]);
+        assert_ne!(shares[1], shares[2]);
+        assert_ne!(shares[0], shares[2]);
+        Ok(())
     }
 
     /// Creates a genesis block with the requested validator count.

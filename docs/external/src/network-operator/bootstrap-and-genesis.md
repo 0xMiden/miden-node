@@ -149,6 +149,20 @@ miden-ntx-builder bootstrap \
 The key each validator operator starts their validator with must match the public key committed for them in the genesis
 configuration's `validators` list.
 
+## Golden Storage Key Ceremony
+
+After genesis is built, every listed validator must join one offline Golden DKG ceremony. The ceremony creates the
+shared public storage key and one distinct secret share per validator. No coordinator can derive those shares.
+
+Each operator first registers a fresh DKG identity with the validator signing key committed in genesis. One coordinator
+uses every signed registration to prepare the common ceremony. Every operator then creates two public dealings, checks
+and signs the same full transcript, and completes both rounds locally. The DKG and database bootstrap may run in either
+order, but both must finish before the validator starts.
+
+All listed validators must contribute to the ceremony even when the recovery threshold is lower. If any participant
+drops out or any transcript differs, discard the incomplete ceremony and start a new one with fresh identities and
+sessions. See [Golden storage key setup](./validator.md#golden-storage-key-setup) for the commands and file rules.
+
 Bootstrap takes no transaction encryption key: that key is configured separately when the validator is started, and
 nothing cross-checks it against the genesis block. A validator started without one falls back to a publicly known
 insecure default, which after bootstrap means every submission on the network is encrypted to a key anyone can read. See

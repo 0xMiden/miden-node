@@ -5,6 +5,18 @@ services:
     configs:
       - source: genesis
         target: /genesis.toml
+      - source: validator-storage-key-setup-context
+        target: /fixtures/storage-key/setup-context.wire
+      - source: validator-storage-key-public-set
+        target: /fixtures/storage-key/public-key-set.wire
+      - source: validator-1-storage-key-secret-share
+        target: /fixtures/storage-key/validator-1/secret-share.wire
+      - source: validator-2-storage-key-secret-share
+        target: /fixtures/storage-key/validator-2/secret-share.wire
+      - source: validator-3-storage-key-secret-share
+        target: /fixtures/storage-key/validator-3/secret-share.wire
+    environment:
+      MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
     volumes:
       - node-data:/data
     entrypoint: ["/bin/sh", "-c"]
@@ -36,6 +48,18 @@ services:
           miden-validator bootstrap \
             --data-directory "/data/validators/$${VALIDATOR}" \
             --genesis /data/genesis/genesis.dat
+
+          STORAGE_KEY="/data/validators/$${VALIDATOR}/storage-key"
+          mkdir -p "$${STORAGE_KEY}"
+          printf '%s' "$${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH}" > "$${STORAGE_KEY}/epoch.hex"
+          cp /fixtures/storage-key/setup-context.wire "$${STORAGE_KEY}/setup-context.wire"
+          cp /fixtures/storage-key/public-key-set.wire "$${STORAGE_KEY}/public-key-set.wire"
+          cp "/fixtures/storage-key/validator-$${VALIDATOR}/secret-share.wire" \
+            "$${STORAGE_KEY}/secret-share.wire"
+          chmod 600 "$${STORAGE_KEY}/secret-share.wire"
+          miden-validator golden-dkg validate-fixture \
+            --bundle-directory "$${STORAGE_KEY}" \
+            --expected-participant "$${VALIDATOR}"
         done
 
         touch /data/validators/.bootstrapped

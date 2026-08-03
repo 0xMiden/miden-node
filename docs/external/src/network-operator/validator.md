@@ -28,6 +28,103 @@ the block header, this next-key commitment is authenticated by the existing vali
 rotation safe: the network can verify that the next validator key was authorized by the validator that signed the
 current block.
 
+## Golden Storage Key Setup
+
+The Golden DKG creates the storage key used to re-encrypt validated private inputs. Run one ceremony for the validator
+set committed in genesis. Participant indexes follow the order of validator signing keys in the genesis block.
+
+First, each operator creates a DKG identity and sends `registration.toml` to the coordinator. The signing key must match
+one key in genesis. Use `--signing-key.hex` instead of KMS only for local or private deployments.
+
+```bash
+miden-validator golden-dkg identity \
+  --genesis genesis.dat \
+  --signing-key.kms-id <validator-kms-key-id> \
+  --output-directory identity
+```
+
+The coordinator collects every registration and prepares one common ceremony directory.
+
+```bash
+miden-validator golden-dkg prepare \
+  --genesis genesis.dat \
+  --threshold 2 \
+  --epoch <32-byte-hex-epoch> \
+  --registration validator-1-registration.toml \
+  --registration validator-2-registration.toml \
+  --registration validator-3-registration.toml \
+  --output-directory ceremony
+```
+
+Each operator checks the ceremony directory over the authenticated bootstrap channel, then creates its dealings.
+
+```bash
+miden-validator golden-dkg deal \
+  --genesis genesis.dat \
+  --ceremony-directory ceremony \
+  --identity-secret identity/identity-secret.wire \
+  --output-directory dealing
+```
+
+After all dealings are exchanged, every operator signs the same transcript. Repeat both dealing options once per
+validator.
+
+```bash
+miden-validator golden-dkg accept \
+  --genesis genesis.dat \
+  --ceremony-directory ceremony \
+  --signing-key.kms-id <validator-kms-key-id> \
+  --decryption-dealing validator-1-decryption-dealing.wire \
+  --decryption-dealing validator-2-decryption-dealing.wire \
+  --decryption-dealing validator-3-decryption-dealing.wire \
+  --context-dealing validator-1-context-dealing.wire \
+  --context-dealing validator-2-context-dealing.wire \
+  --context-dealing validator-3-context-dealing.wire \
+  --output-directory acceptance
+```
+
+Compare `transcript.toml` byte for byte across all operators. Collect one signed `transcript-acceptance.toml` from each
+operator. Each operator can then create and validate its own startup bundle.
+
+```bash
+miden-validator golden-dkg finalize \
+  --genesis genesis.dat \
+  --ceremony-directory ceremony \
+  --identity-secret identity/identity-secret.wire \
+  --private-state dealing/private-state.wire \
+  --decryption-dealing validator-1-decryption-dealing.wire \
+  --decryption-dealing validator-2-decryption-dealing.wire \
+  --decryption-dealing validator-3-decryption-dealing.wire \
+  --context-dealing validator-1-context-dealing.wire \
+  --context-dealing validator-2-context-dealing.wire \
+  --context-dealing validator-3-context-dealing.wire \
+  --transcript transcript.toml \
+  --transcript-acceptance validator-1-transcript-acceptance.toml \
+  --transcript-acceptance validator-2-transcript-acceptance.toml \
+  --transcript-acceptance validator-3-transcript-acceptance.toml \
+  --output-directory storage-key
+
+miden-validator golden-dkg validate \
+  --genesis genesis.dat \
+  --ceremony-directory ceremony \
+  --validator-public-key <validator-public-key-hex> \
+  --bundle-directory storage-key
+```
+
+The files have these handling rules:
+
+| Files                                                                  | Handling                                                     |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `registration.toml`, `manifest.toml`, and both DKG configuration files | Public; send through an authenticated channel.               |
+| Both dealing files, `transcript.toml`, and transcript acceptances      | Public; send through an authenticated channel.               |
+| `identity-secret.wire` and `private-state.wire`                        | Private to one operator; never send.                         |
+| `epoch.hex`, `setup-context.wire`, and `public-key-set.wire`           | Public final output; all operators must get identical bytes. |
+| `secret-share.wire`                                                    | Private final output; each operator gets a different share.  |
+
+Every operator must confirm matching public output hashes before activation. Once the final bundle is secured,
+`identity-secret.wire` and `private-state.wire` are no longer needed. A failed ceremony cannot resume with a partial or
+changed participant set; start a new ceremony instead.
+
 ## Start
 
 ```bash

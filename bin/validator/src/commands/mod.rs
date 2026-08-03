@@ -1,6 +1,7 @@
 mod bootstrap;
 mod export_private_record;
 mod genesis;
+mod golden_dkg;
 mod issue_private_record_share;
 mod start;
 
@@ -158,6 +159,9 @@ pub enum ValidatorCommand {
         data_directory: PathBuf,
     },
 
+    /// Runs the Golden storage-key setup ceremony.
+    GoldenDkg(golden_dkg::GoldenDkgOptions),
+
     /// Issues this validator's Golden decryption share for one stored private record.
     IssuePrivateRecordShare(PrivateRecordShareOptions),
 
@@ -290,6 +294,7 @@ impl ValidatorCommand {
                     .context("failed to apply validator database migrations")?;
                 Ok(())
             },
+            Self::GoldenDkg(options) => golden_dkg::run(options),
             Self::IssuePrivateRecordShare(options) => {
                 issue_private_record_share::issue_from_options(options)
             },
@@ -352,6 +357,7 @@ impl ValidatorCommand {
             Self::Genesis { .. }
             | Self::Bootstrap { .. }
             | Self::Pubkey { .. }
+            | Self::GoldenDkg(_)
             | Self::ExportPrivateRecord(_)
             | Self::IssuePrivateRecordShare(_)
             | Self::Migrate { .. } => OpenTelemetry::Disabled,

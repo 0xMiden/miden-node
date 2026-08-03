@@ -2587,6 +2587,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "golden-evrf"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a46591e30b00cc93a3ca196943b2871d621b39b79672f80170a84bb6b5dd4575"
+dependencies = [
+ "bulletproofs-cycle",
+ "ff 0.13.1",
+ "golden-core",
+ "golden-halo2curves",
+ "group 0.13.0",
+ "halo2curves",
+ "merlin",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "golden-halo2curves"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4772,6 +4790,7 @@ dependencies = [
  "fs-err",
  "golden-core",
  "golden-ehtdh1",
+ "golden-evrf",
  "golden-halo2curves",
  "hex",
  "miden-node-db",

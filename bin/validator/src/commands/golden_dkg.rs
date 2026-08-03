@@ -1,18 +1,28 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::{Context, ensure};
-use golden_core::wire::to_wire_bytes;
+use golden_core::wire::{WireMessage, from_wire_bytes as from_core_wire_bytes, to_wire_bytes};
 use golden_core::{
+    DealerMessage,
     DkgConfig,
+    DkgDealing,
+    EvrfProofBackend,
     GoldenGroup,
     GoldenScalar,
     ParticipantIndex,
     ParticipantRegistry,
     SessionId,
+    Share,
+    complete,
+    create_dealing,
+    create_dealing_with_secret,
 };
-use golden_ehtdh1::derive_context_session_id;
+use golden_ehtdh1::wire::to_wire_bytes as to_ehtdh1_wire_bytes;
+use golden_ehtdh1::{SetupContext, derive_context_session_id, material_from_dkg_outputs};
+use golden_evrf::paper::secp_secq::SecpSecqBackend;
 use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::genesis::read_genesis_block;
@@ -20,8 +30,8 @@ use miden_protocol::Word;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::crypto::hash::rpo::Rpo256;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_validator::ValidatorSigner;
-use rand_core_06::OsRng;
+use miden_validator::{EncodedGoldenOperatorKey, StorageKeyEpoch, ValidatorSigner};
+use rand_core_06::{CryptoRngCore, OsRng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -40,6 +50,14 @@ const REGISTRATION_FILE: &str = "registration.toml";
 const MANIFEST_FILE: &str = "manifest.toml";
 const DECRYPTION_CONFIG_FILE: &str = "decryption-config.wire";
 const CONTEXT_CONFIG_FILE: &str = "context-config.wire";
+const DECRYPTION_DEALING_FILE: &str = "decryption-dealing.wire";
+const CONTEXT_DEALING_FILE: &str = "context-dealing.wire";
+const PRIVATE_STATE_FILE: &str = "private-state.wire";
+const PRIVATE_STATE_MAGIC: &[u8] = b"miden-golden-dkg-local-state-v1\0";
+const EPOCH_FILE: &str = "epoch.hex";
+const SETUP_CONTEXT_FILE: &str = "setup-context.wire";
+const PUBLIC_KEY_SET_FILE: &str = "public-key-set.wire";
+const SECRET_SHARE_FILE: &str = "secret-share.wire";
 
 /// Inputs for one Golden DKG ceremony command.
 #[derive(clap::Args)]
@@ -88,6 +106,75 @@ enum GoldenDkgCommand {
         #[arg(long, value_name = "DIR")]
         output_directory: PathBuf,
     },
+
+    /// Creates this validator's public dealings and private local state.
+    Deal {
+        /// Trusted genesis block for the network.
+        #[arg(long, value_name = "FILE")]
+        genesis: PathBuf,
+
+        /// Directory containing the shared ceremony manifest and configurations.
+        #[arg(long, value_name = "DIR")]
+        ceremony_directory: PathBuf,
+
+        /// This validator's private DKG identity file.
+        #[arg(long, value_name = "FILE")]
+        identity_secret: PathBuf,
+
+        /// New directory that receives public dealings and private local state.
+        #[arg(long, value_name = "DIR")]
+        output_directory: PathBuf,
+    },
+
+    /// Completes both DKG rounds and writes this validator's startup bundle.
+    Finalize {
+        /// Trusted genesis block for the network.
+        #[arg(long, value_name = "FILE")]
+        genesis: PathBuf,
+
+        /// Directory containing the shared ceremony manifest and configurations.
+        #[arg(long, value_name = "DIR")]
+        ceremony_directory: PathBuf,
+
+        /// This validator's private DKG identity file.
+        #[arg(long, value_name = "FILE")]
+        identity_secret: PathBuf,
+
+        /// Private state produced by this validator's `deal` command.
+        #[arg(long, value_name = "FILE")]
+        private_state: PathBuf,
+
+        /// Public decryption-round dealing. Repeat once per genesis validator.
+        #[arg(long, required = true, value_name = "FILE")]
+        decryption_dealing: Vec<PathBuf>,
+
+        /// Public context-round dealing. Repeat once per genesis validator.
+        #[arg(long, required = true, value_name = "FILE")]
+        context_dealing: Vec<PathBuf>,
+
+        /// New directory that receives this validator's startup bundle.
+        #[arg(long, value_name = "DIR")]
+        output_directory: PathBuf,
+    },
+
+    /// Checks one startup bundle against genesis and the ceremony manifest.
+    Validate {
+        /// Trusted genesis block for the network.
+        #[arg(long, value_name = "FILE")]
+        genesis: PathBuf,
+
+        /// Directory containing the shared ceremony manifest and configurations.
+        #[arg(long, value_name = "DIR")]
+        ceremony_directory: PathBuf,
+
+        /// Genesis validator public key that owns this bundle.
+        #[arg(long, value_name = "HEX")]
+        validator_public_key: String,
+
+        /// Directory containing the final storage-key bundle.
+        #[arg(long, value_name = "DIR")]
+        bundle_directory: PathBuf,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -120,6 +207,22 @@ struct ManifestParticipant {
     dkg_identity_public_key: String,
 }
 
+struct Ceremony {
+    manifest: Manifest,
+    decryption_config: DkgConfig<StorageGroup>,
+    context_config: DkgConfig<StorageGroup>,
+}
+
+struct PrivateState {
+    participant: ParticipantIndex,
+    decryption_session_id: SessionId,
+    context_session_id: SessionId,
+    decryption_message_sha256: [u8; 32],
+    context_message_sha256: [u8; 32],
+    decryption_private_share: StorageScalar,
+    context_private_share: StorageScalar,
+}
+
 /// Runs one Golden DKG ceremony command.
 pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
     match options.command {
@@ -134,6 +237,43 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             registration,
             output_directory,
         } => prepare(&genesis, threshold, &epoch, &registration, &output_directory),
+        GoldenDkgCommand::Deal {
+            genesis,
+            ceremony_directory,
+            identity_secret,
+            output_directory,
+        } => deal::<SecpSecqBackend>(
+            &genesis,
+            &ceremony_directory,
+            &identity_secret,
+            &output_directory,
+            &mut OsRng,
+        ),
+        GoldenDkgCommand::Finalize {
+            genesis,
+            ceremony_directory,
+            identity_secret,
+            private_state,
+            decryption_dealing,
+            context_dealing,
+            output_directory,
+        } => finalize::<SecpSecqBackend>(
+            &genesis,
+            &ceremony_directory,
+            &identity_secret,
+            &private_state,
+            &decryption_dealing,
+            &context_dealing,
+            &output_directory,
+        ),
+        GoldenDkgCommand::Validate {
+            genesis,
+            ceremony_directory,
+            validator_public_key,
+            bundle_directory,
+        } => {
+            validate_bundle(&genesis, &ceremony_directory, &validator_public_key, &bundle_directory)
+        },
     }
 }
 
@@ -270,6 +410,231 @@ fn prepare(
     Ok(())
 }
 
+/// Creates this validator's two public dealings and private self shares.
+fn deal<B>(
+    genesis_path: &Path,
+    ceremony_directory: &Path,
+    identity_secret_path: &Path,
+    output_directory: &Path,
+    rng: &mut impl CryptoRngCore,
+) -> anyhow::Result<()>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
+    let identity_secret_bytes =
+        Zeroizing::new(fs_err::read(identity_secret_path).with_context(|| {
+            format!("failed to read DKG identity secret {}", identity_secret_path.display())
+        })?);
+    let identity_secret = decode_identity_secret(&identity_secret_bytes)?;
+    let participant = participant_for_identity(&ceremony.manifest, &identity_secret)?;
+
+    println!("Creating Golden decryption dealing for participant {}.", participant.get());
+    let started = Instant::now();
+    let decryption = create_dealing::<StorageGroup, B>(
+        participant,
+        &identity_secret,
+        &ceremony.decryption_config,
+        rng,
+    )
+    .context("failed to create decryption dealing")?;
+    println!(
+        "Created Golden decryption dealing for participant {} in {:.1?}.",
+        participant.get(),
+        started.elapsed(),
+    );
+
+    println!("Creating Golden context dealing for participant {}.", participant.get());
+    let started = Instant::now();
+    let context = create_dealing_with_secret::<StorageGroup, B>(
+        participant,
+        &identity_secret,
+        StorageScalar::zero(),
+        &ceremony.context_config,
+        rng,
+    )
+    .context("failed to create context dealing")?;
+    println!(
+        "Created Golden context dealing for participant {} in {:.1?}.",
+        participant.get(),
+        started.elapsed(),
+    );
+
+    let decryption_message = to_wire_bytes(&decryption.message);
+    let context_message = to_wire_bytes(&context.message);
+    let state = PrivateState {
+        participant,
+        decryption_session_id: ceremony.decryption_config.session_id,
+        context_session_id: ceremony.context_config.session_id,
+        decryption_message_sha256: sha256(&decryption_message),
+        context_message_sha256: sha256(&context_message),
+        decryption_private_share: decryption.private_share.value,
+        context_private_share: context.private_share.value,
+    };
+    let state = encode_private_state(&state);
+
+    publish_directory(output_directory, |directory| {
+        write_new_file(&directory.join(DECRYPTION_DEALING_FILE), &decryption_message, false)?;
+        write_new_file(&directory.join(CONTEXT_DEALING_FILE), &context_message, false)?;
+        write_new_file(&directory.join(PRIVATE_STATE_FILE), &state, true)
+    })?;
+
+    println!("Golden DKG dealings written to {}.", output_directory.display());
+    Ok(())
+}
+
+/// Completes both DKG rounds and publishes one validated operator bundle.
+fn finalize<B>(
+    genesis_path: &Path,
+    ceremony_directory: &Path,
+    identity_secret_path: &Path,
+    private_state_path: &Path,
+    decryption_dealing_paths: &[PathBuf],
+    context_dealing_paths: &[PathBuf],
+    output_directory: &Path,
+) -> anyhow::Result<()>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
+    let identity_secret_bytes =
+        Zeroizing::new(fs_err::read(identity_secret_path).with_context(|| {
+            format!("failed to read DKG identity secret {}", identity_secret_path.display())
+        })?);
+    let identity_secret = decode_identity_secret(&identity_secret_bytes)?;
+    let participant = participant_for_identity(&ceremony.manifest, &identity_secret)?;
+    let private_state_bytes =
+        Zeroizing::new(fs_err::read(private_state_path).with_context(|| {
+            format!("failed to read private DKG state {}", private_state_path.display())
+        })?);
+    let private_state = decode_private_state(&private_state_bytes)?;
+    validate_private_state(&private_state, participant, &ceremony)?;
+
+    let decryption_dealings =
+        read_dealings::<B>(decryption_dealing_paths, ceremony.manifest.participants.len())?;
+    let context_dealings =
+        read_dealings::<B>(context_dealing_paths, ceremony.manifest.participants.len())?;
+
+    println!(
+        "Completing Golden decryption round for participant {} with {} dealings.",
+        participant.get(),
+        decryption_dealings.len(),
+    );
+    let started = Instant::now();
+    let decryption_output = complete_round::<B>(
+        participant,
+        &identity_secret,
+        &private_state.decryption_private_share,
+        private_state.decryption_message_sha256,
+        decryption_dealings,
+        &ceremony.decryption_config,
+    )
+    .context("failed to complete decryption round")?;
+    println!(
+        "Completed Golden decryption round for participant {} in {:.1?}.",
+        participant.get(),
+        started.elapsed(),
+    );
+
+    println!(
+        "Completing Golden context round for participant {} with {} dealings.",
+        participant.get(),
+        context_dealings.len(),
+    );
+    let started = Instant::now();
+    let context_output = complete_round::<B>(
+        participant,
+        &identity_secret,
+        &private_state.context_private_share,
+        private_state.context_message_sha256,
+        context_dealings,
+        &ceremony.context_config,
+    )
+    .context("failed to complete context round")?;
+    println!(
+        "Completed Golden context round for participant {} in {:.1?}.",
+        participant.get(),
+        started.elapsed(),
+    );
+
+    let epoch = decode_fixed_hex::<32>(&ceremony.manifest.epoch, "storage-key epoch")?;
+    let material = material_from_dkg_outputs(
+        &ceremony.decryption_config,
+        &decryption_output,
+        &ceremony.context_config,
+        &context_output,
+        epoch,
+    )
+    .context("failed to bridge DKG outputs to EHTDH1")?;
+    let setup_context = to_ehtdh1_wire_bytes(&material.setup_context);
+    let public_key_set = to_ehtdh1_wire_bytes(&material.public_key_set);
+    let secret_share = Zeroizing::new(to_ehtdh1_wire_bytes(&material.secret_share));
+    EncodedGoldenOperatorKey::new(
+        StorageKeyEpoch::new(epoch),
+        setup_context.clone(),
+        public_key_set.clone(),
+        secret_share.to_vec(),
+    )
+    .decode()
+    .context("generated invalid Golden operator key")?;
+
+    publish_directory(output_directory, |directory| {
+        write_new_file(&directory.join(EPOCH_FILE), ceremony.manifest.epoch.as_bytes(), false)?;
+        write_new_file(&directory.join(SETUP_CONTEXT_FILE), &setup_context, false)?;
+        write_new_file(&directory.join(PUBLIC_KEY_SET_FILE), &public_key_set, false)?;
+        write_new_file(&directory.join(SECRET_SHARE_FILE), &secret_share, true)
+    })?;
+    println!("Golden storage key bundle written to {}.", output_directory.display());
+    Ok(())
+}
+
+/// Validates one final operator bundle and its genesis owner binding.
+fn validate_bundle(
+    genesis_path: &Path,
+    ceremony_directory: &Path,
+    validator_public_key: &str,
+    bundle_directory: &Path,
+) -> anyhow::Result<()> {
+    let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
+    let validator_public_key = decode_validator_public_key(validator_public_key)?;
+    let expected = ceremony
+        .manifest
+        .participants
+        .iter()
+        .find(|entry| entry.validator_public_key == hex::encode(validator_public_key.to_bytes()))
+        .context("validator public key is not part of this ceremony")?;
+    let expected_participant = ParticipantIndex::new(expected.participant_index)?;
+    let epoch_text = fs_err::read_to_string(bundle_directory.join(EPOCH_FILE))
+        .context("failed to read storage-key epoch file")?;
+    ensure!(
+        epoch_text == ceremony.manifest.epoch,
+        "storage-key epoch does not match manifest"
+    );
+    let epoch = decode_fixed_hex::<32>(&epoch_text, "storage-key epoch")?;
+    let operator_key = EncodedGoldenOperatorKey::new(
+        StorageKeyEpoch::new(epoch),
+        fs_err::read(bundle_directory.join(SETUP_CONTEXT_FILE))?,
+        fs_err::read(bundle_directory.join(PUBLIC_KEY_SET_FILE))?,
+        fs_err::read(bundle_directory.join(SECRET_SHARE_FILE))?,
+    )
+    .decode()
+    .context("invalid Golden operator key bundle")?;
+    ensure!(
+        operator_key.participant() == expected_participant,
+        "bundle belongs to participant {}, expected {}",
+        operator_key.participant().get(),
+        expected_participant.get(),
+    );
+    validate_setup_context(operator_key.setup_context(), &ceremony)?;
+    println!(
+        "Golden storage key bundle is valid for participant {}.",
+        expected_participant.get(),
+    );
+    Ok(())
+}
+
 /// Reads and validates one public DKG registration.
 fn read_registration(path: &Path) -> anyhow::Result<Registration> {
     let contents = fs_err::read_to_string(path)
@@ -326,6 +691,267 @@ fn read_validated_registrations(
         );
     }
     Ok(registrations)
+}
+
+/// Reads a ceremony directory and checks every public value against genesis.
+fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremony> {
+    let manifest_path = directory.join(MANIFEST_FILE);
+    let manifest_text = fs_err::read_to_string(&manifest_path)
+        .with_context(|| format!("failed to read DKG manifest {}", manifest_path.display()))?;
+    let manifest: Manifest =
+        toml::from_str(&manifest_text).context("failed to decode DKG manifest")?;
+    ensure!(manifest.version == MANIFEST_VERSION, "unsupported DKG manifest version");
+
+    let genesis = read_trusted_genesis(genesis_path)?;
+    let genesis_commitment = genesis.inner().header().commitment();
+    ensure!(
+        manifest.genesis_commitment == hex::encode(genesis_commitment.to_bytes()),
+        "DKG manifest belongs to a different genesis block",
+    );
+    decode_fixed_hex::<32>(&manifest.epoch, "storage-key epoch")?;
+
+    let decryption_bytes = fs_err::read(directory.join(DECRYPTION_CONFIG_FILE))
+        .context("failed to read decryption configuration")?;
+    let context_bytes = fs_err::read(directory.join(CONTEXT_CONFIG_FILE))
+        .context("failed to read context configuration")?;
+    ensure!(
+        sha256_hex(&decryption_bytes) == manifest.decryption_config_sha256,
+        "decryption configuration digest does not match manifest",
+    );
+    ensure!(
+        sha256_hex(&context_bytes) == manifest.context_config_sha256,
+        "context configuration digest does not match manifest",
+    );
+    let decryption_config = from_core_wire_bytes::<DkgConfig<StorageGroup>>(&decryption_bytes)
+        .context("invalid decryption configuration")?;
+    let context_config = from_core_wire_bytes::<DkgConfig<StorageGroup>>(&context_bytes)
+        .context("invalid context configuration")?;
+
+    ensure!(decryption_config.threshold == manifest.threshold, "threshold mismatch");
+    ensure!(context_config.threshold == manifest.threshold, "context threshold mismatch");
+    ensure!(
+        hex::encode(decryption_config.beta.to_repr()) == manifest.beta
+            && context_config.beta == decryption_config.beta,
+        "DKG beta mismatch",
+    );
+    ensure!(
+        hex::encode(decryption_config.session_id.0) == manifest.decryption_session_id,
+        "decryption session mismatch",
+    );
+    ensure!(
+        hex::encode(context_config.session_id.0) == manifest.context_session_id
+            && context_config.session_id == derive_context_session_id(decryption_config.session_id),
+        "context session mismatch",
+    );
+    ensure!(
+        context_config.registry.root() == decryption_config.registry.root(),
+        "registry mismatch between DKG rounds",
+    );
+
+    let validator_keys = genesis.inner().header().validator_keys().as_keys();
+    ensure!(
+        manifest.participants.len() == validator_keys.len(),
+        "manifest participant count does not match genesis",
+    );
+    for (offset, (entry, validator_key)) in
+        manifest.participants.iter().zip(validator_keys).enumerate()
+    {
+        let participant = ParticipantIndex::new(
+            u32::try_from(offset + 1).context("too many Golden DKG participants")?,
+        )?;
+        ensure!(entry.participant_index == participant.get(), "non-canonical participant order");
+        ensure!(
+            entry.validator_public_key == hex::encode(validator_key.to_bytes()),
+            "manifest validator order does not match genesis",
+        );
+        let expected_identity = decode_identity_public_key(&entry.dkg_identity_public_key)?;
+        ensure!(
+            decryption_config.registry.public_key(participant)? == &expected_identity
+                && context_config.registry.public_key(participant)? == &expected_identity,
+            "manifest identity does not match DKG registry",
+        );
+    }
+
+    Ok(Ceremony {
+        manifest,
+        decryption_config,
+        context_config,
+    })
+}
+
+/// Returns the manifest participant whose public identity matches a secret.
+fn participant_for_identity(
+    manifest: &Manifest,
+    identity_secret: &StorageScalar,
+) -> anyhow::Result<ParticipantIndex> {
+    let public_key = StorageGroup::mul_generator(identity_secret);
+    let public_key = hex::encode(StorageGroup::encode_element(&public_key));
+    let entry = manifest
+        .participants
+        .iter()
+        .find(|entry| entry.dkg_identity_public_key == public_key)
+        .context("DKG identity is not part of this ceremony")?;
+    Ok(ParticipantIndex::new(entry.participant_index)?)
+}
+
+/// Reads exactly one public dealing from every ceremony participant.
+fn read_dealings<B>(
+    paths: &[PathBuf],
+    expected: usize,
+) -> anyhow::Result<BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, B::Proof>>>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    ensure!(paths.len() == expected, "expected {expected} dealings, got {}", paths.len());
+    let mut dealings = BTreeMap::new();
+    for path in paths {
+        let bytes = fs_err::read(path)
+            .with_context(|| format!("failed to read dealing {}", path.display()))?;
+        let message = from_core_wire_bytes::<DealerMessage<StorageGroup, B::Proof>>(&bytes)
+            .with_context(|| format!("invalid dealing {}", path.display()))?;
+        let dealer = message.dealer;
+        ensure!(
+            dealings.insert(dealer, message).is_none(),
+            "duplicate dealing from participant {}",
+            dealer.get(),
+        );
+    }
+    ensure!(dealings.len() == expected, "dealing set is incomplete");
+    Ok(dealings)
+}
+
+/// Completes one DKG round from public messages and the local self share.
+fn complete_round<B>(
+    participant: ParticipantIndex,
+    identity_secret: &StorageScalar,
+    private_share: &StorageScalar,
+    expected_own_message_sha256: [u8; 32],
+    mut dealings: BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, B::Proof>>,
+    config: &DkgConfig<StorageGroup>,
+) -> anyhow::Result<golden_core::DkgOutput<StorageGroup>>
+where
+    B: EvrfProofBackend<StorageGroup>,
+    B::Proof: WireMessage,
+{
+    let own_message = dealings.remove(&participant).context("missing local dealing")?;
+    ensure!(
+        sha256(&to_wire_bytes(&own_message)) == expected_own_message_sha256,
+        "local dealing does not match private state",
+    );
+    let own_dealing = DkgDealing {
+        message: own_message,
+        private_share: Share { participant, value: *private_share },
+    };
+    Ok(complete::<StorageGroup, B>(
+        participant,
+        identity_secret,
+        &own_dealing,
+        &dealings,
+        config,
+    )?)
+}
+
+/// Checks a generated setup context against the public ceremony.
+fn validate_setup_context(context: &SetupContext, ceremony: &Ceremony) -> anyhow::Result<()> {
+    ensure!(context.threshold == ceremony.manifest.threshold, "setup threshold mismatch");
+    ensure!(
+        context.registry_root == ceremony.decryption_config.registry.root(),
+        "setup registry mismatch",
+    );
+    ensure!(
+        context.decryption_session_id == ceremony.decryption_config.session_id
+            && context.context_session_id == ceremony.context_config.session_id,
+        "setup session mismatch",
+    );
+    ensure!(
+        context.epoch == decode_fixed_hex::<32>(&ceremony.manifest.epoch, "epoch")?,
+        "setup epoch mismatch"
+    );
+    let participants = ceremony
+        .manifest
+        .participants
+        .iter()
+        .map(|entry| ParticipantIndex::new(entry.participant_index))
+        .collect::<Result<Vec<_>, _>>()?;
+    ensure!(context.participants == participants, "setup participant mismatch");
+    Ok(())
+}
+
+/// Encodes private self shares with their participant, sessions, and public messages.
+fn encode_private_state(state: &PrivateState) -> Zeroizing<Vec<u8>> {
+    let mut bytes = Zeroizing::new(Vec::with_capacity(
+        PRIVATE_STATE_MAGIC.len() + 4 + 4 * 32 + 2 * StorageScalar::REPR_BYTES,
+    ));
+    bytes.extend_from_slice(PRIVATE_STATE_MAGIC);
+    bytes.extend_from_slice(&state.participant.get().to_be_bytes());
+    bytes.extend_from_slice(&state.decryption_session_id.0);
+    bytes.extend_from_slice(&state.context_session_id.0);
+    bytes.extend_from_slice(&state.decryption_message_sha256);
+    bytes.extend_from_slice(&state.context_message_sha256);
+    bytes.extend_from_slice(state.decryption_private_share.to_repr().as_ref());
+    bytes.extend_from_slice(state.context_private_share.to_repr().as_ref());
+    bytes
+}
+
+/// Decodes private self shares and rejects trailing or non-canonical data.
+fn decode_private_state(bytes: &[u8]) -> anyhow::Result<PrivateState> {
+    let mut bytes = bytes
+        .strip_prefix(PRIVATE_STATE_MAGIC)
+        .context("invalid private DKG state format")?;
+    let expected = 4 + 4 * 32 + 2 * StorageScalar::REPR_BYTES;
+    ensure!(bytes.len() == expected, "invalid private DKG state length");
+    let participant = ParticipantIndex::new(u32::from_be_bytes(take_array(&mut bytes)?))?;
+    let decryption_session_id = SessionId(take_array(&mut bytes)?);
+    let context_session_id = SessionId(take_array(&mut bytes)?);
+    let decryption_message_sha256 = take_array(&mut bytes)?;
+    let context_message_sha256 = take_array(&mut bytes)?;
+    let decryption_private_share = take_scalar(&mut bytes)?;
+    let context_private_share = take_scalar(&mut bytes)?;
+    ensure!(bytes.is_empty(), "trailing private DKG state bytes");
+    Ok(PrivateState {
+        participant,
+        decryption_session_id,
+        context_session_id,
+        decryption_message_sha256,
+        context_message_sha256,
+        decryption_private_share,
+        context_private_share,
+    })
+}
+
+/// Checks that private state belongs to this participant and ceremony.
+fn validate_private_state(
+    state: &PrivateState,
+    participant: ParticipantIndex,
+    ceremony: &Ceremony,
+) -> anyhow::Result<()> {
+    ensure!(
+        state.participant == participant,
+        "private DKG state belongs to another participant"
+    );
+    ensure!(
+        state.decryption_session_id == ceremony.decryption_config.session_id
+            && state.context_session_id == ceremony.context_config.session_id,
+        "private DKG state belongs to another ceremony",
+    );
+    Ok(())
+}
+
+/// Removes and returns one fixed-size prefix.
+fn take_array<const N: usize>(bytes: &mut &[u8]) -> anyhow::Result<[u8; N]> {
+    ensure!(bytes.len() >= N, "truncated private DKG state");
+    let (head, tail) = bytes.split_at(N);
+    *bytes = tail;
+    Ok(head.try_into().expect("fixed-size slice"))
+}
+
+/// Removes and decodes one canonical scalar.
+fn take_scalar(bytes: &mut &[u8]) -> anyhow::Result<StorageScalar> {
+    let scalar = take_array::<{ StorageScalar::REPR_BYTES }>(bytes)?;
+    let repr = <StorageScalar as GoldenScalar>::Repr::try_from(scalar.to_vec())
+        .map_err(|_| anyhow::anyhow!("invalid private DKG scalar length"))?;
+    StorageScalar::from_repr(&repr).context("invalid private DKG scalar")
 }
 
 /// Reads and validates the trusted genesis block used by the ceremony.
@@ -394,7 +1020,6 @@ fn encode_identity_secret(secret: &StorageScalar) -> Zeroizing<Vec<u8>> {
 }
 
 /// Decodes a private DKG identity and rejects malformed or zero scalars.
-#[cfg(test)]
 fn decode_identity_secret(bytes: &[u8]) -> anyhow::Result<StorageScalar> {
     let scalar_bytes = bytes
         .strip_prefix(IDENTITY_SECRET_MAGIC)
@@ -466,13 +1091,30 @@ fn decode_fixed_hex<const N: usize>(value: &str, name: &str) -> anyhow::Result<[
 
 /// Returns the SHA-256 digest of one public ceremony artifact.
 fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+    hex::encode(sha256(bytes))
+}
+
+/// Returns the SHA-256 digest of one artifact.
+fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
 }
 
 #[cfg(test)]
 mod tests {
     use golden_core::wire::from_wire_bytes;
+    use golden_ehtdh1::wire::from_wire_bytes as from_ehtdh1_wire_bytes;
+    use golden_ehtdh1::{
+        Combiner,
+        PublicKeySet,
+        SealingKey,
+        SecretShare,
+        SetupContext,
+        UnsealingShare,
+    };
+    use golden_evrf::prototype::ShareOpeningBackend;
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+    use rand_chacha_03::ChaCha20Rng;
+    use rand_chacha_03::rand_core::SeedableRng;
 
     use super::*;
 
@@ -486,18 +1128,29 @@ mod tests {
 
     /// Creates a genesis block for three validators.
     fn write_genesis(root: &Path) -> TestResultWith<TestGenesis> {
-        let signing_keys = vec![SigningKey::new(), SigningKey::new(), SigningKey::new()];
+        write_genesis_with_validator_count(root, 3)
+    }
+
+    /// Creates a genesis block with the requested validator count.
+    fn write_genesis_with_validator_count(
+        root: &Path,
+        validator_count: usize,
+    ) -> TestResultWith<TestGenesis> {
+        let signing_keys = (0..validator_count).map(|_| SigningKey::new()).collect::<Vec<_>>();
+        let validators = signing_keys
+            .iter()
+            .map(|key| format!("\"{}\"", hex::encode(key.public_key().to_bytes())))
+            .collect::<Vec<_>>()
+            .join(", ");
         let config = format!(
             concat!(
                 "version = 1\n",
                 "timestamp = 1717344256\n",
-                "validators = [\"{}\", \"{}\", \"{}\"]\n",
+                "validators = [{validators}]\n",
                 "\n[fee_parameters]\n",
                 "verification_base_fee = 0\n",
             ),
-            hex::encode(signing_keys[0].public_key().to_bytes()),
-            hex::encode(signing_keys[1].public_key().to_bytes()),
-            hex::encode(signing_keys[2].public_key().to_bytes()),
+            validators = validators,
         );
         let config_path = root.join("genesis.toml");
         fs_err::write(&config_path, config)?;
@@ -655,6 +1308,317 @@ mod tests {
             format!("{error:#}").contains("invalid validator signature"),
             "unexpected error: {error:#}",
         );
+        Ok(())
+    }
+
+    struct TestCeremony {
+        genesis: TestGenesis,
+        ceremony: PathBuf,
+        identities: Vec<PathBuf>,
+    }
+
+    /// Creates signed identities and one shared ceremony directory.
+    async fn prepare_test_ceremony(
+        root: &Path,
+        validator_count: usize,
+        threshold: usize,
+    ) -> TestResultWith<TestCeremony> {
+        let genesis = write_genesis_with_validator_count(root, validator_count)?;
+        let mut registrations = Vec::new();
+        let mut identities = Vec::new();
+        for (position, signing_key) in genesis.signing_keys.iter().enumerate() {
+            let directory = root.join(format!("identity-{position}"));
+            generate_identity(
+                &genesis.path,
+                &ValidatorSigner::new_local(signing_key.clone()),
+                &directory,
+            )
+            .await?;
+            registrations.push(directory.join(REGISTRATION_FILE));
+            identities.push(directory);
+        }
+        let ceremony = root.join("ceremony");
+        prepare(&genesis.path, threshold, &"33".repeat(32), &registrations, &ceremony)?;
+        Ok(TestCeremony { genesis, ceremony, identities })
+    }
+
+    /// Creates both dealings for every validator with the fast proof backend.
+    fn deal_for_all(root: &Path, ceremony: &TestCeremony) -> TestResultWith<Vec<PathBuf>> {
+        let mut rng = ChaCha20Rng::from_seed([41; 32]);
+        let mut outputs = Vec::new();
+        for (position, identity) in ceremony.identities.iter().enumerate() {
+            let output = root.join(format!("deal-{position}"));
+            deal::<ShareOpeningBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &identity.join(IDENTITY_SECRET_FILE),
+                &output,
+                &mut rng,
+            )?;
+            outputs.push(output);
+        }
+        Ok(outputs)
+    }
+
+    /// Returns one named dealing file from every participant directory.
+    fn dealing_paths(outputs: &[PathBuf], name: &str) -> Vec<PathBuf> {
+        outputs.iter().map(|directory| directory.join(name)).collect()
+    }
+
+    /// Completes one startup bundle with the fast proof backend.
+    fn finalize_test_bundle(
+        root: &Path,
+        ceremony: &TestCeremony,
+        dealings: &[PathBuf],
+        position: usize,
+    ) -> TestResultWith<PathBuf> {
+        let output = root.join(format!("bundle-{position}"));
+        finalize::<ShareOpeningBackend>(
+            &ceremony.genesis.path,
+            &ceremony.ceremony,
+            &ceremony.identities[position].join(IDENTITY_SECRET_FILE),
+            &dealings[position].join(PRIVATE_STATE_FILE),
+            &dealing_paths(dealings, DECRYPTION_DEALING_FILE),
+            &dealing_paths(dealings, CONTEXT_DEALING_FILE),
+            &output,
+        )?;
+        Ok(output)
+    }
+
+    #[tokio::test]
+    async fn three_validators_complete_dkg_and_recover_with_any_two_shares() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+        let dealings = deal_for_all(root.path(), &ceremony)?;
+        let mut bundles = Vec::new();
+        for position in 0..3 {
+            let bundle = finalize_test_bundle(root.path(), &ceremony, &dealings, position)?;
+            validate_bundle(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &hex::encode(ceremony.genesis.signing_keys[position].public_key().to_bytes()),
+                &bundle,
+            )?;
+            bundles.push(bundle);
+        }
+
+        let shared_setup = fs_err::read(bundles[0].join(SETUP_CONTEXT_FILE))?;
+        let shared_public_keys = fs_err::read(bundles[0].join(PUBLIC_KEY_SET_FILE))?;
+        let secret_shares = bundles
+            .iter()
+            .map(|bundle| fs_err::read(bundle.join(SECRET_SHARE_FILE)))
+            .collect::<Result<Vec<_>, _>>()?;
+        assert!(bundles.iter().all(|bundle| {
+            fs_err::read(bundle.join(SETUP_CONTEXT_FILE)).unwrap() == shared_setup
+                && fs_err::read(bundle.join(PUBLIC_KEY_SET_FILE)).unwrap() == shared_public_keys
+        }));
+        assert_ne!(secret_shares[0], secret_shares[1]);
+        assert_ne!(secret_shares[1], secret_shares[2]);
+
+        let setup: SetupContext = from_ehtdh1_wire_bytes(&shared_setup)?;
+        let public_keys: PublicKeySet<StorageGroup> = from_ehtdh1_wire_bytes(&shared_public_keys)?;
+        let secret_shares = secret_shares
+            .iter()
+            .map(|bytes| from_ehtdh1_wire_bytes::<SecretShare<StorageGroup>>(bytes))
+            .collect::<Result<Vec<_>, _>>()?;
+        let sealing_key = SealingKey::new(public_keys.joint_public_key)?;
+        let context = b"transaction-inputs/test";
+        let content_key = [0x5a; 32];
+        let mut rng = ChaCha20Rng::from_seed([42; 32]);
+        let ciphertext =
+            sealing_key.seal_bytes_with_associated_data(&mut rng, &content_key, context)?;
+        let shares = secret_shares
+            .iter()
+            .map(|secret| {
+                UnsealingShare::new(secret.clone()).decrypt_share_with_associated_data(
+                    &mut rng,
+                    &setup,
+                    &ciphertext,
+                    context,
+                    context,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let combiner = Combiner::new(public_keys, setup)?;
+        for pair in [[0, 1], [0, 2], [1, 2]] {
+            let recovered = combiner.combine_exact_with_associated_data(
+                &ciphertext,
+                context,
+                context,
+                &[shares[pair[0]].clone(), shares[pair[1]].clone()],
+            )?;
+            assert_eq!(recovered, content_key);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalize_rejects_incomplete_or_duplicate_dealings() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+        let dealings = deal_for_all(root.path(), &ceremony)?;
+        let decryption = dealing_paths(&dealings, DECRYPTION_DEALING_FILE);
+        let context = dealing_paths(&dealings, CONTEXT_DEALING_FILE);
+        let output = root.path().join("bundle");
+
+        assert!(
+            finalize::<ShareOpeningBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &ceremony.identities[0].join(IDENTITY_SECRET_FILE),
+                &dealings[0].join(PRIVATE_STATE_FILE),
+                &decryption[..2],
+                &context,
+                &output,
+            )
+            .is_err()
+        );
+        assert!(!output.exists());
+
+        let duplicate = vec![decryption[0].clone(), decryption[0].clone(), decryption[2].clone()];
+        assert!(
+            finalize::<ShareOpeningBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &ceremony.identities[0].join(IDENTITY_SECRET_FILE),
+                &dealings[0].join(PRIVATE_STATE_FILE),
+                &duplicate,
+                &context,
+                &output,
+            )
+            .is_err()
+        );
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalize_rejects_tampered_dealing_without_partial_output() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+        let dealings = deal_for_all(root.path(), &ceremony)?;
+        let tampered = root.path().join("tampered.wire");
+        let mut bytes = fs_err::read(dealings[1].join(DECRYPTION_DEALING_FILE))?;
+        let offset = bytes.len() / 2;
+        bytes[offset] ^= 1;
+        fs_err::write(&tampered, bytes)?;
+        let mut decryption = dealing_paths(&dealings, DECRYPTION_DEALING_FILE);
+        decryption[1] = tampered;
+        let output = root.path().join("bundle");
+
+        assert!(
+            finalize::<ShareOpeningBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &ceremony.identities[0].join(IDENTITY_SECRET_FILE),
+                &dealings[0].join(PRIVATE_STATE_FILE),
+                &decryption,
+                &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+                &output,
+            )
+            .is_err()
+        );
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn private_state_cannot_cross_ceremonies() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let first_root = root.path().join("first");
+        let second_root = root.path().join("second");
+        fs_err::create_dir_all(&first_root)?;
+        fs_err::create_dir_all(&second_root)?;
+        let first = prepare_test_ceremony(&first_root, 3, 2).await?;
+        let first_dealings = deal_for_all(&first_root, &first)?;
+
+        let registrations = first
+            .identities
+            .iter()
+            .map(|identity| identity.join(REGISTRATION_FILE))
+            .collect::<Vec<_>>();
+        let second_ceremony = second_root.join("ceremony");
+        prepare(&first.genesis.path, 2, &"44".repeat(32), &registrations, &second_ceremony)?;
+        let output = second_root.join("bundle");
+        let error = finalize::<ShareOpeningBackend>(
+            &first.genesis.path,
+            &second_ceremony,
+            &first.identities[0].join(IDENTITY_SECRET_FILE),
+            &first_dealings[0].join(PRIVATE_STATE_FILE),
+            &dealing_paths(&first_dealings, DECRYPTION_DEALING_FILE),
+            &dealing_paths(&first_dealings, CONTEXT_DEALING_FILE),
+            &output,
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("another ceremony"));
+        assert!(!output.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn deal_rejects_unknown_identity_and_existing_output() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+        let outsider = root.path().join("outsider.wire");
+        fs_err::write(&outsider, encode_identity_secret(&StorageScalar::random(&mut OsRng)))?;
+        let output = root.path().join("deal");
+        let mut rng = ChaCha20Rng::from_seed([43; 32]);
+        assert!(
+            deal::<ShareOpeningBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &outsider,
+                &output,
+                &mut rng,
+            )
+            .is_err()
+        );
+        assert!(!output.exists());
+
+        fs_err::create_dir(&output)?;
+        assert!(
+            deal::<ShareOpeningBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &ceremony.identities[0].join(IDENTITY_SECRET_FILE),
+                &output,
+                &mut rng,
+            )
+            .is_err()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "slow: runs the concrete Secp/Secq proof backend"]
+    async fn paper_backend_completes_two_round_ceremony() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let ceremony = prepare_test_ceremony(root.path(), 2, 2).await?;
+        let mut rng = ChaCha20Rng::from_seed([44; 32]);
+        let mut dealings = Vec::new();
+        for (position, identity) in ceremony.identities.iter().enumerate() {
+            let output = root.path().join(format!("paper-deal-{position}"));
+            deal::<SecpSecqBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &identity.join(IDENTITY_SECRET_FILE),
+                &output,
+                &mut rng,
+            )?;
+            dealings.push(output);
+        }
+        for position in 0..2 {
+            let output = root.path().join(format!("paper-bundle-{position}"));
+            finalize::<SecpSecqBackend>(
+                &ceremony.genesis.path,
+                &ceremony.ceremony,
+                &ceremony.identities[position].join(IDENTITY_SECRET_FILE),
+                &dealings[position].join(PRIVATE_STATE_FILE),
+                &dealing_paths(&dealings, DECRYPTION_DEALING_FILE),
+                &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+                &output,
+            )?;
+        }
         Ok(())
     }
 }

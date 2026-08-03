@@ -28,6 +28,7 @@ clap                   = { features = ["env", "string"], workspace = true }
 fs-err                 = { workspace = true }
 golden-core            = { workspace = true }
 golden-ehtdh1          = { workspace = true }
+golden-evrf            = { workspace = true }
 golden-halo2curves     = { workspace = true }
 hex                    = { workspace = true }
 miden-node-db          = { workspace = true }

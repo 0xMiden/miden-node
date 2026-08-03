@@ -63,7 +63,6 @@ pub struct TransactionRecordRaw {
 /// transaction.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub(crate) fn insert_transactions(

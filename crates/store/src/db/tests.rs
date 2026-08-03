@@ -43,6 +43,7 @@ use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{
     Note,
     NoteAttachment,
+    NoteAttachmentScheme,
     NoteAttachments,
     NoteDetails,
     NoteDetailsCommitment,
@@ -840,9 +841,20 @@ fn note_sync_across_multiple_blocks() {
         .unwrap();
 
         let new_note = create_note(sender);
+        let attachments = NoteAttachments::new(
+            (1..=NoteAttachments::MAX_COUNT)
+                .map(|scheme| {
+                    NoteAttachment::with_word(
+                        NoteAttachmentScheme::new(u16::try_from(scheme).unwrap()).unwrap(),
+                        Word::from([block_num_raw, scheme as u32, 0, 0]),
+                    )
+                })
+                .collect(),
+        )
+        .unwrap();
         let note_metadata = NoteMetadata::new(
             PartialNoteMetadata::new(sender, NoteType::Public).with_tag(tag.into()),
-            &NoteAttachments::default(),
+            &attachments,
         );
         let note_header = NoteHeader::new(new_note.details_commitment(), note_metadata);
         let values = [(note_index, &note_header)];
@@ -855,7 +867,7 @@ fn note_sync_across_multiple_blocks() {
             note_id: new_note.id().as_word(),
             metadata: note_metadata,
             details: Some(NoteDetails::from(&new_note)),
-            attachments: NoteAttachments::default(),
+            attachments,
             inclusion_path,
         };
         queries::insert_scripts(conn, [&note]).unwrap();
@@ -922,9 +934,20 @@ fn note_sync_multi_respects_payload_limit() {
         .unwrap();
 
         let new_note = create_note(sender);
+        let attachments = NoteAttachments::new(
+            (1..=NoteAttachments::MAX_COUNT)
+                .map(|scheme| {
+                    NoteAttachment::with_word(
+                        NoteAttachmentScheme::new(u16::try_from(scheme).unwrap()).unwrap(),
+                        Word::from([block_num_raw, scheme as u32, 0, 0]),
+                    )
+                })
+                .collect(),
+        )
+        .unwrap();
         let note_metadata = NoteMetadata::new(
             PartialNoteMetadata::new(sender, NoteType::Public).with_tag(tag.into()),
-            &NoteAttachments::default(),
+            &attachments,
         );
         let note_header = NoteHeader::new(new_note.details_commitment(), note_metadata);
         let values = [(note_index, &note_header)];
@@ -937,7 +960,7 @@ fn note_sync_multi_respects_payload_limit() {
             note_id: new_note.id().as_word(),
             metadata: note_metadata,
             details: Some(NoteDetails::from(&new_note)),
-            attachments: NoteAttachments::default(),
+            attachments,
             inclusion_path,
         };
         queries::insert_scripts(conn, [&note]).unwrap();
@@ -2911,6 +2934,17 @@ fn db_roundtrip_note_metadata_attachment() {
         account_id,
         "NetworkAccountTarget should have the correct target account ID"
     );
+
+    // Note sync uses a narrower record than `select_notes_by_id`, but it must retain attachments so
+    // the RPC layer can expose single-word values.
+    let synced = queries::select_notes_since_block_by_tag(
+        &mut conn,
+        &[metadata.tag().as_u32()],
+        BlockNumber::GENESIS..=block_num,
+    )
+    .expect("select_notes_since_block_by_tag should succeed");
+    assert_eq!(synced.len(), 1, "Should sync exactly one note");
+    assert_eq!(synced[0].attachments, attachments);
 }
 
 #[test]
@@ -3744,6 +3778,7 @@ fn db_roundtrip_transactions() {
             note_index: BlockNoteIndex::new(0, idx).unwrap(),
             note_id: note.id(),
             metadata: *note.metadata(),
+            attachments: NoteAttachments::default(),
             inclusion_path: SparseMerklePath::default(),
         })
         .collect();

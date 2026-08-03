@@ -107,7 +107,6 @@ impl State {
     /// writer and obtain the usable [`State`].
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn load(
         data_path: &Path,
@@ -124,7 +123,6 @@ impl State {
     /// writer and obtain the usable [`State`].
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn load_with_database_options(
         data_path: &Path,

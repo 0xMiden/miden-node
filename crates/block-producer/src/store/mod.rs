@@ -171,7 +171,6 @@ impl Display for TransactionInputs {
 #[miden_instrument(
     target = COMPONENT,
     name = "store.state.get_tx_inputs",
-    skip_all,
     err,
     fields(
         transaction.id = %proven_tx.id().to_hex(),

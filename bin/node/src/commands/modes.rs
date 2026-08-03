@@ -7,9 +7,11 @@ use miden_node_block_producer::{DEFAULT_VALIDATOR_TIMEOUT, Sequencer};
 use miden_node_proto::clients::{
     Builder,
     NtxBuilderClient,
+    RemoteProverClient,
     RpcClient,
     SequencerClient,
     ValidatorClient,
+    WantsConnection,
 };
 use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
 use miden_node_store::{BlockWriter, ProofWriter, State, WriterTask};
@@ -57,6 +59,14 @@ impl SequencerCommand {
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
+        let (validator_clients, validator_monitors) =
+            self.external_services.validator_clients_and_monitors()?;
+        let (ntx_builder_client, ntx_builder_monitor) =
+            self.external_services.ntx_builder_client_and_monitor()?;
+        let batch_prover_monitor =
+            remote_prover_monitor(self.block_producer.batch.prover_url.as_ref())?;
+        let block_prover_monitor =
+            remote_prover_monitor(self.block_producer.block_prover.url.as_ref())?;
         let (state, block_writer, proof_writer, writer_task) =
             load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
@@ -84,12 +94,9 @@ impl SequencerCommand {
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
             state,
-            mode: RpcMode::sequencer(
-                block_producer.clone(),
-                self.external_services.validator_clients()?,
-            ),
+            mode: RpcMode::sequencer(block_producer.clone(), validator_clients),
             sync_writers: None,
-            ntx_builder: Some(self.external_services.ntx_builder_client()?),
+            ntx_builder: Some(ntx_builder_client),
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
         };
@@ -97,6 +104,30 @@ impl SequencerCommand {
         tasks.spawn("sequencer", sequencer.wait());
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
         tasks.spawn("store block writer", join_store_writer(writer_task));
+        for (index, validator_monitor) in validator_monitors.into_iter().enumerate() {
+            tasks.spawn_infallible(
+                format!("validator {index} connection monitor"),
+                validator_monitor.monitor::<ValidatorClient>("validator", shutdown.clone()),
+            );
+        }
+        tasks.spawn_infallible(
+            "ntx-builder connection monitor",
+            ntx_builder_monitor.monitor::<NtxBuilderClient>("ntx-builder", shutdown.clone()),
+        );
+        if let Some(batch_prover_monitor) = batch_prover_monitor {
+            tasks.spawn_infallible(
+                "batch prover connection monitor",
+                batch_prover_monitor
+                    .monitor::<RemoteProverClient>("batch-prover", shutdown.clone()),
+            );
+        }
+        if let Some(block_prover_monitor) = block_prover_monitor {
+            tasks.spawn_infallible(
+                "block prover connection monitor",
+                block_prover_monitor
+                    .monitor::<RemoteProverClient>("block-prover", shutdown.clone()),
+            );
+        }
         if let Some(internal_listen) = self.internal {
             let sequencer_internal = SequencerInternal {
                 listener: bind_rpc(internal_listen).await?,
@@ -174,8 +205,10 @@ pub struct SequencerExternalServiceOptions {
 }
 
 impl SequencerExternalServiceOptions {
-    fn validator_clients(&self) -> anyhow::Result<ValidatorClients> {
-        let clients = self
+    fn validator_clients_and_monitors(
+        &self,
+    ) -> anyhow::Result<(ValidatorClients, Vec<Builder<WantsConnection>>)> {
+        let builders = self
             .validator_urls
             .iter()
             .map(|url| {
@@ -184,21 +217,26 @@ impl SequencerExternalServiceOptions {
                     .with_timeout(self.validator_timeout)
                     .without_metadata_version()
                     .without_metadata_genesis()
-                    .with_otel_context_injection()
-                    .connect_lazy::<ValidatorClient>())
+                    .with_otel_context_injection())
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        ValidatorClients::new(clients)
+        let clients =
+            builders.iter().cloned().map(Builder::connect_lazy::<ValidatorClient>).collect();
+        let clients = ValidatorClients::new(clients)?;
+        Ok((clients, builders))
     }
 
-    fn ntx_builder_client(&self) -> anyhow::Result<NtxBuilderClient> {
-        Ok(Builder::new(self.ntx_builder_url.clone())
+    fn ntx_builder_client_and_monitor(
+        &self,
+    ) -> anyhow::Result<(NtxBuilderClient, Builder<WantsConnection>)> {
+        let builder = Builder::new(self.ntx_builder_url.clone())
             .with_tls()?
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .with_otel_context_injection()
-            .connect_lazy::<NtxBuilderClient>())
+            .with_otel_context_injection();
+        let client = builder.clone().connect_lazy::<NtxBuilderClient>();
+        Ok((client, builder))
     }
 }
 
@@ -237,12 +275,22 @@ pub struct FullNodeCommand {
     pub sequencer_url: Option<Url>,
 }
 
+struct PreAuthComponents {
+    submission: Option<PreAuthSubmission>,
+    validator_monitors: Vec<Builder<WantsConnection>>,
+    sequencer_monitor: Option<Builder<WantsConnection>>,
+}
+
 impl FullNodeCommand {
     pub async fn handle(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         self.log_starting();
         let runtime = self.runtime.runtime_config(&self.store);
         let source_rpc = self.sync.source_rpc_client()?;
-        let pre_auth = self.pre_auth_submission()?;
+        let PreAuthComponents {
+            submission: pre_auth,
+            validator_monitors,
+            sequencer_monitor,
+        } = self.pre_auth_components()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
         let (state, block_writer, proof_writer, writer_task) =
             load_state(&runtime, shutdown.clone()).await?;
@@ -260,24 +308,40 @@ impl FullNodeCommand {
         let mut tasks = Tasks::new();
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
         tasks.spawn("store block writer", join_store_writer(writer_task));
+        for (index, validator_monitor) in validator_monitors.into_iter().enumerate() {
+            tasks.spawn_infallible(
+                format!("validator {index} connection monitor"),
+                validator_monitor.monitor::<ValidatorClient>("validator", shutdown.clone()),
+            );
+        }
+        if let Some(sequencer_monitor) = sequencer_monitor {
+            tasks.spawn_infallible(
+                "sequencer connection monitor",
+                sequencer_monitor.monitor::<SequencerClient>("sequencer", shutdown.clone()),
+            );
+        }
 
         tasks.join_next_or_cancelled(shutdown).await
     }
 
-    fn pre_auth_submission(&self) -> anyhow::Result<Option<PreAuthSubmission>> {
+    fn pre_auth_components(&self) -> anyhow::Result<PreAuthComponents> {
         // Clap enforces that the sequencer URL and at least one validator URL come together.
         let Some(sequencer_url) = self.sequencer_url.as_ref() else {
-            return Ok(None);
+            return Ok(PreAuthComponents {
+                submission: None,
+                validator_monitors: Vec::new(),
+                sequencer_monitor: None,
+            });
         };
-        let sequencer = Builder::new(sequencer_url.clone())
+        let sequencer_builder = Builder::new(sequencer_url.clone())
             .with_tls()
             .expect("TLS is enabled")
             .with_timeout(Duration::from_secs(5))
             .without_metadata_version()
             .without_metadata_genesis()
-            .with_otel_context_injection()
-            .connect_lazy::<SequencerClient>();
-        let validators = self
+            .with_otel_context_injection();
+        let sequencer = sequencer_builder.clone().connect_lazy::<SequencerClient>();
+        let validator_builders = self
             .validator_urls
             .iter()
             .map(|url| {
@@ -288,10 +352,19 @@ impl FullNodeCommand {
                     .without_metadata_version()
                     .without_metadata_genesis()
                     .with_otel_context_injection()
-                    .connect_lazy::<ValidatorClient>()
             })
+            .collect::<Vec<_>>();
+        let validators = validator_builders
+            .iter()
+            .cloned()
+            .map(Builder::connect_lazy::<ValidatorClient>)
             .collect();
-        PreAuthSubmission::new(validators, sequencer).map(Some)
+        let pre_auth = PreAuthSubmission::new(validators, sequencer)?;
+        Ok(PreAuthComponents {
+            submission: Some(pre_auth),
+            validator_monitors: validator_builders,
+            sequencer_monitor: Some(sequencer_builder),
+        })
     }
 
     fn log_starting(&self) {
@@ -361,4 +434,20 @@ async fn bind_rpc(listen: SocketAddr) -> anyhow::Result<TcpListener> {
     TcpListener::bind(listen)
         .await
         .with_context(|| format!("failed to bind RPC listener to {listen}"))
+}
+
+fn remote_prover_monitor(
+    endpoint: Option<&Url>,
+) -> anyhow::Result<Option<Builder<WantsConnection>>> {
+    endpoint
+        .map(|endpoint| {
+            Ok(Builder::new(endpoint.clone())
+                .with_tls()?
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
+                .without_auth_header()
+                .with_otel_context_injection())
+        })
+        .transpose()
 }

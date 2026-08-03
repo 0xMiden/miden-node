@@ -311,7 +311,6 @@ impl BlockProducerApi {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_producer.api.submit_proven_tx",
-        skip_all,
         err,
     )]
     pub async fn submit_proven_tx(
@@ -345,7 +344,6 @@ impl BlockProducerApi {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_producer.api.submit_authenticated_tx",
-        skip_all,
         err,
     )]
     #[expect(clippy::let_and_return, reason = "required to lengthen arc lifetime")]
@@ -365,7 +363,6 @@ impl BlockProducerApi {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_producer.api.submit_proven_tx_batch",
-        skip_all,
         err,
     )]
     pub async fn submit_proven_tx_batch(
@@ -398,7 +395,6 @@ impl BlockProducerApi {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_producer.api.submit_authenticated_tx_batch",
-        skip_all,
         err,
     )]
     #[expect(clippy::let_and_return)]

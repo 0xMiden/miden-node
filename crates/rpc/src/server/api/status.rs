@@ -22,7 +22,6 @@ impl proto::server::rpc_api::Status for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "status",
-        skip_all,
         err,
     )]
     async fn handle(

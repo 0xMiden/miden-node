@@ -32,7 +32,6 @@ impl proto::server::rpc_api::GetAccount for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_account",
-        skip_all,
         err,
     )]
     async fn handle(

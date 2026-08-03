@@ -35,7 +35,6 @@ impl StateView {
     /// to the chain tip.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn get_account(
         &self,
@@ -73,7 +72,6 @@ impl StateView {
     /// validation, so the returned block is ready for block-bounded database queries.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     async fn get_account_witness(
         &self,
@@ -109,7 +107,6 @@ impl StateView {
     /// database.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     fn get_storage_map_details_from_forest(
         &self,
@@ -196,7 +193,6 @@ impl StateView {
     /// reverse-key LRU cache, otherwise they fall back to database reconstruction.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     async fn fetch_public_account_details(
         &self,

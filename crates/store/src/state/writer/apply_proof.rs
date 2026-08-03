@@ -15,7 +15,6 @@ impl ProofWriter {
     /// - If the proof's corresponding block was not already committed
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
         fields(
             block.number = block_num.as_u32(),

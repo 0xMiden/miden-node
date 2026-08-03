@@ -29,7 +29,6 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_network_note_status",
-        skip_all,
         err,
     )]
     async fn handle(

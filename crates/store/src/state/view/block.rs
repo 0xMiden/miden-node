@@ -16,7 +16,6 @@ impl StateView {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn get_block_header(

@@ -125,7 +125,6 @@ impl BlockWriter {
     /// in-memory snapshot until the writer atomically publishes the new one.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn apply_block(&self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {

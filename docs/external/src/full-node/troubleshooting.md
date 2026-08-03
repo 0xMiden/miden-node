@@ -5,6 +5,17 @@ sidebar_position: 8
 
 # Troubleshooting
 
+## Increase Log Detail
+
+Use `MIDEN_STDOUT_FILTER` to enable detailed output for the affected component. For example:
+
+```bash
+MIDEN_STDOUT_FILTER='info,user=debug,user::miden-rpc=trace' miden-node full ...
+```
+
+See [Logging](/logging) for filter precedence, all user-facing targets, container and systemd examples, and independent
+OpenTelemetry filtering.
+
 ## Data Directory Is Empty
 
 Run `miden-node bootstrap` before starting `miden-node full`.

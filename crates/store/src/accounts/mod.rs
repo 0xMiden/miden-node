@@ -192,7 +192,6 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
     /// Opens an account at the latest block, returning its witness.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub fn open_latest(&self, account_id: AccountId) -> AccountWitness {
         self.latest.open(account_id)
@@ -208,7 +207,6 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
     /// Returns `None` if the block is in the future or too old (pruned).
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub fn open_at(
         &self,
@@ -261,7 +259,6 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
     /// Reconstructs a historical account witness by applying reversion overlays.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     fn reconstruct_historical_witness(
         &self,
@@ -313,7 +310,6 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
     /// updating both the path nodes and the leaf value based on reversion mutations.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     fn apply_reversion_overlays<'a>(
         overlays: impl IntoIterator<Item = &'a HistoricalOverlay>,
@@ -390,7 +386,6 @@ impl<S: SmtStorage> AccountTreeWithHistory<S> {
     /// 4. Prunes old overlays if exceeding `MAX_HISTORY`
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub fn apply_mutations(
         &mut self,

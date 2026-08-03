@@ -192,7 +192,6 @@ impl RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_block_commitment",
-        skip_all,
         fields(
             block.number = %block,
         ),

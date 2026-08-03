@@ -38,7 +38,6 @@ impl Db {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx_builder.database.load",
-        skip_all,
         fields(
             path=%database_filepath.display(),
         ),
@@ -54,7 +53,6 @@ impl Db {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx_builder.database.load",
-        skip_all,
         fields(
             path=%database_filepath.display(),
         ),
@@ -72,7 +70,6 @@ impl Db {
     /// Applies all pending migrations to an existing DB.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<()> {
         migrate_database(database_filepath.as_ref())?;
@@ -107,7 +104,6 @@ impl Db {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx_builder.database.bootstrap",
-        skip_all,
         fields(
             path=%database_filepath.display(),
         ),

@@ -94,6 +94,20 @@ jobs:
           done
           printf "Static linkage check passed for all of %s\n" "${bin_targets[*]}"
 
+  docker:
+    name: Docker dry-run
+    permissions:
+      # Reusable-workflow permission ceiling; dry-run jobs do not receive these writes.
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      mode: dry-run
+      commit: ${{ github.sha }}
+      tag: dry-run
+
   clippy:
     name: lint - clippy
     runs-on: warp-ubuntu-latest-x64-8x

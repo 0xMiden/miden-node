@@ -14,7 +14,6 @@ impl BlockWriter {
     /// Used by the in-process block producer after it has built and signed a block.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn apply_block_with_proving_inputs(

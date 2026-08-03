@@ -28,7 +28,6 @@ impl proto::server::rpc_api::BlockSubscription for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_subscription",
-        skip_all,
         fields(
             block.from = %input,
         ),

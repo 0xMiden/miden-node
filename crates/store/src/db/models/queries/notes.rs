@@ -71,9 +71,9 @@ pub(crate) const NOTE_SYNC_BLOCK_OVERHEAD_BYTES: usize = 1600;
 
 /// Estimated byte size of a single [`NoteSyncRecord`].
 ///
-/// Note ID (~38 bytes) + index + metadata (~26 bytes) + sparse merkle path with 16 siblings
-/// (~608 bytes).
-pub(crate) const NOTE_SYNC_RECORD_BYTES: usize = 700;
+/// Note ID (~38 bytes) + index + sync metadata with up to four attachment entries (~200 bytes) +
+/// sparse merkle path with 16 siblings (~608 bytes).
+pub(crate) const NOTE_SYNC_RECORD_BYTES: usize = 900;
 
 // NETWORK NOTE TYPE
 // ================================================================================================
@@ -494,12 +494,13 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
 
         let note_id = NoteId::from_raw(Word::read_from_bytes(&self.note_id[..])?);
         let inclusion_path = SparseMerklePath::read_from_bytes(&self.inclusion_path[..])?;
-        let (metadata, _attachments) = self.metadata.try_into()?;
+        let (metadata, attachments) = self.metadata.try_into()?;
         Ok(NoteSyncRecord {
             block_num,
             note_index,
             note_id,
             metadata,
+            attachments,
             inclusion_path,
         })
     }
@@ -733,7 +734,6 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRawRow {
 /// transaction.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub(crate) fn insert_notes(
@@ -763,7 +763,6 @@ pub(crate) fn insert_notes(
 /// transaction.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub(crate) fn insert_scripts<'a>(

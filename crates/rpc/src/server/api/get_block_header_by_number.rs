@@ -22,7 +22,6 @@ impl proto::server::rpc_api::GetBlockHeaderByNumber for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_block_header_by_number",
-        skip_all,
         fields(
             block.number = %request.block_num(),
         ),

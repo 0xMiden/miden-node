@@ -27,7 +27,6 @@ impl StateView {
     /// Returns data needed by the block producer to verify transaction validity.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         fields(
             account.id=%account_id,
             nullifiers = %format_array(nullifiers),

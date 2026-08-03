@@ -27,7 +27,6 @@ impl ProverService {
 
     #[miden_instrument(
         target=COMPONENT,
-        skip_all,
         err,
     )]
     pub(super) fn acquire_permit(&self) -> Result<OwnedSemaphorePermit, tonic::Status> {
@@ -38,7 +37,6 @@ impl ProverService {
 
     #[miden_instrument(
         target=COMPONENT,
-        skip_all,
     )]
     pub(super) async fn acquire_prover(&self) -> OwnedMutexGuard<Prover> {
         Arc::clone(&self.prover).lock_owned().await

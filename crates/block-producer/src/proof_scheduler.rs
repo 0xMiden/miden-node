@@ -170,7 +170,6 @@ pub(crate) async fn run(
 #[miden_instrument(
     target = COMPONENT,
     name = "prove_block",
-    skip_all,
     fields(
         block.number=block_num.as_u32(),
     ),
@@ -241,7 +240,6 @@ async fn prove_block(
 #[miden_instrument(
     target = COMPONENT,
     name = "prove_block.generate",
-    skip_all,
     fields(
         block.number=block_num.as_u32(),
     ),

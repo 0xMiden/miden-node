@@ -145,7 +145,6 @@ impl WriteWorker {
     /// - the new snapshot is published atomically, making the block visible to readers.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     async fn write_block(&mut self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
@@ -352,7 +351,6 @@ impl WriteWorker {
     /// Validates that the block header is consistent with the block body and the current state.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     async fn validate_block_header(
@@ -396,7 +394,6 @@ impl WriteWorker {
     /// Computes nullifier and account tree mutations, validating roots against the block header.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     fn compute_tree_mutations(
@@ -465,7 +462,6 @@ impl WriteWorker {
     /// Builds note records with inclusion proofs from the block body.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     fn build_note_records(

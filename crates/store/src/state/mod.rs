@@ -3,36 +3,31 @@
 //! The [State] provides data access and modifications methods, its main purpose is to ensure that
 //! data is atomically written, and that reads are consistent.
 
+mod block_lifecycle;
+mod bootstrap;
+mod disk_monitor;
+mod lifecycle;
+mod loader;
+mod replica;
+mod tip;
+mod view;
+mod writer;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+pub use lifecycle::LoadedState;
 use miden_protocol::block::BlockNumber;
+pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
 use tokio::sync::watch;
+pub use view::{ScopedBlockNum, ScopedBlockRange, StateView, TransactionInputs};
+use view::{SnapshotGuard, StateSnapshot};
+pub use writer::{BlockWriter, ProofWriter, WriterTask};
 
 use crate::blocks::BlockStore;
 use crate::db::Db;
 use crate::proven_tip::ProvenTipWriter;
-
-mod block_lifecycle;
-mod bootstrap;
-mod disk_monitor;
-mod loader;
-
-mod lifecycle;
-pub use lifecycle::LoadedState;
-
-mod replica;
-pub use replica::{BlockCache, BlockNotification, ProofCache, ProofNotification};
-
-mod tip;
-
-mod view;
-pub use view::{ScopedBlockNum, ScopedBlockRange, StateView, TransactionInputs};
-use view::{SnapshotGuard, StateSnapshot};
-
-mod writer;
-pub use writer::{BlockWriter, ProofWriter, WriterTask};
 
 // CHAIN STATE
 // ================================================================================================

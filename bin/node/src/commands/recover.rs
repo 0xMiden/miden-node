@@ -51,12 +51,12 @@ impl RecoverCommand {
             &self.data_directory,
             self.store.storage.clone().into(),
             self.store.sqlite.database_options(),
-            CancellationToken::new(),
         )
         .await
         .context("failed to load state")?;
 
-        let (state, block_writer, _proof_writer, writer_task) = loaded.start();
+        let (state, block_writer, _proof_writer, writer_task) =
+            loaded.start(CancellationToken::new());
         Ok((state, block_writer, writer_task))
     }
 

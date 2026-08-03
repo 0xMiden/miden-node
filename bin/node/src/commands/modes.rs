@@ -341,12 +341,11 @@ async fn load_state(
         &runtime.data_directory,
         runtime.storage_options.clone(),
         runtime.database_options,
-        shutdown,
     )
     .await
     .context("failed to load state")?;
 
-    Ok(loaded.start())
+    Ok(loaded.start(shutdown))
 }
 
 /// Supervises the store's write worker task.

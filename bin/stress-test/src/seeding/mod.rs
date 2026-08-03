@@ -1138,9 +1138,9 @@ pub async fn start_store(data_directory: PathBuf) -> Arc<State> {
 /// guarantees the backing storage has been released.
 async fn load_state(data_directory: PathBuf) -> (Arc<State>, BlockWriter, WriterTask) {
     let (state, block_writer, _proof_writer, writer_task) =
-        State::load(&data_directory, StorageOptions::bench(), CancellationToken::new())
+        State::load(&data_directory, StorageOptions::bench())
             .await
             .expect("store state should load")
-            .start();
+            .start(CancellationToken::new());
     (state, block_writer, writer_task)
 }

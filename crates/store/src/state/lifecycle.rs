@@ -74,15 +74,18 @@ impl LoadedState {
     /// capabilities expose no read access: tasks that both read and write receive the
     /// [`Arc<State>`] alongside their capability.
     ///
-    /// The writer exits once the shutdown token passed to [`State::load`] is cancelled or the
-    /// [`BlockWriter`] (holding the only request sender) is dropped — an in-flight block write
-    /// always completes first. Awaiting the returned handle after either event guarantees the
-    /// writer has released the tree storage it owns; a join error carries a writer panic.
+    /// The writer exits once `shutdown` is cancelled or the [`BlockWriter`] (holding the only
+    /// request sender) is dropped — an in-flight block write always completes first. Awaiting the
+    /// returned handle after either event guarantees the writer has released the tree storage it
+    /// owns; a join error carries a writer panic.
     ///
-    /// Callers without a token to cancel should stop the store via [`BlockWriter::stop`] rather
-    /// than dropping and joining by hand.
-    pub fn start(self) -> (Arc<State>, BlockWriter, ProofWriter, WriterTask) {
-        let writer_task = tokio::spawn(self.writer.run());
+    /// Callers without a token to cancel should pass [`CancellationToken::new`] and stop the store
+    /// via [`BlockWriter::stop`] instead of dropping and joining by hand.
+    pub fn start(
+        self,
+        shutdown: CancellationToken,
+    ) -> (Arc<State>, BlockWriter, ProofWriter, WriterTask) {
+        let writer_task = tokio::spawn(self.writer.run(shutdown));
         let state = Arc::new(self.state);
         let block_writer = BlockWriter {
             block_store: Arc::clone(&state.block_store),
@@ -109,15 +112,9 @@ impl State {
     pub async fn load(
         data_path: &Path,
         storage_options: StorageOptions,
-        shutdown: CancellationToken,
     ) -> Result<LoadedState, StateInitializationError> {
-        Self::load_with_database_options(
-            data_path,
-            storage_options,
-            DatabaseOptions::default(),
-            shutdown,
-        )
-        .await
+        Self::load_with_database_options(data_path, storage_options, DatabaseOptions::default())
+            .await
     }
 
     /// Loads the state from the data directory using explicit database options.
@@ -133,7 +130,6 @@ impl State {
         data_path: &Path,
         storage_options: StorageOptions,
         database_options: DatabaseOptions,
-        shutdown: CancellationToken,
     ) -> Result<LoadedState, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())
             .map_err(StateInitializationError::DataDirectoryLoadError)?;
@@ -232,7 +228,6 @@ impl State {
             Arc::clone(&committed_tip_tx),
             block_cache.clone(),
             write_rx,
-            shutdown,
             nullifier_tree,
             account_tree,
             blockchain,
@@ -266,10 +261,10 @@ impl State {
     #[doc(hidden)]
     pub async fn for_tests(data_path: &Path) -> (Arc<Self>, BlockWriter, ProofWriter) {
         let (state, block_writer, proof_writer, _writer_task) =
-            Self::load(data_path, StorageOptions::default(), CancellationToken::new())
+            Self::load(data_path, StorageOptions::default())
                 .await
                 .expect("state should load")
-                .start();
+                .start(CancellationToken::new());
         (state, block_writer, proof_writer)
     }
 }

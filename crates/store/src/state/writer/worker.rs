@@ -51,8 +51,6 @@ pub(in crate::state) struct WriteWorker {
     committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
     block_cache: BlockCache,
     rx: mpsc::Receiver<WriteRequest>,
-    /// Token signalling node shutdown; the writer stops accepting new requests once cancelled.
-    shutdown: CancellationToken,
     /// The mutable nullifier tree owned by this writer.
     nullifier_tree: NullifierTree<LargeSmt<TreeStorage>>,
     /// The mutable account tree owned by this writer.
@@ -86,7 +84,6 @@ impl WriteWorker {
         committed_tip_tx: Arc<watch::Sender<BlockNumber>>,
         block_cache: BlockCache,
         rx: mpsc::Receiver<WriteRequest>,
-        shutdown: CancellationToken,
         nullifier_tree: NullifierTree<LargeSmt<TreeStorage>>,
         account_tree: AccountTreeWithHistory<TreeStorage>,
         blockchain: Blockchain,
@@ -100,7 +97,6 @@ impl WriteWorker {
             committed_tip_tx,
             block_cache,
             rx,
-            shutdown,
             nullifier_tree,
             account_tree,
             blockchain,
@@ -109,17 +105,17 @@ impl WriteWorker {
         }
     }
 
-    /// Runs the writer loop, processing requests until shutdown is signalled or the
+    /// Runs the writer loop, processing requests until `shutdown` is signalled or the
     /// [`BlockWriter`] (holding the only request sender) is dropped.
     ///
     /// Cancellation is only observed between requests: an in-flight block write always runs to
     /// completion, so shutdown never leaves the trees lagging the committed database state.
     /// Requests still queued when cancellation fires are dropped, failing their senders.
-    pub async fn run(mut self) {
+    pub async fn run(mut self, shutdown: CancellationToken) {
         loop {
             let req = tokio::select! {
                 biased;
-                () = self.shutdown.cancelled() => break,
+                () = shutdown.cancelled() => break,
                 req = self.rx.recv() => match req {
                     Some(req) => req,
                     None => break,

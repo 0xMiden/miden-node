@@ -7,7 +7,6 @@ use miden_node_proto::domain::account::AccountRequest;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::state::State;
 use miden_node_utils::clap::StorageOptions;
-use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
@@ -701,9 +700,7 @@ pub async fn load_state(data_directory: &Path) {
     let start = Instant::now();
     // The writer is never started: this bench only measures load time, and dropping the un-started
     // state releases the tree storage the writer owns.
-    let _loaded = State::load(data_directory, StorageOptions::default(), CancellationToken::new())
-        .await
-        .unwrap();
+    let _loaded = State::load(data_directory, StorageOptions::default()).await.unwrap();
     let elapsed = start.elapsed();
 
     // Get database path and run SQL commands to count records

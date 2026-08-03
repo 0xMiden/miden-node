@@ -122,7 +122,6 @@ impl Service for RpcService {
         parent = None,
         target = COMPONENT,
         name = "network_monitor.status.check_rpc",
-        skip_all,
         level = "info",
         ret(level = "debug"),
     )]

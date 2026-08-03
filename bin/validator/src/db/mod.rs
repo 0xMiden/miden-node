@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{Database, ReadTx, Row, WriteTx};
+use miden_node_utils::formatting::format_array;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
@@ -43,7 +44,6 @@ mod sql {
 /// Open a connection to the DB after verifying that it is at the latest schema version.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
@@ -53,7 +53,6 @@ pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError>
 /// schema version.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
@@ -67,7 +66,6 @@ pub async fn load_with_pool_size(
 /// Creates a new database, applies all migrations, and opens a connection pool.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
     setup_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
@@ -76,7 +74,6 @@ pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError
 /// Creates a new database with a specific pool size and applies all migrations.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub async fn setup_with_pool_size(
     database_filepath: PathBuf,
@@ -90,7 +87,6 @@ pub async fn setup_with_pool_size(
 /// Applies all pending migrations to an existing DB.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError> {
     migrate_database(database_filepath.as_ref())?;
@@ -114,7 +110,6 @@ fn open_with_pool_size(
 /// Inserts a validated transaction and its encrypted private inputs.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     fields(
         transaction.id = %record.context().transaction_id(),
     ),
@@ -152,7 +147,7 @@ pub fn insert_validated_private_transaction(
 }
 
 /// Loads one encrypted private record by transaction ID.
-#[miden_instrument(target = COMPONENT, skip_all, fields(transaction.id = %transaction_id), err)]
+#[miden_instrument(target = COMPONENT, fields(transaction.id = %transaction_id), err)]
 pub fn load_private_record(
     tx: &ReadTx<'_>,
     transaction_id: TransactionId,
@@ -164,7 +159,7 @@ pub fn load_private_record(
 }
 
 /// Loads encrypted private records for one storage key epoch.
-#[miden_instrument(target = COMPONENT, skip_all, err)]
+#[miden_instrument(target = COMPONENT, err)]
 pub fn load_private_records_by_key_epoch(
     tx: &ReadTx<'_>,
     key_epoch: StorageKeyEpoch,
@@ -177,7 +172,7 @@ pub fn load_private_records_by_key_epoch(
 }
 
 /// Loads encrypted private records for one Golden setup context.
-#[miden_instrument(target = COMPONENT, skip_all, err)]
+#[miden_instrument(target = COMPONENT, err)]
 pub fn load_private_records_by_setup_context(
     tx: &ReadTx<'_>,
     setup_context_id: [u8; 32],
@@ -254,7 +249,7 @@ fn checked_u32(value: i64, field: &'static str) -> Result<u32, DatabaseError> {
 /// Returns whether a transaction with the given id has already been validated.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    fields(transaction.id = %tx_id),
     err,
 )]
 pub(crate) fn transaction_exists(
@@ -275,7 +270,7 @@ pub(crate) fn transaction_exists(
 /// If the resulting vector is empty, all supplied transaction ids have been validated in the past.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    fields(transactions.ids = %format_array(tx_ids)),
     err,
 )]
 pub(crate) fn find_unvalidated_transactions(
@@ -305,7 +300,6 @@ pub(crate) fn find_unvalidated_transactions(
 /// existing block header if one already exists.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx, header),
     err,
 )]
 pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(), DatabaseError> {
@@ -320,7 +314,6 @@ pub fn upsert_block_header(tx: &WriteTx<'_>, header: &BlockHeader) -> Result<(),
 /// Returns `None` if no block headers have been persisted (i.e. bootstrap has not been run).
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
     err,
 )]
 pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseError> {
@@ -335,7 +328,7 @@ pub fn load_chain_tip(tx: &ReadTx<'_>) -> Result<Option<BlockHeader>, DatabaseEr
 /// Returns `None` if no block header exists at the given block number.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
+    fields(block.number = %block_num),
     err,
 )]
 pub fn load_block_header(
@@ -353,7 +346,6 @@ pub fn load_block_header(
 /// Returns the total number of validated transactions in the database.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
     err,
 )]
 pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {
@@ -367,7 +359,6 @@ pub fn count_validated_transactions(tx: &ReadTx<'_>) -> Result<i64, DatabaseErro
 /// Returns the total number of signed blocks in the database.
 #[miden_instrument(
     target = COMPONENT,
-    skip(tx),
     err,
 )]
 pub fn count_signed_blocks(tx: &ReadTx<'_>) -> Result<i64, DatabaseError> {

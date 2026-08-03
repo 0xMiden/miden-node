@@ -30,7 +30,6 @@ impl BlockLifecycle {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_lifecycle.from_block_body",
-        skip_all,
     )]
     pub(super) fn from_block_body(block_num: BlockNumber, body: &BlockBody) -> Self {
         let persisted_note_ids =
@@ -91,7 +90,6 @@ impl BlockLifecycle {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_lifecycle.emit",
-        skip_all,
     )]
     pub(super) fn emit(self, resolved_note_ids: &BTreeMap<Nullifier, NoteId>) {
         for account in self.registered_accounts {

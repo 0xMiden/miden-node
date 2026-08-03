@@ -228,7 +228,6 @@ pub(crate) fn select_nullifiers_paged(
 /// ```
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     err,
 )]
 pub(crate) fn insert_nullifiers_for_block(

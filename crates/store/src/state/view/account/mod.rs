@@ -97,7 +97,7 @@ impl StateView {
             let witness = self.with_inner_read_blocking(|inner_state| {
                 inner_state.account_tree.open_latest(account_id)
             });
-            Ok((self.scoped_tip(), witness))
+            Ok((self.tip(), witness))
         }
     }
 

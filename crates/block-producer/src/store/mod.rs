@@ -209,7 +209,7 @@ pub async fn get_tx_inputs(
     let tx_inputs = TransactionInputs::from_store_inputs(
         proven_tx.account_id(),
         store_inputs,
-        current_block_height,
+        *current_block_height,
     );
 
     tracing::debug!(target: LOG_TARGET, tx_inputs = %tx_inputs, "Transaction inputs");

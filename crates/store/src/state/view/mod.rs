@@ -93,9 +93,9 @@ impl State {
 }
 
 impl StateView {
-    /// The chain tip this view is pinned at.
-    pub fn tip(&self) -> BlockNumber {
-        self.snapshot.latest_block_num()
+    /// Returns this view's tip as a scoped block number for tip-bounded database queries.
+    pub fn tip(&self) -> ScopedBlockNum {
+        ScopedBlockNum::new(self.snapshot.latest_block_num())
     }
 
     /// Returns the pinned snapshot's blockchain MMR.
@@ -117,15 +117,11 @@ impl StateView {
         &self.db
     }
 
-    /// Returns this view's tip as a scoped block number for tip-bounded database queries.
-    fn scoped_tip(&self) -> ScopedBlockNum {
-        ScopedBlockNum::new(self.tip())
-    }
-
     /// Validates that `block_num` does not exceed this view's chain tip, returning the scoped block
     /// number required by block-bounded database queries.
     fn scope_block(&self, block_num: BlockNumber) -> Option<ScopedBlockNum> {
-        (block_num <= self.tip()).then(|| ScopedBlockNum::new(block_num))
+        let tip = self.tip();
+        (block_num <= *tip).then_some(tip)
     }
 
     /// Validates that `range` does not extend beyond this view's chain tip, returning the scoped
@@ -137,7 +133,7 @@ impl StateView {
         &self,
         range: RangeInclusive<BlockNumber>,
     ) -> Result<ScopedBlockRange, RangeBeyondTip> {
-        let tip = self.tip();
+        let tip = *self.tip();
         if *range.end() > tip {
             return Err(RangeBeyondTip { chain_tip: tip, block_to: *range.end() });
         }

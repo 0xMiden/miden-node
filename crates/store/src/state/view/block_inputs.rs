@@ -155,7 +155,7 @@ impl StateView {
                 .collect();
 
             Ok((
-                self.scoped_tip(),
+                self.tip(),
                 scoped_blocks,
                 account_witnesses,
                 nullifier_witnesses,

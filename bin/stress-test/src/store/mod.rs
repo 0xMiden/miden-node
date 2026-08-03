@@ -525,7 +525,7 @@ pub async fn sync_transactions(
                 BlockNumber::from(block_from)..=BlockNumber::from(block_to),
             )
             .await
-            .map(|records| (view.tip(), records))
+            .map(|records| (*view.tip(), records))
             .unwrap()
         })
         .await;
@@ -642,7 +642,7 @@ async fn sync_chain_mmr(state: &Arc<State>, current_client_block_height: u32) ->
     let start = Instant::now();
     state
         .with_view(async |view| {
-            view.sync_chain_mmr(BlockNumber::from(current_client_block_height)..=view.tip())
+            view.sync_chain_mmr(BlockNumber::from(current_client_block_height)..=*view.tip())
                 .await
                 .unwrap();
         })

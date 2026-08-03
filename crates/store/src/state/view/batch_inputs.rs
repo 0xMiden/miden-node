@@ -75,7 +75,7 @@ impl StateView {
                 self.scope_block(block).ok_or(
                     GetBatchInputsError::UnknownTransactionBlockReference {
                         highest_block_num: block,
-                        latest_block_num,
+                        latest_block_num: *latest_block_num,
                     },
                 )
             })
@@ -89,7 +89,7 @@ impl StateView {
         //   smaller than latest block num remain in the set. Therefore all the block numbers are
         //   guaranteed to exist in the chain state at latest block num.
         let partial_mmr =
-            self.blockchain().partial_mmr_from_blocks(&blocks, latest_block_num).expect(
+            self.blockchain().partial_mmr_from_blocks(&blocks, *latest_block_num).expect(
                 "latest block num should exist and all blocks in set should be < than latest block",
             );
 
@@ -99,9 +99,7 @@ impl StateView {
         // up in a separate DB access.
         let mut headers = self
             .db()
-            .select_block_headers(
-                scoped_blocks.into_iter().chain(std::iter::once(self.scoped_tip())),
-            )
+            .select_block_headers(scoped_blocks.into_iter().chain(std::iter::once(self.tip())))
             .await
             .map_err(GetBatchInputsError::SelectBlockHeaderError)?;
 
@@ -110,7 +108,7 @@ impl StateView {
             .iter()
             .enumerate()
             .find_map(|(index, header)| {
-                (header.block_num() == batch_reference_block).then_some(index)
+                (header.block_num() == *batch_reference_block).then_some(index)
             })
             .expect("DB should have returned the header of the batch reference block");
 

@@ -368,7 +368,6 @@ pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<Transaction
 #[miden_instrument(
     target = COMPONENT,
     name = "deploy-counter-account",
-    skip_all,
     ret(level = "debug"),
 )]
 pub async fn deploy_counter_account(

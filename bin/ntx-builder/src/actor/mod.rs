@@ -591,7 +591,6 @@ impl AccountActor {
     /// re-declaring the stale commitment.
     #[miden_instrument(
         name = "ntx.actor.execute_transactions",
-        skip_all,
         fields(account.id = %account_id),
     )]
     async fn execute_transactions(

@@ -36,7 +36,6 @@ impl BlockStore {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.block_store.bootstrap",
-        skip_all,
         err,
         fields(
             path = %store_dir.display(),
@@ -89,7 +88,6 @@ impl BlockStore {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.block_store.save_block",
-        skip_all,
         err,
         fields(
             block.number = %block_num,
@@ -120,7 +118,6 @@ impl BlockStore {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.block_store.save_proof",
-        skip_all,
         err,
         fields(
             block.number = block_num.as_u32(),
@@ -150,7 +147,6 @@ impl BlockStore {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.block_store.save_proving_inputs",
-        skip_all,
         err,
         fields(
             block.number = block_num.as_u32(),

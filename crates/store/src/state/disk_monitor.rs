@@ -30,7 +30,6 @@ impl State {
 #[miden_instrument(
     target = COMPONENT,
     name = "measure_disk_space_usage",
-    skip_all,
     err,
 )]
 async fn measure_disk_space_usage(data_dir: PathBuf) -> Result<(), tokio::task::JoinError> {

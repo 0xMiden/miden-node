@@ -49,7 +49,7 @@ impl Visit for FieldVisitor {
     }
 }
 
-#[miden_instrument(target = "miden-node-utils-test", name = "records_delayed_fields", skip_all)]
+#[miden_instrument(target = "miden-node-utils-test", name = "records_delayed_fields")]
 fn records_inferred_fields() {
     let parsed_value = 42;
     let parsed_text = "parsed";
@@ -63,7 +63,6 @@ fn records_inferred_fields() {
 #[miden_instrument(
     target = "miden-node-utils-test",
     name = "records_explicit_fields",
-    skip_all,
     fields(
         account.id = tracing::field::Empty,
         account.updated = tracing::field::Empty,
@@ -77,7 +76,6 @@ fn records_explicit_fields() {
 #[miden_instrument(
     target = "miden-node-utils-test",
     name = "records_explicit_argument_field",
-    skip_all,
     fields(
         account.id = %account_id,
     ),
@@ -87,7 +85,6 @@ fn records_explicit_argument_field(account_id: &str) {}
 #[miden_instrument(
     target = "miden-node-utils-test",
     name = "records_explicit_and_inferred_fields",
-    skip_all,
     fields(
         account.id = tracing::field::Empty,
     ),
@@ -102,11 +99,7 @@ fn records_explicit_and_inferred_fields() {
     );
 }
 
-#[miden_instrument(
-    target = "miden-node-utils-test",
-    name = "records_fields_from_multiple_calls",
-    skip_all
-)]
+#[miden_instrument(target = "miden-node-utils-test", name = "records_fields_from_multiple_calls")]
 fn records_fields_from_multiple_calls() {
     let block_number = 14;
     let tx_id = "multi-call-tx";
@@ -180,5 +173,7 @@ fn ui_tests() {
     tests.pass("tests/ui/tracing_macros/pass.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_field_name.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_instrument_field_name.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_skip.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_skip_all.rs");
     tests.compile_fail("tests/ui/tracing_macros/outside_miden_instrument.rs");
 }

@@ -20,7 +20,6 @@ use crate::{COMPONENT, LOG_TARGET};
     parent = None,
     target = COMPONENT,
     name = "network_monitor.start_monitor",
-    skip_all,
     level = "info",
     fields(
         port = %config.port,

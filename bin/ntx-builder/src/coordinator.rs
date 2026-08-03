@@ -139,7 +139,6 @@ impl Coordinator {
     /// processing transactions and managing state for the network account.
     #[miden_instrument(
         name = "ntx.builder.spawn_actor",
-        skip_all,
         fields(account.id = %account_id),
     )]
     pub fn spawn_actor(&mut self, account_id: AccountId) {

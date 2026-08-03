@@ -108,7 +108,6 @@ impl BlockBuilder {
         parent = None,
         target = COMPONENT,
         name = "block_builder.build_block",
-        skip_all,
     )]
     async fn build_block(&self, mempool: &SharedMempool) -> Result<(), BuildBlockError> {
         use futures::TryFutureExt;
@@ -156,7 +155,6 @@ impl BlockBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_builder.select_block",
-        skip_all,
     )]
     fn select_block(mempool: &SharedMempool) -> Result<SelectedBlock, BuildBlockError> {
         Ok(mempool.lock().map_err(BuildBlockError::MempoolPoisoned)?.select_block())
@@ -181,7 +179,6 @@ impl BlockBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_builder.get_block_inputs",
-        skip_all,
         err,
     )]
     async fn get_block_inputs(
@@ -245,7 +242,6 @@ impl BlockBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_builder.propose_block",
-        skip_all,
         err,
     )]
     async fn propose_block(
@@ -265,7 +261,6 @@ impl BlockBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_builder.validate_block",
-        skip_all,
         err,
     )]
     async fn build_and_validate_block(
@@ -343,7 +338,6 @@ impl BlockBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_builder.commit_block",
-        skip_all,
         err,
     )]
     async fn commit_block(
@@ -385,7 +379,6 @@ impl BlockBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "block_builder.rollback_block",
-        skip_all,
     )]
     fn rollback_block(mempool: &SharedMempool, block: BlockNumber) -> Result<(), BuildBlockError> {
         mempool.lock().map_err(BuildBlockError::MempoolPoisoned)?.rollback_block(block);

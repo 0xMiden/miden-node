@@ -143,7 +143,6 @@ impl BatchBuilder {
         parent = None,
         target = COMPONENT,
         name = "batch_builder.build_batch",
-        skip_all,
     )]
     fn build_batch(&mut self, mempool: SharedMempool, batch: SelectedBatch) {
         miden_span_record!(
@@ -192,7 +191,6 @@ impl BatchBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.select_full_batch",
-        skip_all,
     )]
     fn select_full_batch(
         mempool: &SharedMempool,
@@ -203,7 +201,6 @@ impl BatchBuilder {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.select_any_batch",
-        skip_all,
     )]
     fn select_any_batch(mempool: &SharedMempool) -> Result<Option<SelectedBatch>, BuildBatchError> {
         Ok(mempool.lock().map_err(BuildBatchError::MempoolPoisoned)?.select_any_batch())
@@ -250,7 +247,6 @@ impl BatchJob {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.build_batch_job",
-        skip_all,
         err,
     )]
     async fn build_batch(&self, batch: SelectedBatch) -> Result<(), BuildBatchError> {
@@ -288,7 +284,6 @@ impl BatchJob {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.get_batch_inputs",
-        skip_all,
         err,
     )]
     async fn get_batch_inputs(
@@ -320,7 +315,6 @@ impl BatchJob {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.propose_batch",
-        skip_all,
         err,
     )]
     async fn propose_batch(
@@ -346,7 +340,6 @@ impl BatchJob {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.prove_batch",
-        skip_all,
         err,
     )]
     async fn prove_batch(
@@ -386,7 +379,6 @@ impl BatchJob {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.commit_batch",
-        skip_all,
     )]
     fn commit_batch(&self, batch: Arc<ProvenBatch>) -> Result<(), BuildBatchError> {
         self.mempool
@@ -399,7 +391,6 @@ impl BatchJob {
     #[miden_instrument(
         target = COMPONENT,
         name = "batch_builder.rollback_batch",
-        skip_all,
     )]
     fn rollback_batch(&self, batch_id: BatchId) -> Result<(), BuildBatchError> {
         self.mempool

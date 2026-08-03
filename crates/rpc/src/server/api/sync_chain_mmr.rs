@@ -23,7 +23,6 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "sync_chain_mmr",
-        skip_all,
         fields(
             current_client_block_height = %request.current_client_block_height,
             finality_level = %request.finality_level().as_str_name(),

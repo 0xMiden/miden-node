@@ -87,10 +87,11 @@ impl State {
     /// *single* read doesn't need it — `state.view().get_account(..)` drops its temporary view at
     /// the end of the statement.
     ///
-    /// Work in the closure should be kept to low-complexity compute over the view, ideally with no I/O and no other
-    /// `.await` points. Anything slower holds the pinned snapshot, and therefore its underlying
-    /// `RocksDB` snapshot, for as long as it runs. The snapshot's lifetime is logged as a warning
-    /// if held too long, but that is a backstop, not a substitute for keeping closures short.
+    /// Work in the closure should be kept to low-complexity compute over the view, ideally with no
+    /// I/O and no other `.await` points. Anything slower holds the pinned snapshot, and therefore
+    /// its underlying `RocksDB` snapshot, for as long as it runs. The snapshot's lifetime is logged
+    /// as a warning if held too long, but that is a backstop, not a substitute for keeping closures
+    /// short.
     pub async fn with_view<R>(&self, f: impl AsyncFnOnce(&StateView) -> R) -> R {
         let view = self.view();
         f(&view).await

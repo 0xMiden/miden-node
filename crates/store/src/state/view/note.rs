@@ -20,7 +20,7 @@ impl StateView {
         &self,
         note_ids: Vec<NoteId>,
     ) -> Result<Vec<NoteRecord>, DatabaseError> {
-        self.db().select_notes_by_id(note_ids).await
+        self.db.select_notes_by_id(note_ids).await
     }
 
     /// Returns the script for a note by its root.
@@ -28,6 +28,6 @@ impl StateView {
         &self,
         root: Word,
     ) -> Result<Option<NoteScript>, DatabaseError> {
-        self.db().select_note_script_by_root(root).await
+        self.db.select_note_script_by_root(root).await
     }
 }

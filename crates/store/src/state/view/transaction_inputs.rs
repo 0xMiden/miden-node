@@ -79,7 +79,7 @@ impl StateView {
         // above: mid-apply, the DB may already contain notes from a block the snapshot does not
         // include yet.
         let found_unauthenticated_notes = self
-            .db()
+            .db
             .select_existing_note_commitments(unauthenticated_note_commitments, self.tip())
             .await?;
 

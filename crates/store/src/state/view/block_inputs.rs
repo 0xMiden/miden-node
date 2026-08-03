@@ -37,7 +37,7 @@ impl StateView {
         // Get the note inclusion proofs from the DB first: the reference blocks of the note proofs
         // are needed below to fetch their authentication paths in the chain MMR.
         let unauthenticated_note_proofs = self
-            .db()
+            .db
             .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBlockInputsError::SelectNoteInclusionProofError)?;
@@ -56,7 +56,7 @@ impl StateView {
         // Fetch the block headers for all blocks in the partial MMR plus the latest one which will
         // be used as the previous block header of the block being built.
         let mut headers = self
-            .db()
+            .db
             .select_block_headers(blocks.into_iter().chain(std::iter::once(latest)))
             .await
             .map_err(GetBlockInputsError::SelectBlockHeaderError)?;

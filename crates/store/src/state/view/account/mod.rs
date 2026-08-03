@@ -139,7 +139,7 @@ impl StateView {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<AccountVaultDetails, DatabaseError> {
-        let assets = self.db().select_account_vault_at_block(account_id, block_num).await?;
+        let assets = self.db.select_account_vault_at_block(account_id, block_num).await?;
 
         if assets.len() > AccountVaultDetails::MAX_RETURN_ENTRIES {
             return Ok(AccountVaultDetails::LimitExceeded);
@@ -166,7 +166,7 @@ impl StateView {
         block_num: ScopedBlockNum,
     ) -> Result<AccountStorageMapDetails, DatabaseError> {
         let details = self
-            .db()
+            .db
             .reconstruct_storage_map_from_db(
                 account_id,
                 slot_name,
@@ -217,7 +217,7 @@ impl StateView {
 
         // Query account header and storage header together in a single DB call
         let (account_header, storage_header) = self
-            .db()
+            .db
             .select_account_header_with_storage_header_at_block(account_id, scoped_block)
             .await?
             .ok_or(GetAccountError::AccountNotFound(account_id, *scoped_block))?;
@@ -229,7 +229,7 @@ impl StateView {
         let account_code = match code_commitment {
             Some(commitment) if commitment == account_header.code_commitment() => None,
             Some(_) => {
-                self.db()
+                self.db
                     .select_account_code_by_commitment(account_header.code_commitment())
                     .await?
             },
@@ -411,6 +411,6 @@ impl StateView {
         &self,
         account_ids: &[AccountId],
     ) -> Result<HashSet<AccountId>, DatabaseError> {
-        self.db().select_network_accounts_subset(account_ids.to_vec()).await
+        self.db.select_network_accounts_subset(account_ids.to_vec()).await
     }
 }

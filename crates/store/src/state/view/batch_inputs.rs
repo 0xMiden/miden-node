@@ -45,7 +45,7 @@ impl StateView {
         // note was included in a given block. We then also need to prove that each of those blocks
         // is included in the chain.
         let note_proofs = self
-            .db()
+            .db
             .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBatchInputsError::SelectNoteInclusionProofError)?;
@@ -96,7 +96,7 @@ impl StateView {
         // Fetch the reference block of the batch as part of this query, so we can avoid looking it
         // up in a separate DB access.
         let mut headers = self
-            .db()
+            .db
             .select_block_headers(
                 scoped_blocks.into_iter().chain(std::iter::once(latest_block_num)),
             )

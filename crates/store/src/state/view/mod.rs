@@ -108,15 +108,6 @@ impl StateView {
         &self.snapshot.blockchain
     }
 
-    /// Returns the database handle.
-    ///
-    /// Block-scoped queries take the [`ScopedBlockNum`] / [`ScopedBlockRange`] proof types issued
-    /// by this view ([`Self::tip`], [`Self::scope_block`], [`Self::scope_range`]), so their
-    /// bounds are always validated against this view's tip, never a tip obtained elsewhere.
-    fn db(&self) -> &Db {
-        &self.db
-    }
-
     /// Validates that `block_num` does not exceed this view's chain tip, returning the scoped block
     /// number required by block-bounded database queries.
     fn scope_block(&self, block_num: BlockNumber) -> Option<ScopedBlockNum> {

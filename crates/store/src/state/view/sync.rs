@@ -26,7 +26,7 @@ impl StateView {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
         let block_range = self.scope_range(block_range)?;
-        self.db().select_transactions_records(account_ids, block_range).await
+        self.db.select_transactions_records(account_ids, block_range).await
     }
 
     /// Returns the chain MMR delta and the block header at the range's end for the specified
@@ -52,7 +52,7 @@ impl StateView {
         // The scoped range's end is committed (at or below this view's tip), so its header must
         // exist in the database.
         let (block_header, signatures) = self
-            .db()
+            .db
             .select_block_header_and_signatures_by_block_num(block_range.scoped_end())
             .await?
             .expect("the range-end header should exist in the database");
@@ -122,7 +122,7 @@ impl StateView {
         // view's blockchain MMR always has at least tip + 1 leaves.
         let mmr_checkpoint = block_end + 1;
 
-        let note_syncs = self.db().get_note_sync_multi(block_range, note_tags.into()).await?;
+        let note_syncs = self.db.get_note_sync_multi(block_range, note_tags.into()).await?;
 
         let mut results = Vec::new();
 
@@ -150,7 +150,7 @@ impl StateView {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
         let block_range = self.scope_range(block_range)?;
-        self.db()
+        self.db
             .select_nullifiers_by_prefix(prefix_len, nullifier_prefixes, block_range)
             .await
     }
@@ -168,7 +168,7 @@ impl StateView {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
         let block_range = self.scope_range(block_range)?;
-        self.db().get_account_vault_sync(account_id, block_range).await
+        self.db.get_account_vault_sync(account_id, block_range).await
     }
 
     /// Returns storage map values for syncing within a block range.
@@ -181,6 +181,6 @@ impl StateView {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<StorageMapValuesPage, DatabaseError> {
         let block_range = self.scope_range(block_range)?;
-        self.db().select_storage_map_sync_values(account_id, block_range, None).await
+        self.db.select_storage_map_sync_values(account_id, block_range, None).await
     }
 }

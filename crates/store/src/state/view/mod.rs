@@ -111,7 +111,7 @@ impl StateView {
     /// Returns the database handle.
     ///
     /// Block-scoped queries take the [`ScopedBlockNum`] / [`ScopedBlockRange`] proof types issued
-    /// by this view ([`Self::scoped_tip`], [`Self::scope_block`], [`Self::scope_range`]), so their
+    /// by this view ([`Self::tip`], [`Self::scope_block`], [`Self::scope_range`]), so their
     /// bounds are always validated against this view's tip, never a tip obtained elsewhere.
     fn db(&self) -> &Db {
         &self.db

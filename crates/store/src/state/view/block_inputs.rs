@@ -50,14 +50,14 @@ impl StateView {
         let mut blocks = reference_blocks;
         blocks.extend(note_proof_reference_blocks);
 
-        let (scoped_latest, scoped_blocks, account_witnesses, nullifier_witnesses, partial_mmr) =
+        let (latest, blocks, account_witnesses, nullifier_witnesses, partial_mmr) =
             self.get_block_inputs_witnesses(blocks, &account_ids, &nullifiers)?;
 
         // Fetch the block headers for all blocks in the partial MMR plus the latest one which will
         // be used as the previous block header of the block being built.
         let mut headers = self
             .db()
-            .select_block_headers(scoped_blocks.into_iter().chain(std::iter::once(scoped_latest)))
+            .select_block_headers(blocks.into_iter().chain(std::iter::once(latest)))
             .await
             .map_err(GetBlockInputsError::SelectBlockHeaderError)?;
 
@@ -66,7 +66,7 @@ impl StateView {
         let latest_block_header_index = headers
             .iter()
             .enumerate()
-            .find_map(|(index, header)| (header.block_num() == *scoped_latest).then_some(index))
+            .find_map(|(index, header)| (header.block_num() == *latest).then_some(index))
             .expect("DB should have returned the header of the latest block header");
 
         // The order doesn't matter for PartialBlockchain::new, so swap remove is fine.

@@ -59,12 +59,12 @@ impl StateView {
         let mut blocks: BTreeSet<BlockNumber> = tx_reference_blocks;
         blocks.extend(note_blocks);
 
-        let latest_block_num = self.tip();
+        let batch_reference_block = self.tip();
 
         // Remove the latest block from the to-be-tracked blocks as it will be the reference block
         // for the batch itself and thus added to the MMR within the batch kernel, so there is no
         // need to prove its inclusion.
-        blocks.remove(&latest_block_num);
+        blocks.remove(&batch_reference_block);
 
         // Scoping the blocks doubles as the validation that none lies beyond the view's tip. Scoped
         // in descending order, so the first failure carries the highest block number.
@@ -75,7 +75,7 @@ impl StateView {
                 self.scope_block(block).ok_or(
                     GetBatchInputsError::UnknownTransactionBlockReference {
                         highest_block_num: block,
-                        latest_block_num: *latest_block_num,
+                        latest_block_num: *batch_reference_block,
                     },
                 )
             })
@@ -89,17 +89,17 @@ impl StateView {
         //   smaller than latest block num remain in the set. Therefore all the block numbers are
         //   guaranteed to exist in the chain state at latest block num.
         let partial_mmr =
-            self.blockchain().partial_mmr_from_blocks(&blocks, *latest_block_num).expect(
+            self.blockchain().partial_mmr_from_blocks(&blocks, *batch_reference_block).expect(
                 "latest block num should exist and all blocks in set should be < than latest block",
             );
-
-        let batch_reference_block = latest_block_num;
 
         // Fetch the reference block of the batch as part of this query, so we can avoid looking it
         // up in a separate DB access.
         let mut headers = self
             .db()
-            .select_block_headers(scoped_blocks.into_iter().chain(std::iter::once(self.tip())))
+            .select_block_headers(
+                scoped_blocks.into_iter().chain(std::iter::once(batch_reference_block)),
+            )
             .await
             .map_err(GetBatchInputsError::SelectBlockHeaderError)?;
 

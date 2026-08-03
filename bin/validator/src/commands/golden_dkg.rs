@@ -24,6 +24,8 @@ use golden_core::{
 use golden_ehtdh1::wire::to_wire_bytes as to_ehtdh1_wire_bytes;
 use golden_ehtdh1::{
     Ehtdh1Material,
+    PublicKeySet,
+    PublicShare,
     SetupContext,
     derive_context_session_id,
     material_from_dkg_outputs,
@@ -46,6 +48,8 @@ use super::ValidatorSigningKey;
 
 type StorageGroup = Secp256k1GoldenGroup;
 type StorageScalar = <StorageGroup as GoldenGroup>::Scalar;
+type StorageElement = <StorageGroup as GoldenGroup>::Element;
+type PublicOutput = (StorageElement, BTreeMap<ParticipantIndex, StorageElement>);
 
 const REGISTRATION_VERSION: &str = "miden-golden-dkg-registration-v1";
 const MANIFEST_VERSION: &str = "miden-golden-dkg-manifest-v1";
@@ -278,6 +282,7 @@ struct CeremonyTranscript {
     manifest_sha256: String,
     decryption_transcript_root: String,
     context_transcript_root: String,
+    public_key_set_sha256: String,
     decryption_dealings: Vec<TranscriptDealing>,
     context_dealings: Vec<TranscriptDealing>,
 }
@@ -749,6 +754,7 @@ where
     publish_operator_bundle(
         &material,
         &ceremony,
+        &transcript,
         &transcript_bytes,
         &acceptances,
         output_directory,
@@ -761,6 +767,7 @@ where
 fn publish_operator_bundle(
     material: &Ehtdh1Material<StorageGroup>,
     ceremony: &Ceremony,
+    transcript: &CeremonyTranscript,
     transcript_bytes: &[u8],
     acceptances: &TranscriptAcceptances,
     output_directory: &Path,
@@ -768,6 +775,10 @@ fn publish_operator_bundle(
     let epoch = decode_fixed_hex::<32>(&ceremony.manifest.epoch, "storage-key epoch")?;
     let setup_context = to_ehtdh1_wire_bytes(&material.setup_context);
     let public_key_set = to_ehtdh1_wire_bytes(&material.public_key_set);
+    ensure!(
+        sha256_hex(&public_key_set) == transcript.public_key_set_sha256,
+        "generated public key set does not match accepted transcript",
+    );
     let secret_share = Zeroizing::new(to_ehtdh1_wire_bytes(&material.secret_share));
     EncodedGoldenOperatorKey::new(
         StorageKeyEpoch::new(epoch),
@@ -824,10 +835,15 @@ fn validate_bundle(
         "storage-key epoch does not match manifest"
     );
     let epoch = decode_fixed_hex::<32>(&epoch_text, "storage-key epoch")?;
+    let public_key_set = fs_err::read(bundle_directory.join(PUBLIC_KEY_SET_FILE))?;
+    ensure!(
+        sha256_hex(&public_key_set) == transcript.public_key_set_sha256,
+        "bundle public key set does not match accepted transcript",
+    );
     let operator_key = EncodedGoldenOperatorKey::new(
         StorageKeyEpoch::new(epoch),
         fs_err::read(bundle_directory.join(SETUP_CONTEXT_FILE))?,
-        fs_err::read(bundle_directory.join(PUBLIC_KEY_SET_FILE))?,
+        public_key_set,
         fs_err::read(bundle_directory.join(SECRET_SHARE_FILE))?,
     )
     .decode()
@@ -1060,11 +1076,17 @@ where
     let expected = ceremony.manifest.participants.len();
     let decryption_dealings = read_dealings::<B>(decryption_paths, expected)?;
     let context_dealings = read_dealings::<B>(context_paths, expected)?;
+    let public_key_set = public_key_set_from_dealings(
+        &decryption_dealings,
+        &context_dealings,
+        &ceremony.decryption_config,
+    )?;
     let transcript = CeremonyTranscript {
         version: TRANSCRIPT_VERSION.to_owned(),
         manifest_sha256: hex::encode(ceremony.manifest_sha256),
         decryption_transcript_root: hex::encode(completion_root(&decryption_dealings)),
         context_transcript_root: hex::encode(completion_root(&context_dealings)),
+        public_key_set_sha256: sha256_hex(&to_ehtdh1_wire_bytes(&public_key_set)),
         decryption_dealings: dealing_hashes::<B>(decryption_paths, expected)?,
         context_dealings: dealing_hashes::<B>(context_paths, expected)?,
     };
@@ -1091,6 +1113,7 @@ fn read_transcript(
     );
     decode_fixed_hex::<32>(&transcript.decryption_transcript_root, "decryption transcript root")?;
     decode_fixed_hex::<32>(&transcript.context_transcript_root, "context transcript root")?;
+    decode_fixed_hex::<32>(&transcript.public_key_set_sha256, "public key set digest")?;
     let canonical =
         toml::to_string_pretty(&transcript).context("failed to encode DKG transcript")?;
     ensure!(canonical.as_bytes() == bytes, "non-canonical DKG transcript");
@@ -1225,6 +1248,59 @@ where
             sha256,
         })
         .collect())
+}
+
+/// Derives the EHTDH1 public key set from the accepted Feldman commitments.
+fn public_key_set_from_dealings<DP, CP>(
+    decryption: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, DP>>,
+    context: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, CP>>,
+    config: &DkgConfig<StorageGroup>,
+) -> anyhow::Result<PublicKeySet<StorageGroup>> {
+    let (joint_public_key, decryption_shares) = aggregate_public_output(decryption, config)?;
+    let (context_public_key, context_shares) = aggregate_public_output(context, config)?;
+    ensure!(
+        bool::from(StorageGroup::is_identity(&context_public_key)),
+        "context dealings do not share zero",
+    );
+    let public_shares = config
+        .registry
+        .indexes()
+        .map(|participant| {
+            Ok((
+                participant,
+                PublicShare {
+                    decryption: *decryption_shares
+                        .get(&participant)
+                        .context("missing decryption public share")?,
+                    context: *context_shares
+                        .get(&participant)
+                        .context("missing context public share")?,
+                },
+            ))
+        })
+        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
+    PublicKeySet::new(config.threshold, joint_public_key, public_shares)
+        .context("dealings produce an invalid public key set")
+}
+
+/// Aggregates the public key and participant shares from one dealing round.
+fn aggregate_public_output<P>(
+    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, P>>,
+    config: &DkgConfig<StorageGroup>,
+) -> anyhow::Result<PublicOutput> {
+    let mut public_key = StorageGroup::identity();
+    for message in dealings.values() {
+        public_key = StorageGroup::add(&public_key, &message.commitment.public_key());
+    }
+    let mut public_shares = BTreeMap::new();
+    for participant in config.registry.indexes() {
+        let mut share = StorageGroup::identity();
+        for message in dealings.values() {
+            share = StorageGroup::add(&share, &message.commitment.public_key_share(participant)?);
+        }
+        public_shares.insert(participant, share);
+    }
+    Ok((public_key, public_shares))
 }
 
 /// Reproduces Golden's completion transcript root from public dealings.
@@ -1777,7 +1853,16 @@ mod tests {
 
     /// Creates both dealings for every validator with the fast proof backend.
     fn deal_for_all(root: &Path, ceremony: &TestCeremony) -> TestResultWith<Vec<PathBuf>> {
-        let mut rng = ChaCha20Rng::from_seed([41; 32]);
+        deal_for_all_with_seed(root, ceremony, [41; 32])
+    }
+
+    /// Creates both dealings using one deterministic test seed.
+    fn deal_for_all_with_seed(
+        root: &Path,
+        ceremony: &TestCeremony,
+        seed: [u8; 32],
+    ) -> TestResultWith<Vec<PathBuf>> {
+        let mut rng = ChaCha20Rng::from_seed(seed);
         let mut outputs = Vec::new();
         for (position, identity) in ceremony.identities.iter().enumerate() {
             let output = root.join(format!("deal-{position}"));
@@ -1933,6 +2018,43 @@ mod tests {
             )?;
             assert_eq!(recovered, content_key);
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn validate_rejects_an_internally_consistent_substitute_key_set() -> TestResult {
+        let root = tempfile::tempdir()?;
+        let alternate_root = root.path().join("alternate");
+        fs_err::create_dir(&alternate_root)?;
+        let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+
+        let dealings = deal_for_all(root.path(), &ceremony)?;
+        let accepted =
+            accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
+        let bundle = finalize_test_bundle(root.path(), &ceremony, &dealings, &accepted, 0)?;
+
+        let alternate_dealings = deal_for_all_with_seed(&alternate_root, &ceremony, [77; 32])?;
+        let alternate_accepted =
+            accept_for_all::<ShareOpeningBackend>(&alternate_root, &ceremony, &alternate_dealings)
+                .await?;
+        let alternate_bundle = finalize_test_bundle(
+            &alternate_root,
+            &ceremony,
+            &alternate_dealings,
+            &alternate_accepted,
+            0,
+        )?;
+        fs_err::copy(alternate_bundle.join(PUBLIC_KEY_SET_FILE), bundle.join(PUBLIC_KEY_SET_FILE))?;
+        fs_err::copy(alternate_bundle.join(SECRET_SHARE_FILE), bundle.join(SECRET_SHARE_FILE))?;
+
+        let error = validate_bundle(
+            &ceremony.genesis.path,
+            &ceremony.ceremony,
+            &hex::encode(ceremony.genesis.signing_keys[0].public_key().to_bytes()),
+            &bundle,
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("public key set"));
         Ok(())
     }
 

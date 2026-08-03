@@ -111,8 +111,7 @@ impl StateView {
     /// Validates that `block_num` does not exceed this view's chain tip, returning the scoped block
     /// number required by block-bounded database queries.
     fn scope_block(&self, block_num: BlockNumber) -> Option<ScopedBlockNum> {
-        let tip = self.tip();
-        (block_num <= *tip).then_some(tip)
+        (block_num <= *self.tip()).then(|| ScopedBlockNum::new(block_num))
     }
 
     /// Validates that `range` does not extend beyond this view's chain tip, returning the scoped

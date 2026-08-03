@@ -3573,10 +3573,12 @@ dependencies = [
  "prost-types",
  "rand 0.10.2",
  "thiserror 2.0.19",
+ "tokio",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
  "tower",
+ "tracing",
  "url",
 ]
 

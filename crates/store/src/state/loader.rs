@@ -180,7 +180,6 @@ impl TreeStorageLoader for MemoryStorage {
 
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     async fn load_account_tree(
         self,
@@ -225,7 +224,6 @@ impl TreeStorageLoader for MemoryStorage {
     // Consider using `NullifierTree::with_storage_from_entries()` for consistency.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     async fn load_nullifier_tree(
         self,
@@ -284,7 +282,6 @@ impl TreeStorageLoader for RocksDbStorage {
 
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     async fn load_account_tree(
         self,
@@ -339,7 +336,6 @@ impl TreeStorageLoader for RocksDbStorage {
 
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     async fn load_nullifier_tree(
         self,
@@ -405,7 +401,6 @@ impl AccountForestLoader for ForestInMemoryBackend {
 
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         fields(
             block.number = %block_num,
         ),
@@ -452,7 +447,6 @@ impl AccountForestLoader for ForestPersistentBackend {
 
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         fields(
             block.number = %block_num,
         ),
@@ -493,7 +487,6 @@ pub fn load_smt<S: SmtStorage>(storage: S) -> Result<LargeSmt<S>, StateInitializ
 /// Loads the blockchain MMR from all block headers in the database.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationError> {
     let latest_header = db.select_block_header_by_block_num(None).await?;
@@ -538,7 +531,6 @@ fn verify_chain_mmr_consistency(
 /// Rebuilds SMT forest with storage map and vault Merkle paths for all public accounts.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
     fields(
         block.number = %block_num,
     ),
@@ -607,7 +599,6 @@ pub async fn rebuild_account_state_forest(
 /// Returns `StateInitializationError::TreeStorageDiverged` if any root doesn't match.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub async fn verify_tree_consistency(
     account_tree_root: Word,
@@ -651,7 +642,6 @@ pub async fn verify_tree_consistency(
 /// match; when loaded from `RocksDB`, this catches corruption or incomplete shutdown.
 #[miden_instrument(
     target = COMPONENT,
-    skip_all,
 )]
 pub async fn verify_account_state_forest_consistency(
     forest: &AccountStateForest<impl Backend>,

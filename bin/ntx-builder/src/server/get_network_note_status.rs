@@ -23,7 +23,6 @@ impl grpc::server::ntx_builder_api::GetNetworkNoteStatus for NtxBuilderRpcServer
     #[miden_node_utils::tracing::miden_instrument(
         target = COMPONENT,
         name = "get_network_note_status",
-        skip_all,
         fields (
             note.id = %note_id,
         ),

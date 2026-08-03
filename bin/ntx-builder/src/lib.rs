@@ -409,6 +409,25 @@ impl NtxBuilderConfig {
             .await
             .context("failed to initialize the transaction inputs sealer")?;
 
+        // The transaction prover is otherwise contacted only once an account has work, so monitor
+        // its lazy endpoint from startup to make a bad configuration visible immediately.
+        let tx_prover_monitor = miden_node_proto::clients::Builder::new(self.tx_prover_url.clone())
+            .with_tls()?
+            .with_timeout(DEFAULT_PROVER_TIMEOUT)
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .without_auth_header()
+            .with_otel_context_injection();
+        let monitor_shutdown = shutdown.clone();
+        let _tx_prover_monitor = tokio::spawn(async move {
+            tx_prover_monitor
+                .monitor::<miden_node_proto::clients::RemoteProverClient>(
+                    "transaction-prover",
+                    monitor_shutdown,
+                )
+                .await;
+        });
+
         // The database is bootstrapped with the genesis block before startup (see
         // `miden-ntx-builder bootstrap`), so a persisted chain state is always present. Load it and
         // resume the subscription from the block after the last applied one.

@@ -27,7 +27,6 @@ impl proto::server::rpc_api::SyncAccountStorageMaps for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "sync_account_storage_maps",
-        skip_all,
         err,
     )]
     async fn handle(

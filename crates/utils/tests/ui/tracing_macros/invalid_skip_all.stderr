@@ -1,0 +1,5 @@
+error: `skip_all` is not supported by `miden_instrument`; function arguments are always skipped, record fields explicitly with `fields(...)`
+ --> tests/ui/tracing_macros/invalid_skip_all.rs:3:20
+  |
+3 | #[miden_instrument(skip_all)]
+  |                    ^^^^^^^^

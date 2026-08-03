@@ -34,7 +34,7 @@ jobs:
         run: |
           cargo nextest run -p miden-validator \
             paper_backend_completes_two_round_ceremony \
-            --run-ignored only
+            --run-ignored ignored-only
 
   # Run tests on the beta channel to provide feedback for Rust team.
   beta-test:

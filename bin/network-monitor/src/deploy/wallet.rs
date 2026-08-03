@@ -64,7 +64,6 @@ pub fn wallet_counter_component_code() -> Result<AccountComponentCode> {
 #[miden_instrument(
     target = COMPONENT,
     name = "create-wallet-account",
-    skip_all,
     ret(level = "debug"),
 )]
 pub fn create_wallet_account() -> Result<(Account, SecretKey)> {

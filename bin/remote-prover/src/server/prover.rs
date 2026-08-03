@@ -71,7 +71,6 @@ trait ProveRequest: Send + Sync {
     #[miden_instrument(
         target=COMPONENT,
         name="prove",
-        skip_all,
         err,
     )]
     fn prove_request(&self, request: proto::ProofRequest) -> Result<proto::Proof, tonic::Status> {
@@ -81,7 +80,6 @@ trait ProveRequest: Send + Sync {
 
     #[miden_instrument(
         target=COMPONENT,
-        skip_all,
         err,
     )]
     fn decode_request(request: proto::ProofRequest) -> Result<Self::Input, tonic::Status> {
@@ -94,7 +92,6 @@ trait ProveRequest: Send + Sync {
 
     #[miden_instrument(
         target=COMPONENT,
-        skip_all,
     )]
     fn encode_response(output: Self::Output) -> proto::Proof {
         use miden_protocol::utils::serde::Serializable;

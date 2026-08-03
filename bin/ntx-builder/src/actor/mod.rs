@@ -11,6 +11,7 @@ use anyhow::Context;
 use candidate::TransactionCandidate;
 use futures::FutureExt;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::formatting::{format_array, format_opt};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::miden_instrument;
@@ -588,7 +589,10 @@ impl AccountActor {
     /// DB before returning: the rejection usually means the in-memory account diverged from the
     /// committed chain, so the next selection must build on the authoritative state rather than
     /// re-declaring the stale commitment.
-    #[miden_instrument(name = "ntx.actor.execute_transactions", skip(self, tx_candidate, account))]
+    #[miden_instrument(
+        name = "ntx.actor.execute_transactions",
+        fields(account.id = %account_id),
+    )]
     async fn execute_transactions(
         &self,
         account_id: AccountId,
@@ -615,7 +619,7 @@ impl AccountActor {
         tracing::info!(
             target: LOG_TARGET,
             %account_id,
-            ?note_ids,
+            note_ids = %format_array(&note_ids),
             num_notes = notes.len(),
             "executing network transaction",
         );
@@ -672,7 +676,7 @@ impl AccountActor {
                 tracing::error!(
                     target: LOG_TARGET,
                     %account_id,
-                    ?note_ids,
+                    note_ids = %format_array(&note_ids),
                     err = %error_msg,
                     "network transaction failed",
                 );
@@ -817,7 +821,7 @@ fn log_oversized_notes(oversized: Vec<FailedNote>) -> Vec<Nullifier> {
                 {
                     note.id = %note.note().id(),
                     nullifier = %note.note().nullifier(),
-                    num_cycles = ?note.num_cycles(),
+                    num_cycles = %format_opt(note.num_cycles().as_ref()),
                 },
                 "note discarded: exceeds the per-tx cycle budget on its own and can never be consumed",
             );
@@ -838,7 +842,7 @@ fn log_deferred_notes(deferred: Vec<FailedNote>) {
             {
                 note.id = %note.note().id(),
                 nullifier = %note.note().nullifier(),
-                num_cycles = ?note.num_cycles(),
+                num_cycles = %format_opt(note.num_cycles().as_ref()),
             },
             "note deferred: exceeded per-tx cycle budget, will retry next round",
         );

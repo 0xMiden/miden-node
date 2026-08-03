@@ -274,7 +274,6 @@ impl Service for ProverStatusService {
         parent = None,
         target = COMPONENT,
         name = "network_monitor.prover.status_check",
-        skip_all,
         level = "info",
         ret(level = "debug"),
         fields(
@@ -356,7 +355,6 @@ const PAYLOAD_RETRY_DELAY: Duration = Duration::from_secs(30);
     parent = None,
     target = COMPONENT,
     name = "network_monitor.prover.run_test",
-    skip_all,
     level = "info",
     fields(
         prover = %name,
@@ -492,7 +490,6 @@ fn tonic_status_to_json(status: &tonic::Status) -> String {
     parent = None,
     target = COMPONENT,
     name = "network_monitor.remote_prover.generate_prover_test_payload",
-    skip_all,
     level = "info",
     ret(level = "debug"),
     err,

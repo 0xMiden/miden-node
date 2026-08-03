@@ -572,7 +572,6 @@ impl<B: Backend> AccountStateForest<B> {
     /// reconstruction.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub(crate) fn get_vault_details(
         &self,
@@ -622,7 +621,6 @@ impl<B: Backend> AccountStateForest<B> {
     /// Returns a `MerkleError` if the forest doesn't contain sufficient data for the proofs.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub(crate) fn get_storage_map_details_for_keys(
         &self,
@@ -690,7 +688,6 @@ impl<B: Backend> AccountStateForest<B> {
     /// should fall back to database reconstruction.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub(crate) fn get_storage_map_details_for_all_entries(
         &self,

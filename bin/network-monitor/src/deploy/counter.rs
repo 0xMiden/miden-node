@@ -39,7 +39,6 @@ pub static COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 #[miden_instrument(
     target = COMPONENT,
     name = "create-counter-account",
-    skip_all,
     ret(level = "debug"),
 )]
 pub fn create_counter_account(

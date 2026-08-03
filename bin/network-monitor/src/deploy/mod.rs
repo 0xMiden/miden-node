@@ -626,7 +626,11 @@ pub async fn build_probe_transaction_inputs(rpc_url: &Url) -> Result<Transaction
 }
 
 /// Deploy a counter account to the network by submitting its genesis transaction via RPC.
-#[miden_instrument(target = COMPONENT, name = "deploy-counter-account", skip_all)]
+#[miden_instrument(
+    target = COMPONENT,
+    name = "deploy-counter-account",
+    ret(level = "debug"),
+)]
 pub async fn deploy_counter_account(
     counter_account: &Account,
     genesis_header: &BlockHeader,

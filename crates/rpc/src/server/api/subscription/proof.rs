@@ -29,7 +29,6 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "proof_subscription",
-        skip_all,
         fields(
             block.from = %input,
         ),

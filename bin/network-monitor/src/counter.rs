@@ -261,7 +261,6 @@ impl IncrementService {
         parent = None,
         target = COMPONENT,
         name = "network_monitor.counter.try_resync_wallet_account",
-        skip_all,
         fields(
             account.id = %self.tx.wallet_account.id(),
         ),
@@ -311,7 +310,6 @@ impl IncrementService {
         parent = None,
         target = COMPONENT,
         name = "network_monitor.counter.try_regenerate_accounts",
-        skip_all,
         level = "warn",
         err,
     )]
@@ -346,7 +344,6 @@ impl IncrementService {
         parent = None,
         target = COMPONENT,
         name = "network_monitor.counter.submit_increment",
-        skip_all,
         level = "info",
         ret(level = "debug"),
         err,

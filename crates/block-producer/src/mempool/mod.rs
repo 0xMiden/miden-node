@@ -156,7 +156,6 @@ impl SharedMempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.lock",
-        skip_all,
         err,
     )]
     pub fn lock(&self) -> Result<MutexGuard<'_, Mempool>, MempoolPoisonError> {
@@ -242,7 +241,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.add_transaction",
-        skip_all,
     )]
     pub fn add_transaction(
         &mut self,
@@ -278,7 +276,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.add_user_batch",
-        skip_all,
     )]
     pub fn add_user_batch(
         &mut self,
@@ -333,7 +330,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.select_any_batch",
-        skip_all,
     )]
     pub fn select_any_batch(&mut self) -> Option<SelectedBatch> {
         let batch = self.transactions.select_any_batch(self.config.batch_budget)?;
@@ -359,7 +355,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.select_full_batch",
-        skip_all,
     )]
     pub fn select_full_batch(&mut self) -> Option<SelectedBatch> {
         let batch = self.transactions.select_full_batch(self.config.batch_budget)?;
@@ -392,7 +387,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.rollback_batch",
-        skip_all,
     )]
     pub fn rollback_batch(&mut self, batch: BatchId) {
         // Guards against bugs in the proof scheduler where a retry results in multiple results
@@ -443,7 +437,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.commit_batch",
-        skip_all,
     )]
     pub fn commit_batch(&mut self, proof: Arc<ProvenBatch>) {
         self.batches.submit_proof(proof);
@@ -471,7 +464,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.select_block",
-        skip_all,
     )]
     pub fn select_block(&mut self) -> SelectedBlock {
         assert!(
@@ -511,7 +503,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.commit_block",
-        skip_all,
     )]
     pub fn commit_block(&mut self, block_header: &BlockHeader) {
         assert_eq!(self.committed_chain_tip.child(), block_header.block_num());
@@ -551,7 +542,6 @@ impl Mempool {
     #[miden_instrument(
         target = COMPONENT,
         name = "mempool.rollback_block",
-        skip_all,
     )]
     pub fn rollback_block(&mut self, block: BlockNumber) {
         // FIXME: We should consider a more robust check here to identify the block by a hash.

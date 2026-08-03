@@ -129,17 +129,20 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
 fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<TokenStream2> {
     validate_explicit_fields(&attr)?;
 
+    let mut args = split_top_level_args(attr);
+    reject_skip_directives(&args)?;
+
+    // Function arguments often contain large or sensitive values. Always skip them so spans only
+    // contain fields explicitly declared by the caller or inferred from `miden_span_record!`.
+    args.push(quote! { skip_all });
+
     if fields.is_empty() {
-        return Ok(attr);
+        return Ok(quote! { #(#args),* });
     }
 
     let inferred_fields = quote! { #(#fields = ::tracing::field::Empty),* };
-    if attr.is_empty() {
-        return Ok(quote! { fields(#inferred_fields) });
-    }
-
     let mut merged_existing_fields = false;
-    let args = split_top_level_args(attr)
+    let args = args
         .into_iter()
         .map(|arg| {
             if let Some(group) = fields_group(&arg) {
@@ -166,6 +169,25 @@ fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<Tok
     } else {
         Ok(quote! { #(#args,)* fields(#inferred_fields) })
     }
+}
+
+fn reject_skip_directives(args: &[TokenStream2]) -> Result<()> {
+    for arg in args {
+        let Some(TokenTree::Ident(ident)) = arg.clone().into_iter().next() else {
+            continue;
+        };
+        if ident == "skip" || ident == "skip_all" {
+            return Err(syn::Error::new_spanned(
+                arg,
+                format!(
+                    "`{ident}` is not supported by `miden_instrument`; function arguments are \
+                     always skipped, record fields explicitly with `fields(...)`"
+                ),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_explicit_fields(attr: &TokenStream2) -> Result<()> {

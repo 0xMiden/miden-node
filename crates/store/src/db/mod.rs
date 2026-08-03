@@ -697,12 +697,13 @@ impl Db {
         // columns
         let mut values = Vec::new();
         let mut block_range_start = BlockNumber::GENESIS;
+        let entries_limit = entries_limit.unwrap_or_else(default_storage_map_entries_limit);
 
         let mut page = self
             .select_storage_map_sync_values(
                 account_id,
                 block_num.range_from(block_range_start),
-                entries_limit,
+                Some(entries_limit),
             )
             .await?;
 
@@ -727,7 +728,7 @@ impl Db {
                 .select_storage_map_sync_values(
                     account_id,
                     block_num.range_from(block_range_start),
-                    entries_limit,
+                    Some(entries_limit),
                 )
                 .await?;
 

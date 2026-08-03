@@ -1,9 +1,19 @@
-//! Live chain-tip queries and tip subscriptions.
+//! Live chain-tip queries and tip subscriptions, deliberately kept off
+//! [`StateView`](super::StateView).
 //!
 //! Both tips are published through watch channels by their single writers (the block writer for
 //! the committed tip, the proof scheduler or proof sync for the proven tip). Everything here
-//! reads or subscribes to those channels; none of it touches state snapshots, so these values
-//! advance independently of any [`StateView`](super::StateView).
+//! reads or subscribes to those channels; none of it touches state snapshots — trees, forest, or
+//! DB — so these values advance independently of any `StateView`.
+//!
+//! This lives on [`State`] rather than `StateView` on purpose, not just because the values are
+//! live. A `StateView` pins a whole `StateSnapshot` (including the `RocksDB` snapshots backing
+//! the trees) and is meant to be released as soon as possible; a tip read never needs that
+//! snapshot, so routing it through a view would pin one for no reason. The `subscribe_*`
+//! receivers go further: they are meant to be held for the lifetime of a long-running task (a
+//! proof-sync loop, a subscription stream), which is the opposite of a `StateView`'s
+//! request-scoped, drop-it-immediately lifetime — so they could not live on `StateView` even if
+//! the values themselves needed one.
 
 use miden_protocol::block::BlockNumber;
 use tokio::sync::watch;

@@ -21,7 +21,7 @@ impl ProofWriter {
         ),
     )]
     pub async fn apply_proof(
-        &self,
+        &mut self,
         block_num: BlockNumber,
         proof_bytes: Vec<u8>,
     ) -> anyhow::Result<()> {

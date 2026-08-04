@@ -108,7 +108,7 @@ impl ProofTaskJoinSet {
 pub(crate) async fn run(
     block_prover: Arc<BlockProver>,
     state: Arc<State>,
-    proof_writer: ProofWriter,
+    mut proof_writer: ProofWriter,
     mut chain_tip_rx: watch::Receiver<BlockNumber>,
     max_concurrent_proofs: NonZeroUsize,
     shutdown: CancellationToken,

@@ -133,35 +133,42 @@ impl BlockBuilder {
         );
         let block_num = selected.block_number;
 
-        let block_commit = self
-            .get_block_inputs(selected)
-            .inspect_ok(|inputs| {
-                let telemetry = inputs.telemetry();
-                miden_span_record!(
-                    block.updated_accounts.count = telemetry.updated_accounts_count,
-                    block.erased_note_proofs.count = telemetry.erased_note_proofs_count,
-                );
-            })
-            .and_then(|inputs| self.propose_block(inputs))
-            .inspect_ok(|proposed_block| {
-                let telemetry = proposed_block_telemetry(&proposed_block.proposed_block);
-                miden_span_record!(
-                    block.nullifiers.count = telemetry.nullifiers_count,
-                    block.output_notes.count = telemetry.output_notes_count,
-                    block.batches.output_notes.count = telemetry.batch_output_notes_count,
-                    block.erased_notes.count = telemetry.erased_notes_count,
-                );
-            })
-            .and_then(|proposed_block| self.build_and_validate_block(proposed_block))
-            .await?;
+        // The stages run inside one async block so that its borrows are sequential: the combinator
+        // chain's shared borrows of `self` end at its `.await`, after which `commit_block` may take
+        // `&mut self` (the block-write capability). The `?` exits only this block, so the error
+        // handling below still sees failures from every stage.
+        async {
+            let block_commit = self
+                .get_block_inputs(selected)
+                .inspect_ok(|inputs| {
+                    let telemetry = inputs.telemetry();
+                    miden_span_record!(
+                        block.updated_accounts.count = telemetry.updated_accounts_count,
+                        block.erased_note_proofs.count = telemetry.erased_note_proofs_count,
+                    );
+                })
+                .and_then(|inputs| self.propose_block(inputs))
+                .inspect_ok(|proposed_block| {
+                    let telemetry = proposed_block_telemetry(&proposed_block.proposed_block);
+                    miden_span_record!(
+                        block.nullifiers.count = telemetry.nullifiers_count,
+                        block.output_notes.count = telemetry.output_notes_count,
+                        block.batches.output_notes.count = telemetry.batch_output_notes_count,
+                        block.erased_notes.count = telemetry.erased_notes_count,
+                    );
+                })
+                .and_then(|proposed_block| self.build_and_validate_block(proposed_block))
+                .await?;
 
-        self.commit_block(mempool, block_commit)
-            .await
-            .inspect_err(|err| Span::current().set_error(err))
-            .or_else(|err| {
-                Self::rollback_block(mempool, block_num)?;
-                Err(err)
-            })
+            self.commit_block(mempool, block_commit).await
+        }
+        // Handle errors by propagating the error to the root span and rolling back the block.
+        .inspect_err(|err| Span::current().set_error(err))
+        .or_else(|err| async {
+            Self::rollback_block(mempool, block_num)?;
+            Err(err)
+        })
+        .await
     }
 
     #[miden_instrument(

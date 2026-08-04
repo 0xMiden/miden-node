@@ -50,3 +50,4 @@ miden-standards  = { workspace = true }
 reqwest          = { workspace = true }
 rstest           = { workspace = true }
 tempfile         = { workspace = true }
+tokio            = { features = ["test-util"], workspace = true }

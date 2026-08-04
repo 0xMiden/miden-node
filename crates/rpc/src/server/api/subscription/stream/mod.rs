@@ -114,11 +114,18 @@ impl SubscriptionStream {
         Self::reject_banned_client(client_ip, &ban_list)?;
         let subscription_permit = Self::acquire_subscription_permit(subscription_semaphore)?;
 
-        let (tx, rx) = mpsc::channel(SUBSCRIBER_CHANNEL_CAPACITY);
+        // Keep one channel slot reserved for the terminal status. This prevents a full data buffer
+        // from causing the terminal status to be dropped as well.
+        let (tx, rx) = mpsc::channel(SUBSCRIBER_CHANNEL_CAPACITY + 1);
+        let terminal_permit = tx
+            .clone()
+            .try_reserve_owned()
+            .expect("a newly created subscription channel must have capacity");
         let producer = SubscriptionProducer {
             next: from,
             chain_tip,
             tx,
+            terminal_permit,
             client_ip,
             ban_list,
             _subscription_permit: subscription_permit,
@@ -177,6 +184,7 @@ struct SubscriptionProducer<GetData> {
     next: BlockNumber,
     chain_tip: watch::Receiver<BlockNumber>,
     tx: mpsc::Sender<tonic::Result<StreamItem>>,
+    terminal_permit: mpsc::OwnedPermit<tonic::Result<StreamItem>>,
     client_ip: Option<IpAddr>,
     ban_list: Arc<IpBanList>,
     _subscription_permit: OwnedSemaphorePermit,
@@ -201,7 +209,7 @@ where
         if let (Some(ip), StreamError::SlowSubscriber) = (self.client_ip, err) {
             self.ban_list.add(ip);
         }
-        let _ = self.tx.try_send(Err(err.into_status()));
+        self.terminal_permit.send(Err(err.into_status()));
     }
 
     /// Produces stream items until a terminal stream error occurs.

@@ -433,7 +433,7 @@ fn estimate_storage_map_details_field_len(details: &AccountStorageMapDetails) ->
         },
         // `apply_all_storage_maps_response_budget()` is only used for `all_storage_maps` requests,
         // which never request proofs. Be conservative and force the fallback path if this changes.
-        StorageMapEntries::EntriesWithProofs(_) => usize::MAX,
+        StorageMapEntries::PartialMap { .. } => usize::MAX,
     }
 }
 

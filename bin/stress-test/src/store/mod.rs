@@ -121,7 +121,7 @@ async fn get_account(
     account_id: AccountId,
     storage_map_slot: String,
 ) -> GetAccountRun {
-    use proto::rpc::account_storage_details::account_storage_map_details::Entries;
+    use proto::rpc::account_storage_details::account_storage_map_details::Result;
 
     let request = get_account_request(account_id, storage_map_slot);
 
@@ -136,9 +136,9 @@ async fn get_account(
         .and_then(|details| details.storage_details.as_ref())
         .and_then(|storage_details| storage_details.map_details.first());
     let (storage_map_entries, storage_map_limit_exceeded) = match map_details {
-        Some(details) if details.too_many_entries => (0, true),
-        Some(details) => match &details.entries {
-            Some(Entries::AllEntries(entries)) => (entries.entries.len(), false),
+        Some(details) => match &details.result {
+            Some(Result::TooManyEntries(true)) => (0, true),
+            Some(Result::AllEntries(entries)) => (entries.entries.len(), false),
             _ => (0, false),
         },
         None => (0, false),

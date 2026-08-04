@@ -615,7 +615,7 @@ impl<B: Backend> AccountStateForest<B> {
         Ok(Some(AccountVaultDetails::from_assets(assets)))
     }
 
-    /// Opens a storage map and returns storage map details with SMT proofs for the given keys.
+    /// Opens a storage map and returns one partial SMT covering the requested keys.
     ///
     /// Returns `None` if no storage root is tracked for this account/slot/block combination.
     /// Returns a `MerkleError` if the forest doesn't contain sufficient data for the proofs.
@@ -631,13 +631,19 @@ impl<B: Backend> AccountStateForest<B> {
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
         let lineage = Self::storage_lineage_id(account_id, &slot_name);
         let tree = self.get_tree_id(lineage, block_num)?;
+        let map_root = match self.forest.root_info(tree) {
+            RootInfo::LatestVersion(root) | RootInfo::HistoricalVersion(root) => root,
+            RootInfo::Missing => return None,
+        };
 
         let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {
             let key_hashed = raw_key.hash().into();
             self.forest.open(tree, key_hashed).map_err(Self::map_forest_error)
         }));
 
-        Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
+        Some(proofs.and_then(|proofs| {
+            AccountStorageMapDetails::from_proofs(slot_name, map_root, raw_keys.to_vec(), proofs)
+        }))
     }
 
     /// Enumerates a storage map as it is stored in the SMT.

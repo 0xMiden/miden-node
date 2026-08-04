@@ -155,6 +155,32 @@ async fn shutdown_while_send_is_pending_reports_server_shutdown() {
     wait_for_subscription_exit(&source).await;
 }
 
+#[tokio::test(start_paused = true)]
+async fn full_buffer_reports_slow_subscriber_before_eos() {
+    let (_tip_tx, tip_rx) = watch::channel(BlockNumber::from(SUBSCRIBER_CHANNEL_CAPACITY as u32));
+    let source = TestSubscription::default();
+    let fetch_count = source.fetch_count();
+    let mut stream = source
+        .stream(BlockNumber::GENESIS, tip_rx)
+        .expect("subscription start should be valid");
+
+    wait_for_fetch_count(&fetch_count, SUBSCRIBER_CHANNEL_CAPACITY + 1).await;
+    tokio::time::advance(SEND_TIMEOUT).await;
+    tokio::task::yield_now().await;
+
+    for expected_block in 0..SUBSCRIBER_CHANNEL_CAPACITY {
+        let item = stream
+            .next()
+            .await
+            .expect("buffered stream item must be present")
+            .expect("buffered stream item must be ok");
+        assert_eq!(item.block, BlockNumber::from(expected_block as u32));
+    }
+
+    let terminal = stream.next().await.expect("terminal status must precede end of stream");
+    assert_stream_status(terminal, tonic::Code::ResourceExhausted);
+}
+
 #[tokio::test]
 async fn slow_subscriber_is_banned() {
     let (tip_tx, tip_rx) = watch::channel(BlockNumber::GENESIS);

@@ -2,7 +2,7 @@ use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::miden_instrument;
 use tracing::debug;
 
-use super::{Request, RpcMode, RpcService};
+use super::{Request, RpcRouting, RpcService};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -40,10 +40,10 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
 
         // Nodes connected to validators ask one directly, otherwise the request is forwarded. The
         // encryption key is shared by the whole validator set, so any single validator serves.
-        let validator = match &self.mode {
-            RpcMode::Sequencer { validators, .. } => validators.random(),
-            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => pre_auth.validators().random(),
-            RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
+        let validator = match &self.route {
+            RpcRouting::Sequencer { validators, .. } => validators.random(),
+            RpcRouting::FullNode { pre_auth: Some(pre_auth), .. } => pre_auth.validators().random(),
+            RpcRouting::FullNode { source_rpc, pre_auth: None, .. } => {
                 return source_rpc
                     .as_ref()
                     .clone()

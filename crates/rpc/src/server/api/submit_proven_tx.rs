@@ -17,7 +17,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tonic::{Request, Status};
 use tracing::debug;
 
-use super::{COMPONENT, RpcMode, RpcService, submit_tx_to_validators};
+use super::{COMPONENT, RpcRouting, RpcService, submit_tx_to_validators};
 use crate::LOG_TARGET;
 
 #[tonic::async_trait]
@@ -118,8 +118,8 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
             Status::internal(format!("transaction proof verification task failed: {err}"))
         })??;
 
-        match &self.mode {
-            RpcMode::Sequencer { block_producer, validators } => {
+        match &self.route {
+            RpcRouting::Sequencer { block_producer, validators } => {
                 submit_tx_to_validators(validators.as_slice(), &request).await?;
                 block_producer
                     .submit_proven_tx(rebuilt_tx)
@@ -127,7 +127,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
                     .map(Into::into)
                     .map_err(Into::into)
             },
-            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => {
+            RpcRouting::FullNode { pre_auth: Some(pre_auth), .. } => {
                 // Pre-authenticated transactions: validate and authenticate locally, then submit
                 // the authenticated transaction to the sequencer's pre-authenticated API.
                 self.submit_authenticated_to_sequencer(
@@ -138,7 +138,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
                 )
                 .await
             },
-            RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
+            RpcRouting::FullNode { source_rpc, pre_auth: None, .. } => {
                 // Unauthenticated transactions: forward the request to the source verbatim.
                 let mut forwarded_request = Request::new(request);
                 if let Some(accept) = original_accept_header {

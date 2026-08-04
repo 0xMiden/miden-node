@@ -588,6 +588,11 @@ impl Db {
     /// The transaction is committed when this method returns. Synchronization with the in-memory
     /// trees is handled by the block writer task; see [`super::state::State::apply_block`].
     ///
+    /// Account history is pruned in the same transaction against `prune_tip`: the effective tip
+    /// for retention, which lags the actual tip while old snapshot generations are still pinned
+    /// by readers (SQLite reads have no point-in-time protection, unlike the `RocksDB`-backed
+    /// trees).
+    ///
     /// Consumed note IDs omitted from transaction headers are resolved from
     /// `unresolved_note_nullifiers` on a best-effort basis. The returned mapping is used only for
     /// lifecycle events and never affects block application. `unresolved_note_nullifiers` is empty
@@ -603,10 +608,11 @@ impl Db {
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
         precomputed_public_states: PrecomputedPublicAccountStates,
         unresolved_note_nullifiers: Vec<Nullifier>,
+        prune_tip: BlockNumber,
     ) -> Result<BTreeMap<Nullifier, NoteId>> {
         self.transact("apply block", move |conn| {
             models::queries::apply_block(conn, &signed_block, &notes, &precomputed_public_states)?;
-            models::queries::prune_history(conn, signed_block.header().block_num())?;
+            models::queries::prune_history(conn, prune_tip)?;
 
             let mut resolved_note_ids = BTreeMap::new();
             for chunk in unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT) {

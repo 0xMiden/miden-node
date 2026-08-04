@@ -31,7 +31,12 @@ use crate::db::{Db, NoteRecord};
 use crate::errors::{ApplyBlockError, InvalidBlockError};
 use crate::state::block_lifecycle::{BlockLifecycle, lifecycle_events_enabled};
 use crate::state::loader::TreeStorage;
-use crate::state::view::{SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot};
+use crate::state::view::{
+    PublishedGenerations,
+    SNAPSHOTS_LIVE_WARN_THRESHOLD,
+    SnapshotGuard,
+    StateSnapshot,
+};
 use crate::state::{BlockCache, BlockNotification};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
 
@@ -61,6 +66,9 @@ pub(in crate::state) struct WriteWorker {
     forest: AccountStateForest<AccountStateForestBackend>,
     /// Shared counter of live snapshot generations, for observability.
     snapshots_live: Arc<AtomicUsize>,
+    /// Writer-local log of published generations; its oldest still-pinned height feeds the
+    /// snapshot-aware history-pruning tip.
+    published_generations: PublishedGenerations,
 }
 
 /// Note records and state mutations computed from a validated block, before any modifications.
@@ -90,6 +98,11 @@ impl WriteWorker {
         forest: AccountStateForest<AccountStateForestBackend>,
         snapshots_live: Arc<AtomicUsize>,
     ) -> Self {
+        // Seed the generation log with the initial snapshot so its readers hold back pruning
+        // exactly like readers of any later generation.
+        let mut published_generations = PublishedGenerations::new();
+        let initial_snapshot = latest_snapshot.load_full();
+        published_generations.record(initial_snapshot.latest_block_num(), &initial_snapshot);
         Self {
             db,
             block_store,
@@ -102,6 +115,7 @@ impl WriteWorker {
             blockchain,
             forest,
             snapshots_live,
+            published_generations,
         }
     }
 
@@ -188,9 +202,21 @@ impl WriteWorker {
 
         // Commit to the DB. Readers continue to see the previous in-memory snapshot while the DB
         // commits; queries that combine DB and in-memory data are scoped by block number.
+        //
+        // History pruning runs inside the same DB transaction, keyed off the oldest live snapshot
+        // generation rather than the actual tip: unlike the `RocksDB`-backed trees, SQLite reads
+        // have no point-in-time protection, so pruning lags while pinned views can still reach
+        // the history and catches up once they are released.
+        let prune_tip = self.published_generations.prune_tip(block_num);
         let resolved_note_ids = self
             .db
-            .apply_block(signed_block, notes, precomputed_public_states, unresolved_note_nullifiers)
+            .apply_block(
+                signed_block,
+                notes,
+                precomputed_public_states,
+                unresolved_note_nullifiers,
+                prune_tip,
+            )
             .await
             .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
@@ -208,6 +234,7 @@ impl WriteWorker {
 
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
         // see the updated state. Readers holding the old snapshot continue unaffected.
+        self.published_generations.record(block_num, &snapshot);
         self.latest_snapshot.store(snapshot);
 
         let snapshots_live = self.check_live_snapshots(block_num);

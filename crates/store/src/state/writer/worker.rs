@@ -1,6 +1,5 @@
 //! The write worker: single-task owner of the store's mutable trees.
 
-use std::fmt::Display;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -315,8 +314,17 @@ impl WriteWorker {
     /// is copied.
     ///
     /// Must only be called after the corresponding DB commit: at that point the mutations are part
-    /// of canonical state, so a failure to apply them leaves the trees divergent and aborts the
-    /// process. May block on backend I/O, so it must run on Tokio's blocking path.
+    /// of canonical state, so a failure to apply them leaves the trees divergent and panics.
+    /// Returning an error instead would expose components at different block heights. The panic
+    /// unwinds the writer task, whose join error shuts the node down; readers keep serving the
+    /// previous published snapshot (block-scoped, so still consistent) until then, and the startup
+    /// consistency checks detect the trees lagging the database on restart.
+    ///
+    /// May block on backend I/O, so it must run on Tokio's blocking path.
+    ///
+    /// # Panics
+    ///
+    /// Panics if applying any prepared mutation fails; see above.
     fn apply_prepared_mutations(
         &mut self,
         block_num: BlockNumber,
@@ -328,19 +336,19 @@ impl WriteWorker {
         self.nullifier_tree
             .apply_mutations(nullifier_tree_update)
             .unwrap_or_else(|error| {
-                Self::abort_after_post_commit_failure("nullifier tree", &error)
+                panic!("nullifier tree update failed after database commit: {error}")
             });
 
-        self.account_tree
-            .apply_mutations(account_tree_update)
-            .unwrap_or_else(|error| Self::abort_after_post_commit_failure("account tree", &error));
+        self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
+            panic!("account tree update failed after database commit: {error}")
+        });
 
         self.blockchain.push(block_commitment);
 
         self.forest
             .apply_precomputed_block_update(block_num, account_forest_update)
             .unwrap_or_else(|error| {
-                Self::abort_after_post_commit_failure("account-state forest", &error)
+                panic!("account-state forest update failed after database commit: {error}")
             });
 
         Arc::new(StateSnapshot::new(
@@ -352,25 +360,6 @@ impl WriteWorker {
             self.forest.reader().expect("forest snapshot creation should not fail"),
             SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
         ))
-    }
-
-    /// Terminates after a persistent state failure that occurred after the canonical DB commit.
-    ///
-    /// Returning would expose components at different block heights. Tests panic so the fatal path
-    /// can be asserted without terminating the test process; production aborts immediately.
-    fn abort_after_post_commit_failure(component: &str, error: &impl Display) -> ! {
-        tracing::error!(
-            target: LOG_TARGET,
-            component,
-            error = %error,
-            "persistent state update failed after database commit; aborting"
-        );
-
-        #[cfg(test)]
-        panic!("{component} update failed after database commit: {error}");
-
-        #[cfg(not(test))]
-        std::process::abort();
     }
 
     /// Validates that the block header is consistent with the block body and the current state.

@@ -18,6 +18,7 @@ use miden_protocol::block::{
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_protocol::utils::serde::Deserializable;
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::codec::Streaming;
 use tracing::info;
@@ -29,6 +30,10 @@ use crate::LOG_TARGET;
 
 // RECOVER
 // ================================================================================================
+
+/// Capacity of the channels connecting the recovery pipeline's stages, bounding the number of
+/// blocks buffered in memory while keeping every stage busy.
+const BLOCK_CHANNEL_CAPACITY: usize = 16;
 
 #[derive(clap::Args, Clone, Debug)]
 pub struct RecoverCommand {
@@ -133,9 +138,10 @@ async fn recover_from_validators(
         .get_block_header(Some(local_tip), false)
         .await
         .context("failed to load the local chain tip header")?;
-    let mut parent = parent.context("local chain tip header not found")?;
+    let parent = parent.context("local chain tip header not found")?;
 
     let block_from = local_tip.child().as_u32();
+    let block_count = u64::from(recovery_tip.as_u32() - block_from) + 1;
     info!(
         target: LOG_TARGET,
         block_from,
@@ -144,26 +150,92 @@ async fn recover_from_validators(
         "Recovering blocks from validators",
     );
 
-    let mut streams = Vec::with_capacity(validators.len());
-    for (url, validator) in &mut validators {
+    // Run recovery as a three-stage pipeline so that receiving blocks from the validators,
+    // signature coalescing and verification, and local block application all overlap: one reader
+    // task per validator stream, a coalescer task zipping the readers, and this task applying the
+    // coalesced blocks in order.
+    let mut block_streams = Vec::with_capacity(validators.len());
+    for (url, mut validator) in validators {
         let stream = validator
             .block_subscription(BlockSubscriptionRequest { block_from })
             .await
             .with_context(|| format!("failed to open block subscription on validator {url}"))?
             .into_inner();
-        streams.push((url.clone(), stream));
+        let (block_tx, block_rx) = mpsc::channel(BLOCK_CHANNEL_CAPACITY);
+        tokio::spawn(read_blocks(url.clone(), stream, block_count, block_tx));
+        block_streams.push((url, block_rx));
     }
 
-    for block_num in block_from..=recovery_tip.as_u32() {
-        let block = next_coalesced_block(&mut streams, &parent)
+    let (coalesced_tx, mut coalesced_rx) = mpsc::channel(BLOCK_CHANNEL_CAPACITY);
+    let coalescer =
+        tokio::spawn(coalesce_blocks(block_streams, parent, recovery_tip, coalesced_tx));
+
+    while let Some(block) = coalesced_rx.recv().await {
+        let block_num = block.header().block_num();
+        state.apply_block(block).await.context("failed to apply recovered block")?;
+        info!(target: LOG_TARGET, block_number = block_num.as_u32(), "Applied recovered block");
+    }
+
+    // The channel closes either because every block up to the recovery target was coalesced or
+    // because the coalescer failed.
+    coalescer.await.context("coalescer task panicked")??;
+
+    info!(target: LOG_TARGET, chain_tip = recovery_tip.as_u32(), "Block recovery complete");
+    Ok(())
+}
+
+/// Reads `block_count` blocks from a validator's subscription stream into `blocks`.
+///
+/// Runs as a background task so that blocks are received and deserialized concurrently with
+/// signature coalescing and block application. An error is forwarded through the channel and ends
+/// the task; the task also ends when the coalescer shuts down.
+async fn read_blocks(
+    url: Url,
+    mut stream: Streaming<BlockSubscriptionResponse>,
+    block_count: u64,
+    blocks: mpsc::Sender<anyhow::Result<SignedBlock>>,
+) {
+    for _ in 0..block_count {
+        let block = stream
+            .next()
+            .await
+            .with_context(|| {
+                format!("block stream of validator {url} ended before the recovery target")
+            })
+            .and_then(|result| {
+                result.with_context(|| format!("block stream of validator {url} returned an error"))
+            })
+            .and_then(|event| {
+                SignedBlock::read_from_bytes(&event.block)
+                    .with_context(|| format!("failed to deserialize block from validator {url}"))
+            });
+
+        let is_err = block.is_err();
+        if blocks.send(block).await.is_err() || is_err {
+            return;
+        }
+    }
+}
+
+/// Coalesces the per-validator block streams into fully signed, verified blocks and forwards them
+/// in block-number order for application.
+async fn coalesce_blocks(
+    mut block_streams: Vec<(Url, mpsc::Receiver<anyhow::Result<SignedBlock>>)>,
+    mut parent: BlockHeader,
+    recovery_tip: BlockNumber,
+    coalesced: mpsc::Sender<SignedBlock>,
+) -> anyhow::Result<()> {
+    for block_num in parent.block_num().child().as_u32()..=recovery_tip.as_u32() {
+        let block = next_coalesced_block(&mut block_streams, &parent)
             .await
             .with_context(|| format!("failed to reconstruct block {block_num}"))?;
         parent = block.header().clone();
-        state.apply_block(block).await.context("failed to apply recovered block")?;
-        info!(target: LOG_TARGET, block_number = block_num, "Applied recovered block");
-    }
 
-    info!(target: LOG_TARGET, chain_tip = recovery_tip.as_u32(), "Block recovery complete");
+        // A send failure means the applier has shut down; its error is reported by the caller.
+        if coalesced.send(block).await.is_err() {
+            return Ok(());
+        }
+    }
     Ok(())
 }
 
@@ -175,23 +247,18 @@ async fn recover_from_validators(
 /// validator set that signature occupies. The signatures are therefore matched to their positions
 /// by verifying them against the validator keys committed to by the parent header.
 async fn next_coalesced_block(
-    streams: &mut [(Url, Streaming<BlockSubscriptionResponse>)],
+    block_streams: &mut [(Url, mpsc::Receiver<anyhow::Result<SignedBlock>>)],
     parent: &BlockHeader,
 ) -> anyhow::Result<SignedBlock> {
     let expected_block_num = parent.block_num().child();
 
-    let mut signatures = Vec::with_capacity(streams.len());
+    let mut signatures = Vec::with_capacity(block_streams.len());
     let mut first_parts: Option<(BlockHeader, BlockBody)> = None;
-    for (url, stream) in streams.iter_mut() {
-        let event = stream
-            .next()
+    for (url, blocks) in block_streams.iter_mut() {
+        let block = blocks
+            .recv()
             .await
-            .with_context(|| {
-                format!("block stream of validator {url} ended before the recovery target")
-            })?
-            .with_context(|| format!("block stream of validator {url} returned an error"))?;
-        let block = SignedBlock::read_from_bytes(&event.block)
-            .with_context(|| format!("failed to deserialize block from validator {url}"))?;
+            .with_context(|| format!("block channel of validator {url} closed unexpectedly"))??;
 
         anyhow::ensure!(
             block.header().block_num() == expected_block_num,

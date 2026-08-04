@@ -116,6 +116,7 @@ sha2               = { version = "0.10" }
 syn                = { version = "2.0" }
 tempfile           = { version = "3.12" }
 thiserror          = { default-features = false, version = "2.0" }
+thread-priority    = { version = "3.1" }
 tokio              = { default-features = false, version = "1.46" }
 tokio-stream       = { version = "0.1" }
 tokio-util         = { features = ["rt"], version = "0.7" }

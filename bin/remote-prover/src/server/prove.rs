@@ -15,7 +15,6 @@ impl grpc::server::remote_prover_api::Prove for ProverService {
     #[miden_instrument(
         target = COMPONENT,
         name = "remote_prover.prove",
-        skip_all,
         err,
     )]
     async fn handle(

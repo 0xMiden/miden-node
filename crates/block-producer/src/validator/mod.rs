@@ -83,7 +83,6 @@ impl BlockProducerValidatorClient {
     #[miden_instrument(
         target = COMPONENT,
         name = "validator.client.validate_block",
-        skip_all,
         err,
     )]
     pub async fn sign_block(

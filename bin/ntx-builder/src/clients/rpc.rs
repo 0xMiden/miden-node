@@ -185,7 +185,6 @@ impl RpcClient {
     #[miden_instrument(
         target = COMPONENT,
         name = "rpc.client.block_subscription_with_retry",
-        skip_all,
         fields(
             block.from = %block_from,
         ),
@@ -322,7 +321,6 @@ impl RpcClient {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx.rpc.client.submit_proven_tx",
-        skip_all,
         err,
     )]
     pub async fn submit_proven_tx(
@@ -520,7 +518,6 @@ impl RpcClient {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx.rpc.client.get_note_script_by_root",
-        skip_all,
         err,
     )]
     pub async fn get_note_script_by_root(

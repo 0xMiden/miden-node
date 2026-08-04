@@ -256,7 +256,6 @@ impl NtxContext {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx.execute_transaction",
-        skip_all,
         err,
     )]
     pub fn execute_transaction(
@@ -366,7 +365,6 @@ impl NtxContext {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx.execute_transaction.filter_notes",
-        skip_all,
         err,
     )]
     async fn filter_notes(
@@ -476,7 +474,6 @@ impl NtxContext {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx.execute_transaction.execute",
-        skip_all,
         err,
     )]
     async fn execute(
@@ -508,7 +505,6 @@ impl NtxContext {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx.execute_transaction.prove",
-        skip_all,
         err,
     )]
     async fn prove(&self, tx_inputs: &TransactionInputs) -> NtxResult<ProvenTransaction> {
@@ -529,7 +525,6 @@ impl NtxContext {
     #[miden_instrument(
         target = COMPONENT,
         name = "ntx.execute_transaction.submit",
-        skip_all,
         err,
     )]
     async fn submit(

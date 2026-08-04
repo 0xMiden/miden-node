@@ -190,7 +190,6 @@ impl BlockSync {
 
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {

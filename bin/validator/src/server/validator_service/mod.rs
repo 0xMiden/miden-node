@@ -212,7 +212,6 @@ impl ValidatorService {
     /// On success, returns the signature and the validated block header.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn validate_block(
@@ -312,7 +311,6 @@ impl ValidatorService {
     #[miden_instrument(
         target = COMPONENT,
         name = "sign_block",
-        skip_all,
         err,
         fields(
             block.number = header.block_num().as_u32(),

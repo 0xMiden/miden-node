@@ -28,7 +28,6 @@ impl proto::server::rpc_api::SyncAccountVault for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "sync_account_vault",
-        skip_all,
         err,
     )]
     async fn handle(

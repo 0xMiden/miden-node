@@ -55,7 +55,6 @@ impl BlockProver {
 
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn prove(

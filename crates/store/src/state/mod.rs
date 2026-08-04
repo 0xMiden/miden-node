@@ -171,7 +171,6 @@ impl State {
     /// sequencer and replica tasks.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn load(
         data_path: &Path,
@@ -187,7 +186,6 @@ impl State {
     /// sequencer and replica tasks.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
     )]
     pub async fn load_with_database_options(
         data_path: &Path,
@@ -362,7 +360,6 @@ impl State {
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
-        skip_all,
         err,
     )]
     pub async fn get_block_header(
@@ -649,7 +646,6 @@ impl State {
     /// Returns data needed by the block producer to verify transactions validity.
     #[miden_instrument(
         target = COMPONENT,
-        skip_all,
         fields(
             account.id=%account_id,
             nullifiers = %format_array(nullifiers),

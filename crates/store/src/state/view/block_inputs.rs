@@ -35,10 +35,12 @@ impl StateView {
         reference_blocks: BTreeSet<BlockNumber>,
     ) -> Result<BlockInputs, GetBlockInputsError> {
         // Get the note inclusion proofs from the DB first: the reference blocks of the note proofs
-        // are needed below to fetch their authentication paths in the chain MMR.
+        // are needed below to fetch their authentication paths in the chain MMR. The proofs are
+        // scoped by the view's tip, so the database cannot report a note from a block the pinned
+        // snapshot cannot prove yet.
         let unauthenticated_note_proofs = self
             .db
-            .select_note_inclusion_proofs(unauthenticated_note_commitments)
+            .select_note_inclusion_proofs(unauthenticated_note_commitments, self.tip())
             .await
             .map_err(GetBlockInputsError::SelectNoteInclusionProofError)?;
 

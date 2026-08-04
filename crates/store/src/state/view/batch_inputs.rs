@@ -41,12 +41,15 @@ impl StateView {
             return Err(GetBatchInputsError::TransactionBlockReferencesEmpty);
         }
 
+        let latest_block_num = self.tip();
+
         // First we grab note inclusion proofs for the known notes. These proofs only prove that the
         // note was included in a given block. We then also need to prove that each of those blocks
-        // is included in the chain.
+        // is included in the chain. The proofs are scoped by the view's tip, so the database cannot
+        // report a note from a block the pinned snapshot cannot prove yet.
         let note_proofs = self
             .db
-            .select_note_inclusion_proofs(unauthenticated_note_commitments)
+            .select_note_inclusion_proofs(unauthenticated_note_commitments, latest_block_num)
             .await
             .map_err(GetBatchInputsError::SelectNoteInclusionProofError)?;
 
@@ -58,8 +61,6 @@ impl StateView {
         // - all blocks referenced by transactions in the batch.
         let mut blocks: BTreeSet<BlockNumber> = tx_reference_blocks;
         blocks.extend(note_blocks);
-
-        let latest_block_num = self.tip();
 
         // Remove the latest block from the to-be-tracked blocks as it will be the reference block
         // for the batch itself and thus added to the MMR within the batch kernel, so there is no

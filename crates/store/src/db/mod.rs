@@ -565,7 +565,8 @@ impl Db {
         .await
     }
 
-    /// Loads inclusion proofs for notes matching the given note commitments.
+    /// Loads inclusion proofs for notes matching the given note commitments that were committed at
+    /// or before `up_to_block`.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
@@ -574,9 +575,10 @@ impl Db {
     pub async fn select_note_inclusion_proofs(
         &self,
         note_commitments: BTreeSet<Word>,
+        up_to_block: ScopedBlockNum,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
         self.transact("block note inclusion proofs by commitment", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_commitments)
+            models::queries::select_note_inclusion_proofs(conn, &note_commitments, *up_to_block)
         })
         .await
     }

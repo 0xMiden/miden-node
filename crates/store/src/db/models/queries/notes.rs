@@ -254,11 +254,13 @@ pub(crate) fn select_existing_note_commitments(
     Ok(commitments)
 }
 
-/// Select note inclusion proofs matching the note commitments.
+/// Select note inclusion proofs matching the note commitments, restricted to notes committed at
+/// or before `up_to_block`.
 ///
 /// # Parameters
 /// * `note_ids`: Set of note IDs to query
 ///     - Limit: 0 <= count <= 1000
+/// * `up_to_block`: Only notes committed at or before this block are returned
 ///
 /// # Returns
 ///
@@ -277,13 +279,15 @@ pub(crate) fn select_existing_note_commitments(
 /// FROM
 ///     notes
 /// WHERE
-///     note_id IN (?1)
+///     note_id IN (?1) AND
+///     committed_at <= ?2
 /// ORDER BY
 ///     committed_at ASC
 /// ```
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
     note_commitments: &BTreeSet<Word>,
+    up_to_block: BlockNumber,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
     QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
 
@@ -300,6 +304,7 @@ pub(crate) fn select_note_inclusion_proofs(
         ),
     )
     .filter(schema::notes::note_id.eq_any(note_commitments))
+    .filter(schema::notes::committed_at.le(up_to_block.to_raw_sql()))
     .order_by(schema::notes::committed_at.asc())
     .load::<(i64, Vec<u8>, i32, i32, Vec<u8>)>(conn)?;
 

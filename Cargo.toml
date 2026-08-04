@@ -54,12 +54,12 @@ miden-node-tracing-macro    = { path = "crates/tracing-macro", version = "0.16.0
 miden-node-utils            = { path = "crates/utils", version = "0.16.0-alpha.3" }
 
 # miden-protocol dependencies. These should be updated in sync.
-miden-block-prover = { branch = "next", git = "https://github.com/0xMiden/protocol.git" }
-miden-protocol     = { branch = "next", default-features = false, git = "https://github.com/0xMiden/protocol.git" }
-miden-standards    = { branch = "next", git = "https://github.com/0xMiden/protocol.git" }
-miden-testing      = { branch = "next", git = "https://github.com/0xMiden/protocol.git" }
-miden-tx           = { branch = "next", default-features = false, git = "https://github.com/0xMiden/protocol.git" }
-miden-tx-batch     = { branch = "next", git = "https://github.com/0xMiden/protocol.git" }
+miden-block-prover = { git = "https://github.com/0xMiden/protocol.git", tag = "v0.16.0-rc.1" }
+miden-protocol     = { default-features = false, git = "https://github.com/0xMiden/protocol.git", tag = "v0.16.0-rc.1" }
+miden-standards    = { git = "https://github.com/0xMiden/protocol.git", tag = "v0.16.0-rc.1" }
+miden-testing      = { git = "https://github.com/0xMiden/protocol.git", tag = "v0.16.0-rc.1" }
+miden-tx           = { default-features = false, git = "https://github.com/0xMiden/protocol.git", tag = "v0.16.0-rc.1" }
+miden-tx-batch     = { git = "https://github.com/0xMiden/protocol.git", tag = "v0.16.0-rc.1" }
 
 # Other miden dependencies. These should align with those expected by miden-protocol.
 miden-crypto = { version = "0.28" }

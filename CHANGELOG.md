@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- [BREAKING] Updated `miden-protocol` dependencies to use the `next` branch (v0.16). Block and transaction account updates now use the absolute `AccountPatch` representation instead of the relative `AccountDelta`, and the `miden-tx-batch-prover` crate was renamed to `miden-tx-batch` ([#2282](https://github.com/0xMiden/node/pull/2282)).
+- [BREAKING] Updated `miden-protocol` dependencies to the `v0.16.0-rc.1` tag. Block and transaction account updates now use the absolute `AccountPatch` representation instead of the relative `AccountDelta`, and the `miden-tx-batch-prover` crate was renamed to `miden-tx-batch` ([#2282](https://github.com/0xMiden/node/pull/2282)).
+- [BREAKING] The transaction kernel commitment changed, since the kernel now caches each input note's `NoteId` and its procedure offsets shifted. Chain data and transaction proofs produced against an earlier `v0.16.0` prerelease are not compatible, so a node upgrading from one must be bootstrapped from a fresh genesis ([#2282](https://github.com/0xMiden/node/pull/2282)).
 
 ## v0.15.0 (2026-06-10)
 

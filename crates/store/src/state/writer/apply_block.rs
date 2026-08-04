@@ -17,7 +17,7 @@ impl BlockWriter {
         err,
     )]
     pub async fn apply_block_with_proving_inputs(
-        &self,
+        &mut self,
         ordered_batches: OrderedBatches,
         block_inputs: BlockInputs,
         signed_block: SignedBlock,

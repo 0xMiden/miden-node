@@ -236,7 +236,7 @@ pub async fn seed_store_with_readers(
     let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 
-    let (state, block_writer, writer_task) = load_state(data_directory.clone()).await;
+    let (state, mut block_writer, writer_task) = load_state(data_directory.clone()).await;
 
     // Recreate the deterministic genesis benchmark accounts after bootstrapping instead of keeping
     // another copy of their potentially very large maps alive while the genesis block is built.
@@ -281,7 +281,7 @@ pub async fn seed_store_with_readers(
         },
         faucet,
         genesis_header,
-        &block_writer,
+        &mut block_writer,
         data_directory,
         accounts_filepath,
         &signer,
@@ -366,7 +366,7 @@ async fn generate_blocks(
     first_account_index: u64,
     mut faucet: Account,
     genesis_header: BlockHeader,
-    block_writer: &BlockWriter,
+    block_writer: &mut BlockWriter,
     data_directory: DataDirectory,
     accounts_filepath: PathBuf,
     signer: &EcdsaSecretKey,
@@ -601,7 +601,7 @@ async fn generate_blocks(
 async fn apply_block(
     batches: Vec<ProvenBatch>,
     block_inputs: BlockInputs,
-    block_writer: &BlockWriter,
+    block_writer: &mut BlockWriter,
     metrics: &mut SeedingMetrics,
     signer: &EcdsaSecretKey,
     block_kind: metrics::BlockKind,

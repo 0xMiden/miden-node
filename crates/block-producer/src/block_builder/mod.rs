@@ -70,7 +70,7 @@ impl BlockBuilder {
     ///   3. Proving the block (this is simulated using random sleeps)
     ///   4. Committing the block to the store
     pub async fn run(
-        self,
+        mut self,
         mempool: SharedMempool,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
@@ -119,7 +119,7 @@ impl BlockBuilder {
         target = COMPONENT,
         name = "block_builder.build_block",
     )]
-    async fn build_block(&self, mempool: &SharedMempool) -> Result<(), BuildBlockError> {
+    async fn build_block(&mut self, mempool: &SharedMempool) -> Result<(), BuildBlockError> {
         use futures::TryFutureExt;
 
         let selected = Self::select_block(mempool)?;
@@ -133,7 +133,8 @@ impl BlockBuilder {
         );
         let block_num = selected.block_number;
 
-        self.get_block_inputs(selected)
+        let block_commit = self
+            .get_block_inputs(selected)
             .inspect_ok(|inputs| {
                 let telemetry = inputs.telemetry();
                 miden_span_record!(
@@ -152,14 +153,15 @@ impl BlockBuilder {
                 );
             })
             .and_then(|proposed_block| self.build_and_validate_block(proposed_block))
-            .and_then(|block_commit| self.commit_block(mempool, block_commit))
-            // Handle errors by propagating the error to the root span and rolling back the block.
+            .await?;
+
+        self.commit_block(mempool, block_commit)
+            .await
             .inspect_err(|err| Span::current().set_error(err))
-            .or_else(|err| async {
+            .or_else(|err| {
                 Self::rollback_block(mempool, block_num)?;
                 Err(err)
             })
-            .await
     }
 
     #[miden_instrument(
@@ -352,7 +354,7 @@ impl BlockBuilder {
         err,
     )]
     async fn commit_block(
-        &self,
+        &mut self,
         mempool: &SharedMempool,
         block_commit: BlockCommit,
     ) -> Result<(), BuildBlockError> {

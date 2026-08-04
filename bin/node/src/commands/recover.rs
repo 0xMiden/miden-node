@@ -36,9 +36,9 @@ pub struct RecoverCommand {
 
 impl RecoverCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let (state, block_writer, writer_task) = self.load_state().await?;
+        let (state, mut block_writer, writer_task) = self.load_state().await?;
         let validator = self.validator_client()?;
-        let result = recover_from_validator(&state, &block_writer, validator).await;
+        let result = recover_from_validator(&state, &mut block_writer, validator).await;
         // Wait for the writer to drain and release the backing storage before the process exits.
         block_writer.stop(writer_task).await;
         result
@@ -74,7 +74,7 @@ impl RecoverCommand {
 /// Streams blocks from the validator into the local store until the chain tip is reached.
 async fn recover_from_validator(
     state: &State,
-    block_writer: &BlockWriter,
+    block_writer: &mut BlockWriter,
     mut validator: ValidatorClient,
 ) -> anyhow::Result<()> {
     // Capture the validator's chain tip as the recovery target. The validator's block stream

@@ -127,7 +127,7 @@ impl BlockWriter {
         target = COMPONENT,
         err,
     )]
-    pub async fn apply_block(&self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
+    pub async fn apply_block(&mut self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
         let (result_tx, result_rx) = oneshot::channel();
         self.write_tx
             .send(WriteRequest { signed_block, result_tx })

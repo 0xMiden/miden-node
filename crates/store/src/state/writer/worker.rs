@@ -184,8 +184,6 @@ impl WriteWorker {
         // state will be unchanged, but the file might still be written. Such blocks should be
         // considered candidates, not finalized blocks.
         let signed_block_bytes = signed_block.to_bytes();
-        // Clone before moving into the block-save call so we can cache for replicas at commit.
-        let cache_bytes = signed_block_bytes.clone();
         self.block_store.save_block(block_num, &signed_block_bytes).await?;
 
         // Commit to the DB. Readers continue to see the previous in-memory snapshot while the DB
@@ -217,7 +215,7 @@ impl WriteWorker {
 
         // Push to cache and notify replica subscribers.
         self.block_cache
-            .push(block_num, BlockNotification::new(block_num, cache_bytes))
+            .push(block_num, BlockNotification::new(block_num, signed_block_bytes))
             .expect("block cache receives sequential block numbers");
         // `send` is a no-op (and reports an error) when there are no subscribers, which would leave
         // `committed_tip()` stuck reporting a stale value. Use `send_replace` so the tip is always

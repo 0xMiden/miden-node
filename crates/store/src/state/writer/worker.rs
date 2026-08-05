@@ -203,12 +203,8 @@ impl WriteWorker {
 
         // Compute the tree and forest mutations and note records upfront, before any modifications.
         // The writer is the sole forest mutator, so the precomputed forest update stays valid until
-        // it is applied after the DB commit below. Block serialization is folded in so that all
-        // write-path CPU work lands on the dedicated pool.
-        let (prepared, signed_block_bytes) = run_on_pool(&self.apply_pool, || {
-            let prepared = self.prepare_block_update(header, body)?;
-            Ok::<_, ApplyBlockError>((prepared, signed_block.to_bytes()))
-        })?;
+        // it is applied after the DB commit below.
+        let (prepared, signed_block_bytes) = self.prepare_block_update(&signed_block)?;
         let PreparedBlockUpdate {
             notes,
             nullifier_tree_update,
@@ -244,16 +240,13 @@ impl WriteWorker {
 
         // The DB is committed at this point, so the prepared mutations must be applied and any
         // failure to do so aborts the process.
-        let apply_pool = Arc::clone(&self.apply_pool);
-        let snapshot = run_on_pool(&apply_pool, || {
-            self.apply_prepared_mutations(
-                block_num,
-                block_commitment,
-                nullifier_tree_update,
-                account_tree_update,
-                account_forest_update,
-            )
-        });
+        let snapshot = self.apply_prepared_mutations(
+            block_num,
+            block_commitment,
+            nullifier_tree_update,
+            account_tree_update,
+            account_forest_update,
+        );
 
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
         // see the updated state. Readers holding the old snapshot continue unaffected, but are on
@@ -300,49 +293,55 @@ impl WriteWorker {
     }
 
     /// Computes the note records and all tree and forest mutations for a block, without mutating
-    /// any state.
+    /// any state, and serializes the signed block.
     ///
-    /// May block on backend I/O and fans out via rayon, so it must run on the dedicated
-    /// apply-block pool via [`run_on_pool`]. The returned forest update is bound to the forest
+    /// The work may block on backend I/O and fans out via rayon, so it runs on the dedicated
+    /// apply-block pool via [`run_on_pool`]; the block serialization is folded in so that all
+    /// write-path CPU work lands on the pool. The returned forest update is bound to the forest
     /// state observed here; it remains valid until applied because the writer is the sole forest
     /// mutator.
     fn prepare_block_update(
         &self,
-        header: &BlockHeader,
-        body: &BlockBody,
-    ) -> Result<PreparedBlockUpdate, ApplyBlockError> {
-        // The header must commit to the body's transactions. Checked here rather than in
-        // `validate_block_header` so the transaction hashing runs on the apply-block pool.
-        let tx_commitment = body.transactions().commitment();
-        if header.tx_commitment() != tx_commitment {
-            return Err(InvalidBlockError::InvalidBlockTxCommitment {
-                expected: tx_commitment,
-                actual: header.tx_commitment(),
+        signed_block: &SignedBlock,
+    ) -> Result<(PreparedBlockUpdate, Vec<u8>), ApplyBlockError> {
+        run_on_pool(&self.apply_pool, || {
+            let header = signed_block.header();
+            let body = signed_block.body();
+
+            // The header must commit to the body's transactions. Checked here rather than in
+            // `validate_block_header` so the transaction hashing runs on the apply-block pool.
+            let tx_commitment = body.transactions().commitment();
+            if header.tx_commitment() != tx_commitment {
+                return Err(InvalidBlockError::InvalidBlockTxCommitment {
+                    expected: tx_commitment,
+                    actual: header.tx_commitment(),
+                }
+                .into());
             }
-            .into());
-        }
 
-        let notes = Self::build_note_records(header, body)?;
-        let (nullifier_tree_update, account_tree_update) =
-            self.compute_tree_mutations(header, body)?;
+            let notes = Self::build_note_records(header, body)?;
+            let (nullifier_tree_update, account_tree_update) =
+                self.compute_tree_mutations(header, body)?;
 
-        // Public account updates carry patches; private accounts are filtered out since they don't
-        // expose their state changes.
-        let account_patches =
-            body.updated_accounts().iter().filter_map(|update| match update.details() {
-                AccountUpdateDetails::Public(patch) => Some(patch.clone()),
-                AccountUpdateDetails::Private => None,
-            });
-        let account_forest_update = self
-            .forest
-            .compute_block_update_mutations(header.block_num(), account_patches)
-            .map_err(ApplyBlockError::AccountStateForestPreparation)?;
+            // Public account updates carry patches; private accounts are filtered out since they
+            // don't expose their state changes.
+            let account_patches =
+                body.updated_accounts().iter().filter_map(|update| match update.details() {
+                    AccountUpdateDetails::Public(patch) => Some(patch.clone()),
+                    AccountUpdateDetails::Private => None,
+                });
+            let account_forest_update = self
+                .forest
+                .compute_block_update_mutations(header.block_num(), account_patches)
+                .map_err(ApplyBlockError::AccountStateForestPreparation)?;
 
-        Ok(PreparedBlockUpdate {
-            notes,
-            nullifier_tree_update,
-            account_tree_update,
-            account_forest_update,
+            let prepared = PreparedBlockUpdate {
+                notes,
+                nullifier_tree_update,
+                account_tree_update,
+                account_forest_update,
+            };
+            Ok((prepared, signed_block.to_bytes()))
         })
     }
 
@@ -371,33 +370,36 @@ impl WriteWorker {
         account_tree_update: AccountMutationSet,
         account_forest_update: PreparedAccountStateForestBlockUpdate<AccountStateForestBackend>,
     ) -> Arc<StateSnapshot> {
-        self.nullifier_tree
-            .apply_mutations(nullifier_tree_update)
-            .unwrap_or_else(|error| {
-                panic!("nullifier tree update failed after database commit: {error}")
-            });
-
-        self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
-            panic!("account tree update failed after database commit: {error}")
-        });
-
-        self.blockchain.push(block_commitment);
-
-        self.forest
-            .apply_precomputed_block_update(block_num, account_forest_update)
-            .unwrap_or_else(|error| {
-                panic!("account-state forest update failed after database commit: {error}")
-            });
-
-        Arc::new(StateSnapshot::new(
+        let apply_pool = Arc::clone(&self.apply_pool);
+        run_on_pool(&apply_pool, || {
             self.nullifier_tree
-                .reader()
-                .expect("nullifier tree snapshot creation should not fail"),
-            self.blockchain.clone(),
-            self.account_tree.reader(),
-            self.forest.reader().expect("forest snapshot creation should not fail"),
-            SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
-        ))
+                .apply_mutations(nullifier_tree_update)
+                .unwrap_or_else(|error| {
+                    Self::abort_after_post_commit_failure("nullifier tree", &error)
+                });
+
+            self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
+                Self::abort_after_post_commit_failure("account tree", &error)
+            });
+
+            self.blockchain.push(block_commitment);
+
+            self.forest
+                .apply_precomputed_block_update(block_num, account_forest_update)
+                .unwrap_or_else(|error| {
+                    Self::abort_after_post_commit_failure("account-state forest", &error)
+                });
+
+            Arc::new(StateSnapshot::new(
+                self.nullifier_tree
+                    .reader()
+                    .expect("nullifier tree snapshot creation should not fail"),
+                self.blockchain.clone(),
+                self.account_tree.reader(),
+                self.forest.reader().expect("forest snapshot creation should not fail"),
+                SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
+            ))
+        })
     }
 
     /// Validates that the block header is consistent with the committed chain state.

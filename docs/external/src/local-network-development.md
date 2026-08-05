@@ -228,14 +228,12 @@ chain data before starting with a different genesis configuration:
 make local-network-delete
 ```
 
-## Storage Key Fixture
+## Storage Key Setup
 
-The Compose bootstrap service stages a committed, insecure two-of-three storage-key fixture in each validator data
-directory. It gives each validator its own secret share and validates the expected participant index before marking
-bootstrap complete. The running validators read only their staged paths; they do not run the production DKG ceremony.
-
-The fixture is public test data. Never use it outside local development. Run the
-[storage key ceremony](./network-operator/validator.md#storage-key-setup) for a real network.
+The Compose bootstrap service runs the two-of-three storage key ceremony and validates each validator's output before
+starting the network. This can take several minutes. For a faster local start, set
+`MIDEN_VALIDATOR_USE_STORAGE_KEY_FIXTURE=true` to use the committed insecure fixture instead. The fixture is public test
+data and must never be used outside local development.
 
 ## Check the RPC API
 

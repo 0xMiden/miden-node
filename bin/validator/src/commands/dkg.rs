@@ -552,7 +552,7 @@ where
     let identity_secret = decode_identity_secret(&identity_secret_bytes)?;
     let participant = participant_for_identity(&ceremony.manifest, &identity_secret)?;
 
-    println!("Creating Golden decryption dealing for participant {}.", participant.get());
+    println!("Creating decryption dealing for participant {}.", participant.get());
     let started = Instant::now();
     let decryption = create_dealing::<StorageGroup, B>(
         participant,
@@ -562,12 +562,12 @@ where
     )
     .context("failed to create decryption dealing")?;
     println!(
-        "Created Golden decryption dealing for participant {} in {:.1?}.",
+        "Created decryption dealing for participant {} in {:.1?}.",
         participant.get(),
         started.elapsed(),
     );
 
-    println!("Creating Golden context dealing for participant {}.", participant.get());
+    println!("Creating context dealing for participant {}.", participant.get());
     let started = Instant::now();
     let context = create_dealing_with_secret::<StorageGroup, B>(
         participant,
@@ -578,7 +578,7 @@ where
     )
     .context("failed to create context dealing")?;
     println!(
-        "Created Golden context dealing for participant {} in {:.1?}.",
+        "Created context dealing for participant {} in {:.1?}.",
         participant.get(),
         started.elapsed(),
     );
@@ -717,7 +717,7 @@ where
     )?;
 
     println!(
-        "Completing Golden decryption round for participant {} with {} dealings.",
+        "Completing decryption round for participant {} with {} dealings.",
         participant.get(),
         decryption_dealings.len(),
     );
@@ -732,13 +732,13 @@ where
     )
     .context("failed to complete decryption round")?;
     println!(
-        "Completed Golden decryption round for participant {} in {:.1?}.",
+        "Completed decryption round for participant {} in {:.1?}.",
         participant.get(),
         started.elapsed(),
     );
 
     println!(
-        "Completing Golden context round for participant {} with {} dealings.",
+        "Completing context round for participant {} with {} dealings.",
         participant.get(),
         context_dealings.len(),
     );
@@ -753,7 +753,7 @@ where
     )
     .context("failed to complete context round")?;
     println!(
-        "Completed Golden context round for participant {} in {:.1?}.",
+        "Completed context round for participant {} in {:.1?}.",
         participant.get(),
         started.elapsed(),
     );

@@ -356,7 +356,7 @@ impl WriteWorker {
     /// previous published snapshot (block-scoped, so still consistent) until then, and the startup
     /// consistency checks detect the trees lagging the database on restart.
     ///
-    /// May block on backend I/O and fans out via rayon, so it must run on the dedicated
+    /// The work may block on backend I/O and fans out via rayon, so it runs on the dedicated
     /// apply-block pool via [`run_on_pool`].
     ///
     /// # Panics
@@ -375,11 +375,11 @@ impl WriteWorker {
             self.nullifier_tree
                 .apply_mutations(nullifier_tree_update)
                 .unwrap_or_else(|error| {
-                    Self::abort_after_post_commit_failure("nullifier tree", &error)
+                    panic!("nullifier tree update failed after database commit: {error}")
                 });
 
             self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
-                Self::abort_after_post_commit_failure("account tree", &error)
+                panic!("account tree update failed after database commit: {error}")
             });
 
             self.blockchain.push(block_commitment);
@@ -387,7 +387,7 @@ impl WriteWorker {
             self.forest
                 .apply_precomputed_block_update(block_num, account_forest_update)
                 .unwrap_or_else(|error| {
-                    Self::abort_after_post_commit_failure("account-state forest", &error)
+                    panic!("account-state forest update failed after database commit: {error}")
                 });
 
             Arc::new(StateSnapshot::new(

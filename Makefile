@@ -183,6 +183,10 @@ install-network-monitor: ## Installs network monitor binary
 install-benchmark: ## Installs the benchmark binary
 	cargo install --path bin/benchmark --locked
 
+.PHONY: install-large-account-benchmark
+install-large-account-benchmark: ## Installs the large account benchmark binary
+	cargo install --path bin/large-account-benchmark --locked
+
 # --- docker --------------------------------------------------------------------------------------
 
 .PHONY: local-network-build

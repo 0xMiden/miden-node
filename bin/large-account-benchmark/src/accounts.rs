@@ -1,0 +1,255 @@
+//! Account construction for the seeded wallet + counter pair.
+//!
+//! Self-contained by design: the assembly under `src/assets/`, the storage slot names, the component
+//! paths, and the build order all live here, so this tool depends on nothing outside its own crate.
+//!
+//! Two internal invariants tie these accounts to the increment driver in [`crate::increment`]:
+//!
+//! - the counter's note allowlist must contain the root of the increment note script, pinned as
+//!   `INCREMENT_NOTE_SCRIPT_ROOT` in this module's tests, and
+//! - the wallet must expose `increment_and_create_note` at [`WALLET_COUNTER_COMPONENT_PATH`], which
+//!   the increment transaction script `call`s.
+//!
+//! Both derive from the assembly here, and both sides of each pair are built from the same constants,
+//! so they cannot disagree within this binary. The pinned root exists to catch an accidental edit to
+//! the assembly, which would otherwise only surface as rejected notes on a live chain.
+
+use std::sync::LazyLock;
+
+use anyhow::{Context, Result};
+use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountComponentCode,
+    AccountId,
+    AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
+use miden_protocol::note::NoteScript;
+use miden_protocol::{Felt, Word};
+use miden_standards::account::auth::{Approver, AuthNetworkAccount, AuthSingleSig};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::tx_script::ExpirationTransactionScript;
+use rand::{RngExt, SeedableRng};
+use rand_chacha::ChaCha20Rng;
+
+// MASM SOURCES
+// ================================================================================================
+
+/// The counter account's program (also linked into the increment note script).
+const COUNTER_PROGRAM: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
+
+/// The wallet self-counter component source.
+const WALLET_COUNTER_PROGRAM: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/wallet_counter_program.masm"));
+
+/// The increment note script source.
+const INCREMENT_COUNTER_NOTE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/increment_counter.masm"));
+
+// STORAGE SLOT NAMES
+// ================================================================================================
+
+/// Storage slot on the wallet holding the number of increment transactions it has committed.
+static WALLET_COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::monitor::wallet_contract::counter")
+        .expect("storage slot name should be valid")
+});
+
+/// Storage slot on the counter account holding the owner's account id.
+static OWNER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::monitor::counter_contract::owner")
+        .expect("storage slot name should be valid")
+});
+
+/// Name of the storage slot on the counter account holding the counter value. Exposed as a string
+/// so the value can be read back from RPC by name.
+pub const COUNTER_SLOT: &str = "miden::monitor::counter_contract::counter";
+
+/// Storage slot on the counter account holding the counter value.
+static COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new(COUNTER_SLOT).expect("storage slot name should be valid")
+});
+
+/// Storage slot holding the large map that makes the account oversized. The counter's own logic
+/// never touches this slot, but the ntx-builder must load the full account — map included — to
+/// build every increment transaction, which is the whole point of the benchmark.
+static BIG_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::monitor::counter_contract::big_map")
+        .expect("storage slot name should be valid")
+});
+
+/// Module path under which the wallet's self-counter component is compiled. The increment
+/// transaction script `call`s `increment_and_create_note` under this exact path, so the call
+/// resolves to the procedure root the account registered.
+pub const WALLET_COUNTER_COMPONENT_PATH: &str = "wallet::program";
+
+/// Compiles the wallet's self-counter component code.
+///
+/// Both the account builder and the increment transaction script go through here: the script
+/// dynamically links this code so its `call` resolves to the same procedure root the account
+/// registered. Compilation is deterministic, so both sites get identical code.
+pub fn wallet_counter_component_code() -> Result<AccountComponentCode> {
+    CodeBuilder::default()
+        .compile_component_code(WALLET_COUNTER_COMPONENT_PATH, WALLET_COUNTER_PROGRAM)
+        .context("failed to compile wallet counter component code")
+}
+
+// WALLET
+// ================================================================================================
+
+/// Creates the owner wallet: Falcon512 auth plus the self-counter component the increment
+/// transaction script calls into. Returns the account and its signing key.
+pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
+    let secret_key = SecretKey::with_rng(&mut rng);
+    let auth_component: AccountComponent = AuthSingleSig::new(Approver::new(
+        secret_key.public_key().into(),
+        AuthScheme::Falcon512Poseidon2,
+    ))
+    .into();
+    let init_seed: [u8; 32] = rng.random();
+
+    let component_code = wallet_counter_component_code()?;
+
+    let counter_slot = StorageSlot::with_value(WALLET_COUNTER_SLOT_NAME.clone(), Word::empty());
+    let metadata = AccountComponentMetadata::new(WALLET_COUNTER_COMPONENT_PATH);
+    let counter_component = AccountComponent::new(component_code, vec![counter_slot], metadata)?;
+
+    let account = AccountBuilder::new(init_seed)
+        .account_type(AccountType::Public)
+        .with_auth_component(auth_component)
+        .with_component(counter_component)
+        .build()
+        .context("failed to build wallet account")?;
+
+    Ok((account, secret_key))
+}
+
+// COUNTER
+// ================================================================================================
+
+/// Compiles the increment note script whose root must appear in the counter's note allowlist.
+pub fn create_increment_script() -> Result<NoteScript> {
+    CodeBuilder::new()
+        .with_linked_module("external_contract::counter_contract", COUNTER_PROGRAM)
+        .context("failed to create script builder with library")?
+        .compile_note_script(INCREMENT_COUNTER_NOTE)
+        .context("failed to compile note script")
+}
+
+/// Builds the large storage-map slot, keyed `[i, 0, 0, 0]`. Returns an empty vector when `entries` is
+/// zero.
+///
+/// The values carry no meaning and nothing ever reads them. The counter's own logic never touches
+/// this slot. The one requirement is that they are not all-zero, since a zero value denotes deletion
+/// in the underlying SMT and the entry would not be stored at all: hence the trailing `1`.
+fn counter_big_map_slots(entries: u32) -> Vec<StorageSlot> {
+    if entries == 0 {
+        return Vec::new();
+    }
+
+    let map_entries: Vec<(StorageMapKey, Word)> = (0..entries)
+        .map(|i| (StorageMapKey::from_index(i), Word::from([i, 0, 0, 1])))
+        .collect();
+
+    let map = StorageMap::with_entries(map_entries).expect("map entries should be valid");
+    vec![StorageSlot::with_map(BIG_MAP_SLOT_NAME.clone(), map)]
+}
+
+/// Creates the network counter account owned by `owner_account_id`, with `big_map_entries` entries
+/// pre-populated into its benchmark storage map.
+pub fn create_counter_account(
+    owner_account_id: AccountId,
+    big_map_entries: u32,
+) -> Result<Account> {
+    let owner_account_id_prefix = owner_account_id.prefix().as_felt();
+    let owner_account_id_suffix = owner_account_id.suffix();
+
+    let owner_id_slot = StorageSlot::with_value(
+        OWNER_SLOT_NAME.clone(),
+        Word::from([owner_account_id_suffix, owner_account_id_prefix, Felt::ZERO, Felt::ZERO]),
+    );
+    let counter_slot = StorageSlot::with_value(COUNTER_SLOT_NAME.clone(), Word::empty());
+
+    let component_code = CodeBuilder::default()
+        .compile_component_code("counter::program", COUNTER_PROGRAM)
+        .context("failed to compile counter component code")?;
+
+    // The counter's own two value slots, followed by the large benchmark map slot.
+    // `AccountComponent::new` only bounds the slot count (<256); the map slot need not be
+    // referenced by the component MASM.
+    let mut storage_slots = vec![counter_slot, owner_id_slot];
+    storage_slots.extend(counter_big_map_slots(big_map_entries));
+
+    let metadata = AccountComponentMetadata::new("counter::program");
+    let account_code = AccountComponent::new(component_code, storage_slots, metadata)?;
+
+    let increment_script = create_increment_script()?;
+    let allowed_scripts = [increment_script.root()].into_iter().collect();
+
+    let allowed_tx_scripts = [ExpirationTransactionScript::script_root()].into_iter().collect();
+    let network_account_auth: AccountComponent =
+        AuthNetworkAccount::with_allowed_notes(allowed_scripts)
+            .expect("list is not empty")
+            .with_allowed_tx_scripts(allowed_tx_scripts)
+            .into();
+
+    let init_seed: [u8; 32] = rand::random();
+    AccountBuilder::new(init_seed)
+        .account_type(AccountType::Public)
+        .with_component(account_code)
+        .with_auth_component(network_account_auth)
+        .build()
+        .context("failed to build counter account")
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::{create_counter_account, create_increment_script, create_wallet_account};
+
+    /// The increment note script root.
+    const INCREMENT_NOTE_SCRIPT_ROOT: &str =
+        "0x84cab4ae9c724836a015a458fc540c850fd2126602290b0d3dcd2dd2085e6aa3";
+
+    #[test]
+    fn increment_note_script_root_is_unchanged() {
+        let root = create_increment_script().expect("increment script should compile").root();
+
+        assert_eq!(
+            root.to_string(),
+            INCREMENT_NOTE_SCRIPT_ROOT,
+            "the increment note script root changed; accounts seeded from this version will reject \
+             increment notes built from a different copy of the assembly",
+        );
+    }
+
+    /// Both accounts must assemble, and the counter must be buildable with a populated map. A small
+    /// entry count keeps this fast while still exercising the map-slot path.
+    #[test]
+    fn accounts_build_with_and_without_a_populated_map() {
+        let (wallet, _secret_key) = create_wallet_account().expect("wallet should build");
+
+        let small = create_counter_account(wallet.id(), 0).expect("counter should build empty");
+        let big = create_counter_account(wallet.id(), 64).expect("counter should build with a map");
+
+        // Assert the delta rather than absolute counts, which also include the auth component's
+        // slots: a populated map must add exactly one slot, and an empty one must add none.
+        assert_eq!(
+            big.storage().slots().len(),
+            small.storage().slots().len() + 1,
+            "a populated map should add exactly one storage slot",
+        );
+    }
+}

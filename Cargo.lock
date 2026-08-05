@@ -3355,6 +3355,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-large-account-benchmark"
+version = "0.16.0-alpha.3"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fs-err",
+ "hex",
+ "humantime",
+ "miden-node-proto",
+ "miden-protocol",
+ "miden-standards",
+ "miden-tx",
+ "rand 0.10.2",
+ "rand_chacha 0.10.0",
+ "tokio",
+ "tonic",
+ "url",
+]
+
+[[package]]
 name = "miden-lifted-air"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

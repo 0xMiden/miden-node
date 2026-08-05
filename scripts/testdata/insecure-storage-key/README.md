@@ -1,7 +1,7 @@
-# Insecure Golden storage key
+# Insecure storage key
 
-These files hold a deterministic **two-of-three** Golden storage key used by the docker-compose network and the
-benchmark smoke test to exercise threshold storage.
+These files hold a deterministic **two-of-three** storage key used by the docker-compose network and the benchmark smoke
+test to exercise threshold storage.
 
 Layout:
 
@@ -17,9 +17,9 @@ impossible even though each validator stores encrypted records.
 
 This key is public and must not be used outside tests.
 
-Compose checks each staged bundle with `miden-validator golden-dkg validate-fixture` before it marks the local network
-as bootstrapped. This fixture-only check binds the secret share to its expected participant index. Production bundles
-must use `miden-validator golden-dkg validate`, which also checks genesis, the ceremony manifest, and signed transcript.
+Compose checks each staged bundle with `miden-validator dkg validate-fixture` before it marks the local network as
+bootstrapped. This fixture-only check binds the secret share to its expected participant index. Production bundles must
+use `miden-validator dkg validate`, which also checks genesis, the ceremony manifest, and signed transcript.
 
 ## Regenerating
 

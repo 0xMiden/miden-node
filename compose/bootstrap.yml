@@ -57,7 +57,7 @@ services:
           cp "/fixtures/storage-key/validator-$${VALIDATOR}/secret-share.wire" \
             "$${STORAGE_KEY}/secret-share.wire"
           chmod 600 "$${STORAGE_KEY}/secret-share.wire"
-          miden-validator golden-dkg validate-fixture \
+          miden-validator dkg validate-fixture \
             --bundle-directory "$${STORAGE_KEY}" \
             --expected-participant "$${VALIDATOR}"
         done

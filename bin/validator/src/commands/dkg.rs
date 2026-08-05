@@ -46,15 +46,18 @@ use zeroize::Zeroizing;
 
 use super::ValidatorSigningKey;
 
+#[cfg(test)]
+mod tests;
+
 type StorageGroup = Secp256k1GoldenGroup;
 type StorageScalar = <StorageGroup as GoldenGroup>::Scalar;
 type StorageElement = <StorageGroup as GoldenGroup>::Element;
 type PublicOutput = (StorageElement, BTreeMap<ParticipantIndex, StorageElement>);
 
-const REGISTRATION_VERSION: &str = "miden-golden-dkg-registration-v1";
-const MANIFEST_VERSION: &str = "miden-golden-dkg-manifest-v1";
-const REGISTRATION_SIGNATURE_DOMAIN: &[u8] = b"miden-golden-dkg-registration-signature-v1";
-const IDENTITY_SECRET_MAGIC: &[u8] = b"miden-golden-dkg-identity-v1\0";
+const REGISTRATION_VERSION: &str = "miden-storage-key-dkg-registration-v1";
+const MANIFEST_VERSION: &str = "miden-storage-key-dkg-manifest-v1";
+const REGISTRATION_SIGNATURE_DOMAIN: &[u8] = b"miden-storage-key-dkg-registration-signature-v1";
+const IDENTITY_SECRET_MAGIC: &[u8] = b"miden-storage-key-dkg-identity-v1\0";
 const IDENTITY_SECRET_FILE: &str = "identity-secret.wire";
 const REGISTRATION_FILE: &str = "registration.toml";
 const MANIFEST_FILE: &str = "manifest.toml";
@@ -63,28 +66,28 @@ const CONTEXT_CONFIG_FILE: &str = "context-config.wire";
 const DECRYPTION_DEALING_FILE: &str = "decryption-dealing.wire";
 const CONTEXT_DEALING_FILE: &str = "context-dealing.wire";
 const PRIVATE_STATE_FILE: &str = "private-state.wire";
-const PRIVATE_STATE_MAGIC: &[u8] = b"miden-golden-dkg-local-state-v1\0";
+const PRIVATE_STATE_MAGIC: &[u8] = b"miden-storage-key-dkg-local-state-v1\0";
 const EPOCH_FILE: &str = "epoch.hex";
 const SETUP_CONTEXT_FILE: &str = "setup-context.wire";
 const PUBLIC_KEY_SET_FILE: &str = "public-key-set.wire";
 const SECRET_SHARE_FILE: &str = "secret-share.wire";
-const TRANSCRIPT_VERSION: &str = "miden-golden-dkg-transcript-v1";
-const TRANSCRIPT_ACCEPTANCE_VERSION: &str = "miden-golden-dkg-transcript-acceptance-v1";
-const TRANSCRIPT_SIGNATURE_DOMAIN: &[u8] = b"miden-golden-dkg-transcript-signature-v1";
+const TRANSCRIPT_VERSION: &str = "miden-storage-key-dkg-transcript-v1";
+const TRANSCRIPT_ACCEPTANCE_VERSION: &str = "miden-storage-key-dkg-transcript-acceptance-v1";
+const TRANSCRIPT_SIGNATURE_DOMAIN: &[u8] = b"miden-storage-key-dkg-transcript-signature-v1";
 const TRANSCRIPT_FILE: &str = "transcript.toml";
 const TRANSCRIPT_ACCEPTANCE_FILE: &str = "transcript-acceptance.toml";
 const TRANSCRIPT_ACCEPTANCES_FILE: &str = "transcript-acceptances.toml";
 
-/// Inputs for one Golden DKG ceremony command.
+/// Inputs for one DKG ceremony command.
 #[derive(clap::Args)]
-pub struct GoldenDkgOptions {
+pub struct DkgOptions {
     #[command(subcommand)]
-    command: GoldenDkgCommand,
+    command: DkgCommand,
 }
 
-/// Golden DKG ceremony commands.
+/// DKG ceremony commands.
 #[derive(clap::Subcommand)]
-enum GoldenDkgCommand {
+enum DkgCommand {
     /// Generates this validator's DKG identity and public registration.
     Identity {
         /// Trusted genesis block for the network.
@@ -100,7 +103,7 @@ enum GoldenDkgCommand {
         output_directory: PathBuf,
     },
 
-    /// Builds the public configurations for both Golden DKG rounds.
+    /// Builds the public configurations for both DKG rounds.
     Prepare {
         /// Trusted genesis block for the network.
         #[arg(long, value_name = "FILE")]
@@ -233,7 +236,7 @@ enum GoldenDkgCommand {
         #[arg(long, value_name = "DIR")]
         bundle_directory: PathBuf,
 
-        /// Golden participant index that must own the secret share.
+        /// DKG participant index that must own the secret share.
         #[arg(long, value_name = "NUM")]
         expected_participant: u32,
     },
@@ -317,21 +320,21 @@ struct TranscriptAcceptances {
     acceptances: Vec<TranscriptAcceptance>,
 }
 
-/// Runs one Golden DKG ceremony command.
-pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
+/// Runs one DKG ceremony command.
+pub async fn run(options: DkgOptions) -> anyhow::Result<()> {
     match options.command {
-        GoldenDkgCommand::Identity { genesis, signing_key, output_directory } => {
+        DkgCommand::Identity { genesis, signing_key, output_directory } => {
             let signer = signing_key.into_signer().await?;
             generate_identity(&genesis, &signer, &output_directory).await
         },
-        GoldenDkgCommand::Prepare {
+        DkgCommand::Prepare {
             genesis,
             threshold,
             epoch,
             registration,
             output_directory,
         } => prepare(&genesis, threshold, &epoch, &registration, &output_directory),
-        GoldenDkgCommand::Deal {
+        DkgCommand::Deal {
             genesis,
             ceremony_directory,
             identity_secret,
@@ -343,7 +346,7 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             &output_directory,
             &mut OsRng,
         ),
-        GoldenDkgCommand::Accept {
+        DkgCommand::Accept {
             genesis,
             ceremony_directory,
             signing_key,
@@ -362,7 +365,7 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             )
             .await
         },
-        GoldenDkgCommand::Finalize {
+        DkgCommand::Finalize {
             genesis,
             ceremony_directory,
             identity_secret,
@@ -383,7 +386,7 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
             &transcript_acceptance,
             &output_directory,
         ),
-        GoldenDkgCommand::Validate {
+        DkgCommand::Validate {
             genesis,
             ceremony_directory,
             validator_public_key,
@@ -391,7 +394,7 @@ pub async fn run(options: GoldenDkgOptions) -> anyhow::Result<()> {
         } => {
             validate_bundle(&genesis, &ceremony_directory, &validator_public_key, &bundle_directory)
         },
-        GoldenDkgCommand::ValidateFixture { bundle_directory, expected_participant } => {
+        DkgCommand::ValidateFixture { bundle_directory, expected_participant } => {
             validate_fixture_bundle(&bundle_directory, expected_participant)
         },
     }
@@ -444,7 +447,7 @@ async fn generate_identity(
         write_new_file(&directory.join(REGISTRATION_FILE), registration.as_bytes(), false)
     })?;
 
-    println!("Golden DKG identity written to {}.", output_directory.display());
+    println!("DKG identity written to {}.", output_directory.display());
     Ok(())
 }
 
@@ -478,9 +481,8 @@ fn prepare(
             registrations.remove(validator_key.to_bytes().as_slice()).with_context(|| {
                 format!("missing registration for genesis validator {validator_key_hex}")
             })?;
-        let participant = ParticipantIndex::new(
-            u32::try_from(offset + 1).context("too many Golden DKG participants")?,
-        )?;
+        let participant =
+            ParticipantIndex::new(u32::try_from(offset + 1).context("too many DKG participants")?)?;
         let identity_key_hex = hex::encode(StorageGroup::encode_element(&identity_key));
 
         registry_entries.push((participant, identity_key));
@@ -526,7 +528,7 @@ fn prepare(
         write_new_file(&directory.join(CONTEXT_CONFIG_FILE), &context_config, false)
     })?;
 
-    println!("Golden DKG configuration written to {}.", output_directory.display());
+    println!("DKG configuration written to {}.", output_directory.display());
     Ok(())
 }
 
@@ -600,7 +602,7 @@ where
         write_new_file(&directory.join(PRIVATE_STATE_FILE), &state, true)
     })?;
 
-    println!("Golden DKG dealings written to {}.", output_directory.display());
+    println!("DKG dealings written to {}.", output_directory.display());
     Ok(())
 }
 
@@ -652,7 +654,7 @@ where
         write_new_file(&directory.join(TRANSCRIPT_FILE), &transcript_bytes, false)?;
         write_new_file(&directory.join(TRANSCRIPT_ACCEPTANCE_FILE), acceptance.as_bytes(), false)
     })?;
-    println!("Golden DKG transcript accepted in {}.", output_directory.display());
+    println!("DKG transcript accepted in {}.", output_directory.display());
     Ok(())
 }
 
@@ -773,11 +775,11 @@ where
         &acceptances,
         output_directory,
     )?;
-    println!("Golden storage key bundle written to {}.", output_directory.display());
+    println!("Storage key bundle written to {}.", output_directory.display());
     Ok(())
 }
 
-/// Validates and publishes one final Golden operator key bundle.
+/// Validates and publishes one final storage key bundle.
 fn publish_operator_bundle(
     material: &Ehtdh1Material<StorageGroup>,
     ceremony: &Ceremony,
@@ -801,7 +803,7 @@ fn publish_operator_bundle(
         secret_share.to_vec(),
     )
     .decode()
-    .context("generated invalid Golden operator key")?;
+    .context("generated invalid storage key")?;
 
     publish_directory(output_directory, |directory| {
         write_new_file(&directory.join(EPOCH_FILE), ceremony.manifest.epoch.as_bytes(), false)?;
@@ -861,7 +863,7 @@ fn validate_bundle(
         fs_err::read(bundle_directory.join(SECRET_SHARE_FILE))?,
     )
     .decode()
-    .context("invalid Golden operator key bundle")?;
+    .context("invalid storage key bundle")?;
     ensure!(
         operator_key.participant() == expected_participant,
         "bundle belongs to participant {}, expected {}",
@@ -882,10 +884,7 @@ fn validate_bundle(
                 )?,
         "bundle transcript roots do not match accepted transcript",
     );
-    println!(
-        "Golden storage key bundle is valid for participant {}.",
-        expected_participant.get(),
-    );
+    println!("Storage key bundle is valid for participant {}.", expected_participant.get());
     Ok(())
 }
 
@@ -905,17 +904,14 @@ fn validate_fixture_bundle(
         fs_err::read(bundle_directory.join(SECRET_SHARE_FILE))?,
     )
     .decode()
-    .context("invalid Golden operator key fixture")?;
+    .context("invalid storage key fixture")?;
     ensure!(
         operator_key.participant() == expected_participant,
         "fixture belongs to participant {}, expected {}",
         operator_key.participant().get(),
         expected_participant.get(),
     );
-    println!(
-        "Golden storage key fixture is valid for participant {}.",
-        expected_participant.get(),
-    );
+    println!("Storage key fixture is valid for participant {}.", expected_participant.get());
     Ok(())
 }
 
@@ -980,8 +976,8 @@ fn read_validated_registrations(
 /// Reads a ceremony directory and checks every public value against genesis.
 fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremony> {
     let manifest_path = directory.join(MANIFEST_FILE);
-    let manifest_text = fs_err::read_to_string(&manifest_path)
-        .with_context(|| format!("failed to read DKG manifest {}", manifest_path.display()))?;
+    let manifest_text =
+        fs_err::read_to_string(&manifest_path).context("failed to read DKG manifest")?;
     let manifest: Manifest =
         toml::from_str(&manifest_text).context("failed to decode DKG manifest")?;
     ensure!(manifest.version == MANIFEST_VERSION, "unsupported DKG manifest version");
@@ -1040,9 +1036,8 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
     for (offset, (entry, validator_key)) in
         manifest.participants.iter().zip(validator_keys).enumerate()
     {
-        let participant = ParticipantIndex::new(
-            u32::try_from(offset + 1).context("too many Golden DKG participants")?,
-        )?;
+        let participant =
+            ParticipantIndex::new(u32::try_from(offset + 1).context("too many DKG participants")?)?;
         ensure!(entry.participant_index == participant.get(), "non-canonical participant order");
         ensure!(
             entry.validator_public_key == hex::encode(validator_key.to_bytes()),
@@ -1347,7 +1342,7 @@ fn aggregate_public_output<P>(
     Ok((public_key, public_shares))
 }
 
-/// Reproduces Golden's completion transcript root from public dealings.
+/// Reproduces the completion transcript root from public dealings.
 fn completion_root<P>(
     dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, P>>,
 ) -> [u8; 32] {
@@ -1545,7 +1540,7 @@ fn decode_validator_signature(value: &str) -> anyhow::Result<Signature> {
     Ok(signature)
 }
 
-/// Parses a non-identity Golden DKG public key.
+/// Parses a non-identity DKG public key.
 fn decode_identity_public_key(
     value: &str,
 ) -> anyhow::Result<<StorageGroup as GoldenGroup>::Element> {
@@ -1595,7 +1590,7 @@ fn publish_directory(
     let parent = output_directory.parent().unwrap_or_else(|| Path::new("."));
     fs_err::create_dir_all(parent).context("failed to create output parent directory")?;
     let temporary = tempfile::Builder::new()
-        .prefix(".golden-dkg-")
+        .prefix(".storage-key-dkg-")
         .tempdir_in(parent)
         .context("failed to create temporary output directory")?;
     write(temporary.path())?;
@@ -1649,6 +1644,3 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
-
-#[cfg(test)]
-mod tests;

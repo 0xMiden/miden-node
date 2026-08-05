@@ -31,8 +31,8 @@ fn write_genesis(root: &Path) -> TestResultWith<TestGenesis> {
 
 #[test]
 fn committed_fixture_has_one_valid_share_per_participant() -> TestResult {
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scripts/testdata/insecure-golden-storage-key");
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/testdata/insecure-storage-key");
     let root = tempfile::tempdir()?;
     let mut shares = Vec::new();
 
@@ -712,7 +712,7 @@ async fn deal_rejects_unknown_identity_and_existing_output() -> TestResult {
 
 #[tokio::test]
 #[ignore = "slow: runs the concrete Secp/Secq proof backend"]
-async fn paper_backend_completes_two_round_ceremony() -> TestResult {
+async fn production_backend_completes_two_round_ceremony() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 2, 2).await?;
     let mut rng = ChaCha20Rng::from_seed([44; 32]);

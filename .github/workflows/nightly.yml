@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 jobs:
-  golden-dkg:
-    name: Golden DKG production backend
+  dkg:
+    name: DKG production backend
     runs-on: warp-ubuntu-latest-x64-8x
     timeout-minutes: 45
     steps:
@@ -30,10 +30,10 @@ jobs:
       - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
           tool: nextest@0.9.122
-      - name: Run the paper-backed ceremony
+      - name: Run the production ceremony
         run: |
           cargo nextest run -p miden-validator \
-            paper_backend_completes_two_round_ceremony \
+            production_backend_completes_two_round_ceremony \
             --run-ignored ignored-only
 
   # Run tests on the beta channel to provide feedback for Rust team.

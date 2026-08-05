@@ -28,16 +28,16 @@ the block header, this next-key commitment is authenticated by the existing vali
 rotation safe: the network can verify that the next validator key was authorized by the validator that signed the
 current block.
 
-## Golden Storage Key Setup
+## Storage Key Setup
 
-The Golden DKG creates the storage key used to re-encrypt validated private inputs. Run one ceremony for the validator
-set committed in genesis. Participant indexes follow the order of validator signing keys in the genesis block.
+The DKG creates the storage key used to re-encrypt validated private inputs. Run one ceremony for the validator set
+committed in genesis. Participant indexes follow the order of validator signing keys in the genesis block.
 
 First, each operator creates a DKG identity and sends `registration.toml` to the coordinator. The signing key must match
 one key in genesis. Use `--signing-key.hex` instead of KMS only for local or private deployments.
 
 ```bash
-miden-validator golden-dkg identity \
+miden-validator dkg identity \
   --genesis genesis.dat \
   --signing-key.kms-id <validator-kms-key-id> \
   --output-directory identity
@@ -46,7 +46,7 @@ miden-validator golden-dkg identity \
 The coordinator collects every registration and prepares one common ceremony directory.
 
 ```bash
-miden-validator golden-dkg prepare \
+miden-validator dkg prepare \
   --genesis genesis.dat \
   --threshold 2 \
   --epoch <32-byte-hex-epoch> \
@@ -59,7 +59,7 @@ miden-validator golden-dkg prepare \
 Each operator checks the ceremony directory over the authenticated bootstrap channel, then creates its dealings.
 
 ```bash
-miden-validator golden-dkg deal \
+miden-validator dkg deal \
   --genesis genesis.dat \
   --ceremony-directory ceremony \
   --identity-secret identity/identity-secret.wire \
@@ -70,7 +70,7 @@ After all dealings are exchanged, every operator signs the same transcript. Repe
 validator.
 
 ```bash
-miden-validator golden-dkg accept \
+miden-validator dkg accept \
   --genesis genesis.dat \
   --ceremony-directory ceremony \
   --signing-key.kms-id <validator-kms-key-id> \
@@ -87,7 +87,7 @@ Compare `transcript.toml` byte for byte across all operators. Collect one signed
 operator. Each operator can then create and validate its own startup bundle.
 
 ```bash
-miden-validator golden-dkg finalize \
+miden-validator dkg finalize \
   --genesis genesis.dat \
   --ceremony-directory ceremony \
   --identity-secret identity/identity-secret.wire \
@@ -104,7 +104,7 @@ miden-validator golden-dkg finalize \
   --transcript-acceptance validator-3-transcript-acceptance.toml \
   --output-directory storage-key
 
-miden-validator golden-dkg validate \
+miden-validator dkg validate \
   --genesis genesis.dat \
   --ceremony-directory ceremony \
   --validator-public-key <validator-public-key-hex> \
@@ -155,11 +155,12 @@ is the supported provisioning path.
 Each validator must run inside its trusted execution environment. If transaction proving uses a remote prover, that
 prover also receives the plaintext inputs and must run inside the same trusted boundary.
 
-This version requires a fresh validator database. Phase 1 client ciphertext cannot be converted into Golden records.
+This version requires a fresh validator database. Phase 1 client ciphertext cannot be converted into threshold-encrypted
+records.
 
-The files contain canonical Golden wire bytes. Every validator uses the same setup context and public key set, but uses
-its own secret share. The validator will not start if any storage key option is missing or the key material is invalid.
-After validation, it stores only the transaction ID and the Golden threshold record. It does not store the client
+The files contain canonical wire bytes. Every validator uses the same setup context and public key set, but uses its own
+secret share. The validator will not start if any storage key option is missing or the key material is invalid. After
+validation, it stores only the transaction ID and the threshold-encrypted record. It does not store the client
 ciphertext.
 
 Use `miden-validator start --help` for the complete current option list.

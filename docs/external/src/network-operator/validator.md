@@ -155,9 +155,6 @@ is the supported provisioning path.
 Each validator must run inside its trusted execution environment. If transaction proving uses a remote prover, that
 prover also receives the plaintext inputs and must run inside the same trusted boundary.
 
-This version requires a fresh validator database. Phase 1 client ciphertext cannot be converted into threshold-encrypted
-records.
-
 The files contain canonical wire bytes. Every validator uses the same setup context and public key set, but uses its own
 secret share. The validator will not start if any storage key option is missing or the key material is invalid. After
 validation, it stores only the transaction ID and the threshold-encrypted record. It does not store the client

@@ -28,5 +28,5 @@ with:
 
 ```sh
 cargo test -p miden-validator --lib \
-  storage_key::tests::write_insecure_golden_fixture -- --ignored
+  storage_key::tests::write_insecure_storage_key_fixture -- --ignored
 ```

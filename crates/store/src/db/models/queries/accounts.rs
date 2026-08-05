@@ -1653,15 +1653,21 @@ pub(crate) struct AccountStorageMapRowInsert {
 // ================================================================================================
 
 /// Number of historical blocks to retain for vault assets, storage map values, and account codes.
-/// Entries older than `chain_tip - HISTORICAL_BLOCK_RETENTION` will be deleted, except for entries
-/// marked with `is_latest=true` which are always retained.
+/// Entries older than `chain_tip - HISTORICAL_BLOCK_RETENTION` will be deleted, except for each
+/// key's newest entry at or below the cutoff, which is always retained as the baseline for
+/// reconstructing state at blocks inside the retention window.
 pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 
-/// Clean up old entries for all accounts, deleting entries older than the retention window.
+/// Clean up old entries for all accounts, deleting entries that can no longer affect state
+/// reconstruction at any block within the retention window.
 ///
-/// Deletes rows where `block_num < chain_tip - HISTORICAL_BLOCK_RETENTION` and `is_latest = false`
-/// for vault assets and storage map values. Also deletes account codes that are no longer
-/// referenced by any account row within the retention window.
+/// Reconstruction at block `X` takes, per key, the newest row with `block_num <= X`. A row below
+/// the cutoff (`chain_tip - HISTORICAL_BLOCK_RETENTION`) may therefore still be the applicable
+/// value for blocks inside the window — up until the key's next-newer row. A vault-asset or
+/// storage-map row is deleted only when a newer row for the same key also sits at or below the
+/// cutoff; each key's newest row at or below the cutoff survives as its baseline. Account codes
+/// follow the analogous rule: a code is deleted only when no account row at or above the cutoff,
+/// no latest row, and no account's baseline row references it.
 ///
 /// # Returns
 /// A tuple of `(vault_assets_deleted, storage_map_values_deleted, account_codes_deleted)`
@@ -1696,13 +1702,24 @@ fn prune_account_vault_assets(
     conn: &mut SqliteConnection,
     cutoff_block: i64,
 ) -> Result<usize, DatabaseError> {
-    diesel::delete(
-        schema::account_vault_assets::table.filter(
-            schema::account_vault_assets::block_num
-                .lt(cutoff_block)
-                .and(schema::account_vault_assets::is_latest.eq(false)),
-        ),
+    use diesel::sql_types::BigInt;
+
+    // A below-cutoff row is deletable only when a newer row for the same key also sits at or below
+    // the cutoff; otherwise it is the key's baseline for reads inside the retention window.
+    diesel::sql_query(
+        "DELETE FROM account_vault_assets \
+         WHERE is_latest = 0 \
+           AND block_num < ?1 \
+           AND EXISTS ( \
+               SELECT 1 \
+               FROM account_vault_assets AS newer \
+               WHERE newer.account_id = account_vault_assets.account_id \
+                 AND newer.vault_key = account_vault_assets.vault_key \
+                 AND newer.block_num > account_vault_assets.block_num \
+                 AND newer.block_num <= ?1 \
+           )",
     )
+    .bind::<BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)
 }
@@ -1718,27 +1735,42 @@ fn prune_account_storage_map_values(
     conn: &mut SqliteConnection,
     cutoff_block: i64,
 ) -> Result<usize, DatabaseError> {
-    diesel::delete(
-        schema::account_storage_map_values::table.filter(
-            schema::account_storage_map_values::block_num
-                .lt(cutoff_block)
-                .and(schema::account_storage_map_values::is_latest.eq(false)),
-        ),
+    use diesel::sql_types::BigInt;
+
+    // Same baseline rule as `prune_account_vault_assets`, keyed by (account_id, slot_name, key).
+    diesel::sql_query(
+        "DELETE FROM account_storage_map_values \
+         WHERE is_latest = 0 \
+           AND block_num < ?1 \
+           AND EXISTS ( \
+               SELECT 1 \
+               FROM account_storage_map_values AS newer \
+               WHERE newer.account_id = account_storage_map_values.account_id \
+                 AND newer.slot_name = account_storage_map_values.slot_name \
+                 AND newer.key = account_storage_map_values.key \
+                 AND newer.block_num > account_storage_map_values.block_num \
+                 AND newer.block_num <= ?1 \
+           )",
     )
+    .bind::<BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)
 }
 
-/// Deletes account codes that are no longer referenced by any account row within the retention
-/// window.
+/// Deletes account codes that are no longer referenced by any account row that can serve a read
+/// within the retention window.
 ///
-/// An account code is safe to delete when no `accounts` row with `block_num >= cutoff_block`
-/// references its `code_commitment`. This covers both active accounts (`is_latest=true`) and
-/// recent historical rows that still fall within the retention window.
+/// An account code is safe to delete when it is referenced by no `accounts` row with
+/// `block_num >= cutoff_block`, no `is_latest=1` row, and no baseline row: for each account
+/// updated at or above the cutoff, the newest row at or below the cutoff. The baseline row is the
+/// applicable state for blocks inside the window that precede the account's first in-window
+/// update, so its code must survive even though the row itself is older than the cutoff.
 ///
 /// The `UNION ALL` shape and explicit index selections avoid SQLite choosing
 /// `idx_accounts_code_commitment` for the whole predicate, which is expensive when the account
-/// history table has millions of public rows.
+/// history table has millions of public rows. The baseline arm only enumerates accounts with
+/// public rows at or above the cutoff (via `idx_accounts_prune_code`), so its cost scales with
+/// recent activity rather than total history.
 #[miden_instrument(
     target = COMPONENT,
     err,
@@ -1766,6 +1798,23 @@ fn prune_account_codes(
                  FROM accounts INDEXED BY idx_accounts_latest_code_commitment \
                  WHERE code_commitment IS NOT NULL \
                    AND is_latest = 1 \
+                 UNION ALL \
+                 SELECT baseline.code_commitment \
+                 FROM ( \
+                     SELECT DISTINCT account_id \
+                     FROM accounts INDEXED BY idx_accounts_prune_code \
+                     WHERE code_commitment IS NOT NULL \
+                       AND block_num >= ?1 \
+                 ) AS active \
+                 JOIN accounts AS baseline \
+                   ON baseline.account_id = active.account_id \
+                 WHERE baseline.code_commitment IS NOT NULL \
+                   AND baseline.block_num = ( \
+                       SELECT MAX(prior.block_num) \
+                       FROM accounts AS prior \
+                       WHERE prior.account_id = active.account_id \
+                         AND prior.block_num <= ?1 \
+                   ) \
              ) \
          )",
     )

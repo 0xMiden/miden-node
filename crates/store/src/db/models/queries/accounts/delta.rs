@@ -31,7 +31,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{Felt, Word};
 
-use super::NetworkAccountType;
+use super::{NetworkAccountType, VALID_UNTIL_OPEN};
 use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_nonce};
 use crate::db::schema;
 use crate::errors::DatabaseError;
@@ -147,7 +147,7 @@ pub(super) enum AccountStateForInsert {
 /// ```sql
 /// SELECT created_at_block, network_account_type, nonce, code_commitment, storage_header
 /// FROM accounts
-/// WHERE account_id = ?1 AND is_latest = 1
+/// WHERE account_id = ?1 AND valid_until = {VALID_UNTIL_OPEN}
 /// ```
 pub(super) fn select_latest_account_state(
     conn: &mut SqliteConnection,
@@ -164,7 +164,7 @@ pub(super) fn select_latest_account_state(
         ),
     )
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-    .filter(schema::accounts::is_latest.eq(true))
+    .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
     .get_result(conn)
     .optional()?;
 

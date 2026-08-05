@@ -3220,8 +3220,8 @@ fn test_prune_history() {
         "vault reconstruction at the cutoff must include the baseline written at block_old"
     );
 
-    // Test that is_latest=true entries are never deleted, even if old Insert an old entry marked as
-    // latest
+    // Test that open-ended (current) entries are never deleted, even if old: insert an entry at
+    // block 0 that is never superseded.
     let faucet_4 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3).unwrap();
     let asset_old = Asset::Fungible(FungibleAsset::new(faucet_4, 9999).unwrap());
     let vault_key_old_latest = asset_old.id();
@@ -3234,21 +3234,20 @@ fn test_prune_history() {
     )
     .unwrap();
 
-    // This entry at block 0 is marked as is_latest=true by insert_account_vault_asset Run cleanup
-    // again
+    // This entry at block 0 keeps an open validity interval. Run cleanup again
     let (vault_deleted_2, ..) = queries::prune_history(conn, block_tip).unwrap();
 
-    // The old latest entry should not be deleted (vault_deleted_2 should be 0)
-    assert_eq!(vault_deleted_2, 0, "should not delete any is_latest=true entries");
+    // The old open-ended entry should not be deleted (vault_deleted_2 should be 0)
+    assert_eq!(vault_deleted_2, 0, "should not delete any open-ended entries");
 
-    // Verify the old latest entry still exists
+    // Verify the old open-ended entry still exists
     let (_, vault_assets_with_latest) =
         queries::select_account_vault_assets(conn, public_account_id, block_0..=block_tip).unwrap();
     assert!(
         vault_assets_with_latest
             .iter()
             .any(|v| v.block_num == block_0 && v.vault_key == vault_key_old_latest),
-        "is_latest=true entry should be retained even if old"
+        "open-ended entry should be retained even if old"
     );
 }
 

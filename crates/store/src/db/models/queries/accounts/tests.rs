@@ -462,7 +462,7 @@ fn test_upsert_accounts_inserts_storage_header() {
     // Verify exactly 1 latest account with storage exists
     let header_count: i64 = schema::accounts::table
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
         .filter(schema::accounts::storage_header.is_not_null())
         .count()
         .get_result(&mut conn)
@@ -472,7 +472,7 @@ fn test_upsert_accounts_inserts_storage_header() {
 }
 
 #[test]
-fn test_upsert_accounts_updates_is_latest_flag() {
+fn test_upsert_accounts_closes_previous_validity_interval() {
     let mut conn = setup_test_db();
     let (account, account_id) = create_test_account_with_storage();
 
@@ -556,10 +556,10 @@ fn test_upsert_accounts_updates_is_latest_flag() {
 
     assert_eq!(total_accounts, 2, "Expected 2 total account records");
 
-    // Verify only 1 is marked as latest
+    // Verify only 1 is open-ended (latest)
     let latest_accounts: i64 = schema::accounts::table
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
         .count()
         .get_result(&mut conn)
         .expect("Failed to count latest accounts");
@@ -745,7 +745,7 @@ fn test_upsert_accounts_with_empty_storage() {
     let storage_header_exists: Option<bool> = SelectDsl::select(
         schema::accounts::table
             .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-            .filter(schema::accounts::is_latest.eq(true)),
+            .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN)),
         schema::accounts::storage_header.is_not_null(),
     )
     .first(&mut conn)
@@ -1572,7 +1572,7 @@ fn network_accounts_subset_classifies_correctly() {
     insert_block_header(&mut conn, block_num);
 
     // Three accounts with distinct classifications. AccountIds are dummies — the queries only care
-    // about the (account_id, network_account_type, is_latest) tuple, not protocol-level validity.
+    // about the (account_id, network_account_type, valid_until) tuple, not protocol-level validity.
     let network_id = AccountId::dummy(
         [1u8; 15],
         AccountIdVersion::Version1,

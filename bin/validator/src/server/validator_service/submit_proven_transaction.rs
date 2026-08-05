@@ -125,35 +125,53 @@ impl ValidatorService {
         sealed: &grpc::transaction::SealedTransactionInputs,
         tx_id: TransactionId,
     ) -> tonic::Result<TransactionInputs> {
-        // Checked ahead of the unseal purely to turn what would otherwise be an indistinguishable
-        // authentication failure into an actionable one. The key identifier is public metadata, so
-        // there is nothing to leak by comparing it. Deliberately does not echo this validator's own
-        // key id: the RPC relays this status verbatim to the submitting client.
-        if sealed.key_id != self.encryption_key_info.key_id {
-            return Err(Status::failed_precondition(
-                "Transaction inputs were sealed against an unknown encryption key: re-fetch the \
-                 key with GetTransactionEncryptionKey and seal the inputs again",
-            ));
-        }
+        // The key the inputs were sealed against is whichever one the client held, which during a
+        // rotation may be the previous, current or next key. The provider owns that decision, so
+        // the key id is passed through to it rather than compared against a single key here.
+        let attested = self
+            .attested_encryption_key_schedule()
+            .await
+            .map_err(|err| Status::failed_precondition(err.to_string()))?;
+        let chain_tip = *self.committed_tip.borrow();
+        let scheme = attested.scheme_of(&sealed.key_id).as_u32();
 
         let associated_data = transaction_inputs_associated_data(
-            self.encryption_key_info.scheme.as_u32(),
-            &self.encryption_key_info.key_id,
+            scheme,
+            &sealed.key_id,
             self.genesis_commitment,
             tx_id,
         );
         let plaintext = self
             .decrypter
-            .decrypt_transaction_inputs(&sealed.ciphertext, &associated_data)
+            .decrypt_transaction_inputs(
+                &sealed.key_id,
+                chain_tip,
+                &sealed.ciphertext,
+                &associated_data,
+            )
             .await
             .map_err(|err| {
-                // The underlying scheme collapses a wrong key, tampered ciphertext, mismatched
-                // associated data and corrupt framing into one error, so this cannot be any more
-                // specific than "it did not authenticate". `{:#}` renders the anyhow context chain,
-                // which `ErrorReport` cannot because it is not a `std::error::Error`.
-                Status::invalid_argument(format!(
-                    "Failed to unseal the transaction inputs: {err:#}"
-                ))
+                use crate::TransactionInputDecryptionError as DecryptionError;
+
+                // A rejected key id is actionable: the client can refetch the schedule and reseal.
+                // Deliberately does not echo this validator's own key ids, because the RPC relays
+                // this status verbatim to the submitting client. An authentication failure, by
+                // contrast, collapses a wrong key, tampered ciphertext, mismatched associated data
+                // and corrupt framing into one error, so it cannot be any more specific than "it
+                // did not authenticate". `{:#}` renders the anyhow context chain, which
+                // `ErrorReport` cannot because it is not a `std::error::Error`.
+                match err {
+                    DecryptionError::PrematureKey { .. }
+                    | DecryptionError::ExpiredKey { .. }
+                    | DecryptionError::UnknownKey { .. } => Status::failed_precondition(
+                        "Transaction inputs were sealed against an encryption key that is not \
+                         currently accepted: re-fetch the key with GetTransactionEncryptionKey and \
+                         seal the inputs again",
+                    ),
+                    err => Status::invalid_argument(format!(
+                        "Failed to unseal the transaction inputs: {err:#}"
+                    )),
+                }
             })?;
 
         TransactionInputs::read_from_bytes(&plaintext).map_err(|err| {

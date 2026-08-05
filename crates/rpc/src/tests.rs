@@ -673,7 +673,7 @@ async fn start_source_rpc(
 /// other RPC.
 #[derive(Clone)]
 struct FixedValidator {
-    encryption_key: proto::transaction::TransactionEncryptionKey,
+    encryption_key: proto::transaction::TransactionEncryptionKeyResponse,
     call_count: Arc<AtomicUsize>,
     last_accept: Arc<std::sync::Mutex<Option<String>>>,
 }
@@ -681,13 +681,15 @@ struct FixedValidator {
 #[tonic::async_trait]
 impl validator_api::GetTransactionEncryptionKey for FixedValidator {
     type Input = ();
-    type Output = proto::transaction::TransactionEncryptionKey;
+    type Output = proto::transaction::TransactionEncryptionKeyResponse;
 
     fn decode(request: ()) -> tonic::Result<Self::Input> {
         Ok(request)
     }
 
-    fn encode(output: Self::Output) -> tonic::Result<proto::transaction::TransactionEncryptionKey> {
+    fn encode(
+        output: Self::Output,
+    ) -> tonic::Result<proto::transaction::TransactionEncryptionKeyResponse> {
         Ok(output)
     }
 
@@ -804,7 +806,7 @@ impl validator_api::BlockSubscription for FixedValidator {
 /// Serves a [`FixedValidator`] on an ephemeral port and returns a connected client together with
 /// the stub's call counter and the last ACCEPT header it observed.
 async fn start_validator(
-    encryption_key: proto::transaction::TransactionEncryptionKey,
+    encryption_key: proto::transaction::TransactionEncryptionKeyResponse,
 ) -> (ValidatorClient, Arc<AtomicUsize>, Arc<std::sync::Mutex<Option<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind validator");
     let addr = listener.local_addr().expect("Failed to get validator address");
@@ -837,21 +839,27 @@ async fn start_validator(
 
 /// A fixed transaction encryption key response for forwarding tests. The values only need to
 /// survive the passthrough unchanged.
-fn test_encryption_key() -> proto::transaction::TransactionEncryptionKey {
-    proto::transaction::TransactionEncryptionKey {
-        scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
-        key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
-        public_key: vec![7; 32],
+fn test_encryption_key() -> proto::transaction::TransactionEncryptionKeyResponse {
+    proto::transaction::TransactionEncryptionKeyResponse {
+        current_key: Some(proto::transaction::TransactionEncryptionKey {
+            scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
+            key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
+            public_key: vec![7; 32],
+        }),
+        next_key: Some(proto::transaction::NextTransactionEncryptionKey {
+            key: Some(proto::transaction::TransactionEncryptionKey {
+                scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
+                key_id: vec![0xFE, 0xED],
+                public_key: vec![6; 32],
+            }),
+            activation_block_num: 1 << 16,
+        }),
+        current_key_activation_block_num: 0,
+        attestation_epoch: 0,
         attestations: vec![proto::transaction::ValidatorKeyAttestation {
             validator_public_key: vec![8; 33],
             signature: vec![9; 65],
         }],
-        next_key: Some(proto::transaction::NextTransactionEncryptionKey {
-            scheme: proto::transaction::IesScheme::X25519Xchacha20Poly1305 as i32,
-            key_id: vec![0xFE, 0xED],
-            public_key: vec![6; 32],
-            rotation_block_num: 42,
-        }),
     }
 }
 

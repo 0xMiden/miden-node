@@ -46,12 +46,13 @@ service Api {
     // Returns the public key that clients use to encrypt the private inputs of the transactions
     // they submit, so that validators can decrypt and validate them.
     //
-    // Every validator in the set is provisioned with the same encryption keypair, so the returned
-    // public key is identical regardless of which validator attests it. The key carries a list of
-    // validator attestations, currently containing a single one. Since all validators vouch for
-    // the same key, an attestation verifiable against any chain-recognized validator signing key
-    // is sufficient.
-    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKey) {}
+    // Every validator in the set uses the same provider-owned key schedule. The complete current
+    // and optional-next schedule carries validator attestations, currently containing a single
+    // one. An attestation verifiable against any chain-recognized validator signing key is
+    // sufficient.
+    //
+    // Rotations are scheduled manually and may activate only at epoch boundaries.
+    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKeyResponse) {}
 
     // Submits proven transaction to the Miden network. Returns the node's current block height.
     rpc SubmitProvenTx(transaction.ProvenTransaction) returns (blockchain.BlockNumber) {}

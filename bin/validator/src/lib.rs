@@ -23,7 +23,9 @@ pub use server::{ValidatorAdminServer, ValidatorServer};
 pub use signers::{
     KmsSigner,
     LocalX25519TransactionInputDecrypter,
+    TransactionEncryptionKeySchedule,
     TransactionInputDecrypter,
+    TransactionInputDecryptionError,
     ValidatorSigner,
     decrypt_key_material,
 };

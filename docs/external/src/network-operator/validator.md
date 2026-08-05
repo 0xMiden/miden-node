@@ -45,15 +45,27 @@ configure validator signing explicitly, either with a local key or with KMS-back
 
 In addition to its signing key, every validator holds the shared transaction encryption key, configured with
 `--encryption-key.hex` or `MIDEN_VALIDATOR_ENCRYPTION_KEY`. Unlike the signing key, this value must be identical across
-every validator in the set. The validator logs a warning at startup if the insecure development default is in use, and
-always logs the resolved key id so you can confirm which key is live.
+every validator in the set. The validator does not derive replacement keys or rotate it automatically. The validator
+logs a warning at startup if the insecure development default is in use, and another if a key was loaded from plain hex
+rather than a KMS ciphertext.
 
-Production deployments should not pass the secret in plaintext. Instead, wrap it with a symmetric AWS KMS key
-(`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via `--encryption-key.kms-ciphertext` or
-`MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT`. The validator recovers the key material at startup with `kms:Decrypt`,
-so its AWS identity needs that permission on the wrapping key. Note that, unlike KMS-backed signing, the decrypted
-encryption key is held in validator memory: AWS KMS cannot perform X25519 key agreement itself, so envelope encryption
-is the supported provisioning path.
+The validator accepts an optional previous key for grace decryption and an optional next key for a planned rotation.
+Each key has an activation block, which must be an epoch boundary. Configure these with `--encryption-key.previous.*`,
+`--encryption-key.activation-block`, and `--encryption-key.next.*`. Hex and KMS ciphertext sources are supported for all
+three keys.
+
+All validators must restart with the same key schedule whenever the configured keys change. Keys then activate at their
+epoch boundaries without another restart. For example, a restart that activates key B and announces key C uses A as the
+previous key, B as the current key, and C as the next key. The provider accepts A through B's activation epoch, then
+marks it expired. After that epoch, a restart can drop A. When C activates, move B into the previous slot.
+
+The validator logs a warning when any key is loaded from plain hex. Production deployments should instead wrap each key
+with a symmetric AWS KMS key (`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via
+`--encryption-key.kms-ciphertext` or `MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT`. The validator recovers the key
+material at startup with `kms:Decrypt`, so its AWS identity needs that permission on the wrapping key. Note that, unlike
+KMS-backed signing, the decrypted encryption key is held in validator memory: AWS KMS cannot perform X25519 key
+agreement itself, so envelope encryption is the supported provisioning path. Other providers may keep the secret outside
+the validator process because the provider contract requires only public schedule metadata and a decrypt operation.
 
 Each validator must run inside its trusted execution environment. If transaction proving uses a remote prover, that
 prover also receives the plaintext inputs and must run inside the same trusted boundary.

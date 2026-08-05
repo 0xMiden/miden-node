@@ -32,22 +32,34 @@ grpcurl rpc.testnet.miden.io:443 describe rpc.Api
 
 ## Transaction Submission
 
-| Method                        | Purpose                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| `GetTransactionEncryptionKey` | Returns the transaction encryption public key, attested by a validator's signing key.       |
-| `SubmitProvenTx`              | Submits one proven transaction and returns the node's current block height.                 |
-| `SubmitProvenTxBatch`         | Submits an atomic batch of proven transactions and returns the node's current block height. |
+| Method                        | Purpose                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `GetTransactionEncryptionKey` | Returns the current and next transaction encryption public keys, attested by a validator's signing key. |
+| `SubmitProvenTx`              | Submits one proven transaction and returns the node's current block height.                             |
+| `SubmitProvenTxBatch`         | Submits an atomic batch of proven transactions and returns the node's current block height.             |
 
 Fetching the encryption key is a **required first step** before submitting. Both submit methods carry their private
 transaction inputs sealed against that key, and a submission with missing or unsealable inputs is rejected. For a batch,
 each transaction's inputs are sealed independently against that transaction's own id.
 
-The public key returned by `GetTransactionEncryptionKey` is shared across the whole validator set, while each
-attestation is specific to one validator (currently the response carries a single attestation). Clients verify an
-attestation against a validator signing key they already trust from the chain and reconstruct the encryption key with
-miden-crypto. The exact attestation payload, and the associated data that binds a sealed submission to one key, one
-network and one transaction, are documented on the `TransactionEncryptionKey` and `SealedTransactionInputs` proto
-messages.
+The response carries the current key, its activation block, and an optional manually scheduled next key. Activations
+must be epoch boundaries. One validator signature covers the complete schedule, including whether the next key is
+absent, so an untrusted RPC cannot remove a scheduled key without invalidating the signature.
+
+Clients should use `miden_node_proto::domain::encryption` to verify the response against a genesis commitment, trusted
+chain tip, and validator signing keys. The signed attestation epoch must match the trusted tip's epoch, which rejects
+responses replayed from an earlier epoch. The verifier also rejects premature current keys, already-active next keys,
+and activations that are not epoch boundaries. Key IDs are opaque provider-owned bytes and must be sent back with
+encrypted submissions so the provider can select the intended key.
+
+Providers keep a schedule unchanged within an epoch. Preventing a validator from signing two different schedules in one
+epoch requires this operational rule until the schedule has its own on-chain commitment.
+
+The exact attestation payload, and the associated data that binds a sealed submission to one key, one network and one
+transaction, are documented on the `ValidatorKeyAttestation` and `SealedTransactionInputs` proto messages.
+
+This scheme does not hide transaction inputs from holders of the shared encryption secret and provides no forward
+secrecy.
 
 Write requests must identify the target network with the `genesis` parameter in the `Accept` header:
 

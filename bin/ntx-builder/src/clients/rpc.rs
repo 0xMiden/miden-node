@@ -15,7 +15,7 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::encryption::{
     TransactionInputsSealer,
     TrustedTransactionEncryptionState,
-    verify_transaction_encryption_key,
+    verify_transaction_encryption_key_schedule,
 };
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::account_request::account_detail_request::{StorageMapDetailRequest, StorageMapDetailRequests, StorageRequest, storage_map_detail_request};
@@ -146,26 +146,33 @@ impl RpcClient {
         })
     }
 
-    /// Returns a sealer for transaction inputs, fetching the encryption key if the cache is empty.
+    /// Returns a sealer for transaction inputs, fetching the key schedule if the cache is empty.
+    ///
+    /// The chain tip used to bound the schedule's attestation epoch comes from the same node, so it
+    /// detects a schedule replayed from an earlier epoch only as far as that node is honest about
+    /// its own tip. The attestation itself is still checked against the validator signing keys
+    /// committed at genesis, which is what makes the served key trustworthy at all.
     pub(crate) async fn sealer(&self) -> Result<TransactionInputsSealer, Status> {
         if let Some(sealer) = self.sealer.read().await.clone() {
             return Ok(sealer);
         }
 
-        let key = self.inner.clone().get_transaction_encryption_key(()).await?.into_inner();
-        let verified = verify_transaction_encryption_key(
-            key,
+        let chain_tip = self.latest_block_num().await?;
+        let schedule = self.inner.clone().get_transaction_encryption_key(()).await?.into_inner();
+        let verified = verify_transaction_encryption_key_schedule(
+            &schedule,
             TrustedTransactionEncryptionState::new(
                 self.genesis_commitment,
+                chain_tip,
                 &self.trusted_validator_signing_keys,
             ),
         )
         .map_err(|err| {
             Status::failed_precondition(
-                err.as_report_context("Untrusted transaction encryption key"),
+                err.as_report_context("Untrusted transaction encryption key schedule"),
             )
         })?;
-        let sealer = TransactionInputsSealer::new(verified);
+        let sealer = TransactionInputsSealer::new(verified.into_current_key());
 
         let mut cached = self.sealer.write().await;
         if let Some(sealer) = cached.clone() {
@@ -173,6 +180,27 @@ impl RpcClient {
         }
         *cached = Some(sealer.clone());
         Ok(sealer)
+    }
+
+    /// Fetches the node's current chain tip.
+    async fn latest_block_num(&self) -> Result<BlockNumber, Status> {
+        let response = self
+            .inner
+            .clone()
+            .get_block_header_by_number(proto::rpc::BlockHeaderByNumberRequest {
+                block_num: None,
+                include_mmr_proof: None,
+            })
+            .await?
+            .into_inner();
+        let header = response
+            .block_header
+            .ok_or_else(|| Status::internal("Block header response carried no header"))?;
+        let header: miden_protocol::block::BlockHeader = header
+            .try_into()
+            .map_err(|err: ConversionError| Status::internal(err.as_report()))?;
+
+        Ok(header.block_num())
     }
 
     /// Opens a committed-block subscription starting at `block_from`, retrying indefinitely with

@@ -8,13 +8,15 @@ use crate::{COMPONENT, LOG_TARGET};
 #[tonic::async_trait]
 impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
     type Input = ();
-    type Output = proto::transaction::TransactionEncryptionKey;
+    type Output = proto::transaction::TransactionEncryptionKeyResponse;
 
     fn decode(request: ()) -> tonic::Result<Self::Input> {
         Ok(request)
     }
 
-    fn encode(output: Self::Output) -> tonic::Result<proto::transaction::TransactionEncryptionKey> {
+    fn encode(
+        output: Self::Output,
+    ) -> tonic::Result<proto::transaction::TransactionEncryptionKeyResponse> {
         Ok(output)
     }
 

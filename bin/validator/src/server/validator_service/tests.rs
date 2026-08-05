@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use miden_node_proto::domain::encryption::{
     TransactionEncryptionScheme,
     TrustedTransactionEncryptionState,
     transaction_inputs_associated_data,
-    verify_transaction_encryption_key,
+    verify_transaction_encryption_key_schedule,
 };
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::validator_api;
@@ -61,9 +64,64 @@ const TEST_ENCRYPTION_SECRET: [u8; 32] = [3u8; 32];
 /// Creates a [`LocalX25519TransactionInputDecrypter`] from the shared test secret, modelling the
 /// identically provisioned encryption key of a validator in the set.
 fn test_decrypter() -> LocalX25519TransactionInputDecrypter {
-    let key = KeyExchangeKey::read_from_bytes(&TEST_ENCRYPTION_SECRET)
-        .expect("test secret should be a valid key exchange key");
-    LocalX25519TransactionInputDecrypter::new(key)
+    LocalX25519TransactionInputDecrypter::new(
+        KeyExchangeKey::read_from_bytes(&TEST_ENCRYPTION_SECRET).unwrap(),
+    )
+}
+
+struct FailingScheduleProvider {
+    inner: LocalX25519TransactionInputDecrypter,
+    schedule_calls: AtomicUsize,
+    fail_schedule: AtomicBool,
+    panic_schedule: AtomicBool,
+    block_schedule: AtomicBool,
+    schedule_started: tokio::sync::Notify,
+    schedule_released: tokio::sync::Notify,
+}
+
+impl FailingScheduleProvider {
+    fn new() -> Self {
+        Self {
+            inner: test_decrypter(),
+            schedule_calls: AtomicUsize::new(0),
+            fail_schedule: AtomicBool::new(false),
+            panic_schedule: AtomicBool::new(false),
+            block_schedule: AtomicBool::new(false),
+            schedule_started: tokio::sync::Notify::new(),
+            schedule_released: tokio::sync::Notify::new(),
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl TransactionInputDecrypter for FailingScheduleProvider {
+    async fn encryption_key_schedule(
+        &self,
+        chain_tip: BlockNumber,
+    ) -> anyhow::Result<crate::TransactionEncryptionKeySchedule> {
+        self.schedule_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail_schedule.load(Ordering::SeqCst) {
+            anyhow::bail!("schedule provider unavailable");
+        }
+        assert!(!self.panic_schedule.load(Ordering::SeqCst), "schedule provider panicked");
+        if self.block_schedule.load(Ordering::SeqCst) {
+            self.schedule_started.notify_one();
+            self.schedule_released.notified().await;
+        }
+        self.inner.encryption_key_schedule(chain_tip).await
+    }
+
+    async fn decrypt_transaction_inputs(
+        &self,
+        key_id: &[u8],
+        chain_tip: BlockNumber,
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> Result<Vec<u8>, crate::TransactionInputDecryptionError> {
+        self.inner
+            .decrypt_transaction_inputs(key_id, chain_tip, ciphertext, associated_data)
+            .await
+    }
 }
 
 /// Test harness that wraps a [`Validator`] and tracks the chain MMR state needed to construct valid
@@ -81,6 +139,10 @@ impl TestValidator {
     /// Creates a correctly configured [`ValidatorService`]: the validator signs blocks with the
     /// same key that is designated as the `validator_key` in the genesis block.
     async fn new() -> Self {
+        Self::new_with_decrypter(Arc::new(test_decrypter())).await
+    }
+
+    async fn new_with_decrypter(decrypter: Arc<dyn TransactionInputDecrypter>) -> Self {
         let key = random_secret_key();
         let signer = ValidatorSigner::new_local(key.clone());
         let (temp_dir, db, block_store, genesis_header) = setup_db_with_genesis(&key).await;
@@ -88,7 +150,7 @@ impl TestValidator {
         Self {
             server: ValidatorService::new(
                 signer,
-                std::sync::Arc::new(test_decrypter()),
+                decrypter,
                 PrivateRecordSealer::from_operator_key(&operator_keys().remove(0)),
                 db,
                 block_store,
@@ -120,14 +182,31 @@ impl TestValidator {
         validator_api::SubmitProvenTransaction::full(&self.server, request).await
     }
 
+    /// Returns the opaque id of the key this validator currently serves.
+    async fn current_key_id(&self) -> Vec<u8> {
+        self.server
+            .attested_encryption_key_schedule()
+            .await
+            .expect("the test schedule should attest")
+            .schedule
+            .current_key
+            .key_id
+            .clone()
+    }
+
     /// Seals `plaintext` exactly as a well-behaved client would: against the key this validator
     /// serves, bound to `tx_id` and this network's genesis commitment.
-    fn seal(
+    async fn seal(
         &self,
         tx_id: TransactionId,
         plaintext: &[u8],
     ) -> proto::transaction::SealedTransactionInputs {
-        let key = &self.server.encryption_key_info;
+        let attested = self
+            .server
+            .attested_encryption_key_schedule()
+            .await
+            .expect("the test schedule should attest");
+        let key = attested.schedule.current_key.clone();
         let associated_data = transaction_inputs_associated_data(
             key.scheme.as_u32(),
             &key.key_id,
@@ -218,7 +297,7 @@ impl TestValidator {
     /// Calls the `get_transaction_encryption_key` endpoint on the validator server.
     async fn call_get_transaction_encryption_key(
         &self,
-    ) -> proto::transaction::TransactionEncryptionKey {
+    ) -> proto::transaction::TransactionEncryptionKeyResponse {
         validator_api::GetTransactionEncryptionKey::full(&self.server, tonic::Request::new(()))
             .await
             .expect("encryption key should always be available")
@@ -948,21 +1027,21 @@ async fn requests_run_concurrently() {
 // TRANSACTION ENCRYPTION KEY
 // ================================================================================================
 
-/// The endpoint returns the shared encryption key attested by this validator's own signing key. The
-/// signature verifies over a commitment recomputed from the response fields and the chain's genesis
-/// commitment, so a client needs nothing beyond the response and the chain data it already trusts.
+/// The endpoint returns one complete provider schedule attested by this validator. The shared
+/// verifier consumes only the response and chain state already trusted by the caller.
 #[tokio::test]
-async fn transaction_encryption_key_is_attested() {
+async fn transaction_encryption_key_schedule_is_attested() {
     let tv = TestValidator::new().await;
-    // The chain has not advanced, so the chain tip is the genesis header.
-    let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
-
-    let info = test_decrypter().encryption_key().await.expect("key info should be available");
-    let scheme = TransactionEncryptionScheme::try_from(response.scheme).unwrap();
-    assert_eq!(scheme, info.scheme);
-    assert_eq!(response.key_id, info.key_id);
-    assert_eq!(response.public_key, info.public_key);
+    let expected = test_decrypter()
+        .encryption_key_schedule(tv.chain_tip.block_num())
+        .await
+        .unwrap();
+    let current_key = response.current_key.as_ref().expect("response must carry a current key");
+    let scheme = TransactionEncryptionScheme::try_from(current_key.scheme).unwrap();
+    assert_eq!(scheme, expected.current_key.scheme);
+    assert_eq!(current_key.key_id, expected.current_key.key_id);
+    assert_eq!(current_key.public_key, expected.current_key.public_key);
 
     let [attestation] = response.attestations.as_slice() else {
         panic!("response must carry exactly the serving validator's attestation");
@@ -972,80 +1051,283 @@ async fn transaction_encryption_key_is_attested() {
         tv.server.signer.public_key().to_bytes(),
         "attestation must identify the serving validator",
     );
+
     let trusted_keys = [tv.server.signer.public_key()];
-    let verified = verify_transaction_encryption_key(
-        response,
-        TrustedTransactionEncryptionState::new(genesis, &trusted_keys),
+    let verified = verify_transaction_encryption_key_schedule(
+        &response,
+        TrustedTransactionEncryptionState::new(
+            tv.chain_tip.commitment(),
+            tv.chain_tip.block_num(),
+            &trusted_keys,
+        ),
     )
     .expect("attestation must verify against this validator's signing key");
-    assert_eq!(verified.info(), &info);
+    assert_eq!(verified.schedule(), &expected);
 }
 
-/// Two validators provisioned with the same shared encryption secret but distinct signing keys
-/// return identical public key material with different signatures.
+/// Validators sharing an encryption provider return the same schedule but attest it with their own
+/// chain-recognized signing keys.
 #[tokio::test]
-async fn shared_key_is_attested_per_validator() {
+async fn shared_schedule_is_attested_per_validator() {
     let tv_a = TestValidator::new().await;
     let tv_b = TestValidator::new().await;
 
     let response_a = tv_a.call_get_transaction_encryption_key().await;
     let response_b = tv_b.call_get_transaction_encryption_key().await;
 
-    assert_eq!(response_a.scheme, response_b.scheme);
-    assert_eq!(response_a.key_id, response_b.key_id);
-    assert_eq!(response_a.public_key, response_b.public_key);
+    assert_eq!(response_a.current_key, response_b.current_key);
+    assert_eq!(
+        response_a.current_key_activation_block_num,
+        response_b.current_key_activation_block_num
+    );
+    assert_eq!(response_a.next_key, response_b.next_key);
     assert_ne!(
         response_a.attestations[0].signature, response_b.attestations[0].signature,
         "each validator must attest with its own signing key",
     );
 }
 
-/// The attestation signature must not survive tampering with any field of the response, nor a
-/// swapped chain.
+/// Changing a signed field invalidates the single schedule-level attestation.
 #[tokio::test]
-async fn tampered_attestation_fails_verification() {
+async fn tampered_schedule_fails_shared_verification() {
     let tv = TestValidator::new().await;
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
     let trusted_keys = [tv.server.signer.public_key()];
-    let trusted = TrustedTransactionEncryptionState::new(genesis, &trusted_keys);
+    let trusted =
+        TrustedTransactionEncryptionState::new(genesis, tv.chain_tip.block_num(), &trusted_keys);
 
-    let mut changed_scheme = response.clone();
-    changed_scheme.scheme += 1;
     let mut changed_key_id = response.clone();
-    changed_key_id.key_id[0] ^= 0x01;
+    changed_key_id.current_key.as_mut().unwrap().key_id[0] ^= 0x01;
     let mut changed_public_key = response.clone();
-    changed_public_key.public_key =
+    changed_public_key.current_key.as_mut().unwrap().public_key =
         KeyExchangeKey::read_from_bytes(&[4u8; 32]).unwrap().public_key().to_bytes();
+    // Injecting a scheduled rotation into a schedule attested without one must also break the
+    // signature, which is what makes the next key impossible to add or strip in transit.
     let mut injected_next_key = response.clone();
     injected_next_key.next_key = Some(proto::transaction::NextTransactionEncryptionKey {
-        scheme: response.scheme,
-        key_id: response.key_id.clone(),
-        public_key: response.public_key.clone(),
-        rotation_block_num: 100,
+        key: Some(proto::transaction::TransactionEncryptionKey {
+            scheme: TransactionEncryptionScheme::X25519XChaCha20Poly1305.as_i32(),
+            key_id: vec![9, 9, 9, 9],
+            public_key: KeyExchangeKey::read_from_bytes(&[5u8; 32])
+                .unwrap()
+                .public_key()
+                .to_bytes(),
+        }),
+        activation_block_num: BlockNumber::from_epoch(1).as_u32(),
     });
 
-    for tampered in [changed_scheme, changed_key_id, changed_public_key, injected_next_key] {
+    for tampered in [changed_key_id, changed_public_key, injected_next_key] {
         assert!(
-            verify_transaction_encryption_key(tampered, trusted).is_err(),
+            verify_transaction_encryption_key_schedule(&tampered, trusted).is_err(),
             "attestation must not verify over tampered fields",
         );
     }
 
     let tampered_genesis = Word::try_from([9u64, 9, 9, 9]).unwrap();
     assert!(
-        verify_transaction_encryption_key(
-            response,
-            TrustedTransactionEncryptionState::new(tampered_genesis, &trusted_keys),
+        verify_transaction_encryption_key_schedule(
+            &response,
+            TrustedTransactionEncryptionState::new(
+                tampered_genesis,
+                tv.chain_tip.block_num(),
+                &trusted_keys,
+            ),
         )
         .is_err(),
         "attestation must not verify for another network",
     );
 }
 
-/// A client can reconstruct the sealing key from the response fields and seal a payload that any
-/// validator holding the shared secret can unseal. Unsealing must reject mismatched associated
-/// data.
+/// A fixed provider key remains current across epochs while the validator refreshes only the
+/// schedule's freshness attestation.
+#[tokio::test]
+async fn schedule_is_reattested_without_automatic_rotation() {
+    let tv = TestValidator::new().await;
+    let before = tv.call_get_transaction_encryption_key().await;
+
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+    let after = tv.call_get_transaction_encryption_key().await;
+
+    assert_eq!(before.current_key, after.current_key);
+    assert_eq!(before.next_key, after.next_key);
+    assert_eq!(before.attestation_epoch, 0);
+    assert_eq!(after.attestation_epoch, 1);
+    assert_ne!(before.attestations[0].signature, after.attestations[0].signature);
+
+    let validator_keys = [tv.server.signer.public_key()];
+    let trusted = TrustedTransactionEncryptionState::new(
+        tv.chain_tip.commitment(),
+        BlockNumber::from_epoch(1),
+        &validator_keys,
+    );
+    verify_transaction_encryption_key_schedule(&after, trusted).unwrap();
+    assert!(verify_transaction_encryption_key_schedule(&before, trusted).is_err());
+}
+
+/// A request that waits on the cache lock reads the chain tip after the lock is acquired, so it
+/// cannot replace a newer attestation with one for an older epoch.
+#[tokio::test]
+async fn stale_request_cannot_roll_back_schedule_attestation() {
+    let tv = TestValidator::new().await;
+    let epoch_one = ValidatorService::attest_encryption_key_schedule(
+        tv.server.signer.as_ref(),
+        tv.server.decrypter.as_ref(),
+        tv.server.genesis_commitment,
+        BlockNumber::from_epoch(1),
+        tv.server.encryption_key_refresh_timeout,
+    )
+    .await
+    .unwrap();
+
+    let mut cached = tv.server.encryption_key_schedule.lock().await;
+    let mut stale_request = Box::pin(tv.server.attested_encryption_key_schedule());
+    tokio::select! {
+        biased;
+        _ = &mut stale_request => panic!("request unexpectedly completed"),
+        () = tokio::task::yield_now() => {},
+    }
+
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+    cached.attested = Arc::new(epoch_one);
+    drop(cached);
+
+    let attested = stale_request.await.unwrap();
+    assert_eq!(attested.epoch, 1);
+    assert_eq!(tv.server.encryption_key_schedule.lock().await.attested.epoch, 1);
+}
+
+/// A failed epoch refresh is retried only after a request-path backoff, avoiding repeated provider
+/// or KMS calls during an outage without introducing a background rotation worker.
+#[tokio::test]
+async fn failed_schedule_refresh_is_backed_off() {
+    let provider = Arc::new(FailingScheduleProvider::new());
+    let tv = TestValidator::new_with_decrypter(provider.clone()).await;
+    assert_eq!(provider.schedule_calls.load(Ordering::SeqCst), 1);
+
+    provider.fail_schedule.store(true, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyAttestationFailed(_))
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+    assert_eq!(
+        provider.schedule_calls.load(Ordering::SeqCst),
+        2,
+        "the initial load and first failed refresh should be the only provider calls",
+    );
+}
+
+#[tokio::test]
+async fn panicked_schedule_refresh_is_backed_off_without_wedging_cache() {
+    let provider = Arc::new(FailingScheduleProvider::new());
+    let tv = TestValidator::new_with_decrypter(provider.clone()).await;
+
+    provider.panic_schedule.store(true, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyAttestationFailed(message))
+            if message.contains("refresh task failed")
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+
+    provider.panic_schedule.store(false, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(2));
+    tv.server.attested_encryption_key_schedule().await.unwrap();
+    assert_eq!(provider.schedule_calls.load(Ordering::SeqCst), 3);
+}
+
+/// A client cancellation does not penalize the next request.
+#[tokio::test]
+async fn cancelled_schedule_refresh_allows_immediate_retry() {
+    let provider = Arc::new(FailingScheduleProvider::new());
+    let tv = TestValidator::new_with_decrypter(provider.clone()).await;
+
+    provider.block_schedule.store(true, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    let mut refresh = Box::pin(tv.server.attested_encryption_key_schedule());
+    tokio::select! {
+        () = provider.schedule_started.notified() => {},
+        _ = &mut refresh => panic!("refresh unexpectedly completed"),
+    }
+    drop(refresh);
+
+    provider.block_schedule.store(false, Ordering::SeqCst);
+    provider.schedule_released.notify_one();
+    tv.server.attested_encryption_key_schedule().await.unwrap();
+    assert_eq!(
+        provider.schedule_calls.load(Ordering::SeqCst),
+        2,
+        "the successful retry must share the refresh started by the cancelled request",
+    );
+}
+
+#[tokio::test]
+async fn failed_signer_refresh_is_backed_off() {
+    let mut tv = TestValidator::new().await;
+    let public_key = tv.server.signer.public_key();
+    tv.server.signer = Arc::new(ValidatorSigner::new_failing(public_key));
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyAttestationFailed(_))
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+}
+
+#[tokio::test]
+async fn schedule_lookup_timeout_is_backed_off() {
+    let provider = Arc::new(FailingScheduleProvider::new());
+    let mut tv = TestValidator::new_with_decrypter(provider.clone()).await;
+    tv.server.encryption_key_refresh_timeout = Duration::from_millis(1);
+    provider.block_schedule.store(true, Ordering::SeqCst);
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshTimedOut { operation: "loading" })
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+    assert_eq!(provider.schedule_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn schedule_signing_timeout_is_backed_off() {
+    let mut tv = TestValidator::new().await;
+    tv.server.encryption_key_refresh_timeout = Duration::from_millis(1);
+    let public_key = tv.server.signer.public_key();
+    tv.server.signer = Arc::new(ValidatorSigner::new_blocking(public_key));
+    tv.server.committed_tip.send_replace(BlockNumber::from_epoch(1));
+
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshTimedOut { operation: "signing" })
+    ));
+    assert!(matches!(
+        tv.server.attested_encryption_key_schedule().await,
+        Err(ValidatorError::EncryptionKeyScheduleRefreshBackoff { epoch: 1 })
+    ));
+}
+
+/// A client can reconstruct the sealing key from the response and the provider can decrypt the
+/// ciphertext selected by the caller-supplied opaque key id.
 #[tokio::test]
 async fn response_key_seals_for_the_validator_set() {
     use miden_protocol::crypto::dsa::eddsa_25519_sha512::PublicKey as EncryptionPublicKey;
@@ -1053,47 +1335,38 @@ async fn response_key_seals_for_the_validator_set() {
 
     let tv = TestValidator::new().await;
     let response = tv.call_get_transaction_encryption_key().await;
+    let current = response.current_key.unwrap();
 
-    let public_key = EncryptionPublicKey::read_from_bytes(&response.public_key)
+    let public_key = EncryptionPublicKey::read_from_bytes(&current.public_key)
         .expect("response public key should deserialize");
     let sealing_key = SealingKey::X25519XChaCha20Poly1305(public_key);
-
-    let mut rng = rand::rng();
-    let plaintext = b"transaction inputs";
     let associated_data = b"scheme|key_id|chain|tx";
     let sealed = sealing_key
-        .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
-        .unwrap();
+        .seal_bytes_with_associated_data(&mut rand::rng(), b"transaction inputs", associated_data)
+        .unwrap()
+        .to_bytes();
 
-    let sealed = sealed.to_bytes();
     let opened = test_decrypter()
-        .decrypt_transaction_inputs(&sealed, associated_data)
+        .decrypt_transaction_inputs(
+            &current.key_id,
+            tv.chain_tip.block_num(),
+            &sealed,
+            associated_data,
+        )
         .await
         .unwrap();
-    assert_eq!(opened.as_slice(), plaintext);
-
-    assert!(
-        test_decrypter()
-            .decrypt_transaction_inputs(&sealed, b"other associated data")
-            .await
-            .is_err(),
-        "decryption must fail under mismatched associated data",
-    );
+    assert_eq!(opened, b"transaction inputs");
 }
 
-/// Like `status`, the encryption key stays available while a backup subscription holds the
-/// exclusive serve lock.
+/// Like status, the encryption key remains available during an exclusive backup subscription.
 #[tokio::test]
 async fn encryption_key_available_during_backup() {
     let mut tv = TestValidator::new().await;
     tv.apply_empty_block().await;
-
     let stream = tv.call_block_subscription(1).await;
 
-    // `call_get_transaction_encryption_key` panics on rejection, so completing proves availability
-    // during the backup.
     let response = tv.call_get_transaction_encryption_key().await;
-    assert!(!response.public_key.is_empty());
+    assert!(!response.current_key.unwrap().public_key.is_empty());
 
     drop(stream);
 }
@@ -1127,7 +1400,7 @@ async fn submit_rejects_plaintext_inputs() {
     let tv = TestValidator::new().await;
     let tx = dummy_proven_tx(3);
     let sealed = proto::transaction::SealedTransactionInputs {
-        key_id: tv.server.encryption_key_info.key_id.clone(),
+        key_id: tv.current_key_id().await,
         ciphertext: b"not a sealed message, just bytes".to_vec(),
     };
 
@@ -1145,7 +1418,7 @@ async fn submit_rejects_plaintext_inputs() {
 async fn submit_rejects_unknown_key_id() {
     let tv = TestValidator::new().await;
     let tx = dummy_proven_tx(4);
-    let mut sealed = tv.seal(tx.id(), b"transaction inputs");
+    let mut sealed = tv.seal(tx.id(), b"transaction inputs").await;
     sealed.key_id = vec![0xAA, 0xBB, 0xCC, 0xDD];
 
     let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
@@ -1157,7 +1430,7 @@ async fn submit_rejects_unknown_key_id() {
         status.message(),
     );
     // This status reaches the client verbatim through the RPC.
-    let own_key_id = hex::encode(&tv.server.encryption_key_info.key_id);
+    let own_key_id = hex::encode(tv.current_key_id().await);
     assert!(
         !status.message().contains(&own_key_id),
         "the rejection must not echo the validator's key id",
@@ -1175,7 +1448,7 @@ async fn submit_rejects_inputs_sealed_for_a_different_transaction() {
     let tx_b = dummy_proven_tx(7);
     assert_ne!(tx_a.id(), tx_b.id());
 
-    let sealed_for_a = tv.seal(tx_a.id(), b"transaction inputs");
+    let sealed_for_a = tv.seal(tx_a.id(), b"transaction inputs").await;
 
     let status = tv.call_submit_proven_transaction(&tx_b, sealed_for_a).await.unwrap_err();
 
@@ -1190,7 +1463,7 @@ async fn submit_rejects_inputs_sealed_for_a_different_transaction() {
 async fn correctly_sealed_inputs_reach_the_deserialization_stage() {
     let tv = TestValidator::new().await;
     let tx = dummy_proven_tx(10);
-    let sealed = tv.seal(tx.id(), b"not really transaction inputs");
+    let sealed = tv.seal(tx.id(), b"not really transaction inputs").await;
 
     let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
 
@@ -1214,7 +1487,7 @@ async fn failed_proof_verification_does_not_store_inputs() {
     let tv = TestValidator::new().await;
     let tx = dummy_proven_tx(11);
     let fixture = proven_transaction_fixture().await;
-    let sealed = tv.seal(tx.id(), &fixture.inputs.to_bytes());
+    let sealed = tv.seal(tx.id(), &fixture.inputs.to_bytes()).await;
 
     let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
 
@@ -1229,7 +1502,7 @@ async fn failed_reexecution_does_not_store_inputs() {
     let tv = TestValidator::new().await;
     let fixture = proven_transaction_fixture().await;
     let tx = &fixture.transaction;
-    let sealed = tv.seal(tx.id(), &fixture.execution_failure_inputs.to_bytes());
+    let sealed = tv.seal(tx.id(), &fixture.execution_failure_inputs.to_bytes()).await;
 
     let status = tv.call_submit_proven_transaction(tx, sealed).await.unwrap_err();
 
@@ -1244,7 +1517,7 @@ async fn header_mismatch_does_not_store_inputs() {
     let tv = TestValidator::new().await;
     let fixture = proven_transaction_fixture().await;
     let tx = &fixture.transaction;
-    let sealed = tv.seal(tx.id(), &fixture.mismatch_inputs.to_bytes());
+    let sealed = tv.seal(tx.id(), &fixture.mismatch_inputs.to_bytes()).await;
 
     let status = tv.call_submit_proven_transaction(tx, sealed).await.unwrap_err();
 
@@ -1259,8 +1532,8 @@ async fn valid_submission_stores_one_protected_record() {
     let tv = TestValidator::new().await;
     let fixture = proven_transaction_fixture().await;
     let tx = &fixture.transaction;
-    let first = tv.seal(tx.id(), &fixture.inputs.to_bytes());
-    let second = tv.seal(tx.id(), &fixture.inputs.to_bytes());
+    let first = tv.seal(tx.id(), &fixture.inputs.to_bytes()).await;
+    let second = tv.seal(tx.id(), &fixture.inputs.to_bytes()).await;
     assert_ne!(first.ciphertext, second.ciphertext);
 
     tv.call_submit_proven_transaction(tx, first.clone()).await.unwrap();
@@ -1296,13 +1569,16 @@ async fn failed_batch_item_does_not_store_inputs() {
     let valid_tx = &fixture.transaction;
     let rejected_tx = dummy_proven_tx(12);
 
-    tv.call_submit_proven_transaction(valid_tx, tv.seal(valid_tx.id(), &fixture.inputs.to_bytes()))
-        .await
-        .unwrap();
+    tv.call_submit_proven_transaction(
+        valid_tx,
+        tv.seal(valid_tx.id(), &fixture.inputs.to_bytes()).await,
+    )
+    .await
+    .unwrap();
     let status = tv
         .call_submit_proven_transaction(
             &rejected_tx,
-            tv.seal(rejected_tx.id(), &fixture.inputs.to_bytes()),
+            tv.seal(rejected_tx.id(), &fixture.inputs.to_bytes()).await,
         )
         .await
         .unwrap_err();

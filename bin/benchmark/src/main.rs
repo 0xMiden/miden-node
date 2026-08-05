@@ -14,7 +14,7 @@ use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::domain::encryption::{
     TransactionInputsSealer,
     TrustedTransactionEncryptionState,
-    verify_transaction_encryption_key,
+    verify_transaction_encryption_key_schedule,
 };
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_protocol::Word;
@@ -213,20 +213,44 @@ pub(crate) async fn create_genesis_aware_rpc_client_pool(
     for _ in 0..size {
         pool.push(build_rpc_client(rpc_url, timeout, Some(genesis)).await?);
     }
-    let key = pool[0]
+    let chain_tip = latest_block_num(&pool[0]).await?;
+    let schedule = pool[0]
         .clone()
         .get_transaction_encryption_key(())
         .await
-        .context("Failed to fetch the transaction encryption key")?
+        .context("Failed to fetch the transaction encryption key schedule")?
         .into_inner();
     let trusted_keys = [trusted_validator_signing_key];
-    let verified = verify_transaction_encryption_key(
-        key,
-        TrustedTransactionEncryptionState::new(genesis, &trusted_keys),
+    // The chain tip comes from the same node that serves the schedule, so the epoch check detects a
+    // replayed schedule only as far as that node is honest about its own tip. The attestation is
+    // still checked against the validator signing key trusted from the chain.
+    let verified = verify_transaction_encryption_key_schedule(
+        &schedule,
+        TrustedTransactionEncryptionState::new(genesis, chain_tip, &trusted_keys),
     )
-    .context("Untrusted transaction encryption key")?;
+    .context("Untrusted transaction encryption key schedule")?;
 
-    Ok((pool, TransactionInputsSealer::new(verified)))
+    Ok((pool, TransactionInputsSealer::new(verified.into_current_key())))
+}
+
+/// Fetches the node's current chain tip.
+async fn latest_block_num(rpc: &RpcClient) -> Result<BlockNumber> {
+    let response = rpc
+        .clone()
+        .get_block_header_by_number(BlockHeaderByNumberRequest {
+            block_num: None,
+            include_mmr_proof: None,
+        })
+        .await
+        .context("Failed to fetch the chain tip block header")?
+        .into_inner();
+    let header: BlockHeader = response
+        .block_header
+        .context("Block header response carried no header")?
+        .try_into()
+        .context("Failed to convert the chain tip block header")?;
+
+    Ok(header.block_num())
 }
 
 pub(crate) fn get_genesis_header_request() -> BlockHeaderByNumberRequest {

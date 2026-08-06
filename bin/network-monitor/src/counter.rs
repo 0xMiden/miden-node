@@ -16,6 +16,7 @@ use miden_protocol::account::{Account, AccountCode, AccountId, AccountPatch};
 use miden_protocol::asset::AssetVault;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
+use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -36,8 +37,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{LocalTransactionProver, TransactionExecutor};
-use rand::{RngExt, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 use tokio::sync::{Mutex, watch};
 use tracing::{debug, error, info, warn};
 
@@ -112,7 +111,7 @@ struct TxBuilder {
     secret_key: SecretKey,
     increment_script: NoteScript,
     counter_anchor: Arc<CounterAnchor>,
-    rng: ChaCha20Rng,
+    rng: RandomCoin,
 }
 
 // FAILURE TRACKER
@@ -750,7 +749,7 @@ fn setup_increment_task(
         secret_key,
         increment_script,
         counter_anchor: Arc::new(counter_anchor),
-        rng: ChaCha20Rng::from_rng(&mut rand::rng()),
+        rng: RandomCoin::new(Word::from(rand::random::<[u32; 4]>())),
     };
 
     Ok((tx, IncrementDetails::default()))
@@ -1205,20 +1204,10 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
 /// Build the auth args committing to paying the transaction fee in the chain's native fee asset at
 /// rate 1/1, together with the advice-map preimage `miden::standards::fee::load_conversion_info`
 /// verifies against them in-VM.
-fn fee_conversion_auth_args(fee_faucet_id: AccountId, rng: &mut ChaCha20Rng) -> (Word, Vec<Felt>) {
+fn fee_conversion_auth_args(fee_faucet_id: AccountId, rng: &mut RandomCoin) -> (Word, Vec<Felt>) {
     // The salt keeps the auth args usable as a per-transaction unique value for replay protection.
-    let salt = random_word(rng);
+    let salt = rng.draw_word();
     commit_fee_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id), salt)
-}
-
-/// Draw a random [`Word`] from `rng`.
-fn random_word(rng: &mut ChaCha20Rng) -> Word {
-    Word::new([
-        Felt::new_unchecked(rng.random()),
-        Felt::new_unchecked(rng.random()),
-        Felt::new_unchecked(rng.random()),
-        Felt::new_unchecked(rng.random()),
-    ])
 }
 
 /// Create a network note that targets the counter account.
@@ -1226,7 +1215,7 @@ fn create_network_note(
     wallet_account: &Account,
     counter_account_id: AccountId,
     script: NoteScript,
-    rng: &mut ChaCha20Rng,
+    rng: &mut RandomCoin,
 ) -> Result<(Note, NoteRecipient)> {
     let target = NetworkAccountTarget::new(counter_account_id, NoteExecutionHint::Always)
         .context("Failed to create NetworkAccountTarget for counter account")?;
@@ -1235,7 +1224,7 @@ fn create_network_note(
 
     let partial_metadata = PartialNoteMetadata::new(wallet_account.id(), NoteType::Public);
 
-    let serial_num = random_word(rng);
+    let serial_num = rng.draw_word();
 
     let recipient = NoteRecipient::new(serial_num, script, NoteStorage::new(vec![])?);
 
@@ -1264,15 +1253,15 @@ async fn fetch_chain_tip(rpc_client: &mut RpcClient) -> Result<u32> {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::Word;
     use miden_protocol::account::Account;
     use miden_protocol::account::auth::AuthSecretKey;
     use miden_protocol::asset::FungibleAsset;
+    use miden_protocol::crypto::rand::RandomCoin;
     use miden_protocol::transaction::{InputNotes, TransactionArgs};
     use miden_testing::MockChain;
     use miden_tx::TransactionExecutor;
     use miden_tx::auth::BasicAuthenticator;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng;
 
     use crate::counter::{
         FailureTracker,
@@ -1324,7 +1313,7 @@ mod tests {
         );
 
         let increment_script = create_increment_script()?;
-        let mut rng = ChaCha20Rng::from_seed([11u8; 32]);
+        let mut rng = RandomCoin::new(Word::from([11u32; 4]));
         let (network_note, note_recipient) =
             create_network_note(&wallet, committed_counter.id(), increment_script, &mut rng)?;
         let script = create_increment_tx_script(&network_note)?;
@@ -1482,7 +1471,7 @@ mod tests {
             .expect("counter account should build");
         let note_script = create_increment_script().expect("note script should compile");
 
-        let mut rng = ChaCha20Rng::from_seed([7u8; 32]);
+        let mut rng = RandomCoin::new(Word::from([7u32; 4]));
         let (network_note, _recipient) =
             create_network_note(&wallet, counter.id(), note_script, &mut rng)
                 .expect("network note should build");

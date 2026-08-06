@@ -9,7 +9,7 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
 use miden_protocol::block::nullifier_tree::NullifierTree;
@@ -25,11 +25,14 @@ use crate::account_state_forest::{
 use crate::accounts::AccountTreeWithHistory;
 use crate::state::loader::TreeStorageReader;
 
-/// Snapshot lifetime above which [`SnapshotGuard`] logs a warning on release.
+/// Time held past supersession above which [`SnapshotGuard`] logs a warning on release.
 ///
-/// Readers are expected to be request-scoped, so a snapshot outliving several block intervals
-/// indicates a slow or leaked reader pinning a `RocksDB` snapshot (see [`SnapshotGuard`]).
-const SNAPSHOT_LIFETIME_WARN_THRESHOLD: Duration = Duration::from_secs(10);
+/// Readers are expected to be request-scoped, so a superseded generation outliving several block
+/// intervals indicates a slow or leaked reader pinning a `RocksDB` snapshot (see
+/// [`SnapshotGuard`]). The clock starts at supersession rather than creation: the latest
+/// generation is always pinned by the published pointer, so time spent as the current generation
+/// (idle chains, shutdown) says nothing about reader behaviour.
+const SNAPSHOT_SUPERSEDED_WARN_THRESHOLD: Duration = Duration::from_secs(10);
 
 /// Number of live snapshot generations above which the block writer logs a warning after
 /// publishing a new snapshot.
@@ -118,11 +121,15 @@ impl<T> PublishedGenerations<T> {
 /// write churn for as long as the snapshot is held and is reclaimed once it is released. A held
 /// generation also holds back SQLite history pruning (see [`PublishedGenerations::prune_tip`]).
 ///
-/// Readers are expected to be request-scoped, so snapshot lifetimes should be well under a block
-/// interval. A lifetime exceeding [`SNAPSHOT_LIFETIME_WARN_THRESHOLD`] is logged at warn level.
+/// Readers are expected to be request-scoped, so a superseded generation should be released well
+/// within a block interval. Outliving supersession by more than
+/// [`SNAPSHOT_SUPERSEDED_WARN_THRESHOLD`] is logged at warn level; a generation that is never
+/// superseded (the latest at shutdown) is released silently regardless of age.
 pub(in crate::state) struct SnapshotGuard {
     live: Arc<AtomicUsize>,
     created_at: Instant,
+    /// Set by the writer when a newer generation replaces this one as the published snapshot.
+    superseded_at: OnceLock<Instant>,
     block_num: BlockNumber,
 }
 
@@ -132,24 +139,35 @@ impl SnapshotGuard {
         Self {
             live,
             created_at: Instant::now(),
+            superseded_at: OnceLock::new(),
             block_num,
         }
+    }
+
+    /// Marks this generation as superseded by a newer published snapshot, starting the clock
+    /// against which slow readers are measured. Only the first call takes effect.
+    pub(in crate::state) fn mark_superseded(&self) {
+        let _ = self.superseded_at.set(Instant::now());
     }
 }
 
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
         let remaining = self.live.fetch_sub(1, Ordering::Relaxed) - 1;
-        let lifetime = self.created_at.elapsed();
-        let lifetime_ms = u64::try_from(lifetime.as_millis()).unwrap_or(u64::MAX);
+        let lifetime_ms = u64::try_from(self.created_at.elapsed().as_millis()).unwrap_or(u64::MAX);
         let block_num = self.block_num.as_u32();
-        if lifetime > SNAPSHOT_LIFETIME_WARN_THRESHOLD {
+        let superseded_for = self.superseded_at.get().map(Instant::elapsed);
+        if let Some(superseded_for) =
+            superseded_for.filter(|held| *held > SNAPSHOT_SUPERSEDED_WARN_THRESHOLD)
+        {
+            let superseded_for_ms = u64::try_from(superseded_for.as_millis()).unwrap_or(u64::MAX);
             tracing::warn!(
                 target: COMPONENT,
                 block_num,
                 snapshot.lifetime_ms = lifetime_ms,
+                snapshot.superseded_for_ms = superseded_for_ms,
                 snapshots.live = remaining,
-                "state snapshot held for excessive time",
+                "state snapshot held for excessive time after supersession",
             );
         } else {
             tracing::debug!(
@@ -181,7 +199,7 @@ pub(in crate::state) struct StateSnapshot {
     pub(super) account_tree: AccountTreeWithHistory<TreeStorageReader>,
     pub(super) forest: AccountStateForest<AccountStateForestBackendReader>,
     /// Keeps the live-snapshot count accurate; see [`SnapshotGuard`].
-    _guard: SnapshotGuard,
+    guard: SnapshotGuard,
 }
 
 impl StateSnapshot {
@@ -198,8 +216,14 @@ impl StateSnapshot {
             blockchain,
             account_tree,
             forest,
-            _guard: guard,
+            guard,
         }
+    }
+
+    /// Marks this snapshot as superseded by a newer published generation; see
+    /// [`SnapshotGuard::mark_superseded`].
+    pub(in crate::state) fn mark_superseded(&self) {
+        self.guard.mark_superseded();
     }
 
     /// Returns the latest block number.

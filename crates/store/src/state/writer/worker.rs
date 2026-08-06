@@ -232,9 +232,10 @@ impl WriteWorker {
         });
 
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
-        // see the updated state. Readers holding the old snapshot continue unaffected.
+        // see the updated state. Readers holding the old snapshot continue unaffected, but are on
+        // the clock: a superseded generation held too long is reported on release.
         self.published_generations.record(block_num, &snapshot);
-        self.latest_snapshot.store(snapshot);
+        self.latest_snapshot.swap(snapshot).mark_superseded();
 
         let snapshots_live = self.check_live_snapshots(block_num);
         miden_span_record!(snapshots.live = snapshots_live);

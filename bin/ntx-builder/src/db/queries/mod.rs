@@ -1,26 +1,83 @@
 //! Database query functions for the NTX builder.
+//!
+//! Each function takes a [`ReadTx`](miden_node_db::sqlite::ReadTx) or
+//! [`WriteTx`](miden_node_db::sqlite::WriteTx) and is driven from a call site through
+//! [`Database::read`](miden_node_db::sqlite::Database::read) /
+//! [`Database::write`](miden_node_db::sqlite::Database::write).
 
-use diesel::prelude::*;
 use miden_node_db::DatabaseError;
+use miden_node_db::sqlite::WriteTx;
 use miden_protocol::Word;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::transaction::TransactionId;
 
-use super::account_effect::NetworkAccountEffect;
 use crate::committed_block::CommittedBlockEffects;
+use crate::db::queries::account_effect::NetworkAccountEffect;
 
-mod accounts;
-pub use accounts::*;
+pub(crate) mod account_effect;
 
-mod chain_state;
-pub use chain_state::*;
+mod account_exists;
+pub use account_exists::account_exists;
 
-mod note_scripts;
-pub use note_scripts::*;
+mod account_has_pending_notes;
+pub use account_has_pending_notes::account_has_pending_notes;
 
-mod notes;
-pub use notes::*;
+// The committed-transaction landing check reads `last_committed_tx` from the `AccountView` the
+// coordinator pushes, so this read accessor is only used by tests to verify that `upsert_account`
+// persists `accounts.last_tx_id` correctly.
+#[cfg(test)]
+mod account_last_tx;
+#[cfg(test)]
+pub use account_last_tx::account_last_tx;
+
+mod accounts_with_pending_notes;
+pub use accounts_with_pending_notes::accounts_with_pending_notes;
+
+mod available_notes;
+pub use available_notes::{AvailableNotes, available_notes};
+
+mod discard_notes;
+pub use discard_notes::discard_notes;
+
+mod get_account;
+pub use get_account::get_account;
+
+mod get_note_status;
+pub use get_note_status::{NoteStatusRow, get_note_status};
+
+mod insert_genesis_chain_state;
+pub use insert_genesis_chain_state::insert_genesis_chain_state;
+
+mod insert_network_notes;
+pub use insert_network_notes::insert_network_notes;
+
+mod insert_note_scripts;
+pub use insert_note_scripts::insert_note_script;
+
+mod lookup_note_script;
+pub use lookup_note_script::lookup_note_script;
+
+mod mark_notes_consumed;
+pub use mark_notes_consumed::mark_notes_consumed;
+
+mod notes_failed;
+pub use notes_failed::notes_failed;
+
+mod select_chain_state;
+pub use select_chain_state::select_chain_state;
+
+mod select_genesis_commitment;
+pub use select_genesis_commitment::select_genesis_commitment;
+
+mod select_genesis_validator_keys;
+pub use select_genesis_validator_keys::select_genesis_validator_keys;
+
+mod update_chain_state_tip;
+pub use update_chain_state_tip::update_chain_state_tip;
+
+mod upsert_account;
+pub use upsert_account::upsert_account;
 
 #[cfg(test)]
 mod tests;
@@ -44,7 +101,7 @@ mod tests;
 /// the `last_committed_tx` the coordinator pushes to actors both derive from the block's
 /// `account_transactions`, so they agree on which transaction last touched each account.
 pub fn apply_committed_block(
-    conn: &mut SqliteConnection,
+    tx: &WriteTx<'_>,
     effects: &CommittedBlockEffects,
     chain_mmr: &PartialMmr,
 ) -> Result<(), DatabaseError> {
@@ -76,26 +133,26 @@ pub fn apply_committed_block(
         });
         match effect {
             NetworkAccountEffect::Created(account) => {
-                upsert_account(conn, *account_id, &account, last_tx_id)?;
+                upsert_account(tx, *account_id, &account, last_tx_id)?;
             },
             NetworkAccountEffect::Updated(patch) => {
                 // If the account is not already tracked locally, skip it.
-                let Some(mut current) = get_account(conn, *account_id)? else {
+                let Some(mut current) = get_account(tx, *account_id)? else {
                     continue;
                 };
                 current
                     .apply_patch(&patch)
                     .expect("network account patch should apply since the block was committed");
-                upsert_account(conn, *account_id, &current, last_tx_id)?;
+                upsert_account(tx, *account_id, &current, last_tx_id)?;
             },
         }
     }
 
-    insert_network_notes(conn, &effects.network_notes)?;
+    insert_network_notes(tx, &effects.network_notes)?;
 
-    mark_notes_consumed(conn, &effects.nullifiers, effects.header.block_num())?;
+    mark_notes_consumed(tx, &effects.nullifiers, effects.header.block_num())?;
 
-    update_chain_state_tip(conn, effects.header.block_num(), &effects.header, chain_mmr)?;
+    update_chain_state_tip(tx, effects.header.block_num(), &effects.header, chain_mmr)?;
 
     Ok(())
 }

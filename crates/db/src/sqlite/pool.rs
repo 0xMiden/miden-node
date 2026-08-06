@@ -118,54 +118,52 @@ fn configure_connection(conn: &Connection, read_only: bool) -> rusqlite::Result<
     Ok(())
 }
 
-// DATABASE
+// DATABASE HANDLES
 // =================================================================================================
 
-/// A rusqlite-backed connection pool. Cloning shares the underlying pools.
+/// Opens a database over `database_filepath` with the default reader-pool size.
 ///
-/// Holds a single writer connection and a pool of reader connections (see the module docs).
+/// Returns a `(DbWriter, DbReader)` pair (see [`open_with_pool_size`]).
+pub fn open(database_filepath: &Path) -> Result<(DbWriter, DbReader), DatabaseError> {
+    open_with_pool_size(database_filepath, default_connection_pool_size())
+}
+
+/// Opens a database over `database_filepath` with the given reader-pool size. The writer is always a
+/// single connection.
+///
+/// Returns the write handle and the reader handle as **separate** values rather than one shared
+/// object, so read-only and write access are distinct, non-interchangeable capabilities: a component
+/// handed only a [`DbReader`] has no way to write. The [`DbWriter`] is not `Clone`, so there is at
+/// most one writer owner (mirroring the `max_size(1)` writer pool).
+pub fn open_with_pool_size(
+    database_filepath: &Path,
+    connection_pool_size: NonZeroUsize,
+) -> Result<(DbWriter, DbReader), DatabaseError> {
+    let writer = Pool::builder(SqliteManager {
+        path: database_filepath.to_path_buf(),
+        read_only: false,
+    })
+    .max_size(1)
+    .build()?;
+    let readers = Pool::builder(SqliteManager {
+        path: database_filepath.to_path_buf(),
+        read_only: true,
+    })
+    .max_size(connection_pool_size.get())
+    .build()?;
+    Ok((DbWriter { writer }, DbReader { readers }))
+}
+
+/// Read-only handle over the reader connection pool. Cloning shares the underlying pool.
+///
+/// Exposes only read access ([`read`](Self::read)/[`begin_read`](Self::begin_read)); it has no way to
+/// mutate the database. Hand this to components that must never write.
 #[derive(Clone)]
-pub struct Database {
-    writer: Pool<SqliteManager>,
+pub struct DbReader {
     readers: Pool<SqliteManager>,
 }
 
-impl Database {
-    /// Opens a database over `database_filepath` with the default reader-pool size.
-    pub fn new(database_filepath: &Path) -> Result<Self, DatabaseError> {
-        Self::new_with_pool_size(database_filepath, default_connection_pool_size())
-    }
-
-    /// Opens a database over `database_filepath` with the given reader-pool size. The writer is
-    /// always a single connection.
-    pub fn new_with_pool_size(
-        database_filepath: &Path,
-        connection_pool_size: NonZeroUsize,
-    ) -> Result<Self, DatabaseError> {
-        let writer = Pool::builder(SqliteManager {
-            path: database_filepath.to_path_buf(),
-            read_only: false,
-        })
-        .max_size(1)
-        .build()?;
-        let readers = Pool::builder(SqliteManager {
-            path: database_filepath.to_path_buf(),
-            read_only: true,
-        })
-        .max_size(connection_pool_size.get())
-        .build()?;
-        Ok(Self { writer, readers })
-    }
-
-    /// Checks the single writer connection out of the pool.
-    async fn checkout_writer(&self) -> Result<Object<SqliteManager>, DatabaseError> {
-        self.writer
-            .get()
-            .in_current_span()
-            .await
-            .map_err(|err| DatabaseError::ConnectionPoolObtainError(Box::new(err)))
-    }
-
+impl DbReader {
     /// Checks a reader connection out of the pool.
     async fn checkout_reader(&self) -> Result<Object<SqliteManager>, DatabaseError> {
         self.readers
@@ -198,6 +196,35 @@ impl Database {
         .map_err(|err| E::from(DatabaseError::interact(&msg, &err)))?
     }
 
+    /// Begins a read-only (`DEFERRED`) transaction on a reader connection and returns a handle held
+    /// across `.await` points. See [`ReadTransaction`].
+    pub async fn begin_read(&self) -> Result<ReadTransaction, DatabaseError> {
+        let conn = self.checkout_reader().await?;
+        run_tx_stmt(&conn, "BEGIN DEFERRED").await?;
+        Ok(ReadTransaction { conn })
+    }
+}
+
+/// Write handle over the single writer connection.
+///
+/// **Not `Clone`**: SQLite permits only one writer, so at most one owner holds write access at a time
+/// (the writer pool is `max_size(1)`). Exposes only write access
+/// ([`write`](Self::write)/[`begin_write`](Self::begin_write)); pair it with a [`DbReader`] when the
+/// owner also needs to read.
+pub struct DbWriter {
+    writer: Pool<SqliteManager>,
+}
+
+impl DbWriter {
+    /// Checks the single writer connection out of the pool.
+    async fn checkout_writer(&self) -> Result<Object<SqliteManager>, DatabaseError> {
+        self.writer
+            .get()
+            .in_current_span()
+            .await
+            .map_err(|err| DatabaseError::ConnectionPoolObtainError(Box::new(err)))
+    }
+
     /// Runs `query` inside a read-write (`IMMEDIATE`) transaction on the single writer connection,
     /// committing on `Ok`.
     pub async fn write<R, E, F>(&self, msg: impl ToString + Send, query: F) -> Result<R, E>
@@ -220,14 +247,6 @@ impl Database {
         })
         .await
         .map_err(|err| E::from(DatabaseError::interact(&msg, &err)))?
-    }
-
-    /// Begins a read-only (`DEFERRED`) transaction on a reader connection and returns a handle held
-    /// across `.await` points. See [`ReadTransaction`].
-    pub async fn begin_read(&self) -> Result<ReadTransaction, DatabaseError> {
-        let conn = self.checkout_reader().await?;
-        run_tx_stmt(&conn, "BEGIN DEFERRED").await?;
-        Ok(ReadTransaction { conn })
     }
 
     /// Begins a read-write (`IMMEDIATE`) transaction on the single writer connection and returns a
@@ -340,7 +359,7 @@ mod tests {
 
     use rusqlite::Connection;
 
-    use super::Database;
+    use super::{DbReader, DbWriter, open_with_pool_size};
     use crate::DatabaseError;
 
     /// A throwaway file-backed database; the pools open existing files `READ_WRITE` only, so the
@@ -378,23 +397,24 @@ mod tests {
         }
     }
 
-    fn open_db(temp: &TempDb) -> Database {
-        Database::new_with_pool_size(temp.path(), NonZeroUsize::new(4).unwrap()).unwrap()
+    fn open_db(temp: &TempDb) -> (DbWriter, DbReader) {
+        open_with_pool_size(temp.path(), NonZeroUsize::new(4).unwrap()).unwrap()
     }
 
-    async fn count_items(db: &Database) -> i64 {
-        db.read::<_, DatabaseError, _>("count", |r| {
-            Ok(r.query("SELECT COUNT(*) FROM items", &[], |row| row.get::<i64>(0))?
-                .into_iter()
-                .next()
-                .unwrap_or(0))
-        })
-        .await
-        .unwrap()
+    async fn count_items(reader: &DbReader) -> i64 {
+        reader
+            .read::<_, DatabaseError, _>("count", |r| {
+                Ok(r.query("SELECT COUNT(*) FROM items", &[], |row| row.get::<i64>(0))?
+                    .into_iter()
+                    .next()
+                    .unwrap_or(0))
+            })
+            .await
+            .unwrap()
     }
 
-    async fn insert_committed(db: &Database, id: i64) {
-        let tx = db.begin_write().await.unwrap();
+    async fn insert_committed(writer: &DbWriter, id: i64) {
+        let tx = writer.begin_write().await.unwrap();
         tx.run::<_, DatabaseError, _>("insert", move |w| {
             w.execute("INSERT INTO items (id) VALUES (?1)", &[&id])?;
             Ok(())
@@ -407,9 +427,9 @@ mod tests {
     #[tokio::test]
     async fn held_write_transaction_commits_across_awaits() {
         let temp = TempDb::new("commit");
-        let db = open_db(&temp);
+        let (writer, reader) = open_db(&temp);
 
-        let tx = db.begin_write().await.unwrap();
+        let tx = writer.begin_write().await.unwrap();
         tx.run::<_, DatabaseError, _>("insert-1", |w| {
             w.execute("INSERT INTO items (id) VALUES (?1)", &[&1i64])?;
             Ok(())
@@ -429,16 +449,16 @@ mod tests {
 
         tx.commit().await.unwrap();
 
-        assert_eq!(count_items(&db).await, 2);
+        assert_eq!(count_items(&reader).await, 2);
     }
 
     #[tokio::test]
     async fn dropped_write_transaction_rolls_back() {
         let temp = TempDb::new("rollback");
-        let db = open_db(&temp);
+        let (writer, reader) = open_db(&temp);
 
         {
-            let tx = db.begin_write().await.unwrap();
+            let tx = writer.begin_write().await.unwrap();
             tx.run::<_, DatabaseError, _>("insert", |w| {
                 w.execute("INSERT INTO items (id) VALUES (?1)", &[&1i64])?;
                 Ok(())
@@ -451,18 +471,18 @@ mod tests {
         // The sole writer connection is reused; `recycle` must have rolled back the orphaned
         // transaction, otherwise this `BEGIN IMMEDIATE` would fail with "cannot start a transaction
         // within a transaction". The first insert must not have persisted.
-        insert_committed(&db, 2).await;
-        assert_eq!(count_items(&db).await, 1);
+        insert_committed(&writer, 2).await;
+        assert_eq!(count_items(&reader).await, 1);
     }
 
     #[tokio::test]
     async fn reads_proceed_while_write_transaction_is_held() {
         let temp = TempDb::new("concurrent");
-        let db = open_db(&temp);
-        insert_committed(&db, 1).await;
+        let (writer, reader) = open_db(&temp);
+        insert_committed(&writer, 1).await;
 
         // Hold an open write transaction with an uncommitted insert.
-        let tx = db.begin_write().await.unwrap();
+        let tx = writer.begin_write().await.unwrap();
         tx.run::<_, DatabaseError, _>("insert-uncommitted", |w| {
             w.execute("INSERT INTO items (id) VALUES (?1)", &[&2i64])?;
             Ok(())
@@ -472,18 +492,18 @@ mod tests {
 
         // A read on the reader pool proceeds (does not block on the writer) and does not see the
         // uncommitted row.
-        assert_eq!(count_items(&db).await, 1);
+        assert_eq!(count_items(&reader).await, 1);
 
         tx.commit().await.unwrap();
-        assert_eq!(count_items(&db).await, 2);
+        assert_eq!(count_items(&reader).await, 2);
     }
 
     #[tokio::test]
     async fn reader_connections_are_query_only() {
         let temp = TempDb::new("query_only");
-        let db = open_db(&temp);
+        let (_writer, reader) = open_db(&temp);
 
-        let query_only = db
+        let query_only = reader
             .read::<_, DatabaseError, _>("pragma", |r| {
                 Ok(r.query("PRAGMA query_only", &[], |row| row.get::<i64>(0))?
                     .into_iter()
@@ -495,7 +515,7 @@ mod tests {
         assert_eq!(query_only, 1, "reader connections must be query_only");
 
         // A write attempted on a reader connection is rejected.
-        let result = db
+        let result = reader
             .read::<(), DatabaseError, _>("rejected-write", |r| {
                 r.query("INSERT INTO items (id) VALUES (99)", &[], |_| Ok(()))?;
                 Ok(())

@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::{Database, ReadTx, Row, WriteTx};
+use miden_node_db::sqlite::{DbReader, DbWriter, ReadTx, Row, WriteTx};
 use miden_node_utils::formatting::format_array;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -45,7 +45,7 @@ mod sql {
 #[miden_instrument(
     target = COMPONENT,
 )]
-pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
+pub async fn load(database_filepath: PathBuf) -> Result<(DbWriter, DbReader), DatabaseError> {
     load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -57,7 +57,7 @@ pub async fn load(database_filepath: PathBuf) -> Result<Database, DatabaseError>
 pub async fn load_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<Database, DatabaseError> {
+) -> Result<(DbWriter, DbReader), DatabaseError> {
     verify_latest_schema(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -67,7 +67,7 @@ pub async fn load_with_pool_size(
 #[miden_instrument(
     target = COMPONENT,
 )]
-pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError> {
+pub async fn setup(database_filepath: PathBuf) -> Result<(DbWriter, DbReader), DatabaseError> {
     setup_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
@@ -78,7 +78,7 @@ pub async fn setup(database_filepath: PathBuf) -> Result<Database, DatabaseError
 pub async fn setup_with_pool_size(
     database_filepath: PathBuf,
     connection_pool_size: NonZeroUsize,
-) -> Result<Database, DatabaseError> {
+) -> Result<(DbWriter, DbReader), DatabaseError> {
     bootstrap_database(&database_filepath)?;
 
     open_with_pool_size(&database_filepath, connection_pool_size)
@@ -96,15 +96,16 @@ pub fn migrate(database_filepath: impl AsRef<Path>) -> Result<(), DatabaseError>
 fn open_with_pool_size(
     database_filepath: &Path,
     connection_pool_size: NonZeroUsize,
-) -> Result<Database, DatabaseError> {
-    let db = Database::new_with_pool_size(database_filepath, connection_pool_size)?;
+) -> Result<(DbWriter, DbReader), DatabaseError> {
+    let (writer, reader) =
+        miden_node_db::sqlite::open_with_pool_size(database_filepath, connection_pool_size)?;
     tracing::info!(
         target: LOG_TARGET,
         sqlite= %database_filepath.display(),
         connection_pool_size = %connection_pool_size,
         "Connected to the database"
     );
-    Ok(db)
+    Ok((writer, reader))
 }
 
 /// Inserts a validated transaction and its encrypted private inputs.
@@ -422,23 +423,24 @@ mod tests {
     #[tokio::test]
     async fn transaction_exists_detects_validated_transactions() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
 
         let validated_id = TransactionId::from_raw(Word::try_from([1u64, 2, 3, 4]).unwrap());
         let unknown_id = TransactionId::from_raw(Word::try_from([5u64, 6, 7, 8]).unwrap());
 
         let record = private_record(validated_id, 1);
-        db.write("insert_row", move |tx| insert_validated_private_transaction(tx, &record))
+        writer
+            .write("insert_row", move |tx| insert_validated_private_transaction(tx, &record))
             .await
             .unwrap();
 
-        let validated_exists = db
+        let validated_exists = reader
             .read("transaction_exists", move |tx| transaction_exists(tx, validated_id))
             .await
             .unwrap();
         assert!(validated_exists, "an inserted transaction id should be reported as existing");
 
-        let unknown_exists = db
+        let unknown_exists = reader
             .read("transaction_exists", move |tx| transaction_exists(tx, unknown_id))
             .await
             .unwrap();
@@ -448,24 +450,25 @@ mod tests {
     #[tokio::test]
     async fn private_record_indexes_work() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let transaction_id = TransactionId::from_raw(Word::from([5u32, 6, 7, 8]));
         let record = private_record(transaction_id, 9);
 
         let expected = record.clone();
-        db.write("insert_private_record", move |tx| {
-            insert_validated_private_transaction(tx, &record)
-        })
-        .await
-        .unwrap();
+        writer
+            .write("insert_private_record", move |tx| {
+                insert_validated_private_transaction(tx, &record)
+            })
+            .await
+            .unwrap();
 
-        let by_record = db
+        let by_record = reader
             .read("load_private_record", move |tx| load_private_record(tx, transaction_id))
             .await
             .unwrap();
         assert_eq!(by_record, Some(expected.clone()));
 
-        let by_epoch = db
+        let by_epoch = reader
             .read("load_private_records_by_key_epoch", move |tx| {
                 load_private_records_by_key_epoch(tx, KEY_EPOCH)
             })
@@ -473,7 +476,7 @@ mod tests {
             .unwrap();
         assert_eq!(by_epoch, vec![expected.clone()]);
 
-        let by_setup = db
+        let by_setup = reader
             .read("load_private_records_by_setup_context", move |tx| {
                 load_private_records_by_setup_context(tx, SETUP_CONTEXT_ID)
             })
@@ -485,7 +488,7 @@ mod tests {
     #[tokio::test]
     async fn validated_private_transactions_are_loaded_in_insertion_order() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let transaction_ids = [
             TransactionId::from_raw(Word::from([9u32, 0, 0, 0])),
             TransactionId::from_raw(Word::from([1u32, 0, 0, 0])),
@@ -498,14 +501,15 @@ mod tests {
             .collect::<Vec<_>>();
 
         for record in records.clone() {
-            db.write("insert private record", move |tx| {
-                insert_validated_private_transaction(tx, &record)
-            })
-            .await
-            .unwrap();
+            writer
+                .write("insert private record", move |tx| {
+                    insert_validated_private_transaction(tx, &record)
+                })
+                .await
+                .unwrap();
         }
 
-        let loaded = db.read("load all transactions", load_all_transactions).await.unwrap();
+        let loaded = reader.read("load all transactions", load_all_transactions).await.unwrap();
 
         assert_eq!(loaded, records);
     }
@@ -513,7 +517,7 @@ mod tests {
     #[tokio::test]
     async fn stored_private_record_opens_with_threshold_shares() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let (writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
         let operators = operator_keys();
         let transaction_id = TransactionId::from_raw(Word::from([9u32, 10, 11, 12]));
         let context = PrivateRecordContext::new(CHAIN_ID, operators[0].key_epoch(), transaction_id);
@@ -522,13 +526,14 @@ mod tests {
         let record = PrivateRecordSealer::from_operator_key(&operators[0])
             .seal(&mut seal_rng, record_id(transaction_id), context, plaintext)
             .unwrap();
-        db.write("insert_threshold_record", move |tx| {
-            insert_validated_private_transaction(tx, &record)
-        })
-        .await
-        .unwrap();
+        writer
+            .write("insert_threshold_record", move |tx| {
+                insert_validated_private_transaction(tx, &record)
+            })
+            .await
+            .unwrap();
 
-        let stored = db
+        let stored = reader
             .read("load_threshold_record", move |tx| load_private_record(tx, transaction_id))
             .await
             .unwrap()
@@ -555,9 +560,9 @@ mod tests {
     #[tokio::test]
     async fn private_record_schema_has_required_indexes() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp directory");
-        let db = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
+        let (_writer, reader) = setup(temp_dir.path().join("validator.sqlite3")).await.unwrap();
 
-        let schema = db
+        let schema = reader
             .read("private_record_schema", |tx| {
                 tx.query(
                     "SELECT sql FROM sqlite_schema \

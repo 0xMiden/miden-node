@@ -10,7 +10,7 @@ use tonic_reflection::server;
 use tower_http::trace::TraceLayer;
 
 use crate::LOG_TARGET;
-use crate::db::Db;
+use crate::db::NtxDbReader;
 
 mod get_network_note_status;
 
@@ -22,12 +22,12 @@ mod get_network_note_status;
 /// Exposes endpoints for querying network note status, useful for debugging
 /// network notes that fail to be consumed.
 pub struct NtxBuilderRpcServer {
-    db: Db,
+    db: NtxDbReader,
     max_note_attempts: usize,
 }
 
 impl NtxBuilderRpcServer {
-    pub fn new(db: Db, max_note_attempts: usize) -> Self {
+    pub(crate) fn new(db: NtxDbReader, max_note_attempts: usize) -> Self {
         Self { db, max_note_attempts }
     }
 

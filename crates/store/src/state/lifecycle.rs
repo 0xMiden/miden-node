@@ -148,6 +148,8 @@ impl State {
         let blockchain = load_mmr(&mut db).await?;
         let latest_block_num = blockchain.chain_tip().unwrap_or(BlockNumber::GENESIS);
 
+        let apply_block_thread_priority = storage_options.apply_block_thread_priority;
+
         #[cfg(feature = "rocksdb")]
         let (account_storage_config, nullifier_storage_config, forest_storage_config) = (
             storage_options.account_tree.into(),
@@ -155,10 +157,8 @@ impl State {
             storage_options.account_state_forest.into(),
         );
         #[cfg(not(feature = "rocksdb"))]
-        let (account_storage_config, nullifier_storage_config, forest_storage_config) = {
-            let _ = &storage_options;
-            ((), (), ())
-        };
+        let (account_storage_config, nullifier_storage_config, forest_storage_config) =
+            ((), (), ());
         let account_storage =
             TreeStorage::create(data_path, &account_storage_config, ACCOUNT_TREE_STORAGE_DIR)?;
         let account_tree = account_storage.load_account_tree(&mut db).await?;
@@ -231,6 +231,7 @@ impl State {
             blockchain,
             forest,
             snapshots_live,
+            apply_block_thread_priority,
         );
         let state = Self {
             data_directory: data_path.to_path_buf(),

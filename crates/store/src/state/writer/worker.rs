@@ -73,9 +73,9 @@ pub(in crate::state) struct WriteWorker {
     /// Dedicated rayon pool for the CPU-heavy sections of the write path.
     ///
     /// Applying a block must not queue behind unrelated jobs on the global rayon pool, so its
-    /// parallel tree work runs here instead. The pool spans all cores and its threads run at
-    /// raised priority (best-effort), giving apply-block work high scheduling weight while
-    /// runnable and costing nothing while idle.
+    /// parallel tree work runs here instead. The pool spans all cores and, when configured, its
+    /// threads run at raised priority (best-effort), giving apply-block work high scheduling
+    /// weight while runnable and costing nothing while idle.
     apply_pool: Arc<ThreadPool>,
 }
 
@@ -105,6 +105,7 @@ impl WriteWorker {
         blockchain: Blockchain,
         forest: AccountStateForest<AccountStateForestBackend>,
         snapshots_live: Arc<AtomicUsize>,
+        apply_block_thread_priority: bool,
     ) -> Self {
         // Seed the generation log with the initial snapshot so its readers hold back pruning
         // exactly like readers of any later generation.
@@ -112,13 +113,13 @@ impl WriteWorker {
         let initial_snapshot = latest_snapshot.load_full();
         published_generations.record(initial_snapshot.latest_block_num(), &initial_snapshot);
 
-        let apply_pool = Arc::new(
-            rayon::ThreadPoolBuilder::new()
-                .thread_name(|index| format!("apply_block_{index}"))
-                .start_handler(|_| raise_thread_priority())
-                .build()
-                .expect("apply_block thread pool should build"),
-        );
+        let mut pool_builder =
+            rayon::ThreadPoolBuilder::new().thread_name(|index| format!("apply_block_{index}"));
+        if apply_block_thread_priority {
+            pool_builder = pool_builder.start_handler(|_| raise_thread_priority());
+        }
+        let apply_pool =
+            Arc::new(pool_builder.build().expect("apply_block thread pool should build"));
 
         Self {
             db,
@@ -565,7 +566,8 @@ fn run_on_pool<T: Send>(pool: &ThreadPool, op: impl FnOnce() -> T + Send) -> T {
 
 /// Raises the current thread's scheduling priority, best-effort.
 ///
-/// Runs on each apply-block pool thread at startup. The OS may deny the raise (on Linux it
+/// Runs on each apply-block pool thread at startup when raised priority is enabled in the
+/// storage options. The OS may deny the raise (on Linux it
 /// requires `CAP_SYS_NICE`); the pool still isolates apply-block work from the global rayon pool
 /// at normal priority, so a denial is only logged, and only once rather than per thread.
 fn raise_thread_priority() {

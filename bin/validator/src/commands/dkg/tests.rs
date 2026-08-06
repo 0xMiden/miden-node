@@ -153,9 +153,11 @@ async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
         registrations.push(directory.join(REGISTRATION_FILE));
     }
     let output = root.path().join("ceremony");
+    let second_output = root.path().join("ceremony-copy");
     let epoch = "11".repeat(32);
 
     prepare(&genesis.path, 2, &epoch, &registrations, &output)?;
+    prepare(&genesis.path, 2, &epoch, &registrations, &second_output)?;
 
     let manifest: Manifest = toml::from_str(&fs_err::read_to_string(output.join(MANIFEST_FILE))?)?;
     let decryption_bytes = fs_err::read(output.join(DECRYPTION_CONFIG_FILE))?;
@@ -169,6 +171,7 @@ async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
     assert_eq!(manifest.context_config_sha256, sha256_hex(&context_bytes));
     assert_eq!(decryption.threshold, 2);
     assert_eq!(context.threshold, 2);
+    assert_eq!(decryption.beta, setup_beta()?);
     assert_eq!(decryption.registry, context.registry);
     assert_eq!(context.session_id, derive_context_session_id(decryption.session_id));
     for ((position, participant), validator_key) in
@@ -177,6 +180,49 @@ async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
         assert_eq!(participant.participant_index, u32::try_from(position + 1)?);
         assert_eq!(participant.validator_public_key, hex::encode(validator_key.to_bytes()));
     }
+    for name in [MANIFEST_FILE, DECRYPTION_CONFIG_FILE, CONTEXT_CONFIG_FILE] {
+        assert_eq!(fs_err::read(output.join(name))?, fs_err::read(second_output.join(name))?);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn ceremony_rejects_a_substituted_session_with_matching_config_digests() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+    let mut manifest: Manifest =
+        toml::from_str(&fs_err::read_to_string(ceremony.ceremony.join(MANIFEST_FILE))?)?;
+    let decryption_bytes = fs_err::read(ceremony.ceremony.join(DECRYPTION_CONFIG_FILE))?;
+    let decryption: DkgConfig<StorageGroup> = from_wire_bytes(&decryption_bytes)?;
+    let wrong_session = SessionId([0x55; 32]);
+    assert_ne!(wrong_session, decryption.session_id);
+    let beta = decryption.beta;
+
+    let wrong_decryption =
+        DkgConfig::new(decryption.threshold, wrong_session, beta, decryption.registry.clone())?;
+    let wrong_context = DkgConfig::new(
+        decryption.threshold,
+        derive_context_session_id(wrong_session),
+        beta,
+        decryption.registry,
+    )?;
+    let wrong_decryption = to_wire_bytes(&wrong_decryption);
+    let wrong_context = to_wire_bytes(&wrong_context);
+    manifest.decryption_session_id = hex::encode(wrong_session.0);
+    manifest.context_session_id = hex::encode(derive_context_session_id(wrong_session).0);
+    manifest.decryption_config_sha256 = sha256_hex(&wrong_decryption);
+    manifest.context_config_sha256 = sha256_hex(&wrong_context);
+    fs_err::write(ceremony.ceremony.join(DECRYPTION_CONFIG_FILE), wrong_decryption)?;
+    fs_err::write(ceremony.ceremony.join(CONTEXT_CONFIG_FILE), wrong_context)?;
+    fs_err::write(ceremony.ceremony.join(MANIFEST_FILE), toml::to_string_pretty(&manifest)?)?;
+
+    let Err(error) = read_ceremony(&ceremony.genesis.path, &ceremony.ceremony) else {
+        panic!("substituted session was accepted");
+    };
+    assert!(
+        format!("{error:#}").contains("decryption session mismatch"),
+        "unexpected error: {error:#}",
+    );
     Ok(())
 }
 
@@ -611,9 +657,9 @@ async fn finalize_rejects_manifest_changed_after_acceptance() -> TestResult {
     let dealings = deal_for_all(root.path(), &ceremony)?;
     let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
     let manifest_path = ceremony.ceremony.join(MANIFEST_FILE);
-    let mut manifest: Manifest = toml::from_str(&fs_err::read_to_string(&manifest_path)?)?;
-    manifest.epoch = "55".repeat(32);
-    fs_err::write(&manifest_path, toml::to_string_pretty(&manifest)?)?;
+    let mut manifest = fs_err::read_to_string(&manifest_path)?;
+    manifest.push_str("# changed after transcript acceptance\n");
+    fs_err::write(&manifest_path, manifest)?;
     let output = root.path().join("bundle");
 
     let error = finalize::<ShareOpeningBackend>(

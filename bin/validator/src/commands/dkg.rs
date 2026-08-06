@@ -57,6 +57,8 @@ type PublicOutput = (StorageElement, BTreeMap<ParticipantIndex, StorageElement>)
 const REGISTRATION_VERSION: &str = "miden-storage-key-dkg-registration-v1";
 const MANIFEST_VERSION: &str = "miden-storage-key-dkg-manifest-v1";
 const REGISTRATION_SIGNATURE_DOMAIN: &[u8] = b"miden-storage-key-dkg-registration-signature-v1";
+const SETUP_BETA_DOMAIN: &[u8] = b"miden-storage-key-dkg-beta-v1";
+const DECRYPTION_SESSION_DOMAIN: &[u8] = b"miden-storage-key-dkg-session-v1";
 const IDENTITY_SECRET_MAGIC: &[u8] = b"miden-storage-key-dkg-identity-v1\0";
 const IDENTITY_SECRET_FILE: &str = "identity-secret.wire";
 const REGISTRATION_FILE: &str = "registration.toml";
@@ -497,9 +499,9 @@ fn prepare(
         "registration set contains a validator outside genesis"
     );
 
-    let beta = StorageScalar::random(&mut OsRng);
-    ensure!(!bool::from(beta.is_zero()), "generated a zero DKG beta");
-    let decryption_session_id = SessionId::random(&mut OsRng);
+    let beta = setup_beta()?;
+    let decryption_session_id =
+        derive_decryption_session_id(genesis_commitment, threshold, &epoch, &participants)?;
     let context_session_id = derive_context_session_id(decryption_session_id);
     let registry: ParticipantRegistry<StorageGroup> = ParticipantRegistry::new(registry_entries)?;
     let decryption_config =
@@ -988,7 +990,7 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
         manifest.genesis_commitment == hex::encode(genesis_commitment.to_bytes()),
         "DKG manifest belongs to a different genesis block",
     );
-    decode_fixed_hex::<32>(&manifest.epoch, "storage-key epoch")?;
+    let epoch = decode_fixed_hex::<32>(&manifest.epoch, "storage-key epoch")?;
 
     let decryption_bytes = fs_err::read(directory.join(DECRYPTION_CONFIG_FILE))
         .context("failed to read decryption configuration")?;
@@ -1009,13 +1011,22 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
 
     ensure!(decryption_config.threshold == manifest.threshold, "threshold mismatch");
     ensure!(context_config.threshold == manifest.threshold, "context threshold mismatch");
+    let expected_beta = setup_beta()?;
     ensure!(
-        hex::encode(decryption_config.beta.to_repr()) == manifest.beta
+        decryption_config.beta == expected_beta
+            && hex::encode(expected_beta.to_repr()) == manifest.beta
             && context_config.beta == decryption_config.beta,
         "DKG beta mismatch",
     );
+    let expected_session = derive_decryption_session_id(
+        genesis_commitment,
+        manifest.threshold,
+        &epoch,
+        &manifest.participants,
+    )?;
     ensure!(
-        hex::encode(decryption_config.session_id.0) == manifest.decryption_session_id,
+        decryption_config.session_id == expected_session
+            && hex::encode(expected_session.0) == manifest.decryption_session_id,
         "decryption session mismatch",
     );
     ensure!(
@@ -1058,6 +1069,37 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
         decryption_config,
         context_config,
     })
+}
+
+/// Returns the fixed public eVRF setup coefficient for this storage DKG backend.
+fn setup_beta() -> anyhow::Result<StorageScalar> {
+    StorageScalar::hash_to_scalar(SETUP_BETA_DOMAIN, StorageGroup::BACKEND_ID.as_bytes())
+        .context("failed to derive storage key DKG beta")
+}
+
+/// Derives one ceremony session from its agreed public policy and participant registry.
+fn derive_decryption_session_id(
+    genesis_commitment: Word,
+    threshold: usize,
+    epoch: &[u8; 32],
+    participants: &[ManifestParticipant],
+) -> anyhow::Result<SessionId> {
+    let mut digest = Sha256::new();
+    digest.update(DECRYPTION_SESSION_DOMAIN);
+    digest.update(u64::try_from(StorageGroup::BACKEND_ID.len())?.to_be_bytes());
+    digest.update(StorageGroup::BACKEND_ID.as_bytes());
+    digest.update(genesis_commitment.to_bytes());
+    digest.update(u64::try_from(threshold)?.to_be_bytes());
+    digest.update(epoch);
+    digest.update(u64::try_from(participants.len())?.to_be_bytes());
+    for participant in participants {
+        digest.update(participant.participant_index.to_be_bytes());
+        let validator_key = decode_validator_public_key(&participant.validator_public_key)?;
+        let identity_key = decode_identity_public_key(&participant.dkg_identity_public_key)?;
+        digest.update(validator_key.to_bytes());
+        digest.update(StorageGroup::encode_element(&identity_key).as_ref());
+    }
+    Ok(SessionId(digest.finalize().into()))
 }
 
 /// Returns the manifest participant whose public identity matches a secret.

@@ -20,6 +20,7 @@ use golden_core::{
     complete,
     create_dealing,
     create_dealing_with_secret,
+    verify_dealing,
 };
 use golden_ehtdh1::wire::to_wire_bytes as to_ehtdh1_wire_bytes;
 use golden_ehtdh1::{
@@ -1211,6 +1212,14 @@ where
     let expected = ceremony.manifest.participants.len();
     let decryption_dealings = read_dealings::<B>(decryption_paths, expected)?;
     let context_dealings = read_dealings::<B>(context_paths, expected)?;
+    for message in decryption_dealings.values() {
+        verify_dealing::<StorageGroup, B>(message, &ceremony.decryption_config)
+            .context("invalid decryption dealing")?;
+    }
+    for message in context_dealings.values() {
+        verify_dealing::<StorageGroup, B>(message, &ceremony.context_config)
+            .context("invalid context dealing")?;
+    }
     let public_key_set = public_key_set_from_dealings(
         &decryption_dealings,
         &context_dealings,

@@ -33,6 +33,13 @@ current block.
 The DKG creates the storage key used to re-encrypt validated private inputs. Run one ceremony for the validator set
 committed in genesis. Participant indexes follow the order of validator signing keys in the genesis block.
 
+The threshold is network policy. A threshold of `t` lets any `t` validators decrypt a stored record; fewer validators
+cannot. Choose it from the network's confidentiality and availability needs before the ceremony starts.
+
+This flow supports initial storage-key bootstrap only. The validator loads one storage-key epoch. Rotation, creating new
+shares, and validator-set changes are not yet supported. Keep each operator bundle available for as long as records from
+its epoch may need to be decrypted.
+
 First, each operator creates a DKG identity for the agreed storage-key epoch and sends `registration.toml` to the
 coordinator. The registration proves ownership of the DKG identity secret. The signing key must match one key in
 genesis. Use `--signing-key.hex` instead of KMS only for local or private deployments.

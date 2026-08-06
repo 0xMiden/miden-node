@@ -682,6 +682,40 @@ async fn finalize_rejects_tampered_dealing_without_partial_output() -> TestResul
 }
 
 #[tokio::test]
+async fn accept_rejects_a_dealing_from_another_session() -> TestResult {
+    type FastDealerMessage =
+        DealerMessage<StorageGroup, <ShareOpeningBackend as EvrfProofBackend<StorageGroup>>::Proof>;
+
+    let root = tempfile::tempdir()?;
+    let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
+    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let substituted = root.path().join("wrong-session.wire");
+    let mut message = from_wire_bytes::<FastDealerMessage>(&fs_err::read(
+        dealings[1].join(DECRYPTION_DEALING_FILE),
+    )?)?;
+    message.session_id = SessionId([0x55; 32]);
+    fs_err::write(&substituted, to_wire_bytes(&message))?;
+    let mut decryption = dealing_paths(&dealings, DECRYPTION_DEALING_FILE);
+    decryption[1] = substituted;
+    let output = root.path().join("acceptance");
+
+    let error = accept_transcript::<ShareOpeningBackend>(
+        &ceremony.genesis.path,
+        &ceremony.ceremony,
+        &ValidatorSigner::new_local(ceremony.genesis.signing_keys[0].clone()),
+        &decryption,
+        &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
+        &output,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains("session mismatch"));
+    assert!(!output.exists());
+    Ok(())
+}
+
+#[tokio::test]
 async fn finalize_rejects_valid_dealer_equivocation() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;

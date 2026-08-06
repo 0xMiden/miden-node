@@ -65,16 +65,12 @@ pub fn partition_by_allowlist(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
-    use miden_protocol::asset::FungibleAsset;
-    use miden_standards::account::auth::{AuthNetworkAccount, NetworkAccountNoteAllowlistError};
-    use miden_standards::account::fees::FeePolicyManager;
+    use miden_standards::account::auth::NetworkAccountNoteAllowlistError;
 
     use super::*;
     use crate::test_utils::{
         mock_account,
-        mock_account_with_auth_component,
+        mock_network_account,
         mock_network_account_id,
         mock_single_target_note,
         mock_single_target_note_with_code,
@@ -91,13 +87,7 @@ end";
         let account_id = mock_network_account_id();
         let note = mock_single_target_note(account_id, 10);
         let root = note.as_note().script().root();
-        let account = mock_account_with_auth_component(
-            AuthNetworkAccount::new(
-                BTreeSet::from_iter([root]),
-                FeePolicyManager::mock(FungibleAsset::mock_issuer()),
-            )
-            .expect("non-empty allowlist should construct"),
-        );
+        let account = mock_network_account([root]);
 
         let partitioned_notes =
             partition_by_allowlist(&account, vec![note.clone()]).expect("allowlist should load");
@@ -117,13 +107,7 @@ end";
         let rejected_root = rejected_note.as_note().script().root();
         assert_ne!(allowed_root, rejected_root);
 
-        let account = mock_account_with_auth_component(
-            AuthNetworkAccount::new(
-                BTreeSet::from_iter([allowed_root]),
-                FeePolicyManager::mock(FungibleAsset::mock_issuer()),
-            )
-            .expect("non-empty allowlist should construct"),
-        );
+        let account = mock_network_account([allowed_root]);
 
         let partitioned_notes = partition_by_allowlist(&account, vec![rejected_note.clone()])
             .expect("allowlist should load");
@@ -145,13 +129,7 @@ end";
         let rejected_root = rejected_note.as_note().script().root();
         assert_ne!(allowed_root, rejected_root);
 
-        let account = mock_account_with_auth_component(
-            AuthNetworkAccount::new(
-                BTreeSet::from_iter([allowed_root]),
-                FeePolicyManager::mock(FungibleAsset::mock_issuer()),
-            )
-            .expect("non-empty allowlist should construct"),
-        );
+        let account = mock_network_account([allowed_root]);
 
         let partitioned_notes =
             partition_by_allowlist(&account, vec![allowed_note.clone(), rejected_note.clone()])

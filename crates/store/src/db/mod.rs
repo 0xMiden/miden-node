@@ -187,6 +187,7 @@ pub struct NoteSyncRecord {
     pub note_index: BlockNoteIndex,
     pub note_id: NoteId,
     pub metadata: NoteMetadata,
+    pub attachments: NoteAttachments,
     pub inclusion_path: SparseMerklePath,
 }
 
@@ -197,6 +198,7 @@ impl From<NoteRecord> for NoteSyncRecord {
             note_index: note.note_index,
             note_id: NoteId::from_raw(note.note_id),
             metadata: note.metadata,
+            attachments: note.attachments,
             inclusion_path: note.inclusion_path,
         }
     }

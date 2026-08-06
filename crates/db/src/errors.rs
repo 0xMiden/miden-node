@@ -4,6 +4,8 @@ use std::io;
 use deadpool_sync::InteractError;
 use thiserror::Error;
 
+use crate::DatabaseTypeConversionError;
+
 // SCHEMA VERIFICATION ERROR
 // =================================================================================================
 
@@ -37,6 +39,7 @@ pub enum DatabaseError {
     InteractError(String),
     #[error("setup deadpool connection pool failed")]
     ConnectionPoolObtainError(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+    // This error can be removed after completing the removal of Diesel.
     #[error("conversion from SQL to rust type {to} failed")]
     ConversionSqlToRust {
         #[source]
@@ -57,6 +60,8 @@ pub enum DatabaseError {
     PoolBuild(#[from] deadpool::managed::BuildError),
     #[error("Setup deadpool connection pool failed")]
     Pool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
+    #[error("failed to cast")]
+    ConversionError(#[from] DatabaseTypeConversionError),
 }
 
 impl DatabaseError {

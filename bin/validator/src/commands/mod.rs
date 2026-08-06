@@ -642,10 +642,10 @@ mod tests {
     }
 
     async fn store_private_record(
-        database: &miden_node_db::sqlite::Database,
+        writer: &miden_node_db::sqlite::DbWriter,
         record: miden_validator::StoredPrivateRecord,
     ) {
-        database
+        writer
             .write("insert_private_record", move |tx| {
                 miden_validator::db::insert_validated_private_transaction(tx, &record)
             })
@@ -835,9 +835,10 @@ mod tests {
     #[tokio::test]
     async fn two_validators_issue_shares_for_third_validator_record() {
         let directory = tempfile::tempdir().unwrap();
-        let database = miden_validator::db::setup(directory.path().join("validator.sqlite3"))
-            .await
-            .unwrap();
+        let (writer, _reader) =
+            miden_validator::db::setup(directory.path().join("validator.sqlite3"))
+                .await
+                .unwrap();
         let operator_keys = test_operator_keys(9, 3);
         let validator_signers = [7u8, 8, 9].map(|seed| {
             SigningKey::read_from_bytes(&[seed; 32]).expect("test signing key should decode")
@@ -866,7 +867,7 @@ mod tests {
         assert_ne!(records[1].encrypted_record_key(), records[2].encrypted_record_key());
 
         let target = records.remove(2);
-        store_private_record(&database, target.clone()).await;
+        store_private_record(&writer, target.clone()).await;
         let target_file = directory.path().join("target-record.bin");
         let encoded_transaction_id = hex::encode(transaction_id.to_bytes());
         let encoded_validator_id = hex::encode(target.record_id().validator_id());

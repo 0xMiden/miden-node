@@ -331,6 +331,11 @@ struct TranscriptAcceptances {
     acceptances: Vec<TranscriptAcceptance>,
 }
 
+struct DealingSet<P> {
+    messages: BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, P>>,
+    hashes: Vec<TranscriptDealing>,
+}
+
 /// Runs one DKG ceremony command.
 pub async fn run(options: DkgOptions) -> anyhow::Result<()> {
     match options.command {
@@ -731,19 +736,18 @@ where
         sha256(&transcript_bytes),
     )?;
 
-    let decryption_dealings =
+    let decryption =
         read_dealings::<B>(decryption_dealing_paths, ceremony.manifest.participants.len())?;
-    let context_dealings =
-        read_dealings::<B>(context_dealing_paths, ceremony.manifest.participants.len())?;
+    let context = read_dealings::<B>(context_dealing_paths, ceremony.manifest.participants.len())?;
     validate_dealings_against_transcript::<B>(
-        &decryption_dealings,
-        decryption_dealing_paths,
+        &decryption.messages,
+        &decryption.hashes,
         &transcript.decryption_dealings,
         &transcript.decryption_transcript_root,
     )?;
     validate_dealings_against_transcript::<B>(
-        &context_dealings,
-        context_dealing_paths,
+        &context.messages,
+        &context.hashes,
         &transcript.context_dealings,
         &transcript.context_transcript_root,
     )?;
@@ -751,7 +755,7 @@ where
     println!(
         "Completing decryption round for participant {} with {} dealings.",
         participant.get(),
-        decryption_dealings.len(),
+        decryption.messages.len(),
     );
     let started = Instant::now();
     let decryption_output = complete_round::<B>(
@@ -759,7 +763,7 @@ where
         &identity_secret,
         &private_state.decryption_private_share,
         private_state.decryption_message_sha256,
-        decryption_dealings,
+        decryption.messages,
         &ceremony.decryption_config,
     )
     .context("failed to complete decryption round")?;
@@ -772,7 +776,7 @@ where
     println!(
         "Completing context round for participant {} with {} dealings.",
         participant.get(),
-        context_dealings.len(),
+        context.messages.len(),
     );
     let started = Instant::now();
     let context_output = complete_round::<B>(
@@ -780,7 +784,7 @@ where
         &identity_secret,
         &private_state.context_private_share,
         private_state.context_message_sha256,
-        context_dealings,
+        context.messages,
         &ceremony.context_config,
     )
     .context("failed to complete context round")?;
@@ -1173,16 +1177,14 @@ fn participant_for_identity(
 }
 
 /// Reads exactly one public dealing from every ceremony participant.
-fn read_dealings<B>(
-    paths: &[PathBuf],
-    expected: usize,
-) -> anyhow::Result<BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, B::Proof>>>
+fn read_dealings<B>(paths: &[PathBuf], expected: usize) -> anyhow::Result<DealingSet<B::Proof>>
 where
     B: EvrfProofBackend<StorageGroup>,
     B::Proof: WireMessage,
 {
     ensure!(paths.len() == expected, "expected {expected} dealings, got {}", paths.len());
     let mut dealings = BTreeMap::new();
+    let mut hashes = BTreeMap::new();
     for path in paths {
         let bytes = fs_err::read(path)
             .with_context(|| format!("failed to read dealing {}", path.display()))?;
@@ -1194,9 +1196,17 @@ where
             "duplicate dealing from participant {}",
             dealer.get(),
         );
+        hashes.insert(dealer, sha256_hex(&bytes));
     }
     ensure!(dealings.len() == expected, "dealing set is incomplete");
-    Ok(dealings)
+    let hashes = hashes
+        .into_iter()
+        .map(|(participant, sha256)| TranscriptDealing {
+            participant_index: participant.get(),
+            sha256,
+        })
+        .collect();
+    Ok(DealingSet { messages: dealings, hashes })
 }
 
 /// Builds the canonical transcript over one manifest and both dealing rounds.
@@ -1210,29 +1220,29 @@ where
     B::Proof: WireMessage,
 {
     let expected = ceremony.manifest.participants.len();
-    let decryption_dealings = read_dealings::<B>(decryption_paths, expected)?;
-    let context_dealings = read_dealings::<B>(context_paths, expected)?;
-    for message in decryption_dealings.values() {
+    let decryption = read_dealings::<B>(decryption_paths, expected)?;
+    let context = read_dealings::<B>(context_paths, expected)?;
+    for message in decryption.messages.values() {
         verify_dealing::<StorageGroup, B>(message, &ceremony.decryption_config)
             .context("invalid decryption dealing")?;
     }
-    for message in context_dealings.values() {
+    for message in context.messages.values() {
         verify_dealing::<StorageGroup, B>(message, &ceremony.context_config)
             .context("invalid context dealing")?;
     }
     let public_key_set = public_key_set_from_dealings(
-        &decryption_dealings,
-        &context_dealings,
+        &decryption.messages,
+        &context.messages,
         &ceremony.decryption_config,
     )?;
     let transcript = CeremonyTranscript {
         version: TRANSCRIPT_VERSION.to_owned(),
         manifest_sha256: hex::encode(ceremony.manifest_sha256),
-        decryption_transcript_root: hex::encode(completion_root(&decryption_dealings)),
-        context_transcript_root: hex::encode(completion_root(&context_dealings)),
+        decryption_transcript_root: hex::encode(completion_root(&decryption.messages)),
+        context_transcript_root: hex::encode(completion_root(&context.messages)),
         public_key_set_sha256: sha256_hex(&to_ehtdh1_wire_bytes(&public_key_set)),
-        decryption_dealings: dealing_hashes::<B>(decryption_paths, expected)?,
-        context_dealings: dealing_hashes::<B>(context_paths, expected)?,
+        decryption_dealings: decryption.hashes,
+        context_dealings: context.hashes,
     };
     let bytes = toml::to_string_pretty(&transcript)
         .context("failed to encode DKG transcript")?
@@ -1347,7 +1357,7 @@ fn validate_transcript_acceptances(
 /// Recomputes one round's canonical dealing hashes and completion root.
 fn validate_dealings_against_transcript<B>(
     dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, B::Proof>>,
-    paths: &[PathBuf],
+    actual_hashes: &[TranscriptDealing],
     expected_hashes: &[TranscriptDealing],
     expected_root: &str,
 ) -> anyhow::Result<()>
@@ -1355,43 +1365,12 @@ where
     B: EvrfProofBackend<StorageGroup>,
     B::Proof: WireMessage,
 {
-    ensure!(
-        dealing_hashes::<B>(paths, dealings.len())? == expected_hashes,
-        "dealings do not match accepted transcript",
-    );
+    ensure!(actual_hashes == expected_hashes, "dealings do not match accepted transcript");
     ensure!(
         hex::encode(completion_root(dealings)) == expected_root,
         "dealing roots do not match accepted transcript",
     );
     Ok(())
-}
-
-/// Returns canonical hashes for dealing files sorted by participant.
-fn dealing_hashes<B>(paths: &[PathBuf], expected: usize) -> anyhow::Result<Vec<TranscriptDealing>>
-where
-    B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
-{
-    let mut hashes = BTreeMap::new();
-    for path in paths {
-        let bytes = fs_err::read(path)
-            .with_context(|| format!("failed to read dealing {}", path.display()))?;
-        let message = from_core_wire_bytes::<DealerMessage<StorageGroup, B::Proof>>(&bytes)
-            .with_context(|| format!("invalid dealing {}", path.display()))?;
-        ensure!(
-            hashes.insert(message.dealer, sha256_hex(&bytes)).is_none(),
-            "duplicate dealing from participant {}",
-            message.dealer.get(),
-        );
-    }
-    ensure!(hashes.len() == expected, "dealing set is incomplete");
-    Ok(hashes
-        .into_iter()
-        .map(|(participant, sha256)| TranscriptDealing {
-            participant_index: participant.get(),
-            sha256,
-        })
-        .collect())
 }
 
 /// Derives the EHTDH1 public key set from the accepted Feldman commitments.

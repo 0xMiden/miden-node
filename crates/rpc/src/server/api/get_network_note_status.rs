@@ -4,7 +4,7 @@ use miden_protocol::Word;
 use tonic::Request;
 use tracing::debug;
 
-use super::{RpcRouting, RpcService};
+use super::{RpcMode, RpcService};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -53,8 +53,8 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
             forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
         }
 
-        let response = match &self.route {
-            RpcRouting::Sequencer { .. } => {
+        let response = match &self.mode {
+            RpcMode::Sequencer { .. } => {
                 let Some(ntx_builder) = &self.ntx_builder else {
                     return Err(tonic::Status::unavailable(
                         "Network transaction builder is not enabled",
@@ -67,7 +67,7 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
                     .await?
                     .into_inner()
             },
-            RpcRouting::FullNode { source_rpc, .. } => source_rpc
+            RpcMode::FullNode { source_rpc, .. } => source_rpc
                 .as_ref()
                 .clone()
                 .get_network_note_status(forwarded_request)

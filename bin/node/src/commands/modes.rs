@@ -95,6 +95,7 @@ impl SequencerCommand {
             listener: bind_rpc(runtime.rpc_listen).await?,
             state,
             mode: RpcMode::sequencer(block_producer.clone(), validator_clients),
+            sync_writers: None,
             ntx_builder: Some(ntx_builder_client),
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
@@ -298,13 +299,8 @@ impl FullNodeCommand {
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
             state,
-            mode: RpcMode::full_node(
-                source_rpc,
-                self.sync.readiness_threshold,
-                pre_auth,
-                block_writer,
-                proof_writer,
-            ),
+            mode: RpcMode::full_node(source_rpc, self.sync.readiness_threshold, pre_auth),
+            sync_writers: Some((block_writer, proof_writer)),
             ntx_builder: None,
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,

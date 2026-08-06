@@ -43,7 +43,7 @@ use miden_standards::code_builder::CodeBuilder;
 use crate::db::models::queries::accounts::{
     PrecomputedPublicAccountState,
     PrecomputedPublicAccountStates,
-    VALID_UNTIL_OPEN,
+    VALID_FOREVER,
     select_account_header_with_storage_header_at_block,
     select_account_vault_at_block,
     select_full_account,
@@ -1023,7 +1023,7 @@ fn upsert_private_account() {
     let (stored_commitment, stored_nonce, stored_code): (Vec<u8>, Option<i64>, Option<Vec<u8>>) =
         accounts::table
             .filter(accounts::account_id.eq(account_id.to_bytes()))
-            .filter(accounts::valid_until.eq(VALID_UNTIL_OPEN))
+            .filter(accounts::valid_until.eq(VALID_FOREVER))
             .select((accounts::account_commitment, accounts::nonce, accounts::code_commitment))
             .first(&mut conn)
             .expect("Account should exist in DB");

@@ -82,7 +82,7 @@ type StorageHeaderWithEntries =
 /// interval by setting its `valid_until` to the new row's `block_num`. The open end is `i64::MAX`
 /// rather than NULL so every validity predicate is a single range comparison that partial indexes
 /// can serve.
-pub(crate) const VALID_UNTIL_OPEN: i64 = i64::MAX;
+pub(crate) const VALID_FOREVER: i64 = i64::MAX;
 
 // NETWORK ACCOUNT TYPE
 // ================================================================================================
@@ -148,7 +148,7 @@ pub(crate) fn select_account_code_by_commitment(
 ///     accounts
 /// WHERE
 ///     account_id = ?1
-///     AND valid_until = {VALID_UNTIL_OPEN}
+///     AND valid_until = {VALID_FOREVER}
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
@@ -156,7 +156,7 @@ pub(crate) fn select_account(
 ) -> Result<AccountInfo, DatabaseError> {
     let raw = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .get_result::<AccountSummaryRaw>(conn)
         .optional()?
         .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
@@ -201,7 +201,7 @@ pub(crate) fn select_full_account(
     let (nonce, code_bytes): (Option<i64>, Vec<u8>) =
         SelectDsl::select(joined, (schema::accounts::nonce, schema::account_codes::code))
             .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-            .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+            .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
             .get_result(conn)
             .optional()?
             .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
@@ -221,7 +221,7 @@ pub(crate) fn select_full_account(
         (schema::account_vault_assets::vault_key, schema::account_vault_assets::asset),
     )
     .filter(schema::account_vault_assets::account_id.eq(account_id.to_bytes()))
-    .filter(schema::account_vault_assets::valid_until.eq(VALID_UNTIL_OPEN))
+    .filter(schema::account_vault_assets::valid_until.eq(VALID_FOREVER))
     .load(conn)?;
 
     let mut assets = Vec::new();
@@ -260,7 +260,7 @@ pub struct AccountCommitmentsPage {
 /// FROM
 ///     accounts
 /// WHERE
-///     valid_until = {VALID_UNTIL_OPEN}
+///     valid_until = {VALID_FOREVER}
 ///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
 /// ORDER BY
 ///     account_id ASC
@@ -279,7 +279,7 @@ pub(crate) fn select_account_commitments_paged(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
     )
-    .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+    .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
     .order_by(schema::accounts::account_id.asc())
     .limit(limit)
     .into_boxed();
@@ -359,7 +359,7 @@ pub(crate) type PrecomputedPublicAccountStates = BTreeMap<AccountId, Precomputed
 /// FROM
 ///     accounts
 /// WHERE
-///     valid_until = {VALID_UNTIL_OPEN}
+///     valid_until = {VALID_FOREVER}
 ///     AND code_commitment IS NOT NULL
 ///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
 /// ORDER BY
@@ -375,7 +375,7 @@ pub(crate) fn select_public_account_ids_paged(
     let limit = (page_size.get() + 1) as i64;
 
     let mut query = SelectDsl::select(schema::accounts::table, schema::accounts::account_id)
-        .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .filter(schema::accounts::code_commitment.is_not_null())
         .order_by(schema::accounts::account_id.asc())
         .limit(limit)
@@ -421,7 +421,7 @@ pub(crate) fn select_public_account_ids_paged(
 /// FROM
 ///     accounts
 /// WHERE
-///     valid_until = {VALID_UNTIL_OPEN}
+///     valid_until = {VALID_FOREVER}
 ///     AND code_commitment IS NOT NULL
 ///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
 /// ORDER BY
@@ -444,7 +444,7 @@ pub(crate) fn select_public_account_state_roots_paged(
             schema::accounts::storage_header,
         ),
     )
-    .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+    .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
     .filter(schema::accounts::code_commitment.is_not_null())
     .order_by(schema::accounts::account_id.asc())
     .limit(limit)
@@ -645,7 +645,7 @@ struct AssetRow {
 /// FROM
 ///     accounts
 /// WHERE
-///     valid_until = {VALID_UNTIL_OPEN}
+///     valid_until = {VALID_FOREVER}
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -654,7 +654,7 @@ pub(crate) fn select_all_accounts(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<AccountInfo>, DatabaseError> {
     let raw = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
-        .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .order_by(schema::accounts::block_num.asc())
         .load::<AccountSummaryRaw>(conn)?;
 
@@ -843,7 +843,7 @@ pub(crate) fn select_latest_account_storage_components(
     let storage_blob: Option<Vec<u8>> =
         SelectDsl::select(schema::accounts::table, schema::accounts::storage_header)
             .filter(schema::accounts::account_id.eq(&account_id_bytes))
-            .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+            .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
             .first(conn)
             .optional()?
             .flatten();
@@ -867,7 +867,7 @@ fn select_latest_storage_map_entries_all(
     let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
         SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
             .filter(t::account_id.eq(&account_id.to_bytes()))
-            .filter(t::valid_until.eq(VALID_UNTIL_OPEN))
+            .filter(t::valid_until.eq(VALID_FOREVER))
             .load(conn)?;
 
     group_storage_map_entries(map_values)
@@ -940,7 +940,7 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
-/// The new row is inserted open-ended (`valid_until = VALID_UNTIL_OPEN`); any existing open row
+/// The new row is inserted open-ended (`valid_until = VALID_FOREVER`); any existing open row
 /// with the same `(account_id, vault_key)` tuple has its validity interval closed at `block_num`.
 ///
 /// # Returns
@@ -965,7 +965,7 @@ pub(crate) fn insert_account_vault_asset(
                 schema::account_vault_assets::account_id
                     .eq(account_id_bytes)
                     .and(schema::account_vault_assets::vault_key.eq(vault_key_bytes))
-                    .and(schema::account_vault_assets::valid_until.eq(VALID_UNTIL_OPEN)),
+                    .and(schema::account_vault_assets::valid_until.eq(VALID_FOREVER)),
             )
             .set(schema::account_vault_assets::valid_until.eq(block_num.to_raw_sql()))
             .execute(conn)?;
@@ -1036,7 +1036,7 @@ fn insert_account_storage_map_value_inner(
                     .eq(&account_id)
                     .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
                     .and(schema::account_storage_map_values::key.eq(&key))
-                    .and(schema::account_storage_map_values::valid_until.eq(VALID_UNTIL_OPEN)),
+                    .and(schema::account_storage_map_values::valid_until.eq(VALID_FOREVER)),
             )
             .set(schema::account_storage_map_values::valid_until.eq(block_num))
             .execute(conn)?
@@ -1050,7 +1050,7 @@ fn insert_account_storage_map_value_inner(
         value,
         slot_name,
         block_num,
-        valid_until: VALID_UNTIL_OPEN,
+        valid_until: VALID_FOREVER,
     };
     let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
         .values(record)
@@ -1293,7 +1293,7 @@ pub(crate) fn select_network_accounts_subset(
                         schema::accounts::network_account_type
                             .eq(NetworkAccountType::Network.to_raw_sql()),
                     )
-                    .and(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN)),
+                    .and(schema::accounts::valid_until.eq(VALID_FOREVER)),
             )
             .load::<Vec<u8>>(conn)
             .map_err(DatabaseError::Diesel)?;
@@ -1417,7 +1417,7 @@ pub(crate) fn upsert_accounts(
             .filter(
                 schema::accounts::account_id
                     .eq(&account_id_bytes)
-                    .and(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN)),
+                    .and(schema::accounts::valid_until.eq(VALID_FOREVER)),
             )
             .set(schema::accounts::valid_until.eq(block_num.to_raw_sql()))
             .execute(conn)?;
@@ -1527,7 +1527,7 @@ impl AccountRowInsert {
             storage_header: None,
             vault_root: None,
             created_at_block: created_at_block.to_raw_sql(),
-            valid_until: VALID_UNTIL_OPEN,
+            valid_until: VALID_FOREVER,
         }
     }
 
@@ -1550,7 +1550,7 @@ impl AccountRowInsert {
             storage_header: Some(account.storage().to_header().to_bytes()),
             vault_root: Some(account.vault().root().to_bytes()),
             created_at_block: created_at_block.to_raw_sql(),
-            valid_until: VALID_UNTIL_OPEN,
+            valid_until: VALID_FOREVER,
         }
     }
 
@@ -1572,7 +1572,7 @@ impl AccountRowInsert {
             storage_header: Some(state.storage_header.to_bytes()),
             vault_root: Some(state.vault_root.to_bytes()),
             created_at_block: created_at_block.to_raw_sql(),
-            valid_until: VALID_UNTIL_OPEN,
+            valid_until: VALID_FOREVER,
         }
     }
 
@@ -1595,7 +1595,7 @@ impl AccountRowInsert {
             storage_header: Some(state.storage_header.to_bytes()),
             vault_root: Some(state.vault_root.to_bytes()),
             created_at_block: created_at_block.to_raw_sql(),
-            valid_until: VALID_UNTIL_OPEN,
+            valid_until: VALID_FOREVER,
         }
     }
 }
@@ -1627,7 +1627,7 @@ impl AccountAssetRowInsert {
             block_num,
             vault_key,
             asset,
-            valid_until: VALID_UNTIL_OPEN,
+            valid_until: VALID_FOREVER,
         }
     }
 }
@@ -1695,11 +1695,11 @@ fn prune_account_vault_assets(
 ) -> Result<usize, DatabaseError> {
     use diesel::sql_types::BigInt;
 
-    // The literal `!= VALID_UNTIL_OPEN` term (rather than a bound parameter) lets SQLite prove the
+    // The literal `!= VALID_FOREVER` term (rather than a bound parameter) lets SQLite prove the
     // predicate implies `idx_vault_cleanup`'s partial-index condition.
     diesel::sql_query(format!(
         "DELETE FROM account_vault_assets \
-         WHERE valid_until != {VALID_UNTIL_OPEN} \
+         WHERE valid_until != {VALID_FOREVER} \
            AND valid_until <= ?1"
     ))
     .bind::<BigInt, _>(cutoff_block)
@@ -1720,11 +1720,11 @@ fn prune_account_storage_map_values(
 ) -> Result<usize, DatabaseError> {
     use diesel::sql_types::BigInt;
 
-    // The literal `!= VALID_UNTIL_OPEN` term (rather than a bound parameter) lets SQLite prove the
+    // The literal `!= VALID_FOREVER` term (rather than a bound parameter) lets SQLite prove the
     // predicate implies `idx_storage_cleanup`'s partial-index condition.
     diesel::sql_query(format!(
         "DELETE FROM account_storage_map_values \
-         WHERE valid_until != {VALID_UNTIL_OPEN} \
+         WHERE valid_until != {VALID_FOREVER} \
            AND valid_until <= ?1"
     ))
     .bind::<BigInt, _>(cutoff_block)

@@ -114,7 +114,7 @@ mod tests {
         use diesel::query_dsl::methods::{OrderDsl, SelectDsl};
         use diesel::{Connection, ExpressionMethods, RunQueryDsl, SqliteConnection};
 
-        use crate::db::models::queries::VALID_UNTIL_OPEN;
+        use crate::db::models::queries::VALID_FOREVER;
         use crate::db::schema;
 
         let temp_dir = tempfile::tempdir()?;
@@ -157,7 +157,7 @@ mod tests {
             schema::accounts::block_num.asc(),
         )
         .load(&mut conn)?;
-        pretty_assertions::assert_eq!(accounts, vec![(1, 5), (5, VALID_UNTIL_OPEN)]);
+        pretty_assertions::assert_eq!(accounts, vec![(1, 5), (5, VALID_FOREVER)]);
 
         let vault: Vec<(Vec<u8>, i64, i64)> = OrderDsl::order(
             SelectDsl::select(
@@ -178,8 +178,8 @@ mod tests {
             vault,
             vec![
                 (vec![0x0b], 1, 5),
-                (vec![0x0b], 5, VALID_UNTIL_OPEN),
-                (vec![0x0c], 1, VALID_UNTIL_OPEN),
+                (vec![0x0b], 5, VALID_FOREVER),
+                (vec![0x0c], 1, VALID_FOREVER),
             ]
         );
 
@@ -194,7 +194,7 @@ mod tests {
             schema::account_storage_map_values::block_num.asc(),
         )
         .load(&mut conn)?;
-        pretty_assertions::assert_eq!(storage, vec![(1, 5), (5, VALID_UNTIL_OPEN)]);
+        pretty_assertions::assert_eq!(storage, vec![(1, 5), (5, VALID_FOREVER)]);
 
         Ok(())
     }

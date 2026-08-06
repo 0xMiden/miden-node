@@ -462,7 +462,7 @@ fn test_upsert_accounts_inserts_storage_header() {
     // Verify exactly 1 latest account with storage exists
     let header_count: i64 = schema::accounts::table
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .filter(schema::accounts::storage_header.is_not_null())
         .count()
         .get_result(&mut conn)
@@ -559,7 +559,7 @@ fn test_upsert_accounts_closes_previous_validity_interval() {
     // Verify only 1 is open-ended (latest)
     let latest_accounts: i64 = schema::accounts::table
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .count()
         .get_result(&mut conn)
         .expect("Failed to count latest accounts");
@@ -745,7 +745,7 @@ fn test_upsert_accounts_with_empty_storage() {
     let storage_header_exists: Option<bool> = SelectDsl::select(
         schema::accounts::table
             .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-            .filter(schema::accounts::valid_until.eq(VALID_UNTIL_OPEN)),
+            .filter(schema::accounts::valid_until.eq(VALID_FOREVER)),
         schema::accounts::storage_header.is_not_null(),
     )
     .first(&mut conn)

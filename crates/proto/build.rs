@@ -444,6 +444,7 @@ impl UnaryMethod {
     ///         request: tonic::Request<<Method::Request>>,
     ///     ) -> tonic::Result<<Method::response>> {
     ///         let (metadata, extensions, message) = request.into_parts();
+    ///         tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));
     ///         let input = Self::decode(message)?;
     ///         let output = self.handle(input, &metadata, &extensions).await?;
     ///         Self::encode(output)
@@ -479,6 +480,9 @@ impl UnaryMethod {
             .arg("request", format!("tonic::Request<{}>", &self.request))
             .ret(format!("tonic::Result<{}>", &self.response))
             .line("let (metadata, extensions, message) = request.into_parts();")
+            .line(
+                r#"tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));"#,
+            )
             .line("let input = Self::decode(message)?;")
             .line("let output = self.handle(input, &metadata, &extensions).await?;")
             .line("Self::encode(output)");
@@ -517,6 +521,7 @@ impl ServerStream {
     ///     async fn full(&self, request: tonic::Request<<Method::request>>) -> tonic::Result<Pin<Box<dyn Stream<...>>>> {
     ///         use tokio_stream::StreamExt as _;
     ///         let (metadata, extensions, message) = request.into_parts();
+    ///         tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));
     ///         let input = Self::decode(message)?;
     ///         let stream = self.handle(input, &metadata, &extensions).await?;
     ///         Ok(Box::pin(stream.map(|item| item.and_then(Self::encode))))
@@ -564,6 +569,9 @@ impl ServerStream {
             .ret(format!("tonic::Result<{boxed_stream}>"))
             .line("use tonic::codegen::tokio_stream::StreamExt as _;")
             .line("let (metadata, extensions, message) = request.into_parts();")
+            .line(
+                r#"tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));"#,
+            )
             .line("let input = Self::decode(message)?;")
             .line("let stream = self.handle(input, &metadata, &extensions).await?;")
             .line("Ok(Box::pin(stream.map(|item| item.and_then(Self::encode))))");

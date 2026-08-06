@@ -25,6 +25,7 @@ pub fn grpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         rpc.service = service,
         rpc.method = method,
         rpc.system = field::Empty,
+        rpc.request.size = field::Empty,
         server.address = field::Empty,
         server.port = field::Empty,
         client.address = field::Empty,

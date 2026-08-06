@@ -31,7 +31,7 @@ use tonic::metadata::MetadataMap;
 use tonic::{IntoRequest, Request, Status};
 
 use crate::server::api::subscription::{IpBanList, MAX_REPLICA_SUBSCRIPTIONS};
-use crate::server::{NetworkTxAuth, RpcRouting};
+use crate::server::{NetworkTxAuth, RpcBackend};
 use crate::{COMPONENT, LOG_TARGET};
 
 // VALIDATOR FAN-OUT
@@ -112,7 +112,7 @@ impl From<InvalidBlockRange> for RpcInvalidBlockRange {
 
 pub struct RpcService {
     state: Arc<State>,
-    route: RpcRouting,
+    backend: RpcBackend,
     ntx_builder: Option<NtxBuilderClient>,
     network_tx_auth: Option<NetworkTxAuth>,
     genesis_commitment: Option<Word>,
@@ -125,14 +125,14 @@ pub struct RpcService {
 impl RpcService {
     pub(crate) fn new(
         state: Arc<State>,
-        route: RpcRouting,
+        backend: RpcBackend,
         ntx_builder: Option<NtxBuilderClient>,
         commitment_cache_capacity: NonZeroUsize,
         network_tx_auth: Option<NetworkTxAuth>,
     ) -> Self {
         Self {
             state,
-            route,
+            backend,
             ntx_builder,
             network_tx_auth,
             genesis_commitment: None,

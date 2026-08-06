@@ -61,7 +61,7 @@ pub(crate) struct NetworkTxAuth(pub(crate) AsciiMetadataValue);
 ///
 /// Deliberately not `Clone`: the full-node variant owns the store's single-writer capabilities,
 /// which must not be duplicated. Per-request handlers never need those, so they read through
-/// [`RpcRouting`] instead — the `Clone`-able subset [`Self::routing`] derives from this.
+/// [`RpcBackend`] instead — the `Clone`-able subset [`Self::backend`] derives from this.
 pub enum RpcMode {
     /// Sequencer RPC validates submissions locally, re-executes them through every validator, then
     /// forwards them to the block producer.
@@ -92,14 +92,14 @@ pub enum RpcMode {
     },
 }
 
-/// The per-request submission-routing subset of [`RpcMode`], held by
+/// The clients handlers forward requests to — the per-request subset of [`RpcMode`], held by
 /// [`RpcService`](api::RpcService) for the server's lifetime and read by every handler.
 ///
 /// `Clone` because it is cloned once into `RpcService` and then read on every request; it never
 /// carries the full-node's store write capabilities ([`RpcMode`] does), since no handler needs
 /// them — those are consumed once by the sync loop at startup.
 #[derive(Clone, Debug)]
-pub(crate) enum RpcRouting {
+pub(crate) enum RpcBackend {
     Sequencer {
         block_producer: Box<BlockProducerApi>,
         validators: ValidatorClients,
@@ -111,9 +111,9 @@ pub(crate) enum RpcRouting {
 }
 
 #[cfg(test)]
-impl RpcRouting {
-    /// Test-only: production code only ever builds a routing value from an [`RpcMode`] via
-    /// [`RpcMode::routing`]; these let handler-level tests construct one directly, without a store
+impl RpcBackend {
+    /// Test-only: production code only ever builds a backend from an [`RpcMode`] via
+    /// [`RpcMode::backend`]; these let handler-level tests construct one directly, without a store
     /// or write capabilities.
     pub(crate) fn sequencer(
         block_producer: BlockProducerApi,
@@ -232,15 +232,15 @@ impl RpcMode {
         }
     }
 
-    /// Returns the `Clone`-able per-request routing subset handed to
+    /// Returns the `Clone`-able per-request backend subset handed to
     /// [`RpcService`](api::RpcService).
-    fn routing(&self) -> RpcRouting {
+    fn backend(&self) -> RpcBackend {
         match self {
-            Self::Sequencer { block_producer, validators } => RpcRouting::Sequencer {
+            Self::Sequencer { block_producer, validators } => RpcBackend::Sequencer {
                 block_producer: block_producer.clone(),
                 validators: validators.clone(),
             },
-            Self::FullNode { source_rpc, pre_auth, .. } => RpcRouting::FullNode {
+            Self::FullNode { source_rpc, pre_auth, .. } => RpcBackend::FullNode {
                 source_rpc: source_rpc.clone(),
                 pre_auth: pre_auth.clone(),
             },
@@ -261,7 +261,7 @@ impl Rpc {
         let mode = self.mode.as_str();
         let mut api = api::RpcService::new(
             self.state.clone(),
-            self.mode.routing(),
+            self.mode.backend(),
             self.ntx_builder.clone(),
             NonZeroUsize::new(1_000_000).unwrap(),
             self.network_tx_auth.map(NetworkTxAuth),

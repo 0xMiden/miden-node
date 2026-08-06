@@ -33,17 +33,21 @@ current block.
 The DKG creates the storage key used to re-encrypt validated private inputs. Run one ceremony for the validator set
 committed in genesis. Participant indexes follow the order of validator signing keys in the genesis block.
 
-First, each operator creates a DKG identity and sends `registration.toml` to the coordinator. The signing key must match
-one key in genesis. Use `--signing-key.hex` instead of KMS only for local or private deployments.
+First, each operator creates a DKG identity for the agreed storage-key epoch and sends `registration.toml` to the
+coordinator. The registration proves ownership of the DKG identity secret. The signing key must match one key in
+genesis. Use `--signing-key.hex` instead of KMS only for local or private deployments.
 
 ```bash
 miden-validator dkg identity \
   --genesis genesis.dat \
+  --epoch <32-byte-hex-epoch> \
   --signing-key.kms-id <validator-kms-key-id> \
   --output-directory identity
 ```
 
-The coordinator collects every registration and prepares one common ceremony directory.
+The coordinator collects every registration and prepares one common ceremony directory. The setup coefficient is fixed
+by the validator backend. The session ID is derived from genesis, the epoch, the threshold, and the ordered
+registrations, so every operator can reproduce the same files.
 
 ```bash
 miden-validator dkg prepare \

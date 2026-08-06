@@ -83,6 +83,7 @@ services:
             esac
             miden-validator dkg identity \
               --genesis /data/genesis/genesis.dat \
+              --epoch "$${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH}" \
               --signing-key.hex "$${SIGNING_KEY}" \
               --output-directory "$${DKG}/identity/$${VALIDATOR}"
           done

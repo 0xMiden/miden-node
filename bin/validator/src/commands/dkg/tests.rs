@@ -101,19 +101,39 @@ async fn identity_round_trip_matches_public_registration() -> TestResult {
     let validator_key = signing_key.public_key();
     let signer = ValidatorSigner::new_local(signing_key);
     let output = root.path().join("identity");
+    let epoch = "10".repeat(32);
 
-    generate_identity(&genesis.path, &signer, &output).await?;
+    generate_identity(&genesis.path, &epoch, &signer, &output).await?;
 
     let registration = read_registration(&output.join(REGISTRATION_FILE))?;
     let secret_bytes = Zeroizing::new(fs_err::read(output.join(IDENTITY_SECRET_FILE))?);
     let secret = decode_identity_secret(&secret_bytes)?;
     let public_key = decode_identity_public_key(&registration.dkg_identity_public_key)?;
     let signature = decode_validator_signature(&registration.validator_signature)?;
+    let proof_commitment =
+        decode_non_identity_element(&registration.identity_proof_commitment, "identity proof")?;
+    let proof_response = decode_scalar(&registration.identity_proof_response, "proof response")?;
     let genesis_commitment = read_trusted_genesis(&genesis.path)?.inner().header().commitment();
+    let epoch = decode_fixed_hex::<32>(&epoch, "storage-key epoch")?;
     assert_eq!(StorageGroup::mul_generator(&secret), public_key);
     assert_eq!(registration.validator_public_key, hex::encode(validator_key.to_bytes()));
+    assert!(verify_identity_proof(
+        genesis_commitment,
+        &epoch,
+        &validator_key,
+        &public_key,
+        &proof_commitment,
+        &proof_response,
+    )?);
     assert!(signature.verify(
-        registration_signature_commitment(genesis_commitment, &validator_key, &public_key),
+        registration_signature_commitment(
+            genesis_commitment,
+            &epoch,
+            &validator_key,
+            &public_key,
+            &proof_commitment,
+            &proof_response,
+        ),
         &validator_key,
     ));
 
@@ -141,11 +161,13 @@ fn identity_secret_rejects_malformed_input() {
 async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
     let root = tempfile::tempdir()?;
     let genesis = write_genesis(root.path())?;
+    let epoch = "11".repeat(32);
     let mut registrations = Vec::new();
     for (position, signing_key) in genesis.signing_keys.iter().rev().enumerate() {
         let directory = root.path().join(format!("identity-{position}"));
         generate_identity(
             &genesis.path,
+            &epoch,
             &ValidatorSigner::new_local(signing_key.clone()),
             &directory,
         )
@@ -154,8 +176,6 @@ async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
     }
     let output = root.path().join("ceremony");
     let second_output = root.path().join("ceremony-copy");
-    let epoch = "11".repeat(32);
-
     prepare(&genesis.path, 2, &epoch, &registrations, &output)?;
     prepare(&genesis.path, 2, &epoch, &registrations, &second_output)?;
 
@@ -232,9 +252,14 @@ async fn identity_rejects_signer_outside_genesis() -> TestResult {
     let genesis = write_genesis(root.path())?;
     let outsider = ValidatorSigner::new_local(SigningKey::new());
 
-    let error = generate_identity(&genesis.path, &outsider, &root.path().join("identity"))
-        .await
-        .unwrap_err();
+    let error = generate_identity(
+        &genesis.path,
+        &"12".repeat(32),
+        &outsider,
+        &root.path().join("identity"),
+    )
+    .await
+    .unwrap_err();
     assert!(format!("{error:#}").contains("not committed by genesis"));
     Ok(())
 }
@@ -243,11 +268,13 @@ async fn identity_rejects_signer_outside_genesis() -> TestResult {
 async fn prepare_rejects_substituted_dkg_identity() -> TestResult {
     let root = tempfile::tempdir()?;
     let genesis = write_genesis(root.path())?;
+    let epoch = "22".repeat(32);
     let mut registrations = Vec::new();
     for (position, signing_key) in genesis.signing_keys.iter().enumerate() {
         let directory = root.path().join(format!("identity-{position}"));
         generate_identity(
             &genesis.path,
+            &epoch,
             &ValidatorSigner::new_local(signing_key.clone()),
             &directory,
         )
@@ -262,16 +289,80 @@ async fn prepare_rejects_substituted_dkg_identity() -> TestResult {
     ));
     fs_err::write(&registrations[0], toml::to_string_pretty(&registration)?)?;
 
+    let error = prepare(&genesis.path, 2, &epoch, &registrations, &root.path().join("ceremony"))
+        .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("invalid validator signature"),
+        "unexpected error: {error:#}",
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepare_rejects_a_signed_registration_without_a_valid_identity_proof() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let genesis = write_genesis_with_validator_count(root.path(), 1)?;
+    let epoch = "23".repeat(32);
+    let epoch_bytes = decode_fixed_hex::<32>(&epoch, "storage-key epoch")?;
+    let signing_key = genesis.signing_keys[0].clone();
+    let signer = ValidatorSigner::new_local(signing_key.clone());
+    let identity = root.path().join("identity");
+    generate_identity(&genesis.path, &epoch, &signer, &identity).await?;
+    let registration_path = identity.join(REGISTRATION_FILE);
+    let mut registration = read_registration(&registration_path)?;
+    let identity_key = decode_identity_public_key(&registration.dkg_identity_public_key)?;
+    let proof_commitment =
+        decode_non_identity_element(&registration.identity_proof_commitment, "identity proof")?;
+    let bad_response = StorageScalar::zero();
+    registration.identity_proof_response = hex::encode(bad_response.to_repr());
+    let genesis_commitment = read_trusted_genesis(&genesis.path)?.inner().header().commitment();
+    let validator_key = signing_key.public_key();
+    let signature = signer
+        .sign_commitment(registration_signature_commitment(
+            genesis_commitment,
+            &epoch_bytes,
+            &validator_key,
+            &identity_key,
+            &proof_commitment,
+            &bad_response,
+        ))
+        .await?;
+    registration.validator_signature = hex::encode(signature.to_bytes());
+    fs_err::write(&registration_path, toml::to_string_pretty(&registration)?)?;
+
+    let error =
+        prepare(&genesis.path, 1, &epoch, &[registration_path], &root.path().join("ceremony"))
+            .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("invalid DKG identity proof"),
+        "unexpected error: {error:#}",
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepare_rejects_a_registration_from_another_epoch() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let genesis = write_genesis_with_validator_count(root.path(), 1)?;
+    let identity = root.path().join("identity");
+    generate_identity(
+        &genesis.path,
+        &"24".repeat(32),
+        &ValidatorSigner::new_local(genesis.signing_keys[0].clone()),
+        &identity,
+    )
+    .await?;
+
     let error = prepare(
         &genesis.path,
-        2,
-        &"22".repeat(32),
-        &registrations,
+        1,
+        &"25".repeat(32),
+        &[identity.join(REGISTRATION_FILE)],
         &root.path().join("ceremony"),
     )
     .unwrap_err();
     assert!(
-        format!("{error:#}").contains("invalid validator signature"),
+        format!("{error:#}").contains("different storage-key epoch"),
         "unexpected error: {error:#}",
     );
     Ok(())
@@ -291,12 +382,14 @@ async fn prepare_test_ceremony(
     threshold: usize,
 ) -> TestResultWith<TestCeremony> {
     let genesis = write_genesis_with_validator_count(root, validator_count)?;
+    let epoch = "33".repeat(32);
     let mut registrations = Vec::new();
     let mut identities = Vec::new();
     for (position, signing_key) in genesis.signing_keys.iter().enumerate() {
         let directory = root.join(format!("identity-{position}"));
         generate_identity(
             &genesis.path,
+            &epoch,
             &ValidatorSigner::new_local(signing_key.clone()),
             &directory,
         )
@@ -305,7 +398,7 @@ async fn prepare_test_ceremony(
         identities.push(directory);
     }
     let ceremony = root.join("ceremony");
-    prepare(&genesis.path, threshold, &"33".repeat(32), &registrations, &ceremony)?;
+    prepare(&genesis.path, threshold, &epoch, &registrations, &ceremony)?;
     Ok(TestCeremony { genesis, ceremony, identities })
 }
 
@@ -695,7 +788,7 @@ async fn private_state_cannot_cross_ceremonies() -> TestResult {
         .map(|identity| identity.join(REGISTRATION_FILE))
         .collect::<Vec<_>>();
     let second_ceremony = second_root.join("ceremony");
-    prepare(&first.genesis.path, 2, &"44".repeat(32), &registrations, &second_ceremony)?;
+    prepare(&first.genesis.path, 3, &"33".repeat(32), &registrations, &second_ceremony)?;
     let second = TestCeremony {
         genesis: first.genesis.clone(),
         ceremony: second_ceremony,

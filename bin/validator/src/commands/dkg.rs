@@ -54,9 +54,10 @@ type StorageScalar = <StorageGroup as GoldenGroup>::Scalar;
 type StorageElement = <StorageGroup as GoldenGroup>::Element;
 type PublicOutput = (StorageElement, BTreeMap<ParticipantIndex, StorageElement>);
 
-const REGISTRATION_VERSION: &str = "miden-storage-key-dkg-registration-v1";
-const MANIFEST_VERSION: &str = "miden-storage-key-dkg-manifest-v1";
-const REGISTRATION_SIGNATURE_DOMAIN: &[u8] = b"miden-storage-key-dkg-registration-signature-v1";
+const REGISTRATION_VERSION: &str = "miden-storage-key-dkg-registration-v2";
+const MANIFEST_VERSION: &str = "miden-storage-key-dkg-manifest-v2";
+const REGISTRATION_SIGNATURE_DOMAIN: &[u8] = b"miden-storage-key-dkg-registration-signature-v2";
+const IDENTITY_PROOF_DOMAIN: &[u8] = b"miden-storage-key-dkg-identity-proof-v1";
 const SETUP_BETA_DOMAIN: &[u8] = b"miden-storage-key-dkg-beta-v1";
 const DECRYPTION_SESSION_DOMAIN: &[u8] = b"miden-storage-key-dkg-session-v1";
 const IDENTITY_SECRET_MAGIC: &[u8] = b"miden-storage-key-dkg-identity-v1\0";
@@ -95,6 +96,10 @@ enum DkgCommand {
         /// Trusted genesis block for the network.
         #[arg(long, value_name = "FILE")]
         genesis: PathBuf,
+
+        /// Hex-encoded 32-byte storage-key epoch.
+        #[arg(long, value_name = "HEX")]
+        epoch: String,
 
         /// Validator signing key committed by genesis.
         #[command(flatten)]
@@ -248,8 +253,11 @@ enum DkgCommand {
 struct Registration {
     version: String,
     genesis_commitment: String,
+    epoch: String,
     validator_public_key: String,
     dkg_identity_public_key: String,
+    identity_proof_commitment: String,
+    identity_proof_response: String,
     validator_signature: String,
 }
 
@@ -325,9 +333,14 @@ struct TranscriptAcceptances {
 /// Runs one DKG ceremony command.
 pub async fn run(options: DkgOptions) -> anyhow::Result<()> {
     match options.command {
-        DkgCommand::Identity { genesis, signing_key, output_directory } => {
+        DkgCommand::Identity {
+            genesis,
+            epoch,
+            signing_key,
+            output_directory,
+        } => {
             let signer = signing_key.into_signer().await?;
-            generate_identity(&genesis, &signer, &output_directory).await
+            generate_identity(&genesis, &epoch, &signer, &output_directory).await
         },
         DkgCommand::Prepare {
             genesis,
@@ -405,9 +418,11 @@ pub async fn run(options: DkgOptions) -> anyhow::Result<()> {
 /// Generates one validator's private DKG identity and public registration.
 async fn generate_identity(
     genesis_path: &Path,
+    epoch: &str,
     signer: &ValidatorSigner,
     output_directory: &Path,
 ) -> anyhow::Result<()> {
+    let epoch = decode_fixed_hex::<32>(epoch, "storage-key epoch")?;
     let genesis = read_trusted_genesis(genesis_path)?;
     let genesis_commitment = genesis.inner().header().commitment();
     let validator_public_key = signer.public_key();
@@ -423,10 +438,20 @@ async fn generate_identity(
     let identity_secret = StorageScalar::random(&mut OsRng);
     ensure!(!bool::from(identity_secret.is_zero()), "generated a zero DKG identity secret");
     let identity_public_key = StorageGroup::mul_generator(&identity_secret);
+    let (proof_commitment, proof_response) = create_identity_proof(
+        genesis_commitment,
+        &epoch,
+        &validator_public_key,
+        &identity_secret,
+        &mut OsRng,
+    )?;
     let signature_commitment = registration_signature_commitment(
         genesis_commitment,
+        &epoch,
         &validator_public_key,
         &identity_public_key,
+        &proof_commitment,
+        &proof_response,
     );
     let validator_signature = signer
         .sign_commitment(signature_commitment)
@@ -436,8 +461,11 @@ async fn generate_identity(
     let registration = Registration {
         version: REGISTRATION_VERSION.to_owned(),
         genesis_commitment: hex::encode(genesis_commitment.to_bytes()),
+        epoch: hex::encode(epoch),
         validator_public_key: hex::encode(validator_public_key.to_bytes()),
         dkg_identity_public_key: hex::encode(StorageGroup::encode_element(&identity_public_key)),
+        identity_proof_commitment: hex::encode(StorageGroup::encode_element(&proof_commitment)),
+        identity_proof_response: hex::encode(proof_response.to_repr()),
         validator_signature: hex::encode(validator_signature.to_bytes()),
     };
     let registration =
@@ -473,7 +501,8 @@ fn prepare(
         registration_paths.len(),
     );
 
-    let mut registrations = read_validated_registrations(registration_paths, genesis_commitment)?;
+    let mut registrations =
+        read_validated_registrations(registration_paths, genesis_commitment, &epoch)?;
 
     let mut registry_entries = Vec::with_capacity(validator_keys.len());
     let mut participants = Vec::with_capacity(validator_keys.len());
@@ -935,6 +964,7 @@ fn read_registration(path: &Path) -> anyhow::Result<Registration> {
 fn read_validated_registrations(
     paths: &[PathBuf],
     genesis_commitment: Word,
+    expected_epoch: &[u8; 32],
 ) -> anyhow::Result<BTreeMap<Vec<u8>, <StorageGroup as GoldenGroup>::Element>> {
     let mut registrations = BTreeMap::new();
     let mut identity_keys = BTreeSet::new();
@@ -942,6 +972,10 @@ fn read_validated_registrations(
         let registration = read_registration(path)?;
         let validator_key = decode_validator_public_key(&registration.validator_public_key)?;
         let identity_key = decode_identity_public_key(&registration.dkg_identity_public_key)?;
+        let proof_commitment =
+            decode_non_identity_element(&registration.identity_proof_commitment, "identity proof")?;
+        let proof_response =
+            decode_scalar(&registration.identity_proof_response, "identity proof response")?;
         let signature = decode_validator_signature(&registration.validator_signature)?;
 
         ensure!(
@@ -950,15 +984,35 @@ fn read_validated_registrations(
             path.display(),
         );
         ensure!(
+            registration.epoch == hex::encode(expected_epoch),
+            "registration in {} belongs to a different storage-key epoch",
+            path.display(),
+        );
+        ensure!(
             signature.verify(
                 registration_signature_commitment(
                     genesis_commitment,
+                    expected_epoch,
                     &validator_key,
                     &identity_key,
+                    &proof_commitment,
+                    &proof_response,
                 ),
                 &validator_key,
             ),
             "invalid validator signature in {}",
+            path.display(),
+        );
+        ensure!(
+            verify_identity_proof(
+                genesis_commitment,
+                expected_epoch,
+                &validator_key,
+                &identity_key,
+                &proof_commitment,
+                &proof_response,
+            )?,
+            "invalid DKG identity proof in {}",
             path.display(),
         );
         ensure!(
@@ -1550,20 +1604,103 @@ fn read_trusted_genesis(path: &Path) -> anyhow::Result<GenesisBlock> {
 /// Commits a validator signature to one genesis-bound DKG identity registration.
 fn registration_signature_commitment(
     genesis_commitment: Word,
+    epoch: &[u8; 32],
     validator_public_key: &PublicKey,
     identity_public_key: &<StorageGroup as GoldenGroup>::Element,
+    proof_commitment: &<StorageGroup as GoldenGroup>::Element,
+    proof_response: &StorageScalar,
 ) -> Word {
     let mut bytes = Vec::with_capacity(
         REGISTRATION_SIGNATURE_DOMAIN.len()
             + Word::SERIALIZED_SIZE
+            + epoch.len()
             + validator_public_key.to_bytes().len()
-            + StorageGroup::ELEMENT_REPR_BYTES,
+            + StorageGroup::ELEMENT_REPR_BYTES * 2
+            + StorageScalar::REPR_BYTES,
     );
     bytes.extend_from_slice(REGISTRATION_SIGNATURE_DOMAIN);
     bytes.extend_from_slice(&genesis_commitment.to_bytes());
+    bytes.extend_from_slice(epoch);
     bytes.extend_from_slice(&validator_public_key.to_bytes());
     bytes.extend_from_slice(StorageGroup::encode_element(identity_public_key).as_ref());
+    bytes.extend_from_slice(StorageGroup::encode_element(proof_commitment).as_ref());
+    bytes.extend_from_slice(proof_response.to_repr().as_ref());
     Rpo256::hash(&bytes)
+}
+
+/// Creates a proof that the registering validator knows its DKG identity secret.
+fn create_identity_proof(
+    genesis_commitment: Word,
+    epoch: &[u8; 32],
+    validator_public_key: &PublicKey,
+    identity_secret: &StorageScalar,
+    rng: &mut impl CryptoRngCore,
+) -> anyhow::Result<(StorageElement, StorageScalar)> {
+    let identity_public_key = StorageGroup::mul_generator(identity_secret);
+    let nonce = loop {
+        let nonce = StorageScalar::random(rng);
+        if !bool::from(nonce.is_zero()) {
+            break nonce;
+        }
+    };
+    let commitment = StorageGroup::mul_generator(&nonce);
+    let challenge = identity_proof_challenge(
+        genesis_commitment,
+        epoch,
+        validator_public_key,
+        &identity_public_key,
+        &commitment,
+    )?;
+    let response = nonce.add(&challenge.mul(identity_secret));
+    Ok((commitment, response))
+}
+
+/// Checks a proof that the registering validator knows its DKG identity secret.
+fn verify_identity_proof(
+    genesis_commitment: Word,
+    epoch: &[u8; 32],
+    validator_public_key: &PublicKey,
+    identity_public_key: &StorageElement,
+    commitment: &StorageElement,
+    response: &StorageScalar,
+) -> anyhow::Result<bool> {
+    let challenge = identity_proof_challenge(
+        genesis_commitment,
+        epoch,
+        validator_public_key,
+        identity_public_key,
+        commitment,
+    )?;
+    let expected =
+        StorageGroup::add(commitment, &StorageGroup::mul(identity_public_key, &challenge));
+    Ok(StorageGroup::mul_generator(response) == expected)
+}
+
+/// Derives the Fiat-Shamir challenge for one DKG identity proof.
+fn identity_proof_challenge(
+    genesis_commitment: Word,
+    epoch: &[u8; 32],
+    validator_public_key: &PublicKey,
+    identity_public_key: &StorageElement,
+    commitment: &StorageElement,
+) -> anyhow::Result<StorageScalar> {
+    let mut message = Vec::with_capacity(
+        std::mem::size_of::<u64>()
+            + StorageGroup::BACKEND_ID.len()
+            + Word::SERIALIZED_SIZE
+            + epoch.len()
+            + validator_public_key.to_bytes().len()
+            + StorageGroup::ELEMENT_REPR_BYTES * 2,
+    );
+    message.extend_from_slice(&u64::try_from(StorageGroup::BACKEND_ID.len())?.to_be_bytes());
+    message.extend_from_slice(StorageGroup::BACKEND_ID.as_bytes());
+    message.extend_from_slice(&genesis_commitment.to_bytes());
+    message.extend_from_slice(epoch);
+    message.extend_from_slice(&validator_public_key.to_bytes());
+    message.extend_from_slice(StorageGroup::encode_element(identity_public_key).as_ref());
+    message.extend_from_slice(StorageGroup::encode_element(commitment).as_ref());
+    StorageScalar::hash_to_scalar(IDENTITY_PROOF_DOMAIN, &message)
+        .context("failed to derive DKG identity proof challenge")
 }
 
 /// Parses a validator public key and requires its canonical hex form.
@@ -1586,16 +1723,26 @@ fn decode_validator_signature(value: &str) -> anyhow::Result<Signature> {
 fn decode_identity_public_key(
     value: &str,
 ) -> anyhow::Result<<StorageGroup as GoldenGroup>::Element> {
-    let bytes = decode_hex(value, "DKG identity public key")?;
+    decode_non_identity_element(value, "DKG identity public key")
+}
+
+/// Parses a canonical non-identity group element.
+fn decode_non_identity_element(value: &str, name: &str) -> anyhow::Result<StorageElement> {
+    let bytes = decode_hex(value, name)?;
     let repr = <StorageGroup as GoldenGroup>::ElementRepr::try_from(bytes)
-        .map_err(|_| anyhow::anyhow!("invalid DKG identity public key length"))?;
+        .map_err(|_| anyhow::anyhow!("invalid {name} length"))?;
     let public_key =
-        StorageGroup::decode_element(&repr).context("invalid DKG identity public key")?;
-    ensure!(
-        !bool::from(StorageGroup::is_identity(&public_key)),
-        "DKG identity public key is the identity"
-    );
+        StorageGroup::decode_element(&repr).with_context(|| format!("invalid {name}"))?;
+    ensure!(!bool::from(StorageGroup::is_identity(&public_key)), "{name} is the identity");
     Ok(public_key)
+}
+
+/// Parses a canonical scalar.
+fn decode_scalar(value: &str, name: &str) -> anyhow::Result<StorageScalar> {
+    let bytes = decode_hex(value, name)?;
+    let repr = <StorageScalar as GoldenScalar>::Repr::try_from(bytes)
+        .map_err(|_| anyhow::anyhow!("invalid {name} length"))?;
+    StorageScalar::from_repr(&repr).with_context(|| format!("invalid {name}"))
 }
 
 /// Encodes a private DKG identity with a fixed format marker.

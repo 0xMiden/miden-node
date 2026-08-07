@@ -35,7 +35,9 @@ pub async fn start(
 ) -> anyhow::Result<()> {
     let data_directory =
         DataDirectory::load(data_directory).context("failed to load validator data directory")?;
-    let database = miden_validator::db::load_with_pool_size(
+    // The pool is opened once here and shared: the public API owns the sole writer, and both
+    // servers read through cloned read handles.
+    let (writer, reader) = miden_validator::db::load_with_pool_size(
         data_directory.database_path(),
         sqlite_connection_pool_size,
     )
@@ -49,7 +51,8 @@ pub async fn start(
         decrypter: keys.decrypter,
         private_record_sealer,
         data_directory,
-        database: database.clone(),
+        writer,
+        reader: reader.clone(),
     };
 
     let mut tasks = Tasks::new();
@@ -58,7 +61,7 @@ pub async fn start(
         let admin_server = ValidatorAdminServer {
             address,
             operator_key: keys.operator_key,
-            database,
+            reader,
         };
         tasks.spawn("validator admin API", admin_server.serve(shutdown.clone()));
     }

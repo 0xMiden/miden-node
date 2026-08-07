@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::Database;
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_proto::domain::encryption::TransactionEncryptionKeyInfo;
 use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
@@ -102,6 +102,11 @@ impl InitialMetrics {
 /// Implements the gRPC API for the validator.
 pub(crate) struct ValidatorService {
     signer: ValidatorSigner,
+    /// Read-only handle, cloned freely for concurrent read queries.
+    reader: DbReader,
+    /// Write handle, shared behind an `Arc` because this service is itself shared across concurrent
+    /// gRPC handlers; writes still serialize on the single writer connection.
+    writer: Arc<DbWriter>,
     /// Decrypter for transaction inputs sealed against the shared encryption key.
     decrypter: Arc<dyn TransactionInputDecrypter>,
     /// Commitment of the genesis block, loaded once at construction.
@@ -115,7 +120,6 @@ pub(crate) struct ValidatorService {
     /// Signature by this validator's own signing key over the encryption key attestation
     /// commitment, computed once at construction.
     encryption_key_attestation: Signature,
-    db: Arc<Database>,
     block_store: BlockStore,
     /// Enforces mutual exclusion between backup block subscriptions and all other RPCs. Regular
     /// RPCs take the read side (any number may run concurrently); a backup subscription takes the
@@ -137,16 +141,17 @@ pub(crate) struct ValidatorService {
 impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
+        writer: DbWriter,
+        reader: DbReader,
         decrypter: Arc<dyn TransactionInputDecrypter>,
         private_record_sealer: PrivateRecordSealer,
-        db: Database,
         block_store: BlockStore,
         initial_metrics: InitialMetrics,
     ) -> Result<Self, ValidatorError> {
         // The chain tip's header commits to the validator set authorized to sign the next block, so
         // the signing key must be a member of that set for this validator to be useful. Reject a
         // misconfigured key here.
-        let chain_tip = db
+        let chain_tip = reader
             .read("load_chain_tip", load_chain_tip)
             .await
             .map_err(ValidatorError::DatabaseError)?
@@ -158,7 +163,7 @@ impl ValidatorService {
 
         // Both keys are fixed for the process lifetime, so the attestation is computed once. This
         // also keeps KMS-backed signers to a single signing call.
-        let genesis_commitment = db
+        let genesis_commitment = reader
             .read("load_genesis_header", |tx| load_block_header(tx, BlockNumber::GENESIS))
             .await
             .map_err(ValidatorError::DatabaseError)?
@@ -187,7 +192,8 @@ impl ValidatorService {
             encryption_key_info,
             encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
-            db: db.into(),
+            reader,
+            writer: Arc::new(writer),
             block_store,
             sign_block_semaphore: Semaphore::new(1),
             committed_tip: watch::Sender::new(BlockNumber::from(initial_metrics.chain_tip)),
@@ -219,7 +225,7 @@ impl ValidatorService {
         let proposed_tx_ids =
             proposed_block.transactions().map(TransactionHeader::id).collect::<Vec<_>>();
         let unvalidated_txs = self
-            .db
+            .reader
             .read("find_unvalidated_transactions", move |tx| {
                 find_unvalidated_transactions(tx, &proposed_tx_ids)
             })
@@ -246,7 +252,7 @@ impl ValidatorService {
             // The genesis block cannot be replaced (genesis block has no parent).
             let prev_block_num =
                 chain_tip.block_num().parent().ok_or(ValidatorError::NoPrevBlockHeader)?;
-            self.db
+            self.reader
                 .read("load_block_header", move |tx| load_block_header(tx, prev_block_num))
                 .await
                 .map_err(ValidatorError::DatabaseError)?

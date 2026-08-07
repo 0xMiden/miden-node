@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use anyhow::Context;
-use miden_node_db::sqlite::Database;
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_proto::server::validator_api;
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_store::BlockStore;
@@ -56,8 +56,11 @@ pub struct ValidatorServer {
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
 
-    /// Shared validator database.
-    pub database: Database,
+    /// Write handle to the shared validator database, owned solely by the public API.
+    pub writer: DbWriter,
+
+    /// Read handle to the shared validator database.
+    pub reader: DbReader,
 }
 
 /// Serves the private validator administration API on a network-isolated listener.
@@ -66,8 +69,9 @@ pub struct ValidatorAdminServer {
     pub address: SocketAddr,
     /// Golden key material used to issue this validator's decryption shares.
     pub operator_key: GoldenOperatorKey,
-    /// Shared validator database.
-    pub database: Database,
+    /// Read handle to the shared validator database. The administration API only ever reads, so it
+    /// holds a [`DbReader`] and cannot mutate validator state.
+    pub reader: DbReader,
 }
 
 impl ValidatorAdminServer {
@@ -94,7 +98,7 @@ impl ValidatorAdminServer {
             "Validator admin server ready",
         );
 
-        axum::serve(listener, admin_service::router(self.operator_key, self.database))
+        axum::serve(listener, admin_service::router(self.operator_key, self.reader))
             .with_graceful_shutdown(shutdown.cancelled_owned())
             .await
             .context("failed to serve validator admin API")
@@ -107,14 +111,16 @@ impl ValidatorServer {
     /// Executes in place (i.e. not spawned) and will run indefinitely until a fatal error is
     /// encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let db = self.database;
+        // The database pool is opened once by the caller and shared with the admin server, so this
+        // takes the handles rather than opening its own connection.
+        let (writer, reader) = (self.writer, self.reader);
 
         // Initialize block store.
         let block_store = BlockStore::load(self.data_directory.block_store_dir())
             .context("failed to load block store")?;
 
         // Load initial metrics from the database for the in-memory counters.
-        let (initial_chain_tip, initial_tx_count, initial_block_count) = db
+        let (initial_chain_tip, initial_tx_count, initial_block_count) = reader
             .read("load_initial_metrics", |tx| {
                 let tip = load_chain_tip(tx)?.map_or(0, |h| h.block_num().as_u32());
                 let tx_count = u64::try_from(count_validated_transactions(tx)?).unwrap_or(0);
@@ -135,9 +141,10 @@ impl ValidatorServer {
 
         let service = ValidatorService::new(
             self.signer,
+            writer,
+            reader,
             self.decrypter,
             self.private_record_sealer,
-            db,
             block_store,
             InitialMetrics::new(initial_chain_tip, initial_tx_count, initial_block_count),
         )

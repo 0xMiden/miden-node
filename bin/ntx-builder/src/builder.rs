@@ -16,7 +16,7 @@ use crate::chain_state::SharedChainState;
 use crate::clients::RpcError;
 use crate::committed_block::CommittedBlockEffects;
 use crate::coordinator::Coordinator;
-use crate::db::{Db, LoopDb};
+use crate::db::NtxDbWriter;
 use crate::server::NtxBuilderRpcServer;
 use crate::{LOG_TARGET, NtxBuilderConfig};
 
@@ -57,7 +57,7 @@ pub struct NetworkTransactionBuilder {
     /// Configuration for the builder.
     config: NtxBuilderConfig,
     /// Database for persistent state.
-    db: Db,
+    db: NtxDbWriter,
     /// Stream of committed blocks from the node RPC service.
     block_stream: BlockStream,
     /// Highest block number applied to the DB so far.
@@ -77,7 +77,7 @@ pub struct NetworkTransactionBuilder {
 impl NetworkTransactionBuilder {
     pub(crate) fn new(
         config: NtxBuilderConfig,
-        db: Db,
+        db: NtxDbWriter,
         block_stream: BlockStream,
         last_applied_block: BlockNumber,
         chain: Arc<SharedChainState>,
@@ -111,7 +111,7 @@ impl NetworkTransactionBuilder {
         let mut tasks = Tasks::new();
 
         // Start the gRPC server.
-        let server = NtxBuilderRpcServer::new(self.db.clone(), self.config.max_note_attempts);
+        let server = NtxBuilderRpcServer::new(self.db.reader(), self.config.max_note_attempts);
         let server_shutdown = shutdown.clone();
         tasks.spawn("grpc-server", async move {
             server
@@ -128,14 +128,6 @@ impl NetworkTransactionBuilder {
     }
 
     async fn run_event_loop(mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        // Pin a dedicated connection for the loop's DB writes so block application is never starved
-        // by the account actors competing for the shared pool.
-        let loop_db = self
-            .db
-            .pin_loop_connection()
-            .await
-            .context("failed to pin a database connection for the ntx-builder event loop")?;
-
         // Phase 1: catch-up.
         loop {
             let (block, committed_tip) = tokio::select! {
@@ -143,7 +135,7 @@ impl NetworkTransactionBuilder {
                 result = self.next_block() => result?,
             };
             let local_tip = block.header().block_num();
-            self.apply_committed_block(&loop_db, block, committed_tip).await?;
+            self.apply_committed_block(block, committed_tip).await?;
 
             if local_tip == committed_tip {
                 self.is_synced = true;
@@ -158,8 +150,10 @@ impl NetworkTransactionBuilder {
 
         // Phase 2: spawn an actor for every account with carry-over pending notes. Accounts whose
         // creation has not been committed yet have their spawn deferred by the coordinator.
-        let pending_accounts = loop_db
-            .accounts_with_pending_notes(self.config.max_note_attempts)
+        let max_note_attempts = self.config.max_note_attempts;
+        let pending_accounts = self
+            .db
+            .accounts_with_pending_notes(max_note_attempts)
             .await
             .context("failed to load accounts with pending notes at catch-up")?;
         tracing::info!(
@@ -193,16 +187,15 @@ impl NetworkTransactionBuilder {
                 SteadyStateAction::Block(block) => {
                     let (block, committed_tip) =
                         (*block).context("block stream ended")?.context("block stream failed")?;
-                    let effects = self
-                        .apply_committed_block_with_effects(&loop_db, block, committed_tip)
-                        .await?;
+                    let effects =
+                        self.apply_committed_block_with_effects(block, committed_tip).await?;
                     self.coordinator.handle_committed_block(&effects).await?;
                 },
                 SteadyStateAction::Request(request) => {
                     let Some(request) = request else {
                         anyhow::bail!("actor request channel closed unexpectedly");
                     };
-                    handle_actor_request(&loop_db, request, self.config.max_note_attempts).await?;
+                    handle_actor_request(&self.db, request, self.config.max_note_attempts).await?;
                 },
                 SteadyStateAction::Respawn(respawn) => {
                     if let Some(account_id) = respawn {
@@ -235,13 +228,10 @@ impl NetworkTransactionBuilder {
     /// Applies a committed block without surfacing the computed effects.
     async fn apply_committed_block(
         &mut self,
-        loop_db: &LoopDb,
         block: SignedBlock,
         committed_tip: BlockNumber,
     ) -> anyhow::Result<()> {
-        self.apply_committed_block_with_effects(loop_db, block, committed_tip)
-            .await
-            .map(drop)
+        self.apply_committed_block_with_effects(block, committed_tip).await.map(drop)
     }
 
     /// Applies a committed block and returns the computed `CommittedBlockEffects` so the
@@ -256,7 +246,6 @@ impl NetworkTransactionBuilder {
     )]
     async fn apply_committed_block_with_effects(
         &mut self,
-        loop_db: &LoopDb,
         block: SignedBlock,
         committed_tip: BlockNumber,
     ) -> anyhow::Result<CommittedBlockEffects> {
@@ -270,8 +259,9 @@ impl NetworkTransactionBuilder {
         self.chain.update_chain_tip(header, self.config.max_block_count);
         let next_mmr = self.chain.current_mmr();
 
-        loop_db
-            .apply_committed_block(effects.clone(), next_mmr)
+        let effects_for_db = effects.clone();
+        self.db
+            .apply_committed_block(effects_for_db, next_mmr)
             .await
             .context("failed to apply committed block to DB")?;
 
@@ -281,41 +271,28 @@ impl NetworkTransactionBuilder {
     }
 }
 
-/// Reason recorded in a note's `last_error` when it is discarded for exceeding the per-tx cycle
-/// budget on its own.
-const OVERSIZED_NOTE_DISCARD_REASON: &str =
-    "note consumption exceeds the per-transaction cycle budget; it can never be consumed";
-
-/// Handles a single actor request then acknowledges the actor. Runs on the pinned loop connection
-/// so the actors' shared pool cannot starve these writes.
+/// Handles a single actor request then acknowledges the actor. All writes go through the
+/// framework's single writer connection, so the actors' reads cannot starve them.
 async fn handle_actor_request(
-    loop_db: &LoopDb,
+    db: &NtxDbWriter,
     request: ActorRequest,
     max_note_attempts: usize,
 ) -> anyhow::Result<()> {
     match request {
         ActorRequest::NotesFailed { failed_notes, block_num, ack_tx } => {
-            loop_db
-                .notes_failed(failed_notes, block_num)
+            db.notes_failed(failed_notes, block_num)
                 .await
                 .context("failed to persist note failure")?;
             let _ = ack_tx.send(());
         },
         ActorRequest::NotesDiscarded { nullifiers, block_num, ack_tx } => {
-            loop_db
-                .discard_notes(
-                    nullifiers,
-                    block_num,
-                    max_note_attempts,
-                    OVERSIZED_NOTE_DISCARD_REASON.to_string(),
-                )
+            db.discard_notes(nullifiers, block_num, max_note_attempts)
                 .await
                 .context("failed to persist note discard")?;
             let _ = ack_tx.send(());
         },
         ActorRequest::CacheNoteScript { script_root, script } => {
-            loop_db
-                .insert_note_script(script_root, &script)
+            db.insert_note_scripts(script_root, script)
                 .await
                 .context("failed to cache note script")?;
         },

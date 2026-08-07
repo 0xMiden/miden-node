@@ -37,12 +37,12 @@ impl proto::server::rpc_api::GetBlockByNumber for RpcService {
 
         let block_num = BlockNumber::from(request.block_num);
         let block = self
-            .store
+            .state
             .load_block(block_num)
             .await
             .map_err(|err| database_error_to_status(&err))?;
         let proof = if request.include_proof.unwrap_or_default() {
-            self.store
+            self.state
                 .load_proof(block_num)
                 .await
                 .map_err(|err| database_error_to_status(&err))?

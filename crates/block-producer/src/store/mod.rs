@@ -7,7 +7,7 @@ use miden_node_proto::decode;
 use miden_node_proto::decode::GrpcDecodeExt;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::sequencer;
-use miden_node_store::state::{Finality, State, TransactionInputs as StoreTransactionInputs};
+use miden_node_store::state::{State, TransactionInputs as StoreTransactionInputs};
 use miden_node_utils::formatting::format_opt;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
@@ -184,14 +184,18 @@ pub async fn get_tx_inputs(
     let unauthenticated_note_commitments =
         proven_tx.unauthenticated_notes().map(|header| header.id().as_word()).collect();
 
-    let store_inputs = state
-        .get_transaction_inputs(
-            proven_tx.account_id(),
-            &nullifiers,
-            unauthenticated_note_commitments,
-        )
-        .await
-        .map_err(StoreError::GetTransactionInputsFailed)?;
+    let (current_block_height, store_inputs) = state
+        .with_view(async |view| {
+            view.get_transaction_inputs(
+                proven_tx.account_id(),
+                &nullifiers,
+                unauthenticated_note_commitments,
+            )
+            .await
+            .map(|inputs| (view.tip(), inputs))
+            .map_err(StoreError::GetTransactionInputsFailed)
+        })
+        .await?;
 
     if !store_inputs.new_account_id_prefix_is_unique.unwrap_or(true) {
         debug_assert!(
@@ -201,11 +205,10 @@ pub async fn get_tx_inputs(
         return Err(StoreError::DuplicateAccountIdPrefix(proven_tx.account_id()));
     }
 
-    let current_block_height = state.chain_tip(Finality::Committed).await;
     let tx_inputs = TransactionInputs::from_store_inputs(
         proven_tx.account_id(),
         store_inputs,
-        current_block_height,
+        *current_block_height,
     );
 
     tracing::debug!(target: LOG_TARGET, tx_inputs = %tx_inputs, "Transaction inputs");

@@ -5,8 +5,8 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, ProofSubscriptionRequest};
-use miden_node_store::state::{Finality, State};
-use miden_node_utils::retry::{self, Retryable};
+use miden_node_store::state::{BlockWriter, ProofWriter, State};
+use miden_node_utils::retry::{self, RetryableWithContext};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::miden_instrument;
@@ -130,7 +130,12 @@ impl RpcReadiness {
 
 /// Synchronizes local state from an upstream RPC service.
 pub struct RpcSync {
+    /// Read-only store state, used by both loops to read tips and subscribe to commits.
     pub state: Arc<State>,
+    /// The store's block-write capability, consumed by the block sync loop.
+    pub block_writer: BlockWriter,
+    /// The store's proof-write capability, consumed by the proof sync loop.
+    pub proof_writer: ProofWriter,
     pub source_rpc: RpcClient,
     pub readiness: RpcReadiness,
 }
@@ -141,11 +146,13 @@ impl RpcSync {
         let mut tasks = Tasks::new();
         let block_sync = BlockSync {
             state: Arc::clone(&self.state),
+            writer: self.block_writer,
             source_rpc: self.source_rpc.clone(),
             readiness: self.readiness,
         };
         let proof_sync = ProofSync {
             state: self.state,
+            writer: self.proof_writer,
             source_rpc: self.source_rpc,
         };
 
@@ -161,18 +168,28 @@ impl RpcSync {
 
 struct BlockSync {
     state: Arc<State>,
+    writer: BlockWriter,
     source_rpc: RpcClient,
     readiness: RpcReadiness,
 }
 
 impl BlockSync {
     async fn run(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let retry = (|| async {
-            self.sync(shutdown.clone())
-                .await
-                .and_then(|()| Err(anyhow::anyhow!("unexpected end of stream")))
+        // `sync` needs `&mut self` (it applies blocks through the writer capability), so the retry
+        // closure cannot lend out a borrow of a capture; thread `self` through as owned context
+        // instead.
+        let retry = (|mut sync: Self| {
+            let shutdown = shutdown.clone();
+            async move {
+                let result = sync
+                    .sync(shutdown)
+                    .await
+                    .and_then(|()| Err(anyhow::anyhow!("unexpected end of stream")));
+                (sync, result)
+            }
         })
         .retry(retry::constant(RECONNECT_DELAY, None))
+        .context(self)
         .notify(|err, _| {
             warn!(
                 target: LOG_TARGET,
@@ -183,7 +200,7 @@ impl BlockSync {
         });
 
         tokio::select! {
-            result = retry => result,
+            (_, result) = retry => result,
             () = shutdown.cancelled() => Ok(()),
         }
     }
@@ -192,8 +209,8 @@ impl BlockSync {
         target = COMPONENT,
         err,
     )]
-    async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let local_tip = self.state.chain_tip(Finality::Committed).await;
+    async fn sync(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
+        let local_tip = self.state.committed_tip();
         let mut client = self.source_rpc.clone();
         let upstream_tip =
             BlockNumber::from(client.status(tonic::Request::new(())).await?.into_inner().chain_tip);
@@ -219,9 +236,9 @@ impl BlockSync {
             let upstream_tip = BlockNumber::from(event.committed_chain_tip);
             let block = SignedBlock::read_from_bytes(&event.block)
                 .context("failed to deserialize block from upstream")?;
-            self.state.apply_block(block).await?;
+            self.writer.apply_block(block).await?;
 
-            let local_tip = self.state.chain_tip(Finality::Committed).await;
+            let local_tip = self.state.committed_tip();
             self.readiness.update(upstream_tip, local_tip).await;
         }
     }
@@ -229,6 +246,7 @@ impl BlockSync {
 
 struct ProofSync {
     state: Arc<State>,
+    writer: ProofWriter,
     source_rpc: RpcClient,
 }
 
@@ -240,12 +258,21 @@ impl ProofSync {
     /// behind, but that is acceptable — there is no value in streaming proofs for blocks that have not
     /// yet been applied.
     async fn run(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let retry = (|| async {
-            self.sync(shutdown.clone())
-                .await
-                .and_then(|()| Err(anyhow::anyhow!("unexpected end of stream")))
+        // `sync` needs `&mut self` (it commits proofs through the writer capability), so the retry
+        // closure cannot lend out a borrow of a capture; thread `self` through as owned context
+        // instead.
+        let retry = (|mut sync: Self| {
+            let shutdown = shutdown.clone();
+            async move {
+                let result = sync
+                    .sync(shutdown)
+                    .await
+                    .and_then(|()| Err(anyhow::anyhow!("unexpected end of stream")));
+                (sync, result)
+            }
         })
         .retry(retry::constant(RECONNECT_DELAY, None))
+        .context(self)
         .notify(|err, _| {
             warn!(
                 target: LOG_TARGET,
@@ -256,14 +283,14 @@ impl ProofSync {
         });
 
         tokio::select! {
-            result = retry => result,
+            (_, result) = retry => result,
             () = shutdown.cancelled() => Ok(()),
         }
     }
 
-    async fn sync(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
+    async fn sync(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
         // Subscribe from next proven tip.
-        let starting_block = self.state.chain_tip(Finality::Proven).await.child();
+        let starting_block = self.state.proven_tip().child();
         info!(
             target: LOG_TARGET,
             block_from = %starting_block,
@@ -302,7 +329,7 @@ impl ProofSync {
                 },
             }
 
-            self.state.apply_proof(block_num, event.proof).await?;
+            self.writer.apply_proof(block_num, event.proof).await?;
 
             expected = expected.child();
         }

@@ -8,7 +8,6 @@ use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_tx::utils::serde::{Deserializable, Serializable};
 
 use super::ValidatorService;
-use crate::db::{load_chain_tip, upsert_block_header};
 
 #[tonic::async_trait]
 impl grpc::server::validator_api::SignBlock for ValidatorService {
@@ -51,8 +50,8 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
 
         // Load the current chain tip from the database.
         let chain_tip = self
-            .reader
-            .read("load_chain_tip", load_chain_tip)
+            .db
+            .load_chain_tip()
             .await
             .map_err(|err| {
                 tonic::Status::internal(format!("Failed to load chain tip: {}", err.as_report()))
@@ -74,15 +73,9 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
 
         // Persist the signed header.
         let new_block_num = header.block_num().as_u32();
-        self.writer
-            .write("upsert_block_header", move |tx| upsert_block_header(tx, &header))
-            .await
-            .map_err(|err| {
-                tonic::Status::internal(format!(
-                    "Failed to persist block header: {}",
-                    err.as_report()
-                ))
-            })?;
+        self.db.upsert_block_header(header).await.map_err(|err| {
+            tonic::Status::internal(format!("Failed to persist block header: {}", err.as_report()))
+        })?;
 
         // Update the in-memory counters after successful persistence. The block has already been
         // backed up to the block store by `validate_block`, so it is available to subscribers by

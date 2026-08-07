@@ -1,3 +1,4 @@
+-- Returns every validated private transaction in local insertion order.
 SELECT
     chain_id,
     key_epoch,

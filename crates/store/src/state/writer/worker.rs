@@ -1,7 +1,7 @@
 //! The write worker: single-task owner of the store's mutable trees.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Once};
 
 use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
@@ -16,6 +16,8 @@ use miden_protocol::crypto::merkle::smt::LargeSmt;
 use miden_protocol::note::{NoteDetails, Nullifier};
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::serde::Serializable;
+use rayon::ThreadPool;
+use thread_priority::{ThreadPriority, set_current_thread_priority};
 use tokio::sync::{mpsc, watch};
 
 use super::WriteRequest;
@@ -68,6 +70,13 @@ pub(in crate::state) struct WriteWorker {
     /// Writer-local log of published generations; its oldest still-pinned height feeds the
     /// snapshot-aware history-pruning tip.
     published_generations: PublishedGenerations,
+    /// Dedicated rayon pool for the CPU-heavy sections of the write path.
+    ///
+    /// Applying a block must not queue behind unrelated jobs on the global rayon pool, so its
+    /// parallel tree work runs here instead. The pool spans all cores and, when configured, its
+    /// threads run at raised priority (best-effort), giving apply-block work high scheduling
+    /// weight while runnable and costing nothing while idle.
+    apply_pool: Arc<ThreadPool>,
 }
 
 /// Note records and state mutations computed from a validated block, before any modifications.
@@ -96,12 +105,22 @@ impl WriteWorker {
         blockchain: Blockchain,
         forest: AccountStateForest<AccountStateForestBackend>,
         snapshots_live: Arc<AtomicUsize>,
+        apply_block_thread_priority: bool,
     ) -> Self {
         // Seed the generation log with the initial snapshot so its readers hold back pruning
         // exactly like readers of any later generation.
         let mut published_generations = PublishedGenerations::new();
         let initial_snapshot = latest_snapshot.load_full();
         published_generations.record(initial_snapshot.latest_block_num(), &initial_snapshot);
+
+        let mut pool_builder =
+            rayon::ThreadPoolBuilder::new().thread_name(|index| format!("apply_block_{index}"));
+        if apply_block_thread_priority {
+            pool_builder = pool_builder.start_handler(|_| raise_thread_priority());
+        }
+        let apply_pool =
+            Arc::new(pool_builder.build().expect("apply_block thread pool should build"));
+
         Self {
             db,
             block_store,
@@ -115,6 +134,7 @@ impl WriteWorker {
             forest,
             snapshots_live,
             published_generations,
+            apply_pool,
         }
     }
 
@@ -174,7 +194,7 @@ impl WriteWorker {
             block.transactions.count = num_transactions,
         );
 
-        self.validate_block_header(header, body).await?;
+        self.validate_block_header(header).await?;
 
         let block_lifecycle =
             lifecycle_events_enabled().then(|| BlockLifecycle::from_block_body(block_num, body));
@@ -185,18 +205,18 @@ impl WriteWorker {
         // Compute the tree and forest mutations and note records upfront, before any modifications.
         // The writer is the sole forest mutator, so the precomputed forest update stays valid until
         // it is applied after the DB commit below.
+        let (prepared, signed_block_bytes) = self.prepare_block_update(&signed_block)?;
         let PreparedBlockUpdate {
             notes,
             nullifier_tree_update,
             account_tree_update,
             account_forest_update,
-        } = tokio::task::block_in_place(|| self.prepare_block_update(header, body))?;
+        } = prepared;
         let precomputed_public_states = account_forest_update.account_states.clone();
 
         // Save the block to the block store. In a case of a failed DB transaction, the in-memory
         // state will be unchanged, but the file might still be written. Such blocks should be
         // considered candidates, not finalized blocks.
-        let signed_block_bytes = signed_block.to_bytes();
         self.block_store.save_block(block_num, &signed_block_bytes).await?;
 
         // Commit to the DB. Readers continue to see the previous in-memory snapshot while the DB
@@ -221,15 +241,13 @@ impl WriteWorker {
 
         // The DB is committed at this point, so the prepared mutations must be applied and any
         // failure to do so aborts the process.
-        let snapshot = tokio::task::block_in_place(|| {
-            self.apply_prepared_mutations(
-                block_num,
-                block_commitment,
-                nullifier_tree_update,
-                account_tree_update,
-                account_forest_update,
-            )
-        });
+        let snapshot = self.apply_prepared_mutations(
+            block_num,
+            block_commitment,
+            nullifier_tree_update,
+            account_tree_update,
+            account_forest_update,
+        );
 
         // Atomically publish the new state. Readers that call `snapshot()` after this point will
         // see the updated state. Readers holding the old snapshot continue unaffected, but are on
@@ -276,37 +294,55 @@ impl WriteWorker {
     }
 
     /// Computes the note records and all tree and forest mutations for a block, without mutating
-    /// any state.
+    /// any state, and serializes the signed block.
     ///
-    /// May block on backend I/O, so it must run on Tokio's blocking path. The returned forest
-    /// update is bound to the forest state observed here; it remains valid until applied because
-    /// the writer is the sole forest mutator.
+    /// The work may block on backend I/O and fans out via rayon, so it runs on the dedicated
+    /// apply-block pool via [`run_on_pool`]; the block serialization is folded in so that all
+    /// write-path CPU work lands on the pool. The returned forest update is bound to the forest
+    /// state observed here; it remains valid until applied because the writer is the sole forest
+    /// mutator.
     fn prepare_block_update(
         &self,
-        header: &BlockHeader,
-        body: &BlockBody,
-    ) -> Result<PreparedBlockUpdate, ApplyBlockError> {
-        let notes = Self::build_note_records(header, body)?;
-        let (nullifier_tree_update, account_tree_update) =
-            self.compute_tree_mutations(header, body)?;
+        signed_block: &SignedBlock,
+    ) -> Result<(PreparedBlockUpdate, Vec<u8>), ApplyBlockError> {
+        run_on_pool(&self.apply_pool, || {
+            let header = signed_block.header();
+            let body = signed_block.body();
 
-        // Public account updates carry patches; private accounts are filtered out since they don't
-        // expose their state changes.
-        let account_patches =
-            body.updated_accounts().iter().filter_map(|update| match update.details() {
-                AccountUpdateDetails::Public(patch) => Some(patch.clone()),
-                AccountUpdateDetails::Private => None,
-            });
-        let account_forest_update = self
-            .forest
-            .compute_block_update_mutations(header.block_num(), account_patches)
-            .map_err(ApplyBlockError::AccountStateForestPreparation)?;
+            // The header must commit to the body's transactions. Checked here rather than in
+            // `validate_block_header` so the transaction hashing runs on the apply-block pool.
+            let tx_commitment = body.transactions().commitment();
+            if header.tx_commitment() != tx_commitment {
+                return Err(InvalidBlockError::InvalidBlockTxCommitment {
+                    expected: tx_commitment,
+                    actual: header.tx_commitment(),
+                }
+                .into());
+            }
 
-        Ok(PreparedBlockUpdate {
-            notes,
-            nullifier_tree_update,
-            account_tree_update,
-            account_forest_update,
+            let notes = Self::build_note_records(header, body)?;
+            let (nullifier_tree_update, account_tree_update) =
+                self.compute_tree_mutations(header, body)?;
+
+            // Public account updates carry patches; private accounts are filtered out since they
+            // don't expose their state changes.
+            let account_patches =
+                body.updated_accounts().iter().filter_map(|update| match update.details() {
+                    AccountUpdateDetails::Public(patch) => Some(patch.clone()),
+                    AccountUpdateDetails::Private => None,
+                });
+            let account_forest_update = self
+                .forest
+                .compute_block_update_mutations(header.block_num(), account_patches)
+                .map_err(ApplyBlockError::AccountStateForestPreparation)?;
+
+            let prepared = PreparedBlockUpdate {
+                notes,
+                nullifier_tree_update,
+                account_tree_update,
+                account_forest_update,
+            };
+            Ok((prepared, signed_block.to_bytes()))
         })
     }
 
@@ -321,7 +357,8 @@ impl WriteWorker {
     /// previous published snapshot (block-scoped, so still consistent) until then, and the startup
     /// consistency checks detect the trees lagging the database on restart.
     ///
-    /// May block on backend I/O, so it must run on Tokio's blocking path.
+    /// The work may block on backend I/O and fans out via rayon, so it runs on the dedicated
+    /// apply-block pool via [`run_on_pool`].
     ///
     /// # Panics
     ///
@@ -334,55 +371,47 @@ impl WriteWorker {
         account_tree_update: AccountMutationSet,
         account_forest_update: PreparedAccountStateForestBlockUpdate<AccountStateForestBackend>,
     ) -> Arc<StateSnapshot> {
-        self.nullifier_tree
-            .apply_mutations(nullifier_tree_update)
-            .unwrap_or_else(|error| {
-                panic!("nullifier tree update failed after database commit: {error}")
-            });
-
-        self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
-            panic!("account tree update failed after database commit: {error}")
-        });
-
-        self.blockchain.push(block_commitment);
-
-        self.forest
-            .apply_precomputed_block_update(block_num, account_forest_update)
-            .unwrap_or_else(|error| {
-                panic!("account-state forest update failed after database commit: {error}")
-            });
-
-        Arc::new(StateSnapshot::new(
+        let apply_pool = Arc::clone(&self.apply_pool);
+        run_on_pool(&apply_pool, || {
             self.nullifier_tree
-                .reader()
-                .expect("nullifier tree snapshot creation should not fail"),
-            self.blockchain.clone(),
-            self.account_tree.reader(),
-            self.forest.reader().expect("forest snapshot creation should not fail"),
-            SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
-        ))
+                .apply_mutations(nullifier_tree_update)
+                .unwrap_or_else(|error| {
+                    panic!("nullifier tree update failed after database commit: {error}")
+                });
+
+            self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
+                panic!("account tree update failed after database commit: {error}")
+            });
+
+            self.blockchain.push(block_commitment);
+
+            self.forest
+                .apply_precomputed_block_update(block_num, account_forest_update)
+                .unwrap_or_else(|error| {
+                    panic!("account-state forest update failed after database commit: {error}")
+                });
+
+            Arc::new(StateSnapshot::new(
+                self.nullifier_tree
+                    .reader()
+                    .expect("nullifier tree snapshot creation should not fail"),
+                self.blockchain.clone(),
+                self.account_tree.reader(),
+                self.forest.reader().expect("forest snapshot creation should not fail"),
+                SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
+            ))
+        })
     }
 
-    /// Validates that the block header is consistent with the block body and the current state.
+    /// Validates that the block header is consistent with the committed chain state.
+    ///
+    /// Consistency between the header and the block body is checked in
+    /// [`Self::prepare_block_update`], where the hashing runs on the apply-block pool.
     #[miden_instrument(
         target = COMPONENT,
         err,
     )]
-    async fn validate_block_header(
-        &self,
-        header: &BlockHeader,
-        body: &BlockBody,
-    ) -> Result<(), ApplyBlockError> {
-        // Validate that header and body match.
-        let tx_commitment = body.transactions().commitment();
-        if header.tx_commitment() != tx_commitment {
-            return Err(InvalidBlockError::InvalidBlockTxCommitment {
-                expected: tx_commitment,
-                actual: header.tx_commitment(),
-            }
-            .into());
-        }
-
+    async fn validate_block_header(&self, header: &BlockHeader) -> Result<(), ApplyBlockError> {
         let block_num = header.block_num();
 
         // Validate that the applied block is the next block in sequence.
@@ -519,5 +548,37 @@ impl WriteWorker {
             .collect::<Result<Vec<_>, InvalidBlockError>>()?;
 
         Ok(notes)
+    }
+}
+
+// APPLY-BLOCK POOL
+// ================================================================================================
+
+/// Runs `op` on the dedicated apply-block pool, blocking in place until it completes.
+///
+/// The closure executes on a pool thread, so every rayon primitive it invokes fans out over the
+/// pool rather than the global one. The caller's tracing span is propagated so spans opened
+/// inside `op` stay parented under it.
+fn run_on_pool<T: Send>(pool: &ThreadPool, op: impl FnOnce() -> T + Send) -> T {
+    let span = tracing::Span::current();
+    tokio::task::block_in_place(|| pool.install(|| span.in_scope(op)))
+}
+
+/// Raises the current thread's scheduling priority, best-effort.
+///
+/// Runs on each apply-block pool thread at startup when raised priority is enabled in the
+/// storage options. The OS may deny the raise (on Linux it
+/// requires `CAP_SYS_NICE`); the pool still isolates apply-block work from the global rayon pool
+/// at normal priority, so a denial is only logged, and only once rather than per thread.
+fn raise_thread_priority() {
+    static WARN_ONCE: Once = Once::new();
+    if let Err(error) = set_current_thread_priority(ThreadPriority::Max) {
+        WARN_ONCE.call_once(|| {
+            tracing::warn!(
+                target: COMPONENT,
+                ?error,
+                "failed to raise apply-block thread priority; continuing at normal priority",
+            );
+        });
     }
 }

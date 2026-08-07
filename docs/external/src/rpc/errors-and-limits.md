@@ -76,7 +76,7 @@ The limits are returned in `json` format as follows:
 ```json
 {
   "endpoints": {
-    "GetAccount": { "parameters": { "storage_map_key": 64 } },
+    "GetAccount": { "parameters": { "storage_map_key": 64, "storage_maps": 256 } },
     "GetNotesById": { "parameters": { "note_id": 100 } },
     "SyncNotes": { "parameters": { "note_tag": 1000 } },
     "SyncNullifiers": { "parameters": { "nullifier_prefix": 1000 } },

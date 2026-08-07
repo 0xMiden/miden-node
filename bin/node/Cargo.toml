@@ -27,7 +27,7 @@ miden-node-rpc            = { workspace = true }
 miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }
 miden-protocol            = { workspace = true }
-tokio                     = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
+tokio                     = { features = ["macros", "net", "rt-multi-thread", "sync"], workspace = true }
 tokio-stream              = { workspace = true }
 tonic                     = { default-features = false, workspace = true }
 tracing                   = { workspace = true }

@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use miden_node_db::sqlite::Database;
+use miden_node_db::sqlite::DbReader;
 use miden_protocol::utils::serde::Serializable;
 use rand_core_06::OsRng;
 use serde::{Deserialize, Serialize};
@@ -19,23 +19,25 @@ const ISSUE_SHARE_PATH: &str = "/admin/decryption-share";
 #[derive(Clone)]
 struct ValidatorAdminService {
     operator_key: Arc<GoldenOperatorKey>,
-    database: Database,
+    /// Read-only handle: the administration API lists stored records and issues decryption shares,
+    /// and must never mutate validator state.
+    reader: DbReader,
 }
 
 impl ValidatorAdminService {
-    fn new(operator_key: GoldenOperatorKey, database: Database) -> Self {
+    fn new(operator_key: GoldenOperatorKey, reader: DbReader) -> Self {
         Self {
             operator_key: Arc::new(operator_key),
-            database,
+            reader,
         }
     }
 }
 
-pub(super) fn router(operator_key: GoldenOperatorKey, database: Database) -> Router {
+pub(super) fn router(operator_key: GoldenOperatorKey, reader: DbReader) -> Router {
     Router::new()
         .route(LIST_TRANSACTIONS_PATH, get(list_validated_private_transactions))
         .route(ISSUE_SHARE_PATH, post(issue_decryption_share))
-        .with_state(ValidatorAdminService::new(operator_key, database))
+        .with_state(ValidatorAdminService::new(operator_key, reader))
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -68,7 +70,7 @@ async fn list_validated_private_transactions(
     State(service): State<ValidatorAdminService>,
 ) -> Result<Json<ListValidatedPrivateTransactionsResponse>, ApiError> {
     let records = service
-        .database
+        .reader
         .read("list validated private transactions", load_all_transactions)
         .await
         .map_err(|_error| ApiError::internal("failed to list validated private transactions"))?;
@@ -160,6 +162,7 @@ mod tests {
     use golden_ehtdh1::wire::{from_wire_bytes, to_wire_bytes};
     use golden_ehtdh1::{Ciphertext, Combiner, DecryptionShare};
     use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
+    use miden_node_db::sqlite::DbWriter;
     use miden_protocol::Word;
     use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -211,10 +214,11 @@ mod tests {
         builder.build().unwrap().get_transaction_inputs(&account, &[], &[]).unwrap()
     }
 
-    async fn test_database() -> (tempfile::TempDir, Database) {
+    async fn test_database() -> (tempfile::TempDir, DbWriter, DbReader) {
         let directory = tempfile::tempdir().unwrap();
-        let database = crate::db::setup(directory.path().join("validator.sqlite3")).await.unwrap();
-        (directory, database)
+        let (writer, reader) =
+            crate::db::setup(directory.path().join("validator.sqlite3")).await.unwrap();
+        (directory, writer, reader)
     }
 
     fn share_request(record: &StoredPrivateRecord) -> IssueDecryptionShareRequest {
@@ -241,14 +245,14 @@ mod tests {
         let first = keys.pop().unwrap();
         let public_key_set = record_owner.public_key_set().clone();
         let setup_context = record_owner.setup_context().clone();
-        let (_directory, database) = test_database().await;
-        let first_service = ValidatorAdminService::new(first, database.clone());
-        let second_service = ValidatorAdminService::new(second, database.clone());
+        let (_directory, writer, reader) = test_database().await;
+        let first_service = ValidatorAdminService::new(first, reader.clone());
+        let second_service = ValidatorAdminService::new(second, reader);
         let inputs = transaction_inputs();
         let transaction_id = TransactionId::from_raw(Word::from([8u32, 7, 6, 5]));
         let record = target_record(&record_owner, transaction_id, 10, &inputs.to_bytes());
         let stored_record = record.clone();
-        database
+        writer
             .write("store listed private transaction", move |tx| {
                 insert_validated_private_transaction(tx, &stored_record)
             })
@@ -302,7 +306,7 @@ mod tests {
     #[tokio::test]
     async fn list_uses_insertion_order() {
         let mut keys = operator_keys();
-        let (_directory, database) = test_database().await;
+        let (_directory, writer, reader) = test_database().await;
         let transaction_ids = [
             TransactionId::from_raw(Word::from([9u32, 0, 0, 0])),
             TransactionId::from_raw(Word::from([1u32, 0, 0, 0])),
@@ -310,7 +314,7 @@ mod tests {
         ];
         for (seed, transaction_id) in [11u8, 12, 13].into_iter().zip(transaction_ids) {
             let record = target_record(&keys[0], transaction_id, seed, b"record");
-            database
+            writer
                 .write("store private transaction", move |tx| {
                     insert_validated_private_transaction(tx, &record)
                 })
@@ -318,7 +322,7 @@ mod tests {
                 .unwrap();
         }
 
-        let service = ValidatorAdminService::new(keys.remove(0), database);
+        let service = ValidatorAdminService::new(keys.remove(0), reader);
         let Json(response) = list_validated_private_transactions(State(service)).await.unwrap();
         assert_eq!(
             response
@@ -337,8 +341,8 @@ mod tests {
     async fn shares_for_different_ciphertexts_are_not_reusable() {
         let mut keys = operator_keys();
         let record_owner = keys.pop().unwrap();
-        let second = ValidatorAdminService::new(keys.pop().unwrap(), test_database().await.1);
-        let first = ValidatorAdminService::new(keys.pop().unwrap(), test_database().await.1);
+        let second = ValidatorAdminService::new(keys.pop().unwrap(), test_database().await.2);
+        let first = ValidatorAdminService::new(keys.pop().unwrap(), test_database().await.2);
         let transaction_id = TransactionId::from_raw(Word::from([1u32, 2, 3, 4]));
         let first_record = target_record(&record_owner, transaction_id, 2, b"same plaintext");
         let second_record = target_record(&record_owner, transaction_id, 3, b"same plaintext");
@@ -370,16 +374,15 @@ mod tests {
             b"record",
         );
         let context = record.context().to_bytes();
-        let (_directory, database) = test_database().await;
+        let (_directory, _writer, reader) = test_database().await;
 
         let invalid_hex = IssueDecryptionShareRequest {
             ciphertext: "not hex".to_owned(),
             decryption_context: hex::encode(&context),
         };
-        let error =
-            issue(&ValidatorAdminService::new(keys.remove(0), database.clone()), invalid_hex)
-                .await
-                .unwrap_err();
+        let error = issue(&ValidatorAdminService::new(keys.remove(0), reader.clone()), invalid_hex)
+            .await
+            .unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
 
         let mut short_rng = ChaCha20Rng::from_seed([5; 32]);
@@ -391,10 +394,9 @@ mod tests {
             ciphertext: hex::encode(to_wire_bytes(&short_ciphertext)),
             decryption_context: hex::encode(context),
         };
-        let error =
-            issue(&ValidatorAdminService::new(keys.remove(0), database.clone()), wrong_size)
-                .await
-                .unwrap_err();
+        let error = issue(&ValidatorAdminService::new(keys.remove(0), reader.clone()), wrong_size)
+            .await
+            .unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
 
         let wrong_context = IssueDecryptionShareRequest {
@@ -402,7 +404,7 @@ mod tests {
             decryption_context: hex::encode(b"wrong context"),
         };
         let error =
-            issue(&ValidatorAdminService::new(operator_keys().remove(0), database), wrong_context)
+            issue(&ValidatorAdminService::new(operator_keys().remove(0), reader), wrong_context)
                 .await
                 .unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
@@ -410,8 +412,8 @@ mod tests {
 
     #[tokio::test]
     async fn router_exposes_only_the_json_admin_routes() {
-        let (_directory, database) = test_database().await;
-        let app = router(operator_keys().remove(0), database);
+        let (_directory, _writer, reader) = test_database().await;
+        let app = router(operator_keys().remove(0), reader);
 
         let response = app
             .clone()

@@ -16,7 +16,7 @@
 
 use std::time::Duration;
 
-pub use backon::{BackoffBuilder, Retryable};
+pub use backon::{BackoffBuilder, Retryable, RetryableWithContext};
 use backon::{ConstantBuilder, ExponentialBuilder};
 
 // BACKOFF BUILDERS

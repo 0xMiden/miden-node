@@ -57,12 +57,15 @@ impl proto::server::rpc_api::SyncAccountStorageMaps for RpcService {
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()
             .map_err(invalid_block_range_to_status)?;
-        let chain_tip = self.range_bounds_check(&block_range).await?;
-        let storage_maps_page = self
-            .store
-            .sync_account_storage_maps(account_id, block_range)
-            .await
-            .map_err(|err| database_error_to_status(&err))?;
+        let (chain_tip, storage_maps_page) = self
+            .state
+            .with_view(async |view| {
+                view.sync_account_storage_maps(account_id, block_range)
+                    .await
+                    .map(|page| (view.tip(), page))
+                    .map_err(|err| database_error_to_status(&err))
+            })
+            .await?;
         let updates = storage_maps_page
             .values
             .into_iter()

@@ -76,6 +76,9 @@ pub type TreeStorage = RocksDbStorage;
 #[cfg(not(feature = "rocksdb"))]
 pub type TreeStorage = MemoryStorage;
 
+/// The read-only snapshot storage backend for trees, used by in-memory state snapshots.
+pub type TreeStorageReader = <TreeStorage as SmtStorage>::Reader;
+
 // ERROR CONVERSION
 // ================================================================================================
 

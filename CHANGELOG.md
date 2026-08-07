@@ -2,8 +2,6 @@
 
 ## Unreleased
 
-## v0.16.0-rc.1 (2026-08-07)
-
 - [BREAKING] Updated `miden-protocol` dependencies to use the `next` branch (v0.16). Block and transaction account updates now use the absolute `AccountPatch` representation instead of the relative `AccountDelta`, and the `miden-tx-batch-prover` crate was renamed to `miden-tx-batch` ([#2282](https://github.com/0xMiden/node/pull/2282)).
 
 ## v0.15.0 (2026-06-10)

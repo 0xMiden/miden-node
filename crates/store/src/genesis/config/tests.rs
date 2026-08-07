@@ -40,11 +40,12 @@ fn parsing_yields_expected_default_values() -> TestResult {
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
     let (state, _secrets) = gcfg.into_state()?;
     let _ = state;
-    // faucets always precede wallet accounts
+    // faucets, then the faucet operator, then the wallet accounts
     let native_faucet = state.accounts[0].clone();
     let _excess = state.accounts[1].clone();
-    let wallet1 = state.accounts[2].clone();
-    let wallet2 = state.accounts[3].clone();
+    let _operator = state.accounts[2].clone();
+    let wallet1 = state.accounts[3].clone();
+    let wallet2 = state.accounts[4].clone();
 
     assert!(FungibleFaucet::try_from(&native_faucet).is_ok());
     assert!(FungibleFaucet::try_from(&wallet1).is_err());
@@ -201,107 +202,66 @@ path = "test_account.mac"
 }
 
 #[test]
-fn parsing_native_faucet_from_file() -> TestResult {
-    use miden_protocol::account::auth::AuthScheme;
-    use miden_protocol::account::{AccountBuilder, AccountFile, AccountType};
-    use miden_protocol::asset::AssetAmount;
-    use miden_standards::account::auth::{Approver, AuthSingleSig};
-    use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
-    use tempfile::tempdir;
-
-    // Create a temporary directory for our test files
-    let temp_dir = tempdir()?;
-    let config_dir = temp_dir.path();
-
-    // Create a faucet account and save it to a .mac file
-    let init_seed: [u8; 32] = rand::random();
-    let mut rng = rand_chacha::ChaCha20Rng::from_seed(rand::random());
-    let secret_key = SecretKey::with_rng(&mut rng);
-    let auth = AuthSingleSig::new(Approver::new(
-        secret_key.public_key().into(),
-        AuthScheme::Falcon512Poseidon2,
-    ));
-
-    let faucet = FungibleFaucet::builder()
-        .name(TokenName::new("MIDEN").unwrap())
-        .symbol(TokenSymbol::new("MIDEN").unwrap())
-        .decimals(6)
-        .max_supply(AssetAmount::new(1_000_000_000)?)
-        .build()?;
-
-    let faucet_account = AccountBuilder::new(init_seed)
-        .account_type(AccountType::Public)
-        .with_component(auth)
-        .with_component(faucet)
-        .with_components(
-            TokenPolicyManager::builder()
-                .active_mint_policy(MintPolicy::allow_all())
-                .active_burn_policy(BurnPolicy::allow_all())
-                .build(),
-        )
-        .build()?;
-
-    let faucet_id = faucet_account.id();
-
-    // Save to file
-    let faucet_file_path = config_dir.join("native_faucet.mac");
-    let account_file = AccountFile::new(faucet_account, vec![]);
-    account_file.write(&faucet_file_path)?;
-
-    // Create a genesis config TOML that references the faucet file
-    let toml_content = format!(
-        r#"{}
+fn native_faucet_is_always_generated_as_a_network_account() -> TestResult {
+    let toml = format!(
+        "{}
 timestamp = 1717344256
 version   = 1
 
-native_faucet = "native_faucet.mac"
-
 [fee_parameters]
 verification_base_fee = 0
-"#,
+",
         dev_validators_line()
     );
-    let config_path = write_toml_file(config_dir, &toml_content);
 
-    // Parse the config
-    let gcfg = GenesisConfig::read_toml_file(&config_path)?;
-
-    // Convert to state and verify the native faucet is included
+    let gcfg = GenesisConfig::read_toml(&toml, Path::new("."))?;
     let (state, secrets) = gcfg.into_state()?;
-    assert!(state.accounts.iter().any(|a| a.id() == faucet_id));
 
-    // No secrets should be generated for file-loaded native faucet
-    assert!(secrets.secrets.is_empty());
+    // The native faucet is the fee faucet and precedes every other account.
+    let native_faucet = &state.accounts[0];
+    assert_eq!(native_faucet.id(), state.fee_parameters.fee_faucet_id());
+    assert!(FungibleFaucet::try_from(native_faucet).is_ok());
+    assert_eq!(native_faucet.nonce(), ONE);
+
+    // A network account is authenticated by the network and carries no key of its own, so the only
+    // generated secret belongs to the operator.
+    assert_eq!(secrets.secrets.len(), 1);
+    let (name, operator_id, _) = &secrets.secrets[0];
+    assert_eq!(name, FAUCET_OPERATOR_FILE_NAME);
+    assert_ne!(*operator_id, native_faucet.id());
+
+    // The operator is deployed alongside the faucet.
+    let operator = state
+        .accounts
+        .iter()
+        .find(|account| account.id() == *operator_id)
+        .expect("the operator account is part of the genesis state");
+    assert_eq!(operator.nonce(), ONE);
+    assert!(FungibleFaucet::try_from(operator).is_err());
 
     Ok(())
 }
 
 #[test]
-fn native_faucet_from_file_must_be_faucet_type() -> TestResult {
+fn native_faucet_path_is_ignored() -> TestResult {
+    use miden_protocol::account::AccountFile;
     use miden_protocol::account::auth::AuthScheme;
-    use miden_protocol::account::{AccountFile, AccountType};
     use miden_standards::account::auth::Approver;
     use miden_standards::account::wallets::create_basic_wallet;
     use tempfile::tempdir;
 
-    // Create a temporary directory for our test files
     let temp_dir = tempdir()?;
     let config_dir = temp_dir.path();
 
-    // Create a regular wallet account (not a faucet) and try to use it as native faucet
+    // The referenced file is not even a faucet: its contents are never read.
     let init_seed: [u8; 32] = rand::random();
     let mut rng = rand_chacha::ChaCha20Rng::from_seed(rand::random());
     let secret_key = SecretKey::with_rng(&mut rng);
     let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
+    let not_a_faucet = create_basic_wallet(init_seed, auth, AccountType::Public)?;
+    let not_a_faucet_id = not_a_faucet.id();
+    AccountFile::new(not_a_faucet, vec![]).write(config_dir.join("not_a_faucet.mac"))?;
 
-    let regular_account = create_basic_wallet(init_seed, auth, AccountType::Public)?;
-
-    // Save to file
-    let account_file_path = config_dir.join("not_a_faucet.mac");
-    let account_file = AccountFile::new(regular_account, vec![]);
-    account_file.write(&account_file_path)?;
-
-    // Create a genesis config TOML that tries to use a non-faucet as native faucet
     let toml_content = format!(
         r#"{}
 timestamp = 1717344256
@@ -316,17 +276,14 @@ verification_base_fee = 0
     );
     let config_path = write_toml_file(config_dir, &toml_content);
 
-    // Parsing should succeed
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
+    let (state, _secrets) = gcfg.into_state()?;
 
-    // into_state should fail with NativeFaucetNotFungible error when loading the file
-    let result = gcfg.into_state();
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(
-        matches!(err, GenesisConfigError::NativeFaucetNotFungible { .. }),
-        "Expected NativeFaucetNotFungible error, got: {err:?}"
-    );
+    assert!(!state.accounts.iter().any(|a| a.id() == not_a_faucet_id));
+
+    let native_faucet = &state.accounts[0];
+    assert_eq!(native_faucet.id(), state.fee_parameters.fee_faucet_id());
+    assert!(FungibleFaucet::try_from(native_faucet).is_ok());
 
     Ok(())
 }

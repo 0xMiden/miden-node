@@ -1,10 +1,8 @@
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::time::Duration;
 
 use miden_node_store::GenesisState;
 use miden_node_store::state::State;
-use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::fee::test_fee_params;
 use miden_protocol::block::{BlockNumber, ValidatorKeys};
 use miden_protocol::testing::random_secret_key::random_secret_key;
@@ -23,10 +21,12 @@ use crate::{
 async fn block_producer_starts_with_store_state() {
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
     bootstrap_store(data_directory.path());
-    let store = load_state(data_directory.path()).await;
+    let (state, block_writer, proof_writer) = State::for_tests(data_directory.path()).await;
 
     let block_producer = Sequencer {
-        store,
+        state,
+        block_writer,
+        proof_writer,
         validator_urls: vec![Url::parse("http://127.0.0.1:0").unwrap()],
         validator_timeout: DEFAULT_VALIDATOR_TIMEOUT,
         batch_prover_url: None,
@@ -40,7 +40,6 @@ async fn block_producer_starts_with_store_state() {
         batch_workers: DEFAULT_BATCH_WORKERS,
     }
     .spawn(miden_node_utils::shutdown::CancellationToken::new())
-    .await
     .unwrap();
 
     let status = block_producer.api().status().await;
@@ -60,9 +59,4 @@ fn bootstrap_store(path: &std::path::Path) {
     let genesis_block = genesis_state.into_block().expect("genesis block should be created");
 
     State::bootstrap(genesis_block, path).expect("store should bootstrap");
-}
-
-async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let state = State::load(path, StorageOptions::default()).await.expect("state should load");
-    Arc::new(state)
 }

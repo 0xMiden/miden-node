@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::mem::size_of;
 use std::num::NonZeroUsize;
-use std::ops::{Deref, DerefMut, RangeInclusive};
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -36,7 +36,6 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::TransactionHeader;
 use miden_protocol::utils::serde::Deserializable;
-use tokio::sync::oneshot;
 use tracing::info;
 
 use crate::db::migrations::{migrate_database, verify_latest_schema};
@@ -55,6 +54,7 @@ use crate::db::models::queries::{
 };
 use crate::errors::{DatabaseError, NoteSyncError};
 use crate::genesis::GenesisBlock;
+use crate::state::{ScopedBlockNum, ScopedBlockRange};
 use crate::{COMPONENT, LOG_TARGET};
 
 const STORAGE_MAP_VALUE_PER_ROW_BYTES: usize =
@@ -308,8 +308,9 @@ impl Db {
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
     ) -> Result<(Vec<NullifierInfo>, BlockNumber)> {
+        let block_range = block_range.into_inner();
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.transact("nullifieres by prefix", move |conn| {
@@ -335,10 +336,13 @@ impl Db {
     )]
     pub async fn select_block_header_by_block_num(
         &self,
-        maybe_block_number: Option<BlockNumber>,
+        maybe_block_number: Option<ScopedBlockNum>,
     ) -> Result<Option<BlockHeader>> {
         self.transact("block headers by block number", move |conn| {
-            let val = queries::select_block_header_by_block_num(conn, maybe_block_number)?;
+            let val = queries::select_block_header_by_block_num(
+                conn,
+                maybe_block_number.map(|block_number| *block_number),
+            )?;
             Ok(val)
         })
         .await
@@ -353,10 +357,11 @@ impl Db {
     )]
     pub async fn select_block_header_and_signatures_by_block_num(
         &self,
-        block_number: BlockNumber,
+        block_number: ScopedBlockNum,
     ) -> Result<Option<(BlockHeader, BlockSignatures)>> {
         self.transact("block headers and signatures by block number", move |conn| {
-            let val = queries::select_block_header_and_signatures_by_block_num(conn, block_number)?;
+            let val =
+                queries::select_block_header_and_signatures_by_block_num(conn, *block_number)?;
             Ok(val)
         })
         .await
@@ -370,10 +375,10 @@ impl Db {
     )]
     pub async fn select_block_headers(
         &self,
-        blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
+        blocks: impl Iterator<Item = ScopedBlockNum> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
         self.transact("block headers from given block numbers", move |conn| {
-            let raw = queries::select_block_headers(conn, blocks)?;
+            let raw = queries::select_block_headers(conn, blocks.map(|block| *block))?;
             Ok(raw)
         })
         .await
@@ -497,10 +502,12 @@ impl Db {
     pub async fn select_account_header_with_storage_header_at_block(
         &self,
         account_id: AccountId,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
     ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
         self.transact("Get account header with storage header at block", move |conn| {
-            queries::select_account_header_with_storage_header_at_block(conn, account_id, block_num)
+            queries::select_account_header_with_storage_header_at_block(
+                conn, account_id, *block_num,
+            )
         })
         .await
     }
@@ -512,9 +519,10 @@ impl Db {
     )]
     pub async fn get_note_sync_multi(
         &self,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
         note_tags: Arc<[u32]>,
     ) -> Result<Vec<NoteSyncUpdate>, NoteSyncError> {
+        let block_range = block_range.into_inner();
         self.transact("notes sync task", move |conn| {
             queries::get_note_sync_multi(conn, &note_tags, block_range, MAX_RESPONSE_PAYLOAD_BYTES)
         })
@@ -535,7 +543,8 @@ impl Db {
         .await
     }
 
-    /// Returns all note commitments from the DB that match the provided ones.
+    /// Returns all note commitments from the DB that match the provided ones and were committed at
+    /// or before `up_to_block`.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
@@ -544,14 +553,20 @@ impl Db {
     pub async fn select_existing_note_commitments(
         &self,
         note_commitments: Vec<Word>,
+        up_to_block: ScopedBlockNum,
     ) -> Result<HashSet<Word>> {
         self.transact("note by commitment", move |conn| {
-            queries::select_existing_note_commitments(conn, note_commitments.as_slice())
+            queries::select_existing_note_commitments(
+                conn,
+                note_commitments.as_slice(),
+                *up_to_block,
+            )
         })
         .await
     }
 
-    /// Loads inclusion proofs for notes matching the given note commitments.
+    /// Loads inclusion proofs for notes matching the given note commitments that were committed at
+    /// or before `up_to_block`.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
@@ -560,17 +575,23 @@ impl Db {
     pub async fn select_note_inclusion_proofs(
         &self,
         note_commitments: BTreeSet<Word>,
+        up_to_block: ScopedBlockNum,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
         self.transact("block note inclusion proofs by commitment", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_commitments)
+            models::queries::select_note_inclusion_proofs(conn, &note_commitments, *up_to_block)
         })
         .await
     }
 
     /// Inserts the data of a new block into the DB.
     ///
-    /// `allow_acquire` and `acquire_done` are used to synchronize writes to the DB with writes to
-    /// the in-memory trees. Further details available on [`super::state::State::apply_block`].
+    /// The transaction is committed when this method returns. Synchronization with the in-memory
+    /// trees is handled by the block writer task; see [`super::state::State::apply_block`].
+    ///
+    /// Account history is pruned in the same transaction against `prune_tip`: the effective tip
+    /// for retention, which lags the actual tip while old snapshot generations are still pinned
+    /// by readers (SQLite reads have no point-in-time protection, unlike the `RocksDB`-backed
+    /// trees).
     ///
     /// Consumed note IDs omitted from transaction headers are resolved from
     /// `unresolved_note_nullifiers` on a best-effort basis. The returned mapping is used only for
@@ -583,31 +604,18 @@ impl Db {
     )]
     pub(crate) async fn apply_block(
         &self,
-        allow_acquire: oneshot::Sender<()>,
-        acquire_done: oneshot::Receiver<()>,
         signed_block: SignedBlock,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
         precomputed_public_states: PrecomputedPublicAccountStates,
         unresolved_note_nullifiers: Vec<Nullifier>,
+        prune_tip: BlockNumber,
     ) -> Result<BTreeMap<Nullifier, NoteId>> {
         self.transact("apply block", move |conn| {
             models::queries::apply_block(conn, &signed_block, &notes, &precomputed_public_states)?;
-
-            // XXX FIXME TODO free floating mutex MUST NOT exist it doesn't bind it properly to the
-            // data locked!
-            {
-                let _span = tracing::info_span!(target: COMPONENT, "acquire_write_lock").entered();
-                if allow_acquire.send(()).is_err() {
-                    tracing::warn!(target: COMPONENT, "failed to send notification for successful block application, potential deadlock");
-                }
-            }
-
-            models::queries::prune_history(conn, signed_block.header().block_num())?;
+            models::queries::prune_history(conn, prune_tip)?;
 
             let mut resolved_note_ids = BTreeMap::new();
-            for chunk in
-                unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT)
-            {
+            for chunk in unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT) {
                 match queries::select_note_ids_by_nullifier(conn, chunk) {
                     Ok(note_ids) => resolved_note_ids.extend(note_ids),
                     Err(err) => {
@@ -622,10 +630,6 @@ impl Db {
                 }
             }
 
-            let _span =
-                tracing::info_span!(target: COMPONENT, "acquire_done_lock").entered();
-            acquire_done.blocking_recv()?;
-
             Ok(resolved_note_ids)
         })
         .await
@@ -638,9 +642,10 @@ impl Db {
     pub(crate) async fn select_storage_map_sync_values(
         &self,
         account_id: AccountId,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
         entries_limit: Option<usize>,
     ) -> Result<StorageMapValuesPage> {
+        let block_range = block_range.into_inner();
         let entries_limit = entries_limit.unwrap_or_else(default_storage_map_entries_limit);
 
         self.transact("select storage map sync values", move |conn| {
@@ -669,7 +674,7 @@ impl Db {
         &self,
         account_id: AccountId,
         slot_name: miden_protocol::account::StorageSlotName,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
         entries_limit: Option<usize>,
     ) -> Result<miden_node_proto::domain::account::AccountStorageMapDetails> {
         use miden_node_proto::domain::account::{AccountStorageMapDetails, StorageMapEntries};
@@ -684,7 +689,7 @@ impl Db {
         let mut page = self
             .select_storage_map_sync_values(
                 account_id,
-                block_range_start..=block_num,
+                block_num.range_from(block_range_start),
                 Some(entries_limit),
             )
             .await?;
@@ -699,7 +704,8 @@ impl Db {
         }
 
         loop {
-            if page.last_block_included == block_num || page.last_block_included < block_range_start
+            if page.last_block_included == *block_num
+                || page.last_block_included < block_range_start
             {
                 break;
             }
@@ -708,7 +714,7 @@ impl Db {
             page = self
                 .select_storage_map_sync_values(
                     account_id,
-                    block_range_start..=block_num,
+                    block_num.range_from(block_range_start),
                     Some(entries_limit),
                 )
                 .await?;
@@ -721,7 +727,7 @@ impl Db {
             values.extend(page.values);
         }
 
-        if page.last_block_included != block_num {
+        if page.last_block_included != *block_num {
             return Ok(AccountStorageMapDetails::limit_exceeded(slot_name));
         }
 
@@ -758,10 +764,10 @@ impl Db {
     pub async fn select_account_vault_at_block(
         &self,
         account_id: AccountId,
-        block_num: BlockNumber,
+        block_num: ScopedBlockNum,
     ) -> Result<Vec<Asset>, DatabaseError> {
         self.transact("select account vault at block", move |conn| {
-            queries::select_account_vault_at_block(conn, account_id, block_num)
+            queries::select_account_vault_at_block(conn, account_id, *block_num)
         })
         .await
     }
@@ -769,8 +775,9 @@ impl Db {
     pub async fn get_account_vault_sync(
         &self,
         account_id: AccountId,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
+        let block_range = block_range.into_inner();
         self.transact("account vault sync", move |conn| {
             queries::select_account_vault_assets(conn, account_id, block_range)
         })
@@ -794,8 +801,9 @@ impl Db {
     pub async fn select_transactions_records(
         &self,
         account_ids: Vec<AccountId>,
-        block_range: RangeInclusive<BlockNumber>,
+        block_range: ScopedBlockRange,
     ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
+        let block_range = block_range.into_inner();
         self.transact("full transactions records", move |conn| {
             queries::select_transactions_records(conn, &account_ids, block_range)
         })

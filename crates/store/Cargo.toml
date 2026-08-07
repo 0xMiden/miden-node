@@ -19,6 +19,7 @@ doctest = false
 
 [dependencies]
 anyhow           = { workspace = true }
+arc-swap         = { workspace = true }
 deadpool         = { features = ["managed", "rt_tokio_1"], workspace = true }
 deadpool-diesel  = { features = ["sqlite"], workspace = true }
 diesel           = { features = ["numeric", "sqlite"], workspace = true }

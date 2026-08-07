@@ -14,7 +14,7 @@ use miden_node_proto::clients::{
     WantsConnection,
 };
 use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
-use miden_node_store::State;
+use miden_node_store::{BlockWriter, ProofWriter, State, WriterTask};
 use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
 use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::shutdown::CancellationToken;
@@ -67,11 +67,14 @@ impl SequencerCommand {
             remote_prover_monitor(self.block_producer.batch.prover_url.as_ref())?;
         let block_prover_monitor =
             remote_prover_monitor(self.block_producer.block_prover.url.as_ref())?;
-        let state = load_state(&runtime).await?;
+        let (state, block_writer, proof_writer, writer_task) =
+            load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let sequencer = Sequencer {
-            store: Arc::clone(&state),
+            state: Arc::clone(&state),
+            block_writer,
+            proof_writer,
             validator_urls: self.external_services.validator_urls.clone(),
             validator_timeout: self.external_services.validator_timeout,
             batch_prover_url: self.block_producer.batch.prover_url,
@@ -85,14 +88,14 @@ impl SequencerCommand {
             batch_workers: self.block_producer.batch.workers,
         }
         .spawn(shutdown.clone())
-        .await
         .context("failed to spawn sequencer")?;
         let block_producer = sequencer.api();
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: state,
+            state,
             mode: RpcMode::sequencer(block_producer.clone(), validator_clients),
+            sync_writers: None,
             ntx_builder: Some(ntx_builder_client),
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
@@ -100,6 +103,7 @@ impl SequencerCommand {
         let mut tasks = Tasks::new();
         tasks.spawn("sequencer", sequencer.wait());
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
+        tasks.spawn("store block writer", join_store_writer(writer_task));
         for (index, validator_monitor) in validator_monitors.into_iter().enumerate() {
             tasks.spawn_infallible(
                 format!("validator {index} connection monitor"),
@@ -288,19 +292,22 @@ impl FullNodeCommand {
             sequencer_monitor,
         } = self.pre_auth_components()?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
-        let state = load_state(&runtime).await?;
+        let (state, block_writer, proof_writer, writer_task) =
+            load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            store: state,
+            state,
             mode: RpcMode::full_node(source_rpc, self.sync.readiness_threshold, pre_auth),
+            sync_writers: Some((block_writer, proof_writer)),
             ntx_builder: None,
             grpc_options: runtime.external_grpc_options,
             network_tx_auth,
         };
         let mut tasks = Tasks::new();
         tasks.spawn("RPC server", rpc.serve(shutdown.clone()));
+        tasks.spawn("store block writer", join_store_writer(writer_task));
         for (index, validator_monitor) in validator_monitors.into_iter().enumerate() {
             tasks.spawn_infallible(
                 format!("validator {index} connection monitor"),
@@ -399,8 +406,11 @@ impl SyncOptions {
     }
 }
 
-async fn load_state(runtime: &RuntimeConfig) -> anyhow::Result<Arc<State>> {
-    let state = State::load_with_database_options(
+async fn load_state(
+    runtime: &RuntimeConfig,
+    shutdown: CancellationToken,
+) -> anyhow::Result<(Arc<State>, BlockWriter, ProofWriter, WriterTask)> {
+    let loaded = State::load_with_database_options(
         &runtime.data_directory,
         runtime.storage_options.clone(),
         runtime.database_options,
@@ -408,7 +418,16 @@ async fn load_state(runtime: &RuntimeConfig) -> anyhow::Result<Arc<State>> {
     .await
     .context("failed to load state")?;
 
-    Ok(Arc::new(state))
+    Ok(loaded.start(shutdown))
+}
+
+/// Supervises the store's write worker task.
+///
+/// On shutdown the task-drain loop waits for the writer to finish any in-flight block write and
+/// close its storage; an early exit or panic surfaces through the task set like any other task
+/// failure.
+async fn join_store_writer(writer_task: WriterTask) -> anyhow::Result<()> {
+    writer_task.await.map_err(anyhow::Error::from)
 }
 
 async fn bind_rpc(listen: SocketAddr) -> anyhow::Result<TcpListener> {

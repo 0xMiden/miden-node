@@ -4,9 +4,9 @@ use miden_protocol::block::{BlockNumber, BlockProof};
 use miden_protocol::utils::serde::Deserializable;
 
 use crate::COMPONENT;
-use crate::state::{Finality, ProofNotification, State};
+use crate::state::{ProofNotification, ProofWriter};
 
-impl State {
+impl ProofWriter {
     /// Saves a block proof, advances the proven-in-sequence tip, and notifies replica subscribers.
     ///
     /// # Errors
@@ -21,17 +21,17 @@ impl State {
         ),
     )]
     pub async fn apply_proof(
-        &self,
+        &mut self,
         block_num: BlockNumber,
         proof_bytes: Vec<u8>,
     ) -> anyhow::Result<()> {
-        let expected = self.proven_tip.read().child();
+        let expected = self.state.proven_tip().child();
         ensure!(
             block_num == expected,
             "out-of-sequence proof: expected block {expected}, got {block_num}",
         );
 
-        let committed_tip = self.chain_tip(Finality::Committed).await;
+        let committed_tip = self.state.committed_tip();
         ensure!(
             block_num <= committed_tip,
             "proof for uncommitted block {block_num} exceeds committed tip {committed_tip}",
@@ -39,11 +39,12 @@ impl State {
 
         verify_block_proof(block_num, &proof_bytes)?;
 
-        self.block_store.commit_proof(block_num, &proof_bytes).await?;
-        self.proof_cache
+        self.state.block_store.commit_proof(block_num, &proof_bytes).await?;
+        self.state
+            .proof_cache
             .push(block_num, ProofNotification::new(block_num, proof_bytes))
             .expect("proof cache receives sequential block numbers");
-        self.proven_tip.advance(block_num);
+        self.state.proven_tip.advance(block_num);
         Ok(())
     }
 }

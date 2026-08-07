@@ -22,7 +22,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_store::state::State;
-use miden_node_utils::clap::{GrpcOptionsExternal, StorageOptions};
+use miden_node_utils::clap::GrpcOptionsExternal;
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
@@ -94,7 +94,7 @@ impl TestStore {
     async fn start() -> Self {
         let data_directory = new_tempdir();
         let genesis_commitment = Self::bootstrap(&data_directory);
-        let state = load_state(&data_directory).await;
+        let (state, ..) = State::for_tests(&data_directory).await;
         Self {
             state,
             genesis_commitment,
@@ -113,11 +113,6 @@ impl TestStore {
 
         genesis_commitment
     }
-}
-
-async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let state = State::load(path, StorageOptions::default()).await.expect("state should load");
-    Arc::new(state)
 }
 
 /// Byte offset of the account delta commitment in serialized `ProvenTransaction`. Layout:
@@ -631,8 +626,8 @@ async fn start_source_rpc(
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
-    let block_producer_state = load_state(&block_producer_dir).await;
-    let store_state = Arc::clone(&store.state);
+    let (block_producer_state, ..) = State::for_tests(&block_producer_dir).await;
+    let state = Arc::clone(&store.state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind source RPC");
     let addr = listener.local_addr().expect("Failed to get source RPC address");
@@ -644,7 +639,7 @@ async fn start_source_rpc(
             BlockProducerApiConfig::default(),
         );
         let source_rpc = RpcService::new(
-            store_state,
+            state,
             RpcMode::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
             Some(ntx_builder),
             NonZeroUsize::new(1_000_000).unwrap(),
@@ -1108,8 +1103,8 @@ async fn start_rpc_with_options(
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
-    let block_producer_state = load_state(&block_producer_dir).await;
-    let store_state = Arc::clone(&store.state);
+    let (block_producer_state, ..) = State::for_tests(&block_producer_dir).await;
+    let state = Arc::clone(&store.state);
 
     // Start the rpc component.
     let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
@@ -1131,11 +1126,12 @@ async fn start_rpc_with_options(
             .connect_lazy::<ValidatorClient>();
         Rpc {
             listener: rpc_listener,
-            store: store_state,
+            state,
             mode: RpcMode::sequencer(
                 block_producer,
                 ValidatorClients::new(vec![validator]).unwrap(),
             ),
+            sync_writers: None,
             ntx_builder: None,
             grpc_options,
             network_tx_auth: None,

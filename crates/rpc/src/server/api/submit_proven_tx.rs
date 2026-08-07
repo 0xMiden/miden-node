@@ -168,7 +168,7 @@ impl RpcService {
         request: proto::transaction::ProvenTransaction,
         rebuilt_tx: ProvenTransaction,
     ) -> tonic::Result<proto::blockchain::BlockNumber> {
-        let tx_inputs = get_tx_inputs(&self.store, &rebuilt_tx).await.map_err(|err| {
+        let tx_inputs = get_tx_inputs(&self.state, &rebuilt_tx).await.map_err(|err| {
             Status::internal(err.as_report_context("failed to get transaction inputs"))
         })?;
 

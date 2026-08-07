@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use miden_protocol::Word;
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -143,18 +144,30 @@ async fn add_transaction_traces_are_correct() {
 
     let (mut uut, _) = Mempool::for_tests();
     let txs = MockProvenTxBuilder::sequential();
+    let tx_id = txs[0].id().to_string();
     uut.add_transaction(txs[0].clone()).unwrap();
 
-    let span_data = rx_export.recv().await.unwrap();
-    assert_eq!(span_data.name, "mempool.add_transaction");
+    // The exporter is global, so skip spans leaked by tests running concurrently on other threads
+    // by matching on this test's transaction ID.
+    let span_data = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let span_data = rx_export.recv().await.unwrap();
+            if span_data.name == "mempool.add_transaction"
+                && span_data
+                    .attributes
+                    .iter()
+                    .any(|kv| kv.key == "transaction.id".into() && kv.value.to_string() == tx_id)
+            {
+                break span_data;
+            }
+        }
+    })
+    .await
+    .expect("span for the added transaction should be exported");
+
     assert!(span_data.attributes.iter().any(|kv| kv.key == "code.module.name".into()
         && kv.value == "miden_node_block_producer::mempool".into()));
-    assert!(
-        span_data
-            .attributes
-            .iter()
-            .any(|kv| kv.key == "transaction.id".into() && kv.value.to_string().starts_with("0x"))
-    );
+    assert!(tx_id.starts_with("0x"));
 }
 
 // BATCH FAILED TESTS

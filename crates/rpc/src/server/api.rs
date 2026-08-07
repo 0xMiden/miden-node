@@ -1,5 +1,4 @@
 use std::num::NonZeroUsize;
-use std::ops::RangeInclusive;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
@@ -10,7 +9,7 @@ use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::generated::rpc::MempoolStats as ProtoMempoolStats;
 use miden_node_proto::generated::rpc::api_server::Api;
 use miden_node_proto::generated::{self as proto};
-use miden_node_store::state::{Finality, State};
+use miden_node_store::state::State;
 use miden_node_store::{DatabaseError, GetBlockHeaderError};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
@@ -112,7 +111,7 @@ impl From<InvalidBlockRange> for RpcInvalidBlockRange {
 // ================================================================================================
 
 pub struct RpcService {
-    store: Arc<State>,
+    state: Arc<State>,
     mode: RpcMode,
     ntx_builder: Option<NtxBuilderClient>,
     network_tx_auth: Option<NetworkTxAuth>,
@@ -125,14 +124,14 @@ pub struct RpcService {
 
 impl RpcService {
     pub(crate) fn new(
-        store: Arc<State>,
+        state: Arc<State>,
         mode: RpcMode,
         ntx_builder: Option<NtxBuilderClient>,
         commitment_cache_capacity: NonZeroUsize,
         network_tx_auth: Option<NetworkTxAuth>,
     ) -> Self {
         Self {
-            store,
+            state,
             mode,
             ntx_builder,
             network_tx_auth,
@@ -146,8 +145,8 @@ impl RpcService {
 
     /// Sets the genesis commitment, returning an error if it is already set.
     ///
-    /// Required since the store client is used to fetch the `genesis_commitment` after
-    /// `RpcService` construction.
+    /// Required since the genesis header is fetched through the store state after `RpcService`
+    /// construction.
     pub fn set_genesis_commitment(&mut self, commitment: Word) -> anyhow::Result<()> {
         if self.genesis_commitment.is_some() {
             return Err(anyhow::anyhow!("genesis commitment already set"));
@@ -203,7 +202,8 @@ impl RpcService {
         }
 
         let header = self
-            .store
+            .state
+            .view()
             .get_block_header(Some(block), false)
             .await
             .map_err(get_block_header_error_to_status)?
@@ -233,25 +233,6 @@ impl RpcService {
         Ok(())
     }
 
-    /// Fetches the committed chain tip and ensures the requested range does not extend beyond it.
-    ///
-    /// Returns the chain tip so callers can reuse it (e.g. in the response's pagination info)
-    /// without issuing a second query.
-    async fn range_bounds_check(
-        &self,
-        range: &RangeInclusive<BlockNumber>,
-    ) -> Result<BlockNumber, Status> {
-        let chain_tip = self.store.chain_tip(Finality::Committed).await;
-        if *range.end() > chain_tip {
-            return Err(Status::invalid_argument(format!(
-                "block_to ({}) is greater than chain tip ({chain_tip})",
-                range.end()
-            )));
-        }
-
-        Ok(chain_tip)
-    }
-
     /// Errors if any of `candidate_ids` is classified as a network account by the store. Callers
     /// should pre-filter to post-deployment, public-account ids; `Ok(())` on empty.
     async fn reject_if_any_network_accounts(
@@ -264,7 +245,7 @@ impl RpcService {
         }
 
         let network_accounts =
-            self.store.filter_network_accounts(&account_ids).await.map_err(|err| {
+            self.state.view().filter_network_accounts(&account_ids).await.map_err(|err| {
                 Status::internal(format!("network-account classification failed: {err}"))
             })?;
 
@@ -310,6 +291,7 @@ fn database_error_to_status(err: &DatabaseError) -> Status {
         | DatabaseError::AccountsNotFoundInDb(_)
         | DatabaseError::AccountNotPublic(_) => Status::not_found(message),
         DatabaseError::TransactionPageExceedsPayloadLimit { .. } => Status::out_of_range(message),
+        DatabaseError::RangeBeyondTip(_) => Status::invalid_argument(message),
         _ => Status::internal(message),
     }
 }

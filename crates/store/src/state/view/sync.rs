@@ -5,7 +5,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockHeader, BlockNumber, BlockSignatures};
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrProof};
 
-use super::State;
+use super::StateView;
 use crate::COMPONENT;
 use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::{AccountVaultValue, NoteSyncUpdate, NullifierInfo};
@@ -14,18 +14,26 @@ use crate::errors::{DatabaseError, NoteSyncError, StateSyncError};
 // STATE SYNCHRONIZATION ENDPOINTS
 // ================================================================================================
 
-impl State {
+impl StateView {
     /// Returns the complete transaction records for the specified accounts within the specified
     /// block range, including state commitments and note IDs.
+    ///
+    /// Returns [`RangeBeyondTip`](crate::errors::RangeBeyondTip) if the range extends beyond this
+    /// view's chain tip.
     pub async fn sync_transactions(
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
+        let block_range = self.scope_range(block_range)?;
         self.db.select_transactions_records(account_ids, block_range).await
     }
 
-    /// Returns the chain MMR delta and the `block_to` block header for the specified block range.
+    /// Returns the chain MMR delta and the block header at the range's end for the specified
+    /// block range.
+    ///
+    /// Returns [`RangeBeyondTip`](crate::errors::RangeBeyondTip) if the range extends beyond this
+    /// view's chain tip.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
@@ -35,16 +43,18 @@ impl State {
         &self,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(MmrDelta, BlockHeader, BlockSignatures), StateSyncError> {
-        let block_from = *block_range.start();
-        let block_to = *block_range.end();
+        let block_range = self.scope_range(block_range)?;
 
-        // SAFETY: block_to has been validated to be <= the effective tip (chain tip or latest
-        // proven block) by the caller, so it must exist in the database.
+        let block_from = block_range.start();
+        let block_to = block_range.end();
+
+        // The scoped range's end is committed (at or below this view's tip), so its header must
+        // exist in the database.
         let (block_header, signatures) = self
             .db
-            .select_block_header_and_signatures_by_block_num(block_to)
+            .select_block_header_and_signatures_by_block_num(block_range.scoped_end())
             .await?
-            .expect("block_to should exist in the database");
+            .expect("the range-end header should exist in the database");
 
         if block_from == block_to {
             return Ok((
@@ -70,10 +80,7 @@ impl State {
         let to_forest = block_to.as_usize();
 
         let mmr_delta = self
-            .inner
-            .read()
-            .await
-            .blockchain
+            .blockchain()
             .as_mmr()
             .get_delta(
                 Forest::new(from_forest).expect("from_forest fits in u32"),
@@ -92,6 +99,9 @@ impl State {
     ///
     /// Also returns the last block number checked. If this equals `block_range.end()`, the
     /// sync is complete.
+    ///
+    /// Returns [`RangeBeyondTip`](crate::errors::RangeBeyondTip) if the range extends beyond this
+    /// view's chain tip.
     #[miden_instrument(
         level = "debug",
         target = COMPONENT,
@@ -102,24 +112,22 @@ impl State {
         note_tags: Vec<u32>,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<(NoteSyncUpdate, MmrProof)>, BlockNumber), NoteSyncError> {
-        let block_end = *block_range.end();
+        let block_range = self.scope_range(block_range)?;
+
+        let block_end = block_range.end();
         // The MMR at forest N contains proofs for blocks 0..N-1, so we use block_end + 1 to include
-        // the proof for block_end. SAFETY: it is ensured that block_end <= chain_tip, and the
-        // blockchain MMR always has at least chain_tip + 1 leaves.
+        // the proof for block_end. SAFETY: block_end <= this view's tip (checked above), and the
+        // view's blockchain MMR always has at least tip + 1 leaves.
         let mmr_checkpoint = block_end + 1;
 
         let note_syncs = self.db.get_note_sync_multi(block_range, note_tags.into()).await?;
 
         let mut results = Vec::new();
 
-        {
-            let inner = self.inner.read().await;
-
-            for note_sync in note_syncs {
-                let mmr_proof =
-                    inner.blockchain.open_at(note_sync.block_header.block_num(), mmr_checkpoint)?;
-                results.push((note_sync, mmr_proof));
-            }
+        for note_sync in note_syncs {
+            let mmr_proof =
+                self.blockchain().open_at(note_sync.block_header.block_num(), mmr_checkpoint)?;
+            results.push((note_sync, mmr_proof));
         }
 
         // if results is empty, return `block_end` since the sync is complete.
@@ -129,12 +137,17 @@ impl State {
         Ok((results, last_block_checked))
     }
 
+    /// Returns nullifiers matching the given prefixes that were created within a block range.
+    ///
+    /// Returns [`RangeBeyondTip`](crate::errors::RangeBeyondTip) if the range extends beyond this
+    /// view's chain tip.
     pub async fn sync_nullifiers(
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
+        let block_range = self.scope_range(block_range)?;
         self.db
             .select_nullifiers_by_prefix(prefix_len, nullifier_prefixes, block_range)
             .await
@@ -144,20 +157,28 @@ impl State {
     // --------------------------------------------------------------------------------------------
 
     /// Returns account vault updates for specified account within a block range.
+    ///
+    /// Returns [`RangeBeyondTip`](crate::errors::RangeBeyondTip) if the range extends beyond this
+    /// view's chain tip.
     pub async fn sync_account_vault(
         &self,
         account_id: AccountId,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
+        let block_range = self.scope_range(block_range)?;
         self.db.get_account_vault_sync(account_id, block_range).await
     }
 
     /// Returns storage map values for syncing within a block range.
+    ///
+    /// Returns [`RangeBeyondTip`](crate::errors::RangeBeyondTip) if the range extends beyond this
+    /// view's chain tip.
     pub async fn sync_account_storage_maps(
         &self,
         account_id: AccountId,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<StorageMapValuesPage, DatabaseError> {
+        let block_range = self.scope_range(block_range)?;
         self.db.select_storage_map_sync_values(account_id, block_range, None).await
     }
 }

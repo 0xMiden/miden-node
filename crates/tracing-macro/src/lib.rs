@@ -83,6 +83,7 @@ const ALLOWED_FIELD_NAMES: &[&str] = &[
     "script.root",
     "snapshot.block_num",
     "snapshot.lifetime_ms",
+    "snapshots.lag_blocks",
     "snapshots.live",
     "transaction.id",
     "transaction.expires_at",

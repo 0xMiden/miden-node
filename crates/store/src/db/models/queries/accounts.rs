@@ -46,7 +46,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
-use miden_standards::account::auth::{NetworkAccount, NetworkAccountNoteAllowlist};
+use miden_standards::account::auth::NetworkAccount;
 
 use crate::COMPONENT;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
@@ -1173,13 +1173,9 @@ fn prepare_precomputed_full_account_update(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let is_network_account = account_id.is_public()
-        && patch
-            .storage()
-            .maps()
-            .find(|(slot_name, _)| *slot_name == NetworkAccountNoteAllowlist::slot_name())
-            .and_then(|(_slot_name, map_patch)| map_patch.entries())
-            .is_some_and(|entries| !entries.is_empty());
+    // The patch carries full state, so it can be turned back into an account and classified with
+    // the canonical check.
+    let is_network_account = NetworkAccount::new(Account::try_from(patch)?).is_ok();
     let state = PrecomputedFullAccountState {
         nonce,
         code,

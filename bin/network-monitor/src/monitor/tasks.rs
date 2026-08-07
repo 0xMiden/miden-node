@@ -276,8 +276,7 @@ async fn bootstrap_ntx(
         submission_client,
         accounts_tx,
         latency_state.clone(),
-    )
-    .await?;
+    )?;
     let tracking_svc =
         CounterTrackingService::new(config.clone(), accounts_rx, latency_state).await?;
 

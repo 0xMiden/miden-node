@@ -10,7 +10,6 @@ use rand_core_06::OsRng;
 use tonic::Status;
 
 use super::ValidatorService;
-use crate::db::{insert_validated_private_transaction, transaction_exists};
 use crate::tx_validation::validate_transaction;
 use crate::{COMPONENT, PrivateRecordContext, PrivateRecordId};
 
@@ -45,14 +44,10 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             .map_err(|_| Status::resource_exhausted("validator is busy streaming a backup"))?;
 
         // Short-circuit transactions that have already been validated.
-        let transaction_exists = self
-            .reader
-            .read("transaction_exists", move |tx| transaction_exists(tx, tx_id))
-            .await
-            .map_err(|err| {
-                Status::internal(err.as_report_context("Failed to query transaction"))
-            })?;
-        if transaction_exists {
+        let already_validated = self.db.transaction_exists(tx_id).await.map_err(|err| {
+            Status::internal(err.as_report_context("Failed to query transaction"))
+        })?;
+        if already_validated {
             return Ok(());
         }
 
@@ -78,15 +73,13 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             })?;
 
         // Store the validated transaction and private record atomically.
-        let count = self
-            .writer
-            .write("insert_validated_private_transaction", move |tx| {
-                insert_validated_private_transaction(tx, &private_record)
-            })
-            .await
-            .map_err(|err| {
-                Status::internal(err.as_report_context("Failed to insert transaction"))
-            })?;
+        let count =
+            self.db
+                .insert_validated_private_transaction(private_record)
+                .await
+                .map_err(|err| {
+                    Status::internal(err.as_report_context("Failed to insert transaction"))
+                })?;
 
         self.validated_transactions_count.fetch_add(count as u64, Ordering::Relaxed);
         Ok(())

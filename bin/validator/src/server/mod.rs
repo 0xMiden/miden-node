@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 
 use anyhow::Context;
-use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_proto::server::validator_api;
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_store::BlockStore;
@@ -14,7 +13,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::db::{count_signed_blocks, count_validated_transactions, load_chain_tip};
+use crate::db::{ValidatorDbReader, ValidatorDbWriter};
 use crate::{
     DataDirectory,
     GoldenOperatorKey,
@@ -27,7 +26,7 @@ use crate::{
 mod admin_service;
 mod validator_service;
 
-use validator_service::{InitialMetrics, ValidatorService};
+use validator_service::ValidatorService;
 
 // VALIDATOR SERVER
 // ================================================================================
@@ -56,11 +55,9 @@ pub struct ValidatorServer {
     /// The data directory for the validator component's database files.
     pub data_directory: DataDirectory,
 
-    /// Write handle to the shared validator database, owned solely by the public API.
-    pub writer: DbWriter,
-
-    /// Read handle to the shared validator database.
-    pub reader: DbReader,
+    /// Handle to the shared validator database. Carrying the write handle makes the public API the
+    /// database's single writer; reads reach the shared read handle through its `Deref`.
+    pub db: ValidatorDbWriter,
 }
 
 /// Serves the private validator administration API on a network-isolated listener.
@@ -70,8 +67,8 @@ pub struct ValidatorAdminServer {
     /// Golden key material used to issue this validator's decryption shares.
     pub operator_key: GoldenOperatorKey,
     /// Read handle to the shared validator database. The administration API only ever reads, so it
-    /// holds a [`DbReader`] and cannot mutate validator state.
-    pub reader: DbReader,
+    /// holds a [`ValidatorDbReader`] and cannot mutate validator state.
+    pub reader: ValidatorDbReader,
 }
 
 impl ValidatorAdminServer {
@@ -112,23 +109,15 @@ impl ValidatorServer {
     /// encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         // The database pool is opened once by the caller and shared with the admin server, so this
-        // takes the handles rather than opening its own connection.
-        let (writer, reader) = (self.writer, self.reader);
+        // takes the handle rather than opening its own connection.
+        let db = self.db;
 
         // Initialize block store.
         let block_store = BlockStore::load(self.data_directory.block_store_dir())
             .context("failed to load block store")?;
 
         // Load initial metrics from the database for the in-memory counters.
-        let (initial_chain_tip, initial_tx_count, initial_block_count) = reader
-            .read("load_initial_metrics", |tx| {
-                let tip = load_chain_tip(tx)?.map_or(0, |h| h.block_num().as_u32());
-                let tx_count = u64::try_from(count_validated_transactions(tx)?).unwrap_or(0);
-                let block_count = u64::try_from(count_signed_blocks(tx)?).unwrap_or(0);
-                Ok::<_, miden_node_db::DatabaseError>((tip, tx_count, block_count))
-            })
-            .await
-            .context("failed to load initial metrics")?;
+        let metrics = db.load_initial_metrics().await.context("failed to load initial metrics")?;
 
         let listener = TcpListener::bind(self.address)
             .await
@@ -141,12 +130,11 @@ impl ValidatorServer {
 
         let service = ValidatorService::new(
             self.signer,
-            writer,
-            reader,
+            db,
             self.decrypter,
             self.private_record_sealer,
             block_store,
-            InitialMetrics::new(initial_chain_tip, initial_tx_count, initial_block_count),
+            metrics,
         )
         .await
         .context("failed to initialize validator server")?;
@@ -157,7 +145,7 @@ impl ValidatorServer {
                 service.name = "miden-validator",
                 service.version = env!("CARGO_PKG_VERSION"),
                 validator.listen = %endpoint,
-                block.number = initial_chain_tip,
+                block.number = metrics.chain_tip,
             },
             "Validator ready",
         );

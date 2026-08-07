@@ -36,7 +36,8 @@ use miden_tx::utils::serde::{Deserializable, Serializable};
 use tokio::sync::OnceCell;
 
 use super::{ValidatorError, ValidatorService};
-use crate::db::{InitialMetrics, ValidatorDbWriter, setup};
+use crate::db::{ValidatorDbWriter, setup};
+use crate::metrics::InitialMetrics;
 use crate::storage_key::tests::operator_keys;
 use crate::{
     LocalX25519TransactionInputDecrypter,

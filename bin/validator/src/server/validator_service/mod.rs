@@ -19,7 +19,8 @@ use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
-use crate::db::{InitialMetrics, ValidatorDbWriter};
+use crate::db::ValidatorDbWriter;
+use crate::metrics::InitialMetrics;
 use crate::{
     COMPONENT,
     PrivateRecordChainId,

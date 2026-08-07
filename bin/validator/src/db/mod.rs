@@ -8,6 +8,7 @@ use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
 
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
+use crate::metrics::InitialMetrics;
 use crate::{COMPONENT, LOG_TARGET, StorageKeyEpoch, StoredPrivateRecord};
 
 mod migrations;
@@ -139,17 +140,6 @@ impl ValidatorDbReader {
     ) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
         self.reader.read("load_all_transactions", queries::load_all_transactions).await
     }
-}
-
-/// The persisted state the validator server's in-memory counters are seeded with on startup.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct InitialMetrics {
-    /// Block number of the chain tip, or zero if the database holds no block header.
-    pub chain_tip: u32,
-    /// Total number of validated transactions.
-    pub validated_transactions: u64,
-    /// Total number of signed blocks.
-    pub signed_blocks: u64,
 }
 
 /// Write handle to the validator database.

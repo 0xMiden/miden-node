@@ -1,5 +1,6 @@
 pub mod data_directory;
 pub mod db;
+pub(crate) mod metrics;
 mod private_record;
 mod server;
 mod signers;

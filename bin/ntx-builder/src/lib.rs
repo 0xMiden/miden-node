@@ -7,7 +7,6 @@ use anyhow::Context;
 use builder::BlockStream;
 use chain_state::SharedChainState;
 use clients::{RemoteTransactionProver, RpcClient};
-use db::Db;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
@@ -18,6 +17,7 @@ use url::Url;
 
 use crate::actor::{AccountActorContext, ActorConfig, GrpcClients, State};
 use crate::coordinator::Coordinator;
+use crate::db::NtxDbReader;
 
 pub(crate) type NoteError = Arc<dyn ErrorReport + Send + Sync>;
 
@@ -46,12 +46,12 @@ pub use builder::NetworkTransactionBuilder;
 ///
 /// Returns an error if the database has already been bootstrapped.
 pub async fn bootstrap(database_filepath: PathBuf, genesis: &GenesisBlock) -> anyhow::Result<()> {
-    db::Db::bootstrap(database_filepath, genesis.inner()).await
+    db::bootstrap(database_filepath, genesis.inner()).await
 }
 
 /// Applies pending migrations to the ntx-builder database at `database_filepath`.
 pub fn migrate(database_filepath: impl AsRef<Path>) -> anyhow::Result<()> {
-    db::Db::migrate(database_filepath).context("failed to apply ntx-builder database migrations")
+    db::migrate(database_filepath).context("failed to apply ntx-builder database migrations")
 }
 
 #[cfg(test)]
@@ -361,28 +361,26 @@ impl NtxBuilderConfig {
         self,
         shutdown: CancellationToken,
     ) -> anyhow::Result<NetworkTransactionBuilder> {
-        // The event loop pins one connection for itself (so block application is never starved by
-        // the account actors), leaving the rest of the pool for actors and the gRPC server. That
-        // requires at least two connections.
-        anyhow::ensure!(
-            self.sqlite_connection_pool_size.get() >= 2,
-            "sqlite connection pool size must be at least 2 (the event loop pins one connection)",
-        );
-
-        // Set up the database (bootstrap + connection pool).
-        let db = Db::load_with_pool_size(
+        // Set up the database connection pool. Writes are serialized by the framework's single
+        // dedicated writer connection, so block application never contends with the account actors
+        // (which only read) for the shared reader pool.
+        let db = db::load_with_pool_size(
             self.database_filepath.clone(),
             self.sqlite_connection_pool_size,
         )
         .await?;
 
         // Get the genesis commitment to send in the accept header
-        let genesis_commitment = db.get_genesis_commitment().await.context(
-            "failed to read genesis commitment; \
-             run `miden-ntx-builder bootstrap` first",
-        )?;
+        let genesis_commitment = db
+            .select_genesis_commitment()
+            .await
+            .context("failed to read genesis commitment")?
+            .context(
+                "ntx-builder database has not been bootstrapped; \
+                 run `miden-ntx-builder bootstrap` first",
+            )?;
         let genesis_validator_keys = db
-            .get_genesis_validator_keys()
+            .select_genesis_validator_keys()
             .await
             .context("failed to read genesis validator keys")?
             .context("genesis validator keys are missing; re-bootstrap the NTX builder database")?;
@@ -432,7 +430,7 @@ impl NtxBuilderConfig {
         // `miden-ntx-builder bootstrap`), so a persisted chain state is always present. Load it and
         // resume the subscription from the block after the last applied one.
         let (last_applied_block, header, mmr) =
-            db.get_chain_state().await.context("failed to read chain state")?.context(
+            db.select_chain_state().await.context("failed to read chain state")?.context(
                 "ntx-builder database has not been bootstrapped; \
                  run `miden-ntx-builder bootstrap` first",
             )?;
@@ -452,7 +450,7 @@ impl NtxBuilderConfig {
         let chain = Arc::new(SharedChainState::new(header, mmr));
 
         let (coordinator, actor_request_rx) =
-            self.build_coordinator(rpc, db.clone(), chain.clone(), shutdown)?;
+            self.build_coordinator(rpc, db.reader(), chain.clone(), shutdown)?;
 
         Ok(NetworkTransactionBuilder::new(
             self,
@@ -473,7 +471,7 @@ impl NtxBuilderConfig {
     fn build_coordinator(
         &self,
         rpc: RpcClient,
-        db: Db,
+        db: NtxDbReader,
         chain: Arc<SharedChainState>,
         shutdown: CancellationToken,
     ) -> anyhow::Result<(Coordinator, mpsc::Receiver<actor::ActorRequest>)> {

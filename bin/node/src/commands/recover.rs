@@ -5,8 +5,8 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated::validator::{BlockSubscriptionRequest, BlockSubscriptionResponse};
-use miden_node_store::State;
-use miden_node_store::state::Finality;
+use miden_node_store::{BlockWriter, State, WriterTask};
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::block::{
     BlockBody,
@@ -62,17 +62,22 @@ pub struct RecoverCommand {
 
 impl RecoverCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let state = self.load_state().await?;
+        let (state, mut block_writer, writer_task) = self.load_state().await?;
         let validators = self
             .validator_urls
             .iter()
             .map(|url| Ok((url.clone(), Self::validator_client(url)?)))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        recover_from_validators(&state, validators).await
+        let result = recover_from_validators(&state, &mut block_writer, validators).await;
+        // Wait for the writer to drain and release the backing storage before the process exits.
+        block_writer.stop(writer_task).await;
+        result
     }
 
-    async fn load_state(&self) -> anyhow::Result<Arc<State>> {
-        let state = State::load_with_database_options(
+    async fn load_state(&self) -> anyhow::Result<(Arc<State>, BlockWriter, WriterTask)> {
+        // Recovery is not wired into the node's shutdown token; the writer exits once the
+        // `BlockWriter` (holding the only write handle) is dropped after recovery completes.
+        let loaded = State::load_with_database_options(
             &self.data_directory,
             self.store.storage.clone().into(),
             self.store.sqlite.database_options(),
@@ -80,7 +85,9 @@ impl RecoverCommand {
         .await
         .context("failed to load state")?;
 
-        Ok(Arc::new(state))
+        let (state, block_writer, _proof_writer, writer_task) =
+            loaded.start(CancellationToken::new());
+        Ok((state, block_writer, writer_task))
     }
 
     fn validator_client(url: &Url) -> anyhow::Result<ValidatorClient> {
@@ -100,7 +107,8 @@ impl RecoverCommand {
 /// from every validator in lock-step and the individual signatures are coalesced into the full,
 /// positionally ordered signature set before each block is applied.
 async fn recover_from_validators(
-    state: &Arc<State>,
+    state: &State,
+    block_writer: &mut BlockWriter,
     mut validators: Vec<(Url, ValidatorClient)>,
 ) -> anyhow::Result<()> {
     // Capture the smallest of the validators' chain tips as the recovery target: it is the highest
@@ -121,7 +129,7 @@ async fn recover_from_validators(
     }
     let recovery_tip = recovery_tip.context("at least one validator URL is required")?;
 
-    let local_tip = state.chain_tip(Finality::Committed).await;
+    let local_tip = state.committed_tip();
     if local_tip >= recovery_tip {
         info!(
             target: LOG_TARGET,
@@ -135,6 +143,7 @@ async fn recover_from_validators(
     // The parent of the first recovered block is the local chain tip; each parent's header commits
     // to the validator keys whose signatures the child block must carry.
     let (parent, _) = state
+        .view()
         .get_block_header(Some(local_tip), false)
         .await
         .context("failed to load the local chain tip header")?;
@@ -172,7 +181,10 @@ async fn recover_from_validators(
 
     while let Some(block) = coalesced_rx.recv().await {
         let block_num = block.header().block_num();
-        state.apply_block(block).await.context("failed to apply recovered block")?;
+        block_writer
+            .apply_block(block)
+            .await
+            .context("failed to apply recovered block")?;
         info!(target: LOG_TARGET, block_number = block_num.as_u32(), "Applied recovered block");
     }
 
@@ -292,7 +304,7 @@ async fn next_coalesced_block(
     let block = SignedBlock::new_unchecked(header, body, signatures);
 
     // Fully validate the reconstructed block before it is persisted, including verifying the
-    // signature set against the parent's validator keys; `State::apply_block` does not verify
+    // signature set against the parent's validator keys; `BlockWriter::apply_block` does not verify
     // signatures.
     block.validate(Some(parent)).context("coalesced block failed validation")?;
 

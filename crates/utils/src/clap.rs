@@ -151,10 +151,8 @@ impl GrpcOptionsExternal {
     }
 }
 
-/// Collection of per usage storage backend configurations.
-///
-/// Note: Currently only contains `rocksdb` related configuration.
-#[derive(clap::Args, Clone, Debug, Default, PartialEq, Eq)]
+/// Collection of per usage storage backend configurations, plus store write-path tuning.
+#[derive(clap::Args, Clone, Debug, PartialEq, Eq)]
 pub struct StorageOptions {
     #[cfg(feature = "rocksdb")]
     #[clap(flatten)]
@@ -165,6 +163,30 @@ pub struct StorageOptions {
     #[cfg(feature = "rocksdb")]
     #[clap(flatten)]
     pub account_state_forest: AccountStateForestRocksDbOptions,
+
+    /// Whether the store's apply-block thread pool runs at raised OS thread priority (best-effort).
+    #[arg(
+        id = "apply_block_thread_priority",
+        long = "apply_block.thread_priority",
+        default_value_t = true,
+        action = clap::ArgAction::Set,
+        value_name = "BOOL"
+    )]
+    pub apply_block_thread_priority: bool,
+}
+
+impl Default for StorageOptions {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "rocksdb")]
+            account_tree: AccountTreeRocksDbOptions::default(),
+            #[cfg(feature = "rocksdb")]
+            nullifier_tree: NullifierTreeRocksDbOptions::default(),
+            #[cfg(feature = "rocksdb")]
+            account_state_forest: AccountStateForestRocksDbOptions::default(),
+            apply_block_thread_priority: true,
+        }
+    }
 }
 
 impl StorageOptions {
@@ -193,6 +215,7 @@ impl StorageOptions {
                 account_tree,
                 nullifier_tree,
                 account_state_forest,
+                apply_block_thread_priority: true,
             }
         }
         #[cfg(not(feature = "rocksdb"))]

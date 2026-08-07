@@ -27,7 +27,7 @@ use tokio::sync::{Semaphore, mpsc, watch};
 use crate::chain_state::{ChainState, SharedChainState};
 use crate::clients::{RemoteTransactionProver, RpcClient};
 use crate::coordinator::AccountView;
-use crate::db::Db;
+use crate::db::NtxDbReader;
 use crate::{LOG_TARGET, NoteError};
 
 /// Builds the [`TransactionArgs`] shared by every network transaction.
@@ -88,7 +88,7 @@ pub struct GrpcClients {
 #[derive(Clone)]
 pub struct State {
     /// Local database for account state, notes, and transaction tracking.
-    pub db: Db,
+    pub db: NtxDbReader,
     /// The latest chain state. A single chain state is shared among all actors.
     pub chain: Arc<SharedChainState>,
     /// Shared LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
@@ -142,7 +142,7 @@ impl AccountActorContext {
     ///
     /// The URLs are fake and actors spawned with this context will fail on their first gRPC call,
     /// but this is sufficient for testing coordinator logic (registry, deactivation, etc.).
-    pub fn test(db: &crate::db::Db) -> Self {
+    pub fn test(db: &NtxDbReader) -> Self {
         use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
         use url::Url;
 
@@ -518,10 +518,11 @@ impl AccountActor {
         let block_num = chain_state.chain_tip_header.block_num();
         let max_notes = self.config.max_notes_per_tx.get();
 
+        let max_note_attempts = self.config.max_note_attempts;
         let availability = self
             .state
             .db
-            .available_notes(account_id, block_num, self.config.max_note_attempts)
+            .available_notes(account_id, block_num, max_note_attempts)
             .await
             .context("failed to query DB for available notes")?;
         let next_retry_block = availability.next_retry_block;
@@ -879,7 +880,6 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
-    use crate::db::Db;
     use crate::test_utils::{mock_account, mock_network_account_id, mock_transaction_id};
 
     /// Builds a valid nonce-only [`AccountPatch`] that advances `account` by a single nonce.
@@ -895,7 +895,7 @@ mod tests {
     }
 
     /// Builds an actor wired to `db` for the given account.
-    fn test_actor(db: &Db, account: &Account) -> AccountActor {
+    fn test_actor(db: &NtxDbReader, account: &Account) -> AccountActor {
         let ctx = AccountActorContext::test(db);
         AccountActor::new(account.id(), &ctx)
     }
@@ -917,7 +917,7 @@ mod tests {
     /// advances its in-memory account by exactly the patch the transaction produced.
     #[tokio::test]
     async fn landing_advances_in_memory_account_by_its_patch() {
-        let (db, _dir) = Db::test_setup().await;
+        let (db, _dir) = crate::db::test_setup().await;
         let account = mock_account(mock_network_account_id());
         let submitted = mock_transaction_id(7);
 
@@ -957,7 +957,7 @@ mod tests {
     /// in-memory account untouched.
     #[tokio::test]
     async fn pending_submission_keeps_waiting_without_touching_account() {
-        let (db, _dir) = Db::test_setup().await;
+        let (db, _dir) = crate::db::test_setup().await;
         let account = mock_account(mock_network_account_id());
 
         // The view shows no committed tx for the account (submission has not landed) and a tip well
@@ -999,7 +999,7 @@ mod tests {
     /// the chain tip: no new notes arrived and no scheduled retry is due.
     #[tokio::test]
     async fn idle_actor_ignores_view_without_new_work() {
-        let (db, _dir) = Db::test_setup().await;
+        let (db, _dir) = crate::db::test_setup().await;
         let account = mock_account(mock_network_account_id());
         let actor = test_actor(&db, &account);
         let mut in_memory = Arc::new(account.clone());
@@ -1028,7 +1028,7 @@ mod tests {
     /// New notes (the view's counter moving past the local cursor) wake an idle actor.
     #[tokio::test]
     async fn new_notes_wake_idle_actor() {
-        let (db, _dir) = Db::test_setup().await;
+        let (db, _dir) = crate::db::test_setup().await;
         let account = mock_account(mock_network_account_id());
         let actor = test_actor(&db, &account);
         let mut in_memory = Arc::new(account.clone());
@@ -1054,7 +1054,7 @@ mod tests {
     /// and not before. This is how backoff/hint retries fire without a new note arriving.
     #[tokio::test]
     async fn due_retry_wakes_idle_actor_at_its_block() {
-        let (db, _dir) = Db::test_setup().await;
+        let (db, _dir) = crate::db::test_setup().await;
         let account = mock_account(mock_network_account_id());
         let actor = test_actor(&db, &account);
         let mut in_memory = Arc::new(account.clone());
@@ -1093,7 +1093,7 @@ mod tests {
     /// by real work, so repeated view updates cannot keep a no-work actor resident indefinitely.
     #[tokio::test]
     async fn idle_timeout_fires_despite_repeated_view_updates() {
-        let (db, _dir) = Db::test_setup().await;
+        let (db, _dir) = crate::db::test_setup().await;
         // A real network account with a populated allowlist, so re-evaluation on each wake reaches
         // a clean "no viable notes" outcome instead of erroring on a missing allowlist slot.
         let (account, _) = crate::test_utils::mock_network_account_update();

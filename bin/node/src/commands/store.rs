@@ -53,6 +53,18 @@ pub struct StoreStorageOptions {
 
     #[command(flatten)]
     pub account_state_forest: AccountStateForestStoreRocksDbOptions,
+
+    /// Whether the store's apply-block thread pool runs at raised OS thread priority (best-effort).
+    #[arg(
+        id = "store.apply-block.thread-priority",
+        long = "store.apply-block.thread-priority",
+        env = "MIDEN_NODE_STORE_APPLY_BLOCK_THREAD_PRIORITY",
+        default_value_t = true,
+        action = clap::ArgAction::Set,
+        value_name = "BOOL",
+        help_heading = super::section::STORE_CONFIGURATION_HELP_HEADING
+    )]
+    pub apply_block_thread_priority: bool,
 }
 
 impl From<StoreStorageOptions> for StorageOptions {
@@ -73,6 +85,7 @@ impl From<StoreStorageOptions> for StorageOptions {
                 cache_size_in_bytes: value.account_state_forest.cache_size_in_bytes,
                 durability_mode: value.account_state_forest.durability_mode,
             },
+            apply_block_thread_priority: value.apply_block_thread_priority,
         }
     }
 }

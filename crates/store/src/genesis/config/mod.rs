@@ -21,6 +21,7 @@ use miden_standards::account::faucets::{
     TokenName,
     create_network_fungible_faucet,
 };
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -28,6 +29,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::{BasicWallet, create_basic_wallet};
+use miden_standards::note::{BurnNote, MintNote};
 use rand::distr::weighted::Weight;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -433,7 +435,7 @@ fn build_native_faucet() -> Result<NativeFaucet, GenesisConfigError> {
     let operator_seed: [u8; 32] = rng.random();
     let mut operator = AccountBuilder::new(operator_seed)
         .account_type(AccountType::Public)
-        .with_auth_component(operator_auth)
+        .with_component(operator_auth)
         .with_component(BasicWallet)
         .build()?;
     operator.set_nonce(ONE)?;
@@ -456,12 +458,32 @@ fn build_native_faucet() -> Result<NativeFaucet, GenesisConfigError> {
         .active_receive_policy(TransferPolicy::allow_all())
         .build();
 
+    // The faucet issues the network's fee asset, so it cannot charge fees in an asset issued by
+    // anyone else, and it cannot name itself: the fee faucet id is part of the account's storage,
+    // and therefore of the account id being derived. Every note the faucet accepts is instead
+    // scheduled free, which makes the fee asset inert. The id below is only a placeholder to
+    // satisfy the required setter.
+    //
+    // A script root without a schedule entry aborts fee estimation rather than defaulting to free,
+    // so every note allowlisted by `create_network_fungible_faucet` must be listed here.
+    let fee_policy = BasicConstantFeePolicy::new()
+        .with_fees([
+            (MintNote::script_root(), AssetAmount::ZERO),
+            (BurnNote::script_root(), AssetAmount::ZERO),
+        ])
+        .into();
+    let fee_policy_manager = FeePolicyManager::builder()
+        .fee_faucet_id(operator.id())
+        .active_fee_policy(fee_policy)
+        .build();
+
     let faucet_seed: [u8; 32] = rng.random();
     let faucet = create_network_fungible_faucet(
         faucet_seed,
         faucet_component,
         AccessControl::Ownable2Step { owner: operator.id() },
         policies,
+        fee_policy_manager,
     )?;
 
     debug_assert_eq!(faucet.nonce(), Felt::ZERO);

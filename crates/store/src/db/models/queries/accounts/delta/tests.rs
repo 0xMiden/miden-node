@@ -136,7 +136,7 @@ fn callback_delta_test_account(seed: [u8; 32], slot_index: usize) -> Account {
     AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -270,7 +270,7 @@ fn optimized_delta_matches_full_account_method() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -477,7 +477,7 @@ fn optimized_delta_updates_non_empty_vault() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -713,7 +713,7 @@ fn optimized_delta_updates_storage_map_header() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -851,7 +851,7 @@ fn partial_public_upsert_requires_precomputed_state() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -922,7 +922,7 @@ fn partial_public_upsert_rejects_bad_precomputed_root() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1082,7 +1082,7 @@ fn upsert_full_state_delta() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))

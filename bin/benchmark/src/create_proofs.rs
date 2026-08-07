@@ -287,7 +287,8 @@ pub(crate) async fn run(rpc_url: Url, num_transactions: u64, remote_prover_url: 
         let script = SendNotesTransactionScript::new(&code_interface, &partial_notes)
             .expect("failed to build mint send-notes script");
 
-        let mut tx_args = TransactionArgs::default().with_tx_script(script.into());
+        let mut tx_args = TransactionArgs::default()
+            .with_tx_script_and_args(script.tx_script().clone(), script.tx_script_args());
         for note in &notes {
             tx_args.add_output_note_recipient(Box::new(note.recipient().clone()));
         }
@@ -429,7 +430,7 @@ fn create_faucet() -> (Account, SecretKey) {
                 .active_burn_policy(BurnPolicy::allow_all())
                 .build(),
         )
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             key_pair.public_key().into(),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -447,7 +448,7 @@ fn create_wallet(
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
     AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::Private)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             public_key.clone().into(),
             AuthScheme::Falcon512Poseidon2,
         )))

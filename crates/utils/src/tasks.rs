@@ -89,9 +89,17 @@ impl Tasks {
     /// Waits for either an unexpected task completion or a shutdown request.
     ///
     /// Before shutdown, any task completion is treated as fatal because this type supervises
-    /// long-running tasks. Once `token` is cancelled, clean task exits are accepted and this method
-    /// waits for all tracked tasks to finish.
+    /// long-running tasks. Such a completion triggers the shutdown itself: the token is cancelled
+    /// and the remaining tasks are drained before the error is returned. Returning without
+    /// draining would drop the set and abort the surviving tasks mid-work — e.g. the store's
+    /// block writer between its database commit and tree update, tearing persistent state.
+    ///
+    /// Once `token` is cancelled (whether externally or by a failure here), clean task exits are
+    /// accepted and this method waits for all tracked tasks to finish. The first failure observed
+    /// is returned as the root cause; subsequent failures are logged, since they are often
+    /// knock-on effects of the first.
     pub async fn join_next_or_cancelled(&mut self, token: CancellationToken) -> anyhow::Result<()> {
+        let mut outcome = Ok(());
         while !token.is_cancelled() {
             tokio::select! {
                 biased;
@@ -100,18 +108,35 @@ impl Tasks {
                     let Some((task, result)) = result else {
                         anyhow::bail!("task set is empty");
                     };
-                    Self::unexpected_completion(&task, result)?;
+                    outcome = Self::unexpected_completion(&task, result);
+                    // Shut the remaining tasks down and fall through to the drain below.
+                    token.cancel();
                 },
             }
         }
 
         while let Some((task, result)) = self.join_next().await {
-            Self::shutdown_completion(&task, result)?;
+            match (&outcome, Self::shutdown_completion(&task, result)) {
+                // No failure so far: this task's result (clean or failed) becomes the outcome.
+                (Ok(()), result) => outcome = result,
+                // A failure is already recorded as the root cause; later failures are often
+                // knock-on effects of it, so log them rather than mask it.
+                (Err(_), Err(err)) => {
+                    tracing::warn!(task = %task, error = %format!("{err:#}"), "task failed during shutdown");
+                },
+                // A failure is already recorded and this task exited cleanly: nothing to add.
+                (Err(_), Ok(())) => {},
+            }
         }
 
-        Ok(())
+        outcome
     }
 
+    /// Interprets a task completion observed *before* shutdown was requested.
+    ///
+    /// Supervised tasks are expected to run until shutdown, so every completion — even a clean
+    /// exit — is an error here; the variants only differ in how much context the error carries
+    /// (task failure, or a panicked/aborted task surfacing as a [`JoinError`]).
     fn unexpected_completion(
         task: &str,
         result: Result<anyhow::Result<()>, JoinError>,
@@ -123,6 +148,11 @@ impl Tasks {
         }
     }
 
+    /// Interprets a task completion observed *after* shutdown was requested.
+    ///
+    /// During shutdown a clean exit is the expected outcome, and a cancelled task is also fine —
+    /// abort is how a dropped set winds tasks down. A task error or a panic (a non-cancellation
+    /// [`JoinError`]) is still a failure worth reporting.
     fn shutdown_completion(
         task: &str,
         result: Result<anyhow::Result<()>, JoinError>,
@@ -174,6 +204,84 @@ mod tests {
             .expect_err("unexpected task completion should fail before shutdown");
 
         assert_eq!(err.to_string(), "task worker completed unexpectedly");
+    }
+
+    #[tokio::test]
+    async fn join_next_or_cancelled_drains_remaining_tasks_after_a_failure() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let token = crate::shutdown::CancellationToken::new();
+        let mut tasks = Tasks::new();
+        let survivor_finished = Arc::new(AtomicBool::new(false));
+
+        tasks.spawn("failing", async { anyhow::bail!("boom") });
+        tasks.spawn("survivor", {
+            let token = token.clone();
+            let finished = Arc::clone(&survivor_finished);
+            async move {
+                token.cancelled().await;
+                // Work past the cancellation point: an aborted task would never get here.
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                finished.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+        });
+
+        let err = tasks
+            .join_next_or_cancelled(token.clone())
+            .await
+            .expect_err("the failing task's error should be returned");
+
+        assert_eq!(err.to_string(), "task failing failed");
+        assert!(token.is_cancelled(), "a task failure should trigger shutdown");
+        assert!(tasks.is_empty(), "all tasks should be drained before returning");
+        assert!(
+            survivor_finished.load(Ordering::Relaxed),
+            "surviving tasks should shut down gracefully, not be aborted",
+        );
+    }
+
+    #[tokio::test]
+    async fn join_next_or_cancelled_drains_past_failures_during_shutdown() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let token = crate::shutdown::CancellationToken::new();
+        let mut tasks = Tasks::new();
+        let survivor_finished = Arc::new(AtomicBool::new(false));
+
+        tasks.spawn("failing", {
+            let token = token.clone();
+            async move {
+                token.cancelled().await;
+                anyhow::bail!("boom")
+            }
+        });
+        tasks.spawn("survivor", {
+            let token = token.clone();
+            let finished = Arc::clone(&survivor_finished);
+            async move {
+                token.cancelled().await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                finished.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+        });
+
+        token.cancel();
+
+        let err = tasks
+            .join_next_or_cancelled(token)
+            .await
+            .expect_err("a failure during shutdown should be reported");
+
+        assert_eq!(err.to_string(), "task failing failed during shutdown");
+        assert!(tasks.is_empty(), "draining should continue past the failed task");
+        assert!(
+            survivor_finished.load(Ordering::Relaxed),
+            "surviving tasks should shut down gracefully, not be aborted",
+        );
     }
 
     #[tokio::test]

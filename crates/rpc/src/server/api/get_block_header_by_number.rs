@@ -37,7 +37,8 @@ impl proto::server::rpc_api::GetBlockHeaderByNumber for RpcService {
 
         let block_num = request.block_num.map(BlockNumber::from);
         let (block_header, mmr_proof) = self
-            .store
+            .state
+            .view()
             .get_block_header(block_num, request.include_mmr_proof.unwrap_or(false))
             .await
             .map_err(super::get_block_header_error_to_status)?;

@@ -3,6 +3,7 @@
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountComponent, AccountId, AccountType};
 use miden_protocol::block::BlockNumber;
+use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     AccountIdBuilder,
@@ -73,22 +74,45 @@ pub fn mock_account(_account_id: AccountId) -> miden_protocol::account::Account 
     AccountBuilder::new([0u8; 32])
         .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_slots(vec![]))
-        .with_auth_component(NoopAuthComponent)
+        .with_component(NoopAuthComponent)
         .build_existing()
         .unwrap()
 }
 
-/// Creates a mock network [`Account`] with the provided auth component.
-pub fn mock_account_with_auth_component(auth_component: impl Into<AccountComponent>) -> Account {
+/// Creates a mock network [`Account`] with the provided auth components.
+pub fn mock_account_with_auth_component(
+    auth_components: impl IntoIterator<Item = impl Into<AccountComponent>>,
+) -> Account {
     use miden_protocol::account::AccountBuilder;
     use miden_standards::testing::account_component::MockAccountComponent;
 
     AccountBuilder::new([0u8; 32])
         .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_slots(vec![]))
-        .with_auth_component(auth_component)
+        .with_components(auth_components)
         .build_existing()
         .unwrap()
+}
+
+/// Creates a mock network [`Account`] whose note-script allowlist contains the given roots.
+///
+/// The resulting account passes `NetworkAccount::new`, so it is treated as a network account.
+pub fn mock_network_account(
+    allowed_script_roots: impl IntoIterator<Item = NoteScriptRoot>,
+) -> Account {
+    use std::collections::BTreeSet;
+
+    use miden_protocol::asset::FungibleAsset;
+    use miden_standards::account::auth::AuthNetworkAccount;
+    use miden_standards::account::fees::FeePolicyManager;
+
+    mock_account_with_auth_component(
+        AuthNetworkAccount::new(
+            BTreeSet::from_iter(allowed_script_roots),
+            FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+        )
+        .expect("non-empty allowlist should construct"),
+    )
 }
 
 /// Creates a mock `BlockHeader` for the given block number.
@@ -117,17 +141,11 @@ pub fn mock_genesis_block() -> miden_protocol::block::SignedBlock {
 /// Builds a full-state [`AccountUpdateDetails`] for a network account. The returned account passes
 /// `NetworkAccount::new`, so the ntx-builder treats the update as a network-account creation.
 pub fn mock_network_account_update() -> (Account, miden_protocol::account::AccountUpdateDetails) {
-    use std::collections::BTreeSet;
-
     use miden_protocol::account::{AccountPatch, AccountUpdateDetails};
-    use miden_standards::account::auth::AuthNetworkAccount;
 
-    // The allowlist content is irrelevant here; any non-empty set yields a valid network account.
+    // The allowlist content is irrelevant here, any non-empty set yields a valid network account.
     let root = mock_single_target_note(mock_network_account_id(), 1).as_note().script().root();
-    let account = mock_account_with_auth_component(
-        AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root]))
-            .expect("non-empty allowlist should construct"),
-    );
+    let account = mock_network_account([root]);
     let details = AccountUpdateDetails::Public(
         AccountPatch::try_from(account.clone()).expect("full-state patch should build"),
     );

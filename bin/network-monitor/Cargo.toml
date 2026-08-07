@@ -41,3 +41,7 @@ tonic               = { features = ["codegen", "tls-native-roots", "transport"],
 tonic-health        = { workspace = true }
 tracing             = { workspace = true }
 url                 = { features = ["serde"], workspace = true }
+
+[dev-dependencies]
+miden-protocol = { features = ["std", "testing"], workspace = true }
+miden-testing  = { workspace = true }

@@ -382,8 +382,8 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
             let chain = chain_builder.build().unwrap();
 
             let context_a = chain
-                .build_tx_context(account_a.id(), &[note_a.id()], &[])
-                .unwrap()
+                .build_transaction(account_a.id())
+                .authenticated_input_note(note_a.id())
                 .build()
                 .unwrap();
             let executed_a = Box::pin(context_a.execute()).await.unwrap();
@@ -391,8 +391,8 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
             let transaction = LocalTransactionProver::default().prove(inputs.clone()).unwrap();
 
             let context_b = chain
-                .build_tx_context(account_b.id(), &[note_b.id()], &[])
-                .unwrap()
+                .build_transaction(account_b.id())
+                .authenticated_input_note(note_b.id())
                 .build()
                 .unwrap();
             let mismatch_inputs = Box::pin(context_b.execute()).await.unwrap().tx_inputs().clone();

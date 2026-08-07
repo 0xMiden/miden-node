@@ -1,3 +1,4 @@
+-- Returns the encrypted private record of the given transaction.
 SELECT
     chain_id,
     key_epoch,

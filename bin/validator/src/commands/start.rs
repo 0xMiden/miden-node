@@ -37,12 +37,13 @@ pub async fn start(
         DataDirectory::load(data_directory).context("failed to load validator data directory")?;
     // The pool is opened once here and shared: the public API owns the sole writer, and both
     // servers read through cloned read handles.
-    let (writer, reader) = miden_validator::db::load_with_pool_size(
+    let db = miden_validator::db::load_with_pool_size(
         data_directory.database_path(),
         sqlite_connection_pool_size,
     )
     .await
     .context("failed to initialize validator database")?;
+    let reader = db.reader();
     let private_record_sealer = PrivateRecordSealer::from_operator_key(&keys.operator_key);
     let public_server = ValidatorServer {
         address,
@@ -51,8 +52,7 @@ pub async fn start(
         decrypter: keys.decrypter,
         private_record_sealer,
         data_directory,
-        writer,
-        reader: reader.clone(),
+        db,
     };
 
     let mut tasks = Tasks::new();

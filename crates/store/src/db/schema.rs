@@ -14,7 +14,7 @@ diesel::table! {
         slot_name -> Text,
         key -> Binary,
         value -> Binary,
-        is_latest -> Bool,
+        valid_until -> BigInt,
     }
 }
 
@@ -24,7 +24,7 @@ diesel::table! {
         block_num -> BigInt,
         vault_key -> Binary,
         asset -> Nullable<Binary>,
-        is_latest -> Bool,
+        valid_until -> BigInt,
     }
 }
 
@@ -38,8 +38,8 @@ diesel::table! {
         nonce -> Nullable<BigInt>,
         storage_header -> Nullable<Binary>,
         vault_root -> Nullable<Binary>,
-        is_latest -> Bool,
         created_at_block -> BigInt,
+        valid_until -> BigInt,
     }
 }
 

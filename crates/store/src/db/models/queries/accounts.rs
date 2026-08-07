@@ -75,6 +75,15 @@ type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
 type StorageHeaderWithEntries =
     (AccountStorageHeader, HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>);
 
+/// Sentinel `valid_until` value marking a row as the current, open-ended version of its key.
+///
+/// Versioned rows (`accounts`, `account_vault_assets`, `account_storage_map_values`) are
+/// applicable for blocks in `[block_num, valid_until)`; updating a key closes the previous row's
+/// interval by setting its `valid_until` to the new row's `block_num`. The open end is `i64::MAX`
+/// rather than NULL so every validity predicate is a single range comparison that partial indexes
+/// can serve.
+pub(crate) const VALID_FOREVER: i64 = i64::MAX;
+
 // NETWORK ACCOUNT TYPE
 // ================================================================================================
 
@@ -139,7 +148,7 @@ pub(crate) fn select_account_code_by_commitment(
 ///     accounts
 /// WHERE
 ///     account_id = ?1
-///     AND is_latest = 1
+///     AND valid_until = {VALID_FOREVER}
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
@@ -147,7 +156,7 @@ pub(crate) fn select_account(
 ) -> Result<AccountInfo, DatabaseError> {
     let raw = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .get_result::<AccountSummaryRaw>(conn)
         .optional()?
         .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
@@ -192,7 +201,7 @@ pub(crate) fn select_full_account(
     let (nonce, code_bytes): (Option<i64>, Vec<u8>) =
         SelectDsl::select(joined, (schema::accounts::nonce, schema::account_codes::code))
             .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-            .filter(schema::accounts::is_latest.eq(true))
+            .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
             .get_result(conn)
             .optional()?
             .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
@@ -212,7 +221,7 @@ pub(crate) fn select_full_account(
         (schema::account_vault_assets::vault_key, schema::account_vault_assets::asset),
     )
     .filter(schema::account_vault_assets::account_id.eq(account_id.to_bytes()))
-    .filter(schema::account_vault_assets::is_latest.eq(true))
+    .filter(schema::account_vault_assets::valid_until.eq(VALID_FOREVER))
     .load(conn)?;
 
     let mut assets = Vec::new();
@@ -251,7 +260,7 @@ pub struct AccountCommitmentsPage {
 /// FROM
 ///     accounts
 /// WHERE
-///     is_latest = 1
+///     valid_until = {VALID_FOREVER}
 ///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
 /// ORDER BY
 ///     account_id ASC
@@ -270,7 +279,7 @@ pub(crate) fn select_account_commitments_paged(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
     )
-    .filter(schema::accounts::is_latest.eq(true))
+    .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
     .order_by(schema::accounts::account_id.asc())
     .limit(limit)
     .into_boxed();
@@ -350,7 +359,7 @@ pub(crate) type PrecomputedPublicAccountStates = BTreeMap<AccountId, Precomputed
 /// FROM
 ///     accounts
 /// WHERE
-///     is_latest = 1
+///     valid_until = {VALID_FOREVER}
 ///     AND code_commitment IS NOT NULL
 ///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
 /// ORDER BY
@@ -366,7 +375,7 @@ pub(crate) fn select_public_account_ids_paged(
     let limit = (page_size.get() + 1) as i64;
 
     let mut query = SelectDsl::select(schema::accounts::table, schema::accounts::account_id)
-        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .filter(schema::accounts::code_commitment.is_not_null())
         .order_by(schema::accounts::account_id.asc())
         .limit(limit)
@@ -412,7 +421,7 @@ pub(crate) fn select_public_account_ids_paged(
 /// FROM
 ///     accounts
 /// WHERE
-///     is_latest = 1
+///     valid_until = {VALID_FOREVER}
 ///     AND code_commitment IS NOT NULL
 ///     AND (account_id > :after_account_id OR :after_account_id IS NULL)
 /// ORDER BY
@@ -435,7 +444,7 @@ pub(crate) fn select_public_account_state_roots_paged(
             schema::accounts::storage_header,
         ),
     )
-    .filter(schema::accounts::is_latest.eq(true))
+    .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
     .filter(schema::accounts::code_commitment.is_not_null())
     .order_by(schema::accounts::account_id.asc())
     .limit(limit)
@@ -568,17 +577,11 @@ pub(crate) fn select_account_vault_assets(
 
 /// Query vault assets at a specific block by finding the most recent update for each `vault_key`.
 ///
-/// Uses a single raw SQL query with a subquery join:
+/// Selects, per vault key, the row whose validity interval covers `block_num`:
 /// ```sql
-/// SELECT a.asset FROM account_vault_assets a
-/// INNER JOIN (
-///     SELECT vault_key, MAX(block_num) as max_block
-///     FROM account_vault_assets
-///     WHERE account_id = ? AND block_num <= ?
-///     GROUP BY vault_key
-/// ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
-/// WHERE a.account_id = ?
-/// LIMIT ?
+/// SELECT asset FROM account_vault_assets
+/// WHERE account_id = ?1 AND block_num <= ?2 AND valid_until > ?2
+/// LIMIT ?3
 /// ```
 ///
 /// The read is bounded to [`AccountVaultDetails::MAX_RETURN_ENTRIES`] + 1 rows so an over-the-limit
@@ -597,20 +600,13 @@ pub(crate) fn select_account_vault_at_block(
 
     let entries: Vec<Option<Vec<u8>>> = diesel::sql_query(
         r"
-        SELECT a.asset FROM account_vault_assets a
-        INNER JOIN (
-            SELECT vault_key, MAX(block_num) as max_block
-            FROM account_vault_assets
-            WHERE account_id = ? AND block_num <= ?
-            GROUP BY vault_key
-        ) latest ON a.vault_key = latest.vault_key AND a.block_num = latest.max_block
-        WHERE a.account_id = ?
-        LIMIT ?
+        SELECT asset FROM account_vault_assets
+        WHERE account_id = ?1 AND block_num <= ?2 AND valid_until > ?2
+        LIMIT ?3
         ",
     )
     .bind::<Binary, _>(&account_id_bytes)
     .bind::<BigInt, _>(block_num_sql)
-    .bind::<Binary, _>(&account_id_bytes)
     .bind::<BigInt, _>(limit_sql)
     .load::<AssetRow>(conn)?
     .into_iter()
@@ -649,7 +645,7 @@ struct AssetRow {
 /// FROM
 ///     accounts
 /// WHERE
-///     is_latest = 1
+///     valid_until = {VALID_FOREVER}
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -658,7 +654,7 @@ pub(crate) fn select_all_accounts(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<AccountInfo>, DatabaseError> {
     let raw = SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
-        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .order_by(schema::accounts::block_num.asc())
         .load::<AccountSummaryRaw>(conn)?;
 
@@ -709,7 +705,7 @@ impl StorageMapValue {
 ///
 /// # Returns
 ///
-/// A vector of tuples containing `(slot, key, value, is_latest)` for the given account.
+/// A vector of tuples containing `(block_num, slot, key, value)` for the given account.
 /// Each row contains one of:
 ///
 /// - the historical value for a slot and key specifically on block `block_to`
@@ -803,8 +799,8 @@ pub(crate) fn select_account_storage_map_values_paged(
     Ok(StorageMapValuesPage { last_block_included, values })
 }
 
-/// Select latest account storage by querying `accounts.storage_header` where `is_latest=true`
-/// and reconstructing full storage from the header plus map values from
+/// Select latest account storage by querying `accounts.storage_header` for the account's
+/// open-ended row and reconstructing full storage from the header plus map values from
 /// `account_storage_map_values`.
 ///
 /// Attention: For large accounts it is prohibitively expensive!
@@ -843,11 +839,11 @@ pub(crate) fn select_latest_account_storage_components(
 ) -> Result<StorageHeaderWithEntries, DatabaseError> {
     let account_id_bytes = account_id.to_bytes();
 
-    // Query storage header blob for this account where is_latest = true
+    // Query storage header blob for this account's current (open-ended) row
     let storage_blob: Option<Vec<u8>> =
         SelectDsl::select(schema::accounts::table, schema::accounts::storage_header)
             .filter(schema::accounts::account_id.eq(&account_id_bytes))
-            .filter(schema::accounts::is_latest.eq(true))
+            .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
             .first(conn)
             .optional()?
             .flatten();
@@ -871,7 +867,7 @@ fn select_latest_storage_map_entries_all(
     let map_values: Vec<(String, Vec<u8>, Vec<u8>)> =
         SelectDsl::select(t::table, (t::slot_name, t::key, t::value))
             .filter(t::account_id.eq(&account_id.to_bytes()))
-            .filter(t::is_latest.eq(true))
+            .filter(t::valid_until.eq(VALID_FOREVER))
             .load(conn)?;
 
     group_storage_map_entries(map_values)
@@ -944,8 +940,8 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
-/// Sets `is_latest=true` for the new row and updates any existing
-/// row with the same `(account_id, vault_key)` tuple to `is_latest=false`.
+/// The new row is inserted open-ended (`valid_until = VALID_FOREVER`); any existing open row
+/// with the same `(account_id, vault_key)` tuple has its validity interval closed at `block_num`.
 ///
 /// # Returns
 ///
@@ -957,11 +953,10 @@ pub(crate) fn insert_account_vault_asset(
     vault_key: AssetId,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
-    let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
+    let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset);
 
     diesel::Connection::transaction(conn, |conn| {
-        // First, update any existing rows with the same (account_id, vault_key) to set
-        // is_latest=false
+        // Close the previous version's validity interval at the new row's block.
         let vault_key: Word = vault_key.into();
         let vault_key_bytes = vault_key.to_bytes();
         let account_id_bytes = account_id.to_bytes();
@@ -970,12 +965,12 @@ pub(crate) fn insert_account_vault_asset(
                 schema::account_vault_assets::account_id
                     .eq(account_id_bytes)
                     .and(schema::account_vault_assets::vault_key.eq(vault_key_bytes))
-                    .and(schema::account_vault_assets::is_latest.eq(true)),
+                    .and(schema::account_vault_assets::valid_until.eq(VALID_FOREVER)),
             )
-            .set(schema::account_vault_assets::is_latest.eq(false))
+            .set(schema::account_vault_assets::valid_until.eq(block_num.to_raw_sql()))
             .execute(conn)?;
 
-        // Insert the new latest row
+        // Insert the new open-ended row
         let insert_count = diesel::insert_into(schema::account_vault_assets::table)
             .values(record)
             .execute(conn)?;
@@ -986,8 +981,8 @@ pub(crate) fn insert_account_vault_asset(
 
 /// Inserts a versioned account storage-map value using the given [`SqliteConnection`].
 ///
-/// The new row is marked as latest, and any previous latest row for the same
-/// `(account_id, slot_name, key)` tuple is invalidated first.
+/// The new row is inserted open-ended, and any previous open row for the same
+/// `(account_id, slot_name, key)` tuple has its validity interval closed at `block_num` first.
 ///
 /// # Returns
 ///
@@ -1010,7 +1005,7 @@ pub(crate) fn insert_account_storage_map_value(
 /// Inserts a versioned account storage-map value with optional previous-row invalidation.
 ///
 /// `invalidate_previous` may be disabled when inserting state for a new account, for which no
-/// previous latest row can exist. The inserted row is always marked as latest.
+/// previous open row can exist. The inserted row is always open-ended.
 ///
 /// # Returns
 ///
@@ -1041,9 +1036,9 @@ fn insert_account_storage_map_value_inner(
                     .eq(&account_id)
                     .and(schema::account_storage_map_values::slot_name.eq(&slot_name))
                     .and(schema::account_storage_map_values::key.eq(&key))
-                    .and(schema::account_storage_map_values::is_latest.eq(true)),
+                    .and(schema::account_storage_map_values::valid_until.eq(VALID_FOREVER)),
             )
-            .set(schema::account_storage_map_values::is_latest.eq(false))
+            .set(schema::account_storage_map_values::valid_until.eq(block_num))
             .execute(conn)?
     } else {
         0
@@ -1055,7 +1050,7 @@ fn insert_account_storage_map_value_inner(
         value,
         slot_name,
         block_num,
-        is_latest: true,
+        valid_until: VALID_FOREVER,
     };
     let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
         .values(record)
@@ -1298,7 +1293,7 @@ pub(crate) fn select_network_accounts_subset(
                         schema::accounts::network_account_type
                             .eq(NetworkAccountType::Network.to_raw_sql()),
                     )
-                    .and(schema::accounts::is_latest.eq(true)),
+                    .and(schema::accounts::valid_until.eq(VALID_FOREVER)),
             )
             .load::<Vec<u8>>(conn)
             .map_err(DatabaseError::Diesel)?;
@@ -1417,14 +1412,14 @@ pub(crate) fn upsert_accounts(
                 .execute(conn)?;
         }
 
-        // mark previous rows as non-latest and insert NEW account row
+        // close the previous row's validity interval and insert NEW account row
         diesel::update(schema::accounts::table)
             .filter(
                 schema::accounts::account_id
                     .eq(&account_id_bytes)
-                    .and(schema::accounts::is_latest.eq(true)),
+                    .and(schema::accounts::valid_until.eq(VALID_FOREVER)),
             )
-            .set(schema::accounts::is_latest.eq(false))
+            .set(schema::accounts::valid_until.eq(block_num.to_raw_sql()))
             .execute(conn)?;
 
         let account_value = match &account_state {
@@ -1509,8 +1504,8 @@ pub(crate) struct AccountRowInsert {
     pub(crate) nonce: Option<i64>,
     pub(crate) storage_header: Option<Vec<u8>>,
     pub(crate) vault_root: Option<Vec<u8>>,
-    pub(crate) is_latest: bool,
     pub(crate) created_at_block: i64,
+    pub(crate) valid_until: i64,
 }
 
 impl AccountRowInsert {
@@ -1531,8 +1526,8 @@ impl AccountRowInsert {
             code_commitment: None,
             storage_header: None,
             vault_root: None,
-            is_latest: true,
             created_at_block: created_at_block.to_raw_sql(),
+            valid_until: VALID_FOREVER,
         }
     }
 
@@ -1554,8 +1549,8 @@ impl AccountRowInsert {
             code_commitment: Some(account.code().commitment().to_bytes()),
             storage_header: Some(account.storage().to_header().to_bytes()),
             vault_root: Some(account.vault().root().to_bytes()),
-            is_latest: true,
             created_at_block: created_at_block.to_raw_sql(),
+            valid_until: VALID_FOREVER,
         }
     }
 
@@ -1576,8 +1571,8 @@ impl AccountRowInsert {
             nonce: Some(nonce_to_raw_sql(state.nonce)),
             storage_header: Some(state.storage_header.to_bytes()),
             vault_root: Some(state.vault_root.to_bytes()),
-            is_latest: true,
             created_at_block: created_at_block.to_raw_sql(),
+            valid_until: VALID_FOREVER,
         }
     }
 
@@ -1599,8 +1594,8 @@ impl AccountRowInsert {
             code_commitment: Some(state.code_commitment.to_bytes()),
             storage_header: Some(state.storage_header.to_bytes()),
             vault_root: Some(state.vault_root.to_bytes()),
-            is_latest: true,
             created_at_block: created_at_block.to_raw_sql(),
+            valid_until: VALID_FOREVER,
         }
     }
 }
@@ -1612,7 +1607,7 @@ pub(crate) struct AccountAssetRowInsert {
     pub(crate) block_num: i64,
     pub(crate) vault_key: Vec<u8>,
     pub(crate) asset: Option<Vec<u8>>,
-    pub(crate) is_latest: bool,
+    pub(crate) valid_until: i64,
 }
 
 impl AccountAssetRowInsert {
@@ -1621,7 +1616,6 @@ impl AccountAssetRowInsert {
         vault_key: &AssetId,
         block_num: BlockNumber,
         asset: Option<Asset>,
-        is_latest: bool,
     ) -> Self {
         let account_id = account_id.to_bytes();
         let vault_key: Word = (*vault_key).into();
@@ -1633,7 +1627,7 @@ impl AccountAssetRowInsert {
             block_num,
             vault_key,
             asset,
-            is_latest,
+            valid_until: VALID_FOREVER,
         }
     }
 }
@@ -1646,22 +1640,25 @@ pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) slot_name: String,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
-    pub(crate) is_latest: bool,
+    pub(crate) valid_until: i64,
 }
 
 // CLEANUP FUNCTIONS
 // ================================================================================================
 
 /// Number of historical blocks to retain for vault assets, storage map values, and account codes.
-/// Entries older than `chain_tip - HISTORICAL_BLOCK_RETENTION` will be deleted, except for entries
-/// marked with `is_latest=true` which are always retained.
+/// Rows whose validity interval ends at or below `chain_tip - HISTORICAL_BLOCK_RETENTION` will be
+/// deleted; rows still valid anywhere inside the retention window (including all open-ended rows)
+/// are retained.
 pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 
-/// Clean up old entries for all accounts, deleting entries older than the retention window.
+/// Clean up old entries for all accounts, deleting entries that can no longer affect state
+/// reconstruction at any block within the retention window.
 ///
-/// Deletes rows where `block_num < chain_tip - HISTORICAL_BLOCK_RETENTION` and `is_latest = false`
-/// for vault assets and storage map values. Also deletes account codes that are no longer
-/// referenced by any account row within the retention window.
+/// A row is applicable for blocks in `[block_num, valid_until)`, so it is deletable exactly when
+/// its interval ends at or below the cutoff (`chain_tip - HISTORICAL_BLOCK_RETENTION`): it then
+/// cannot cover any block inside the window. Account codes follow the same rule — a code is
+/// deleted only when no account row whose interval reaches past the cutoff references it.
 ///
 /// # Returns
 /// A tuple of `(vault_assets_deleted, storage_map_values_deleted, account_codes_deleted)`
@@ -1696,13 +1693,16 @@ fn prune_account_vault_assets(
     conn: &mut SqliteConnection,
     cutoff_block: i64,
 ) -> Result<usize, DatabaseError> {
-    diesel::delete(
-        schema::account_vault_assets::table.filter(
-            schema::account_vault_assets::block_num
-                .lt(cutoff_block)
-                .and(schema::account_vault_assets::is_latest.eq(false)),
-        ),
-    )
+    use diesel::sql_types::BigInt;
+
+    // The literal `!= VALID_FOREVER` term (rather than a bound parameter) lets SQLite prove the
+    // predicate implies `idx_vault_cleanup`'s partial-index condition.
+    diesel::sql_query(format!(
+        "DELETE FROM account_vault_assets \
+         WHERE valid_until != {VALID_FOREVER} \
+           AND valid_until <= ?1"
+    ))
+    .bind::<BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)
 }
@@ -1718,27 +1718,30 @@ fn prune_account_storage_map_values(
     conn: &mut SqliteConnection,
     cutoff_block: i64,
 ) -> Result<usize, DatabaseError> {
-    diesel::delete(
-        schema::account_storage_map_values::table.filter(
-            schema::account_storage_map_values::block_num
-                .lt(cutoff_block)
-                .and(schema::account_storage_map_values::is_latest.eq(false)),
-        ),
-    )
+    use diesel::sql_types::BigInt;
+
+    // The literal `!= VALID_FOREVER` term (rather than a bound parameter) lets SQLite prove the
+    // predicate implies `idx_storage_cleanup`'s partial-index condition.
+    diesel::sql_query(format!(
+        "DELETE FROM account_storage_map_values \
+         WHERE valid_until != {VALID_FOREVER} \
+           AND valid_until <= ?1"
+    ))
+    .bind::<BigInt, _>(cutoff_block)
     .execute(conn)
     .map_err(DatabaseError::Diesel)
 }
 
-/// Deletes account codes that are no longer referenced by any account row within the retention
-/// window.
+/// Deletes account codes that are no longer referenced by any account row that can serve a read
+/// within the retention window.
 ///
-/// An account code is safe to delete when no `accounts` row with `block_num >= cutoff_block`
-/// references its `code_commitment`. This covers both active accounts (`is_latest=true`) and
-/// recent historical rows that still fall within the retention window.
+/// An account code is safe to delete when no `accounts` row whose validity interval reaches past
+/// the cutoff (`valid_until > cutoff_block`) references it. That single predicate covers rows
+/// inside the window, all open-ended (current) rows, and each account's baseline row — the row
+/// still valid at the cutoff even though it was written before it.
 ///
-/// The `UNION ALL` shape and explicit index selections avoid SQLite choosing
-/// `idx_accounts_code_commitment` for the whole predicate, which is expensive when the account
-/// history table has millions of public rows.
+/// The forced `idx_accounts_code_validity` covering index keeps the subquery an index-only range
+/// scan, sized by rows valid at or after the cutoff rather than total history.
 #[miden_instrument(
     target = COMPONENT,
     err,
@@ -1756,17 +1759,9 @@ fn prune_account_codes(
         "DELETE FROM account_codes \
          WHERE code_commitment NOT IN ( \
              SELECT DISTINCT code_commitment \
-             FROM ( \
-                 SELECT code_commitment \
-                 FROM accounts INDEXED BY idx_accounts_prune_code \
-                 WHERE code_commitment IS NOT NULL \
-                   AND block_num >= ?1 \
-                 UNION ALL \
-                 SELECT code_commitment \
-                 FROM accounts INDEXED BY idx_accounts_latest_code_commitment \
-                 WHERE code_commitment IS NOT NULL \
-                   AND is_latest = 1 \
-             ) \
+             FROM accounts INDEXED BY idx_accounts_code_validity \
+             WHERE code_commitment IS NOT NULL \
+               AND valid_until > ?1 \
          )",
     )
     .bind::<BigInt, _>(cutoff_block)

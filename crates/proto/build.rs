@@ -447,7 +447,9 @@ impl UnaryMethod {
     ///         tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));
     ///         let input = Self::decode(message)?;
     ///         let output = self.handle(input, &metadata, &extensions).await?;
-    ///         Self::encode(output)
+    ///         let response = Self::encode(output)?;
+    ///         tracing::Span::current().record("rpc.response.size", prost::Message::encoded_len(&response));
+    ///         Ok(response)
     ///     }
     /// }
     // /// ```
@@ -485,7 +487,11 @@ impl UnaryMethod {
             )
             .line("let input = Self::decode(message)?;")
             .line("let output = self.handle(input, &metadata, &extensions).await?;")
-            .line("Self::encode(output)");
+            .line("let response = Self::encode(output)?;")
+            .line(
+                r#"tracing::Span::current().record("rpc.response.size", prost::Message::encoded_len(&response));"#,
+            )
+            .line("Ok(response)");
 
         ret
     }

@@ -3,7 +3,7 @@ use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::miden_instrument;
 use tracing::debug;
 
-use super::{ProtoMempoolStats, Request, RpcMode, RpcService};
+use super::{ProtoMempoolStats, Request, RpcBackend, RpcService};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -30,11 +30,11 @@ impl proto::server::rpc_api::Status for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        let block_producer_status = match &self.mode {
-            RpcMode::Sequencer { block_producer, .. } => {
+        let block_producer_status = match &self.backend {
+            RpcBackend::Sequencer { block_producer, .. } => {
                 Some(block_producer_status_to_proto(block_producer.status().await))
             },
-            RpcMode::FullNode { source_rpc, .. } => source_rpc
+            RpcBackend::FullNode { source_rpc, .. } => source_rpc
                 .as_ref()
                 .clone()
                 .status(Request::new(()))

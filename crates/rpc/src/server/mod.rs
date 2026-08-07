@@ -47,11 +47,6 @@ pub struct Rpc {
     pub listener: TcpListener,
     pub state: Arc<State>,
     pub mode: RpcMode,
-    /// Store write capabilities consumed by the full-node sync loop.
-    ///
-    /// Must be provided in full-node mode and omitted in sequencer mode. The RPC service itself
-    /// only ever reads through `state`; these are passed through untouched to the sync tasks.
-    pub sync_writers: Option<(BlockWriter, ProofWriter)>,
     pub ntx_builder: Option<NtxBuilderClient>,
     pub grpc_options: GrpcOptionsExternal,
     pub network_tx_auth: Option<AsciiMetadataValue>,
@@ -61,7 +56,12 @@ pub struct Rpc {
 /// Shared secret value expected in the fixed `x-miden-network-tx-auth` metadata header.
 pub(crate) struct NetworkTxAuth(pub(crate) AsciiMetadataValue);
 
-#[derive(Clone, Debug)]
+/// How the RPC is wired at startup: which submission path it runs and, in full-node mode, the
+/// store write capabilities its sync loop consumes.
+///
+/// Deliberately not `Clone`: the full-node variant owns the store's single-writer capabilities,
+/// which must not be duplicated. Per-request handlers never need those, so they read through
+/// [`RpcBackend`] instead — the `Clone`-able subset [`Self::backend`] derives from this.
 pub enum RpcMode {
     /// Sequencer RPC validates submissions locally, re-executes them through every validator, then
     /// forwards them to the block producer.
@@ -85,7 +85,55 @@ pub enum RpcMode {
         source_rpc: Box<SourceRpcClient>,
         readiness_threshold: u32,
         pre_auth: Option<PreAuthSubmission>,
+        /// The store's block-write capability, handed to the sync loop.
+        block_writer: BlockWriter,
+        /// The store's proof-write capability, handed to the sync loop.
+        proof_writer: ProofWriter,
     },
+}
+
+/// The clients handlers forward requests to — the per-request subset of [`RpcMode`], held by
+/// [`RpcService`](api::RpcService) for the server's lifetime and read by every handler.
+///
+/// `Clone` because it is cloned once into `RpcService` and then read on every request; it never
+/// carries the full-node's store write capabilities ([`RpcMode`] does), since no handler needs
+/// them — those are consumed once by the sync loop at startup.
+#[derive(Clone, Debug)]
+pub(crate) enum RpcBackend {
+    Sequencer {
+        block_producer: Box<BlockProducerApi>,
+        validators: ValidatorClients,
+    },
+    FullNode {
+        source_rpc: Box<SourceRpcClient>,
+        pre_auth: Option<PreAuthSubmission>,
+    },
+}
+
+#[cfg(test)]
+impl RpcBackend {
+    /// Test-only: production code only ever builds a backend from an [`RpcMode`] via
+    /// [`RpcMode::backend`]; these let handler-level tests construct one directly, without a store
+    /// or write capabilities.
+    pub(crate) fn sequencer(
+        block_producer: BlockProducerApi,
+        validators: ValidatorClients,
+    ) -> Self {
+        Self::Sequencer {
+            block_producer: Box::new(block_producer),
+            validators,
+        }
+    }
+
+    pub(crate) fn full_node(
+        source_rpc: SourceRpcClient,
+        pre_auth: Option<PreAuthSubmission>,
+    ) -> Self {
+        Self::FullNode {
+            source_rpc: Box::new(source_rpc),
+            pre_auth,
+        }
+    }
 }
 
 /// A non-empty set of validator clients.
@@ -165,11 +213,15 @@ impl RpcMode {
         source_rpc: SourceRpcClient,
         readiness_threshold: u32,
         pre_auth: Option<PreAuthSubmission>,
+        block_writer: BlockWriter,
+        proof_writer: ProofWriter,
     ) -> Self {
         Self::FullNode {
             source_rpc: Box::new(source_rpc),
             readiness_threshold,
             pre_auth,
+            block_writer,
+            proof_writer,
         }
     }
 
@@ -177,6 +229,21 @@ impl RpcMode {
         match self {
             Self::Sequencer { .. } => "sequencer",
             Self::FullNode { .. } => "full",
+        }
+    }
+
+    /// Returns the `Clone`-able per-request backend subset handed to
+    /// [`RpcService`](api::RpcService).
+    fn backend(&self) -> RpcBackend {
+        match self {
+            Self::Sequencer { block_producer, validators } => RpcBackend::Sequencer {
+                block_producer: block_producer.clone(),
+                validators: validators.clone(),
+            },
+            Self::FullNode { source_rpc, pre_auth, .. } => RpcBackend::FullNode {
+                source_rpc: source_rpc.clone(),
+                pre_auth: pre_auth.clone(),
+            },
         }
     }
 }
@@ -194,7 +261,7 @@ impl Rpc {
         let mode = self.mode.as_str();
         let mut api = api::RpcService::new(
             self.state.clone(),
-            self.mode.clone(),
+            self.mode.backend(),
             self.ntx_builder.clone(),
             NonZeroUsize::new(1_000_000).unwrap(),
             self.network_tx_auth.map(NetworkTxAuth),
@@ -224,29 +291,26 @@ impl Rpc {
                 let chain_tip = self.state.committed_tip();
                 log_node_ready(mode, endpoint, chain_tip);
             },
-            RpcMode::FullNode { source_rpc, readiness_threshold, .. } => {
-                health_reporter
-                    .set_service_status(
-                        rpc_api::service_name(),
-                        tonic_health::ServingStatus::NotServing,
-                    )
-                    .await;
-                let readiness = RpcReadiness::new(health_reporter, readiness_threshold);
-                let (block_writer, proof_writer) = self.sync_writers.context(
-                    "full-node RPC requires the store write capabilities for its sync loop",
-                )?;
-                tasks.spawn(
-                    "RPC sync",
-                    RpcSync {
-                        state: Arc::clone(&self.state),
-                        block_writer,
-                        proof_writer,
-                        source_rpc: *source_rpc,
-                        readiness,
-                    }
-                    .run(shutdown.clone()),
-                );
-                log_node_synchronizing(mode, endpoint, readiness_threshold);
+            RpcMode::FullNode {
+                source_rpc,
+                readiness_threshold,
+                block_writer,
+                proof_writer,
+                ..
+            } => {
+                Self::spawn_full_node_sync(
+                    &self.state,
+                    &mut tasks,
+                    health_reporter,
+                    mode,
+                    endpoint,
+                    shutdown.clone(),
+                    *source_rpc,
+                    readiness_threshold,
+                    block_writer,
+                    proof_writer,
+                )
+                .await;
             },
         }
 
@@ -306,6 +370,41 @@ impl Rpc {
         tasks.spawn("RPC server", async move { rpc.await.map_err(|e| anyhow::anyhow!(e)) });
 
         tasks.join_next_or_cancelled(shutdown).await
+    }
+
+    /// Marks the RPC `NotServing` until synchronized, then spawns the full-node sync loop.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "assembles the full-node sync task from Rpc::serve's local state"
+    )]
+    async fn spawn_full_node_sync(
+        state: &Arc<State>,
+        tasks: &mut Tasks,
+        health_reporter: tonic_health::server::HealthReporter,
+        mode: &str,
+        endpoint: impl Display,
+        shutdown: CancellationToken,
+        source_rpc: SourceRpcClient,
+        readiness_threshold: u32,
+        block_writer: BlockWriter,
+        proof_writer: ProofWriter,
+    ) {
+        health_reporter
+            .set_service_status(rpc_api::service_name(), tonic_health::ServingStatus::NotServing)
+            .await;
+        let readiness = RpcReadiness::new(health_reporter, readiness_threshold);
+        tasks.spawn(
+            "RPC sync",
+            RpcSync {
+                state: Arc::clone(state),
+                block_writer,
+                proof_writer,
+                source_rpc,
+                readiness,
+            }
+            .run(shutdown),
+        );
+        log_node_synchronizing(mode, endpoint, readiness_threshold);
     }
 }
 

@@ -10,7 +10,7 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_tx_batch::BatchVerifier;
 use tonic::{Request, Status};
 
-use super::{RpcMode, RpcService, submit_batch_to_validators};
+use super::{RpcBackend, RpcService, submit_batch_to_validators};
 use crate::{COMPONENT, LOG_TARGET};
 
 #[tonic::async_trait]
@@ -107,8 +107,8 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         // Verify batch transaction proofs.
         verify_batch_proof(proven_batch, &proposed_batch).await?;
 
-        match &self.mode {
-            RpcMode::Sequencer { block_producer, validators } => {
+        match &self.backend {
+            RpcBackend::Sequencer { block_producer, validators } => {
                 submit_batch_to_validators(
                     validators.as_slice(),
                     &proposed_batch,
@@ -121,7 +121,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                     .map(Into::into)
                     .map_err(Into::into)
             },
-            RpcMode::FullNode { pre_auth: Some(pre_auth), .. } => {
+            RpcBackend::FullNode { pre_auth: Some(pre_auth), .. } => {
                 // Pre-authenticated transactions: validate and authenticate locally, then submit
                 // the authenticated batch to the sequencer's pre-authenticated API.
                 self.submit_authenticated_batch_to_sequencer(
@@ -132,7 +132,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                 )
                 .await
             },
-            RpcMode::FullNode { source_rpc, pre_auth: None, .. } => {
+            RpcBackend::FullNode { source_rpc, pre_auth: None, .. } => {
                 // Unauthenticated transactions: forward the request to the source verbatim.
                 let mut forwarded_request = Request::new(request);
                 if let Some(accept) = original_accept_header {

@@ -56,6 +56,7 @@ use tonic::Request;
 use tonic::metadata::MetadataMap;
 use url::Url;
 
+use crate::server::RpcBackend;
 use crate::server::api::RpcService;
 use crate::{PreAuthSubmission, Rpc, RpcMode, ValidatorClients};
 
@@ -515,7 +516,7 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
 
     let service = RpcService::new(
         Arc::clone(&store.state),
-        RpcMode::full_node(source_rpc_client(), 100, None),
+        RpcBackend::full_node(source_rpc_client(), None),
         None,
         NonZeroUsize::new(1_000_000).unwrap(),
         None,
@@ -640,7 +641,7 @@ async fn start_source_rpc(
         );
         let source_rpc = RpcService::new(
             state,
-            RpcMode::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
+            RpcBackend::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
             Some(ntx_builder),
             NonZeroUsize::new(1_000_000).unwrap(),
             None,
@@ -857,9 +858,8 @@ async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(
+        RpcBackend::full_node(
             dummy_client::<RpcClient>(),
-            100,
             Some(
                 PreAuthSubmission::new(vec![validator], dummy_client::<SequencerClient>())
                     .expect("one validator is configured"),
@@ -899,7 +899,7 @@ async fn full_node_forwards_get_transaction_encryption_key_to_source_rpc() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -924,7 +924,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding_encryption
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -966,7 +966,7 @@ async fn full_node_forwards_get_network_note_status_to_source_rpc() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -997,7 +997,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -1131,7 +1131,6 @@ async fn start_rpc_with_options(
                 block_producer,
                 ValidatorClients::new(vec![validator]).unwrap(),
             ),
-            sync_writers: None,
             ntx_builder: None,
             grpc_options,
             network_tx_auth: None,

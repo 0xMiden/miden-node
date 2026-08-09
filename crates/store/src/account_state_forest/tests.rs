@@ -858,7 +858,7 @@ fn storage_map_empty_entries_query() {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))

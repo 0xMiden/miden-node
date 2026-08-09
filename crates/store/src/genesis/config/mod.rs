@@ -458,7 +458,7 @@ impl FungibleFaucetConfig {
         // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
         let faucet_account = AccountBuilder::new(init_seed)
             .account_type(account_type.into())
-            .with_auth_component(auth)
+            .with_component(auth)
             .with_component(faucet)
             .with_components(
                 TokenPolicyManager::builder()

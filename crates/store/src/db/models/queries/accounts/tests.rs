@@ -154,7 +154,7 @@ fn create_test_account_with_storage() -> (Account, AccountId) {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -238,7 +238,7 @@ fn create_account_with_map_storage(
     AccountBuilder::new([9u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -524,7 +524,7 @@ fn test_upsert_accounts_closes_previous_validity_interval() {
     let account_2 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(component_2)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -624,7 +624,7 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -700,7 +700,7 @@ fn test_upsert_accounts_with_empty_storage() {
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -852,7 +852,7 @@ fn test_select_latest_account_storage_multiple_slots() {
     let account = AccountBuilder::new([9u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1305,7 +1305,7 @@ fn build_account_with_code(push_value: u32) -> Account {
     AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))

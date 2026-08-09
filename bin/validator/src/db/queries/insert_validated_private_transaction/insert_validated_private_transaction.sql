@@ -1,3 +1,4 @@
+-- Inserts a validated transaction, ignoring the insert if the transaction is already recorded.
 INSERT INTO validated_transactions (
     id,
     validator_id,

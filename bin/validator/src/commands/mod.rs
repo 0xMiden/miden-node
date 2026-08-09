@@ -642,15 +642,10 @@ mod tests {
     }
 
     async fn store_private_record(
-        writer: &miden_node_db::sqlite::DbWriter,
+        writer: &miden_validator::db::ValidatorDbWriter,
         record: miden_validator::StoredPrivateRecord,
     ) {
-        writer
-            .write("insert_private_record", move |tx| {
-                miden_validator::db::insert_validated_private_transaction(tx, &record)
-            })
-            .await
-            .unwrap();
+        writer.insert_validated_private_transaction(record).await.unwrap();
     }
 
     async fn export_record_file(
@@ -835,10 +830,9 @@ mod tests {
     #[tokio::test]
     async fn two_validators_issue_shares_for_third_validator_record() {
         let directory = tempfile::tempdir().unwrap();
-        let (writer, _reader) =
-            miden_validator::db::setup(directory.path().join("validator.sqlite3"))
-                .await
-                .unwrap();
+        let writer = miden_validator::db::setup(directory.path().join("validator.sqlite3"))
+            .await
+            .unwrap();
         let operator_keys = test_operator_keys(9, 3);
         let validator_signers = [7u8, 8, 9].map(|seed| {
             SigningKey::read_from_bytes(&[seed; 32]).expect("test signing key should decode")

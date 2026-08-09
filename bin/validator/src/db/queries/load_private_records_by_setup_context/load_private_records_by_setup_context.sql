@@ -1,3 +1,4 @@
+-- Returns the encrypted private records belonging to the given Golden setup context.
 SELECT
     chain_id,
     key_epoch,
@@ -9,5 +10,5 @@ SELECT
     encrypted_record,
     encrypted_record_key
 FROM validated_transactions
-WHERE key_epoch = ?1
+WHERE setup_context_id = ?1
 ORDER BY id;

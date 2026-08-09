@@ -1,7 +1,12 @@
 use anyhow::{Context, ensure};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockNumber, BlockProof};
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::serde::{
+    BudgetedReader,
+    ByteReader,
+    Deserializable,
+    SliceReader,
+};
 
 use crate::COMPONENT;
 use crate::state::{ProofNotification, ProofWriter};
@@ -51,9 +56,47 @@ impl ProofWriter {
 
 /// Verifies that `proof_bytes` is a valid [`BlockProof`] for the block at `block_num`.
 fn verify_block_proof(_block_num: BlockNumber, proof_bytes: &[u8]) -> anyhow::Result<()> {
-    let _proof =
-        BlockProof::read_from_bytes(proof_bytes).context("failed to deserialize block proof")?;
+    let _proof = decode_block_proof_exact(proof_bytes)?;
 
-    // TODO: perform verification.
+    // TODO: perform cryptographic verification once miden-protocol exposes a verifier.
     Ok(())
+}
+
+/// Decodes the exact serialized representation of a [`BlockProof`].
+///
+/// Exact decoding is important here because [`Deserializable::read_from_bytes`] intentionally
+/// accepts trailing bytes. Proof bytes may originate from a remote prover or an upstream node, so
+/// accepting an arbitrary suffix would persist and re-broadcast data that is not part of the proof.
+fn decode_block_proof_exact(proof_bytes: &[u8]) -> anyhow::Result<BlockProof> {
+    let reader = SliceReader::new(proof_bytes);
+    let mut reader = BudgetedReader::new(reader, proof_bytes.len());
+    let proof = BlockProof::read_from(&mut reader).context("failed to deserialize block proof")?;
+
+    ensure!(!reader.has_more_bytes(), "block proof contains trailing bytes");
+    Ok(proof)
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::block::BlockProof;
+    use miden_protocol::utils::serde::Serializable;
+
+    use super::decode_block_proof_exact;
+
+    #[test]
+    fn accepts_canonical_block_proof_encoding() {
+        let proof_bytes = BlockProof::new_dummy().to_bytes();
+
+        decode_block_proof_exact(&proof_bytes).unwrap();
+    }
+
+    #[test]
+    fn rejects_bytes_trailing_the_block_proof() {
+        let mut proof_bytes = BlockProof::new_dummy().to_bytes();
+        proof_bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let error = decode_block_proof_exact(&proof_bytes).unwrap_err();
+
+        assert_eq!(error.to_string(), "block proof contains trailing bytes");
+    }
 }

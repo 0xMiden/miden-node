@@ -1,8 +1,10 @@
 //! Seeds an oversized network account and checks the ntx-builder can work with it.
 //!
-//! - `seed` writes the counter account and its owner wallet as `.mac` [`AccountFile`]s. A genesis
-//!   configuration references them via `[[account]]` entries, so the store and the ntx-builder both
-//!   load the account from `genesis.dat` on disk with no wire transfer involved.
+//! - `seed` writes the counter account, its owner wallet, and the faucet fees are denominated in as
+//!   `.mac` [`AccountFile`]s. A genesis configuration references the first two via `[[account]]`
+//!   entries, so the store and the ntx-builder both load the account from `genesis.dat` on disk with
+//!   no wire transfer involved, and the faucet via `native_faucet`, which makes the asset the counter
+//!   prices its notes in the asset the chain settles in.
 //! - `verify` submits one increment and asserts the counter advances within a block budget. The
 //!   increment emits a network note, which makes the ntx-builder load the full account — so a passing
 //!   run is the evidence that an account this large can be worked with at all.
@@ -24,10 +26,13 @@ mod accounts;
 mod increment;
 mod rpc;
 
-use self::accounts::{create_counter_account, create_wallet_account};
+use self::accounts::{create_counter_account, create_fee_faucet_account, create_wallet_account};
 
 /// File name of the seeded owner wallet (carries its signing key).
 const WALLET_FILE: &str = "wallet.mac";
+/// File name of the seeded fee faucet (carries its signing key). Referenced by the genesis
+/// configuration's `native_faucet`, not by an `[[account]]` entry.
+const FAUCET_FILE: &str = "faucet.mac";
 /// File name of the seeded network counter account (no secret key; the ntx-builder authors its
 /// transactions).
 const COUNTER_FILE: &str = "counter.mac";
@@ -118,16 +123,27 @@ fn seed(args: &SeedArgs) -> Result<()> {
     fs_err::create_dir_all(&args.output_dir)
         .with_context(|| format!("failed to create output dir {}", args.output_dir.display()))?;
 
-    let (wallet, secret_key, counter) = build_pair(args.counter_map_entries)?;
+    let Seeded {
+        faucet,
+        faucet_secret_key,
+        wallet,
+        wallet_secret_key,
+        counter,
+    } = build_seeded_accounts(args.counter_map_entries)?;
 
+    let faucet_id = faucet.id();
     let wallet_id = wallet.id();
     let counter_id = counter.id();
 
-    write_wallet(&args.output_dir, &wallet, &secret_key)?;
+    write_wallet(&args.output_dir, &wallet, &wallet_secret_key)?;
+    AccountFile::new(faucet, vec![AuthSecretKey::Falcon512Poseidon2(faucet_secret_key)])
+        .write(args.output_dir.join(FAUCET_FILE))
+        .context("failed to write faucet.mac")?;
     AccountFile::new(counter, vec![])
         .write(args.output_dir.join(COUNTER_FILE))
         .context("failed to write counter.mac")?;
 
+    println!("fee_faucet_id={}", faucet_id.to_hex());
     println!("wallet_id={}", wallet_id.to_hex());
     println!("counter_id={}", counter_id.to_hex());
     println!("counter_map_entries={}", args.counter_map_entries);
@@ -136,16 +152,42 @@ fn seed(args: &SeedArgs) -> Result<()> {
     Ok(())
 }
 
-/// Builds the wallet + counter pair in committed form.
-fn build_pair(counter_map_entries: u32) -> Result<(Account, SecretKey, Account)> {
-    let (mut wallet, secret_key) = create_wallet_account().context("failed to create wallet")?;
+/// The accounts a seed run writes.
+struct Seeded {
+    /// The faucet fees are denominated in, at nonce zero for genesis to adopt as its native faucet.
+    faucet: Account,
+    faucet_secret_key: SecretKey,
+    /// The owner wallet, in committed form.
+    wallet: Account,
+    wallet_secret_key: SecretKey,
+    /// The oversized network counter, in committed form.
+    counter: Account,
+}
+
+/// Builds the faucet + wallet + counter set.
+///
+/// The wallet and the counter are committed here by bumping their nonce, since genesis takes them
+/// as `[[account]]` entries and writes them into the block as-is. The faucet is left at nonce zero
+/// because genesis commits that one itself.
+fn build_seeded_accounts(counter_map_entries: u32) -> Result<Seeded> {
+    let (faucet, faucet_secret_key) =
+        create_fee_faucet_account().context("failed to create the fee faucet")?;
+
+    let (mut wallet, wallet_secret_key) =
+        create_wallet_account().context("failed to create wallet")?;
     wallet.set_nonce(ONE).context("failed to bump wallet nonce")?;
 
-    let mut counter = create_counter_account(wallet.id(), counter_map_entries)
+    let mut counter = create_counter_account(wallet.id(), faucet.id(), counter_map_entries)
         .context("failed to create counter account")?;
     counter.set_nonce(ONE).context("failed to bump counter nonce")?;
 
-    Ok((wallet, secret_key, counter))
+    Ok(Seeded {
+        faucet,
+        faucet_secret_key,
+        wallet,
+        wallet_secret_key,
+        counter,
+    })
 }
 
 // VERIFY
@@ -173,7 +215,8 @@ async fn verify(args: &VerifyArgs) -> Result<()> {
         secret_key.clone(),
         &client,
         ChaCha20Rng::from_rng(&mut rand::rng()),
-    )?;
+    )
+    .await?;
 
     // Read both baselines before submitting, so the assertion is against a known starting point.
     let baseline = driver

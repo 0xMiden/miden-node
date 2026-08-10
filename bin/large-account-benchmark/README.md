@@ -38,20 +38,21 @@ PASS — the ntx-builder loaded the account and consumed the network note
 miden-large-account-benchmark seed --output-dir ./seeded --counter-map-entries 1000000
 ```
 
-This writes `wallet.mac` (carrying the wallet's signing key) and `counter.mac` into `./seeded`, and prints both account
-ids. Reference them from a genesis configuration:
+This writes `faucet.mac`, `wallet.mac` (both carrying their signing key) and `counter.mac` into `./seeded`, and prints
+all three account ids. Reference them from a genesis configuration:
 
 ```toml
+native_faucet = "seeded/faucet.mac"
+validators = ["<miden-validator pubkey>"]
+
+[fee_parameters]
+verification_base_fee = 0
+
 [[account]]
 path = "seeded/wallet.mac"
 
 [[account]]
 path = "seeded/counter.mac"
-
-validators = ["<miden-validator pubkey>"]
-
-[fee_parameters]
-verification_base_fee = 0
 ```
 
 Paths are resolved relative to the genesis configuration file's directory. Build the genesis block and bootstrap each

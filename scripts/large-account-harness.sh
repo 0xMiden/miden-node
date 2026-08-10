@@ -168,7 +168,7 @@ done
 
 # --- seed ----------------------------------------------------------------------------------------
 
-phase "Seeding the wallet + counter pair ($MAP_ENTRIES map entries)" "$SEED_LOG"
+phase "Seeding the faucet + wallet + counter set ($MAP_ENTRIES map entries)" "$SEED_LOG"
 quietly "$SEED_LOG" "$BENCH_BIN" seed \
     --output-dir "$SEEDED_DIR" --counter-map-entries "$MAP_ENTRIES"
 
@@ -190,6 +190,7 @@ fi
 cat > "$GENESIS_CONFIG_FILE" <<EOF
 timestamp = 1717344256
 version   = 1
+native_faucet = "$SEEDED_DIR/faucet.mac"
 
 [fee_parameters]
 # Zero, because the seeded wallet holds no assets and could not pay a fee.

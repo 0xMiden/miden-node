@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use miden_node_proto::clients::{Builder, RpcClient};
+use miden_node_proto::domain::account::AccountResponse;
 use miden_node_proto::domain::encryption::{
     TransactionInputsSealer,
     TrustedTransactionEncryptionState,
@@ -16,6 +17,7 @@ use miden_node_proto::generated::rpc::{AccountRequest, BlockHeaderByNumberReques
 use miden_node_proto::generated::transaction::ProvenTransaction as ProtoProvenTransaction;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
+use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey as ValidatorPublicKey;
 use miden_protocol::transaction::ProvenTransaction;
@@ -186,6 +188,45 @@ impl SubmissionClient {
                 .expect("a word has four elements")
                 .as_canonical_u64(),
         ))
+    }
+
+    /// Fetches the account-tree witness proving `account_id`'s state in `block_num`.
+    ///
+    /// Every increment emits a note targeted at the counter, which makes the wallet's auth procedure
+    /// invoke the counter's `estimate_note_fee` through FPI. The kernel authenticates that foreign
+    /// account against the reference block's account root, so the executor needs this witness.
+    pub async fn account_witness(
+        &self,
+        account_id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<AccountWitness> {
+        let id_bytes: [u8; 15] = account_id.into();
+        let request = AccountRequest {
+            account_id: Some(ProtoAccountId { id: id_bytes.to_vec() }),
+            block_num: Some(block_num.into()),
+            details: None,
+        };
+
+        let response = self
+            .rpc
+            .clone()
+            .get_account(request)
+            .await
+            .context("failed to fetch the account witness from RPC")?
+            .into_inner();
+
+        let response =
+            AccountResponse::try_from(response).context("failed to decode the account response")?;
+
+        // An account-ID prefix collision makes the tree return a witness for the *other* account,
+        // and the data store keys witnesses by the account they prove.
+        anyhow::ensure!(
+            response.witness.id() == account_id,
+            "account tree returned a witness for {} when {account_id} was requested",
+            response.witness.id(),
+        );
+
+        Ok(response.witness)
     }
 
     /// Returns the cached sealer, fetching and verifying the attested encryption key on first use.

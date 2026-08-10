@@ -12,8 +12,10 @@ use miden_protocol::account::{
     PartialAccount,
     StorageMapKey,
     StorageMapWitness,
+    StorageSlotContent,
 };
 use miden_protocol::asset::{AssetId, AssetWitness};
+use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::note::{
@@ -38,6 +40,7 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::utils::serde::Serializable;
 use miden_protocol::{Felt, Word};
+use miden_standards::account::auth::{FeeConversionInfo, commit_fee_conversion_info};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_tx::auth::BasicAuthenticator;
@@ -65,6 +68,10 @@ use crate::rpc::SubmissionClient;
 pub struct Driver {
     wallet: Account,
     counter: Account,
+    /// Proves the counter's inclusion in the genesis account tree, which every increment references
+    /// as its FPI anchor. Genesis commits the counter, so the anchor is valid from the first block
+    /// and stays valid as later increments change the live state.
+    counter_witness: AccountWitness,
     secret_key: SecretKey,
     increment_script: NoteScript,
     genesis_header: BlockHeader,
@@ -73,20 +80,34 @@ pub struct Driver {
 }
 
 impl Driver {
-    pub fn new(
+    pub async fn new(
         wallet: Account,
         counter: Account,
         secret_key: SecretKey,
         client: &SubmissionClient,
         rng: ChaCha20Rng,
     ) -> Result<Self> {
+        let genesis_header = client.genesis_header().clone();
+        let counter_witness = client
+            .account_witness(counter.id(), genesis_header.block_num())
+            .await
+            .context("failed to fetch the counter's genesis account witness")?;
+
+        anyhow::ensure!(
+            counter_witness.state_commitment() == counter.to_commitment(),
+            "the chain's genesis state for counter account {} does not match the seeded \
+             counter.mac; the accounts directory and the running chain were seeded separately",
+            counter.id(),
+        );
+
         Ok(Self {
             wallet,
             counter,
+            counter_witness,
             secret_key,
             increment_script: create_increment_script()
                 .context("failed to compile the increment note script")?,
-            genesis_header: client.genesis_header().clone(),
+            genesis_header,
             prover: LocalTransactionProver::default(),
             rng,
         })
@@ -117,12 +138,21 @@ impl Driver {
 
         let script = create_increment_tx_script(&network_note)?;
         let mut tx_args = TransactionArgs::default().with_tx_script(script);
+
+        // The wallet's auth procedure pays the transaction fee in the chain's native asset. It
+        // reads the conversion rate from the advice map, keyed by a commitment it recomputes from
+        // the auth args, so both halves have to be supplied.
+        let (auth_args, conversion_info_preimage) = self.fee_conversion_auth_args();
+        tx_args = tx_args.with_auth_args(auth_args);
+        tx_args.extend_advice_map([(auth_args, conversion_info_preimage)]);
         tx_args.add_output_note_recipient(Box::new(recipient));
 
         let mut data_store =
             DriverDataStore::new(self.genesis_header.clone(), PartialBlockchain::default());
         data_store.add_account(self.wallet.clone());
-        data_store.add_account(self.counter.clone());
+        // The counter is *foreign* to this transaction: creating a note targeted at it makes the
+        // wallet's auth procedure price the note through the counter's `estimate_note_fee` via FPI.
+        data_store.add_foreign_account(self.counter.clone(), self.counter_witness.clone());
 
         let authenticator =
             BasicAuthenticator::new(&[AuthSecretKey::Falcon512Poseidon2(self.secret_key.clone())]);
@@ -156,6 +186,22 @@ impl Driver {
             block_num,
             proving_time,
         })
+    }
+
+    /// Builds the auth args committing to paying the fee in the chain's native asset at rate 1/1,
+    /// together with the advice-map preimage the auth procedure verifies against them in-VM.
+    fn fee_conversion_auth_args(&mut self) -> (Word, Vec<Felt>) {
+        let fee_faucet_id = self.genesis_header.fee_parameters().fee_faucet_id();
+        // The salt keeps the auth args usable as a per-transaction unique value for replay
+        // protection.
+        let salt = Word::new([
+            Felt::new_unchecked(self.rng.random()),
+            Felt::new_unchecked(self.rng.random()),
+            Felt::new_unchecked(self.rng.random()),
+            Felt::new_unchecked(self.rng.random()),
+        ]);
+
+        commit_fee_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id), salt)
     }
 }
 
@@ -264,7 +310,7 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
     );
 
     let mut code_builder = CodeBuilder::new()
-        .with_dynamically_linked_library(&wallet_component)
+        .with_dynamically_linked_package(&wallet_component)
         .context("failed to dynamically link the wallet counter component")?;
 
     // Attachments are resolved at runtime from the advice map, keyed by their commitment.
@@ -282,10 +328,11 @@ fn create_increment_tx_script(network_note: &Note) -> Result<TransactionScript> 
 
 /// An in-memory [`DataStore`] over the genesis header and the two accounts involved.
 ///
-/// The transaction consumes no input notes and touches no foreign accounts or storage maps, so only
-/// the account, blockchain, and vault-witness methods need real implementations.
+/// The transaction consumes no input notes and reads no storage maps, so only the account,
+/// blockchain, foreign-account and vault-witness methods need real implementations.
 struct DriverDataStore {
     accounts: HashMap<AccountId, Account>,
+    account_witnesses: HashMap<AccountId, AccountWitness>,
     block_header: BlockHeader,
     partial_blockchain: PartialBlockchain,
     mast_store: TransactionMastStore,
@@ -295,6 +342,7 @@ impl DriverDataStore {
     fn new(block_header: BlockHeader, partial_blockchain: PartialBlockchain) -> Self {
         Self {
             accounts: HashMap::new(),
+            account_witnesses: HashMap::new(),
             block_header,
             partial_blockchain,
             mast_store: TransactionMastStore::new(),
@@ -304,6 +352,13 @@ impl DriverDataStore {
     fn add_account(&mut self, account: Account) {
         self.mast_store.load_account_code(account.code());
         self.accounts.insert(account.id(), account);
+    }
+
+    /// Registers an account the transaction reaches through a foreign procedure invocation,
+    /// together with the account-tree witness proving its state in the reference block.
+    fn add_foreign_account(&mut self, account: Account, witness: AccountWitness) {
+        self.add_account(account);
+        self.account_witnesses.insert(witness.id(), witness);
     }
 
     fn account(&self, account_id: AccountId) -> Result<&Account, DataStoreError> {
@@ -329,21 +384,53 @@ impl DataStore for DriverDataStore {
         ))
     }
 
+    /// Opens a map slot of the requested account by root.
+    ///
+    /// Reached through the counter's fee policy: `estimate_note_fee` looks the note's script root up
+    /// in the `basic_constant_fee` schedule, which is a storage map.
     async fn get_storage_map_witness(
         &self,
-        _account_id: AccountId,
-        _map_root: Word,
-        _map_key: StorageMapKey,
+        account_id: AccountId,
+        map_root: Word,
+        map_key: StorageMapKey,
     ) -> Result<StorageMapWitness, DataStoreError> {
-        Err(DataStoreError::other("increment transactions do not read storage maps"))
+        let account = self.account(account_id)?;
+
+        account
+            .storage()
+            .slots()
+            .iter()
+            .filter_map(|slot| match slot.content() {
+                StorageSlotContent::Map(map) => Some(map),
+                StorageSlotContent::Value(_) => None,
+            })
+            .find(|map| map.root() == map_root)
+            .map(|map| map.open(&map_key))
+            .ok_or_else(|| DataStoreError::Other {
+                error_msg: format!("no storage map with root {map_root} in account {account_id}")
+                    .into(),
+                source: None,
+            })
     }
 
     async fn get_foreign_account_inputs(
         &self,
-        _foreign_account_id: AccountId,
+        foreign_account_id: AccountId,
         _ref_block: BlockNumber,
     ) -> Result<AccountInputs, DataStoreError> {
-        Err(DataStoreError::other("increment transactions use no foreign accounts"))
+        let account = self.account(foreign_account_id)?;
+        let witness =
+            self.account_witnesses.get(&foreign_account_id).cloned().ok_or_else(|| {
+                DataStoreError::Other {
+                    error_msg: format!(
+                        "no account witness for foreign account {foreign_account_id}"
+                    )
+                    .into(),
+                    source: None,
+                }
+            })?;
+
+        Ok(AccountInputs::new(PartialAccount::from(account), witness))
     }
 
     async fn get_vault_asset_witnesses(

@@ -22,9 +22,11 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_standards::account::auth::AuthNetworkAccount;
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
@@ -101,8 +103,13 @@ fn network_auth_component() -> AuthNetworkAccount {
         .expect("note should build");
     let root = note.script().root();
 
-    AuthNetworkAccount::with_allowed_notes(BTreeSet::from_iter([root]))
-        .expect("non-empty allowlist should construct")
+    // Nothing here executes a transaction, so the mock manager's empty fee schedule is enough: it
+    // only has to make the component constructible and install the three fee-policy slots.
+    AuthNetworkAccount::new(
+        BTreeSet::from_iter([root]),
+        FeePolicyManager::mock(FungibleAsset::mock_issuer()),
+    )
+    .expect("non-empty allowlist should construct")
 }
 
 /// Builds a single storage slot holding a map with `num_entries` entries, keyed `[i, 0, 0, 0]`.
@@ -126,7 +133,7 @@ fn build_large_network_account(num_maps: u32, entries_per_map: u32) -> Account {
     AccountBuilder::new([0u8; 32])
         .account_type(AccountType::Public)
         .with_component(MockAccountComponent::with_slots(slots))
-        .with_auth_component(network_auth_component())
+        .with_components(network_auth_component())
         .build_existing()
         .expect("account should build")
 }

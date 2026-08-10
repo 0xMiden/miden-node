@@ -1,14 +1,13 @@
-# Insecure Golden storage key
+# Insecure storage key
 
-These files hold a deterministic **two-of-three** Golden storage key used by the docker-compose network and the
-benchmark smoke test to exercise threshold storage.
+These files hold a deterministic **two-of-three** storage key used by the docker-compose network and the benchmark smoke
+test to exercise threshold storage.
 
 Layout:
 
 - `setup-context.wire`, `public-key-set.wire` — the shared public setup, the same for every validator.
 - `validator-1/secret-share.wire`, `validator-2/secret-share.wire`, `validator-3/secret-share.wire` — each participant's
-  **distinct** secret share. `compose/validator.yml` mounts this directory into all three validators and points each at
-  its own share.
+  **distinct** secret share. The Compose bootstrap service stages only the matching share in each validator's bundle.
 - `secret-share.wire` — participant 1's share (identical to `validator-1/secret-share.wire`), kept at the top level so
   single-validator tooling such as the CI benchmark smoke test keeps working unchanged.
 
@@ -18,6 +17,10 @@ impossible even though each validator stores encrypted records.
 
 This key is public and must not be used outside tests.
 
+Compose checks each staged bundle with `miden-validator dkg validate-fixture` before it marks the local network as
+bootstrapped. This fixture-only check binds the secret share to its expected participant index. Production bundles must
+use `miden-validator dkg validate`, which also checks genesis, the ceremony manifest, and signed transcript.
+
 ## Regenerating
 
 The fixture is derived deterministically by `bin/validator/src/storage_key.rs` (`tests::values_for`). Regenerate it
@@ -25,5 +28,5 @@ with:
 
 ```sh
 cargo test -p miden-validator --lib \
-  storage_key::tests::write_insecure_golden_fixture -- --ignored
+  storage_key::tests::write_insecure_storage_key_fixture -- --ignored
 ```

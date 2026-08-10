@@ -28,7 +28,7 @@ use miden_standards::account::policies::{
     TokenPolicyManager,
     TransferPolicy,
 };
-use miden_standards::account::wallets::{BasicWallet, create_basic_wallet};
+use miden_standards::account::wallets::create_basic_wallet;
 use miden_standards::note::{BurnNote, MintNote};
 use rand::distr::weighted::Weight;
 use rand::{RngExt, SeedableRng};
@@ -443,16 +443,9 @@ fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError
     let mut rng = ChaCha20Rng::from_seed(rand::random());
 
     let secret_key = RpoSecretKey::with_rng(&mut rng);
-    let auth = AuthSingleSig::new(Approver::new(
-        secret_key.public_key().into(),
-        AuthScheme::Falcon512Poseidon2,
-    ));
+    let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
     let init_seed: [u8; 32] = rng.random();
-    let mut operator = AccountBuilder::new(init_seed)
-        .account_type(AccountType::Public)
-        .with_component(auth)
-        .with_component(BasicWallet)
-        .build()?;
+    let mut operator = create_basic_wallet(init_seed, auth, AccountType::Public)?;
     operator.set_nonce(ONE)?;
 
     Ok((operator, secret_key))

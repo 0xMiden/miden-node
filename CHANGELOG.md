@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-- [BREAKING] The genesis native faucet is now always built as a network account, owned by a generated faucet operator account that holds the only key permitted to mint. Both are written to the accounts directory as `native_faucet.mac` and `faucet_operator.mac`, and the `native_faucet` genesis configuration field is ignored.
 - [BREAKING] Updated `miden-protocol` dependencies to use the `next` branch (v0.16). Block and transaction account updates now use the absolute `AccountPatch` representation instead of the relative `AccountDelta`, and the `miden-tx-batch-prover` crate was renamed to `miden-tx-batch` ([#2282](https://github.com/0xMiden/node/pull/2282)).
 
 ## v0.15.0 (2026-06-10)

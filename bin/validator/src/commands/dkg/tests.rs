@@ -402,22 +402,28 @@ async fn prepare_test_ceremony(
     Ok(TestCeremony { genesis, ceremony, identities })
 }
 
-/// Creates both dealings for every validator with the fast proof backend.
-fn deal_for_all(root: &Path, ceremony: &TestCeremony) -> TestResultWith<Vec<PathBuf>> {
-    deal_for_all_with_seed(root, ceremony, [41; 32])
+/// Creates both dealings for every validator with the selected proof backend.
+fn deal_for_all<B>(root: &Path, ceremony: &TestCeremony) -> TestResultWith<Vec<PathBuf>>
+where
+    B: EvrfProofBackend<StorageGroup>,
+{
+    deal_for_all_with_seed::<B>(root, ceremony, [41; 32])
 }
 
 /// Creates both dealings using one deterministic test seed.
-fn deal_for_all_with_seed(
+fn deal_for_all_with_seed<B>(
     root: &Path,
     ceremony: &TestCeremony,
     seed: [u8; 32],
-) -> TestResultWith<Vec<PathBuf>> {
+) -> TestResultWith<Vec<PathBuf>>
+where
+    B: EvrfProofBackend<StorageGroup>,
+{
     let mut rng = ChaCha20Rng::from_seed(seed);
     let mut outputs = Vec::new();
     for (position, identity) in ceremony.identities.iter().enumerate() {
         let output = root.join(format!("deal-{position}"));
-        deal::<ShareOpeningBackend>(
+        deal::<B>(
             &ceremony.genesis.path,
             &ceremony.ceremony,
             &identity.join(IDENTITY_SECRET_FILE),
@@ -475,16 +481,19 @@ where
     })
 }
 
-/// Completes one startup bundle with the fast proof backend.
-fn finalize_test_bundle(
+/// Completes one startup bundle with the selected proof backend.
+fn finalize_test_bundle<B>(
     root: &Path,
     ceremony: &TestCeremony,
     dealings: &[PathBuf],
     accepted: &AcceptedTranscript,
     position: usize,
-) -> TestResultWith<PathBuf> {
+) -> TestResultWith<PathBuf>
+where
+    B: EvrfProofBackend<StorageGroup>,
+{
     let output = root.join(format!("bundle-{position}"));
-    finalize::<ShareOpeningBackend>(
+    finalize::<B>(
         &ceremony.genesis.path,
         &ceremony.ceremony,
         &ceremony.identities[position].join(IDENTITY_SECRET_FILE),
@@ -502,11 +511,17 @@ fn finalize_test_bundle(
 async fn three_validators_complete_dkg_and_recover_with_any_two_shares() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let dealings = deal_for_all(root.path(), &ceremony)?;
-    let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
+    let dealings = deal_for_all::<SecpSecqBackend>(root.path(), &ceremony)?;
+    let accepted = accept_for_all::<SecpSecqBackend>(root.path(), &ceremony, &dealings).await?;
     let mut bundles = Vec::new();
     for position in 0..3 {
-        let bundle = finalize_test_bundle(root.path(), &ceremony, &dealings, &accepted, position)?;
+        let bundle = finalize_test_bundle::<SecpSecqBackend>(
+            root.path(),
+            &ceremony,
+            &dealings,
+            &accepted,
+            position,
+        )?;
         validate_bundle(
             &ceremony.genesis.path,
             &ceremony.ceremony,
@@ -573,15 +588,22 @@ async fn validate_rejects_an_internally_consistent_substitute_key_set() -> TestR
     fs_err::create_dir(&alternate_root)?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
 
-    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let dealings = deal_for_all::<ShareOpeningBackend>(root.path(), &ceremony)?;
     let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
-    let bundle = finalize_test_bundle(root.path(), &ceremony, &dealings, &accepted, 0)?;
+    let bundle = finalize_test_bundle::<ShareOpeningBackend>(
+        root.path(),
+        &ceremony,
+        &dealings,
+        &accepted,
+        0,
+    )?;
 
-    let alternate_dealings = deal_for_all_with_seed(&alternate_root, &ceremony, [77; 32])?;
+    let alternate_dealings =
+        deal_for_all_with_seed::<ShareOpeningBackend>(&alternate_root, &ceremony, [77; 32])?;
     let alternate_accepted =
         accept_for_all::<ShareOpeningBackend>(&alternate_root, &ceremony, &alternate_dealings)
             .await?;
-    let alternate_bundle = finalize_test_bundle(
+    let alternate_bundle = finalize_test_bundle::<ShareOpeningBackend>(
         &alternate_root,
         &ceremony,
         &alternate_dealings,
@@ -606,7 +628,7 @@ async fn validate_rejects_an_internally_consistent_substitute_key_set() -> TestR
 async fn finalize_rejects_incomplete_or_duplicate_dealings() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let dealings = deal_for_all::<ShareOpeningBackend>(root.path(), &ceremony)?;
     let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
     let decryption = dealing_paths(&dealings, DECRYPTION_DEALING_FILE);
     let context = dealing_paths(&dealings, CONTEXT_DEALING_FILE);
@@ -651,7 +673,7 @@ async fn finalize_rejects_incomplete_or_duplicate_dealings() -> TestResult {
 async fn finalize_rejects_tampered_dealing_without_partial_output() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let dealings = deal_for_all::<ShareOpeningBackend>(root.path(), &ceremony)?;
     let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
     let tampered = root.path().join("tampered.wire");
     let mut bytes = fs_err::read(dealings[1].join(DECRYPTION_DEALING_FILE))?;
@@ -686,7 +708,7 @@ async fn accept_rejects_a_dealing_from_another_session() -> TestResult {
 
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let dealings = deal_for_all::<ShareOpeningBackend>(root.path(), &ceremony)?;
     let substituted = root.path().join("wrong-session.wire");
     let mut message = from_wire_bytes::<FastDealerMessage>(&fs_err::read(
         dealings[1].join(DECRYPTION_DEALING_FILE),
@@ -717,7 +739,7 @@ async fn accept_rejects_a_dealing_from_another_session() -> TestResult {
 async fn finalize_rejects_valid_dealer_equivocation() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let dealings = deal_for_all::<ShareOpeningBackend>(root.path(), &ceremony)?;
     let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
 
     let alternate = root.path().join("alternate-deal");
@@ -754,7 +776,7 @@ async fn finalize_rejects_valid_dealer_equivocation() -> TestResult {
 async fn finalize_requires_every_transcript_acceptance() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let dealings = deal_for_all::<ShareOpeningBackend>(root.path(), &ceremony)?;
     let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
     let output = root.path().join("bundle");
 
@@ -779,7 +801,7 @@ async fn finalize_requires_every_transcript_acceptance() -> TestResult {
 async fn finalize_rejects_manifest_changed_after_acceptance() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let dealings = deal_for_all(root.path(), &ceremony)?;
+    let dealings = deal_for_all::<ShareOpeningBackend>(root.path(), &ceremony)?;
     let accepted = accept_for_all::<ShareOpeningBackend>(root.path(), &ceremony, &dealings).await?;
     let manifest_path = ceremony.ceremony.join(MANIFEST_FILE);
     let mut manifest = fs_err::read_to_string(&manifest_path)?;
@@ -812,7 +834,7 @@ async fn private_state_cannot_cross_ceremonies() -> TestResult {
     fs_err::create_dir_all(&first_root)?;
     fs_err::create_dir_all(&second_root)?;
     let first = prepare_test_ceremony(&first_root, 3, 2).await?;
-    let first_dealings = deal_for_all(&first_root, &first)?;
+    let first_dealings = deal_for_all::<ShareOpeningBackend>(&first_root, &first)?;
 
     let registrations = first
         .identities
@@ -826,7 +848,7 @@ async fn private_state_cannot_cross_ceremonies() -> TestResult {
         ceremony: second_ceremony,
         identities: first.identities.clone(),
     };
-    let second_dealings = deal_for_all(&second_root, &second)?;
+    let second_dealings = deal_for_all::<ShareOpeningBackend>(&second_root, &second)?;
     let accepted =
         accept_for_all::<ShareOpeningBackend>(&second_root, &second, &second_dealings).await?;
     let output = second_root.join("bundle");
@@ -878,41 +900,5 @@ async fn deal_rejects_unknown_identity_and_existing_output() -> TestResult {
         )
         .is_err()
     );
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore = "slow: runs the concrete Secp/Secq proof backend"]
-async fn production_backend_completes_two_round_ceremony() -> TestResult {
-    let root = tempfile::tempdir()?;
-    let ceremony = prepare_test_ceremony(root.path(), 2, 2).await?;
-    let mut rng = ChaCha20Rng::from_seed([44; 32]);
-    let mut dealings = Vec::new();
-    for (position, identity) in ceremony.identities.iter().enumerate() {
-        let output = root.path().join(format!("paper-deal-{position}"));
-        deal::<SecpSecqBackend>(
-            &ceremony.genesis.path,
-            &ceremony.ceremony,
-            &identity.join(IDENTITY_SECRET_FILE),
-            &output,
-            &mut rng,
-        )?;
-        dealings.push(output);
-    }
-    let accepted = accept_for_all::<SecpSecqBackend>(root.path(), &ceremony, &dealings).await?;
-    for position in 0..2 {
-        let output = root.path().join(format!("paper-bundle-{position}"));
-        finalize::<SecpSecqBackend>(
-            &ceremony.genesis.path,
-            &ceremony.ceremony,
-            &ceremony.identities[position].join(IDENTITY_SECRET_FILE),
-            &dealings[position].join(PRIVATE_STATE_FILE),
-            &dealing_paths(&dealings, DECRYPTION_DEALING_FILE),
-            &dealing_paths(&dealings, CONTEXT_DEALING_FILE),
-            &accepted.transcript,
-            &accepted.acceptances,
-            &output,
-        )?;
-    }
     Ok(())
 }

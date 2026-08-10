@@ -228,14 +228,10 @@ impl GenesisConfig {
             );
         }
 
-        // Build the native faucet and the operator owning it. The operator is deployed alongside
-        // the faucet since it holds the only key permitted to mint.
-        let NativeFaucet {
-            faucet: native_faucet_account,
-            symbol,
-            operator: operator_account,
-            operator_secret,
-        } = build_native_faucet()?;
+        // The operator is built first, since the faucet it owns commits to its id. Both are
+        // deployed at genesis: the operator holds the only key permitted to mint.
+        let (operator_account, operator_secret) = build_faucet_operator()?;
+        let (native_faucet_account, symbol) = build_native_faucet(operator_account.id())?;
 
         secrets.push((
             FAUCET_OPERATOR_FILE_NAME.to_string(),
@@ -401,44 +397,47 @@ pub struct FeeParameterConfig {
     verification_base_fee: u32,
 }
 
-// NATIVE FAUCET
+// FAUCET OPERATOR
 // ================================================================================================
 
-/// The native faucet together with the operator account owning it.
-struct NativeFaucet {
-    /// The faucet whose asset is used to pay fees.
-    faucet: Account,
-    /// Token symbol of the faucet's asset.
-    symbol: TokenSymbolStr,
-    /// The account owning the faucet, and the only one permitted to mint from it.
-    operator: Account,
-    /// Signing key of the operator account.
-    operator_secret: RpoSecretKey,
-}
-
-/// Builds the native faucet as a network account, along with the operator account owning it.
+/// Builds the account owning the native faucet, returning it along with its signing key.
 ///
-/// The faucet is authenticated as a network account and therefore carries no signing key of its
-/// own. Minting is gated on the operator, which holds the only key, so the operator must be part
-/// of the genesis state for the faucet to be usable.
+/// The operator holds the only key permitted to mint from the native faucet, so it must be part of
+/// the genesis state for the faucet to be usable.
 ///
-/// The operator's nonce is set to `1` here, marking it as deployed at genesis. The faucet's nonce
-/// is set by the caller, together with its token supply.
-fn build_native_faucet() -> Result<NativeFaucet, GenesisConfigError> {
+/// Its nonce is set to `1`, marking it as deployed at genesis.
+fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError> {
     let mut rng = ChaCha20Rng::from_seed(rand::random());
 
-    let operator_secret = RpoSecretKey::with_rng(&mut rng);
-    let operator_auth = AuthSingleSig::new(Approver::new(
-        operator_secret.public_key().into(),
+    let secret_key = RpoSecretKey::with_rng(&mut rng);
+    let auth = AuthSingleSig::new(Approver::new(
+        secret_key.public_key().into(),
         AuthScheme::Falcon512Poseidon2,
     ));
-    let operator_seed: [u8; 32] = rng.random();
-    let mut operator = AccountBuilder::new(operator_seed)
+    let init_seed: [u8; 32] = rng.random();
+    let mut operator = AccountBuilder::new(init_seed)
         .account_type(AccountType::Public)
-        .with_component(operator_auth)
+        .with_component(auth)
         .with_component(BasicWallet)
         .build()?;
     operator.set_nonce(ONE)?;
+
+    Ok((operator, secret_key))
+}
+
+// NATIVE FAUCET
+// ================================================================================================
+
+/// Builds the native faucet as a network account owned by `operator_id`.
+///
+/// The faucet is authenticated as a network account and therefore carries no signing key of its
+/// own; minting is gated on the operator instead.
+///
+/// The faucet's nonce is set by the caller, together with its token supply.
+fn build_native_faucet(
+    operator_id: AccountId,
+) -> Result<(Account, TokenSymbolStr), GenesisConfigError> {
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
 
     let symbol = TokenSymbolStr::from_str(DEFAULT_NATIVE_FAUCET_SYMBOL)?;
     let faucet_component = FungibleFaucet::builder()
@@ -473,7 +472,7 @@ fn build_native_faucet() -> Result<NativeFaucet, GenesisConfigError> {
         ])
         .into();
     let fee_policy_manager = FeePolicyManager::builder()
-        .fee_faucet_id(operator.id())
+        .fee_faucet_id(operator_id)
         .active_fee_policy(fee_policy)
         .build();
 
@@ -481,19 +480,14 @@ fn build_native_faucet() -> Result<NativeFaucet, GenesisConfigError> {
     let faucet = create_network_fungible_faucet(
         faucet_seed,
         faucet_component,
-        AccessControl::Ownable2Step { owner: operator.id() },
+        AccessControl::Ownable2Step { owner: operator_id },
         policies,
         fee_policy_manager,
     )?;
 
     debug_assert_eq!(faucet.nonce(), Felt::ZERO);
 
-    Ok(NativeFaucet {
-        faucet,
-        symbol,
-        operator,
-        operator_secret,
-    })
+    Ok((faucet, symbol))
 }
 
 // FUNGIBLE FAUCET CONFIG

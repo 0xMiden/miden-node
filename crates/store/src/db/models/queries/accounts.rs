@@ -1736,8 +1736,21 @@ fn prune_account_storage_map_values(
 /// inside the window, all open-ended (current) rows, and each account's baseline row — the row
 /// still valid at the cutoff even though it was written before it.
 ///
-/// The forced `idx_accounts_code_validity` covering index keeps the subquery an index-only range
-/// scan, sized by rows valid at or after the cutoff rather than total history.
+/// The prune is churn-driven: a code pinned at the previous prune (some row with
+/// `valid_until > prev_cutoff` referenced it) can only become collectable now if the row holding
+/// its maximal `valid_until` expired inside `(prev_cutoff, cutoff_block]`. Candidate codes are
+/// therefore collected from that window — an `idx_accounts_code_validity` range scan sized by
+/// churn since the previous prune — and each is deleted only if the `idx_accounts_code_probe`
+/// existence probe finds no row still referencing it past the cutoff. The previous cutoff is
+/// persisted in `prune_progress` within the same transaction; when absent (first prune after
+/// migration, or a fresh database) a full pass over all rows valid past the cutoff runs instead.
+///
+/// Correctness of the windowed candidate set rests on two invariants:
+/// - Rows are only ever closed to the `block_num` of the block currently being applied, which is
+///   always above the cutoff, so every expiry crosses the window of some later prune. A write path
+///   that back-dated `valid_until` below the current cutoff would leak the code forever.
+/// - Every `account_codes` row is inserted alongside an `accounts` row referencing it (see
+///   [`upsert_accounts`]); an orphan code with no referencing row would never become a candidate.
 #[miden_instrument(
     target = COMPONENT,
     err,
@@ -1751,16 +1764,63 @@ fn prune_account_codes(
 ) -> Result<usize, DatabaseError> {
     use diesel::sql_types::BigInt;
 
-    diesel::sql_query(
-        "DELETE FROM account_codes \
-         WHERE code_commitment NOT IN ( \
-             SELECT DISTINCT code_commitment \
-             FROM accounts INDEXED BY idx_accounts_code_validity \
-             WHERE code_commitment IS NOT NULL \
-               AND valid_until > ?1 \
-         )",
-    )
-    .bind::<BigInt, _>(cutoff_block)
-    .execute(conn)
-    .map_err(DatabaseError::Diesel)
+    let prev_cutoff: Option<i64> =
+        SelectDsl::select(schema::prune_progress::table, schema::prune_progress::codes_cutoff)
+            .first(conn)
+            .optional()
+            .map_err(DatabaseError::Diesel)?;
+
+    let deleted = match prev_cutoff {
+        // Codes are already pruned through this cutoff and nothing can become collectable while the
+        // cutoff stands still, so skip without moving the marker backwards.
+        Some(prev_cutoff) if prev_cutoff >= cutoff_block => return Ok(0),
+        Some(prev_cutoff) => diesel::sql_query(
+            "DELETE FROM account_codes \
+             WHERE code_commitment IN ( \
+                 SELECT DISTINCT code_commitment \
+                 FROM accounts INDEXED BY idx_accounts_code_validity \
+                 WHERE code_commitment IS NOT NULL \
+                   AND valid_until > ?1 \
+                   AND valid_until <= ?2 \
+             ) \
+             AND NOT EXISTS ( \
+                 SELECT 1 \
+                 FROM accounts INDEXED BY idx_accounts_code_probe \
+                 WHERE accounts.code_commitment = account_codes.code_commitment \
+                   AND accounts.valid_until > ?2 \
+             )",
+        )
+        .bind::<BigInt, _>(prev_cutoff)
+        .bind::<BigInt, _>(cutoff_block)
+        .execute(conn)
+        .map_err(DatabaseError::Diesel)?,
+        // No recorded cutoff: full pass. The forced `idx_accounts_code_validity` covering index
+        // keeps the subquery an index-only range scan, sized by rows valid at or after the cutoff
+        // rather than total history.
+        None => diesel::sql_query(
+            "DELETE FROM account_codes \
+             WHERE code_commitment NOT IN ( \
+                 SELECT DISTINCT code_commitment \
+                 FROM accounts INDEXED BY idx_accounts_code_validity \
+                 WHERE code_commitment IS NOT NULL \
+                   AND valid_until > ?1 \
+             )",
+        )
+        .bind::<BigInt, _>(cutoff_block)
+        .execute(conn)
+        .map_err(DatabaseError::Diesel)?,
+    };
+
+    diesel::insert_into(schema::prune_progress::table)
+        .values((
+            schema::prune_progress::id.eq(0),
+            schema::prune_progress::codes_cutoff.eq(cutoff_block),
+        ))
+        .on_conflict(schema::prune_progress::id)
+        .do_update()
+        .set(schema::prune_progress::codes_cutoff.eq(cutoff_block))
+        .execute(conn)
+        .map_err(DatabaseError::Diesel)?;
+
+    Ok(deleted)
 }

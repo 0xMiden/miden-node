@@ -74,10 +74,7 @@ struct GenericAccountConfig {
 pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
-    /// Override the native faucet with a pre-built faucet account file.
-    ///
-    /// The account is included in the genesis state as-is, and no faucet operator is generated:
-    /// whoever supplied the file already holds its keys.
+    /// Override the native faucet with a custom faucet account.
     ///
     /// If unspecified, the native faucet is generated as a network account owned by a generated
     /// faucet operator account, using:
@@ -468,8 +465,6 @@ fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError
 ///
 /// The faucet is authenticated as a network account and therefore carries no signing key of its
 /// own; minting is gated on the operator instead.
-///
-/// The faucet's nonce is set by the caller, together with its token supply.
 fn build_native_faucet(
     operator_id: AccountId,
 ) -> Result<(Account, TokenSymbolStr), GenesisConfigError> {
@@ -493,20 +488,17 @@ fn build_native_faucet(
         .active_receive_policy(TransferPolicy::allow_all())
         .build();
 
-    // The faucet issues the network's fee asset, so it cannot charge fees in an asset issued by
-    // anyone else, and it cannot name itself: the fee faucet id is part of the account's storage,
-    // and therefore of the account id being derived. Every note the faucet accepts is instead
-    // scheduled free, which makes the fee asset inert. The id below is only a placeholder to
-    // satisfy the required setter.
-    //
-    // A script root without a schedule entry aborts fee estimation rather than defaulting to free,
-    // so every note allowlisted by `create_network_fungible_faucet` must be listed here.
     let fee_policy = BasicConstantFeePolicy::new()
         .with_fees([
             (MintNote::script_root(), AssetAmount::ZERO),
             (BurnNote::script_root(), AssetAmount::ZERO),
         ])
         .into();
+    // The faucet should charge fees in its own asset, but it cannot name itself, since the fee
+    // faucet id is part of the storage this account id is derived from, so the id is not known yet.
+    // We use the operator id for now. This only works because the fees above are zero, since a
+    // network account skips the fee asset check when a transaction pays nothing. The id cannot be
+    // changed later without deploying a new faucet, so revisit this before charging any fees.
     let fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(operator_id)
         .active_fee_policy(fee_policy)

@@ -447,7 +447,6 @@ async fn accept_for_all<B>(
 ) -> TestResultWith<AcceptedTranscript>
 where
     B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
 {
     let mut outputs = Vec::new();
     for (position, signing_key) in ceremony.genesis.signing_keys.iter().enumerate() {
@@ -683,8 +682,7 @@ async fn finalize_rejects_tampered_dealing_without_partial_output() -> TestResul
 
 #[tokio::test]
 async fn accept_rejects_a_dealing_from_another_session() -> TestResult {
-    type FastDealerMessage =
-        DealerMessage<StorageGroup, <ShareOpeningBackend as EvrfProofBackend<StorageGroup>>::Proof>;
+    type FastDealerMessage = DealerMessage<StorageGroup>;
 
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;

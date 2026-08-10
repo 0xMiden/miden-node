@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, ensure};
-use golden_core::wire::{WireMessage, from_wire_bytes as from_core_wire_bytes, to_wire_bytes};
+use golden_core::wire::{from_wire_bytes as from_core_wire_bytes, to_wire_bytes};
 use golden_core::{
     DealerMessage,
     DkgConfig,
@@ -331,8 +331,8 @@ struct TranscriptAcceptances {
     acceptances: Vec<TranscriptAcceptance>,
 }
 
-struct DealingSet<P> {
-    messages: BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, P>>,
+struct DealingSet {
+    messages: BTreeMap<ParticipantIndex, DealerMessage<StorageGroup>>,
     hashes: Vec<TranscriptDealing>,
 }
 
@@ -579,7 +579,6 @@ fn deal<B>(
 ) -> anyhow::Result<()>
 where
     B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
 {
     let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
     let identity_secret_bytes =
@@ -654,7 +653,6 @@ async fn accept_transcript<B>(
 ) -> anyhow::Result<()>
 where
     B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
 {
     let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
     let validator_public_key = signer.public_key();
@@ -713,7 +711,6 @@ fn finalize<B>(
 ) -> anyhow::Result<()>
 where
     B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
 {
     let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
     let identity_secret_bytes =
@@ -736,16 +733,15 @@ where
         sha256(&transcript_bytes),
     )?;
 
-    let decryption =
-        read_dealings::<B>(decryption_dealing_paths, ceremony.manifest.participants.len())?;
-    let context = read_dealings::<B>(context_dealing_paths, ceremony.manifest.participants.len())?;
-    validate_dealings_against_transcript::<B>(
+    let decryption = read_dealings(decryption_dealing_paths, ceremony.manifest.participants.len())?;
+    let context = read_dealings(context_dealing_paths, ceremony.manifest.participants.len())?;
+    validate_dealings_against_transcript(
         &decryption.messages,
         &decryption.hashes,
         &transcript.decryption_dealings,
         &transcript.decryption_transcript_root,
     )?;
-    validate_dealings_against_transcript::<B>(
+    validate_dealings_against_transcript(
         &context.messages,
         &context.hashes,
         &transcript.context_dealings,
@@ -1177,18 +1173,14 @@ fn participant_for_identity(
 }
 
 /// Reads exactly one public dealing from every ceremony participant.
-fn read_dealings<B>(paths: &[PathBuf], expected: usize) -> anyhow::Result<DealingSet<B::Proof>>
-where
-    B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
-{
+fn read_dealings(paths: &[PathBuf], expected: usize) -> anyhow::Result<DealingSet> {
     ensure!(paths.len() == expected, "expected {expected} dealings, got {}", paths.len());
     let mut dealings = BTreeMap::new();
     let mut hashes = BTreeMap::new();
     for path in paths {
         let bytes = fs_err::read(path)
             .with_context(|| format!("failed to read dealing {}", path.display()))?;
-        let message = from_core_wire_bytes::<DealerMessage<StorageGroup, B::Proof>>(&bytes)
+        let message = from_core_wire_bytes::<DealerMessage<StorageGroup>>(&bytes)
             .with_context(|| format!("invalid dealing {}", path.display()))?;
         let dealer = message.dealer;
         ensure!(
@@ -1217,11 +1209,10 @@ fn build_transcript<B>(
 ) -> anyhow::Result<(CeremonyTranscript, Vec<u8>)>
 where
     B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
 {
     let expected = ceremony.manifest.participants.len();
-    let decryption = read_dealings::<B>(decryption_paths, expected)?;
-    let context = read_dealings::<B>(context_paths, expected)?;
+    let decryption = read_dealings(decryption_paths, expected)?;
+    let context = read_dealings(context_paths, expected)?;
     for message in decryption.messages.values() {
         verify_dealing::<StorageGroup, B>(message, &ceremony.decryption_config)
             .context("invalid decryption dealing")?;
@@ -1355,16 +1346,12 @@ fn validate_transcript_acceptances(
 }
 
 /// Recomputes one round's canonical dealing hashes and completion root.
-fn validate_dealings_against_transcript<B>(
-    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, B::Proof>>,
+fn validate_dealings_against_transcript(
+    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup>>,
     actual_hashes: &[TranscriptDealing],
     expected_hashes: &[TranscriptDealing],
     expected_root: &str,
-) -> anyhow::Result<()>
-where
-    B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
-{
+) -> anyhow::Result<()> {
     ensure!(actual_hashes == expected_hashes, "dealings do not match accepted transcript");
     ensure!(
         hex::encode(completion_root(dealings)) == expected_root,
@@ -1374,9 +1361,9 @@ where
 }
 
 /// Derives the EHTDH1 public key set from the accepted Feldman commitments.
-fn public_key_set_from_dealings<DP, CP>(
-    decryption: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, DP>>,
-    context: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, CP>>,
+fn public_key_set_from_dealings(
+    decryption: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup>>,
+    context: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup>>,
     config: &DkgConfig<StorageGroup>,
 ) -> anyhow::Result<PublicKeySet<StorageGroup>> {
     let (joint_public_key, decryption_shares) = aggregate_public_output(decryption, config)?;
@@ -1407,8 +1394,8 @@ fn public_key_set_from_dealings<DP, CP>(
 }
 
 /// Aggregates the public key and participant shares from one dealing round.
-fn aggregate_public_output<P>(
-    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, P>>,
+fn aggregate_public_output(
+    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup>>,
     config: &DkgConfig<StorageGroup>,
 ) -> anyhow::Result<PublicOutput> {
     let mut public_key = StorageGroup::identity();
@@ -1427,9 +1414,7 @@ fn aggregate_public_output<P>(
 }
 
 /// Reproduces the completion transcript root from public dealings.
-fn completion_root<P>(
-    dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, P>>,
-) -> [u8; 32] {
+fn completion_root(dealings: &BTreeMap<ParticipantIndex, DealerMessage<StorageGroup>>) -> [u8; 32] {
     let mut transcript = TranscriptBuilder::with_prefix(b"golden-core-v1", b"completion");
     transcript.bytes(b"backend", StorageGroup::BACKEND_ID.as_bytes());
     transcript.usize(b"dealings-len", dealings.len());
@@ -1457,12 +1442,11 @@ fn complete_round<B>(
     identity_secret: &StorageScalar,
     private_share: &StorageScalar,
     expected_own_message_sha256: [u8; 32],
-    mut dealings: BTreeMap<ParticipantIndex, DealerMessage<StorageGroup, B::Proof>>,
+    mut dealings: BTreeMap<ParticipantIndex, DealerMessage<StorageGroup>>,
     config: &DkgConfig<StorageGroup>,
 ) -> anyhow::Result<golden_core::DkgOutput<StorageGroup>>
 where
     B: EvrfProofBackend<StorageGroup>,
-    B::Proof: WireMessage,
 {
     let own_message = dealings.remove(&participant).context("missing local dealing")?;
     ensure!(

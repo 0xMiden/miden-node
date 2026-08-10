@@ -3,6 +3,8 @@
 mod codec;
 mod in_list;
 mod pool;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 mod tx;
 
 pub use codec::{DbValue, DbValueRef, FromSqlValue, ToSqlValue};

@@ -8,9 +8,18 @@
 //! [`impl_blob_codec!`](crate::impl_blob_codec) macro generates both traits for such a type. Scalar
 //! types map onto an SQLite `INTEGER`/`TEXT` and implement the traits directly (see the impls ported
 //! from the legacy `SqlTypeConvert` below).
+//!
+//! Integer primitives read back range-checked rather than cast, so a column holding a value outside
+//! the target type's range errors instead of silently truncating. The one place a lossy conversion
+//! is deliberate is where the stored encoding itself is a bit-pattern wrap (`NoteTag`, `Felt`);
+//! those are documented at the impl.
 
 use std::rc::Rc;
 
+use miden_protocol::Felt;
+use miden_protocol::account::StorageSlotName;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::NoteTag;
 use rusqlite::ToSql;
 use rusqlite::types::{ToSqlOutput, Value, ValueRef};
 
@@ -142,6 +151,45 @@ impl FromSqlValue for i64 {
     }
 }
 
+// The unsigned integers widen losslessly on the write side and are range-checked on the read side,
+// so a column holding a value outside the type's range errors instead of silently truncating.
+
+impl ToSqlValue for u8 {
+    fn to_sql_value(&self) -> DbValue {
+        DbValue::integer(i64::from(*self))
+    }
+}
+
+impl FromSqlValue for u8 {
+    fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
+        Self::try_from(value.as_i64()?).map_err(|err| DatabaseError::deserialization("u8", err))
+    }
+}
+
+impl ToSqlValue for u16 {
+    fn to_sql_value(&self) -> DbValue {
+        DbValue::integer(i64::from(*self))
+    }
+}
+
+impl FromSqlValue for u16 {
+    fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
+        Self::try_from(value.as_i64()?).map_err(|err| DatabaseError::deserialization("u16", err))
+    }
+}
+
+impl ToSqlValue for u32 {
+    fn to_sql_value(&self) -> DbValue {
+        DbValue::integer(i64::from(*self))
+    }
+}
+
+impl FromSqlValue for u32 {
+    fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
+        Self::try_from(value.as_i64()?).map_err(|err| DatabaseError::deserialization("u32", err))
+    }
+}
+
 impl ToSqlValue for bool {
     fn to_sql_value(&self) -> DbValue {
         DbValue::integer(i64::from(*self))
@@ -203,6 +251,74 @@ impl<T: FromSqlValue> FromSqlValue for Option<T> {
     }
 }
 
+// DOMAIN SCALAR IMPLS
+// =================================================================================================
+//
+// Domain types stored in an `INTEGER`/`TEXT` column rather than as a BLOB.
+
+impl ToSqlValue for BlockNumber {
+    fn to_sql_value(&self) -> DbValue {
+        DbValue::integer(i64::from(self.as_u32()))
+    }
+}
+
+impl FromSqlValue for BlockNumber {
+    fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
+        u32::from_sql_value(value).map(BlockNumber::from)
+    }
+}
+
+impl ToSqlValue for NoteTag {
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "tags occupy the full u32 range and are stored as the wrapped i32 bit pattern"
+    )]
+    fn to_sql_value(&self) -> DbValue {
+        DbValue::integer(i64::from(self.as_u32() as i32))
+    }
+}
+
+impl FromSqlValue for NoteTag {
+    #[expect(clippy::cast_sign_loss, reason = "reverses the u32 -> i32 wrap applied on write")]
+    fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
+        let raw = value.as_i64()?;
+        let raw =
+            i32::try_from(raw).map_err(|err| DatabaseError::deserialization("NoteTag", err))?;
+        Ok(NoteTag::new(raw as u32))
+    }
+}
+
+impl ToSqlValue for StorageSlotName {
+    fn to_sql_value(&self) -> DbValue {
+        DbValue::text(self.as_str().to_owned())
+    }
+}
+
+impl FromSqlValue for StorageSlotName {
+    fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
+        StorageSlotName::new(value.as_str()?)
+            .map_err(|err| DatabaseError::deserialization("StorageSlotName", err))
+    }
+}
+
+/// A field element is stored as the bit reinterpretation of its canonical `u64`.
+impl ToSqlValue for Felt {
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "canonical field elements are stored as the wrapped i64 bit pattern"
+    )]
+    fn to_sql_value(&self) -> DbValue {
+        DbValue::integer(self.as_canonical_u64() as i64)
+    }
+}
+
+impl FromSqlValue for Felt {
+    #[expect(clippy::cast_sign_loss, reason = "reverses the u64 -> i64 wrap applied on write")]
+    fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
+        Felt::new(value.as_i64()? as u64).map_err(|err| DatabaseError::deserialization("Felt", err))
+    }
+}
+
 // BLOB CODEC MACRO
 // =================================================================================================
 
@@ -243,14 +359,175 @@ macro_rules! impl_blob_codec {
 // rule does not force each consumer to redeclare them.
 impl_blob_codec!(
     miden_protocol::block::BlockHeader,
+    miden_protocol::block::BlockSignatures,
     miden_protocol::block::ValidatorKeys,
     miden_protocol::account::Account,
+    miden_protocol::account::AccountCode,
     miden_protocol::account::AccountId,
+    miden_protocol::account::AccountStorageHeader,
+    miden_protocol::account::StorageMapKey,
+    miden_protocol::asset::Asset,
     miden_protocol::transaction::TransactionId,
     miden_protocol::note::Note,
+    miden_protocol::note::NoteAssets,
+    miden_protocol::note::NoteAttachments,
     miden_protocol::note::NoteId,
     miden_protocol::note::NoteScript,
+    miden_protocol::note::NoteStorage,
     miden_protocol::note::Nullifier,
+    miden_protocol::crypto::merkle::SparseMerklePath,
     miden_protocol::crypto::merkle::mmr::PartialMmr,
     miden_protocol::Word,
 );
+
+// TESTS
+// =================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::Word;
+    use miden_protocol::block::BlockNumber;
+    use rusqlite::types::{Value, ValueRef};
+
+    use super::*;
+    use crate::SqlTypeConvert;
+
+    /// Returns the `i64` a value binds to, failing the test for non-integer values.
+    fn bound_integer(value: &impl ToSqlValue) -> i64 {
+        match value.to_sql_value() {
+            DbValue::Single(Value::Integer(raw)) => raw,
+            other => panic!("expected an INTEGER binding, got {other:?}"),
+        }
+    }
+
+    /// Reads a value back from the `i64` a column holds.
+    fn read_integer<T: FromSqlValue>(raw: i64) -> Result<T, DatabaseError> {
+        T::from_sql_value(DbValueRef::new(ValueRef::Integer(raw)))
+    }
+
+    // ENCODING PARITY WITH `SqlTypeConvert`
+    // ---------------------------------------------------------------------------------------------
+    // These are the load-bearing tests of this module: the codec must write and read exactly the
+    // bytes the diesel-era `SqlTypeConvert` impls did, or it silently misreads existing databases.
+
+    #[test]
+    fn block_number_matches_sql_type_convert() {
+        for block_num in [
+            BlockNumber::GENESIS,
+            BlockNumber::from(1),
+            BlockNumber::from(u32::MAX - 1),
+            BlockNumber::from(u32::MAX),
+        ] {
+            let raw = bound_integer(&block_num);
+            assert_eq!(raw, block_num.to_raw_sql(), "write side diverged for {block_num}");
+            assert_eq!(
+                read_integer::<BlockNumber>(raw).unwrap(),
+                BlockNumber::from_raw_sql(raw).unwrap(),
+                "read side diverged for {block_num}",
+            );
+        }
+    }
+
+    #[test]
+    fn note_tag_matches_sql_type_convert() {
+        // The tags above `i32::MAX` are the interesting ones: they are stored as a negative
+        // integer, and a range-checked (rather than wrapping) read would reject them.
+        for tag in [
+            NoteTag::new(0),
+            NoteTag::new(1),
+            NoteTag::new(i32::MAX as u32),
+            NoteTag::new(1 << 31),
+            NoteTag::new(u32::MAX),
+        ] {
+            let raw = bound_integer(&tag);
+            assert_eq!(raw, i64::from(tag.to_raw_sql()), "write side diverged for {tag:?}");
+            assert_eq!(
+                read_integer::<NoteTag>(raw).unwrap(),
+                tag,
+                "read side diverged for {tag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn felt_matches_sql_type_convert() {
+        // `Felt::MAX` is the largest canonical element; it exceeds `i64::MAX` and is therefore
+        // stored as a negative integer.
+        for felt in [Felt::ZERO, Felt::ONE, Felt::from_u32(u32::MAX), Felt::MAX] {
+            let raw = bound_integer(&felt);
+            #[expect(clippy::cast_possible_wrap, reason = "mirrors the legacy nonce encoding")]
+            let legacy = felt.as_canonical_u64() as i64;
+            assert_eq!(raw, legacy, "write side diverged for {felt}");
+            assert_eq!(read_integer::<Felt>(raw).unwrap(), felt, "read side diverged for {felt}");
+        }
+    }
+
+    #[test]
+    fn storage_slot_name_round_trips_as_text() {
+        let name = StorageSlotName::new("some_component::some_slot").unwrap();
+        let DbValue::Single(Value::Text(text)) = name.to_sql_value() else {
+            panic!("storage slot names are stored as TEXT");
+        };
+        assert_eq!(text, String::from(name.clone()));
+        assert_eq!(
+            StorageSlotName::from_sql_value(DbValueRef::new(ValueRef::Text(text.as_bytes())))
+                .unwrap(),
+            name,
+        );
+    }
+
+    // RANGE CHECKING
+    // ---------------------------------------------------------------------------------------------
+
+    #[test]
+    fn unsigned_ints_round_trip_at_their_bounds() {
+        assert_eq!(read_integer::<u8>(bound_integer(&u8::MAX)).unwrap(), u8::MAX);
+        assert_eq!(read_integer::<u16>(bound_integer(&u16::MAX)).unwrap(), u16::MAX);
+        assert_eq!(read_integer::<u32>(bound_integer(&u32::MAX)).unwrap(), u32::MAX);
+        assert_eq!(read_integer::<u8>(0).unwrap(), 0);
+    }
+
+    #[test]
+    fn out_of_range_ints_error_instead_of_truncating() {
+        // A cast would have yielded 0, 0, and `u32::MAX` respectively.
+        assert_matches::assert_matches!(
+            read_integer::<u8>(256),
+            Err(DatabaseError::ConversionSqlToRust { to: "u8", .. })
+        );
+        assert_matches::assert_matches!(
+            read_integer::<u16>(65_536),
+            Err(DatabaseError::ConversionSqlToRust { to: "u16", .. })
+        );
+        assert_matches::assert_matches!(
+            read_integer::<u32>(-1),
+            Err(DatabaseError::ConversionSqlToRust { to: "u32", .. })
+        );
+    }
+
+    #[test]
+    fn out_of_range_block_number_errors() {
+        // `BlockNumber` is a u32 on the wire; a wider column value is corruption, not a wrap.
+        assert_matches::assert_matches!(
+            read_integer::<BlockNumber>(i64::from(u32::MAX) + 1),
+            Err(DatabaseError::ConversionSqlToRust { to: "u32", .. })
+        );
+        assert_matches::assert_matches!(
+            read_integer::<BlockNumber>(-1),
+            Err(DatabaseError::ConversionSqlToRust { to: "u32", .. })
+        );
+    }
+
+    #[test]
+    fn blob_codec_round_trips_and_reports_context_on_failure() {
+        let word = Word::from([1u32, 2, 3, 4]);
+        let DbValue::Single(Value::Blob(bytes)) = word.to_sql_value() else {
+            panic!("words are stored as BLOBs");
+        };
+        assert_eq!(Word::from_sql_value(DbValueRef::new(ValueRef::Blob(&bytes))).unwrap(), word);
+
+        assert_matches::assert_matches!(
+            Word::from_sql_value(DbValueRef::new(ValueRef::Blob(&[0xff]))),
+            Err(DatabaseError::ConversionSqlToRust { to: "miden_protocol::Word", .. })
+        );
+    }
+}

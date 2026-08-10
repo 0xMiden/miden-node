@@ -65,17 +65,21 @@ pub fn generate(
         account_file.write(account_path)?;
     }
 
-    // The native faucet is a network account and holds no key of its own, so it is not part of the
-    // account secrets. Write it out regardless, since consumers need its state and id.
     let native_faucet_id = genesis_state.fee_parameters.fee_faucet_id();
-    let native_faucet = genesis_state
-        .accounts
-        .iter()
-        .find(|account| account.id() == native_faucet_id)
-        .context("the native faucet is missing from the genesis state")?;
-    AccountFile::new(native_faucet.clone(), vec![])
-        .write(accounts_directory.join(NATIVE_FAUCET_FILE_NAME))
-        .context("failed to write the native faucet account file")?;
+
+    // A generated native faucet is a network account and holds no key of its own, so it is not part
+    // of the account secrets. Write it out regardless, since consumers need its state and id. An
+    // imported faucet already exists on disk, and is identified by the presence of an operator.
+    if operator_id.is_some() {
+        let native_faucet = genesis_state
+            .accounts
+            .iter()
+            .find(|account| account.id() == native_faucet_id)
+            .context("the native faucet is missing from the genesis state")?;
+        AccountFile::new(native_faucet.clone(), vec![])
+            .write(accounts_directory.join(NATIVE_FAUCET_FILE_NAME))
+            .context("failed to write the native faucet account file")?;
+    }
 
     let genesis_block = genesis_state.into_block().context("failed to build the genesis block")?;
 

@@ -22,6 +22,8 @@ pub enum GenesisConfigError {
     ConfigFileRead(#[source] std::io::Error, PathBuf),
     #[error("failed to read account file at {1}")]
     AccountFileRead(#[source] std::io::Error, PathBuf),
+    #[error("native faucet from file {path} is not a fungible faucet")]
+    NativeFaucetNotFungible { path: PathBuf },
     #[error("account translation from config to state failed")]
     Account(#[from] AccountError),
     #[error("asset translation from config to state failed")]

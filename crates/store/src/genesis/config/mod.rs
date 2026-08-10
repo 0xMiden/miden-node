@@ -74,18 +74,19 @@ struct GenericAccountConfig {
 pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
-    /// Path to a pre-built native faucet account file.
+    /// Override the native faucet with a pre-built faucet account file.
     ///
-    /// Currently ignored: the native faucet is always generated as a network account, using
+    /// The account is included in the genesis state as-is, and no faucet operator is generated:
+    /// whoever supplied the file already holds its keys.
+    ///
+    /// If unspecified, the native faucet is generated as a network account owned by a generated
+    /// faucet operator account, using:
     ///
     /// ```toml
     /// symbol     = "MIDEN"
     /// decimals   = 6
     /// max_supply = 100_000_000_000_000_000
     /// ```
-    ///
-    /// The field is retained so that configurations setting it keep parsing. Setting it logs a
-    /// warning.
     #[serde(default)]
     native_faucet: Option<PathBuf>,
     fee_parameters: FeeParameterConfig,
@@ -219,25 +220,14 @@ impl GenesisConfig {
         // accounts/sign transactions
         let mut secrets = Vec::new();
 
-        if let Some(path) = native_faucet {
-            tracing::warn!(
-                target: LOG_TARGET,
-                path = %path.display(),
-                "`native_faucet` is ignored; the native faucet is always generated as a network \
-                 account owned by a generated operator account",
-            );
-        }
+        // Handle native faucet: generate a network faucet and its operator, or load from file
+        let (native_faucet_account, symbol, faucet_operator) =
+            NativeFaucetConfig(native_faucet).build_account(&config_dir)?;
 
-        // The operator is built first, since the faucet it owns commits to its id. Both are
-        // deployed at genesis: the operator holds the only key permitted to mint.
-        let (operator_account, operator_secret) = build_faucet_operator()?;
-        let (native_faucet_account, symbol) = build_native_faucet(operator_account.id())?;
-
-        secrets.push((
-            FAUCET_OPERATOR_FILE_NAME.to_string(),
-            operator_account.id(),
-            operator_secret,
-        ));
+        let operator_account = faucet_operator.map(|(operator, operator_secret)| {
+            secrets.push((FAUCET_OPERATOR_FILE_NAME.to_string(), operator.id(), operator_secret));
+            operator
+        });
 
         let native_faucet_account_id = native_faucet_account.id();
         faucet_accounts.insert(symbol.clone(), native_faucet_account);
@@ -365,7 +355,7 @@ impl GenesisConfig {
             all_accounts.push(faucet_account);
         }
         // Ensure the faucets always precede the wallets referencing them
-        all_accounts.push(operator_account);
+        all_accounts.extend(operator_account);
         all_accounts.extend(wallet_accounts);
 
         // Append file-loaded accounts as-is
@@ -395,6 +385,52 @@ impl GenesisConfig {
 pub struct FeeParameterConfig {
     /// Verification base fee, in units of smallest denomination.
     verification_base_fee: u32,
+}
+
+// NATIVE FAUCET CONFIG
+// ================================================================================================
+
+/// The native faucet and its token symbol, along with the operator account owning it and that
+/// operator's signing key. The operator is only present when the faucet is generated.
+type NativeFaucetAccounts = (Account, TokenSymbolStr, Option<(Account, RpoSecretKey)>);
+
+/// Wraps an optional path to a pre-built faucet account file.
+///
+/// When no path is provided, a network faucet is generated together with the operator account
+/// owning it.
+struct NativeFaucetConfig(Option<PathBuf>);
+
+impl NativeFaucetConfig {
+    /// Build or load the native faucet account.
+    ///
+    /// For `None`, generates a network faucet plus the operator account owning it, and returns the
+    /// operator alongside its signing key. The operator must be part of the genesis state, since it
+    /// holds the only key permitted to mint.
+    ///
+    /// For `Some(path)`, loads the account from disk and validates it is a fungible faucet. No
+    /// operator is generated: whoever supplied the file already holds the faucet's keys.
+    fn build_account(self, config_dir: &Path) -> Result<NativeFaucetAccounts, GenesisConfigError> {
+        match self.0 {
+            None => {
+                // The operator is built first, since the faucet it owns commits to its id.
+                let (operator, operator_secret) = build_faucet_operator()?;
+                let (faucet, symbol) = build_native_faucet(operator.id())?;
+                Ok((faucet, symbol, Some((operator, operator_secret))))
+            },
+            Some(path) => {
+                let full_path = config_dir.join(&path);
+                let account_file = AccountFile::read(&full_path)
+                    .map_err(|e| GenesisConfigError::AccountFileRead(e, full_path.clone()))?;
+                let account = account_file.account;
+
+                let faucet = FungibleFaucet::try_from(&account).map_err(|_| {
+                    GenesisConfigError::NativeFaucetNotFungible { path: full_path.clone() }
+                })?;
+                let symbol = TokenSymbolStr::from(faucet.symbol().clone());
+                Ok((account, symbol, None))
+            },
+        }
+    }
 }
 
 // FAUCET OPERATOR

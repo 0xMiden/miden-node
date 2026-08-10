@@ -58,10 +58,10 @@ miden-validator genesis \
   --config genesis.toml
 ```
 
-The native faucet is built as a network account and holds no key of its own; minting from it is restricted to the faucet
-operator account generated alongside it. Both are written to the accounts directory as `native_faucet.mac` and
-`faucet_operator.mac`, and their account ids are printed. The operator file carries the only signing key permitted to
-mint, so treat it as a secret.
+Unless the configuration sets `native_faucet` to a pre-built account file, the native faucet is generated as a network
+account and holds no key of its own; minting from it is restricted to the faucet operator account generated alongside
+it. Both are written to the accounts directory as `native_faucet.mac` and `faucet_operator.mac`, and their account ids
+are printed. The operator file carries the only signing key permitted to mint, so treat it as a secret.
 
 Upload `genesis-data/genesis.dat` so it is served at:
 

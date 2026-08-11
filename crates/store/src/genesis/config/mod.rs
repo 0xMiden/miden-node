@@ -426,11 +426,10 @@ impl NativeFaucetConfig {
     /// Build or load the native faucet account.
     ///
     /// For `None`, generates a network faucet plus the operator account owning it, and returns the
-    /// operator alongside its signing key. The operator must be part of the genesis state, since it
-    /// holds the only key permitted to mint.
+    /// operator alongside its signing key.
     ///
-    /// For `Some(path)`, loads the account from disk and validates it is a fungible faucet. No
-    /// operator is generated: whoever supplied the file already holds the faucet's keys.
+    /// For `Some(path)`, loads the account from disk and validates it is a fungible faucet.
+    /// In this case, operator is generated.
     fn build_account(self, config_dir: &Path) -> Result<NativeFaucet, GenesisConfigError> {
         match self.0 {
             None => {
@@ -462,12 +461,8 @@ impl NativeFaucetConfig {
 // FAUCET OPERATOR
 // ================================================================================================
 
-/// Builds the account owning the native faucet, returning it along with its signing key.
-///
-/// The operator holds the only key permitted to mint from the native faucet, so it must be part of
-/// the genesis state for the faucet to be usable.
-///
-/// Its nonce is set to `1`, marking it as deployed at genesis.
+/// Builds the faucet operator account and returns it along with its signing key. Its nonce is set
+/// to `1`, marking it as deployed at genesis.
 fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError> {
     let mut rng = ChaCha20Rng::from_seed(rand::random());
 
@@ -516,11 +511,11 @@ fn build_native_faucet(
             (BurnNote::script_root(), AssetAmount::ZERO),
         ])
         .into();
-    // The faucet should charge fees in its own asset, but it cannot name itself, since the fee
-    // faucet id is part of the storage this account id is derived from, so the id is not known yet.
-    // We use the operator id for now. This only works because the fees above are zero, since a
-    // network account skips the fee asset check when a transaction pays nothing. The id cannot be
-    // changed later without deploying a new faucet, so revisit this before charging any fees.
+    // The faucet should charge fees in its own asset, but setting its own id as the fee faucet id
+    // would require knowing that id before creating the account, which is not possible: the fee
+    // faucet id is part of the storage the account id is derived from. We use the operator id
+    // instead, which only works while the fees above are zero. Changing it later requires a new
+    // faucet, so this should be revisited once a proper solution is available.
     let fee_policy_manager = FeePolicyManager::builder()
         .fee_faucet_id(operator_id)
         .active_fee_policy(fee_policy)

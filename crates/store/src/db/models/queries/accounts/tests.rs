@@ -1287,7 +1287,11 @@ fn make_full_state_update(account: &Account) -> BlockAccountUpdate {
 /// The `push_value` must be different for each variant to produce a distinct MAST root and thus a
 /// distinct [`AccountCode::commitment`].
 fn build_account_with_code(push_value: u32) -> Account {
-    // Seed [2u8; 32] keeps the account ID distinct from the other test helpers.
+    // The seed alone determines the account ID, so every `push_value` variant maps to the same
+    // account — the property the prune tests rely on to model one account changing its code.
+    // Keeping the seed distinct from the other helpers' ([1u8; 32], [9u8; 32], ...) is only a
+    // precaution: each test runs on a fresh database, so a collision would matter only if a single
+    // test mixed this helper with another one.
     build_account_with_code_seeded(push_value, [2u8; 32])
 }
 

@@ -1738,14 +1738,18 @@ fn prune_account_storage_map_values(
 /// inside the window, all open-ended (current) rows, and each account's baseline row — the row
 /// still valid at the cutoff even though it was written before it.
 ///
-/// The prune is churn-driven: a code pinned at the previous prune (some row with
-/// `valid_until > prev_cutoff` referenced it) can only become collectable now if the row holding
-/// its maximal `valid_until` expired inside `(prev_cutoff, cutoff_block]`. Candidate codes are
-/// therefore collected from that window — an `idx_accounts_code_validity` range scan sized by
-/// churn since the previous prune — and each is deleted only if the `idx_accounts_code_probe`
-/// existence probe finds no row still referencing it past the cutoff. The previous cutoff is
-/// persisted in `prune_progress` within the same transaction; when absent (first prune after
-/// migration, or a fresh database) a full pass over all rows valid past the cutoff runs instead.
+/// Rather than re-checking every code on every prune, only codes whose deletability could have
+/// changed since the previous prune are examined. A code survived the previous prune because at
+/// least one `accounts` row with `valid_until > prev_cutoff` referenced it. For it to be
+/// deletable now, all such rows must have expired by the new cutoff — including the longest-lived
+/// one, whose `valid_until` therefore lands inside `(prev_cutoff, cutoff_block]`. Scanning the
+/// rows that expired in that window thus finds every code that could have become deletable. The
+/// scan is an `idx_accounts_code_validity` index range, so its cost scales with the number of
+/// account updates since the previous prune, not with total history. Each candidate is deleted
+/// only if the `idx_accounts_code_probe` existence probe finds no row still referencing it with
+/// `valid_until > cutoff_block`. The previous cutoff is persisted in `prune_progress` within the
+/// same transaction; when absent (first prune after migration, or a fresh database) a full pass
+/// over all rows valid past the cutoff runs instead.
 ///
 /// Correctness of the windowed candidate set rests on two invariants:
 /// - Rows are only ever closed to the `block_num` of the block currently being applied, which is

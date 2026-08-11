@@ -92,7 +92,7 @@ impl Manager for SqliteManager {
 /// Both pools open the file `READ_WRITE`; reader connections are made read-only at runtime with
 /// `PRAGMA query_only = ON` (which, unlike opening `READ_ONLY`, still lets them create the WAL
 /// `-shm` file and read a WAL database).
-pub(crate) fn configure_connection(conn: &Connection, read_only: bool) -> rusqlite::Result<()> {
+fn configure_connection(conn: &Connection, read_only: bool) -> rusqlite::Result<()> {
     // busy_timeout makes concurrent writers wait instead of failing immediately; foreign keys
     // enforce referential integrity.
     if read_only {

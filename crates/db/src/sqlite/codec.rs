@@ -411,7 +411,7 @@ mod tests {
     // bytes the diesel-era `SqlTypeConvert` impls did, or it silently misreads existing databases.
 
     #[test]
-    fn block_number_matches_sql_type_convert() {
+    fn block_number_roundtrip() {
         for block_num in [
             BlockNumber::GENESIS,
             BlockNumber::from(1),
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn note_tag_matches_sql_type_convert() {
+    fn note_tag_roundtrip() {
         // The tags above `i32::MAX` are the interesting ones: they are stored as a negative
         // integer, and a range-checked (rather than wrapping) read would reject them.
         for tag in [
@@ -450,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn felt_matches_sql_type_convert() {
+    fn felt_roundtrip() {
         // `Felt::MAX` is the largest canonical element; it exceeds `i64::MAX` and is therefore
         // stored as a negative integer.
         for felt in [Felt::ZERO, Felt::ONE, Felt::from_u32(u32::MAX), Felt::MAX] {
@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn storage_slot_name_round_trips_as_text() {
+    fn storage_slot_name_roundtrip() {
         let name = StorageSlotName::new("some_component::some_slot").unwrap();
         let DbValue::Single(Value::Text(text)) = name.to_sql_value() else {
             panic!("storage slot names are stored as TEXT");
@@ -480,7 +480,7 @@ mod tests {
     // ---------------------------------------------------------------------------------------------
 
     #[test]
-    fn unsigned_ints_round_trip_at_their_bounds() {
+    fn unsigned_int_roundtrip() {
         assert_eq!(read_integer::<u8>(bound_integer(&u8::MAX)).unwrap(), u8::MAX);
         assert_eq!(read_integer::<u16>(bound_integer(&u16::MAX)).unwrap(), u16::MAX);
         assert_eq!(read_integer::<u32>(bound_integer(&u32::MAX)).unwrap(), u32::MAX);
@@ -517,14 +517,20 @@ mod tests {
         );
     }
 
+    // BLOB CODEC
+    // ---------------------------------------------------------------------------------------------
+
     #[test]
-    fn blob_codec_round_trips_and_reports_context_on_failure() {
+    fn blob_roundtrip() {
         let word = Word::from([1u32, 2, 3, 4]);
         let DbValue::Single(Value::Blob(bytes)) = word.to_sql_value() else {
             panic!("words are stored as BLOBs");
         };
         assert_eq!(Word::from_sql_value(DbValueRef::new(ValueRef::Blob(&bytes))).unwrap(), word);
+    }
 
+    #[test]
+    fn blob_deserialization_error_names_the_type() {
         assert_matches::assert_matches!(
             Word::from_sql_value(DbValueRef::new(ValueRef::Blob(&[0xff]))),
             Err(DatabaseError::ConversionSqlToRust { to: "miden_protocol::Word", .. })

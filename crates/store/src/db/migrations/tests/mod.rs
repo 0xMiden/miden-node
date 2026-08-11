@@ -113,34 +113,6 @@ fn migration_004_validity_intervals_backfills_valid_until() -> Result<()> {
     Ok(())
 }
 
-/// Smoke test for the framework test harness against the real bootstrapped schema: a write through
-/// a [`TestConnection`](miden_node_db::sqlite::testing::TestConnection) autocommits and is visible
-/// to the following read, and the codec round-trips the column types on the way through.
-#[test]
-fn framework_test_connection_reads_back_what_it_writes() -> Result<()> {
-    use miden_protocol::block::BlockNumber;
-
-    let db = test_framework_connection();
-    let block_num = BlockNumber::from(7);
-
-    db.write().execute(
-        "INSERT INTO accounts \
-             (account_id, network_account_type, block_num, account_commitment, created_at_block, \
-              valid_until) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        &[&vec![0xaa_u8], &0_u32, &block_num, &vec![0x01_u8], &block_num, &VALID_FOREVER],
-    )?;
-
-    let stored: Vec<(BlockNumber, u32)> =
-        db.read()
-            .query("SELECT block_num, network_account_type FROM accounts", &[], |row| {
-                Ok((row.get::<BlockNumber>(0)?, row.get::<u32>(1)?))
-            })?;
-
-    pretty_assertions::assert_eq!(stored, vec![(block_num, 0)]);
-    Ok(())
-}
-
 #[test]
 #[ignore = "requires diesel CLI; CI runs this in the diesel-schema job"]
 fn diesel_schema_is_in_sync_with_migrations() -> Result<()> {

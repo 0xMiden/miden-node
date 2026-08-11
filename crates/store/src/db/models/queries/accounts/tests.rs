@@ -269,7 +269,7 @@ fn assert_storage_map_slot_entries(
 // ================================================================================================
 
 #[test]
-fn test_select_account_header_at_block_returns_none_for_nonexistent() {
+fn select_account_header_at_block_returns_none_for_nonexistent() {
     let mut conn = setup_test_db();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
@@ -290,7 +290,7 @@ fn test_select_account_header_at_block_returns_none_for_nonexistent() {
 }
 
 #[test]
-fn test_select_account_header_at_block_returns_correct_header() {
+fn select_account_header_at_block_returns_correct_header() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -330,7 +330,7 @@ fn test_select_account_header_at_block_returns_correct_header() {
 }
 
 #[test]
-fn test_select_account_header_at_block_historical_query() {
+fn select_account_header_at_block_historical_query() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -378,7 +378,7 @@ fn test_select_account_header_at_block_historical_query() {
 // ================================================================================================
 
 #[test]
-fn test_select_account_vault_at_block_empty() {
+fn select_account_vault_at_block_empty() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -413,7 +413,7 @@ fn test_select_account_vault_at_block_empty() {
 // ================================================================================================
 
 #[test]
-fn test_upsert_accounts_inserts_storage_header() {
+fn upsert_accounts_inserts_storage_header() {
     let mut conn = setup_test_db();
     let (account, account_id) = create_test_account_with_storage();
 
@@ -472,7 +472,7 @@ fn test_upsert_accounts_inserts_storage_header() {
 }
 
 #[test]
-fn test_upsert_accounts_closes_previous_validity_interval() {
+fn upsert_accounts_closes_previous_validity_interval() {
     let mut conn = setup_test_db();
     let (account, account_id) = create_test_account_with_storage();
 
@@ -589,7 +589,7 @@ fn test_upsert_accounts_closes_previous_validity_interval() {
 }
 
 #[test]
-fn test_upsert_accounts_with_multiple_storage_slots() {
+fn upsert_accounts_with_multiple_storage_slots() {
     let mut conn = setup_test_db();
 
     // Create account with 3 storage slots
@@ -675,7 +675,7 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
 }
 
 #[test]
-fn test_upsert_accounts_with_empty_storage() {
+fn upsert_accounts_with_empty_storage() {
     let mut conn = setup_test_db();
 
     // Create account with no component storage slots (only auth slot)
@@ -763,7 +763,7 @@ fn test_upsert_accounts_with_empty_storage() {
 // ================================================================================================
 
 #[test]
-fn test_select_latest_account_storage_ordering_semantics() {
+fn select_latest_account_storage_ordering_semantics() {
     let mut conn = setup_test_db();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
@@ -816,7 +816,7 @@ fn test_select_latest_account_storage_ordering_semantics() {
 }
 
 #[test]
-fn test_select_latest_account_storage_multiple_slots() {
+fn select_latest_account_storage_multiple_slots() {
     let mut conn = setup_test_db();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
@@ -887,7 +887,7 @@ fn test_select_latest_account_storage_multiple_slots() {
 }
 
 #[test]
-fn test_select_latest_account_storage_slot_updates() {
+fn select_latest_account_storage_slot_updates() {
     let mut conn = setup_test_db();
     let block_1 = BlockNumber::from_epoch(0);
     let block_2 = BlockNumber::from_epoch(1);
@@ -963,7 +963,7 @@ fn test_select_latest_account_storage_slot_updates() {
 /// Focuses on deduplication logic that relies on ordering by (`vault_key` ASC and `block_num`
 /// DESC).
 #[test]
-fn test_select_account_vault_at_block_historical_with_updates() {
+fn select_account_vault_at_block_historical_with_updates() {
     use assert_matches::assert_matches;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::{
@@ -1068,7 +1068,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
 /// Tests that the query bounds the number of rows it reads, so an over-the-limit vault is detected
 /// without materializing the whole set.
 #[test]
-fn test_select_account_vault_at_block_bounds_read_to_limit() {
+fn select_account_vault_at_block_bounds_read_to_limit() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -1111,7 +1111,7 @@ fn test_select_account_vault_at_block_bounds_read_to_limit() {
 
 /// Tests that a 5-block history returns the correct asset per block.
 #[test]
-fn test_select_account_vault_at_block_exponential_updates() {
+fn select_account_vault_at_block_exponential_updates() {
     const BLOCK_COUNT: u32 = 5;
 
     use assert_matches::assert_matches;
@@ -1172,7 +1172,7 @@ fn test_select_account_vault_at_block_exponential_updates() {
 /// Tests that deleted vault assets (asset = None) are correctly excluded from results, and that the
 /// deduplication handles deletion entries properly.
 #[test]
-fn test_select_account_vault_at_block_with_deletion() {
+fn select_account_vault_at_block_with_deletion() {
     use assert_matches::assert_matches;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -1322,7 +1322,7 @@ fn build_account_with_code_seeded(push_value: u32, seed: [u8; 32]) -> Account {
 /// Prune test 2: when an account's code changes, the old code must be pruned after the retention
 /// window, while the new (latest) code is retained.
 #[test]
-fn test_prune_account_code_retains_latest_after_code_change() {
+fn prune_account_code_retains_latest_after_code_change() {
     let mut conn = setup_test_db();
 
     // Block 0: account created with code A.
@@ -1401,7 +1401,7 @@ fn test_prune_account_code_retains_latest_after_code_change() {
 /// Prune test 3: code A → code B → code A; after the retention window, code B must be pruned but
 /// code A must be retained because it is still the latest.
 #[test]
-fn test_prune_account_code_retains_revisited_code() {
+fn prune_account_code_retains_revisited_code() {
     let mut conn = setup_test_db();
 
     // Block 0:           code A.
@@ -1491,7 +1491,7 @@ fn test_prune_account_code_retains_revisited_code() {
 /// preceding the account's first in-window update. Once a newer row falls below the cutoff, the
 /// code becomes prunable.
 #[test]
-fn test_prune_account_code_retains_baseline_code() {
+fn prune_account_code_retains_baseline_code() {
     let mut conn = setup_test_db();
 
     // Block 0:             code A.
@@ -1576,7 +1576,7 @@ fn codes_prune_cutoff(conn: &mut SqliteConnection) -> Option<i64> {
 /// reference crosses the cutoff window while another account still references it, and must delete
 /// it once the last reference expires in a later window.
 #[test]
-fn test_prune_account_code_incremental_cross_account_reference() {
+fn prune_account_code_incremental_cross_account_reference() {
     let mut conn = setup_test_db();
 
     // The "switcher" account changes code first; the "holdout" account keeps code A pinned.
@@ -1664,7 +1664,7 @@ fn test_prune_account_code_incremental_cross_account_reference() {
 /// Prune test 6: `prune_progress` records the cutoff of the last codes prune; re-pruning at the
 /// same or a lower cutoff deletes nothing and never moves the marker backwards.
 #[test]
-fn test_prune_account_codes_marker_never_regresses() {
+fn prune_account_codes_marker_never_regresses() {
     let mut conn = setup_test_db();
 
     // Same shape as prune test 2: code A at block 0 is superseded by code B at block R+1, so a

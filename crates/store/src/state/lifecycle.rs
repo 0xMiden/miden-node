@@ -1,6 +1,5 @@
 //! Store lifecycle: loading the state, starting its write worker, and stopping the store.
 
-use std::future::Future;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
@@ -56,23 +55,6 @@ async fn join_load_task<T>(
         Ok(result) => result,
         Err(err) => std::panic::resume_unwind(err.into_panic()),
     }
-}
-
-/// Spawns `fut` as a load task in the current span.
-///
-/// The task starts eagerly at call time, so loads spawned this way run concurrently even before
-/// the returned future is polled.
-fn spawn_load<T: Send + 'static>(
-    fut: impl Future<Output = Result<T, StateInitializationError>> + Send + 'static,
-) -> impl Future<Output = Result<T, StateInitializationError>> {
-    join_load_task(tokio::spawn(fut.in_current_span()))
-}
-
-/// Runs a blocking storage open on the blocking pool in the current span.
-fn open_blocking<S: Send + 'static>(
-    open: impl FnOnce() -> Result<S, StateInitializationError> + Send + 'static,
-) -> impl Future<Output = Result<S, StateInitializationError>> {
-    join_load_task(spawn_blocking_in_current_span(open))
 }
 
 /// Number of recent committed blocks held in the in-memory cache for replica subscriptions.
@@ -203,59 +185,76 @@ impl State {
         // The four structures live in independent storages and the database pool supports
         // concurrent readers, so open and load them concurrently. Each branch is a spawned task
         // because loading has long synchronous sections (RocksDB opens, MMR hashing, SMT top
-        // reconstruction) that would serialize if polled from a single task.
-        let (blockchain, account_tree, nullifier_tree, forest) = tokio::try_join!(
-            spawn_load({
+        // reconstruction) that would serialize if polled from a single task. Spawning is eager, so
+        // all four run from this point; the join below only collects their results.
+        let mmr_task = tokio::spawn(
+            {
                 let db = Arc::clone(&db);
                 async move { load_mmr(&db).await }
-            }),
-            spawn_load({
+            }
+            .in_current_span(),
+        );
+        let account_tree_task = tokio::spawn(
+            {
                 let (db, path) = (Arc::clone(&db), data_path.to_path_buf());
                 async move {
-                    open_blocking(move || {
+                    join_load_task(spawn_blocking_in_current_span(move || {
                         TreeStorage::create(
                             &path,
                             &account_storage_config,
                             ACCOUNT_TREE_STORAGE_DIR,
                         )
-                    })
+                    }))
                     .await?
                     .load_account_tree(&db)
                     .await
                 }
-            }),
-            spawn_load({
+            }
+            .in_current_span(),
+        );
+        let nullifier_tree_task = tokio::spawn(
+            {
                 let (db, path) = (Arc::clone(&db), data_path.to_path_buf());
                 async move {
-                    open_blocking(move || {
+                    join_load_task(spawn_blocking_in_current_span(move || {
                         TreeStorage::create(
                             &path,
                             &nullifier_storage_config,
                             NULLIFIER_TREE_STORAGE_DIR,
                         )
-                    })
+                    }))
                     .await?
                     .load_nullifier_tree(&db)
                     .await
                 }
-            }),
-            spawn_load({
+            }
+            .in_current_span(),
+        );
+        let forest_task = tokio::spawn(
+            {
                 let (db, path) = (Arc::clone(&db), data_path.to_path_buf());
                 async move {
-                    let forest = open_blocking(move || {
+                    let forest = join_load_task(spawn_blocking_in_current_span(move || {
                         AccountStateForestBackend::create(
                             &path,
                             &forest_storage_config,
                             ACCOUNT_STATE_FOREST_STORAGE_DIR,
                         )
-                    })
+                    }))
                     .await?
                     .load_account_state_forest(&db, latest_block_num)
                     .await?;
                     verify_account_state_forest_consistency(&forest, &db).await?;
                     Ok(forest)
                 }
-            }),
+            }
+            .in_current_span(),
+        );
+        let (blockchain, account_tree, nullifier_tree, forest) = tokio::try_join!(
+            join_load_task(mmr_task),
+            join_load_task(account_tree_task),
+            join_load_task(nullifier_tree_task),
+            join_load_task(forest_task),
         )?;
 
         // Verify that tree roots match the expected roots from the database. This catches any

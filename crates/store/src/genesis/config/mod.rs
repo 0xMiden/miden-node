@@ -218,13 +218,31 @@ impl GenesisConfig {
         let mut secrets = Vec::new();
 
         // Handle native faucet: generate a network faucet and its operator, or load from file
-        let (native_faucet_account, symbol, faucet_operator) =
-            NativeFaucetConfig(native_faucet).build_account(&config_dir)?;
+        let NativeFaucet {
+            account: native_faucet_account,
+            symbol,
+            operator,
+        } = NativeFaucetConfig(native_faucet).build_account(&config_dir)?;
 
-        let operator_account = faucet_operator.map(|(operator, operator_secret)| {
-            secrets.push((FAUCET_OPERATOR_FILE_NAME.to_string(), operator.id(), operator_secret));
-            operator
-        });
+        let operator_account = match operator {
+            Some((operator, operator_secret)) => {
+                // The generated faucet is a network account and holds no key of its own, but
+                // consumers still need its state and id, so it is written out like any other
+                // generated account.
+                secrets.push((
+                    NATIVE_FAUCET_FILE_NAME.to_string(),
+                    native_faucet_account.id(),
+                    None,
+                ));
+                secrets.push((
+                    FAUCET_OPERATOR_FILE_NAME.to_string(),
+                    operator.id(),
+                    Some(operator_secret),
+                ));
+                Some(operator)
+            },
+            None => None,
+        };
 
         let native_faucet_account_id = native_faucet_account.id();
         faucet_accounts.insert(symbol.clone(), native_faucet_account);
@@ -241,7 +259,7 @@ impl GenesisConfig {
             secrets.push((
                 format!("faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
                 faucet_account.id(),
-                secret_key,
+                Some(secret_key),
             ));
             // Do _not_ collect the account, only after we know all wallet assets we know the
             // remaining supply in the faucets.
@@ -290,7 +308,7 @@ impl GenesisConfig {
             secrets.push((
                 format!("wallet_{index:0zero_padding_width$}.mac"),
                 wallet_account.id(),
-                secret_key,
+                Some(secret_key),
             ));
 
             wallet_accounts.push(wallet_account);
@@ -351,8 +369,10 @@ impl GenesisConfig {
 
             all_accounts.push(faucet_account);
         }
-        // Ensure the faucets always precede the wallets referencing them
+        // The operator holds no assets, so its position among the accounts does not matter.
         all_accounts.extend(operator_account);
+
+        // Ensure the faucets always precede the wallets referencing them
         all_accounts.extend(wallet_accounts);
 
         // Append file-loaded accounts as-is
@@ -387,9 +407,14 @@ pub struct FeeParameterConfig {
 // NATIVE FAUCET CONFIG
 // ================================================================================================
 
-/// The native faucet and its token symbol, along with the operator account owning it and that
-/// operator's signing key. The operator is only present when the faucet is generated.
-type NativeFaucetAccounts = (Account, TokenSymbolStr, Option<(Account, RpoSecretKey)>);
+/// The native faucet resolved from the configuration.
+struct NativeFaucet {
+    account: Account,
+    symbol: TokenSymbolStr,
+    /// The operator account owning the faucet, with its signing key. Only present when the faucet
+    /// is generated; an imported faucet comes with its own keys.
+    operator: Option<(Account, RpoSecretKey)>,
+}
 
 /// Wraps an optional path to a pre-built faucet account file.
 ///
@@ -406,13 +431,17 @@ impl NativeFaucetConfig {
     ///
     /// For `Some(path)`, loads the account from disk and validates it is a fungible faucet. No
     /// operator is generated: whoever supplied the file already holds the faucet's keys.
-    fn build_account(self, config_dir: &Path) -> Result<NativeFaucetAccounts, GenesisConfigError> {
+    fn build_account(self, config_dir: &Path) -> Result<NativeFaucet, GenesisConfigError> {
         match self.0 {
             None => {
                 // The operator is built first, since the faucet it owns commits to its id.
                 let (operator, operator_secret) = build_faucet_operator()?;
-                let (faucet, symbol) = build_native_faucet(operator.id())?;
-                Ok((faucet, symbol, Some((operator, operator_secret))))
+                let (account, symbol) = build_native_faucet(operator.id())?;
+                Ok(NativeFaucet {
+                    account,
+                    symbol,
+                    operator: Some((operator, operator_secret)),
+                })
             },
             Some(path) => {
                 let full_path = config_dir.join(&path);
@@ -424,7 +453,7 @@ impl NativeFaucetConfig {
                     GenesisConfigError::NativeFaucetNotFungible { path: full_path.clone() }
                 })?;
                 let symbol = TokenSymbolStr::from(faucet.symbol().clone());
-                Ok((account, symbol, None))
+                Ok(NativeFaucet { account, symbol, operator: None })
             },
         }
     }
@@ -631,8 +660,8 @@ pub struct AccountFileWithName {
 /// Secrets generated during the state generation
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
-    // name, account, private key, account seed
-    pub secrets: Vec<(String, AccountId, RpoSecretKey)>,
+    // name, account, private key of the account, if it has one
+    pub secrets: Vec<(String, AccountId, Option<RpoSecretKey>)>,
 }
 
 impl AccountSecrets {
@@ -651,10 +680,9 @@ impl AccountSecrets {
             let account = account_lut
                 .get(&account_id)
                 .ok_or(GenesisConfigError::MissingGenesisAccount { account_id })?;
-            let account_file = AccountFile::new(
-                account.clone(),
-                vec![AuthSecretKey::Falcon512Poseidon2(secret_key)],
-            );
+            let auth_secret_keys =
+                secret_key.map(AuthSecretKey::Falcon512Poseidon2).into_iter().collect();
+            let account_file = AccountFile::new(account.clone(), auth_secret_keys);
             Ok(AccountFileWithName { name, account_file })
         })
     }

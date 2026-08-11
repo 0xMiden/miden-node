@@ -1,14 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use miden_node_store::genesis::config::{
-    AccountFileWithName,
-    FAUCET_OPERATOR_FILE_NAME,
-    GenesisConfig,
-    NATIVE_FAUCET_FILE_NAME,
-};
+use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::fs::ensure_empty_directory;
-use miden_protocol::account::AccountFile;
 use miden_protocol::utils::serde::Serializable;
 
 /// Name of the genesis block file written to the genesis block directory.
@@ -47,39 +41,19 @@ pub fn generate(
 
     let (genesis_state, secrets) = config.into_state()?;
 
-    let operator_id = secrets
-        .secrets
-        .iter()
-        .find(|(name, ..)| name == FAUCET_OPERATOR_FILE_NAME)
-        .map(|&(_, account_id, _)| account_id);
-
     for item in secrets.as_account_files(&genesis_state) {
         let AccountFileWithName { account_file, name } = item?;
         let account_path = accounts_directory.join(name);
-        // Do not override existing keys.
+        // Do not override existing account files.
         fs_err::OpenOptions::new()
             .create_new(true)
             .write(true)
             .open(&account_path)
-            .context("key file already exists")?;
+            .context("account file already exists")?;
         account_file.write(account_path)?;
     }
 
     let native_faucet_id = genesis_state.fee_parameters.fee_faucet_id();
-
-    // A generated native faucet is a network account and holds no key of its own, so it is not part
-    // of the account secrets. Write it out regardless, since consumers need its state and id. An
-    // imported faucet already exists on disk, and is identified by the presence of an operator.
-    if operator_id.is_some() {
-        let native_faucet = genesis_state
-            .accounts
-            .iter()
-            .find(|account| account.id() == native_faucet_id)
-            .context("the native faucet is missing from the genesis state")?;
-        AccountFile::new(native_faucet.clone(), vec![])
-            .write(accounts_directory.join(NATIVE_FAUCET_FILE_NAME))
-            .context("failed to write the native faucet account file")?;
-    }
 
     let genesis_block = genesis_state.into_block().context("failed to build the genesis block")?;
 
@@ -89,10 +63,7 @@ pub fn generate(
 
     println!("Genesis block written to {}.", genesis_block_path.display());
     println!();
-    println!("Native faucet account id:   {}", native_faucet_id.to_hex());
-    if let Some(operator_id) = operator_id {
-        println!("Faucet operator account id: {}", operator_id.to_hex());
-    }
+    println!("Native faucet account id: {}", native_faucet_id.to_hex());
     println!();
     println!("Seed each validator's database with:");
     println!();

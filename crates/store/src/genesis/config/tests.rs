@@ -138,11 +138,13 @@ verification_base_fee = 0
 async fn genesis_accounts_have_nonce_one() -> TestResult {
     let gcfg = GenesisConfig::default();
     let (state, secrets) = gcfg.into_state().unwrap();
-    let mut iter = secrets.as_account_files(&state);
-    let AccountFileWithName { account_file: status_quo, .. } = iter.next().unwrap().unwrap();
-    assert!(iter.next().is_none());
 
-    assert_eq!(status_quo.account.nonce(), ONE);
+    // The default configuration generates the native faucet and its operator.
+    let account_files = secrets.as_account_files(&state).collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(account_files.len(), 2);
+    for AccountFileWithName { account_file, name } in account_files {
+        assert_eq!(account_file.account.nonce(), ONE, "{name} should be deployed at genesis");
+    }
 
     let _block = state.into_block()?;
     Ok(())
@@ -216,11 +218,21 @@ fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestRe
     assert!(FungibleFaucet::try_from(native_faucet).is_ok());
     assert_eq!(native_faucet.nonce(), ONE);
 
-    // A network account is authenticated by the network and carries no key of its own, so the only
-    // generated secret belongs to the operator.
-    assert_eq!(secrets.secrets.len(), 1);
-    let (name, operator_id, _) = &secrets.secrets[0];
-    assert_eq!(name, FAUCET_OPERATOR_FILE_NAME);
+    // Both accounts are written out, but a network account is authenticated by the network and
+    // carries no key of its own, so only the operator has one.
+    let find = |file_name| {
+        secrets
+            .secrets
+            .iter()
+            .find(|(name, ..)| name == file_name)
+            .unwrap_or_else(|| panic!("{file_name} should be generated"))
+    };
+    assert_eq!(secrets.secrets.len(), 2);
+    let (_, faucet_id, faucet_secret) = find(NATIVE_FAUCET_FILE_NAME);
+    let (_, operator_id, operator_secret) = find(FAUCET_OPERATOR_FILE_NAME);
+    assert_eq!(*faucet_id, native_faucet.id());
+    assert!(faucet_secret.is_none());
+    assert!(operator_secret.is_some());
     assert_ne!(*operator_id, native_faucet.id());
 
     // The operator is deployed alongside the faucet.

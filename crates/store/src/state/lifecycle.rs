@@ -9,9 +9,12 @@ use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::shutdown::CancellationToken;
+use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
 use tokio::sync::{mpsc, watch};
+use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use crate::account_state_forest::AccountStateForestBackend;
 use crate::accounts::AccountTreeWithHistory;
@@ -41,6 +44,19 @@ use crate::state::{
     StateSnapshot,
 };
 use crate::{COMPONENT, DataDirectory, DatabaseOptions};
+
+/// Awaits a spawned load task, forwarding its result.
+///
+/// The load tasks are never aborted, so a join error is a panic from the task; it is resumed on
+/// the caller so panics keep propagating as panics.
+async fn join_load_task<T>(
+    handle: JoinHandle<Result<T, StateInitializationError>>,
+) -> Result<T, StateInitializationError> {
+    match handle.await {
+        Ok(result) => result,
+        Err(err) => std::panic::resume_unwind(err.into_panic()),
+    }
+}
 
 /// Number of recent committed blocks held in the in-memory cache for replica subscriptions.
 const BLOCK_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(512).unwrap();
@@ -138,15 +154,22 @@ impl State {
         );
 
         let database_filepath = data_directory.database_path();
-        let mut db = Db::load_with_pool_size(
-            database_filepath.clone(),
-            database_options.connection_pool_size,
-        )
-        .await
-        .map_err(StateInitializationError::DatabaseLoadError)?;
+        let db = Arc::new(
+            Db::load_with_pool_size(
+                database_filepath.clone(),
+                database_options.connection_pool_size,
+            )
+            .await
+            .map_err(StateInitializationError::DatabaseLoadError)?,
+        );
 
-        let blockchain = load_mmr(&mut db).await?;
-        let latest_block_num = blockchain.chain_tip().unwrap_or(BlockNumber::GENESIS);
+        // The chain tip drives forest loading and the account tree history below. A missing genesis
+        // block is reported by `load_mmr`, whose consistency check also pins the chain MMR to this
+        // header.
+        let latest_block_num = db
+            .select_block_header_by_block_num(None)
+            .await?
+            .map_or(BlockNumber::GENESIS, |header| header.block_num());
 
         let apply_block_thread_priority = storage_options.apply_block_thread_priority;
 
@@ -159,30 +182,79 @@ impl State {
         #[cfg(not(feature = "rocksdb"))]
         let (account_storage_config, nullifier_storage_config, forest_storage_config) =
             ((), (), ());
-        let account_storage =
-            TreeStorage::create(data_path, &account_storage_config, ACCOUNT_TREE_STORAGE_DIR)?;
-        let account_tree = account_storage.load_account_tree(&mut db).await?;
 
-        let nullifier_storage =
-            TreeStorage::create(data_path, &nullifier_storage_config, NULLIFIER_TREE_STORAGE_DIR)?;
-        let nullifier_tree = nullifier_storage.load_nullifier_tree(&mut db).await?;
+        // The four structures live in independent storages and the database pool supports
+        // concurrent readers, so open and load them concurrently. Each branch is a spawned task
+        // because loading has long synchronous sections (RocksDB opens, MMR hashing, SMT top
+        // reconstruction) that would serialize if polled from a single task.
+        let mmr_task = tokio::spawn({
+            let db = Arc::clone(&db);
+            async move { load_mmr(&db).await }.in_current_span()
+        });
+        let account_tree_task = tokio::spawn({
+            let db = Arc::clone(&db);
+            let data_path = data_path.to_path_buf();
+            async move {
+                let storage = join_load_task(spawn_blocking_in_current_span(move || {
+                    TreeStorage::create(
+                        &data_path,
+                        &account_storage_config,
+                        ACCOUNT_TREE_STORAGE_DIR,
+                    )
+                }))
+                .await?;
+                storage.load_account_tree(&db).await
+            }
+            .in_current_span()
+        });
+        let nullifier_tree_task = tokio::spawn({
+            let db = Arc::clone(&db);
+            let data_path = data_path.to_path_buf();
+            async move {
+                let storage = join_load_task(spawn_blocking_in_current_span(move || {
+                    TreeStorage::create(
+                        &data_path,
+                        &nullifier_storage_config,
+                        NULLIFIER_TREE_STORAGE_DIR,
+                    )
+                }))
+                .await?;
+                storage.load_nullifier_tree(&db).await
+            }
+            .in_current_span()
+        });
+        let forest_task = tokio::spawn({
+            let db = Arc::clone(&db);
+            let data_path = data_path.to_path_buf();
+            async move {
+                let backend = join_load_task(spawn_blocking_in_current_span(move || {
+                    AccountStateForestBackend::create(
+                        &data_path,
+                        &forest_storage_config,
+                        ACCOUNT_STATE_FOREST_STORAGE_DIR,
+                    )
+                }))
+                .await?;
+                let forest = backend.load_account_state_forest(&db, latest_block_num).await?;
+                verify_account_state_forest_consistency(&forest, &db).await?;
+                Ok(forest)
+            }
+            .in_current_span()
+        });
+
+        let (blockchain, account_tree, nullifier_tree, forest) = tokio::try_join!(
+            join_load_task(mmr_task),
+            join_load_task(account_tree_task),
+            join_load_task(nullifier_tree_task),
+            join_load_task(forest_task),
+        )?;
 
         // Verify that tree roots match the expected roots from the database. This catches any
         // divergence between persistent storage and the database caused by corruption or incomplete
         // shutdown.
-        verify_tree_consistency(account_tree.root(), nullifier_tree.root(), &mut db).await?;
+        verify_tree_consistency(account_tree.root(), nullifier_tree.root(), &db).await?;
 
         let account_tree = AccountTreeWithHistory::new(account_tree, latest_block_num);
-
-        let forest_backend = AccountStateForestBackend::create(
-            data_path,
-            &forest_storage_config,
-            ACCOUNT_STATE_FOREST_STORAGE_DIR,
-        )?;
-        let forest = forest_backend.load_account_state_forest(&mut db, latest_block_num).await?;
-        verify_account_state_forest_consistency(&forest, &mut db).await?;
-
-        let db = Arc::new(db);
 
         // Initialize the proven tip from the block store.
         let proven_tip_init = block_store

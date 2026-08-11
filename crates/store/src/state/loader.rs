@@ -130,13 +130,13 @@ pub trait TreeStorageLoader: SmtStorage + Sized {
     /// Loads an account tree, either from persistent storage or by rebuilding from DB.
     fn load_account_tree(
         self,
-        db: &mut Db,
+        db: &Db,
     ) -> impl Future<Output = Result<AccountTree<LargeSmt<Self>>, StateInitializationError>> + Send;
 
     /// Loads a nullifier tree, either from persistent storage or by rebuilding from DB.
     fn load_nullifier_tree(
         self,
-        db: &mut Db,
+        db: &Db,
     ) -> impl Future<Output = Result<NullifierTree<LargeSmt<Self>>, StateInitializationError>> + Send;
 }
 
@@ -162,7 +162,7 @@ pub(crate) trait AccountForestLoader: Backend + Sized {
     /// Loads the account state forest, either from persistent storage or by rebuilding from DB.
     fn load_account_state_forest(
         self,
-        db: &mut Db,
+        db: &Db,
         block_num: BlockNumber,
     ) -> impl Future<Output = Result<AccountStateForest<Self>, StateInitializationError>> + Send;
 }
@@ -186,7 +186,7 @@ impl TreeStorageLoader for MemoryStorage {
     )]
     async fn load_account_tree(
         self,
-        db: &mut Db,
+        db: &Db,
     ) -> Result<AccountTree<LargeSmt<Self>>, StateInitializationError> {
         let mut smt = LargeSmt::with_entries(self, std::iter::empty())
             .map_err(account_tree_large_smt_error_to_init_error)?;
@@ -230,7 +230,7 @@ impl TreeStorageLoader for MemoryStorage {
     )]
     async fn load_nullifier_tree(
         self,
-        db: &mut Db,
+        db: &Db,
     ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
         let mut smt = LargeSmt::with_entries(self, std::iter::empty())
             .map_err(account_tree_large_smt_error_to_init_error)?;
@@ -295,7 +295,7 @@ impl TreeStorageLoader for RocksDbStorage {
     )]
     async fn load_account_tree(
         self,
-        db: &mut Db,
+        db: &Db,
     ) -> Result<AccountTree<LargeSmt<Self>>, StateInitializationError> {
         // If RocksDB storage has data, load from it directly
 
@@ -349,7 +349,7 @@ impl TreeStorageLoader for RocksDbStorage {
     )]
     async fn load_nullifier_tree(
         self,
-        db: &mut Db,
+        db: &Db,
     ) -> Result<NullifierTree<LargeSmt<Self>>, StateInitializationError> {
         // If RocksDB storage has data, load from it directly
 
@@ -417,7 +417,7 @@ impl AccountForestLoader for ForestInMemoryBackend {
     )]
     async fn load_account_state_forest(
         self,
-        db: &mut Db,
+        db: &Db,
         block_num: BlockNumber,
     ) -> Result<AccountStateForest<Self>, StateInitializationError> {
         let mut forest = AccountStateForest::from_backend(self)
@@ -470,7 +470,7 @@ impl AccountForestLoader for ForestPersistentBackend {
     )]
     async fn load_account_state_forest(
         self,
-        db: &mut Db,
+        db: &Db,
         block_num: BlockNumber,
     ) -> Result<AccountStateForest<Self>, StateInitializationError> {
         let mut forest = AccountStateForest::from_backend(self)
@@ -505,7 +505,7 @@ pub fn load_smt<S: SmtStorage>(storage: S) -> Result<LargeSmt<S>, StateInitializ
 #[miden_instrument(
     target = COMPONENT,
 )]
-pub async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationError> {
+pub async fn load_mmr(db: &Db) -> Result<Blockchain, StateInitializationError> {
     let latest_header = db.select_block_header_by_block_num(None).await?;
     let block_commitments = db.select_all_block_header_commitments().await?;
 
@@ -554,7 +554,7 @@ fn verify_chain_mmr_consistency(
 )]
 pub async fn rebuild_account_state_forest(
     forest: &mut AccountStateForest<impl Backend>,
-    db: &mut Db,
+    db: &Db,
     block_num: BlockNumber,
 ) -> Result<(), StateInitializationError> {
     use miden_protocol::account::AccountPatch;
@@ -620,7 +620,7 @@ pub async fn rebuild_account_state_forest(
 pub async fn verify_tree_consistency(
     account_tree_root: Word,
     nullifier_tree_root: Word,
-    db: &mut Db,
+    db: &Db,
 ) -> Result<(), StateInitializationError> {
     // Fetch the latest block header to get the expected roots
     let latest_header = db.select_block_header_by_block_num(None).await?;
@@ -661,9 +661,11 @@ pub async fn verify_tree_consistency(
     target = COMPONENT,
 )]
 pub async fn verify_account_state_forest_consistency(
-    forest: &AccountStateForest<impl Backend>,
-    db: &mut Db,
+    forest: &AccountStateForest<impl Backend + Sync>,
+    db: &Db,
 ) -> Result<(), StateInitializationError> {
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
     let mut cursor = None;
 
     loop {
@@ -675,14 +677,15 @@ pub async fn verify_account_state_forest_consistency(
             break;
         }
 
-        for account in page.accounts {
+        // Per-account checks are independent, so verify each page in parallel.
+        page.accounts.into_par_iter().try_for_each(|account| {
             verify_account_state_forest_record(
                 forest,
                 account.account_id,
                 account.vault_root,
                 &account.storage_header,
-            )?;
-        }
+            )
+        })?;
 
         cursor = page.next_cursor;
         if cursor.is_none() {
@@ -806,7 +809,7 @@ mod tests {
 
         let headers = build_headers(5);
         let signing_key = SigningKey::new();
-        let mut db = crate::db::Db::load(db_path).await.expect("test database should load");
+        let db = crate::db::Db::load(db_path).await.expect("test database should load");
 
         db.query("insert corrupted block headers", move |conn| {
             for header in &headers {
@@ -830,7 +833,7 @@ mod tests {
         .await
         .expect("test block headers should be inserted");
 
-        let error = load_mmr(&mut db)
+        let error = load_mmr(&db)
             .await
             .expect_err("startup MMR load should reject inconsistent block headers");
 

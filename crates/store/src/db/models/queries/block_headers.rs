@@ -152,6 +152,35 @@ pub fn select_all_block_header_commitments(
     Ok(commitments)
 }
 
+/// Select the commitments of all block headers starting at `from` (inclusive) from the DB using
+/// the given [`SqliteConnection`], ordered by block number.
+///
+/// # Returns
+///
+/// A vector of [`BlockHeaderCommitment`] or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT commitment
+/// FROM block_headers
+/// WHERE block_num >= :from
+/// ORDER BY block_num ASC
+/// ```
+pub fn select_block_header_commitments_from(
+    conn: &mut SqliteConnection,
+    from: BlockNumber,
+) -> Result<Vec<BlockHeaderCommitment>, DatabaseError> {
+    let raw_commitments =
+        QueryDsl::select(schema::block_headers::table, schema::block_headers::commitment)
+            .filter(schema::block_headers::block_num.ge(from.to_raw_sql()))
+            .order(schema::block_headers::block_num.asc())
+            .load::<Vec<u8>>(conn)?;
+    let commitments =
+        Result::from_iter(raw_commitments.into_iter().map(BlockHeaderCommitment::from_raw_sql))?;
+    Ok(commitments)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct BlockHeaderCommitment(pub(crate) Word);

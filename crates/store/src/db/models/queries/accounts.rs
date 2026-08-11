@@ -1643,7 +1643,7 @@ pub(crate) struct AccountStorageMapRowInsert {
 // ================================================================================================
 
 /// Number of historical blocks to retain for vault assets, storage map values, and account codes.
-/// Rows whose validity interval ends at or below `chain_tip - HISTORICAL_BLOCK_RETENTION` will be
+/// Rows whose validity interval ends at or below `prune_tip - HISTORICAL_BLOCK_RETENTION` will be
 /// deleted; rows still valid anywhere inside the retention window (including all open-ended rows)
 /// are retained.
 pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
@@ -1652,9 +1652,11 @@ pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 /// reconstruction at any block within the retention window.
 ///
 /// A row is applicable for blocks in `[block_num, valid_until)`, so it is deletable exactly when
-/// its interval ends at or below the cutoff (`chain_tip - HISTORICAL_BLOCK_RETENTION`): it then
-/// cannot cover any block inside the window. Account codes follow the same rule — a code is
-/// deleted only when no account row whose interval reaches past the cutoff references it.
+/// its interval ends at or below the cutoff (`prune_tip - HISTORICAL_BLOCK_RETENTION`): it then
+/// cannot cover any block inside the window. `prune_tip` is the effective tip for retention — it
+/// lags the chain tip while old snapshot generations are still pinned by readers (see
+/// [`crate::db::Db::apply_block`]). Account codes follow the same rule — a code is deleted only
+/// when no account row whose interval reaches past the cutoff references it.
 ///
 /// # Returns
 /// A tuple of `(vault_assets_deleted, storage_map_values_deleted, account_codes_deleted)`
@@ -1667,9 +1669,9 @@ pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 )]
 pub(crate) fn prune_history(
     conn: &mut SqliteConnection,
-    chain_tip: BlockNumber,
+    prune_tip: BlockNumber,
 ) -> Result<(usize, usize, usize), DatabaseError> {
-    let cutoff_block = i64::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
+    let cutoff_block = i64::from(prune_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
     tracing::Span::current().record("cutoff_block", cutoff_block);
     let vault_deleted = prune_account_vault_assets(conn, cutoff_block)?;
     let storage_deleted = prune_account_storage_map_values(conn, cutoff_block)?;
@@ -1772,7 +1774,11 @@ fn prune_account_codes(
 
     let deleted = match prev_cutoff {
         // Codes are already pruned through this cutoff and nothing can become collectable while the
-        // cutoff stands still, so skip without moving the marker backwards.
+        // cutoff stands still. Equality is the common case: the cutoff is clamped to zero for the
+        // first `HISTORICAL_BLOCK_RETENTION` blocks, and a pinned snapshot freezes the prune tip
+        // across consecutive blocks. A strictly greater `prev_cutoff` is unreachable through
+        // `apply_block` (the prune tip never regresses) but is guarded against so an out-of-order
+        // caller cannot move the marker backwards or run the delete with an inverted window.
         Some(prev_cutoff) if prev_cutoff >= cutoff_block => return Ok(0),
         Some(prev_cutoff) => diesel::sql_query(
             "DELETE FROM account_codes \

@@ -148,7 +148,12 @@ pub enum Endpoint {
     #[command(name = "sync-chain-mmr")]
     SyncChainMmr,
     #[command(name = "load-state")]
-    LoadState,
+    LoadState {
+        /// Number of times to load the state. The first iteration may pay `RocksDB` WAL recovery
+        /// and a cold OS page cache; later iterations measure a clean warm restart.
+        #[arg(long, value_name = "LOAD_ITERATIONS", default_value = "3")]
+        load_iterations: NonZeroUsize,
+    },
     #[command(name = "get-account")]
     GetAccount {
         /// Storage slot name to request with all entries.
@@ -228,8 +233,8 @@ async fn main() {
             Endpoint::SyncChainMmr => {
                 bench_sync_chain_mmr(data_directory, iterations, concurrency).await;
             },
-            Endpoint::LoadState => {
-                load_state(&data_directory).await;
+            Endpoint::LoadState { load_iterations } => {
+                load_state(&data_directory, load_iterations.get()).await;
             },
             Endpoint::GetAccount { storage_map_slot } => {
                 bench_get_account(data_directory, iterations, concurrency, storage_map_slot).await;

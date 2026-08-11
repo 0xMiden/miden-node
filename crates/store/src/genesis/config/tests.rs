@@ -203,6 +203,10 @@ path = "test_account.mac"
 
 #[test]
 fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestResult {
+    use miden_protocol::account::StorageMapKey;
+    use miden_standards::account::access::Ownable2Step;
+    use miden_standards::account::auth::AuthNetworkAccount;
+
     let gcfg = GenesisConfig::default();
     let (state, secrets) = gcfg.into_state()?;
 
@@ -227,6 +231,27 @@ fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestRe
         .expect("the operator account is part of the genesis state");
     assert_eq!(operator.nonce(), ONE);
     assert!(FungibleFaucet::try_from(operator).is_err());
+
+    // The faucet is network authenticated: `AuthNetworkAccount` checks an allowlist of note scripts
+    // instead of a signature. Only mint and burn notes are accepted.
+    for script_root in [MintNote::script_root(), BurnNote::script_root()] {
+        let allowed = native_faucet.storage().get_map_item(
+            AuthNetworkAccount::allowed_note_scripts_slot(),
+            StorageMapKey::new(script_root.as_word()),
+        )?;
+        // The allowlist flags an allowed entry as `[1, 0, 0, 0]`.
+        assert_eq!(allowed, [ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into());
+    }
+
+    // Check the operator is the faucet owner and the active mint policy allows the owner only
+    let ownership = Ownable2Step::try_from_storage(native_faucet.storage())?;
+    assert_eq!(ownership.owner(), Some(*operator_id));
+    assert_eq!(
+        native_faucet
+            .storage()
+            .get_item(TokenPolicyManager::active_mint_policy_slot())?,
+        MintPolicy::owner_only().root().as_word(),
+    );
 
     Ok(())
 }

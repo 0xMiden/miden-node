@@ -457,7 +457,7 @@ fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError
 /// Builds the native faucet as a network account owned by `operator_id`.
 ///
 /// The faucet is authenticated as a network account and therefore carries no signing key of its
-/// own; minting is gated on the operator instead.
+/// own; only the operator can mint from it.
 fn build_native_faucet(
     operator_id: AccountId,
 ) -> Result<(Account, TokenSymbolStr), GenesisConfigError> {

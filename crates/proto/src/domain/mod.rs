@@ -10,7 +10,6 @@ pub mod nullifier;
 pub mod primitives;
 pub mod proof_request;
 pub mod transaction;
-pub mod vm;
 
 // UTILITIES
 // ================================================================================================

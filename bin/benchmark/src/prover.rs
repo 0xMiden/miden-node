@@ -15,10 +15,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use miden_node_proto::clients::{Builder, RemoteProverClient};
-use miden_node_proto::generated::remote_prover::{ProofRequest, proof, proof_request};
+use miden_node_proto::generated::remote_prover::{ProofRequest, ProofType};
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionInputs};
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_tx::{LocalTransactionProver, TransactionProverError};
 use tokio::sync::{Mutex, Semaphore};
 use url::Url;
@@ -199,26 +199,19 @@ impl RemoteTransactionProver {
         tx_inputs: &TransactionInputs,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         let request = tonic::Request::new(ProofRequest {
-            request: Some(proof_request::Request::TransactionInputs(tx_inputs.to_bytes())),
+            proof_type: ProofType::Transaction.into(),
+            payload: tx_inputs.to_bytes(),
         });
 
         let response = self.client.clone().prove(request).await.map_err(|err| {
             TransactionProverError::other_with_source("failed to prove transaction", err)
         })?;
 
-        match response.into_inner().result {
-            Some(proof::Result::ProvenTransaction(transaction)) => {
-                ProvenTransaction::try_from(transaction).map_err(|err| {
-                    TransactionProverError::other_with_source(
-                        "failed to decode received response from remote transaction prover",
-                        err,
-                    )
-                })
-            },
-            _ => Err(TransactionProverError::other(
-                "remote transaction prover returned the wrong proof kind",
-            )),
-        }
+        ProvenTransaction::read_from_bytes(&response.into_inner().payload).map_err(|_| {
+            TransactionProverError::other(
+                "failed to deserialize received response from remote transaction prover",
+            )
+        })
     }
 }
 

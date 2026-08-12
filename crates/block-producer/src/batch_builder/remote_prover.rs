@@ -1,11 +1,11 @@
+use std::sync::Arc;
+
 use miden_node_proto::clients::{Builder, RemoteProverClient};
-use miden_node_proto::domain::batch::decode_proven_batch;
-use miden_node_proto::errors::ConversionError;
-use miden_node_proto::generated::remote_prover::{ProofRequest, proof, proof_request};
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
+use miden_node_proto::generated::remote_prover::{ProofRequest, ProofType};
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
-use miden_tx_batch::{BatchVerifier, LocalBatchProver};
+use miden_protocol::transaction::{OutputNote, ProvenTransaction};
+use miden_protocol::utils::serde::{Deserializable, DeserializationError, Serializable};
+use miden_tx_batch::LocalBatchProver;
 use url::Url;
 
 /// Errors returned by [`RemoteBatchProver`].
@@ -13,8 +13,8 @@ use url::Url;
 pub enum RemoteProverError {
     #[error("remote prover request failed")]
     Grpc(#[source] tonic::Status),
-    #[error("failed to decode proven batch from remote prover")]
-    Decode(#[source] ConversionError),
+    #[error("failed to deserialize proven batch from remote prover")]
+    Deserialize(#[source] DeserializationError),
     #[error("{0}")]
     Validation(String),
 }
@@ -77,32 +77,122 @@ impl RemoteBatchProver {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, RemoteProverError> {
+        // Keep the set of transactions we passed in for later validation.
+        let proposed_txs: Vec<_> = proposed_batch.transactions().iter().map(Arc::clone).collect();
+
         let request = tonic::Request::new(ProofRequest {
-            request: Some(proof_request::Request::ProposedBatch((&proposed_batch).into())),
+            proof_type: ProofType::Batch.into(),
+            payload: proposed_batch.to_bytes(),
         });
 
         let response = self.client.clone().prove(request).await.map_err(RemoteProverError::Grpc)?;
 
-        let batch = match response.into_inner().result {
-            Some(proof::Result::ProvenBatch(batch)) => {
-                decode_proven_batch(batch, &proposed_batch).map_err(RemoteProverError::Decode)
-            },
-            _ => Err(RemoteProverError::Validation(
-                "remote batch prover returned the wrong proof kind".to_string(),
-            )),
-        }?;
+        let proven_batch = ProvenBatch::read_from_bytes(&response.into_inner().payload)
+            .map_err(RemoteProverError::Deserialize)?;
 
-        let batch_to_verify = batch.clone();
-        spawn_blocking_in_current_span(move || {
-            BatchVerifier::new(MIN_PROOF_SECURITY_LEVEL)
-                .verify(&batch_to_verify)
-                .map_err(|err| RemoteProverError::Validation(err.to_string()))
-        })
-        .await
-        .map_err(|err| {
-            RemoteProverError::Validation(format!("batch proof verification task failed: {err}"))
-        })??;
+        Self::validate_tx_headers(&proven_batch, proposed_txs)?;
 
-        Ok(batch)
+        Ok(proven_batch)
+    }
+
+    /// Validates that the proven batch's transaction headers are consistent with the transactions
+    /// passed in the proposed batch.
+    ///
+    /// Note that we expect all input and output notes from a proposed transaction to be present
+    /// in the corresponding header as well, because note erasure doesn't matter for the transaction
+    /// itself and we want the original transaction data to be preserved.
+    ///
+    /// This expects that proposed transactions and batch transactions are in the same order, as
+    /// define by `OrderedTransactionHeaders`.
+    fn validate_tx_headers(
+        proven_batch: &ProvenBatch,
+        proposed_txs: Vec<Arc<ProvenTransaction>>,
+    ) -> Result<(), RemoteProverError> {
+        if proposed_txs.len() != proven_batch.transactions().as_slice().len() {
+            return Err(RemoteProverError::Validation(format!(
+                "remote prover returned {} transaction headers but {} transactions were passed as part of the proposed batch",
+                proven_batch.transactions().as_slice().len(),
+                proposed_txs.len()
+            )));
+        }
+
+        // Because we checked the length matches we can zip the iterators up. We expect the
+        // transactions to be in the same order.
+        for (proposed_header, proven_header) in
+            proposed_txs.into_iter().zip(proven_batch.transactions().as_slice())
+        {
+            if proven_header.account_id() != proposed_header.account_id() {
+                return Err(RemoteProverError::Validation(format!(
+                    "transaction header of {} has a different account ID than the proposed transaction",
+                    proposed_header.id()
+                )));
+            }
+
+            if proven_header.initial_state_commitment()
+                != proposed_header.account_update().initial_state_commitment()
+            {
+                return Err(RemoteProverError::Validation(format!(
+                    "transaction header of {} has a different initial state commitment than the proposed transaction",
+                    proposed_header.id()
+                )));
+            }
+
+            if proven_header.final_state_commitment()
+                != proposed_header.account_update().final_state_commitment()
+            {
+                return Err(RemoteProverError::Validation(format!(
+                    "transaction header of {} has a different final state commitment than the proposed transaction",
+                    proposed_header.id()
+                )));
+            }
+
+            // Check input notes
+            let num_notes = proposed_header.input_notes().num_notes();
+            if num_notes != proven_header.input_notes().num_notes() {
+                return Err(RemoteProverError::Validation(format!(
+                    "transaction header of {} has a different number of input notes than the proposed transaction",
+                    proposed_header.id()
+                )));
+            }
+
+            // Because we checked the length matches we can zip the iterators up. We expect the
+            // nullifiers to be in the same order.
+            for (proposed_nullifier, input_note_commitment) in
+                proposed_header.nullifiers().zip(proven_header.input_notes().iter())
+            {
+                if proposed_nullifier != input_note_commitment.nullifier() {
+                    return Err(RemoteProverError::Validation(format!(
+                        "transaction header of {} has a different set of input notes than the proposed transaction",
+                        proposed_header.id()
+                    )));
+                }
+            }
+
+            // Check output notes
+            if proposed_header.output_notes().num_notes() != proven_header.output_notes().len() {
+                return Err(RemoteProverError::Validation(format!(
+                    "transaction header of {} has a different number of output notes than the proposed transaction",
+                    proposed_header.id()
+                )));
+            }
+
+            // Because we checked the length matches we can zip the iterators up. We expect the note
+            // IDs to be in the same order.
+            for (proposed_note_id, header_note) in proposed_header
+                .output_notes()
+                .iter()
+                .map(OutputNote::id)
+                .zip(proven_header.output_notes().iter())
+            {
+                if proposed_note_id != header_note.id() {
+                    return Err(RemoteProverError::Validation(format!(
+                        "transaction header of {} has a different set of input notes than the proposed transaction",
+                        proposed_header.id()
+                    )));
+                }
+            }
+        }
+
+        Ok(())
     }
 }

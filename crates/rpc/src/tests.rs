@@ -263,7 +263,7 @@ fn rpc_descriptor_exposes_structured_blockchain_schema_and_reserves_legacy_field
 }
 
 #[test]
-fn rpc_descriptor_exposes_structured_transaction_and_proof_schema() {
+fn rpc_descriptor_exposes_structured_transaction_and_batch_schema() {
     let descriptor = miden_node_proto_build::rpc_api_descriptor();
     let transaction_file = descriptor
         .file
@@ -314,10 +314,6 @@ fn rpc_descriptor_exposes_structured_transaction_and_proof_schema() {
     }
 
     for (file_name, messages) in [
-        (
-            "types/vm.proto",
-            &["StarkProof", "DeferredProof", "DeferredStateWire", "ExecutionProof"][..],
-        ),
         ("types/partial_blockchain.proto", &["TrackedMmrLeaf", "PartialBlockchain"][..]),
         ("types/block_header.proto", &["BlockHeader"][..]),
     ] {

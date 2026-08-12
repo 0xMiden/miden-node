@@ -14,6 +14,8 @@ use miden_protocol::transaction::{
     ProvenTransaction,
     TransactionHeader,
 };
+use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::vm::ExecutionProof;
 
 use crate::decode::{ConversionResultExt, GrpcDecodeExt};
 use crate::errors::ConversionError;
@@ -122,7 +124,7 @@ impl From<&ProvenBatch> for proto::transaction::ProvenBatch {
             output_notes: value.output_notes().iter().map(Into::into).collect(),
             expiration_block_num: value.batch_expiration_block_num().as_u32(),
             transactions: value.transactions().as_slice().iter().map(Into::into).collect(),
-            proof: Some(value.proof().into()),
+            proof: value.proof().to_bytes(),
         }
     }
 }
@@ -250,7 +252,9 @@ pub fn decode_proven_batch(
             .context("transactions"));
     }
 
-    let proof = decode!(decoder, value.proof)?;
+    let proof = ExecutionProof::read_from_bytes(&value.proof)
+        .map_err(|source| ConversionError::deserialization("ExecutionProof", source))
+        .context("proof")?;
     ProvenBatch::new_unchecked(
         proposed.id(),
         expected_header.commitment(),
@@ -352,6 +356,25 @@ mod tests {
         let (proposed, proven) = proposal_and_proof();
         let encoded = proto::transaction::ProvenBatch::from(&proven);
         assert_eq!(decode_proven_batch(encoded.clone(), &proposed).unwrap(), proven);
+
+        let mut malformed_proof = encoded.clone();
+        malformed_proof.proof = vec![0xff];
+        assert!(
+            decode_proven_batch(malformed_proof, &proposed)
+                .unwrap_err()
+                .to_string()
+                .contains("proof")
+        );
+
+        let mut malformed_transaction =
+            proto::transaction::ProvenTransactionData::from(proposed.transactions()[0].as_ref());
+        malformed_transaction.proof = vec![0xff];
+        assert!(
+            ProvenTransaction::try_from(malformed_transaction)
+                .unwrap_err()
+                .to_string()
+                .contains("proof")
+        );
 
         let mut wrong_reference = encoded.clone();
         wrong_reference.reference_block_num += 1;

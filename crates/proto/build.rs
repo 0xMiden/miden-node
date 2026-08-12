@@ -59,12 +59,6 @@ fn main() -> miette::Result<()> {
 fn generate_bindings(file_descriptors: &FileDescriptorSet, dst_dir: &Path) -> miette::Result<()> {
     let mut prost_config = tonic_prost_build::Config::new();
     prost_config.skip_debug(["AccountId", "Digest"]);
-    prost_config.type_attribute(
-        ".remote_prover.ProofRequest.request",
-        "#[allow(clippy::large_enum_variant)]",
-    );
-    prost_config
-        .type_attribute(".remote_prover.Proof.result", "#[allow(clippy::large_enum_variant)]");
 
     // Generate the stub of the user facing server from its proto file
     tonic_prost_build::configure()

@@ -13,6 +13,8 @@ use miden_protocol::transaction::{
     TransactionId,
     TxAccountUpdate,
 };
+use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::vm::ExecutionProof;
 
 use crate::decode::{ConversionResultExt, GrpcDecodeExt};
 use crate::errors::ConversionError;
@@ -70,7 +72,7 @@ impl From<&ProvenTransaction> for proto::transaction::ProvenTransactionData {
             reference_block_num: value.ref_block_num().as_u32(),
             reference_block_commitment: Some(value.ref_block_commitment().into()),
             expiration_block_num: value.expiration_block_num().as_u32(),
-            proof: Some(value.proof().into()),
+            proof: value.proof().to_bytes(),
         }
     }
 }
@@ -104,7 +106,9 @@ impl TryFrom<proto::transaction::ProvenTransactionData> for ProvenTransaction {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let reference_block_commitment = decode!(decoder, value.reference_block_commitment)?;
-        let proof = decode!(decoder, value.proof)?;
+        let proof = ExecutionProof::read_from_bytes(&value.proof)
+            .map_err(|source| ConversionError::deserialization("ExecutionProof", source))
+            .context("proof")?;
 
         Self::new(
             account_update,

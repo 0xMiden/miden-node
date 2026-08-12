@@ -6,7 +6,6 @@ import "types/block_header.proto";
 import "types/note.proto";
 import "types/partial_blockchain.proto";
 import "types/primitives.proto";
-import "types/vm.proto";
 
 // TRANSACTION
 // ================================================================================================
@@ -92,7 +91,8 @@ message ProvenTransactionData {
   fixed32 reference_block_num = 4;
   primitives.Word reference_block_commitment = 5;
   fixed32 expiration_block_num = 6;
-  vm.ExecutionProof proof = 7;
+  // Canonically serialized miden_protocol::vm::ExecutionProof.
+  bytes proof = 7;
 }
 
 message ProposedBatch {
@@ -117,7 +117,8 @@ message ProvenBatch {
   repeated OutputNote output_notes = 5;
   fixed32 expiration_block_num = 6;
   repeated TransactionHeader transactions = 7;
-  vm.ExecutionProof proof = 8;
+  // Canonically serialized miden_protocol::vm::ExecutionProof.
+  bytes proof = 8;
 }
 
 // IES scheme used for transaction input encryption.

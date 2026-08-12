@@ -4,17 +4,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use assert_matches::assert_matches;
+use miden_node_proto::domain::batch::decode_proven_batch;
 use miden_node_proto::generated::remote_prover::api_client::ApiClient;
-use miden_node_proto::generated::remote_prover::{Proof, ProofRequest, ProofType};
+use miden_node_proto::generated::remote_prover::{Proof, ProofRequest, proof, proof_request};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::batch::{ProposedBatch, ProvenBatch};
+use miden_protocol::batch::ProposedBatch;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction, TransactionVerifier};
-use miden_protocol::utils::serde::{Deserializable, Serializable};
+use miden_protocol::utils::serde::Serializable;
 use miden_testing::{Auth, MockChainBuilder};
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch::BatchVerifier;
@@ -56,15 +57,13 @@ impl ProofRequestExt for ProofRequest {
         let tx_inputs = tx.tx_inputs().clone();
 
         ProofRequest {
-            proof_type: ProofType::Transaction as i32,
-            payload: tx_inputs.to_bytes(),
+            request: Some(proof_request::Request::TransactionInputs(tx_inputs.to_bytes())),
         }
     }
 
     fn from_batch(batch: &ProposedBatch) -> ProofRequest {
         ProofRequest {
-            proof_type: ProofType::Batch as i32,
-            payload: batch.to_bytes(),
+            request: Some(proof_request::Request::ProposedBatch(batch.into())),
         }
     }
 
@@ -303,14 +302,14 @@ async fn invalid_proof_kind_is_rejected() {
         .expect("server should spawn");
 
     let mut request = ProofRequest::from_tx(&ProofRequest::mock_tx().await);
-    request.proof_type = i32::MAX;
+    request.request = Some(proof_request::Request::BlockProofRequest(Vec::new()));
 
     let mut client = Client::connect(port).await;
     let response = client.submit_request(request).await;
     let err = response.unwrap_err();
 
     assert_eq!(err.code(), tonic::Code::InvalidArgument);
-    assert!(err.message().contains("unknown proof_type value"));
+    assert!(err.message().contains("unsupported proof type"));
 
     server.abort();
 }
@@ -357,7 +356,12 @@ async fn transaction_proof_is_correct() {
 
     let mut client = Client::connect(port).await;
     let response = client.submit_request(request).await.unwrap();
-    let response = ProvenTransaction::read_from_bytes(&response.payload).unwrap();
+    let response = match response.result {
+        Some(proof::Result::ProvenTransaction(transaction)) => {
+            ProvenTransaction::try_from(transaction).unwrap()
+        },
+        _ => panic!("transaction prover returned the wrong response kind"),
+    };
 
     assert_eq!(response.id(), tx.id());
     TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL).verify(&response).unwrap();
@@ -382,7 +386,10 @@ async fn batch_proof_is_correct() {
 
     let mut client = Client::connect(port).await;
     let response = client.submit_request(request).await.unwrap();
-    let response = ProvenBatch::read_from_bytes(&response.payload).unwrap();
+    let response = match response.result {
+        Some(proof::Result::ProvenBatch(proven)) => decode_proven_batch(proven, &batch).unwrap(),
+        _ => panic!("batch prover returned the wrong response kind"),
+    };
 
     assert_eq!(response.id(), batch.id());
     BatchVerifier::new(MIN_PROOF_SECURITY_LEVEL).verify(&response).unwrap();

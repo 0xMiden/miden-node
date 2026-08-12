@@ -13,7 +13,6 @@ use miden_protocol::transaction::{
     TransactionVerifier,
     TxAccountUpdate,
 };
-use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tonic::{Request, Status};
 use tracing::debug;
 
@@ -50,9 +49,12 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
 
         tracing::trace!(target: LOG_TARGET, "Received transaction submission");
 
-        let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("invalid transaction"))
-        })?;
+        let tx: ProvenTransaction = request
+            .transaction_data
+            .take()
+            .ok_or_else(|| Status::invalid_argument("missing `transaction_data` field"))?
+            .try_into()
+            .map_err(Status::from)?;
 
         miden_span_record!(
             transaction.id = %tx.id(),
@@ -89,7 +91,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
             tx.proof().clone(),
         )
         .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        request.transaction = rebuilt_tx.to_bytes();
+        request.transaction_data = Some((&rebuilt_tx).into());
 
         // Block post-deployment network-account transactions from user RPC. First-deployment txs
         // are exempt because the protocol-level allowlist only kicks in once the account exists,

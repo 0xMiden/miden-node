@@ -1,12 +1,12 @@
 use miden_node_block_producer::store::get_tx_inputs;
 use miden_node_proto::clients::{SequencerClient, ValidatorClient};
+use miden_node_proto::domain::batch::{decode_proposed_batch, decode_proven_batch};
 use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
-use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_tx_batch::BatchVerifier;
 use tonic::{Request, Status};
 
@@ -37,7 +37,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        let request = input;
+        let mut request = input;
         let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
         let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
@@ -47,9 +47,23 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
             "Received transaction batch",
         );
 
-        let proven_batch = ProvenBatch::read_from_bytes(&request.batch_proof).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("invalid proven_batch"))
-        })?;
+        let proposed = request
+            .proposed
+            .take()
+            .ok_or_else(|| Status::invalid_argument("missing `proposed` field"))?;
+        let proposed_batch = spawn_blocking_in_current_span(move || {
+            decode_proposed_batch(proposed, MIN_PROOF_SECURITY_LEVEL).map_err(Status::from)
+        })
+        .await
+        .map_err(|err| {
+            Status::internal(format!("proposed batch validation task failed: {err}"))
+        })??;
+
+        let proven_batch = request
+            .proven_batch
+            .take()
+            .ok_or_else(|| Status::invalid_argument("missing `proven_batch` field"))
+            .and_then(|batch| decode_proven_batch(batch, &proposed_batch).map_err(Status::from))?;
 
         miden_span_record!(
             batch.id = %proven_batch.id(),
@@ -57,16 +71,6 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
             batch.reference_block.number = %proven_batch.reference_block_num(),
             batch.reference_block.commitment = %proven_batch.reference_block_commitment(),
         );
-
-        let proposed_batch = request
-            .proposed_batch
-            .as_deref()
-            .map(ProposedBatch::read_from_bytes)
-            .transpose()
-            .map_err(|err| {
-                Status::invalid_argument(err.as_report_context("invalid proposed_batch"))
-            })?
-            .ok_or(Status::invalid_argument("missing `proposed_batch` field"))?;
 
         tracing::debug!(target: LOG_TARGET, "Submitting transaction batch");
 
@@ -105,7 +109,9 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         }
 
         // Verify batch transaction proofs.
-        verify_batch_proof(proven_batch, &proposed_batch).await?;
+        verify_batch_proof(&proven_batch, &proposed_batch).await?;
+        request.proven_batch = Some((&proven_batch).into());
+        request.proposed = Some((&proposed_batch).into());
 
         match &self.backend {
             RpcBackend::Sequencer { block_producer, validators } => {
@@ -173,8 +179,8 @@ impl RpcService {
         }
 
         let authenticated_batch = proto::sequencer::AuthenticatedTransactionBatch {
-            proposed_batch: proposed_batch.to_bytes(),
             auth_inputs,
+            proposed: Some((&proposed_batch).into()),
         };
         sequencer
             .submit_authenticated_tx_batch(authenticated_batch)
@@ -187,7 +193,7 @@ impl RpcService {
 ///
 /// Errors on id mismatch, or the proof cannot be verified [`MIN_PROOF_SECURITY_LEVEL`]
 async fn verify_batch_proof(
-    proven_batch: ProvenBatch,
+    proven_batch: &ProvenBatch,
     proposed_batch: &ProposedBatch,
 ) -> tonic::Result<()> {
     if proven_batch.id() != proposed_batch.id() {

@@ -1,12 +1,13 @@
 use miden_block_prover::{BlockProverError as LocalBlockProverError, LocalBlockProver};
 use miden_node_proto::clients::{Builder, RemoteProverClient};
-use miden_node_proto::generated::remote_prover::{ProofRequest, ProofType};
+use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::remote_prover::{ProofRequest, proof, proof_request};
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof, ProposedBlock};
 use miden_protocol::errors::ProposedBlockError;
-use miden_protocol::utils::serde::{Deserializable, DeserializationError, Serializable};
+use miden_protocol::utils::serde::Serializable;
 use url::Url;
 
 use crate::COMPONENT;
@@ -28,8 +29,8 @@ pub enum RemoteProverError {
     ProposeBlock(#[source] ProposedBlockError),
     #[error("remote prover request failed")]
     Grpc(#[source] tonic::Status),
-    #[error("failed to deserialize block proof from remote prover")]
-    Deserialize(#[source] DeserializationError),
+    #[error("failed to decode block proof from remote prover")]
+    Decode(#[source] ConversionError),
 }
 
 // BLOCK PROVER
@@ -122,13 +123,18 @@ impl RemoteBlockProver {
                 .map_err(RemoteProverError::ProposeBlock)?;
 
         let request = tonic::Request::new(ProofRequest {
-            proof_type: ProofType::Block.into(),
-            payload: proposed_block.to_bytes(),
+            request: Some(proof_request::Request::BlockProofRequest(proposed_block.to_bytes())),
         });
 
         let response = self.client.clone().prove(request).await.map_err(RemoteProverError::Grpc)?;
 
-        BlockProof::read_from_bytes(&response.into_inner().payload)
-            .map_err(RemoteProverError::Deserialize)
+        match response.into_inner().result {
+            Some(proof::Result::BlockProof(proof)) => {
+                BlockProof::try_from(proof).map_err(RemoteProverError::Decode)
+            },
+            _ => Err(RemoteProverError::Grpc(tonic::Status::internal(
+                "remote block prover returned the wrong proof kind",
+            ))),
+        }
     }
 }

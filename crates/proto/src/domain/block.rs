@@ -16,8 +16,15 @@ use miden_protocol::block::{
     ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
+use miden_protocol::crypto::merkle::MerklePath;
+use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks, PartialMmr};
 use miden_protocol::note::Nullifier;
-use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionHeader};
+use miden_protocol::transaction::{
+    OrderedTransactionHeaders,
+    OutputNote,
+    PartialBlockchain,
+    TransactionHeader,
+};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use thiserror::Error;
@@ -38,6 +45,110 @@ impl From<BlockNumber> for proto::blockchain::BlockNumber {
 impl From<proto::blockchain::BlockNumber> for BlockNumber {
     fn from(value: proto::blockchain::BlockNumber) -> Self {
         BlockNumber::from(value.block_num)
+    }
+}
+
+// PARTIAL BLOCKCHAIN
+// ================================================================================================
+
+impl From<&PartialBlockchain> for proto::blockchain::PartialBlockchain {
+    fn from(value: &PartialBlockchain) -> Self {
+        let mmr = value.mmr();
+        let tracked_leaves = mmr
+            .leaves()
+            .map(|(position, leaf)| {
+                let proof = mmr
+                    .open(position)
+                    .expect("tracked MMR position must be in bounds")
+                    .expect("tracked MMR leaf must have an opening");
+                proto::blockchain::TrackedMmrLeaf {
+                    position: position as u64,
+                    leaf: Some(leaf.into()),
+                    path: proof.merkle_path().nodes().iter().map(Into::into).collect(),
+                }
+            })
+            .collect();
+        let peaks = mmr.peaks();
+        Self {
+            forest: mmr.forest().num_leaves() as u64,
+            peaks: peaks.peaks().iter().map(Into::into).collect(),
+            tracked_leaves,
+            block_headers: value.block_headers().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::blockchain::PartialBlockchain> for PartialBlockchain {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::blockchain::PartialBlockchain) -> Result<Self, Self::Error> {
+        let forest_size =
+            usize::try_from(value.forest).map_err(ConversionError::new).context("forest")?;
+        let forest = Forest::new(forest_size).map_err(ConversionError::new).context("forest")?;
+        let peaks = value
+            .peaks
+            .into_iter()
+            .enumerate()
+            .map(|(index, peak)| Word::try_from(peak).context(format!("peaks[{index}]")))
+            .collect::<Result<Vec<_>, _>>()?;
+        let peaks = MmrPeaks::new(forest, peaks).map_err(ConversionError::new).context("peaks")?;
+        let mut mmr = PartialMmr::from_peaks(peaks);
+
+        let mut previous_position = None;
+        for (index, tracked) in value.tracked_leaves.into_iter().enumerate() {
+            let position = usize::try_from(tracked.position)
+                .map_err(ConversionError::new)
+                .context(format!("tracked_leaves[{index}].position"))?;
+            if position >= forest_size {
+                return Err(ConversionError::message(format!(
+                    "tracked leaf position {position} is outside forest of size {forest_size}"
+                ))
+                .context(format!("tracked_leaves[{index}].position")));
+            }
+            if previous_position.is_some_and(|previous| position <= previous) {
+                return Err(ConversionError::message(
+                    "tracked leaf positions must be unique and strictly increasing",
+                )
+                .context(format!("tracked_leaves[{index}].position")));
+            }
+            previous_position = Some(position);
+
+            let decoder = tracked.decoder();
+            let leaf = decode!(decoder, tracked.leaf)?;
+            let path = tracked
+                .path
+                .into_iter()
+                .enumerate()
+                .map(|(path_index, node)| {
+                    Word::try_from(node)
+                        .context(format!("tracked_leaves[{index}].path[{path_index}]"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            mmr.track(position, leaf, &MerklePath::new(path))
+                .map_err(ConversionError::new)
+                .context(format!("tracked_leaves[{index}]"))?;
+        }
+
+        let mut previous_block_num = None;
+        let block_headers = value
+            .block_headers
+            .into_iter()
+            .enumerate()
+            .map(|(index, header)| {
+                let header =
+                    BlockHeader::try_from(header).context(format!("block_headers[{index}]"))?;
+                if previous_block_num.is_some_and(|previous| header.block_num() <= previous) {
+                    return Err(ConversionError::message(
+                        "block headers must be unique and ordered by ascending block number",
+                    )
+                    .context(format!("block_headers[{index}].block_num")));
+                }
+                previous_block_num = Some(header.block_num());
+                Ok(header)
+            })
+            .collect::<Result<Vec<_>, ConversionError>>()?;
+
+        Self::new(mmr, block_headers).map_err(ConversionError::new)
     }
 }
 
@@ -556,8 +667,14 @@ mod tests {
         BlockSignatures,
         SignedBlock,
     };
+    use miden_protocol::crypto::merkle::mmr::{Mmr, PartialMmr};
     use miden_protocol::note::{Note, NoteAttachments, Nullifier};
-    use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, PrivateOutputNote};
+    use miden_protocol::transaction::{
+        OrderedTransactionHeaders,
+        OutputNote,
+        PartialBlockchain,
+        PrivateOutputNote,
+    };
     use miden_protocol::utils::serde::Serializable;
     use miden_protocol::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
     use prost::Message;
@@ -612,6 +729,25 @@ mod tests {
 
         assert!(encoded.contents.is_some());
         assert_eq!(BlockBody::try_from(encoded).unwrap(), body);
+    }
+
+    #[test]
+    fn partial_blockchain_roundtrip_preserves_tracked_leaves_without_headers() {
+        let leaves = [
+            Word::from([1_u32, 2, 3, 4]),
+            Word::from([5_u32, 6, 7, 8]),
+            Word::from([9_u32, 10, 11, 12]),
+        ];
+        let mmr = Mmr::try_from_iter(leaves).unwrap();
+        let mut partial = PartialMmr::from_peaks(mmr.peaks());
+        let proof = mmr.open(0).unwrap();
+        partial.track(0, proof.leaf(), proof.merkle_path()).unwrap();
+        let chain = PartialBlockchain::new(partial, Vec::new()).unwrap();
+
+        let encoded = proto::blockchain::PartialBlockchain::from(&chain);
+        assert_eq!(encoded.tracked_leaves.len(), 1);
+        assert!(encoded.block_headers.is_empty());
+        assert_eq!(PartialBlockchain::try_from(encoded).unwrap(), chain);
     }
 
     #[test]

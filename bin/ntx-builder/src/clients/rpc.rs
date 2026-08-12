@@ -328,14 +328,14 @@ impl RpcClient {
         proven_tx: &ProvenTransaction,
         tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
-        let transaction = proven_tx.to_bytes();
+        let transaction_data: proto::transaction::ProvenTransactionData = proven_tx.into();
         let transaction_inputs = tx_inputs.to_bytes();
         let tx_id = proven_tx.id();
         let stale_key = AtomicBool::new(false);
 
         (|| {
             let mut client = self.inner.clone();
-            let transaction = transaction.clone();
+            let transaction_data = transaction_data.clone();
             let transaction_inputs = transaction_inputs.clone();
             let stale_key = &stale_key;
             async move {
@@ -351,8 +351,8 @@ impl RpcClient {
                 })?;
                 client
                     .submit_proven_tx(proto::transaction::ProvenTransaction {
-                        transaction,
                         sealed_transaction_inputs: Some(sealed),
+                        transaction_data: Some(transaction_data),
                     })
                     .await
             }

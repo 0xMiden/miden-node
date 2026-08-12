@@ -118,9 +118,6 @@ impl TestStore {
     }
 }
 
-/// Byte offset of the account delta commitment in serialized `ProvenTransaction`. Layout:
-/// `AccountId` (15) + `initial_commitment` (32) + `final_commitment` (32) = 79
-const DELTA_COMMITMENT_BYTE_OFFSET: usize = 15 + 32 + 32;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[test]
@@ -263,6 +260,76 @@ fn rpc_descriptor_exposes_structured_blockchain_schema_and_reserves_legacy_field
             .number(),
         4
     );
+}
+
+#[test]
+fn rpc_descriptor_exposes_structured_transaction_and_proof_schema() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let transaction_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name() == "types/transaction.proto")
+        .expect("the public RPC descriptor should include types/transaction.proto");
+
+    for name in [
+        "TxAccountUpdate",
+        "ProvenTransactionData",
+        "ProposedBatch",
+        "BatchAccountUpdate",
+        "ProvenBatch",
+    ] {
+        assert!(
+            transaction_file.message_type.iter().any(|message| message.name() == name),
+            "the public RPC descriptor should expose transaction.{name}"
+        );
+    }
+
+    for (message_name, reserved_names, structured_fields) in [
+        ("ProvenTransaction", &["transaction"][..], &[("transaction_data", 3)][..]),
+        (
+            "TransactionBatch",
+            &["batch_proof", "proposed_batch"][..],
+            &[("proven_batch", 4), ("proposed", 5)][..],
+        ),
+    ] {
+        let message = transaction_file
+            .message_type
+            .iter()
+            .find(|message| message.name() == message_name)
+            .unwrap_or_else(|| panic!("transaction.{message_name} should be present"));
+        for reserved_name in reserved_names {
+            assert!(message.reserved_name.iter().any(|name| name == reserved_name));
+        }
+        for (field_name, field_number) in structured_fields {
+            assert_eq!(
+                message
+                    .field
+                    .iter()
+                    .find(|field| field.name() == *field_name)
+                    .unwrap_or_else(|| panic!("{message_name}.{field_name} should be present"))
+                    .number(),
+                *field_number
+            );
+        }
+    }
+
+    for (file_name, messages) in [
+        (
+            "types/vm.proto",
+            &["StarkProof", "DeferredProof", "DeferredStateWire", "ExecutionProof"][..],
+        ),
+        ("types/partial_blockchain.proto", &["TrackedMmrLeaf", "PartialBlockchain"][..]),
+        ("types/block_header.proto", &["BlockHeader"][..]),
+    ] {
+        let file = descriptor
+            .file
+            .iter()
+            .find(|file| file.name() == file_name)
+            .unwrap_or_else(|| panic!("the public RPC descriptor should include {file_name}"));
+        for message_name in messages {
+            assert!(file.message_type.iter().any(|message| message.name() == *message_name));
+        }
+    }
 }
 
 #[test]
@@ -634,16 +701,13 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Create an incorrect patch commitment from a different account
     let (other_account, _) = build_test_account([1; 32]);
     let incorrect_patch: AccountPatch = AccountPatch::try_from(other_account).unwrap();
-    let incorrect_commitment_bytes = incorrect_patch.to_commitment().as_bytes();
-
-    // Corrupt the transaction bytes with the incorrect patch commitment
-    let mut tx_bytes = tx.to_bytes();
-    tx_bytes[DELTA_COMMITMENT_BYTE_OFFSET..DELTA_COMMITMENT_BYTE_OFFSET + 32]
-        .copy_from_slice(&incorrect_commitment_bytes);
+    let mut transaction_data: proto::transaction::ProvenTransactionData = (&tx).into();
+    transaction_data.account_update.as_mut().unwrap().account_patch_commitment =
+        Some(incorrect_patch.to_commitment().into());
 
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx_bytes,
         sealed_transaction_inputs: None,
+        transaction_data: Some(transaction_data),
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -681,8 +745,8 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
     let tx = build_test_proven_tx(&account, &account_patch, invalid);
 
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -720,8 +784,8 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
     let (account, _) = build_test_account([0; 32]);
     let tx = build_test_proven_tx_with_id(network_account_id, &account, genesis);
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     };
 
     let service = RpcService::new(
@@ -1259,8 +1323,8 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
     let tx = build_test_proven_tx(&account, &account_patch, genesis);
 
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     };
 
     let response = rpc_client.submit_proven_tx(request).await;

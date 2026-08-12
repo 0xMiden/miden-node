@@ -1,19 +1,136 @@
 use miden_protocol::Word;
-use miden_protocol::account::AccountId;
+use miden_protocol::account::{AccountId, AccountUpdateDetails};
+use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteHeader, Nullifier};
 use miden_protocol::transaction::{
     InputNoteCommitment,
     InputNotes,
     OutputNote,
     PrivateOutputNote,
+    ProvenTransaction,
     PublicOutputNote,
     TransactionHeader,
     TransactionId,
+    TxAccountUpdate,
 };
 
 use crate::decode::{ConversionResultExt, GrpcDecodeExt};
 use crate::errors::ConversionError;
 use crate::{decode, generated as proto};
+
+/// A decoded public transaction submission, keeping the sealed validator payload separate from the
+/// protocol transaction.
+pub struct DecodedProvenTransaction {
+    pub transaction: ProvenTransaction,
+    pub sealed_transaction_inputs: Option<proto::transaction::SealedTransactionInputs>,
+}
+
+// PROVEN TRANSACTION
+// ================================================================================================
+
+impl From<&TxAccountUpdate> for proto::transaction::TxAccountUpdate {
+    fn from(value: &TxAccountUpdate) -> Self {
+        Self {
+            account_id: Some(value.account_id().into()),
+            initial_state_commitment: Some(value.initial_state_commitment().into()),
+            final_state_commitment: Some(value.final_state_commitment().into()),
+            account_patch_commitment: Some(value.account_patch_commitment().into()),
+            details: Some(value.details().into()),
+        }
+    }
+}
+
+impl TryFrom<proto::transaction::TxAccountUpdate> for TxAccountUpdate {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::transaction::TxAccountUpdate) -> Result<Self, Self::Error> {
+        let decoder = value.decoder();
+        let account_id: AccountId = decode!(decoder, value.account_id)?;
+        let initial_state_commitment = decode!(decoder, value.initial_state_commitment)?;
+        let final_state_commitment = decode!(decoder, value.final_state_commitment)?;
+        let account_patch_commitment = decode!(decoder, value.account_patch_commitment)?;
+        let details: AccountUpdateDetails = decode!(decoder, value.details)?;
+        Self::new(
+            account_id,
+            initial_state_commitment,
+            final_state_commitment,
+            account_patch_commitment,
+            details,
+        )
+        .map_err(ConversionError::new)
+    }
+}
+
+impl From<&ProvenTransaction> for proto::transaction::ProvenTransactionData {
+    fn from(value: &ProvenTransaction) -> Self {
+        Self {
+            account_update: Some(value.account_update().into()),
+            input_notes: value.input_notes().iter().map(Into::into).collect(),
+            output_notes: value.output_notes().iter().map(Into::into).collect(),
+            reference_block_num: value.ref_block_num().as_u32(),
+            reference_block_commitment: Some(value.ref_block_commitment().into()),
+            expiration_block_num: value.expiration_block_num().as_u32(),
+            proof: Some(value.proof().into()),
+        }
+    }
+}
+
+impl From<ProvenTransaction> for proto::transaction::ProvenTransactionData {
+    fn from(value: ProvenTransaction) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl TryFrom<proto::transaction::ProvenTransactionData> for ProvenTransaction {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::transaction::ProvenTransactionData) -> Result<Self, Self::Error> {
+        let decoder = value.decoder();
+        let account_update = decode!(decoder, value.account_update)?;
+        let input_notes = value
+            .input_notes
+            .into_iter()
+            .enumerate()
+            .map(|(index, note)| {
+                InputNoteCommitment::try_from(note).context(format!("input_notes[{index}]"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let output_notes = value
+            .output_notes
+            .into_iter()
+            .enumerate()
+            .map(|(index, note)| {
+                OutputNote::try_from(note).context(format!("output_notes[{index}]"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let reference_block_commitment = decode!(decoder, value.reference_block_commitment)?;
+        let proof = decode!(decoder, value.proof)?;
+
+        Self::new(
+            account_update,
+            input_notes,
+            output_notes,
+            BlockNumber::from(value.reference_block_num),
+            reference_block_commitment,
+            BlockNumber::from(value.expiration_block_num),
+            proof,
+        )
+        .map_err(ConversionError::new)
+    }
+}
+
+impl TryFrom<proto::transaction::ProvenTransaction> for DecodedProvenTransaction {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::transaction::ProvenTransaction) -> Result<Self, Self::Error> {
+        let decoder = value.decoder();
+        let transaction = decode!(decoder, value.transaction_data)?;
+        Ok(Self {
+            transaction,
+            sealed_transaction_inputs: value.sealed_transaction_inputs,
+        })
+    }
+}
 
 // FROM TRANSACTION ID
 // ================================================================================================

@@ -108,8 +108,8 @@ impl TestValidator {
         sealed: proto::transaction::SealedTransactionInputs,
     ) -> Result<(), tonic::Status> {
         let request = tonic::Request::new(proto::transaction::ProvenTransaction {
-            transaction: tx.to_bytes(),
             sealed_transaction_inputs: Some(sealed),
+            transaction_data: Some(tx.into()),
         });
         validator_api::SubmitProvenTransaction::full(&self.server, request).await
     }
@@ -1085,8 +1085,8 @@ async fn submit_rejects_missing_encrypted_inputs() {
     let tv = TestValidator::new().await;
     let tx = dummy_proven_tx(2);
     let request = tonic::Request::new(proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     });
 
     let status = validator_api::SubmitProvenTransaction::full(&tv.server, request)

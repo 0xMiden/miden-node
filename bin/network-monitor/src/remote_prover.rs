@@ -15,6 +15,7 @@ use miden_node_proto::clients::{RemoteProverClient, RemoteProverProxyStatusClien
 use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::utils::serde::Serializable;
+use prost::Message;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -415,7 +416,7 @@ async fn run_prover_test(
                 state.latest = Some(ProverTestOutcome {
                     details: ProverTestDetails {
                         test_duration_ms: start.elapsed().as_millis() as u64,
-                        proof_size_bytes: response.into_inner().payload.len(),
+                        proof_size_bytes: response.into_inner().encoded_len(),
                         success_count: state.success_count,
                         failure_count: state.failure_count,
                         proof_type: ProofType::Transaction,
@@ -499,8 +500,9 @@ async fn generate_prover_test_payload(
 ) -> anyhow::Result<proto::remote_prover::ProofRequest> {
     let tx_inputs = crate::deploy::build_probe_transaction_inputs(rpc_url).await?;
     Ok(proto::remote_prover::ProofRequest {
-        proof_type: proto::remote_prover::ProofType::Transaction.into(),
-        payload: tx_inputs.to_bytes(),
+        request: Some(proto::remote_prover::proof_request::Request::TransactionInputs(
+            tx_inputs.to_bytes(),
+        )),
     })
 }
 

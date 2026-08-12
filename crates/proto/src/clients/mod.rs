@@ -34,7 +34,6 @@ use http::header::ACCEPT;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_protocol::Word;
 use miden_protocol::batch::ProposedBatch;
-use miden_protocol::utils::serde::Serializable;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint, Error as TransportError};
@@ -652,8 +651,8 @@ impl ValidatorClient {
         }
         for (tx, inputs) in proposed_batch.transactions().iter().zip(sealed_transaction_inputs) {
             let proven_tx = GeneratedProvenTransaction {
-                transaction: tx.to_bytes(),
                 sealed_transaction_inputs: Some(inputs.clone()),
+                transaction_data: Some(tx.as_ref().into()),
             };
             self.submit_proven_transaction(proven_tx).await?;
         }

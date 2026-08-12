@@ -5,6 +5,7 @@ package rpc;
 import "google/protobuf/empty.proto";
 import "types/account.proto";
 import "types/blockchain.proto";
+import "types/block_header.proto";
 import "types/note.proto";
 import "types/primitives.proto";
 import "types/transaction.proto";

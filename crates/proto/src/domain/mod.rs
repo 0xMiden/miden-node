@@ -6,6 +6,7 @@ pub mod encryption;
 pub mod merkle;
 pub mod note;
 pub mod nullifier;
+pub mod primitives;
 pub mod proof_request;
 pub mod transaction;
 

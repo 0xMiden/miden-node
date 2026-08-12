@@ -1,6 +1,24 @@
 syntax = "proto3";
 package primitives;
 
+// FIELD ELEMENT
+// ================================================================================================
+
+// A field element encoded by miden_protocol::utils::serde::Serializable.
+message Felt {
+    // Exactly eight bytes containing a canonical field element.
+    bytes encoded = 1;
+}
+
+// WORD
+// ================================================================================================
+
+// A word encoded by miden_protocol::utils::serde::Serializable.
+message Word {
+    // Exactly 32 bytes containing four canonical field elements.
+    bytes encoded = 1;
+}
+
 // ASSET
 // ================================================================================================
 

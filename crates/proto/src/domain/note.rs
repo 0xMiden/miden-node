@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use miden_protocol::asset::Asset;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     Note,
+    NoteAssets,
     NoteAttachment,
     NoteAttachmentHeader,
     NoteAttachmentScheme,
@@ -13,13 +15,15 @@ use miden_protocol::note::{
     NoteId,
     NoteInclusionProof,
     NoteMetadata,
+    NoteRecipient,
     NoteScript,
+    NoteStorage,
     NoteTag,
     NoteType,
     PartialNoteMetadata,
 };
 use miden_protocol::utils::serde::Serializable;
-use miden_protocol::{MastForest, MastNodeId, Word};
+use miden_protocol::{Felt, MastForest, MastNodeId, Word};
 use miden_standards::note::AccountTargetNetworkNote;
 
 use crate::decode::{ConversionResultExt, DecodeBytesExt, GrpcDecodeExt, GrpcStructDecoder};
@@ -173,21 +177,119 @@ impl TryFrom<proto::note::NoteAttachments> for NoteAttachments {
     }
 }
 
+// NOTE DETAILS
+// ================================================================================================
+
+impl From<NoteStorage> for proto::note::NoteStorage {
+    fn from(storage: NoteStorage) -> Self {
+        Self::from(&storage)
+    }
+}
+
+impl From<&NoteStorage> for proto::note::NoteStorage {
+    fn from(storage: &NoteStorage) -> Self {
+        Self {
+            items: storage.items().iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::note::NoteStorage> for NoteStorage {
+    type Error = ConversionError;
+
+    fn try_from(storage: proto::note::NoteStorage) -> Result<Self, Self::Error> {
+        let items = storage
+            .items
+            .into_iter()
+            .map(Felt::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .context("items")?;
+
+        NoteStorage::new(items).map_err(ConversionError::from).context("items")
+    }
+}
+
+impl From<NoteRecipient> for proto::note::NoteRecipient {
+    fn from(recipient: NoteRecipient) -> Self {
+        Self::from(&recipient)
+    }
+}
+
+impl From<&NoteRecipient> for proto::note::NoteRecipient {
+    fn from(recipient: &NoteRecipient) -> Self {
+        Self {
+            serial_num: Some(recipient.serial_num().into()),
+            script: Some(recipient.script().into()),
+            storage: Some(recipient.storage().into()),
+        }
+    }
+}
+
+impl TryFrom<proto::note::NoteRecipient> for NoteRecipient {
+    type Error = ConversionError;
+
+    fn try_from(recipient: proto::note::NoteRecipient) -> Result<Self, Self::Error> {
+        let decoder = recipient.decoder();
+        let serial_num = decode!(decoder, recipient.serial_num)?;
+        let script = decode!(decoder, recipient.script)?;
+        let storage = decode!(decoder, recipient.storage)?;
+
+        Ok(NoteRecipient::new(serial_num, script, storage))
+    }
+}
+
+impl From<NoteDetails> for proto::note::NoteDetails {
+    fn from(details: NoteDetails) -> Self {
+        Self::from(&details)
+    }
+}
+
+impl From<&NoteDetails> for proto::note::NoteDetails {
+    fn from(details: &NoteDetails) -> Self {
+        Self {
+            assets: details.assets().iter().copied().map(Into::into).collect(),
+            recipient: Some(details.recipient().into()),
+        }
+    }
+}
+
+impl TryFrom<proto::note::NoteDetails> for NoteDetails {
+    type Error = ConversionError;
+
+    fn try_from(details: proto::note::NoteDetails) -> Result<Self, Self::Error> {
+        let decoder = details.decoder();
+        let assets = details
+            .assets
+            .into_iter()
+            .map(Asset::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .context("assets")?;
+        let assets = NoteAssets::new(assets).map_err(ConversionError::from).context("assets")?;
+        let recipient = decode!(decoder, details.recipient)?;
+
+        Ok(NoteDetails::new(assets, recipient))
+    }
+}
+
 impl From<Note> for proto::note::NetworkNote {
     fn from(note: Note) -> Self {
-        let metadata = Some(proto::note::NoteMetadata::from(*note.metadata()));
-        let note_attachments = Some(note.attachments().into());
-        let details = NoteDetails::from(note).to_bytes();
-        Self { metadata, details, note_attachments }
+        let (assets, metadata, recipient, attachments) = note.into_parts();
+        Self {
+            metadata: Some(metadata.into()),
+            note_details: Some(NoteDetails::new(assets, recipient).into()),
+            note_attachments: Some(attachments.into()),
+        }
     }
 }
 
 impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
-        let metadata = Some(proto::note::NoteMetadata::from(*note.metadata()));
-        let note_attachments = Some(note.attachments().into());
-        let details = Some(NoteDetails::from(note).to_bytes());
-        Self { metadata, details, note_attachments }
+        let (assets, metadata, recipient, attachments) = note.into_parts();
+        Self {
+            metadata: Some(metadata.into()),
+            note_details: Some(NoteDetails::new(assets, recipient).into()),
+            note_attachments: Some(attachments.into()),
+        }
     }
 }
 
@@ -202,12 +304,13 @@ impl TryFrom<proto::note::NetworkNote> for AccountTargetNetworkNote {
 
     fn try_from(value: proto::note::NetworkNote) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::note::NetworkNote { metadata, details, note_attachments } = value;
+        let proto::note::NetworkNote { metadata, note_details, note_attachments } = value;
 
         let metadata = decode!(decoder, metadata)?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
 
-        let note_details = NoteDetails::decode_bytes(&details, "NoteDetails")?;
+        let note_details = decode_note_details::<proto::note::NetworkNote>(note_details, true)?
+            .expect("required note details decoder must return a value");
         let (assets, recipient) = note_details.into_parts();
         let attachments = decode_note_attachments::<proto::note::NetworkNote>(note_attachments)?;
 
@@ -221,13 +324,13 @@ impl TryFrom<proto::note::Note> for Note {
 
     fn try_from(proto_note: proto::note::Note) -> Result<Self, Self::Error> {
         let decoder = proto_note.decoder();
-        let proto::note::Note { metadata, details, note_attachments } = proto_note;
+        let proto::note::Note { metadata, note_details, note_attachments } = proto_note;
 
         let metadata = decode!(decoder, metadata)?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
 
-        let details: Vec<u8> = decode!(decoder, details)?;
-        let note_details = NoteDetails::decode_bytes(&details, "NoteDetails")?;
+        let note_details = decode_note_details::<proto::note::Note>(note_details, true)?
+            .expect("required note details decoder must return a value");
         let (assets, recipient) = note_details.into_parts();
         let attachments = decode_note_attachments::<proto::note::Note>(note_attachments)?;
 
@@ -324,6 +427,12 @@ impl TryFrom<proto::note::NoteHeader> for NoteHeader {
 
 impl From<NoteScript> for proto::note::NoteScript {
     fn from(script: NoteScript) -> Self {
+        Self::from(&script)
+    }
+}
+
+impl From<&NoteScript> for proto::note::NoteScript {
+    fn from(script: &NoteScript) -> Self {
         Self {
             entrypoint: script.entrypoint().into(),
             mast: script.mast().to_bytes(),
@@ -372,9 +481,24 @@ fn decode_note_attachments<M: prost::Message>(
     GrpcStructDecoder::<M>::default().decode_field("note_attachments", attachments)
 }
 
+/// Decodes structured note details, optionally allowing the field to be absent.
+fn decode_note_details<M: prost::Message>(
+    details: Option<proto::note::NoteDetails>,
+    required: bool,
+) -> Result<Option<NoteDetails>, ConversionError> {
+    match details {
+        Some(details) => details.try_into().map(Some).context("note_details"),
+        None if required => Err(ConversionError::missing_field::<M>("note_details")),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
+    use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+    use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
+    use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
     use super::*;
 
@@ -403,6 +527,20 @@ mod tests {
         let base = Note::mock_noop(word(100));
         let (assets, metadata, recipient, _) = base.into_parts();
         Note::with_attachments(assets, metadata.into_partial_metadata(), recipient, attachments)
+    }
+
+    fn public_note_with_attachments(attachments: NoteAttachments) -> Note {
+        let base = Note::mock_noop(word(100));
+        let (assets, metadata, recipient, _) = base.into_parts();
+        let partial_metadata =
+            PartialNoteMetadata::new(metadata.sender(), NoteType::Public).with_tag(metadata.tag());
+        Note::with_attachments(assets, partial_metadata, recipient, attachments)
+    }
+
+    fn distinct_assets(count: usize) -> Vec<Asset> {
+        (0..count)
+            .map(|index| NonFungibleAsset::mock(&u64::try_from(index).unwrap().to_le_bytes()))
+            .collect()
     }
 
     #[test]
@@ -622,5 +760,197 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("note_attachments"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn note_storage_boundaries_roundtrip() {
+        for items in [Vec::new(), vec![Felt::ONE; miden_protocol::MAX_NOTE_STORAGE_ITEMS]] {
+            let original = NoteStorage::new(items).unwrap();
+            let encoded = proto::note::NoteStorage::from(&original);
+
+            assert_eq!(NoteStorage::try_from(encoded).unwrap(), original);
+        }
+    }
+
+    #[test]
+    fn note_storage_rejects_too_many_or_malformed_items() {
+        let too_many = proto::note::NoteStorage {
+            items: vec![
+                proto::primitives::Felt { encoded: Felt::ZERO.to_bytes() };
+                miden_protocol::MAX_NOTE_STORAGE_ITEMS + 1
+            ],
+        };
+        let err = NoteStorage::try_from(too_many).unwrap_err();
+        assert!(err.to_string().starts_with("items:"), "unexpected error: {err}");
+
+        let malformed = proto::note::NoteStorage {
+            items: vec![proto::primitives::Felt { encoded: vec![0; 7] }],
+        };
+        let err = NoteStorage::try_from(malformed).unwrap_err();
+        assert!(err.to_string().starts_with("items.felt.encoded:"), "unexpected error: {err}");
+
+        let non_canonical = proto::note::NoteStorage {
+            items: vec![proto::primitives::Felt {
+                encoded: Felt::ORDER.to_le_bytes().to_vec(),
+            }],
+        };
+        let err = NoteStorage::try_from(non_canonical).unwrap_err();
+        assert!(err.to_string().starts_with("items:"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn note_recipient_roundtrip_preserves_all_components() {
+        let original = Note::mock_noop(word(200)).recipient().clone();
+        let encoded = proto::note::NoteRecipient::from(&original);
+        let decoded = NoteRecipient::try_from(encoded).unwrap();
+
+        assert_eq!(decoded.serial_num(), original.serial_num());
+        assert_eq!(decoded.script().root(), original.script().root());
+        assert_eq!(decoded.script().entrypoint(), original.script().entrypoint());
+        assert_eq!(decoded.storage(), original.storage());
+        assert_eq!(decoded.digest(), original.digest());
+    }
+
+    #[test]
+    fn note_recipient_requires_every_component() {
+        let mut encoded = proto::note::NoteRecipient::default();
+        let err = NoteRecipient::try_from(encoded.clone()).unwrap_err();
+        assert!(err.to_string().contains("serial_num"), "unexpected error: {err}");
+
+        encoded.serial_num = Some(word(1).into());
+        let err = NoteRecipient::try_from(encoded.clone()).unwrap_err();
+        assert!(err.to_string().contains("script"), "unexpected error: {err}");
+
+        encoded.script = Some(NoteScript::mock().into());
+        let err = NoteRecipient::try_from(encoded).unwrap_err();
+        assert!(err.to_string().contains("storage"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn note_details_roundtrip_empty_mixed_and_max_assets() {
+        let recipient = Note::mock_noop(word(300)).recipient().clone();
+        let asset_sets = [
+            Vec::new(),
+            vec![FungibleAsset::mock(10), NonFungibleAsset::mock(b"mixed")],
+            distinct_assets(NoteAssets::MAX_NUM_ASSETS),
+        ];
+
+        for assets in asset_sets {
+            let original = NoteDetails::new(NoteAssets::new(assets).unwrap(), recipient.clone());
+            let encoded = proto::note::NoteDetails::from(&original);
+            let decoded = NoteDetails::try_from(encoded).unwrap();
+
+            assert_eq!(decoded, original);
+        }
+    }
+
+    #[test]
+    fn note_details_preserves_asset_order() {
+        let assets = vec![
+            NonFungibleAsset::mock(b"first"),
+            FungibleAsset::mock(10),
+            NonFungibleAsset::mock(b"third"),
+        ];
+        let recipient = Note::mock_noop(word(400)).recipient().clone();
+        let original = NoteDetails::new(NoteAssets::new(assets.clone()).unwrap(), recipient);
+        let decoded = NoteDetails::try_from(proto::note::NoteDetails::from(original)).unwrap();
+
+        assert_eq!(decoded.assets().as_slice(), assets);
+    }
+
+    #[test]
+    fn note_details_rejects_asset_limit_and_duplicates() {
+        let recipient = Some(Note::mock_noop(word(500)).recipient().into());
+
+        let too_many = proto::note::NoteDetails {
+            assets: distinct_assets(NoteAssets::MAX_NUM_ASSETS + 1)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            recipient: recipient.clone(),
+        };
+        let err = NoteDetails::try_from(too_many).unwrap_err();
+        assert!(err.to_string().starts_with("assets:"), "unexpected error: {err}");
+
+        let duplicate_fungible = proto::note::NoteDetails {
+            assets: vec![FungibleAsset::mock(1).into(), FungibleAsset::mock(2).into()],
+            recipient: recipient.clone(),
+        };
+        let err = NoteDetails::try_from(duplicate_fungible).unwrap_err();
+        assert!(err.to_string().starts_with("assets:"), "unexpected error: {err}");
+
+        let duplicate = NonFungibleAsset::mock(b"duplicate");
+        let duplicate_non_fungible = proto::note::NoteDetails {
+            assets: vec![duplicate.into(), duplicate.into()],
+            recipient,
+        };
+        let err = NoteDetails::try_from(duplicate_non_fungible).unwrap_err();
+        assert!(err.to_string().starts_with("assets:"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn note_details_requires_recipient_with_nested_context() {
+        let err = NoteDetails::try_from(proto::note::NoteDetails::default()).unwrap_err();
+        assert!(err.to_string().contains("recipient"), "unexpected error: {err}");
+
+        let value = proto::note::NoteDetails {
+            assets: Vec::new(),
+            recipient: Some(proto::note::NoteRecipient::default()),
+        };
+        let err = NoteDetails::try_from(value).unwrap_err();
+        assert!(
+            err.to_string().starts_with("recipient:") && err.to_string().contains("serial_num"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn public_note_roundtrip_preserves_commitments_and_identity() {
+        let attachments = NoteAttachments::new(vec![attachment(11, 2, 1)]).unwrap();
+        let original = public_note_with_attachments(attachments);
+        let encoded = proto::note::Note::from(original.clone());
+        let decoded = Note::try_from(encoded).unwrap();
+
+        assert_eq!(decoded.id(), original.id());
+        assert_eq!(decoded.nullifier(), original.nullifier());
+        assert_eq!(decoded.details_commitment(), original.details_commitment());
+        assert_eq!(
+            decoded.metadata().attachments_commitment(),
+            original.metadata().attachments_commitment()
+        );
+        assert_eq!(decoded.metadata(), original.metadata());
+    }
+
+    #[test]
+    fn network_note_roundtrip_preserves_target_validation() {
+        let target_id: AccountId =
+            ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
+        let target = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always).unwrap();
+        let note =
+            public_note_with_attachments(NoteAttachments::from(NoteAttachment::from(target)));
+        let original = AccountTargetNetworkNote::new(note).unwrap();
+
+        let encoded = proto::note::NetworkNote::from(original.clone());
+        let decoded = AccountTargetNetworkNote::try_from(encoded).unwrap();
+
+        assert_eq!(decoded.target_account_id(), original.target_account_id());
+        assert_eq!(decoded.as_note(), original.as_note());
+    }
+
+    #[test]
+    fn required_and_optional_note_details_presence_is_enforced() {
+        let mut encoded =
+            proto::note::Note::from(public_note_with_attachments(NoteAttachments::empty()));
+        encoded.note_details = None;
+        let err = Note::try_from(encoded).unwrap_err();
+        assert!(err.to_string().contains("note_details"), "unexpected error: {err}");
+
+        assert!(
+            decode_note_details::<proto::note::Note>(None, false).unwrap().is_none(),
+            "optional details should preserve absence"
+        );
+
+        let err = decode_note_details::<proto::note::NetworkNote>(None, true).unwrap_err();
+        assert!(err.to_string().contains("note_details"), "unexpected error: {err}");
     }
 }

@@ -77,18 +77,38 @@ message NoteAttachments {
     repeated NoteAttachment attachments = 1;
 }
 
+// Represents the ordered field elements in a note's storage.
+message NoteStorage {
+    // Ordered storage values. At most 1024 field elements.
+    repeated primitives.Felt items = 1;
+}
+
+// Represents the recipient data committed to by a note.
+message NoteRecipient {
+    primitives.Word serial_num = 1;
+    NoteScript script = 2;
+    NoteStorage storage = 3;
+}
+
+// Represents a note's assets and recipient.
+message NoteDetails {
+    // Ordered assets. At most 16, with protocol-level duplicate checks.
+    repeated primitives.Asset assets = 1;
+    NoteRecipient recipient = 2;
+}
+
 // Represents a note.
 //
-// The note is composed of its metadata, serialized details, and structured public attachments.
+// The note is composed of its metadata, structured details, and structured public attachments.
 message Note {
-    reserved 3;
-    reserved "attachments";
+    reserved 2, 3;
+    reserved "details", "attachments";
 
     // The note's metadata.
     NoteMetadata metadata = 1;
 
-    // Serialized note details (empty for private notes).
-    optional bytes details = 2;
+    // Absent for a private note response and required when reconstructing a full domain Note.
+    optional NoteDetails note_details = 4;
 
     // The note's public attachments. Required even when the collection is empty.
     NoteAttachments note_attachments = 5;
@@ -99,14 +119,14 @@ message Note {
 // Network notes are a subtype of public notes, and as such, their details are always publicly
 // known.
 message NetworkNote {
-    reserved 3;
-    reserved "attachments";
+    reserved 2, 3;
+    reserved "details", "attachments";
 
     // The note's metadata.
     NoteMetadata metadata = 1;
 
-    // Serialized note details (i.e., assets and recipient).
-    bytes details = 2;
+    // Required because network notes are public.
+    NoteDetails note_details = 4;
 
     // The note's public attachments. Required even when the collection is empty.
     NoteAttachments note_attachments = 5;

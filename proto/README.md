@@ -12,6 +12,12 @@ component APIs used by the Miden node workspace.
 Raw protobuf files are included in this repository for projects that generate bindings in other languages. For project
 navigation and documentation links, see the [primary README](https://github.com/0xMiden/node#readme).
 
+## Wire compatibility
+
+Generated clients must use the protobuf definitions from the same Miden node release. The note API now represents
+`NoteDetails` and `NoteAttachments` as structured protobuf messages; clients generated from the earlier opaque `bytes`
+fields are wire-incompatible and must regenerate their bindings before connecting to this release.
+
 ## Crate Features
 
 - `internal`: exposes file descriptors for internal node component APIs. These APIs are not intended for general client

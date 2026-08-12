@@ -121,6 +121,69 @@ impl TestStore {
 const DELTA_COMMITMENT_BYTE_OFFSET: usize = 15 + 32 + 32;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[test]
+fn rpc_descriptor_exposes_structured_note_schema() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let note_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name() == "types/note.proto")
+        .expect("the public RPC descriptor should include types/note.proto");
+
+    for name in [
+        "NoteAttachment",
+        "NoteAttachments",
+        "NoteStorage",
+        "NoteRecipient",
+        "NoteDetails",
+    ] {
+        assert!(
+            note_file.message_type.iter().any(|message| message.name() == name),
+            "the public RPC descriptor should expose note.{name}"
+        );
+    }
+
+    for message_name in ["Note", "NetworkNote"] {
+        let message = note_file
+            .message_type
+            .iter()
+            .find(|message| message.name() == message_name)
+            .unwrap_or_else(|| {
+                panic!("the public RPC descriptor should expose note.{message_name}")
+            });
+
+        for field_number in [2, 3] {
+            assert!(
+                message
+                    .reserved_range
+                    .iter()
+                    .any(|range| range.start() <= field_number && range.end() > field_number),
+                "note.{message_name} should reserve field number {field_number}"
+            );
+        }
+        assert!(message.reserved_name.iter().any(|name| name == "details"));
+        assert!(message.reserved_name.iter().any(|name| name == "attachments"));
+        assert!(!message.field.iter().any(|field| field.name() == "details"));
+        assert!(!message.field.iter().any(|field| field.name() == "attachments"));
+
+        let details = message
+            .field
+            .iter()
+            .find(|field| field.name() == "note_details")
+            .expect("the structured note_details field should be present");
+        assert_eq!(details.number(), 4);
+        assert_eq!(details.type_name(), ".note.NoteDetails");
+
+        let attachments = message
+            .field
+            .iter()
+            .find(|field| field.name() == "note_attachments")
+            .expect("the structured note_attachments field should be present");
+        assert_eq!(attachments.number(), 5);
+        assert_eq!(attachments.type_name(), ".note.NoteAttachments");
+    }
+}
+
 /// Creates a minimal account and its patch for testing proven transaction building.
 fn build_test_account(seed: [u8; 32]) -> (Account, AccountPatch) {
     let account = AccountBuilder::new(seed)

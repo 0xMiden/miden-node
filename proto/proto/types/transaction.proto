@@ -213,3 +213,24 @@ message TransactionHeader {
   // Output notes of the transaction.
   repeated note.NoteHeader output_notes = 6;
 }
+
+// OUTPUT NOTES
+// ================================================================================================
+
+message PublicOutputNote {
+  note.NoteMetadata metadata = 1;
+  note.NoteDetails details = 2;
+  note.NoteAttachments attachments = 3;
+}
+
+message PrivateOutputNote {
+  note.NoteHeader header = 1;
+  note.NoteAttachments attachments = 2;
+}
+
+message OutputNote {
+  oneof note {
+    PublicOutputNote public = 1;
+    PrivateOutputNote private = 2;
+  }
+}

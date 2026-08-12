@@ -1,4 +1,5 @@
 pub mod account;
+mod account_patch;
 pub mod batch;
 pub mod block;
 pub mod digest;

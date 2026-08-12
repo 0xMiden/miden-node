@@ -210,7 +210,7 @@ impl RpcClient {
             // `&self`, so callers like `block_subscription_reconnecting` can store it freely.
             Ok(stream
                 .map_err(RpcError::GrpcClientError)
-                .and_then(|response| async move { decode_block_subscription_response(&response) })
+                .and_then(|response| async move { decode_block_subscription_response(response) })
                 .boxed())
         })
         .retry(self.backoff)
@@ -374,9 +374,12 @@ impl RpcClient {
 }
 
 fn decode_block_subscription_response(
-    response: &BlockSubscriptionResponse,
+    response: BlockSubscriptionResponse,
 ) -> Result<(SignedBlock, BlockNumber), RpcError> {
-    let block = SignedBlock::read_from_bytes(&response.block).map_err(RpcError::Deserialize)?;
+    let signed_block = response.signed_block.ok_or_else(|| {
+        RpcError::InvalidResponse("block subscription response is missing signed_block".into())
+    })?;
+    let block = SignedBlock::try_from(signed_block).map_err(RpcError::Conversion)?;
     let committed_tip = BlockNumber::from(response.committed_chain_tip);
     Ok((block, committed_tip))
 }

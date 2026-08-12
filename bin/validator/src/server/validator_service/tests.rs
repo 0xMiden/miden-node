@@ -772,7 +772,6 @@ async fn block_subscription_replays_then_freezes_signing() {
     use std::time::Duration;
 
     use miden_protocol::block::SignedBlock;
-    use miden_tx::utils::serde::Deserializable;
     use tokio_stream::StreamExt;
 
     let mut tv = TestValidator::new().await;
@@ -789,7 +788,10 @@ async fn block_subscription_replays_then_freezes_signing() {
             .expect("replayed block should arrive promptly")
             .expect("stream should not end")
             .expect("stream item should not be an error");
-        let block = SignedBlock::read_from_bytes(&response.block).expect("valid signed block");
+        let block = SignedBlock::try_from(
+            response.signed_block.expect("response should contain a signed block"),
+        )
+        .expect("valid signed block");
         assert_eq!(block.header().block_num().as_u32(), expected);
         assert_eq!(response.committed_chain_tip, 2);
     }

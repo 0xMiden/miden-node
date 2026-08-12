@@ -15,8 +15,11 @@ navigation and documentation links, see the [primary README](https://github.com/
 ## Wire compatibility
 
 Generated clients must use the protobuf definitions from the same Miden node release. The note API now represents
-`NoteDetails` and `NoteAttachments` as structured protobuf messages; clients generated from the earlier opaque `bytes`
-fields are wire-incompatible and must regenerate their bindings before connecting to this release.
+`NoteDetails` and `NoteAttachments` as structured protobuf messages. Block APIs likewise return a structured
+`SignedBlock`, whose `BlockBody` contains structured account updates, output-note batches, nullifiers, and transaction
+headers, plus a presence-bearing `BlockProof` message. Clients generated from the earlier opaque `bytes` fields are
+wire-incompatible and must regenerate their bindings before connecting to this release. Stored block and proof files
+retain their existing Miden serialization; only the gRPC representation changed.
 
 ## Crate Features
 

@@ -48,12 +48,14 @@ message BlockSubscriptionRequest {
 
 // A signed block streamed to a subscriber.
 message BlockSubscriptionResponse {
-    // The block encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::SignedBlock].
-    bytes block = 1;
+    reserved 1;
+    reserved "block";
 
     // The signed chain tip when this item was emitted.
     fixed32 committed_chain_tip = 2;
+
+    // The signed block.
+    blockchain.SignedBlock signed_block = 3;
 }
 
 // VALIDATOR STATUS

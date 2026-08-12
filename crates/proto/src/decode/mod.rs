@@ -114,11 +114,11 @@ macro_rules! decode {
 ///
 /// ```rust,ignore
 /// // Before:
-/// BlockBody::read_from_bytes(&value.block_body)
-///     .map_err(|source| ConversionError::deserialization("BlockBody", source))
+/// MastForest::read_from_bytes(&value.mast)
+///     .map_err(|source| ConversionError::deserialization("MastForest", source))
 ///
 /// // After:
-/// BlockBody::decode_bytes(&value.block_body, "BlockBody")
+/// MastForest::decode_bytes(&value.mast, "MastForest")
 /// ```
 pub trait DecodeBytesExt: Deserializable {
     /// Deserialize from bytes, wrapping any error as a [`ConversionError`].

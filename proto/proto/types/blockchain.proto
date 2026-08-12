@@ -3,6 +3,7 @@ package blockchain;
 
 import "types/account.proto";
 import "types/primitives.proto";
+import "types/transaction.proto";
 
 // BLOCK
 // ================================================================================================
@@ -36,12 +37,11 @@ message BlockRequest {
 // Contains empty values for both blocks and proofs that are not found. Some blocks may not yet be
 // proven so it is possible to retrieve a block without a proof even if the proof has been requested.
 message MaybeBlock {
-    // The requested block data encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::SignedBlock].
-    optional bytes block = 1;
-    // The block proof encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::BlockProof], if requested and available.
-    optional bytes proof = 2;
+    reserved 1, 2;
+    reserved "block", "proof";
+
+    optional SignedBlock signed_block = 3;
+    optional BlockProof block_proof = 4;
 }
 
 // Represents a block number.
@@ -143,7 +143,33 @@ message FeeParameters {
 
 // Represents a block body.
 message BlockBody {
-    // Block body data encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::BlockBody].
-    bytes block_body = 1;
+    reserved 1;
+    reserved "block_body";
+
+    BlockBodyContents contents = 2;
 }
+
+message BlockAccountUpdate {
+    account.AccountId account_id = 1;
+    primitives.Word final_state_commitment = 2;
+    account.AccountUpdateDetails details = 3;
+}
+
+message IndexedOutputNote {
+    uint32 note_index_in_batch = 1;
+    transaction.OutputNote note = 2;
+}
+
+message OutputNoteBatch {
+    repeated IndexedOutputNote notes = 1;
+}
+
+message BlockBodyContents {
+    repeated BlockAccountUpdate updated_accounts = 1;
+    repeated OutputNoteBatch output_note_batches = 2;
+    repeated primitives.Word created_nullifiers = 3;
+    repeated transaction.TransactionHeader transactions = 4;
+}
+
+// Placeholder block proof. Extend this message when the protocol proof gains fields.
+message BlockProof {}

@@ -16,7 +16,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use miden_node_proto::BlockProofRequest;
 use miden_node_store::state::{ProofWriter, State};
 use miden_node_utils::retry::{self, Retryable};
@@ -123,7 +123,11 @@ pub(crate) async fn run(
     let mut next_to_prove = state.proven_tip().child();
 
     // Completed proofs waiting to be committed in order.
-    let mut pending: BTreeMap<BlockNumber, Vec<u8>> = BTreeMap::new();
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "BlockProof is a placeholder today but the scheduler must retain each future proof"
+    )]
+    let mut pending: BTreeMap<BlockNumber, BlockProof> = BTreeMap::new();
 
     loop {
         // Schedule blocks up to chain_tip that haven't been scheduled yet.
@@ -142,13 +146,19 @@ pub(crate) async fn run(
             // Proving a block has completed - cache and commit the proof.
             proving_result = proving_tasks.join_next() => {
                 let (block_num, proof_bytes) = proving_result?;
-                pending.insert(block_num, proof_bytes);
+                ensure!(
+                    proof_bytes.is_empty(),
+                    "block prover returned an unsupported non-empty placeholder proof for block {block_num}",
+                );
+                let proof = BlockProof::read_from_bytes(&proof_bytes)
+                    .context("failed to deserialize block proof returned by prover")?;
+                pending.insert(block_num, proof);
 
                 // Drain completed proofs in ascending order so the proven tip advances without
                 // gaps.
                 let mut next = state.proven_tip().child();
-                while let Some(proof_bytes) = pending.remove(&next) {
-                    proof_writer.apply_proof(next, proof_bytes).await?;
+                while let Some(proof) = pending.remove(&next) {
+                    proof_writer.apply_proof(next, proof).await?;
                     next = next.child();
                 }
             },

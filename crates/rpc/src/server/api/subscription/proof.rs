@@ -1,7 +1,8 @@
 use miden_node_proto::generated as proto;
 use miden_node_utils::grpc::ClientIp;
 use miden_node_utils::tracing::miden_instrument;
-use miden_protocol::block::BlockNumber;
+use miden_protocol::block::{BlockNumber, BlockProof};
+use miden_protocol::utils::serde::Deserializable;
 use tracing::debug;
 
 use super::super::{COMPONENT, RpcService};
@@ -19,10 +20,22 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
     }
 
     fn encode(event: Self::Item) -> tonic::Result<proto::rpc::ProofSubscriptionResponse> {
+        if !event.data.is_empty() {
+            return Err(tonic::Status::data_loss(format!(
+                "stored proof for block {} uses an unsupported non-empty placeholder encoding",
+                event.block
+            )));
+        }
+        let block_proof = BlockProof::read_from_bytes(&event.data).map_err(|err| {
+            tonic::Status::data_loss(format!(
+                "stored proof for block {} could not be decoded: {err}",
+                event.block
+            ))
+        })?;
         Ok(proto::rpc::ProofSubscriptionResponse {
             block_num: event.block.as_u32(),
-            proof: event.data,
             proven_chain_tip: event.tip.as_u32(),
+            block_proof: Some(block_proof.into()),
         })
     }
 
@@ -46,5 +59,25 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
 
         let from = input;
         SubscriptionStream::proofs(self, from, client_ip)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::block::BlockNumber;
+    use tonic::Code;
+
+    use super::{RpcService, StreamItem};
+    use crate::server::rpc_api::ProofSubscription;
+
+    #[test]
+    fn corrupt_stored_proof_is_reported_as_data_loss() {
+        let result = <RpcService as ProofSubscription>::encode(StreamItem {
+            data: vec![0xff],
+            block: BlockNumber::from(4_u32),
+            tip: BlockNumber::from(7_u32),
+        });
+
+        assert_eq!(result.unwrap_err().code(), Code::DataLoss);
     }
 }

@@ -1,6 +1,7 @@
 use miden_node_proto::generated as proto;
 use miden_node_utils::tracing::miden_instrument;
-use miden_protocol::block::BlockNumber;
+use miden_protocol::block::{BlockNumber, BlockProof, SignedBlock};
+use miden_protocol::utils::serde::Deserializable;
 use tracing::debug;
 
 use super::{RpcService, database_error_to_status};
@@ -50,6 +51,30 @@ impl proto::server::rpc_api::GetBlockByNumber for RpcService {
             None
         };
 
-        Ok(proto::blockchain::MaybeBlock { block, proof })
+        let signed_block = block
+            .map(|bytes| {
+                SignedBlock::read_from_bytes(&bytes).map(Into::into).map_err(|err| {
+                    tonic::Status::data_loss(format!(
+                        "stored block {block_num} could not be decoded: {err}"
+                    ))
+                })
+            })
+            .transpose()?;
+        let block_proof = proof
+            .map(|bytes| {
+                if !bytes.is_empty() {
+                    return Err(tonic::Status::data_loss(format!(
+                        "stored proof for block {block_num} uses an unsupported non-empty placeholder encoding"
+                    )));
+                }
+                BlockProof::read_from_bytes(&bytes).map(Into::into).map_err(|err| {
+                    tonic::Status::data_loss(format!(
+                        "stored proof for block {block_num} could not be decoded: {err}"
+                    ))
+                })
+            })
+            .transpose()?;
+
+        Ok(proto::blockchain::MaybeBlock { signed_block, block_proof })
     }
 }

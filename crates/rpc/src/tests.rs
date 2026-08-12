@@ -43,6 +43,7 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AssetCallbackFlag,
 };
+use miden_protocol::block::SignedBlock;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
 use miden_protocol::utils::serde::Serializable;
@@ -51,6 +52,7 @@ use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::task;
+use tokio_stream::StreamExt;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Request;
 use tonic::metadata::MetadataMap;
@@ -181,6 +183,122 @@ fn rpc_descriptor_exposes_structured_note_schema() {
             .expect("the structured note_attachments field should be present");
         assert_eq!(attachments.number(), 5);
         assert_eq!(attachments.type_name(), ".note.NoteAttachments");
+    }
+}
+
+#[test]
+fn rpc_descriptor_exposes_structured_blockchain_schema_and_reserves_legacy_fields() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let blockchain_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name() == "types/blockchain.proto")
+        .expect("the public RPC descriptor should include types/blockchain.proto");
+
+    for name in [
+        "BlockAccountUpdate",
+        "IndexedOutputNote",
+        "OutputNoteBatch",
+        "BlockBodyContents",
+        "BlockProof",
+    ] {
+        assert!(
+            blockchain_file.message_type.iter().any(|message| message.name() == name),
+            "the public RPC descriptor should expose blockchain.{name}"
+        );
+    }
+
+    let block_body = blockchain_file
+        .message_type
+        .iter()
+        .find(|message| message.name() == "BlockBody")
+        .expect("blockchain.BlockBody should be present");
+    assert!(block_body.reserved_name.iter().any(|name| name == "block_body"));
+    assert!(
+        block_body
+            .reserved_range
+            .iter()
+            .any(|range| range.start() <= 1 && range.end() > 1)
+    );
+    let contents = block_body
+        .field
+        .iter()
+        .find(|field| field.name() == "contents")
+        .expect("structured BlockBody.contents should be present");
+    assert_eq!(contents.number(), 2);
+    assert_eq!(contents.type_name(), ".blockchain.BlockBodyContents");
+
+    let maybe_block = blockchain_file
+        .message_type
+        .iter()
+        .find(|message| message.name() == "MaybeBlock")
+        .expect("blockchain.MaybeBlock should be present");
+    for field_number in [1, 2] {
+        assert!(
+            maybe_block
+                .reserved_range
+                .iter()
+                .any(|range| range.start() <= field_number && range.end() > field_number)
+        );
+    }
+    for field_name in ["block", "proof"] {
+        assert!(maybe_block.reserved_name.iter().any(|name| name == field_name));
+        assert!(!maybe_block.field.iter().any(|field| field.name() == field_name));
+    }
+    assert_eq!(
+        maybe_block
+            .field
+            .iter()
+            .find(|field| field.name() == "signed_block")
+            .expect("MaybeBlock.signed_block should be present")
+            .number(),
+        3
+    );
+    assert_eq!(
+        maybe_block
+            .field
+            .iter()
+            .find(|field| field.name() == "block_proof")
+            .expect("MaybeBlock.block_proof should be present")
+            .number(),
+        4
+    );
+}
+
+#[test]
+fn rpc_descriptor_exposes_structured_block_subscription_schema() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let rpc_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name().ends_with("/rpc.proto"))
+        .expect("the public RPC descriptor should include rpc.proto");
+    for (message_name, legacy_name, legacy_number, structured_name, structured_number) in [
+        ("BlockSubscriptionResponse", "block", 1, "signed_block", 3),
+        ("ProofSubscriptionResponse", "proof", 2, "block_proof", 4),
+    ] {
+        let message = rpc_file
+            .message_type
+            .iter()
+            .find(|message| message.name() == message_name)
+            .unwrap_or_else(|| panic!("rpc.{message_name} should be present"));
+        assert!(message.reserved_name.iter().any(|name| name == legacy_name));
+        assert!(
+            message
+                .reserved_range
+                .iter()
+                .any(|range| range.start() <= legacy_number && range.end() > legacy_number)
+        );
+        assert!(!message.field.iter().any(|field| field.name() == legacy_name));
+        assert_eq!(
+            message
+                .field
+                .iter()
+                .find(|field| field.name() == structured_name)
+                .unwrap_or_else(|| panic!("rpc.{message_name}.{structured_name} should be present"))
+                .number(),
+            structured_number
+        );
     }
 }
 
@@ -421,6 +539,35 @@ async fn rpc_uses_in_process_store_state() {
     let (mut rpc_client, _, _store) = start_rpc().await;
     let response = send_request(&mut rpc_client).await;
     assert!(response.unwrap().into_inner().block_header.is_some());
+}
+
+#[tokio::test]
+async fn unary_and_streaming_block_responses_use_the_same_structured_value() {
+    let (mut rpc_client, _, store) = start_rpc().await;
+    let unary = rpc_client
+        .get_block_by_number(proto::blockchain::BlockRequest {
+            block_num: 0,
+            include_proof: Some(false),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(unary.block_proof.is_none());
+    let unary_block = SignedBlock::try_from(unary.signed_block.unwrap()).unwrap();
+
+    let stored_bytes = store.state.load_block(0_u32.into()).await.unwrap().unwrap();
+    assert_eq!(unary_block.to_bytes(), stored_bytes);
+
+    let mut stream = rpc_client
+        .block_subscription(proto::rpc::BlockSubscriptionRequest { block_from: 0 })
+        .await
+        .unwrap()
+        .into_inner();
+    let event = stream.next().await.unwrap().unwrap();
+    assert_eq!(event.committed_chain_tip, 0);
+    let streamed_block = SignedBlock::try_from(event.signed_block.unwrap()).unwrap();
+
+    assert_eq!(streamed_block, unary_block);
 }
 
 #[tokio::test]

@@ -6,7 +6,8 @@ use miden_node_proto::generated as grpc;
 use miden_node_proto::generated::validator::BlockSubscriptionResponse;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
-use miden_protocol::block::BlockNumber;
+use miden_protocol::block::{BlockNumber, SignedBlock};
+use miden_protocol::utils::serde::Deserializable;
 use tokio::sync::OwnedRwLockWriteGuard;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
@@ -83,10 +84,16 @@ impl grpc::server::validator_api::BlockSubscription for ValidatorService {
             async move {
                 for block in from.as_u32()..=committed_tip.as_u32() {
                     let response = match store.load_block(block.into()).await {
-                        Ok(Some(block)) => Ok(BlockSubscriptionResponse {
-                            block,
-                            committed_chain_tip: committed_tip.as_u32(),
-                        }),
+                        Ok(Some(block_bytes)) => SignedBlock::read_from_bytes(&block_bytes)
+                            .map(|signed_block| BlockSubscriptionResponse {
+                                committed_chain_tip: committed_tip.as_u32(),
+                                signed_block: Some(signed_block.into()),
+                            })
+                            .map_err(|err| {
+                                tonic::Status::data_loss(format!(
+                                    "stored block {block} could not be decoded: {err}"
+                                ))
+                            }),
                         Ok(None) => {
                             Err(tonic::Status::not_found(format!("block {block} not found")))
                         }

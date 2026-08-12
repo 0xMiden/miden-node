@@ -62,18 +62,36 @@ message NoteMetadata {
     primitives.Digest attachments_commitment = 5;
 }
 
+// Represents one public note attachment.
+message NoteAttachment {
+    // Valid range: 1..=65534.
+    uint32 scheme = 1;
+
+    // Ordered attachment content. Must contain 1..=256 words.
+    repeated primitives.Word words = 2;
+}
+
+// Represents the ordered public attachments of a note.
+message NoteAttachments {
+    // At most four attachments and 512 words in total.
+    repeated NoteAttachment attachments = 1;
+}
+
 // Represents a note.
 //
-// The note is composed of the note metadata, its serialized details, and serialized attachments.
+// The note is composed of its metadata, serialized details, and structured public attachments.
 message Note {
+    reserved 3;
+    reserved "attachments";
+
     // The note's metadata.
     NoteMetadata metadata = 1;
 
     // Serialized note details (empty for private notes).
     optional bytes details = 2;
 
-    // Serialized `miden_protocol::note::NoteAttachments`. Empty bytes encode an empty collection.
-    bytes attachments = 3;
+    // The note's public attachments. Required even when the collection is empty.
+    NoteAttachments note_attachments = 5;
 }
 
 // Represents a network note.
@@ -81,14 +99,17 @@ message Note {
 // Network notes are a subtype of public notes, and as such, their details are always publicly
 // known.
 message NetworkNote {
+    reserved 3;
+    reserved "attachments";
+
     // The note's metadata.
     NoteMetadata metadata = 1;
 
     // Serialized note details (i.e., assets and recipient).
     bytes details = 2;
 
-    // Serialized `miden_protocol::note::NoteAttachments`. Empty bytes encode an empty collection.
-    bytes attachments = 3;
+    // The note's public attachments. Required even when the collection is empty.
+    NoteAttachments note_attachments = 5;
 }
 
 // Represents a committed note.

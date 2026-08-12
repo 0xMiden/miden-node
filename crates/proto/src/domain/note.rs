@@ -3,6 +3,7 @@ use std::sync::Arc;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
     Note,
+    NoteAttachment,
     NoteAttachmentHeader,
     NoteAttachmentScheme,
     NoteAttachments,
@@ -21,7 +22,7 @@ use miden_protocol::utils::serde::Serializable;
 use miden_protocol::{MastForest, MastNodeId, Word};
 use miden_standards::note::AccountTargetNetworkNote;
 
-use crate::decode::{ConversionResultExt, DecodeBytesExt, GrpcDecodeExt};
+use crate::decode::{ConversionResultExt, DecodeBytesExt, GrpcDecodeExt, GrpcStructDecoder};
 use crate::errors::ConversionError;
 use crate::{decode, generated as proto};
 
@@ -111,21 +112,82 @@ impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
 // NOTE
 // ================================================================================================
 
+impl From<&NoteAttachment> for proto::note::NoteAttachment {
+    fn from(attachment: &NoteAttachment) -> Self {
+        Self {
+            scheme: u32::from(attachment.attachment_scheme().as_u16()),
+            words: attachment.content().as_words().iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::note::NoteAttachment> for NoteAttachment {
+    type Error = ConversionError;
+
+    fn try_from(attachment: proto::note::NoteAttachment) -> Result<Self, Self::Error> {
+        let scheme = u16::try_from(attachment.scheme).context("scheme")?;
+        let scheme = NoteAttachmentScheme::new(scheme)
+            .map_err(ConversionError::from)
+            .context("scheme")?;
+        let words = attachment
+            .words
+            .into_iter()
+            .map(Word::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .context("words")?;
+
+        NoteAttachment::with_words(scheme, words)
+            .map_err(ConversionError::from)
+            .context("words")
+    }
+}
+
+impl From<NoteAttachments> for proto::note::NoteAttachments {
+    fn from(attachments: NoteAttachments) -> Self {
+        Self::from(&attachments)
+    }
+}
+
+impl From<&NoteAttachments> for proto::note::NoteAttachments {
+    fn from(attachments: &NoteAttachments) -> Self {
+        Self {
+            attachments: attachments.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::note::NoteAttachments> for NoteAttachments {
+    type Error = ConversionError;
+
+    fn try_from(attachments: proto::note::NoteAttachments) -> Result<Self, Self::Error> {
+        let attachments = attachments
+            .attachments
+            .into_iter()
+            .map(NoteAttachment::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .context("attachments")?;
+
+        NoteAttachments::new(attachments)
+            .map_err(ConversionError::from)
+            .context("attachments")
+    }
+}
+
 impl From<Note> for proto::note::NetworkNote {
     fn from(note: Note) -> Self {
         let metadata = Some(proto::note::NoteMetadata::from(*note.metadata()));
-        let attachments = note.attachments().to_bytes();
+        let note_attachments = Some(note.attachments().into());
         let details = NoteDetails::from(note).to_bytes();
-        Self { metadata, details, attachments }
+        Self { metadata, details, note_attachments }
     }
 }
 
 impl From<Note> for proto::note::Note {
     fn from(note: Note) -> Self {
         let metadata = Some(proto::note::NoteMetadata::from(*note.metadata()));
-        let attachments = note.attachments().to_bytes();
+        let note_attachments = Some(note.attachments().into());
         let details = Some(NoteDetails::from(note).to_bytes());
-        Self { metadata, details, attachments }
+        Self { metadata, details, note_attachments }
     }
 }
 
@@ -140,14 +202,14 @@ impl TryFrom<proto::note::NetworkNote> for AccountTargetNetworkNote {
 
     fn try_from(value: proto::note::NetworkNote) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::note::NetworkNote { metadata, details, attachments } = value;
+        let proto::note::NetworkNote { metadata, details, note_attachments } = value;
 
         let metadata = decode!(decoder, metadata)?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
 
         let note_details = NoteDetails::decode_bytes(&details, "NoteDetails")?;
         let (assets, recipient) = note_details.into_parts();
-        let attachments = decode_attachments(&attachments)?;
+        let attachments = decode_note_attachments::<proto::note::NetworkNote>(note_attachments)?;
 
         let note = Note::with_attachments(assets, partial_metadata, recipient, attachments);
         AccountTargetNetworkNote::new(note).map_err(ConversionError::from)
@@ -159,7 +221,7 @@ impl TryFrom<proto::note::Note> for Note {
 
     fn try_from(proto_note: proto::note::Note) -> Result<Self, Self::Error> {
         let decoder = proto_note.decoder();
-        let proto::note::Note { metadata, details, attachments } = proto_note;
+        let proto::note::Note { metadata, details, note_attachments } = proto_note;
 
         let metadata = decode!(decoder, metadata)?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
@@ -167,7 +229,7 @@ impl TryFrom<proto::note::Note> for Note {
         let details: Vec<u8> = decode!(decoder, details)?;
         let note_details = NoteDetails::decode_bytes(&details, "NoteDetails")?;
         let (assets, recipient) = note_details.into_parts();
-        let attachments = decode_attachments(&attachments)?;
+        let attachments = decode_note_attachments::<proto::note::Note>(note_attachments)?;
 
         Ok(Note::with_attachments(assets, partial_metadata, recipient, attachments))
     }
@@ -303,14 +365,11 @@ fn partial_note_metadata_from_proto(
     Ok(PartialNoteMetadata::new(sender, note_type).with_tag(tag))
 }
 
-/// Decodes a serialized [`NoteAttachments`] payload. Empty bytes are treated as an empty collection
-/// so that proto3's default value round-trips cleanly.
-fn decode_attachments(bytes: &[u8]) -> Result<NoteAttachments, ConversionError> {
-    if bytes.is_empty() {
-        Ok(NoteAttachments::empty())
-    } else {
-        NoteAttachments::decode_bytes(bytes, "NoteAttachments")
-    }
+/// Requires and decodes the structured attachments carried by a note message.
+fn decode_note_attachments<M: prost::Message>(
+    attachments: Option<proto::note::NoteAttachments>,
+) -> Result<NoteAttachments, ConversionError> {
+    GrpcStructDecoder::<M>::default().decode_field("note_attachments", attachments)
 }
 
 #[cfg(test)]
@@ -318,6 +377,33 @@ mod tests {
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountType, AssetCallbackFlag};
 
     use super::*;
+
+    fn word(value: u32) -> Word {
+        Word::from([value, value + 1, value + 2, value + 3])
+    }
+
+    fn attachment(scheme: u16, num_words: usize, first_word: u32) -> NoteAttachment {
+        let words = (0..num_words)
+            .map(|index| word(first_word + u32::try_from(index).unwrap() * 4))
+            .collect();
+        NoteAttachment::with_words(NoteAttachmentScheme::new(scheme).unwrap(), words).unwrap()
+    }
+
+    fn proto_attachment(scheme: u32, num_words: usize) -> proto::note::NoteAttachment {
+        proto::note::NoteAttachment {
+            scheme,
+            words: vec![
+                proto::primitives::Word { encoded: vec![0; Word::SERIALIZED_SIZE] };
+                num_words
+            ],
+        }
+    }
+
+    fn note_with_attachments(attachments: NoteAttachments) -> Note {
+        let base = Note::mock_noop(word(100));
+        let (assets, metadata, recipient, _) = base.into_parts();
+        Note::with_attachments(assets, metadata.into_partial_metadata(), recipient, attachments)
+    }
 
     #[test]
     fn note_header_roundtrip_preserves_id() {
@@ -347,5 +433,194 @@ mod tests {
         assert_eq!(decoded.id(), original.id());
         assert_eq!(decoded.details_commitment(), original.details_commitment());
         assert_eq!(decoded.metadata(), original.metadata());
+    }
+
+    #[test]
+    fn empty_attachments_roundtrip() {
+        let original = NoteAttachments::empty();
+        let encoded = proto::note::NoteAttachments::from(original.clone());
+
+        assert!(encoded.attachments.is_empty());
+        assert_eq!(NoteAttachments::try_from(encoded).unwrap(), original);
+    }
+
+    #[test]
+    fn one_attachment_with_none_scheme_roundtrips() {
+        let original =
+            NoteAttachments::from(NoteAttachment::with_word(NoteAttachmentScheme::none(), word(1)));
+        let encoded = proto::note::NoteAttachments::from(&original);
+
+        assert_eq!(encoded.attachments[0].scheme, 1);
+        assert_eq!(NoteAttachments::try_from(encoded).unwrap(), original);
+    }
+
+    #[test]
+    fn attachment_and_word_order_and_duplicate_schemes_are_preserved() {
+        let original = NoteAttachments::new(vec![
+            attachment(42, 3, 1),
+            attachment(42, 2, 101),
+            attachment(7, 1, 201),
+        ])
+        .unwrap();
+
+        let encoded = proto::note::NoteAttachments::from(&original);
+        assert_eq!(
+            encoded.attachments.iter().map(|item| item.scheme).collect::<Vec<_>>(),
+            [42, 42, 7]
+        );
+        assert_eq!(
+            encoded.attachments[0]
+                .words
+                .iter()
+                .map(|item| Word::try_from(item).unwrap())
+                .collect::<Vec<_>>(),
+            original.get(0).unwrap().content().as_words()
+        );
+        assert_eq!(NoteAttachments::try_from(encoded).unwrap(), original);
+    }
+
+    #[test]
+    fn attachment_boundaries_are_accepted() {
+        let four = NoteAttachments::new(vec![
+            attachment(1, 1, 1),
+            attachment(2, 1, 10),
+            attachment(3, 1, 20),
+            attachment(4, 1, 30),
+        ])
+        .unwrap();
+        assert_eq!(
+            NoteAttachments::try_from(proto::note::NoteAttachments::from(four.clone())).unwrap(),
+            four
+        );
+
+        let max_single = NoteAttachments::from(attachment(1, 256, 1));
+        assert_eq!(
+            NoteAttachments::try_from(proto::note::NoteAttachments::from(max_single.clone()))
+                .unwrap(),
+            max_single
+        );
+
+        let max_total = NoteAttachments::new(vec![
+            attachment(1, 128, 1),
+            attachment(2, 128, 1001),
+            attachment(3, 128, 2001),
+            attachment(4, 128, 3001),
+        ])
+        .unwrap();
+        assert_eq!(
+            NoteAttachments::try_from(proto::note::NoteAttachments::from(max_total.clone()))
+                .unwrap(),
+            max_total
+        );
+    }
+
+    #[test]
+    fn invalid_attachment_schemes_are_rejected() {
+        for scheme in [0, 65_535, u32::from(u16::MAX) + 1] {
+            let err = NoteAttachment::try_from(proto_attachment(scheme, 1)).unwrap_err();
+            assert!(err.to_string().starts_with("scheme:"), "unexpected error: {err}");
+        }
+    }
+
+    #[test]
+    fn invalid_attachment_sizes_are_rejected() {
+        let empty = NoteAttachment::try_from(proto_attachment(1, 0)).unwrap_err();
+        assert!(empty.to_string().starts_with("words:"), "unexpected error: {empty}");
+
+        let too_large = NoteAttachment::try_from(proto_attachment(1, 257)).unwrap_err();
+        assert!(too_large.to_string().starts_with("words:"), "unexpected error: {too_large}");
+    }
+
+    #[test]
+    fn invalid_attachment_collections_are_rejected() {
+        let five = proto::note::NoteAttachments {
+            attachments: (1..=5).map(|scheme| proto_attachment(scheme, 1)).collect(),
+        };
+        let err = NoteAttachments::try_from(five).unwrap_err();
+        assert!(err.to_string().starts_with("attachments:"), "unexpected error: {err}");
+
+        let over_total = proto::note::NoteAttachments {
+            attachments: vec![
+                proto_attachment(1, 171),
+                proto_attachment(2, 171),
+                proto_attachment(3, 171),
+            ],
+        };
+        let err = NoteAttachments::try_from(over_total).unwrap_err();
+        assert!(err.to_string().starts_with("attachments:"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn malformed_primitive_word_is_rejected_with_context() {
+        let value = proto::note::NoteAttachment {
+            scheme: 1,
+            words: vec![proto::primitives::Word { encoded: vec![0; 31] }],
+        };
+        let err = NoteAttachment::try_from(value).unwrap_err();
+
+        assert!(err.to_string().starts_with("words.word.encoded:"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn attachment_commitment_roundtrips() {
+        let original =
+            NoteAttachments::new(vec![attachment(11, 4, 1), attachment(12, 3, 100)]).unwrap();
+        let expected_commitment = original.to_commitment();
+        let decoded =
+            NoteAttachments::try_from(proto::note::NoteAttachments::from(original)).unwrap();
+
+        assert_eq!(decoded.to_commitment(), expected_commitment);
+    }
+
+    #[test]
+    fn note_encoding_keeps_attachments_and_metadata_consistent() {
+        let attachments =
+            NoteAttachments::new(vec![attachment(11, 2, 1), attachment(11, 3, 100)]).unwrap();
+        let note = note_with_attachments(attachments.clone());
+        let encoded = proto::note::Note::from(note.clone());
+        let metadata = encoded.metadata.as_ref().unwrap();
+        let encoded_attachments = encoded.note_attachments.as_ref().unwrap();
+
+        assert_eq!(
+            metadata.attachment_schemes,
+            attachments
+                .to_headers()
+                .iter()
+                .map(|header| u32::from(header.scheme().map_or(0, |scheme| scheme.as_u16())))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            Word::try_from(metadata.attachments_commitment.as_ref().unwrap()).unwrap(),
+            attachments.to_commitment()
+        );
+        assert_eq!(NoteAttachments::try_from(encoded_attachments.clone()).unwrap(), attachments);
+
+        let decoded = Note::try_from(encoded).unwrap();
+        assert_eq!(decoded.attachments(), note.attachments());
+        assert_eq!(
+            decoded.metadata().attachments_commitment(),
+            note.metadata().attachments_commitment()
+        );
+    }
+
+    #[test]
+    fn missing_structured_attachments_are_rejected() {
+        let mut encoded = proto::note::Note::from(note_with_attachments(NoteAttachments::empty()));
+        encoded.note_attachments = None;
+
+        let err = Note::try_from(encoded).unwrap_err();
+        assert!(err.to_string().contains("note_attachments"), "unexpected error: {err}");
+
+        let default_note = proto::note::Note::default();
+        let err = decode_note_attachments::<proto::note::Note>(default_note.note_attachments)
+            .unwrap_err();
+        assert!(err.to_string().contains("note_attachments"), "unexpected error: {err}");
+
+        let default_network_note = proto::note::NetworkNote::default();
+        let err = decode_note_attachments::<proto::note::NetworkNote>(
+            default_network_note.note_attachments,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("note_attachments"), "unexpected error: {err}");
     }
 }

@@ -18,13 +18,6 @@ message SignedBlock {
     repeated BlockSignature signatures = 3;
 }
 
-// Represents a proposed block.
-message ProposedBlock {
-    // Block data encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::ProposedBlock].
-    bytes proposed_block = 1;
-}
-
 // Request for retrieving a block by its number, optionally including the block proof.
 message BlockRequest {
     // The block number of the target block.

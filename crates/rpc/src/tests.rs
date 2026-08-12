@@ -1025,7 +1025,7 @@ impl validator_api::SignBlock for FixedValidator {
     type Input = ();
     type Output = proto::blockchain::SignBlockResponse;
 
-    fn decode(_request: proto::blockchain::ProposedBlock) -> tonic::Result<Self::Input> {
+    fn decode(_request: proto::validator::ProposedBlock) -> tonic::Result<Self::Input> {
         Ok(())
     }
 

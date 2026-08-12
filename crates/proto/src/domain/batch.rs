@@ -1,21 +1,28 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use miden_protocol::Word;
-use miden_protocol::account::{AccountId, AccountUpdateDetails};
-use miden_protocol::batch::{BatchAccountUpdate, ProposedBatch, ProvenBatch};
+use miden_protocol::account::{Account, AccountId, AccountUpdateDetails};
+use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProposedBatch, ProvenBatch};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{NoteId, NoteInclusionProof};
 use miden_protocol::transaction::{
     InputNoteCommitment,
+    InputNotes,
     OrderedTransactionHeaders,
     OutputNote,
     PartialBlockchain,
     ProvenTransaction,
     TransactionHeader,
 };
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
+use miden_protocol::{
+    ACCOUNT_UPDATE_MAX_SIZE,
+    MAX_ACCOUNTS_PER_BATCH,
+    MAX_INPUT_NOTES_PER_BATCH,
+    MAX_OUTPUT_NOTES_PER_BATCH,
+    Word,
+};
 
 use crate::decode::{ConversionResultExt, GrpcDecodeExt};
 use crate::errors::ConversionError;
@@ -157,6 +164,144 @@ impl TryFrom<proto::transaction::BatchAccountUpdate> for BatchAccountUpdateProje
     }
 }
 
+impl BatchAccountUpdateProjection {
+    fn into_domain(self) -> Result<BatchAccountUpdate, ConversionError> {
+        if self.details.get_size_hint() > ACCOUNT_UPDATE_MAX_SIZE as usize {
+            return Err(ConversionError::message("account update exceeds the size limit"));
+        }
+
+        match (&self.details, self.account_id.is_private()) {
+            (AccountUpdateDetails::Private, true) => {},
+            (AccountUpdateDetails::Public(_), true) => {
+                return Err(ConversionError::message(
+                    "private account update must not reveal public details",
+                ));
+            },
+            (AccountUpdateDetails::Private, false) => {
+                return Err(ConversionError::message(
+                    "public account update must include public details",
+                ));
+            },
+            (AccountUpdateDetails::Public(patch), false) => {
+                if patch.id() != self.account_id {
+                    return Err(ConversionError::message(
+                        "public account patch ID does not match account ID",
+                    ));
+                }
+                if self.initial_state_commitment.is_empty() {
+                    let account = Account::try_from(patch).map_err(ConversionError::new)?;
+                    if account.to_commitment() != self.final_state_commitment {
+                        return Err(ConversionError::message(
+                            "new public account commitment does not match its full-state patch",
+                        ));
+                    }
+                }
+            },
+        }
+
+        Ok(BatchAccountUpdate::new_unchecked(
+            self.account_id,
+            self.initial_state_commitment,
+            self.final_state_commitment,
+            self.details,
+        ))
+    }
+}
+
+/// Decodes a proven batch without a proposal, for the internal proposed-block API.
+///
+/// This validates every invariant available from the transmitted batch. Cryptographic proof
+/// verification remains the responsibility of the service boundary.
+pub fn decode_standalone_proven_batch(
+    value: proto::transaction::ProvenBatch,
+) -> Result<ProvenBatch, ConversionError> {
+    let decoder = value.decoder();
+    let reference_block_commitment = decode!(decoder, value.reference_block_commitment)?;
+
+    if value.account_updates.len() > MAX_ACCOUNTS_PER_BATCH {
+        return Err(ConversionError::message("too many account updates").context("account_updates"));
+    }
+    let mut account_updates = BTreeMap::new();
+    let mut previous_account_id = None;
+    for (index, update) in value.account_updates.into_iter().enumerate() {
+        let projection = BatchAccountUpdateProjection::try_from(update)
+            .context(format!("account_updates[{index}]"))?;
+        if previous_account_id.is_some_and(|previous| projection.account_id <= previous) {
+            return Err(ConversionError::message(
+                "account updates must have unique, ascending account IDs",
+            )
+            .context(format!("account_updates[{index}].account_id")));
+        }
+        previous_account_id = Some(projection.account_id);
+        let update = projection.into_domain().context(format!("account_updates[{index}]"))?;
+        account_updates.insert(update.account_id(), update);
+    }
+
+    if value.input_notes.len() > MAX_INPUT_NOTES_PER_BATCH {
+        return Err(ConversionError::message("too many input notes").context("input_notes"));
+    }
+    let input_notes = value
+        .input_notes
+        .into_iter()
+        .enumerate()
+        .map(|(index, note)| {
+            InputNoteCommitment::try_from(note).context(format!("input_notes[{index}]"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut nullifiers = BTreeSet::new();
+    for (index, note) in input_notes.iter().enumerate() {
+        if !nullifiers.insert(note.nullifier()) {
+            return Err(ConversionError::message("duplicate input note nullifier")
+                .context(format!("input_notes[{index}]")));
+        }
+    }
+    let input_notes = InputNotes::new_unchecked(input_notes);
+
+    if value.output_notes.len() > MAX_OUTPUT_NOTES_PER_BATCH {
+        return Err(ConversionError::message("too many output notes").context("output_notes"));
+    }
+    let output_notes = value
+        .output_notes
+        .into_iter()
+        .enumerate()
+        .map(|(index, note)| OutputNote::try_from(note).context(format!("output_notes[{index}]")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut output_note_ids = BTreeSet::new();
+    for (index, note) in output_notes.iter().enumerate() {
+        if !output_note_ids.insert(note.id()) {
+            return Err(ConversionError::message("duplicate output note ID")
+                .context(format!("output_notes[{index}]")));
+        }
+    }
+
+    let transactions = value
+        .transactions
+        .into_iter()
+        .enumerate()
+        .map(|(index, tx)| {
+            TransactionHeader::try_from(tx).context(format!("transactions[{index}]"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let id = BatchId::from_ids(transactions.iter().map(|tx| (tx.id(), tx.account_id())));
+    let transactions = OrderedTransactionHeaders::new_unchecked(transactions);
+    let proof = ExecutionProof::read_from_bytes(&value.proof)
+        .map_err(|source| ConversionError::deserialization("ExecutionProof", source))
+        .context("proof")?;
+
+    ProvenBatch::new_unchecked(
+        id,
+        reference_block_commitment,
+        BlockNumber::from(value.reference_block_num),
+        account_updates,
+        input_notes,
+        output_notes,
+        BlockNumber::from(value.expiration_block_num),
+        transactions,
+        proof,
+    )
+    .map_err(ConversionError::new)
+}
+
 /// Decodes a proven batch and checks every duplicated public field against its proposal.
 pub fn decode_proven_batch(
     value: proto::transaction::ProvenBatch,
@@ -293,7 +438,7 @@ mod tests {
     };
     use miden_protocol::vm::ExecutionProof;
 
-    use super::decode_proven_batch;
+    use super::{decode_proven_batch, decode_standalone_proven_batch};
     use crate::generated as proto;
 
     fn proposal_and_proof() -> (ProposedBatch, ProvenBatch) {
@@ -391,6 +536,33 @@ mod tests {
             .push(duplicate_account.account_updates[0].clone());
         assert!(
             decode_proven_batch(duplicate_account, &proposed)
+                .unwrap_err()
+                .to_string()
+                .contains("account_updates")
+        );
+    }
+
+    #[test]
+    fn standalone_proven_batch_roundtrips_and_rejects_malformed_fields() {
+        let (_, proven) = proposal_and_proof();
+        let encoded = proto::transaction::ProvenBatch::from(&proven);
+        assert_eq!(decode_standalone_proven_batch(encoded.clone()).unwrap(), proven);
+
+        let mut malformed_proof = encoded.clone();
+        malformed_proof.proof = vec![0xff];
+        assert!(
+            decode_standalone_proven_batch(malformed_proof)
+                .unwrap_err()
+                .to_string()
+                .contains("proof")
+        );
+
+        let mut duplicate_account = encoded;
+        duplicate_account
+            .account_updates
+            .push(duplicate_account.account_updates[0].clone());
+        assert!(
+            decode_standalone_proven_batch(duplicate_account)
                 .unwrap_err()
                 .to_string()
                 .contains("account_updates")

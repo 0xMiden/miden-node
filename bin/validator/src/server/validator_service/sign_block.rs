@@ -5,7 +5,7 @@ use miden_node_utils::ErrorReport;
 use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
-use miden_tx::utils::serde::{Deserializable, Serializable};
+use miden_tx::utils::serde::Serializable;
 
 use super::ValidatorService;
 
@@ -14,11 +14,9 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
     type Input = ProposedBlock;
     type Output = (Signature, Word, PublicKey);
 
-    fn decode(request: grpc::blockchain::ProposedBlock) -> tonic::Result<Self::Input> {
-        ProposedBlock::read_from_bytes(&request.proposed_block).map_err(|err| {
-            tonic::Status::invalid_argument(
-                err.as_report_context("Failed to deserialize proposed block"),
-            )
+    fn decode(request: grpc::validator::ProposedBlock) -> tonic::Result<Self::Input> {
+        ProposedBlock::try_from(request).map_err(|err| {
+            tonic::Status::invalid_argument(err.as_report_context("Invalid proposed block"))
         })
     }
 

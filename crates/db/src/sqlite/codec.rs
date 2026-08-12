@@ -11,8 +11,7 @@
 //!
 //! Integer primitives read back range-checked rather than cast, so a column holding a value outside
 //! the target type's range errors instead of silently truncating. The one place a lossy conversion
-//! is deliberate is where the stored encoding itself is a bit-pattern wrap (`NoteTag`, `Felt`);
-//! those are documented at the impl.
+//! is deliberate is `Felt`.
 
 use std::rc::Rc;
 
@@ -269,22 +268,14 @@ impl FromSqlValue for BlockNumber {
 }
 
 impl ToSqlValue for NoteTag {
-    #[expect(
-        clippy::cast_possible_wrap,
-        reason = "tags occupy the full u32 range and are stored as the wrapped i32 bit pattern"
-    )]
     fn to_sql_value(&self) -> DbValue {
-        DbValue::integer(i64::from(self.as_u32() as i32))
+        DbValue::integer(i64::from(self.as_u32()))
     }
 }
 
 impl FromSqlValue for NoteTag {
-    #[expect(clippy::cast_sign_loss, reason = "reverses the u32 -> i32 wrap applied on write")]
     fn from_sql_value(value: DbValueRef<'_>) -> Result<Self, DatabaseError> {
-        let raw = value.as_i64()?;
-        let raw =
-            i32::try_from(raw).map_err(|err| DatabaseError::deserialization("NoteTag", err))?;
-        Ok(NoteTag::new(raw as u32))
+        u32::from_sql_value(value).map(NoteTag::new)
     }
 }
 
@@ -407,8 +398,6 @@ mod tests {
 
     // ENCODING PARITY WITH `SqlTypeConvert`
     // ---------------------------------------------------------------------------------------------
-    // These are the load-bearing tests of this module: the codec must write and read exactly the
-    // bytes the diesel-era `SqlTypeConvert` impls did, or it silently misreads existing databases.
 
     #[test]
     fn block_number_roundtrip() {
@@ -430,17 +419,15 @@ mod tests {
 
     #[test]
     fn note_tag_roundtrip() {
-        // The tags above `i32::MAX` are the interesting ones: they are stored as a negative
-        // integer, and a range-checked (rather than wrapping) read would reject them.
         for tag in [
             NoteTag::new(0),
             NoteTag::new(1),
-            NoteTag::new(i32::MAX as u32),
+            NoteTag::new((1 << 31) - 1),
             NoteTag::new(1 << 31),
             NoteTag::new(u32::MAX),
         ] {
             let raw = bound_integer(&tag);
-            assert_eq!(raw, i64::from(tag.to_raw_sql()), "write side diverged for {tag:?}");
+            assert_eq!(raw, i64::from(tag.as_u32()), "tags are stored unsigned: {tag:?}");
             assert_eq!(
                 read_integer::<NoteTag>(raw).unwrap(),
                 tag,

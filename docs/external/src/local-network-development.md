@@ -228,6 +228,13 @@ chain data before starting with a different genesis configuration:
 make local-network-delete
 ```
 
+## Storage Key Setup
+
+The Compose bootstrap service runs the two-of-three storage key ceremony and validates each validator's output before
+starting the network. This can take several minutes. For a faster local start, set
+`MIDEN_VALIDATOR_USE_STORAGE_KEY_FIXTURE=true` to use the committed insecure fixture instead. The fixture is public test
+data and must never be used outside local development.
+
 ## Check the RPC API
 
 The RPC server exposes gRPC reflection. With `grpcurl` installed, a basic status check looks like:

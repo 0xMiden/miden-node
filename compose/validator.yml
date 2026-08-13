@@ -3,17 +3,6 @@ x-validator: &validator
   pull_policy: missing
   volumes:
     - node-data:/data
-  configs:
-    - source: validator-storage-key-setup-context
-      target: /storage-key/setup-context.wire
-    - source: validator-storage-key-public-set
-      target: /storage-key/public-key-set.wire
-    - source: validator-1-storage-key-secret-share
-      target: /storage-key/validator-1/secret-share.wire
-    - source: validator-2-storage-key-secret-share
-      target: /storage-key/validator-2/secret-share.wire
-    - source: validator-3-storage-key-secret-share
-      target: /storage-key/validator-3/secret-share.wire
   depends_on:
     bootstrap-validator:
       condition: service_completed_successfully
@@ -34,9 +23,9 @@ services:
       MIDEN_VALIDATOR_DATA_DIRECTORY: /data/validators/1
       MIDEN_VALIDATOR_SIGNING_KEY: ${MIDEN_VALIDATOR_1_SIGNING_KEY:-0101010101010101010101010101010101010101010101010101010101010101}
       MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
-      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/validator-1/secret-share.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /data/validators/1/storage-key/setup-context.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /data/validators/1/storage-key/public-key-set.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /data/validators/1/storage-key/secret-share.wire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-1
 
@@ -48,9 +37,9 @@ services:
       MIDEN_VALIDATOR_DATA_DIRECTORY: /data/validators/2
       MIDEN_VALIDATOR_SIGNING_KEY: ${MIDEN_VALIDATOR_2_SIGNING_KEY:-0303030303030303030303030303030303030303030303030303030303030303}
       MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
-      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/validator-2/secret-share.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /data/validators/2/storage-key/setup-context.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /data/validators/2/storage-key/public-key-set.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /data/validators/2/storage-key/secret-share.wire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-2
 
@@ -62,9 +51,9 @@ services:
       MIDEN_VALIDATOR_DATA_DIRECTORY: /data/validators/3
       MIDEN_VALIDATOR_SIGNING_KEY: ${MIDEN_VALIDATOR_3_SIGNING_KEY:-0404040404040404040404040404040404040404040404040404040404040404}
       MIDEN_VALIDATOR_STORAGE_KEY_EPOCH: ${MIDEN_VALIDATOR_STORAGE_KEY_EPOCH:-0909090909090909090909090909090909090909090909090909090909090909}
-      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /storage-key/setup-context.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /storage-key/public-key-set.wire
-      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /storage-key/validator-3/secret-share.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT: /data/validators/3/storage-key/setup-context.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET: /data/validators/3/storage-key/public-key-set.wire
+      MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE: /data/validators/3/storage-key/secret-share.wire
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_RESOURCE_ATTRIBUTES: service.instance.id=validator-3
 

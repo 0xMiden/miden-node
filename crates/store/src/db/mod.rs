@@ -1,12 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::mem::size_of;
 use std::num::NonZeroUsize;
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
-use diesel::{Connection, SqliteConnection};
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_proto::domain::account::AccountInfo;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
@@ -35,21 +34,17 @@ use miden_protocol::note::{
     Nullifier,
 };
 use miden_protocol::transaction::TransactionHeader;
-use miden_protocol::utils::serde::Deserializable;
 use tracing::info;
 
 use crate::db::migrations::{migrate_database, verify_latest_schema};
-use crate::db::models::conv::SqlTypeConvert;
-use crate::db::models::queries;
-pub use crate::db::models::queries::{
+pub use crate::db::queries::{
     AccountCommitmentsPage,
+    HISTORICAL_BLOCK_RETENTION,
     NullifiersPage,
+    PrecomputedPublicAccountState,
+    PrecomputedPublicAccountStates,
     PublicAccountIdsPage,
     PublicAccountStateRootsPage,
-};
-use crate::db::models::queries::{
-    BlockHeaderCommitment,
-    PrecomputedPublicAccountStates,
     StorageMapValuesPage,
 };
 use crate::errors::{DatabaseError, NoteSyncError};
@@ -69,9 +64,17 @@ mod migrations;
 pub(crate) use migrations::bootstrap_database;
 
 #[cfg(test)]
+mod test_db;
+#[cfg(test)]
+pub(crate) use test_db::TestDb;
+
+#[cfg(test)]
 mod tests;
 
-pub(crate) mod models;
+/// Query functions on the `miden-node-db` SQLite framework.
+pub(crate) mod queries;
+
+mod utils;
 
 /// [diesel](https://diesel.rs) generated schema
 ///
@@ -98,22 +101,28 @@ impl Default for DatabaseOptions {
 
 /// The Store's database.
 ///
-/// Extends the underlying [`miden_node_db::Db`] type with functionality specific to the Store.
+/// Owns the writer and reader handles of the `miden-node-db` SQLite framework: every write
+/// serializes on the single writer connection, while reads run concurrently on the reader pool.
 pub struct Db {
-    db: miden_node_db::Db,
+    writer: DbWriter,
+    reader: DbReader,
 }
 
-impl Deref for Db {
-    type Target = miden_node_db::Db;
+/// The commitment of a [`BlockHeader`], stored alongside the header it belongs to.
+///
+/// Keeping it in its own column lets the chain MMR be rebuilt at startup without deserializing
+/// every header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct BlockHeaderCommitment(pub(crate) Word);
 
-    fn deref(&self) -> &Self::Target {
-        &self.db
+impl BlockHeaderCommitment {
+    pub fn new(header: &BlockHeader) -> Self {
+        Self(header.commitment())
     }
-}
 
-impl DerefMut for Db {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.db
+    pub fn word(self) -> Word {
+        self.0
     }
 }
 
@@ -126,18 +135,6 @@ pub struct AccountVaultValue {
     pub vault_key: AssetId,
     /// None if the asset was removed
     pub asset: Option<Asset>,
-}
-
-impl AccountVaultValue {
-    pub fn from_raw_row(row: (i64, Vec<u8>, Option<Vec<u8>>)) -> Result<Self, DatabaseError> {
-        let (block_num, vault_key, asset) = row;
-        let vault_key = Word::read_from_bytes(&vault_key)?;
-        Ok(Self {
-            block_num: BlockNumber::from_raw_sql(block_num)?,
-            vault_key: AssetId::try_from(vault_key)?,
-            asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
-        })
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -212,28 +209,29 @@ impl Db {
         fields(path=%database_filepath.display())
         err,
     )]
-    pub fn bootstrap(database_filepath: PathBuf, genesis: GenesisBlock) -> anyhow::Result<()> {
+    pub async fn bootstrap(
+        database_filepath: PathBuf,
+        genesis: GenesisBlock,
+    ) -> anyhow::Result<()> {
         migrations::bootstrap_database(&database_filepath)
             .context("failed to bootstrap database schema")?;
 
-        let mut conn: SqliteConnection = diesel::sqlite::SqliteConnection::establish(
-            database_filepath.to_str().context("database filepath is invalid")?,
-        )
-        .context("failed to open a database connection")?;
-
-        miden_node_db::configure_connection_on_creation(&mut conn)?;
+        let (writer, _reader) = miden_node_db::sqlite::open(&database_filepath)
+            .context("failed to open a database connection")?;
 
         // Insert genesis block data.
         let genesis_block = genesis.into_inner();
-        conn.transaction(move |conn| {
-            models::queries::apply_block(
-                conn,
-                &genesis_block,
-                &[],
-                &PrecomputedPublicAccountStates::new(),
-            )
-        })
-        .context("failed to insert genesis block")?;
+        writer
+            .write::<_, DatabaseError, _>("insert genesis block", move |tx| {
+                queries::apply_block(
+                    tx,
+                    &genesis_block,
+                    &[],
+                    &PrecomputedPublicAccountStates::new(),
+                )
+            })
+            .await
+            .context("failed to insert genesis block")?;
         Ok(())
     }
 
@@ -257,7 +255,8 @@ impl Db {
     ) -> Result<Self, DatabaseError> {
         verify_latest_schema(&database_filepath)?;
 
-        let db = miden_node_db::Db::new_with_pool_size(&database_filepath, connection_pool_size)?;
+        let (writer, reader) =
+            miden_node_db::sqlite::open_with_pool_size(&database_filepath, connection_pool_size)?;
         info!(
             target: LOG_TARGET,
             sqlite= %database_filepath.display(),
@@ -265,7 +264,13 @@ impl Db {
             "Connected to the database"
         );
 
-        Ok(Self { db })
+        Ok(Self { writer, reader })
+    }
+
+    /// The write handle, for tests that need to seed or corrupt rows no production method writes.
+    #[cfg(test)]
+    pub(crate) fn writer(&self) -> &DbWriter {
+        &self.writer
     }
 
     /// Applies all pending migrations to an existing DB.
@@ -288,10 +293,11 @@ impl Db {
         page_size: std::num::NonZeroUsize,
         after_nullifier: Option<Nullifier>,
     ) -> Result<NullifiersPage> {
-        self.transact("read nullifiers paged", move |conn| {
-            queries::select_nullifiers_paged(conn, page_size, after_nullifier)
-        })
-        .await
+        self.reader
+            .read("read nullifiers paged", move |tx| {
+                queries::select_nullifiers_paged(tx, page_size, after_nullifier)
+            })
+            .await
     }
 
     /// Loads the nullifiers that match the prefixes from the DB.
@@ -313,17 +319,18 @@ impl Db {
         let block_range = block_range.into_inner();
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
-        self.transact("nullifieres by prefix", move |conn| {
-            let nullifier_prefixes =
-                Vec::from_iter(nullifier_prefixes.into_iter().map(|prefix| prefix as u16));
-            queries::select_nullifiers_by_prefix(
-                conn,
-                prefix_len as u8,
-                &nullifier_prefixes[..],
-                block_range,
-            )
-        })
-        .await
+        self.reader
+            .read("nullifieres by prefix", move |tx| {
+                let nullifier_prefixes =
+                    Vec::from_iter(nullifier_prefixes.into_iter().map(|prefix| prefix as u16));
+                queries::select_nullifiers_by_prefix(
+                    tx,
+                    prefix_len as u8,
+                    &nullifier_prefixes[..],
+                    block_range,
+                )
+            })
+            .await
     }
 
     /// Search for a [`BlockHeader`] from the database by its `block_num`.
@@ -338,14 +345,14 @@ impl Db {
         &self,
         maybe_block_number: Option<ScopedBlockNum>,
     ) -> Result<Option<BlockHeader>> {
-        self.transact("block headers by block number", move |conn| {
-            let val = queries::select_block_header_by_block_num(
-                conn,
-                maybe_block_number.map(|block_number| *block_number),
-            )?;
-            Ok(val)
-        })
-        .await
+        self.reader
+            .read("block headers by block number", move |tx| {
+                queries::select_block_header_by_block_num(
+                    tx,
+                    maybe_block_number.map(|block_number| *block_number),
+                )
+            })
+            .await
     }
 
     /// Search for a [`BlockHeader`] and its [`BlockSignatures`] from the database by its
@@ -359,12 +366,11 @@ impl Db {
         &self,
         block_number: ScopedBlockNum,
     ) -> Result<Option<(BlockHeader, BlockSignatures)>> {
-        self.transact("block headers and signatures by block number", move |conn| {
-            let val =
-                queries::select_block_header_and_signatures_by_block_num(conn, *block_number)?;
-            Ok(val)
-        })
-        .await
+        self.reader
+            .read("block headers and signatures by block number", move |tx| {
+                queries::select_block_header_and_signatures_by_block_num(tx, *block_number)
+            })
+            .await
     }
 
     /// Loads multiple block headers from the DB.
@@ -377,11 +383,11 @@ impl Db {
         &self,
         blocks: impl Iterator<Item = ScopedBlockNum> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
-        self.transact("block headers from given block numbers", move |conn| {
-            let raw = queries::select_block_headers(conn, blocks.map(|block| *block))?;
-            Ok(raw)
-        })
-        .await
+        self.reader
+            .read("block headers from given block numbers", move |tx| {
+                queries::select_block_headers(tx, blocks.map(|block| *block))
+            })
+            .await
     }
 
     /// Loads all the block headers from the DB.
@@ -391,11 +397,9 @@ impl Db {
         err,
     )]
     pub async fn select_all_block_header_commitments(&self) -> Result<Vec<BlockHeaderCommitment>> {
-        self.transact("all block headers", |conn| {
-            let raw = queries::select_all_block_header_commitments(conn)?;
-            Ok(raw)
-        })
-        .await
+        self.reader
+            .read("all block headers", queries::select_all_block_header_commitments)
+            .await
     }
 
     /// Returns a page of account commitments for tree rebuilding.
@@ -409,10 +413,11 @@ impl Db {
         page_size: std::num::NonZeroUsize,
         after_account_id: Option<AccountId>,
     ) -> Result<AccountCommitmentsPage> {
-        self.transact("read account commitments paged", move |conn| {
-            queries::select_account_commitments_paged(conn, page_size, after_account_id)
-        })
-        .await
+        self.reader
+            .read("read account commitments paged", move |tx| {
+                queries::select_account_commitments_paged(tx, page_size, after_account_id)
+            })
+            .await
     }
 
     /// Returns a page of public account IDs for forest rebuilding.
@@ -426,10 +431,11 @@ impl Db {
         page_size: std::num::NonZeroUsize,
         after_account_id: Option<AccountId>,
     ) -> Result<PublicAccountIdsPage> {
-        self.transact("read public account IDs paged", move |conn| {
-            queries::select_public_account_ids_paged(conn, page_size, after_account_id)
-        })
-        .await
+        self.reader
+            .read("read public account IDs paged", move |tx| {
+                queries::select_public_account_ids_paged(tx, page_size, after_account_id)
+            })
+            .await
     }
 
     /// Returns a page of public account state roots for forest consistency verification.
@@ -443,10 +449,11 @@ impl Db {
         page_size: std::num::NonZeroUsize,
         after_account_id: Option<AccountId>,
     ) -> Result<PublicAccountStateRootsPage> {
-        self.transact("read public account state roots paged", move |conn| {
-            queries::select_public_account_state_roots_paged(conn, page_size, after_account_id)
-        })
-        .await
+        self.reader
+            .read("read public account state roots paged", move |tx| {
+                queries::select_public_account_state_roots_paged(tx, page_size, after_account_id)
+            })
+            .await
     }
 
     /// Loads public account details from the DB.
@@ -456,7 +463,8 @@ impl Db {
         err,
     )]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.transact("Get account details", move |conn| queries::select_account(conn, id))
+        self.reader
+            .read("Get account details", move |tx| queries::select_account(tx, id))
             .await
     }
 
@@ -470,10 +478,11 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<HashSet<AccountId>> {
-        self.transact("Filter network accounts subset", move |conn| {
-            queries::select_network_accounts_subset(conn, &account_ids)
-        })
-        .await
+        self.reader
+            .read("Filter network accounts subset", move |tx| {
+                queries::select_network_accounts_subset(tx, &account_ids)
+            })
+            .await
     }
 
     /// Queries the account code by its commitment hash.
@@ -486,10 +495,11 @@ impl Db {
         &self,
         code_commitment: Word,
     ) -> Result<Option<Vec<u8>>> {
-        self.transact("Get account code by commitment", move |conn| {
-            queries::select_account_code_by_commitment(conn, code_commitment)
-        })
-        .await
+        self.reader
+            .read("Get account code by commitment", move |tx| {
+                queries::select_account_code_by_commitment(tx, code_commitment)
+            })
+            .await
     }
 
     /// Queries the account header and storage header for a specific account at a block.
@@ -504,12 +514,13 @@ impl Db {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
-        self.transact("Get account header with storage header at block", move |conn| {
-            queries::select_account_header_with_storage_header_at_block(
-                conn, account_id, *block_num,
-            )
-        })
-        .await
+        self.reader
+            .read("Get account header with storage header at block", move |tx| {
+                queries::select_account_header_with_storage_header_at_block(
+                    tx, account_id, *block_num,
+                )
+            })
+            .await
     }
 
     #[miden_instrument(
@@ -523,10 +534,16 @@ impl Db {
         note_tags: Arc<[u32]>,
     ) -> Result<Vec<NoteSyncUpdate>, NoteSyncError> {
         let block_range = block_range.into_inner();
-        self.transact("notes sync task", move |conn| {
-            queries::get_note_sync_multi(conn, &note_tags, block_range, MAX_RESPONSE_PAYLOAD_BYTES)
-        })
-        .await
+        self.reader
+            .read("notes sync task", move |tx| {
+                queries::get_note_sync_multi(
+                    tx,
+                    &note_tags,
+                    block_range,
+                    MAX_RESPONSE_PAYLOAD_BYTES,
+                )
+            })
+            .await
     }
 
     /// Loads all the [`miden_protocol::note::Note`]s matching a certain [`NoteId`] from the
@@ -537,10 +554,9 @@ impl Db {
         err,
     )]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
-        self.transact("note by id", move |conn| {
-            queries::select_notes_by_id(conn, note_ids.as_slice())
-        })
-        .await
+        self.reader
+            .read("note by id", move |tx| queries::select_notes_by_id(tx, note_ids.as_slice()))
+            .await
     }
 
     /// Returns all note commitments from the DB that match the provided ones and were committed at
@@ -555,14 +571,15 @@ impl Db {
         note_commitments: Vec<Word>,
         up_to_block: ScopedBlockNum,
     ) -> Result<HashSet<Word>> {
-        self.transact("note by commitment", move |conn| {
-            queries::select_existing_note_commitments(
-                conn,
-                note_commitments.as_slice(),
-                *up_to_block,
-            )
-        })
-        .await
+        self.reader
+            .read("note by commitment", move |tx| {
+                queries::select_existing_note_commitments(
+                    tx,
+                    note_commitments.as_slice(),
+                    *up_to_block,
+                )
+            })
+            .await
     }
 
     /// Loads inclusion proofs for notes matching the given note commitments that were committed at
@@ -577,10 +594,11 @@ impl Db {
         note_commitments: BTreeSet<Word>,
         up_to_block: ScopedBlockNum,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
-        self.transact("block note inclusion proofs by commitment", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_commitments, *up_to_block)
-        })
-        .await
+        self.reader
+            .read("block note inclusion proofs by commitment", move |tx| {
+                queries::select_note_inclusion_proofs(tx, &note_commitments, *up_to_block)
+            })
+            .await
     }
 
     /// Inserts the data of a new block into the DB.
@@ -610,29 +628,50 @@ impl Db {
         unresolved_note_nullifiers: Vec<Nullifier>,
         prune_tip: BlockNumber,
     ) -> Result<BTreeMap<Nullifier, NoteId>> {
-        self.transact("apply block", move |conn| {
-            models::queries::apply_block(conn, &signed_block, &notes, &precomputed_public_states)?;
-            models::queries::prune_history(conn, prune_tip)?;
+        self.writer
+            .write::<_, DatabaseError, _>("apply block", move |tx| {
+                queries::apply_block(tx, &signed_block, &notes, &precomputed_public_states)?;
+                queries::prune_history(tx, prune_tip)?;
+                Ok(())
+            })
+            .await?;
 
-            let mut resolved_note_ids = BTreeMap::new();
-            for chunk in unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT) {
-                match queries::select_note_ids_by_nullifier(conn, chunk) {
-                    Ok(note_ids) => resolved_note_ids.extend(note_ids),
-                    Err(err) => {
-                        tracing::warn!(
-                            target: COMPONENT,
-                            %err,
-                            nullifiers.count = chunk.len(),
-                            "Failed to resolve consumed note IDs for lifecycle events",
-                        );
-                        break;
-                    },
-                }
+        Ok(self.resolve_consumed_note_ids(unresolved_note_nullifiers).await)
+    }
+
+    /// Maps consumed nullifiers back to their note IDs for lifecycle events, on a best-effort basis.
+    ///
+    /// A failed lookup is logged and abandoned: the caller uses this only for reporting.
+    async fn resolve_consumed_note_ids(
+        &self,
+        nullifiers: Vec<Nullifier>,
+    ) -> BTreeMap<Nullifier, NoteId> {
+        let mut resolved_note_ids = BTreeMap::new();
+        for chunk in nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT) {
+            let chunk = chunk.to_vec();
+            let count = chunk.len();
+            let result = self
+                .reader
+                .read("resolve consumed note ids", move |tx| {
+                    queries::select_note_ids_by_nullifier(tx, &chunk)
+                })
+                .await;
+
+            match result {
+                Ok(note_ids) => resolved_note_ids.extend(note_ids),
+                Err(err) => {
+                    tracing::warn!(
+                        target: COMPONENT,
+                        %err,
+                        nullifiers.count = count,
+                        "Failed to resolve consumed note IDs for lifecycle events",
+                    );
+                    break;
+                },
             }
+        }
 
-            Ok(resolved_note_ids)
-        })
-        .await
+        resolved_note_ids
     }
 
     /// Selects storage map values for syncing storage maps for a specific account ID.
@@ -648,15 +687,16 @@ impl Db {
         let block_range = block_range.into_inner();
         let entries_limit = entries_limit.unwrap_or_else(default_storage_map_entries_limit);
 
-        self.transact("select storage map sync values", move |conn| {
-            models::queries::select_account_storage_map_values_paged(
-                conn,
-                account_id,
-                block_range,
-                entries_limit,
-            )
-        })
-        .await
+        self.reader
+            .read("select storage map sync values", move |tx| {
+                queries::select_account_storage_map_values_paged(
+                    tx,
+                    account_id,
+                    block_range,
+                    entries_limit,
+                )
+            })
+            .await
     }
 
     /// Reconstructs storage map details from the database for a specific slot at a block.
@@ -766,10 +806,11 @@ impl Db {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Vec<Asset>, DatabaseError> {
-        self.transact("select account vault at block", move |conn| {
-            queries::select_account_vault_at_block(conn, account_id, *block_num)
-        })
-        .await
+        self.reader
+            .read("select account vault at block", move |tx| {
+                queries::select_account_vault_at_block(tx, account_id, *block_num)
+            })
+            .await
     }
 
     pub async fn get_account_vault_sync(
@@ -778,18 +819,18 @@ impl Db {
         block_range: ScopedBlockRange,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
         let block_range = block_range.into_inner();
-        self.transact("account vault sync", move |conn| {
-            queries::select_account_vault_assets(conn, account_id, block_range)
-        })
-        .await
+        self.reader
+            .read("account vault sync", move |tx| {
+                queries::select_account_vault_assets(tx, account_id, block_range)
+            })
+            .await
     }
 
     /// Returns the script for a note by its root.
     pub async fn select_note_script_by_root(&self, root: Word) -> Result<Option<NoteScript>> {
-        self.transact("note script by root", move |conn| {
-            queries::select_note_script_by_root(conn, root)
-        })
-        .await
+        self.reader
+            .read("note script by root", move |tx| queries::select_note_script_by_root(tx, root))
+            .await
     }
 
     /// Returns the complete transaction records for the specified accounts within the specified
@@ -804,9 +845,10 @@ impl Db {
         block_range: ScopedBlockRange,
     ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
         let block_range = block_range.into_inner();
-        self.transact("full transactions records", move |conn| {
-            queries::select_transactions_records(conn, &account_ids, block_range)
-        })
-        .await
+        self.reader
+            .read("full transactions records", move |tx| {
+                queries::select_transactions_records(tx, &account_ids, block_range)
+            })
+            .await
     }
 }

@@ -17,7 +17,7 @@ impl State {
         name = "store.bootstrap",
         err,
     )]
-    pub fn bootstrap(genesis: GenesisBlock, data_directory: &Path) -> anyhow::Result<()> {
+    pub async fn bootstrap(genesis: GenesisBlock, data_directory: &Path) -> anyhow::Result<()> {
         let data_directory =
             DataDirectory::load(data_directory.to_path_buf()).with_context(|| {
                 format!("failed to load data directory at {}", data_directory.display())
@@ -32,7 +32,7 @@ impl State {
         tracing::debug!(target: LOG_TARGET, path=%block_store.display(), "Block store created");
 
         let database_filepath = data_directory.database_path();
-        Db::bootstrap(database_filepath.clone(), genesis).with_context(|| {
+        Db::bootstrap(database_filepath.clone(), genesis).await.with_context(|| {
             format!("failed to bootstrap database at {}", database_filepath.display())
         })?;
         tracing::debug!(target: LOG_TARGET, path=%database_filepath.display(), "Database created");

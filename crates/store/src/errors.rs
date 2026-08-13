@@ -1,5 +1,6 @@
 use std::io;
 
+use miden_node_db::DatabaseTypeConversionError;
 use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::errors::ConversionError;
 use miden_node_utils::limiter::QueryLimitError;
@@ -24,8 +25,6 @@ use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::OutputNote;
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
-
-use crate::db::models::conv::DatabaseTypeConversionError;
 
 /// Errors produced while preparing or rebuilding account-state forest updates.
 ///

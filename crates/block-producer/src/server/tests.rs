@@ -72,7 +72,7 @@ fn mempool_stats_track_uncommitted_work_and_the_canonical_tip() {
 #[tokio::test]
 async fn block_producer_starts_with_store_state() {
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
-    bootstrap_store(data_directory.path());
+    bootstrap_store(data_directory.path()).await;
     let (state, block_writer, proof_writer) = State::for_tests(data_directory.path()).await;
 
     let block_producer = Sequencer {
@@ -99,7 +99,7 @@ async fn block_producer_starts_with_store_state() {
     assert_eq!(status.chain_tip, BlockNumber::GENESIS);
 }
 
-fn bootstrap_store(path: &std::path::Path) {
+async fn bootstrap_store(path: &std::path::Path) {
     let signer = random_secret_key();
     let genesis_state = GenesisState::new(
         vec![],
@@ -110,5 +110,5 @@ fn bootstrap_store(path: &std::path::Path) {
     );
     let genesis_block = genesis_state.into_block().expect("genesis block should be created");
 
-    State::bootstrap(genesis_block, path).expect("store should bootstrap");
+    State::bootstrap(genesis_block, path).await.expect("store should bootstrap");
 }

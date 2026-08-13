@@ -2,13 +2,12 @@ use std::process::Command;
 
 use anyhow::{Context, Result, ensure};
 use diesel::connection::SimpleConnection;
-use diesel::query_dsl::methods::{OrderDsl, SelectDsl};
-use diesel::{Connection, ExpressionMethods, RunQueryDsl, SqliteConnection};
+use diesel::{Connection, SqliteConnection};
 use miden_node_db::migration::{SchemaHash, SchemaHashes};
 
 use super::*;
-use crate::db::models::queries::VALID_FOREVER;
-use crate::db::schema;
+use crate::db::TestDb;
+use crate::db::queries::VALID_FOREVER;
 
 const EXPECTED_SCHEMA_HASHES: [SchemaHash; 5] = [
     SchemaHash::from_hex("cc92cb332410e6f63036b52cf953acb446c142d5c0fbbdbd6d3b4f466510b210"),
@@ -61,33 +60,25 @@ fn migration_004_validity_intervals_backfills_valid_until() -> Result<()> {
 
     migrate_database(&database_filepath)?;
 
-    let mut conn = SqliteConnection::establish(database_path_str)?;
+    let db = TestDb::open(&database_filepath);
 
-    let accounts: Vec<(i64, i64)> = OrderDsl::order(
-        SelectDsl::select(
-            schema::accounts::table,
-            (schema::accounts::block_num, schema::accounts::valid_until),
-        ),
-        schema::accounts::block_num.asc(),
-    )
-    .load(&mut conn)?;
+    let accounts = db.read::<_, DatabaseError, _>(|tx| {
+        tx.query(
+            "SELECT block_num, valid_until FROM accounts ORDER BY block_num ASC",
+            &[],
+            |row| Ok((row.get::<i64>(0)?, row.get::<i64>(1)?)),
+        )
+    })?;
     pretty_assertions::assert_eq!(accounts, vec![(1, 5), (5, VALID_FOREVER)]);
 
-    let vault: Vec<(Vec<u8>, i64, i64)> = OrderDsl::order(
-        SelectDsl::select(
-            schema::account_vault_assets::table,
-            (
-                schema::account_vault_assets::vault_key,
-                schema::account_vault_assets::block_num,
-                schema::account_vault_assets::valid_until,
-            ),
-        ),
-        (
-            schema::account_vault_assets::vault_key.asc(),
-            schema::account_vault_assets::block_num.asc(),
-        ),
-    )
-    .load(&mut conn)?;
+    let vault = db.read::<_, DatabaseError, _>(|tx| {
+        tx.query(
+            "SELECT vault_key, block_num, valid_until FROM account_vault_assets \
+             ORDER BY vault_key ASC, block_num ASC",
+            &[],
+            |row| Ok((row.get::<Vec<u8>>(0)?, row.get::<i64>(1)?, row.get::<i64>(2)?)),
+        )
+    })?;
     pretty_assertions::assert_eq!(
         vault,
         vec![
@@ -97,17 +88,13 @@ fn migration_004_validity_intervals_backfills_valid_until() -> Result<()> {
         ]
     );
 
-    let storage: Vec<(i64, i64)> = OrderDsl::order(
-        SelectDsl::select(
-            schema::account_storage_map_values::table,
-            (
-                schema::account_storage_map_values::block_num,
-                schema::account_storage_map_values::valid_until,
-            ),
-        ),
-        schema::account_storage_map_values::block_num.asc(),
-    )
-    .load(&mut conn)?;
+    let storage = db.read::<_, DatabaseError, _>(|tx| {
+        tx.query(
+            "SELECT block_num, valid_until FROM account_storage_map_values ORDER BY block_num ASC",
+            &[],
+            |row| Ok((row.get::<i64>(0)?, row.get::<i64>(1)?)),
+        )
+    })?;
     pretty_assertions::assert_eq!(storage, vec![(1, 5), (5, VALID_FOREVER)]);
 
     Ok(())

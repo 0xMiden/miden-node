@@ -429,7 +429,6 @@ impl NativeFaucetConfig {
     /// operator alongside its signing key.
     ///
     /// For `Some(path)`, loads the account from disk and validates it is a fungible faucet.
-    /// In this case, operator is generated.
     fn build_account(self, config_dir: &Path) -> Result<NativeFaucet, GenesisConfigError> {
         match self.0 {
             None => {

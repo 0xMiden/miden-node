@@ -88,11 +88,15 @@ mod tests {
         assert!(genesis_directory.join("genesis.dat").is_file());
         assert!(data_directory.join("validator.sqlite3").is_file());
         assert!(
-            fs_err::read_dir(accounts_directory)
+            fs_err::read_dir(&accounts_directory)
                 .expect("accounts directory should be readable")
                 .next()
                 .is_some(),
             "genesis should write generated account files",
+        );
+        assert!(
+            accounts_directory.join("native_faucet.mac").is_file(),
+            "genesis should write the generated native faucet account file",
         );
     }
 }

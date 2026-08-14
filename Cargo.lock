@@ -1197,9 +1197,9 @@ dependencies = [
 
 [[package]]
 name = "bulletproofs-cycle"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b6f62956005907a28773784fc65460508de73a9f7eb11d27ec14ee30ffeae2c"
+checksum = "196fdc67113cd56eec82296e6df7c2b6fd9da0ae42e17ed6aa258d9aff362e40"
 dependencies = [
  "digest 0.10.7",
  "ff 0.13.1",
@@ -2561,9 +2561,9 @@ dependencies = [
 
 [[package]]
 name = "golden-core"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b83486ad130ff01a0c83c7ca8d503d1468826810fab620dc553097a3dd81d87"
+checksum = "03c4f49eba27846f56d307941d428dd6e8d1e811eac6f0458d927743fbd37406"
 dependencies = [
  "rand_core 0.6.4",
  "sha2 0.10.9",
@@ -2574,9 +2574,9 @@ dependencies = [
 
 [[package]]
 name = "golden-ehtdh1"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd8abcb44311d30ad55c8401e607ba7ca1c8831f60dc2f8e07307e91274e8657"
+checksum = "6a41410f2058829a91e85cb98223cd5587f724cac1df456591a94e37cbbcc258"
 dependencies = [
  "chacha20 0.9.1",
  "golden-core",
@@ -2589,9 +2589,9 @@ dependencies = [
 
 [[package]]
 name = "golden-evrf"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f1a41bbbec835df64b1c6f7d4b91ac4cb141345a60e6257cfdb1576d74c40a7"
+checksum = "072bee9a9f759abf4818bd23b3d7acf649fa50909fee25edc1ff4156c52a6ea6"
 dependencies = [
  "bulletproofs-cycle",
  "ff 0.13.1",
@@ -2607,9 +2607,9 @@ dependencies = [
 
 [[package]]
 name = "golden-halo2curves"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b48128de1cbe48ce42829291277eb2e92cdaeec103301b23061c2954e746983c"
+checksum = "8fe0dca8e35bcae90197a6697d36ccc4992c805824b6fd09143321d2c7455cda"
 dependencies = [
  "bulletproofs-cycle",
  "ff 0.13.1",

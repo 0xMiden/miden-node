@@ -82,6 +82,33 @@ mod graph;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod staleness_tests {
+    use super::*;
+    use crate::errors::MempoolSubmissionError;
+
+    fn make_mempool(chain_tip: u32) -> Mempool {
+        Mempool::new(BlockNumber::from(chain_tip), MempoolConfig::default())
+    }
+
+    #[test]
+    fn staleness_check_rejects_future_height() {
+        let mempool = make_mempool(100);
+        let result = mempool.authentication_staleness_check(BlockNumber::from(200u32));
+        assert!(
+            matches!(result, Err(MempoolSubmissionError::FutureInputs { .. })),
+            "expected FutureInputs error, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn staleness_check_accepts_chain_tip() {
+        let mempool = make_mempool(100);
+        assert!(mempool.authentication_staleness_check(BlockNumber::from(100u32)).is_ok());
+    }
+}
+
 // MEMPOOL CONFIGURATION
 // ================================================================================================
 
@@ -683,11 +710,12 @@ impl Mempool {
             });
         }
 
-        assert!(
-            authentication_height <= self.chain_tip(),
-            "Authentication height {authentication_height} exceeded the chain tip {}",
-            self.chain_tip()
-        );
+        if authentication_height > self.chain_tip() {
+            return Err(MempoolSubmissionError::FutureInputs {
+                input_block: authentication_height,
+                chain_tip: self.chain_tip(),
+            });
+        }
 
         Ok(())
     }

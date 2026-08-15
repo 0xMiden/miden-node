@@ -44,6 +44,15 @@ pub enum MempoolSubmissionError {
     AuthenticationFailed(#[source] StateConflict),
 
     #[error(
+        "transaction input data from block {input_block} exceeds the chain tip {chain_tip}"
+    )]
+    #[grpc(internal)]
+    FutureInputs {
+        input_block: BlockNumber,
+        chain_tip: BlockNumber,
+    },
+
+    #[error(
         "transaction input data from block {input_block} is rejected as stale because it is older than the limit of {stale_limit}"
     )]
     #[grpc(internal)]

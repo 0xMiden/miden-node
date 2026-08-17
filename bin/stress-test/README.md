@@ -107,13 +107,35 @@ Latency measurements represent pure store processing time without network overhe
 
 #### load-state
 
+Measures full store startup (`State::load`) against the seeded data directory. `--load-iterations` (default 3) repeats
+the load; the first iteration may pay RocksDB WAL recovery and a cold OS page cache, while later iterations measure a
+clean warm restart.
+
 ```text
-State loaded in 42.959271667s
-Database contains 99961 accounts and 99960 nullifiers
+Iteration 0: state loaded in 38.623292ms
+Iteration 1: state loaded in 20.376417ms
+Iteration 2: state loaded in 17.526916ms
+...
+Database contains 52 accounts and 50 nullifiers
 ```
 
-Account tree loading (~21.3s) and nullifier tree loading (~21.5s) were the primary bottlenecks; MMR loading and database
-connection were negligible (<3ms each).
+Build with `--features tracing-forest` to render the per-phase breakdown of each load as a timing tree, including the
+RocksDB opens (`open_tree_storage`, `open_forest_storage`):
+
+```text
+INFO     load [ 36.1ms | 0.00% / 100.00% ]
+INFO     ┕━ load_with_database_options [ 36.1ms | 0.00% / 100.00% ]
+INFO        ┝━ load_with_pool_size [ 8.47ms | 23.48% ]
+INFO        ┝━ load_mmr [ 1.27ms | 3.52% ]
+INFO        ┝━ open_tree_storage [ 10.3ms | 28.68% ] path: "accounttree"
+INFO        ┝━ load_account_tree [ 2.19ms | 6.08% ]
+INFO        ┝━ open_tree_storage [ 6.38ms | 17.70% ] path: "nullifiertree"
+INFO        ┝━ load_nullifier_tree [ 822µs | 2.28% ]
+INFO        ┝━ verify_tree_consistency [ 68.0µs | 0.19% ]
+INFO        ┝━ open_forest_storage [ 5.98ms | 16.60% ] path: "accountstateforest"
+INFO        ┝━ load_account_state_forest [ 74.4µs | 0.21% ] block.number: 2
+INFO        ┕━ verify_account_state_forest_consistency [ 458µs | 1.27% ]
+```
 
 #### sync-notes
 

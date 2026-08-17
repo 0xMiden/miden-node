@@ -14,6 +14,26 @@ use crate::test_utils::{MockProvenTxBuilder, mock_account_id};
 mod add_transaction;
 mod add_user_batch;
 
+// STALENESS CHECK TESTS
+// ================================================================================================
+
+#[test]
+fn staleness_check_rejects_future_height() {
+    let mempool = Mempool::new(BlockNumber::from(100u32), MempoolConfig::default());
+    let result = mempool.authentication_staleness_check(BlockNumber::from(101u32));
+    let Err(MempoolSubmissionError::FutureInputs { input_block, chain_tip }) = result else {
+        panic!("expected FutureInputs error, got {result:?}");
+    };
+    assert_eq!(input_block, BlockNumber::from(101u32));
+    assert_eq!(chain_tip, BlockNumber::from(100u32));
+}
+
+#[test]
+fn staleness_check_accepts_chain_tip() {
+    let mempool = Mempool::new(BlockNumber::from(100u32), MempoolConfig::default());
+    assert!(mempool.authentication_staleness_check(BlockNumber::from(100u32)).is_ok());
+}
+
 #[test]
 fn shared_mempool_lock_is_poisoned_after_panic() {
     let mempool = Mempool::shared(BlockNumber::GENESIS, MempoolConfig::default());

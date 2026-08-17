@@ -82,33 +82,6 @@ mod graph;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod staleness_tests {
-    use super::*;
-    use crate::errors::MempoolSubmissionError;
-
-    fn make_mempool(chain_tip: u32) -> Mempool {
-        Mempool::new(BlockNumber::from(chain_tip), MempoolConfig::default())
-    }
-
-    #[test]
-    fn staleness_check_rejects_future_height() {
-        let mempool = make_mempool(100);
-        let result = mempool.authentication_staleness_check(BlockNumber::from(200u32));
-        assert!(
-            matches!(result, Err(MempoolSubmissionError::FutureInputs { .. })),
-            "expected FutureInputs error, got {:?}",
-            result
-        );
-    }
-
-    #[test]
-    fn staleness_check_accepts_chain_tip() {
-        let mempool = make_mempool(100);
-        assert!(mempool.authentication_staleness_check(BlockNumber::from(100u32)).is_ok());
-    }
-}
-
 // MEMPOOL CONFIGURATION
 // ================================================================================================
 
@@ -687,11 +660,11 @@ impl Mempool {
     /// If our oldest local block is at `N`, then we allow `N-1` and newer since this means we're
     /// covering the full blockchain.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// This panics if the authentication height exceeds the latest locally known block. This
-    /// includes any proposed block since the block is committed to the mempool and store
-    /// concurrently (or at least can be).
+    /// Returns [`MempoolSubmissionError::StaleInputs`] if the authentication height is older than
+    /// the locally retained state, and [`MempoolSubmissionError::FutureInputs`] if it exceeds the
+    /// latest locally known block (including any proposed block).
     fn authentication_staleness_check(
         &self,
         authentication_height: BlockNumber,

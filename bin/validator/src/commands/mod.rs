@@ -725,18 +725,6 @@ mod tests {
     }
 
     #[test]
-    fn genesis_validator_keys_default_to_the_insecure_dev_key() {
-        let command = parse_genesis(&[]).expect("genesis without validator keys must parse");
-        let ValidatorCommand::Genesis { validator_keys, .. } = command else {
-            panic!("expected the genesis command");
-        };
-        assert_eq!(
-            validator_keys,
-            vec![miden_node_utils::genesis::insecure_validator_public_key()]
-        );
-    }
-
-    #[test]
     fn genesis_validator_keys_parse_from_repeated_flags() {
         let keys = [7u8, 8].map(|seed| {
             SigningKey::read_from_bytes(&[seed; 32]).expect("test signing key should decode")

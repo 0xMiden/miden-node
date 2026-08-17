@@ -193,9 +193,10 @@ MIDEN_REMOTE_PROVER_URL=http://<prover-host>:50051 make local-network-up
 
 ## Genesis Config Override
 
-By default, the local network bootstraps from the bundled `genesis` Compose config in `compose/bootstrap.yml`. It
-contains the public signing keys for the three validator services. Their corresponding private keys are insecure
-defaults defined in `compose/validator.yml` and must never be used outside local development.
+By default, the local network bootstraps from the bundled `genesis` Compose config in `compose/bootstrap.yml`. The
+bootstrap service derives the public keys of the three validator services from their signing keys and passes them to
+`miden-validator genesis` via `--validator.key` flags. The signing keys are insecure defaults defined in
+`compose/validator.yml` and must never be used outside local development.
 
 To replace it, create a Compose override file:
 
@@ -217,9 +218,10 @@ docker compose \
 ```
 
 The custom configuration is mounted into the bootstrap validator as `/genesis.toml` and passed to
-`miden-validator genesis --config`. Its `validators` list must contain the public keys corresponding to the three
-validator private keys. Override those private keys with `MIDEN_VALIDATOR_1_SIGNING_KEY`,
-`MIDEN_VALIDATOR_2_SIGNING_KEY`, and `MIDEN_VALIDATOR_3_SIGNING_KEY`.
+`miden-validator genesis --config`. The validator set is not part of the configuration file: the bootstrap service
+always commits the public keys corresponding to the three validator private keys via `--validator.key` flags. Override
+those private keys with `MIDEN_VALIDATOR_1_SIGNING_KEY`, `MIDEN_VALIDATOR_2_SIGNING_KEY`, and
+`MIDEN_VALIDATOR_3_SIGNING_KEY`.
 
 This only affects validator bootstrap. If the local network has already been bootstrapped, delete the existing local
 chain data before starting with a different genesis configuration:

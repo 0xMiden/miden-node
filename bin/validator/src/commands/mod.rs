@@ -13,10 +13,13 @@ use anyhow::Context;
 use base64::Engine;
 use clap::Parser;
 use miden_node_utils::clap::GrpcOptionsInternal;
-use miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX;
+use miden_node_utils::genesis::{
+    INSECURE_VALIDATOR_SIGNING_KEY_HEX,
+    insecure_validator_public_key_hex,
+};
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_validator::{
@@ -38,6 +41,7 @@ const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
 const ENV_GENESIS_CONFIG: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG";
+const ENV_GENESIS_VALIDATOR_KEYS: &str = "MIDEN_VALIDATOR_GENESIS_VALIDATOR_KEYS";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 const ENV_STORAGE_KEY_EPOCH: &str = "MIDEN_VALIDATOR_STORAGE_KEY_EPOCH";
 const ENV_STORAGE_KEY_PUBLIC_SET: &str = "MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET";
@@ -96,12 +100,11 @@ pub enum ValidatorCommand {
     /// block and account secret files to disk.
     ///
     /// The genesis block is the chain's trust root and is not signed: its header commits to the
-    /// full validator set — the `validators` public keys, which a genesis configuration file must
-    /// list explicitly; only the built-in development configuration (used when `--config` is
-    /// omitted) falls back to the predefined, insecure development key — and that set is required
-    /// to sign every block after genesis. Building the genesis block needs no signing access to
-    /// any validator's key, so one operator — who need not be a validator — runs this once and
-    /// distributes the genesis block file.
+    /// full validator set — the public keys passed via `--validator.key`, which default to the
+    /// predefined, insecure development key — and that set is required to sign every block after
+    /// genesis. Building the genesis block needs no signing access to any validator's key, so one
+    /// operator — who need not be a validator — runs this once and distributes the genesis block
+    /// file.
     ///
     /// Every validator then seeds its database from the genesis block file with `bootstrap`.
     Genesis {
@@ -113,9 +116,38 @@ pub enum ValidatorCommand {
         accounts_directory: PathBuf,
         /// Use the given configuration file to construct the genesis state from.
         ///
-        /// If not provided, the built-in single-validator development configuration is used.
-        #[arg(long = "config", env = ENV_GENESIS_CONFIG, value_name = "GENESIS_CONFIG")]
+        /// If not provided, the built-in development configuration is used.
+        ///
+        /// Requires an explicit validator set (`--validator.key`): a custom configuration
+        /// signals a real network bootstrap, which must never fall back to the insecure
+        /// development key.
+        #[arg(
+            long = "config",
+            env = ENV_GENESIS_CONFIG,
+            value_name = "GENESIS_CONFIG",
+            requires = "validator_keys"
+        )]
         genesis_config_file: Option<PathBuf>,
+        /// Hex-encoded public keys of the genesis validator set, committed to by the genesis
+        /// header.
+        ///
+        /// Repeat the flag once per validator (`--validator.key <KEY> --validator.key <KEY>`);
+        /// the environment variable takes a comma-separated list. The genesis block itself is not
+        /// signed; the committed set must sign every block after genesis.
+        ///
+        /// If not provided, the set falls back to the public key of the predefined, insecure
+        /// development signing key that `miden-validator start` signs with by default, so a
+        /// locally bootstrapped chain works without any key configuration. The fallback is not
+        /// available together with `--config`.
+        #[arg(
+            long = "validator.key",
+            env = ENV_GENESIS_VALIDATOR_KEYS,
+            value_name = "VALIDATOR_PUBLIC_KEY",
+            value_delimiter = ',',
+            default_value = insecure_validator_public_key_hex(),
+            value_parser = parse_validator_public_key
+        )]
+        validator_keys: Vec<PublicKey>,
     },
 
     /// Seeds this validator's database from a genesis block file.
@@ -142,9 +174,8 @@ pub enum ValidatorCommand {
 
     /// Prints the hex-encoded public key for the configured validator signing key.
     ///
-    /// Every validator operator runs this and sends the printed key to whoever composes the
-    /// genesis configuration, which commits the full set to the genesis header via its
-    /// `validators` list.
+    /// Every validator operator runs this and sends the printed key to whoever runs the `genesis`
+    /// command, which commits the full set to the genesis header via its `--validator.key` flags.
     Pubkey {
         #[command(flatten)]
         signing_key: ValidatorSigningKey,
@@ -265,10 +296,12 @@ impl ValidatorCommand {
                 genesis_block_directory,
                 accounts_directory,
                 genesis_config_file,
+                validator_keys,
             } => genesis::generate(
                 &genesis_block_directory,
                 &accounts_directory,
                 genesis_config_file.as_ref(),
+                validator_keys,
             ),
             Self::Bootstrap {
                 data_directory,
@@ -363,6 +396,12 @@ impl ValidatorCommand {
             | Self::Migrate { .. } => OpenTelemetry::Disabled,
         }
     }
+}
+
+/// Parses a hex-encoded validator public key CLI argument.
+fn parse_validator_public_key(hex_key: &str) -> Result<PublicKey, String> {
+    let bytes = hex::decode(hex_key).map_err(|err| err.to_string())?;
+    PublicKey::read_from_bytes(&bytes).map_err(|err| err.to_string())
 }
 
 /// Builds the transaction input decrypter from the configured shared encryption key: either the
@@ -668,6 +707,72 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    const BASE_GENESIS_ARGS: [&str; 6] = [
+        "miden-validator",
+        "genesis",
+        "--genesis-block-directory",
+        "/tmp/genesis",
+        "--accounts-directory",
+        "/tmp/accounts",
+    ];
+
+    fn parse_genesis(extra: &[&str]) -> Result<ValidatorCommand, clap::Error> {
+        ValidatorCommand::try_parse_from(
+            BASE_GENESIS_ARGS.iter().copied().chain(extra.iter().copied()),
+        )
+    }
+
+    #[test]
+    fn genesis_validator_keys_default_to_the_insecure_dev_key() {
+        let command = parse_genesis(&[]).expect("genesis without validator keys must parse");
+        let ValidatorCommand::Genesis { validator_keys, .. } = command else {
+            panic!("expected the genesis command");
+        };
+        assert_eq!(
+            validator_keys,
+            vec![miden_node_utils::genesis::insecure_validator_public_key()]
+        );
+    }
+
+    #[test]
+    fn genesis_validator_keys_parse_from_repeated_flags() {
+        let keys = [7u8, 8].map(|seed| {
+            SigningKey::read_from_bytes(&[seed; 32]).expect("test signing key should decode")
+        });
+        let hex_keys = keys.clone().map(|key| hex::encode(key.public_key().to_bytes()));
+        let command =
+            parse_genesis(&["--validator.key", &hex_keys[0], "--validator.key", &hex_keys[1]])
+                .expect("genesis with explicit validator keys must parse");
+        let ValidatorCommand::Genesis { validator_keys, .. } = command else {
+            panic!("expected the genesis command");
+        };
+        assert_eq!(validator_keys, keys.map(|key| key.public_key()).to_vec());
+    }
+
+    #[test]
+    fn genesis_config_requires_an_explicit_validator_set() {
+        let Err(error) = parse_genesis(&["--config", "/tmp/genesis.toml"]) else {
+            panic!("--config without an explicit validator set must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+
+        parse_genesis(&[
+            "--config",
+            "/tmp/genesis.toml",
+            "--validator.key",
+            &insecure_validator_public_key_hex(),
+        ])
+        .expect("--config with an explicit validator set must parse");
+    }
+
+    #[test]
+    fn genesis_rejects_an_invalid_validator_key() {
+        let Err(error) = parse_genesis(&["--validator.key", "not-hex"]) else {
+            panic!("an invalid validator key must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
     }
 
     #[test]

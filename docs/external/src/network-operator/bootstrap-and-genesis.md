@@ -37,25 +37,21 @@ after genesis. Each validator operator first prints their public key and sends i
 miden-validator pubkey --signing-key.kms-id <validator-N-kms-key-id>
 ```
 
-The full validator set is part of the genesis configuration, as a required top-level `validators` list in
-`genesis.toml`. A configuration file without `validators` is rejected; only the built-in development configuration (used
-when no config file is supplied) falls back to the predefined, insecure development signing key.
+The full validator set is passed on the command line, as one `--validator.key` flag per validator. Passing `--config`
+requires an explicit validator set. Only when neither flag is given does the set fall back to the public key of the
+predefined, insecure development signing key — never rely on that fallback outside local development.
 
-```toml
-validators = [
-  "<validator-1-public-key-hex>",
-  "<validator-2-public-key-hex>",
-  "<validator-3-public-key-hex>",
-]
-```
-
-**One** operator then runs `genesis` with the genesis configuration. Building the genesis block requires no signing key:
+**One** operator then runs `genesis` with the genesis configuration and the collected keys. Building the genesis block
+requires no signing key:
 
 ```bash
 miden-validator genesis \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --config genesis.toml
+  --config genesis.toml \
+  --validator.key <validator-1-public-key-hex> \
+  --validator.key <validator-2-public-key-hex> \
+  --validator.key <validator-3-public-key-hex>
 ```
 
 Unless the configuration sets `native_faucet` to a pre-built account file, the native faucet is generated as a network
@@ -106,25 +102,19 @@ Each validator operator's own KMS key ID must be used when that operator starts 
   <TabItem value="unofficial" label="Unofficial network">
 
 **One** operator builds the genesis block; no signing key is needed. The genesis header commits to the full validator
-set, taken from the top-level `validators` list in `genesis.toml`. Each validator operator prints their public key with
-`miden-validator pubkey --signing-key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator, who lists
-it in the genesis configuration. The `validators` list is required: a configuration file without it is rejected, and
-only the built-in development configuration (used when no config file is supplied) falls back to the predefined,
-insecure development signing key.
-
-```toml
-validators = [
-  "<validator-1-public-key-hex>",
-  "<validator-2-public-key-hex>",
-  "<validator-3-public-key-hex>",
-]
-```
+set, passed as one `--validator.key` flag per validator. Each validator operator prints their public key with
+`miden-validator pubkey --signing-key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator. Passing
+`--config` requires an explicit validator set. Only when neither flag is given does the set fall back to the public key
+of the predefined, insecure development signing key — never rely on that fallback outside local development.
 
 ```bash
 miden-validator genesis \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --config genesis.toml
+  --config genesis.toml \
+  --validator.key <validator-1-public-key-hex> \
+  --validator.key <validator-2-public-key-hex> \
+  --validator.key <validator-3-public-key-hex>
 ```
 
 Distribute `genesis-data/genesis.dat` to the validator operators, who each seed their own database from it — including
@@ -154,8 +144,8 @@ miden-ntx-builder bootstrap \
   </TabItem>
 </Tabs>
 
-The key each validator operator starts their validator with must match the public key committed for them in the genesis
-configuration's `validators` list.
+The key each validator operator starts their validator with must match the public key committed for them via the
+`genesis` command's `--validator.key` flags.
 
 ## Storage Key Ceremony
 

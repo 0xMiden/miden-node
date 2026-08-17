@@ -3,15 +3,31 @@ use std::path::Path;
 
 use anyhow::Context;
 use miden_protocol::block::SignedBlock;
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 
 /// A predefined, insecure validator signing key for development purposes.
 ///
-/// `miden-validator start` signs blocks with this key by default, and the default genesis
-/// configuration commits the corresponding public key as the sole genesis validator, so a locally
+/// `miden-validator start` signs blocks with this key by default, and `miden-validator genesis`
+/// commits the corresponding public key as the sole genesis validator by default, so a locally
 /// bootstrapped chain works without any key configuration.
 pub const INSECURE_VALIDATOR_SIGNING_KEY_HEX: &str =
     "0101010101010101010101010101010101010101010101010101010101010101";
+
+/// Returns the public key of the predefined, insecure development validator signing key.
+pub fn insecure_validator_public_key() -> PublicKey {
+    let bytes = hex::decode(INSECURE_VALIDATOR_SIGNING_KEY_HEX)
+        .expect("insecure development signing key hex is valid");
+    SigningKey::read_from_bytes(&bytes)
+        .expect("insecure development signing key bytes are a valid signing key")
+        .public_key()
+}
+
+/// Returns the hex encoding of the insecure development validator public key, as committed by
+/// `miden-validator genesis` when no validator keys are configured.
+pub fn insecure_validator_public_key_hex() -> String {
+    hex::encode(insecure_validator_public_key().to_bytes())
+}
 
 /// Official Miden networks with a hosted genesis block.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]

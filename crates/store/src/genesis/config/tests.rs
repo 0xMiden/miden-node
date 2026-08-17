@@ -18,14 +18,11 @@ fn write_toml_file(dir: &Path, content: &str) -> std::path::PathBuf {
     path
 }
 
-/// A `validators` line listing the insecure development key, for tests exercising unrelated config
-/// features. Top-level keys must precede any TOML tables, so prepend it to the content.
-fn dev_validators_line() -> String {
-    use miden_protocol::utils::serde::Serializable;
-    format!(
-        "validators = [\"{}\"]\n",
-        hex::encode(insecure_dev_validator_public_key().to_bytes())
-    )
+/// A validator set holding only the insecure development key, for tests exercising unrelated config
+/// features.
+fn dev_validator_keys() -> ValidatorKeys {
+    ValidatorKeys::new(vec![miden_node_utils::genesis::insecure_validator_public_key()])
+        .expect("a single development key is a valid validator set")
 }
 
 #[test]
@@ -33,12 +30,10 @@ fn dev_validators_line() -> String {
 fn parsing_yields_expected_default_values() -> TestResult {
     // Copy sample file to temp dir since read_toml_file needs a real file path
     let temp_dir = tempfile::tempdir()?;
-    let sample_content =
-        format!("{}{}", dev_validators_line(), include_str!("./samples/01-simple.toml"));
-    let config_path = write_toml_file(temp_dir.path(), &sample_content);
+    let config_path = write_toml_file(temp_dir.path(), include_str!("./samples/01-simple.toml"));
 
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
-    let (state, _secrets) = gcfg.into_state()?;
+    let (state, _secrets) = gcfg.into_state(dev_validator_keys())?;
     let _ = state;
     // faucets, then the generated faucet operator, then the wallet accounts
     let native_faucet = state.accounts[0].clone();
@@ -80,43 +75,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
 }
 
 #[test]
-fn validator_set_is_read_from_config() -> TestResult {
-    use miden_protocol::utils::serde::Serializable;
-
-    let validator_1 = SigningKey::new();
-    let validator_2 = SigningKey::new();
-    let toml = format!(
-        r#"
-version = 1
-timestamp = 1717344256
-validators = ["{}", "{}"]
-
-[fee_parameters]
-verification_base_fee = 0
-"#,
-        hex::encode(validator_1.public_key().to_bytes()),
-        hex::encode(validator_2.public_key().to_bytes()),
-    );
-
-    let gcfg = GenesisConfig::read_toml(&toml, Path::new("."))?;
-    let (state, _) = gcfg.into_state()?;
-    assert_eq!(state.validator_keys.len(), 2);
-    let block = state.into_block()?;
-    assert!(block.inner().signatures().is_empty());
-
-    Ok(())
-}
-
-#[test]
-fn default_config_uses_insecure_dev_key() -> TestResult {
-    let gcfg = GenesisConfig::default();
-    let (state, _) = gcfg.into_state()?;
-    assert_eq!(state.validator_keys.as_keys(), &[insecure_dev_validator_public_key()]);
-    Ok(())
-}
-
-#[test]
-fn config_without_validators_is_rejected() {
+fn validator_set_is_committed_to_genesis() -> TestResult {
     let toml = r"
 version = 1
 timestamp = 1717344256
@@ -125,19 +84,22 @@ timestamp = 1717344256
 verification_base_fee = 0
 ";
 
-    let gcfg = GenesisConfig::read_toml(toml, Path::new(".")).unwrap();
-    let err = gcfg.into_state().expect_err("config without validators must be rejected");
-    assert!(
-        matches!(err, GenesisConfigError::MissingValidators),
-        "Expected MissingValidators error, got: {err:?}"
-    );
+    let validator_keys =
+        ValidatorKeys::new(vec![SigningKey::new().public_key(), SigningKey::new().public_key()])?;
+    let gcfg = GenesisConfig::read_toml(toml, Path::new("."))?;
+    let (state, _) = gcfg.into_state(validator_keys.clone())?;
+    assert_eq!(state.validator_keys, validator_keys);
+    let block = state.into_block()?;
+    assert!(block.inner().signatures().is_empty());
+
+    Ok(())
 }
 
 #[tokio::test]
 #[miden_node_test_macro::enable_logging]
 async fn genesis_accounts_have_nonce_one() -> TestResult {
     let gcfg = GenesisConfig::default();
-    let (state, secrets) = gcfg.into_state().unwrap();
+    let (state, secrets) = gcfg.into_state(dev_validator_keys()).unwrap();
 
     // The default configuration generates the native faucet and its operator.
     let account_files = secrets.as_account_files(&state).collect::<Result<Vec<_>, _>>()?;
@@ -178,8 +140,7 @@ fn parsing_account_from_file() -> TestResult {
     account_file.write(&account_file_path)?;
 
     // Create a genesis config TOML that references the account file
-    let toml_content = format!(
-        r#"{}
+    let toml_content = r#"
 timestamp = 1717344256
 version   = 1
 
@@ -188,16 +149,14 @@ verification_base_fee = 0
 
 [[account]]
 path = "test_account.mac"
-"#,
-        dev_validators_line()
-    );
-    let config_path = write_toml_file(config_dir, &toml_content);
+"#;
+    let config_path = write_toml_file(config_dir, toml_content);
 
     // Parse the config
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
 
     // Convert to state and verify the account is included
-    let (state, _secrets) = gcfg.into_state()?;
+    let (state, _secrets) = gcfg.into_state(dev_validator_keys())?;
     assert!(state.accounts.iter().any(|a| a.id() == account_id));
 
     Ok(())
@@ -210,7 +169,7 @@ fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestRe
     use miden_standards::account::auth::AuthNetworkAccount;
 
     let gcfg = GenesisConfig::default();
-    let (state, secrets) = gcfg.into_state()?;
+    let (state, secrets) = gcfg.into_state(dev_validator_keys())?;
 
     // The native faucet is the fee faucet and precedes every other account.
     let native_faucet = &state.accounts[0];
@@ -317,8 +276,7 @@ fn parsing_native_faucet_from_file() -> TestResult {
     account_file.write(&faucet_file_path)?;
 
     // Create a genesis config TOML that references the faucet file
-    let toml_content = format!(
-        r#"{}
+    let toml_content = r#"
 timestamp = 1717344256
 version   = 1
 
@@ -326,16 +284,14 @@ native_faucet = "native_faucet.mac"
 
 [fee_parameters]
 verification_base_fee = 0
-"#,
-        dev_validators_line()
-    );
-    let config_path = write_toml_file(config_dir, &toml_content);
+"#;
+    let config_path = write_toml_file(config_dir, toml_content);
 
     // Parse the config
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
 
     // Convert to state and verify the native faucet is included
-    let (state, secrets) = gcfg.into_state()?;
+    let (state, secrets) = gcfg.into_state(dev_validator_keys())?;
     assert!(state.accounts.iter().any(|a| a.id() == faucet_id));
 
     // No secrets should be generated for file-loaded native faucet
@@ -370,8 +326,7 @@ fn native_faucet_from_file_must_be_faucet_type() -> TestResult {
     account_file.write(&account_file_path)?;
 
     // Create a genesis config TOML that tries to use a non-faucet as native faucet
-    let toml_content = format!(
-        r#"{}
+    let toml_content = r#"
 timestamp = 1717344256
 version   = 1
 
@@ -379,16 +334,14 @@ native_faucet = "not_a_faucet.mac"
 
 [fee_parameters]
 verification_base_fee = 0
-"#,
-        dev_validators_line()
-    );
-    let config_path = write_toml_file(config_dir, &toml_content);
+"#;
+    let config_path = write_toml_file(config_dir, toml_content);
 
     // Parsing should succeed
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
 
     // into_state should fail with NativeFaucetNotFungible error when loading the file
-    let result = gcfg.into_state();
+    let result = gcfg.into_state(dev_validator_keys());
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -402,8 +355,7 @@ verification_base_fee = 0
 #[test]
 fn missing_account_file_returns_error() {
     // Create a genesis config TOML that references a non-existent file
-    let toml_content = format!(
-        r#"{}
+    let toml_content = r#"
 timestamp = 1717344256
 version   = 1
 
@@ -412,19 +364,17 @@ verification_base_fee = 0
 
 [[account]]
 path = "does_not_exist.mac"
-"#,
-        dev_validators_line()
-    );
+"#;
 
     // Use temp dir as config dir
     let temp_dir = tempfile::tempdir().unwrap();
-    let config_path = write_toml_file(temp_dir.path(), &toml_content);
+    let config_path = write_toml_file(temp_dir.path(), toml_content);
 
     // Parsing should succeed
     let gcfg = GenesisConfig::read_toml_file(&config_path).unwrap();
 
     // into_state should fail with AccountFileRead error when loading the file
-    let result = gcfg.into_state();
+    let result = gcfg.into_state(dev_validator_keys());
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(

@@ -140,19 +140,12 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
         VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.hex "$VALIDATOR_2_KEY_HEX")
     fi
 
-    # The validator set is part of the genesis config. Prepend the top-level `validators` key to
-    # the sample config (top-level keys must precede its table sections). The sample references no
-    # account files, so resolving relative paths against /tmp is safe.
-    BOOTSTRAP_GENESIS_CONFIG="/tmp/genesis-config.toml"
-    {
-        printf 'validators = ["%s", "%s"]\n' "$VALIDATOR_1_PUBKEY" "$VALIDATOR_2_PUBKEY"
-        cat "$GENESIS_CONFIG"
-    } > "$BOOTSTRAP_GENESIS_CONFIG"
-
     "$VALIDATOR_BINARY" genesis \
         --genesis-block-directory "$GENESIS_DIR" \
         --accounts-directory "$ACCOUNTS_DIR" \
-        --config "$BOOTSTRAP_GENESIS_CONFIG"
+        --config "$GENESIS_CONFIG" \
+        --validator.key "$VALIDATOR_1_PUBKEY" \
+        --validator.key "$VALIDATOR_2_PUBKEY"
 
     echo "Bootstrapping validator 1 (seeds from the genesis block)..."
     "$VALIDATOR_BINARY" bootstrap \

@@ -74,8 +74,13 @@ mod tests {
         let accounts_directory = root.path().join("accounts");
         let data_directory = root.path().join("data");
 
-        super::super::genesis::generate(&genesis_directory, &accounts_directory, None)
-            .expect("genesis should complete");
+        super::super::genesis::generate(
+            &genesis_directory,
+            &accounts_directory,
+            None,
+            vec![miden_node_utils::genesis::insecure_validator_public_key()],
+        )
+        .expect("genesis should complete");
 
         bootstrap(
             &data_directory,

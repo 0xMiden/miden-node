@@ -105,7 +105,11 @@ impl TestStore {
 
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
-        let (genesis_state, _) = config.into_state().unwrap();
+        let validator_keys = miden_protocol::block::ValidatorKeys::new(vec![
+            miden_node_utils::genesis::insecure_validator_public_key(),
+        ])
+        .unwrap();
+        let (genesis_state, _) = config.into_state(validator_keys).unwrap();
         let genesis_block =
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();

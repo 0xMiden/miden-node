@@ -1,8 +1,8 @@
 name: Docker
 
 # Builds and validates all Docker images and the Compose application. CI calls it
-# in dry-run mode for pull requests and pushes to next or release/v*. Release and
-# manual publish runs continue through approval and publish the artifacts to GHCR.
+# in dry-run mode. Release and manually dispatched publish runs validate before
+# publishing to GHCR.
 
 on:
   workflow_call:
@@ -283,8 +283,8 @@ jobs:
           registry-prefix: ${{ env.REGISTRY_PREFIX }}
           tag: ${{ needs.preflight.outputs.tag }}
 
-  authorize-publish:
-    name: Approve Docker publish
+  publish-docker:
+    name: Publish ${{ matrix.component }}
     needs: [preflight, dry-run-docker, dry-run-compose]
     if: >-
       ${{
@@ -299,29 +299,6 @@ jobs:
           )
         )
       }}
-    runs-on: ubuntu-24.04
-    environment: publish-docker
-    permissions:
-      contents: read
-    steps:
-      - name: Ensure GitHub release still does not exist
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.preflight.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            echo "::error::GitHub release ${TAG} already exists. Refusing to publish Docker artifacts."
-            exit 1
-          fi
-
-      - name: Authorize publication
-        run: echo "Docker dry-run succeeded; publication is authorized."
-
-  publish-docker:
-    name: Publish ${{ matrix.component }}
-    needs: [preflight, authorize-publish]
     runs-on: warp-ubuntu-latest-x64-8x
     permissions:
       contents: read
@@ -386,6 +363,12 @@ jobs:
   publish-compose:
     name: Publish Compose
     needs: [preflight, publish-docker]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.preflight.result == 'success' &&
+        needs.publish-docker.result == 'success'
+      }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

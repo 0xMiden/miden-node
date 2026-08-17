@@ -256,8 +256,7 @@ jobs:
     uses: ./.github/workflows/docker.yml
     with:
       mode: dry-run
-      commit: ${{ needs.preflight.outputs.commit }}
-      tag: ${{ needs.preflight.outputs.tag }}
+      ref: ${{ needs.preflight.outputs.tag }}
       created: ${{ needs.preflight.outputs.created }}
 
   publish-docker:
@@ -272,8 +271,7 @@ jobs:
     uses: ./.github/workflows/docker.yml
     with:
       mode: publish
-      commit: ${{ needs.preflight.outputs.commit }}
-      tag: ${{ needs.preflight.outputs.tag }}
+      ref: ${{ needs.preflight.outputs.tag }}
       created: ${{ needs.preflight.outputs.created }}
 
   publish-github-release:

@@ -16,7 +16,9 @@ pub use data_directory::DataDirectory;
 pub use db::models::conv::SqlTypeConvert;
 pub use db::models::queries::StorageMapValuesPage;
 pub use db::{
+    AccountVaultCursor,
     AccountVaultValue,
+    AccountVaultValuesPage,
     DatabaseOptions,
     Db,
     NoteRecord,
@@ -73,9 +75,14 @@ pub mod test_support {
     use diesel::prelude::*;
     use miden_protocol::Word;
     use miden_protocol::account::AccountId;
+    use miden_protocol::asset::{Asset, AssetId};
     use miden_protocol::block::BlockNumber;
 
-    use crate::db::models::queries::{AccountRowInsert, NetworkAccountType};
+    use crate::db::models::queries::{
+        AccountRowInsert,
+        NetworkAccountType,
+        insert_account_vault_asset,
+    };
     use crate::db::schema;
 
     /// Opens a fresh connection to the store's SQLite database and inserts a private
@@ -100,6 +107,34 @@ pub mod test_support {
             .values(&row)
             .execute(&mut conn)
             .expect("insert network account row");
+    }
+
+    /// Inserts a public account row and vault values for downstream RPC integration tests.
+    pub fn seed_account_vault(
+        db_path: &Path,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        values: &[(AssetId, Option<Asset>)],
+    ) {
+        let mut conn = SqliteConnection::establish(db_path.to_str().expect("db path is utf-8"))
+            .expect("connect to store sqlite");
+
+        let row = AccountRowInsert::new_private(
+            account_id,
+            NetworkAccountType::None,
+            Word::default(),
+            block_num,
+            block_num,
+        );
+        diesel::insert_into(schema::accounts::table)
+            .values(&row)
+            .execute(&mut conn)
+            .expect("insert public test account row");
+
+        for (vault_key, asset) in values {
+            insert_account_vault_asset(&mut conn, account_id, block_num, *vault_key, *asset)
+                .expect("insert test account vault value");
+        }
     }
 }
 

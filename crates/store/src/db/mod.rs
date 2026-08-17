@@ -120,12 +120,26 @@ impl DerefMut for Db {
 /// Describes the value of an asset for an account ID at `block_num` specifically.
 ///
 /// If `asset` is `None`, the asset was removed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountVaultValue {
     pub block_num: BlockNumber,
     pub vault_key: AssetId,
     /// None if the asset was removed
     pub asset: Option<Asset>,
+}
+
+/// Stable cursor used to read a squashed account-vault delta in bounded database pages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountVaultCursor {
+    pub(crate) block_num: BlockNumber,
+    pub(crate) vault_key: AssetId,
+}
+
+/// A bounded page of squashed account-vault updates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountVaultValuesPage {
+    pub values: Vec<AccountVaultValue>,
+    pub next_cursor: Option<AccountVaultCursor>,
 }
 
 impl AccountVaultValue {
@@ -780,6 +794,27 @@ impl Db {
         let block_range = block_range.into_inner();
         self.transact("account vault sync", move |conn| {
             queries::select_account_vault_assets(conn, account_id, block_range)
+        })
+        .await
+    }
+
+    /// Selects one final update per vault key changed in `block_range`.
+    pub async fn select_account_vault_updates_v2(
+        &self,
+        account_id: AccountId,
+        block_range: ScopedBlockRange,
+        cursor: Option<AccountVaultCursor>,
+        page_size: NonZeroUsize,
+    ) -> Result<AccountVaultValuesPage> {
+        let block_range = block_range.into_inner();
+        self.transact("account vault sync v2", move |conn| {
+            queries::select_account_vault_updates_v2(
+                conn,
+                account_id,
+                block_range,
+                cursor,
+                page_size,
+            )
         })
         .await
     }

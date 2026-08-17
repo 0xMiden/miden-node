@@ -52,7 +52,7 @@ use crate::COMPONENT;
 use crate::db::models::conv::{SqlTypeConvert, nonce_to_raw_sql, raw_sql_to_nonce};
 #[cfg(test)]
 use crate::db::models::vec_raw_try_into;
-use crate::db::{AccountVaultValue, schema};
+use crate::db::{AccountVaultCursor, AccountVaultValue, AccountVaultValuesPage, schema};
 use crate::errors::DatabaseError;
 
 mod at_block;
@@ -573,6 +573,76 @@ pub(crate) fn select_account_vault_assets(
     };
 
     Ok((last_block_included, values))
+}
+
+/// Selects a bounded page containing the final update at `block_range.end()` for every vault key
+/// changed within the inclusive block range.
+///
+/// Vault rows are valid in `[block_num, valid_until)`. Requiring `valid_until > block_to` removes
+/// intermediate updates while retaining a historical value that was superseded after the target.
+/// Results use the table's `(account_id, block_num, vault_key)` primary-key order so they can be
+/// continued with a stable keyset cursor without response-size accounting.
+pub(crate) fn select_account_vault_updates_v2(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_range: RangeInclusive<BlockNumber>,
+    cursor: Option<AccountVaultCursor>,
+    page_size: NonZeroUsize,
+) -> Result<AccountVaultValuesPage, DatabaseError> {
+    use schema::account_vault_assets as t;
+
+    if !account_id.is_public() {
+        return Err(DatabaseError::AccountNotPublic(account_id));
+    }
+
+    if block_range.is_empty() {
+        return Err(DatabaseError::InvalidBlockRange {
+            from: *block_range.start(),
+            to: *block_range.end(),
+        });
+    }
+
+    let block_from = block_range.start().to_raw_sql();
+    let block_to = block_range.end().to_raw_sql();
+    let mut query = SelectDsl::select(t::table, (t::block_num, t::vault_key, t::asset))
+        .filter(t::account_id.eq(account_id.to_bytes()))
+        .filter(t::block_num.ge(block_from))
+        .filter(t::block_num.le(block_to))
+        .filter(t::valid_until.gt(block_to))
+        .into_boxed();
+
+    if let Some(cursor) = cursor {
+        let cursor_block = cursor.block_num.to_raw_sql();
+        let cursor_key: Word = cursor.vault_key.into();
+        query = query.filter(
+            t::block_num
+                .gt(cursor_block)
+                .or(t::block_num.eq(cursor_block).and(t::vault_key.gt(cursor_key.to_bytes()))),
+        );
+    }
+
+    let limit = page_size.get();
+    let query_limit = i64::try_from(limit.saturating_add(1)).expect("page size fits within i64");
+    let mut raw = query
+        .order((t::block_num.asc(), t::vault_key.asc()))
+        .limit(query_limit)
+        .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
+
+    let has_more = raw.len() > limit;
+    raw.truncate(limit);
+    let values = raw
+        .into_iter()
+        .map(AccountVaultValue::from_raw_row)
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
+    let next_cursor = has_more.then(|| {
+        let last = values.last().expect("a page with more rows cannot be empty");
+        AccountVaultCursor {
+            block_num: last.block_num,
+            vault_key: last.vault_key,
+        }
+    });
+
+    Ok(AccountVaultValuesPage { values, next_cursor })
 }
 
 /// Query vault assets at a specific block by finding the most recent update for each `vault_key`.

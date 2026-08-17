@@ -46,7 +46,6 @@ pub enum MempoolSubmissionError {
     #[error(
         "transaction input data from block {input_block} exceeds the chain tip {chain_tip}"
     )]
-    #[grpc(internal)]
     FutureInputs {
         input_block: BlockNumber,
         chain_tip: BlockNumber,

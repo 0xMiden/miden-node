@@ -72,6 +72,13 @@ pub(crate) fn select_nullifiers_by_prefix(
     pub const BLOCK_NUM_BYTES: usize = 4; // 32 bits per block number
     pub const ROW_OVERHEAD_BYTES: usize = NULLIFIER_BYTES + BLOCK_NUM_BYTES; // 36 bytes
     pub const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    // Pagination reports the last fully-included block, so it only makes progress if every block
+    // fits within a single page. A block that exceeded `MAX_ROWS` nullifiers would produce an
+    // empty page and stall clients forever on that block.
+    const _: () = assert!(
+        miden_protocol::MAX_INPUT_NOTES_PER_BLOCK <= MAX_ROWS,
+        "a block's nullifiers must fit in one response page or pagination cannot make progress",
+    );
 
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 

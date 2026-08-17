@@ -40,7 +40,7 @@ on:
         required: true
         type: string
       tag:
-        description: "Custom image and Compose tag, for example demo"
+        description: "Image and Compose tag; v* tags must resolve to commit"
         required: true
         default: demo
         type: string
@@ -117,11 +117,6 @@ jobs:
             exit 1
           fi
 
-          if [[ "${tag}" == v* && "${release_tag}" != "true" ]]; then
-            echo "::error::The v* tag namespace is reserved for the release workflow"
-            exit 1
-          fi
-
           if [[ "${mode}" == "publish" && "${REPOSITORY_OWNER}" != "0xMiden" ]]; then
             echo "::error::Docker publication is restricted to the 0xMiden repository"
             exit 1
@@ -164,6 +159,7 @@ jobs:
         env:
           COMMIT: ${{ steps.inputs.outputs.commit }}
           CREATED: ${{ inputs.created }}
+          TAG: ${{ steps.inputs.outputs.tag }}
         run: |
           set -euo pipefail
 
@@ -171,6 +167,18 @@ jobs:
           if [[ "${actual_commit}" != "${COMMIT}" ]]; then
             echo "::error::Checked out ${actual_commit}, expected ${COMMIT}"
             exit 1
+          fi
+
+          if [[ "${TAG}" == v* ]]; then
+            if ! tag_commit="$(git rev-parse "refs/tags/${TAG}^{commit}" 2>/dev/null)"; then
+              echo "::error::Version tag ${TAG} does not exist"
+              exit 1
+            fi
+
+            if [[ "${tag_commit}" != "${actual_commit}" ]]; then
+              echo "::error::Version tag ${TAG} points to ${tag_commit}, expected ${actual_commit}"
+              exit 1
+            fi
           fi
 
           created="${CREATED}"
@@ -184,7 +192,11 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Ensure GitHub release does not exist
-        if: ${{ steps.inputs.outputs.mode == 'publish' }}
+        if: >-
+          ${{
+            steps.inputs.outputs.mode == 'publish' &&
+            steps.inputs.outputs.release_tag == 'true'
+          }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.inputs.outputs.tag }}

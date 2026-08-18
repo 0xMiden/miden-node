@@ -660,11 +660,11 @@ impl Mempool {
     /// If our oldest local block is at `N`, then we allow `N-1` and newer since this means we're
     /// covering the full blockchain.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// This panics if the authentication height exceeds the latest locally known block. This
-    /// includes any proposed block since the block is committed to the mempool and store
-    /// concurrently (or at least can be).
+    /// Returns [`MempoolSubmissionError::StaleInputs`] if the authentication height is older than
+    /// the locally retained state, and [`MempoolSubmissionError::FutureInputs`] if it exceeds the
+    /// latest locally known block (including any proposed block).
     fn authentication_staleness_check(
         &self,
         authentication_height: BlockNumber,
@@ -683,11 +683,12 @@ impl Mempool {
             });
         }
 
-        assert!(
-            authentication_height <= self.chain_tip(),
-            "Authentication height {authentication_height} exceeded the chain tip {}",
-            self.chain_tip()
-        );
+        if authentication_height > self.chain_tip() {
+            return Err(MempoolSubmissionError::FutureInputs {
+                input_block: authentication_height,
+                chain_tip: self.chain_tip(),
+            });
+        }
 
         Ok(())
     }

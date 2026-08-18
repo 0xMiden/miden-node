@@ -82,6 +82,7 @@ use rand::RngExt;
 use tempfile::tempdir;
 
 use super::{AccountInfo, NoteRecord, NoteSyncRecord, NullifierInfo, TransactionRecord};
+use crate::ScopedBlockNum;
 use crate::account_state_forest::{
     AccountStorageMapResult,
     HISTORICAL_BLOCK_RETENTION,
@@ -1637,7 +1638,12 @@ async fn reconstruct_storage_map_from_db_pages_until_latest() {
     .unwrap();
 
     let details = db
-        .reconstruct_storage_map_from_db(account_id, slot_name.clone(), block3, Some(1))
+        .reconstruct_storage_map_from_db(
+            account_id,
+            slot_name.clone(),
+            ScopedBlockNum::new_unchecked(block3),
+            Some(1),
+        )
         .await
         .unwrap();
 
@@ -1695,7 +1701,12 @@ async fn reconstruct_storage_map_from_db_returns_limit_exceeded_for_single_block
     // Use limit=1 so that 3 entries in a single block exceed the limit. block_range_start is block5
     // (the first block with data), and the target is also block5.
     let details = db
-        .reconstruct_storage_map_from_db(account_id, slot_name.clone(), block5, Some(1))
+        .reconstruct_storage_map_from_db(
+            account_id,
+            slot_name.clone(),
+            ScopedBlockNum::new_unchecked(block5),
+            Some(1),
+        )
         .await
         .unwrap();
 
@@ -1741,7 +1752,7 @@ fn create_account_with_code(code_str: &str, seed: [u8; 32]) -> Account {
     AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1890,7 +1901,7 @@ fn mock_account_code_and_storage(
         .account_type(account_type)
         .with_assets(assets)
         .with_component(account_component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2056,7 +2067,7 @@ async fn genesis_with_account_assets() {
         .account_type(AccountType::Public)
         .with_component(account_component)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2128,7 +2139,7 @@ async fn genesis_with_account_storage_map() {
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2193,7 +2204,7 @@ async fn genesis_with_account_assets_and_storage() {
         .account_type(AccountType::Public)
         .with_component(account_component)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2237,7 +2248,7 @@ async fn genesis_with_multiple_accounts() {
     let account1 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component1)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2261,7 +2272,7 @@ async fn genesis_with_multiple_accounts() {
         .account_type(AccountType::Public)
         .with_component(account_component2)
         .with_assets([fungible_asset.into()])
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2294,7 +2305,7 @@ async fn genesis_with_multiple_accounts() {
     let account3 = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component3)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2794,7 +2805,7 @@ fn db_roundtrip_account_storage_with_maps() {
     let account = AccountBuilder::new([50u8; 32])
         .account_type(AccountType::Public)
         .with_component(account_component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -2981,8 +2992,20 @@ fn test_prune_history() {
     let vault_key_cutoff = asset_2.id();
     let vault_key_recent = asset_3.id();
 
-    // Old entry at block_old (should be deleted when cutoff is at block_cutoff for
-    // chain_tip=block_tip)
+    // Stale entry at block_0, superseded at block_old which is also below the cutoff — should be
+    // deleted.
+    let stale_asset = Asset::Fungible(FungibleAsset::new(public_account_id, 500).unwrap());
+    queries::insert_account_vault_asset(
+        conn,
+        public_account_id,
+        block_0,
+        vault_key_old,
+        Some(stale_asset),
+    )
+    .unwrap();
+
+    // Entry at block_old, superseded only at block_update which is above the cutoff — must be
+    // retained as the key's baseline for reads at block_cutoff.
     queries::insert_account_vault_asset(
         conn,
         public_account_id,
@@ -3028,12 +3051,26 @@ fn test_prune_history() {
     let map_key_old = StorageMapKey::from_index(10u32);
     let map_key_cutoff = StorageMapKey::from_index(20u32);
     let map_key_recent = StorageMapKey::from_index(30u32);
+    let value_stale = num_to_word(555);
     let value_1 = num_to_word(111);
     let value_2 = num_to_word(222);
     let value_3 = num_to_word(333);
     let value_updated = num_to_word(444);
 
-    // Old storage map entry at block_old
+    // Stale entry at block_0, superseded at block_old which is also below the cutoff — should be
+    // deleted.
+    insert_account_storage_map_value(
+        conn,
+        public_account_id,
+        block_0,
+        slot_name.clone(),
+        map_key_old,
+        value_stale,
+    )
+    .unwrap();
+
+    // Entry at block_old, superseded only at block_update which is above the cutoff — must be
+    // retained as the key's baseline for reads at block_cutoff.
     insert_account_storage_map_value(
         conn,
         public_account_id,
@@ -3077,10 +3114,10 @@ fn test_prune_history() {
     )
     .unwrap();
 
-    // Verify initial state - should have 4 vault assets and 4 storage map values
+    // Verify initial state - should have 5 vault assets and 5 storage map values
     let (_, initial_vault_assets) =
         queries::select_account_vault_assets(conn, public_account_id, block_0..=block_tip).unwrap();
-    assert_eq!(initial_vault_assets.len(), 4, "should have 4 vault assets before cleanup");
+    assert_eq!(initial_vault_assets.len(), 5, "should have 5 vault assets before cleanup");
 
     let initial_storage_values = queries::select_account_storage_map_values_paged(
         conn,
@@ -3091,8 +3128,8 @@ fn test_prune_history() {
     .unwrap();
     assert_eq!(
         initial_storage_values.values.len(),
-        4,
-        "should have 4 storage map values before cleanup"
+        5,
+        "should have 5 storage map values before cleanup"
     );
 
     // Run cleanup with chain_tip = block_tip, cutoff will be block_tip - HISTORICAL_BLOCK_RETENTION
@@ -3100,22 +3137,28 @@ fn test_prune_history() {
     let (vault_deleted, storage_deleted, _codes_deleted) =
         queries::prune_history(conn, block_tip).unwrap();
 
-    // Verify deletions occurred
-    assert_eq!(vault_deleted, 1, "should delete 1 old vault asset");
-    assert_eq!(storage_deleted, 1, "should delete 1 old storage map value");
+    // Only the block_0 rows are deletable: they are superseded at block_old, which is also below
+    // the cutoff. The block_old rows are superseded only above the cutoff, so they remain the
+    // baseline for reads at block_cutoff.
+    assert_eq!(vault_deleted, 1, "should delete 1 stale vault asset");
+    assert_eq!(storage_deleted, 1, "should delete 1 stale storage map value");
 
-    // Verify remaining vault assets - should have 3 (cutoff, update, tip)
+    // Verify remaining vault assets - should have 4 (baseline at block_old, cutoff, update, tip)
     let (_, remaining_vault_assets) =
         queries::select_account_vault_assets(conn, public_account_id, block_0..=block_tip).unwrap();
-    assert_eq!(remaining_vault_assets.len(), 3, "should have 3 vault assets after cleanup");
+    assert_eq!(remaining_vault_assets.len(), 4, "should have 4 vault assets after cleanup");
 
-    // Verify no vault asset at block_old remains
+    // Verify no vault asset at block_0 remains
     assert!(
-        !remaining_vault_assets.iter().any(|v| v.block_num == block_old),
-        "block_old vault asset should be deleted"
+        !remaining_vault_assets.iter().any(|v| v.block_num == block_0),
+        "block_0 vault asset should be deleted"
     );
 
-    // Verify vault assets at block_cutoff, block_update, block_tip remain
+    // Verify vault assets at block_old, block_cutoff, block_update, block_tip remain
+    assert!(
+        remaining_vault_assets.iter().any(|v| v.block_num == block_old),
+        "block_old vault asset should be retained (baseline for reads at the cutoff)"
+    );
     assert!(
         remaining_vault_assets.iter().any(|v| v.block_num == block_cutoff),
         "block_cutoff vault asset should be retained (at cutoff)"
@@ -3129,7 +3172,8 @@ fn test_prune_history() {
         "block_tip vault asset should be retained"
     );
 
-    // Verify remaining storage map values - should have 3 (cutoff, update, tip)
+    // Verify remaining storage map values - should have 4 (baseline at block_old, cutoff, update,
+    // tip)
     let remaining_storage_values = queries::select_account_storage_map_values_paged(
         conn,
         public_account_id,
@@ -3139,17 +3183,21 @@ fn test_prune_history() {
     .unwrap();
     assert_eq!(
         remaining_storage_values.values.len(),
-        3,
-        "should have 3 storage map values after cleanup"
+        4,
+        "should have 4 storage map values after cleanup"
     );
 
-    // Verify no storage map value at block_old remains
+    // Verify no storage map value at block_0 remains
     assert!(
-        !remaining_storage_values.values.iter().any(|v| v.block_num == block_old),
-        "block_old storage map value should be deleted"
+        !remaining_storage_values.values.iter().any(|v| v.block_num == block_0),
+        "block_0 storage map value should be deleted"
     );
 
-    // Verify storage map values at block_cutoff, block_update, block_tip remain
+    // Verify storage map values at block_old, block_cutoff, block_update, block_tip remain
+    assert!(
+        remaining_storage_values.values.iter().any(|v| v.block_num == block_old),
+        "block_old storage map value should be retained (baseline for reads at the cutoff)"
+    );
     assert!(
         remaining_storage_values.values.iter().any(|v| v.block_num == block_cutoff),
         "block_cutoff storage map value should be retained (at cutoff)"
@@ -3163,8 +3211,17 @@ fn test_prune_history() {
         "block_tip storage map value should be retained"
     );
 
-    // Test that is_latest=true entries are never deleted, even if old Insert an old entry marked as
-    // latest
+    // Regression check for baseline loss: reconstructing the vault at the cutoff block must still
+    // see block_old's value, even though that row is older than the cutoff.
+    let assets_at_cutoff =
+        queries::select_account_vault_at_block(conn, public_account_id, block_cutoff).unwrap();
+    assert!(
+        assets_at_cutoff.contains(&asset_1),
+        "vault reconstruction at the cutoff must include the baseline written at block_old"
+    );
+
+    // Test that open-ended (current) entries are never deleted, even if old: insert an entry at
+    // block 0 that is never superseded.
     let faucet_4 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3).unwrap();
     let asset_old = Asset::Fungible(FungibleAsset::new(faucet_4, 9999).unwrap());
     let vault_key_old_latest = asset_old.id();
@@ -3177,21 +3234,20 @@ fn test_prune_history() {
     )
     .unwrap();
 
-    // This entry at block 0 is marked as is_latest=true by insert_account_vault_asset Run cleanup
-    // again
+    // This entry at block 0 keeps an open validity interval. Run cleanup again
     let (vault_deleted_2, ..) = queries::prune_history(conn, block_tip).unwrap();
 
-    // The old latest entry should not be deleted (vault_deleted_2 should be 0)
-    assert_eq!(vault_deleted_2, 0, "should not delete any is_latest=true entries");
+    // The old open-ended entry should not be deleted (vault_deleted_2 should be 0)
+    assert_eq!(vault_deleted_2, 0, "should not delete any open-ended entries");
 
-    // Verify the old latest entry still exists
+    // Verify the old open-ended entry still exists
     let (_, vault_assets_with_latest) =
         queries::select_account_vault_assets(conn, public_account_id, block_0..=block_tip).unwrap();
     assert!(
         vault_assets_with_latest
             .iter()
             .any(|v| v.block_num == block_0 && v.vault_key == vault_key_old_latest),
-        "is_latest=true entry should be retained even if old"
+        "open-ended entry should be retained even if old"
     );
 }
 

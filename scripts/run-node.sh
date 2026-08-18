@@ -32,12 +32,13 @@ VALIDATOR_2_KEY_HEX="02020202020202020202020202020202020202020202020202020202020
 
 # Insecure, hard-coded local dev storage encryption setup.
 VALIDATOR_STORAGE_KEY_EPOCH="0909090909090909090909090909090909090909090909090909090909090909"
-VALIDATOR_INSECURE_STORAGE_KEY_DIRECTORY="scripts/testdata/insecure-golden-storage-key"
+VALIDATOR_INSECURE_STORAGE_KEY_DIRECTORY="scripts/testdata/insecure-storage-key"
 VALIDATOR_INSECURE_STORAGE_KEY_SETUP_CONTEXT="${VALIDATOR_INSECURE_STORAGE_KEY_DIRECTORY}/setup-context.wire"
 VALIDATOR_INSECURE_STORAGE_KEY_PUBLIC_KEY_SET="${VALIDATOR_INSECURE_STORAGE_KEY_DIRECTORY}/public-key-set.wire"
-VALIDATOR_INSECURE_STORAGE_KEY_SECRET_SHARE="${VALIDATOR_INSECURE_STORAGE_KEY_DIRECTORY}/secret-share.wire"
+VALIDATOR_1_INSECURE_STORAGE_KEY_SECRET_SHARE="${VALIDATOR_INSECURE_STORAGE_KEY_DIRECTORY}/validator-1/secret-share.wire"
+VALIDATOR_2_INSECURE_STORAGE_KEY_SECRET_SHARE="${VALIDATOR_INSECURE_STORAGE_KEY_DIRECTORY}/validator-2/secret-share.wire"
 
-GENESIS_CONFIG="crates/store/src/genesis/config/samples/01-simple.toml"
+GENESIS_CONFIG="${GENESIS_CONFIG:-crates/store/src/genesis/config/samples/01-simple.toml}"
 NODE_DIR="/tmp/node"
 FULL_NODE_1_DIR="/tmp/full-node-1"
 FULL_NODE_2_DIR="/tmp/full-node-2"
@@ -106,6 +107,26 @@ bootstrap_ntx_builder() {
     "$NTX_BUILDER_BINARY" bootstrap \
         --data-directory "$NTX_BUILDER_DIR" \
         --genesis "$GENESIS_DIR/genesis.dat"
+}
+
+# Blocks until something is listening on a port, or gives up after roughly $2 seconds.
+#
+# The ntx-builder connects to the sequencer's RPC during startup and exits if that connection is
+# refused, so it must not be started against a fixed sleep: a large genesis state (e.g. an account
+# with a big storage map) delays the sequencer's bind well past a couple of seconds.
+wait_for_port() {
+    local port="$1"
+    local timeout="${2:-120}"
+
+    for _ in $(seq 1 "$timeout"); do
+        if nc -z 127.0.0.1 "$port" 2>/dev/null; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "error: nothing listening on port $port after ${timeout}s" >&2
+    return 1
 }
 
 node_resource_attributes() {
@@ -194,7 +215,7 @@ echo "Starting validator 1..."
     --storage-key.epoch "$VALIDATOR_STORAGE_KEY_EPOCH" \
     --storage-key.setup-context "$VALIDATOR_INSECURE_STORAGE_KEY_SETUP_CONTEXT" \
     --storage-key.public-key-set "$VALIDATOR_INSECURE_STORAGE_KEY_PUBLIC_KEY_SET" \
-    --storage-key.secret-share "$VALIDATOR_INSECURE_STORAGE_KEY_SECRET_SHARE" \
+    --storage-key.secret-share "$VALIDATOR_1_INSECURE_STORAGE_KEY_SECRET_SHARE" \
     $EXTRA_ARGS \
     "${KMS_START_ARGS_1[@]}" &
 PIDS+=($!)
@@ -205,7 +226,7 @@ echo "Starting validator 2..."
     --storage-key.epoch "$VALIDATOR_STORAGE_KEY_EPOCH" \
     --storage-key.setup-context "$VALIDATOR_INSECURE_STORAGE_KEY_SETUP_CONTEXT" \
     --storage-key.public-key-set "$VALIDATOR_INSECURE_STORAGE_KEY_PUBLIC_KEY_SET" \
-    --storage-key.secret-share "$VALIDATOR_INSECURE_STORAGE_KEY_SECRET_SHARE" \
+    --storage-key.secret-share "$VALIDATOR_2_INSECURE_STORAGE_KEY_SECRET_SHARE" \
     $EXTRA_ARGS \
     "${KMS_START_ARGS_2[@]}" &
 PIDS+=($!)
@@ -232,8 +253,10 @@ echo "Starting remote prover..."
     --port="$REMOTE_PROVER_PORT" &
 PIDS+=($!)
 
-# Give the sequencer a moment to bind before starting the NTX builder
-sleep 2
+# The NTX builder connects to the sequencer's RPC while starting up and exits if it is refused, so
+# wait for the port rather than sleeping a fixed amount.
+echo "Waiting for the sequencer's RPC on :$RPC_PORT before starting the NTX builder..."
+wait_for_port "$RPC_PORT"
 
 echo "Starting network transaction builder..."
 "$NTX_BUILDER_BINARY" start \

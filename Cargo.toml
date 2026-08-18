@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "bin/benchmark",
+  "bin/large-account-benchmark",
   "bin/network-monitor",
   "bin/node",
   "bin/ntx-builder",
@@ -31,7 +32,7 @@ license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/node"
 rust-version = "1.96.1"
-version      = "0.16.0-alpha.3"
+version      = "0.16.0-rc.1"
 
 # Optimize the cryptography for faster tests involving account creation.
 [profile.test.package.miden-crypto]
@@ -42,30 +43,31 @@ debug = true
 
 [workspace.dependencies]
 # Workspace crates.
-miden-node-block-producer   = { path = "crates/block-producer", version = "0.16.0-alpha.3" }
-miden-node-db               = { path = "crates/db", version = "0.16.0-alpha.3" }
-miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.16.0-alpha.3" }
-miden-node-proto            = { path = "crates/proto", version = "0.16.0-alpha.3" }
-miden-node-proto-build      = { path = "proto", version = "0.16.0-alpha.3" }
-miden-node-rpc              = { path = "crates/rpc", version = "0.16.0-alpha.3" }
-miden-node-store            = { path = "crates/store", version = "0.16.0-alpha.3" }
+miden-node-block-producer   = { path = "crates/block-producer", version = "0.16.0-rc.1" }
+miden-node-db               = { path = "crates/db", version = "0.16.0-rc.1" }
+miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.16.0-rc.1" }
+miden-node-proto            = { path = "crates/proto", version = "0.16.0-rc.1" }
+miden-node-proto-build      = { path = "proto", version = "0.16.0-rc.1" }
+miden-node-rpc              = { path = "crates/rpc", version = "0.16.0-rc.1" }
+miden-node-store            = { path = "crates/store", version = "0.16.0-rc.1" }
 miden-node-test-macro       = { path = "crates/test-macro" }
-miden-node-tracing-macro    = { path = "crates/tracing-macro", version = "0.16.0-alpha.3" }
-miden-node-utils            = { path = "crates/utils", version = "0.16.0-alpha.3" }
+miden-node-tracing-macro    = { path = "crates/tracing-macro", version = "0.16.0-rc.1" }
+miden-node-utils            = { path = "crates/utils", version = "0.16.0-rc.1" }
 
 # miden-protocol dependencies. These should be updated in sync.
-miden-block-prover = { version = "=0.16.0-alpha.2" }
-miden-protocol     = { default-features = false, version = "=0.16.0-alpha.2" }
-miden-standards    = { version = "=0.16.0-alpha.2" }
-miden-testing      = { version = "=0.16.0-alpha.2" }
-miden-tx           = { default-features = false, version = "=0.16.0-alpha.2" }
-miden-tx-batch     = { version = "=0.16.0-alpha.2" }
+miden-block-prover = { version = "=0.16.0-rc.4" }
+miden-protocol     = { default-features = false, version = "=0.16.0-rc.4" }
+miden-standards    = { version = "=0.16.0-rc.4" }
+miden-testing      = { version = "=0.16.0-rc.4" }
+miden-tx           = { default-features = false, version = "=0.16.0-rc.4" }
+miden-tx-batch     = { version = "=0.16.0-rc.4" }
 
 # Other miden dependencies. These should align with those expected by miden-protocol.
-miden-crypto = { version = "0.28" }
+miden-crypto = { version = "0.29.1" }
 
 # External dependencies
 anyhow             = { version = "1.0" }
+arc-swap           = { version = "1.7" }
 assert_matches     = { version = "1.5" }
 axum               = { version = "0.8" }
 backon             = { version = "1.6" }
@@ -79,9 +81,10 @@ deadpool-sync      = { default-features = false, version = "0.1" }
 diesel             = { version = "2.3" }
 fs-err             = { version = "3" }
 futures            = { version = "0.3" }
-golden-core        = { version = "0.1.0" }
-golden-ehtdh1      = { version = "0.1.0" }
-golden-halo2curves = { features = ["halo2curves-secp256k1"], version = "0.1.0" }
+golden-core        = { version = "0.3.0" }
+golden-ehtdh1      = { version = "0.3.0" }
+golden-evrf        = { features = ["halo2curves-secp256k1"], version = "0.3.0" }
+golden-halo2curves = { features = ["halo2curves-secp256k1"], version = "0.3.0" }
 hex                = { version = "0.4" }
 http               = { version = "1.3" }
 humantime          = { version = "2.2" }
@@ -115,6 +118,7 @@ sha2               = { version = "0.10" }
 syn                = { version = "2.0" }
 tempfile           = { version = "3.12" }
 thiserror          = { default-features = false, version = "2.0" }
+thread-priority    = { version = "3.1" }
 tokio              = { default-features = false, version = "1.46" }
 tokio-stream       = { version = "0.1" }
 tokio-util         = { features = ["rt"], version = "0.7" }

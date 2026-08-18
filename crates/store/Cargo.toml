@@ -19,6 +19,7 @@ doctest = false
 
 [dependencies]
 anyhow           = { workspace = true }
+arc-swap         = { workspace = true }
 deadpool         = { features = ["managed", "rt_tokio_1"], workspace = true }
 deadpool-diesel  = { features = ["sqlite"], workspace = true }
 diesel           = { features = ["numeric", "sqlite"], workspace = true }
@@ -36,8 +37,10 @@ miden-protocol    = { features = ["std", "testing"], workspace = true }
 pretty_assertions = { workspace = true }
 rand              = { workspace = true }
 rand_chacha       = { workspace = true }
+rayon             = { workspace = true }
 serde             = { workspace = true }
 thiserror         = { workspace = true }
+thread-priority   = { workspace = true }
 tokio             = { features = ["fs", "rt-multi-thread"], workspace = true }
 toml              = { workspace = true }
 tracing           = { workspace = true }

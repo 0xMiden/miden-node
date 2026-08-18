@@ -6,8 +6,9 @@ use std::time::Instant;
 
 use metrics::SeedingMetrics;
 use miden_node_proto::domain::batch::BatchInputs;
-use miden_node_store::{DataDirectory, GenesisState, State};
+use miden_node_store::{BlockWriter, DataDirectory, GenesisState, State, WriterTask};
 use miden_node_utils::clap::StorageOptions;
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
@@ -235,7 +236,7 @@ pub async fn seed_store_with_readers(
     let genesis_header = genesis_block.inner().header().clone();
     State::bootstrap(genesis_block, &data_directory).expect("store should bootstrap");
 
-    let store_state = load_state(data_directory.clone()).await;
+    let (state, mut block_writer, writer_task) = load_state(data_directory.clone()).await;
 
     // Recreate the deterministic genesis benchmark accounts after bootstrapping instead of keeping
     // another copy of their potentially very large maps alive while the genesis block is built.
@@ -259,7 +260,7 @@ pub async fn seed_store_with_readers(
     let stop_readers = Arc::new(AtomicBool::new(false));
     let reader_tasks: Vec<_> = (0..readers)
         .map(|_| {
-            let state = Arc::clone(&store_state);
+            let state = Arc::clone(&state);
             let stop = Arc::clone(&stop_readers);
             tokio::spawn(async move { read_latest_header_until(&state, &stop).await })
         })
@@ -270,6 +271,7 @@ pub async fn seed_store_with_readers(
     let data_directory =
         miden_node_store::DataDirectory::load(data_directory).expect("data directory should exist");
     let metrics = Box::pin(generate_blocks(
+        &state,
         account_batches,
         initial_accounts,
         if seed_public_accounts_at_genesis {
@@ -279,7 +281,7 @@ pub async fn seed_store_with_readers(
         },
         faucet,
         genesis_header,
-        &store_state,
+        &mut block_writer,
         data_directory,
         accounts_filepath,
         &signer,
@@ -290,8 +292,8 @@ pub async fn seed_store_with_readers(
     ))
     .await;
 
-    // Stop the readers and report their latencies; they hold state references and the read phase
-    // should not include post-write quiescence.
+    // Stop the readers and report their latencies before stopping the store: they hold state
+    // references, and the read phase should not include post-write quiescence.
     let write_load_elapsed = start.elapsed();
     stop_readers.store(true, Ordering::Relaxed);
     let mut read_latencies = Vec::new();
@@ -302,6 +304,10 @@ pub async fn seed_store_with_readers(
         report_read_latencies(&read_latencies, readers, write_load_elapsed);
     }
 
+    // Wait for the store to release its backing storage so callers can immediately re-load the
+    // state from the same data directory.
+    block_writer.stop(writer_task).await;
+
     println!("Total time: {:.3} seconds", start.elapsed().as_secs_f64());
     println!("{metrics}");
 }
@@ -309,9 +315,9 @@ pub async fn seed_store_with_readers(
 /// Loops `get_block_header` (latest header with MMR proof) against the state until `stop` is set,
 /// returning the latency of every request.
 ///
-/// The request combines an in-memory read (opening the latest block's MMR proof, which contends
-/// with the writer's lock during block application) with a database header lookup, so it exercises
-/// the read path most exposed to concurrent block application.
+/// The request combines an in-memory read (opening the latest block's MMR proof against the
+/// snapshot's blockchain) with a database header lookup scoped to the snapshot's tip, so it
+/// exercises the read path most exposed to concurrent block application.
 async fn read_latest_header_until(
     state: &Arc<State>,
     stop: &AtomicBool,
@@ -320,6 +326,7 @@ async fn read_latest_header_until(
     while !stop.load(Ordering::Relaxed) {
         let start = Instant::now();
         let (header, proof) = state
+            .view()
             .get_block_header(None, true)
             .await
             .expect("get_block_header should succeed during seeding");
@@ -353,12 +360,13 @@ fn report_read_latencies(
 #[expect(clippy::too_many_arguments)]
 #[expect(clippy::too_many_lines)]
 async fn generate_blocks(
+    state: &State,
     account_batches: Vec<AccountBatch>,
     initial_accounts: Vec<Account>,
     first_account_index: u64,
     mut faucet: Account,
     genesis_header: BlockHeader,
-    store_state: &Arc<State>,
+    block_writer: &mut BlockWriter,
     data_directory: DataDirectory,
     accounts_filepath: PathBuf,
     signer: &EcdsaSecretKey,
@@ -439,7 +447,7 @@ async fn generate_blocks(
             .collect();
 
         // create the block and send it to the store
-        let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
 
         // update blocks
         let block_kind = if has_pending_account_creations {
@@ -450,7 +458,7 @@ async fn generate_blocks(
         prev_block_header = apply_block(
             batches,
             block_inputs,
-            store_state,
+            block_writer,
             &mut metrics,
             signer,
             block_kind,
@@ -461,8 +469,7 @@ async fn generate_blocks(
             .extend(pending_consumed_accounts.into_iter().map(|account| (account.id(), account)));
 
         // create the consume notes txs to be used in the next block
-        let batch_inputs =
-            get_batch_inputs(store_state, &prev_block_header, &notes, &mut metrics).await;
+        let batch_inputs = get_batch_inputs(state, &prev_block_header, &notes, &mut metrics).await;
         (pending_consumed_accounts, consume_notes_txs) = create_consume_note_txs(
             &prev_block_header,
             accounts,
@@ -486,11 +493,11 @@ async fn generate_blocks(
             .par_chunks(TRANSACTIONS_PER_BATCH)
             .map(|txs| create_batch(txs, &prev_block_header))
             .collect();
-        let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
         prev_block_header = apply_block(
             batches,
             block_inputs,
-            store_state,
+            block_writer,
             &mut metrics,
             signer,
             metrics::BlockKind::AccountCreation,
@@ -526,11 +533,11 @@ async fn generate_blocks(
         let emit_note_tx = create_emit_note_tx(&prev_block_header, &mut faucet, notes.clone());
         let batches = vec![create_batch(std::slice::from_ref(&emit_note_tx), &prev_block_header)];
 
-        let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
         prev_block_header = apply_block(
             batches,
             block_inputs,
-            store_state,
+            block_writer,
             &mut metrics,
             signer,
             metrics::BlockKind::UpdateNoteEmission,
@@ -538,8 +545,7 @@ async fn generate_blocks(
         )
         .await;
 
-        let batch_inputs =
-            get_batch_inputs(store_state, &prev_block_header, &notes, &mut metrics).await;
+        let batch_inputs = get_batch_inputs(state, &prev_block_header, &notes, &mut metrics).await;
         let accounts = selected_account_ids
             .iter()
             .map(|account_id| {
@@ -562,11 +568,11 @@ async fn generate_blocks(
             .par_chunks(TRANSACTIONS_PER_BATCH)
             .map(|txs| create_batch(txs, &prev_block_header))
             .collect();
-        let block_inputs = get_block_inputs(store_state, &batches, &mut metrics).await;
+        let block_inputs = get_block_inputs(state, &batches, &mut metrics).await;
         prev_block_header = apply_block(
             batches,
             block_inputs,
-            store_state,
+            block_writer,
             &mut metrics,
             signer,
             metrics::BlockKind::AccountUpdate,
@@ -595,7 +601,7 @@ async fn generate_blocks(
 async fn apply_block(
     batches: Vec<ProvenBatch>,
     block_inputs: BlockInputs,
-    store_state: &Arc<State>,
+    block_writer: &mut BlockWriter,
     metrics: &mut SeedingMetrics,
     signer: &EcdsaSecretKey,
     block_kind: metrics::BlockKind,
@@ -613,7 +619,7 @@ async fn apply_block(
     let ordered_batches = proposed_block.batches().clone();
 
     let start = Instant::now();
-    store_state
+    block_writer
         .apply_block_with_proving_inputs(ordered_batches, block_inputs, signed_block)
         .await
         .unwrap();
@@ -763,7 +769,7 @@ fn create_account(
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
     let mut builder = AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(account_type)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             public_key.into(),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -862,7 +868,7 @@ fn create_faucet_with_seed(index: u64) -> Account {
                 .active_burn_policy(BurnPolicy::allow_all())
                 .build(),
         )
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             key_pair.public_key().into(),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1063,7 +1069,7 @@ fn create_emit_note_tx(
 
 /// Gets the batch inputs from the store and tracks the query time on the metrics.
 async fn get_batch_inputs(
-    store_state: &Arc<State>,
+    state: &State,
     block_ref: &BlockHeader,
     notes: &[Note],
     metrics: &mut SeedingMetrics,
@@ -1071,7 +1077,8 @@ async fn get_batch_inputs(
     let start = Instant::now();
     // Mark every note as unauthenticated, so that the store returns the inclusion proofs for all of
     // them
-    let batch_inputs = store_state
+    let batch_inputs = state
+        .view()
         .get_batch_inputs(
             [block_ref.block_num()].into_iter().collect(),
             notes.iter().map(|note| note.id().as_word()).collect(),
@@ -1084,12 +1091,13 @@ async fn get_batch_inputs(
 
 /// Gets the block inputs from the store and tracks the query time on the metrics.
 async fn get_block_inputs(
-    store_state: &Arc<State>,
+    state: &State,
     batches: &[ProvenBatch],
     metrics: &mut SeedingMetrics,
 ) -> BlockInputs {
     let start = Instant::now();
-    let inputs = store_state
+    let inputs = state
+        .view()
         .get_block_inputs(
             batches.iter().flat_map(ProvenBatch::updated_accounts).collect(),
             batches.iter().flat_map(ProvenBatch::created_nullifiers).collect(),
@@ -1111,14 +1119,28 @@ async fn get_block_inputs(
     inputs
 }
 
-/// Loads the store state from the given data directory.
+/// Loads the store state from the given data directory, detaching the block writer task.
+///
+/// Intended for benches that run until process exit and never need the storage released
+/// deterministically; use [`load_state`] when the writer must be joined. The write capability is
+/// leaked to keep the block writer alive for the process lifetime, as before the read/write
+/// split.
 pub async fn start_store(data_directory: PathBuf) -> Arc<State> {
-    load_state(data_directory).await
+    let (state, block_writer, _writer_task) = load_state(data_directory).await;
+    std::mem::forget(block_writer);
+    state
 }
 
-async fn load_state(data_directory: PathBuf) -> Arc<State> {
-    let state = State::load(&data_directory, StorageOptions::bench())
-        .await
-        .expect("store state should load");
-    Arc::new(state)
+/// Loads the store state and spawns its block writer, returning the write capability and the
+/// writer's join handle.
+///
+/// The writer exits once the returned [`BlockWriter`] is dropped; awaiting the handle after that
+/// guarantees the backing storage has been released.
+async fn load_state(data_directory: PathBuf) -> (Arc<State>, BlockWriter, WriterTask) {
+    let (state, block_writer, _proof_writer, writer_task) =
+        State::load(&data_directory, StorageOptions::bench())
+            .await
+            .expect("store state should load")
+            .start(CancellationToken::new());
+    (state, block_writer, writer_task)
 }

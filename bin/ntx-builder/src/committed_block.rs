@@ -6,7 +6,7 @@ use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::{OutputNote, TransactionId};
 use miden_standards::note::AccountTargetNetworkNote;
 
-use crate::db::models::account_effect::NetworkAccountEffect;
+use crate::db::queries::account_effect::NetworkAccountEffect;
 
 /// Network-relevant state extracted from a committed [`SignedBlock`].
 ///

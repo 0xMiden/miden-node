@@ -61,14 +61,14 @@ impl SubscriptionStream {
         from: BlockNumber,
         client_ip: Option<IpAddr>,
     ) -> tonic::Result<SubscriptionStream> {
-        let store = Arc::clone(&rpc.store);
+        let store = Arc::clone(&rpc.state);
 
         Self::create(
             from,
             client_ip,
             Arc::clone(&rpc.subscription_ban),
             Arc::clone(&rpc.block_subscription_semaphore),
-            rpc.store.subscribe_committed_tip(),
+            rpc.state.subscribe_committed_tip(),
             move |block| {
                 let store = Arc::clone(&store);
                 async move { store.load_block(block).await }
@@ -82,14 +82,14 @@ impl SubscriptionStream {
         from: BlockNumber,
         client_ip: Option<IpAddr>,
     ) -> tonic::Result<SubscriptionStream> {
-        let store = Arc::clone(&rpc.store);
+        let store = Arc::clone(&rpc.state);
 
         Self::create(
             from,
             client_ip,
             Arc::clone(&rpc.subscription_ban),
             Arc::clone(&rpc.proof_subscription_semaphore),
-            rpc.store.subscribe_proven_tip(),
+            rpc.state.subscribe_proven_tip(),
             move |block| {
                 let store = Arc::clone(&store);
                 async move { store.load_proof(block).await }

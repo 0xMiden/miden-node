@@ -58,6 +58,14 @@ miden-validator genesis \
   --config genesis.toml
 ```
 
+Unless the configuration sets `native_faucet` to a pre-built account file, the native faucet is generated as a network
+account and holds no key of its own; minting from it is restricted to the faucet operator account generated alongside
+it. Both are written to the accounts directory as `native_faucet.mac` and `faucet_operator.mac`, and the faucet account
+id is printed. The operator file carries the only signing key permitted to mint, so treat it as a secret.
+
+To run a faucet against the network, pass `faucet_operator.mac` to the faucet's `init --import`, and the faucet account
+id to `--faucet-account-id`.
+
 Upload `genesis-data/genesis.dat` so it is served at:
 
 ```text
@@ -148,6 +156,20 @@ miden-ntx-builder bootstrap \
 
 The key each validator operator starts their validator with must match the public key committed for them in the genesis
 configuration's `validators` list.
+
+## Storage Key Ceremony
+
+After genesis is built, every listed validator must join one offline DKG ceremony. The ceremony creates the shared
+public storage key and one distinct secret share per validator. No coordinator can derive those shares.
+
+Each operator first registers a fresh DKG identity with the validator signing key committed in genesis. One coordinator
+uses every signed registration to prepare the common ceremony. Every operator then creates two public dealings, checks
+and signs the same full transcript, and completes both rounds locally. The DKG and database bootstrap may run in either
+order, but both must finish before the validator starts.
+
+All listed validators must contribute to the ceremony even when the recovery threshold is lower. If any participant
+drops out or any transcript differs, discard the incomplete ceremony and start a new one with fresh identities and
+sessions. See [storage key setup](./validator.md#storage-key-setup) for the commands and file rules.
 
 Bootstrap takes no transaction encryption key: that key is configured separately when the validator is started, and
 nothing cross-checks it against the genesis block. A validator started without one falls back to a publicly known

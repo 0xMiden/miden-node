@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::Database;
 use miden_node_proto::domain::encryption::TransactionEncryptionKeyInfo;
 use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
@@ -20,7 +19,8 @@ use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::transaction::{TransactionHeader, TransactionId};
 use tokio::sync::{Semaphore, watch};
 
-use crate::db::{find_unvalidated_transactions, load_block_header, load_chain_tip};
+use crate::db::ValidatorDbWriter;
+use crate::metrics::InitialMetrics;
 use crate::{
     COMPONENT,
     PrivateRecordChainId,
@@ -77,31 +77,14 @@ pub enum ValidatorError {
 // VALIDATOR SERVICE
 // ================================================================================
 
-pub(crate) struct InitialMetrics {
-    chain_tip: u32,
-    validated_transactions: u64,
-    signed_blocks: u64,
-}
-
-impl InitialMetrics {
-    pub(crate) const fn new(
-        chain_tip: u32,
-        validated_transactions: u64,
-        signed_blocks: u64,
-    ) -> Self {
-        Self {
-            chain_tip,
-            validated_transactions,
-            signed_blocks,
-        }
-    }
-}
-
 /// The underlying implementation of the gRPC validator server.
 ///
 /// Implements the gRPC API for the validator.
 pub(crate) struct ValidatorService {
     signer: ValidatorSigner,
+    /// Handle to the validator database. Owning the write handle makes this service the single
+    /// writer; reads reach the underlying read handle through its `Deref`.
+    db: ValidatorDbWriter,
     /// Decrypter for transaction inputs sealed against the shared encryption key.
     decrypter: Arc<dyn TransactionInputDecrypter>,
     /// Commitment of the genesis block, loaded once at construction.
@@ -115,7 +98,6 @@ pub(crate) struct ValidatorService {
     /// Signature by this validator's own signing key over the encryption key attestation
     /// commitment, computed once at construction.
     encryption_key_attestation: Signature,
-    db: Arc<Database>,
     block_store: BlockStore,
     /// Enforces mutual exclusion between backup block subscriptions and all other RPCs. Regular
     /// RPCs take the read side (any number may run concurrently); a backup subscription takes the
@@ -137,9 +119,9 @@ pub(crate) struct ValidatorService {
 impl ValidatorService {
     pub(crate) async fn new(
         signer: ValidatorSigner,
+        db: ValidatorDbWriter,
         decrypter: Arc<dyn TransactionInputDecrypter>,
         private_record_sealer: PrivateRecordSealer,
-        db: Database,
         block_store: BlockStore,
         initial_metrics: InitialMetrics,
     ) -> Result<Self, ValidatorError> {
@@ -147,7 +129,7 @@ impl ValidatorService {
         // the signing key must be a member of that set for this validator to be useful. Reject a
         // misconfigured key here.
         let chain_tip = db
-            .read("load_chain_tip", load_chain_tip)
+            .load_chain_tip()
             .await
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoChainTip)?;
@@ -159,7 +141,7 @@ impl ValidatorService {
         // Both keys are fixed for the process lifetime, so the attestation is computed once. This
         // also keeps KMS-backed signers to a single signing call.
         let genesis_commitment = db
-            .read("load_genesis_header", |tx| load_block_header(tx, BlockNumber::GENESIS))
+            .load_block_header(BlockNumber::GENESIS)
             .await
             .map_err(ValidatorError::DatabaseError)?
             .ok_or(ValidatorError::NoGenesisHeader)?
@@ -187,7 +169,7 @@ impl ValidatorService {
             encryption_key_info,
             encryption_key_attestation,
             serve_lock: Arc::new(tokio::sync::RwLock::new(())),
-            db: db.into(),
+            db,
             block_store,
             sign_block_semaphore: Semaphore::new(1),
             committed_tip: watch::Sender::new(BlockNumber::from(initial_metrics.chain_tip)),
@@ -220,9 +202,7 @@ impl ValidatorService {
             proposed_block.transactions().map(TransactionHeader::id).collect::<Vec<_>>();
         let unvalidated_txs = self
             .db
-            .read("find_unvalidated_transactions", move |tx| {
-                find_unvalidated_transactions(tx, &proposed_tx_ids)
-            })
+            .find_unvalidated_transactions(proposed_tx_ids)
             .await
             .map_err(ValidatorError::DatabaseError)?;
 
@@ -247,7 +227,7 @@ impl ValidatorService {
             let prev_block_num =
                 chain_tip.block_num().parent().ok_or(ValidatorError::NoPrevBlockHeader)?;
             self.db
-                .read("load_block_header", move |tx| load_block_header(tx, prev_block_num))
+                .load_block_header(prev_block_num)
                 .await
                 .map_err(ValidatorError::DatabaseError)?
                 .ok_or(ValidatorError::NoPrevBlockHeader)?

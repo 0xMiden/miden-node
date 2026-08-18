@@ -35,15 +35,9 @@ use miden_tx::LocalTransactionProver;
 use miden_tx::utils::serde::{Deserializable, Serializable};
 use tokio::sync::OnceCell;
 
-use super::{InitialMetrics, ValidatorError, ValidatorService};
-use crate::db::{
-    count_validated_transactions,
-    load_chain_tip,
-    load_private_record,
-    setup,
-    transaction_exists,
-    upsert_block_header,
-};
+use super::{ValidatorError, ValidatorService};
+use crate::db::{ValidatorDbWriter, setup};
+use crate::metrics::InitialMetrics;
 use crate::storage_key::tests::operator_keys;
 use crate::{
     LocalX25519TransactionInputDecrypter,
@@ -88,11 +82,11 @@ impl TestValidator {
         Self {
             server: ValidatorService::new(
                 signer,
+                db,
                 std::sync::Arc::new(test_decrypter()),
                 PrivateRecordSealer::from_operator_key(&operator_keys().remove(0)),
-                db,
                 block_store,
-                InitialMetrics::new(0, 0, 0),
+                InitialMetrics::default(),
             )
             .await
             .unwrap(),
@@ -189,20 +183,12 @@ impl TestValidator {
 
     /// Returns whether `tx_id` has a validated transaction marker.
     async fn transaction_exists(&self, tx_id: TransactionId) -> bool {
-        self.server
-            .db
-            .read("transaction_exists", move |tx| transaction_exists(tx, tx_id))
-            .await
-            .unwrap()
+        self.server.db.transaction_exists(tx_id).await.unwrap()
     }
 
     /// Returns the persisted validated transaction count.
     async fn validated_transaction_count(&self) -> i64 {
-        self.server
-            .db
-            .read("count_validated_transactions", count_validated_transactions)
-            .await
-            .unwrap()
+        self.server.db.count_validated_transactions().await.unwrap()
     }
 
     /// Asserts that a rejected transaction did not change either validated count.
@@ -237,12 +223,7 @@ impl TestValidator {
 
     /// Loads the current chain tip from the validator's database.
     async fn load_chain_tip(&self) -> BlockHeader {
-        self.server
-            .db
-            .read("load_chain_tip", load_chain_tip)
-            .await
-            .unwrap()
-            .expect("chain tip should exist")
+        self.server.db.load_chain_tip().await.unwrap().expect("chain tip should exist")
     }
 
     /// Builds, submits, and applies an empty block, advancing the chain tip.
@@ -262,7 +243,7 @@ impl TestValidator {
 /// of `key`. Returns the database handle and the genesis block header.
 async fn setup_db_with_genesis(
     key: &SigningKey,
-) -> (tempfile::TempDir, miden_node_db::sqlite::Database, BlockStore, BlockHeader) {
+) -> (tempfile::TempDir, ValidatorDbWriter, BlockStore, BlockHeader) {
     let genesis_state = GenesisState::new(
         vec![],
         test_fee_params(),
@@ -278,12 +259,7 @@ async fn setup_db_with_genesis(
     let block_store =
         BlockStore::bootstrap(dir.path().join("blocks").clone(), &genesis_block).unwrap();
 
-    db.write("upsert_genesis", {
-        let h = genesis_header.clone();
-        move |tx| upsert_block_header(tx, &h)
-    })
-    .await
-    .unwrap();
+    db.upsert_block_header(genesis_header.clone()).await.unwrap();
 
     (dir, db, block_store, genesis_header)
 }
@@ -373,8 +349,8 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
             let chain = chain_builder.build().unwrap();
 
             let context_a = chain
-                .build_tx_context(account_a.id(), &[note_a.id()], &[])
-                .unwrap()
+                .build_transaction(account_a.id())
+                .authenticated_input_note(note_a.id())
                 .build()
                 .unwrap();
             let executed_a = Box::pin(context_a.execute()).await.unwrap();
@@ -382,8 +358,8 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
             let transaction = LocalTransactionProver::default().prove(inputs.clone()).unwrap();
 
             let context_b = chain
-                .build_tx_context(account_b.id(), &[note_b.id()], &[])
-                .unwrap()
+                .build_transaction(account_b.id())
+                .authenticated_input_note(note_b.id())
                 .build()
                 .unwrap();
             let mismatch_inputs = Box::pin(context_b.execute()).await.unwrap().tx_inputs().clone();
@@ -421,11 +397,11 @@ async fn signing_key_mismatch_rejected() {
 
     let result = ValidatorService::new(
         rogue_signer,
+        db,
         std::sync::Arc::new(test_decrypter()),
         PrivateRecordSealer::from_operator_key(&operator_keys().remove(0)),
-        db,
         block_store,
-        InitialMetrics::new(0, 0, 0),
+        InitialMetrics::default(),
     )
     .await;
     assert!(
@@ -1265,23 +1241,11 @@ async fn valid_submission_stores_one_protected_record() {
 
     tv.call_submit_proven_transaction(tx, first.clone()).await.unwrap();
     let transaction_id = tx.id();
-    let first_record = tv
-        .server
-        .db
-        .read("load_private_record", move |db_tx| load_private_record(db_tx, transaction_id))
-        .await
-        .unwrap()
-        .unwrap();
+    let first_record = tv.server.db.load_private_record(transaction_id).await.unwrap().unwrap();
     tv.call_submit_proven_transaction(tx, second).await.unwrap();
 
     assert!(tv.transaction_exists(tx.id()).await);
-    let stored_record = tv
-        .server
-        .db
-        .read("load_private_record", move |db_tx| load_private_record(db_tx, transaction_id))
-        .await
-        .unwrap()
-        .unwrap();
+    let stored_record = tv.server.db.load_private_record(transaction_id).await.unwrap().unwrap();
     assert_eq!(stored_record, first_record);
     assert_eq!(tv.validated_transaction_count().await, 1);
     assert_eq!(tv.call_status().await.validated_transactions_count, 1);

@@ -81,6 +81,8 @@ pub enum DatabaseError {
     Diesel(#[from] diesel::result::Error),
     #[error(transparent)]
     QueryParamLimit(#[from] QueryLimitError),
+    #[error(transparent)]
+    RangeBeyondTip(#[from] RangeBeyondTip),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -231,16 +233,16 @@ pub enum ApplyBlockError {
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
-    #[error("block applying was cancelled because of closed channel on database side")]
+    #[error("block applying was cancelled because the writer task dropped the result channel")]
     ClosedChannel(#[from] RecvError),
-    #[error("concurrent write detected")]
-    ConcurrentWrite,
     #[error("account state forest update preparation failed")]
     AccountStateForestPreparation(#[source] AccountStateForestUpdateError),
     #[error("database doesn't have any block header data")]
     DbBlockHeaderEmpty,
     #[error("database update failed: {0}")]
     DbUpdateTaskFailed(String),
+    #[error("failed to send block to the writer task: {0}")]
+    WriterTaskSendFailed(String),
 }
 
 #[derive(Error, Debug)]
@@ -249,6 +251,14 @@ pub enum ApplyBlockWithProvingInputsError {
     SaveProvingInputs(#[source] io::Error),
     #[error("failed to apply block")]
     ApplyBlock(#[source] ApplyBlockError),
+}
+
+/// A requested block range extends beyond the chain tip of the state view serving the request.
+#[derive(Error, Debug)]
+#[error("block_to ({block_to}) is greater than chain tip ({chain_tip})")]
+pub struct RangeBeyondTip {
+    pub chain_tip: BlockNumber,
+    pub block_to: BlockNumber,
 }
 
 #[derive(Error, Debug)]
@@ -282,6 +292,8 @@ pub enum StateSyncError {
     EmptyBlockHeadersTable,
     #[error("failed to build MMR delta")]
     FailedToBuildMmrDelta(#[from] MmrError),
+    #[error(transparent)]
+    RangeBeyondTip(#[from] RangeBeyondTip),
 }
 
 impl From<diesel::result::Error> for StateSyncError {
@@ -302,11 +314,8 @@ pub enum NoteSyncError {
     MmrError(#[from] MmrError),
     #[error("invalid block range")]
     InvalidBlockRange(#[from] InvalidBlockRange),
-    #[error("block_to ({block_to}) is greater than chain tip ({chain_tip})")]
-    FutureBlock {
-        chain_tip: BlockNumber,
-        block_to: BlockNumber,
-    },
+    #[error(transparent)]
+    RangeBeyondTip(#[from] RangeBeyondTip),
     #[error("malformed note tags")]
     DeserializationFailed(#[from] ConversionError),
 }

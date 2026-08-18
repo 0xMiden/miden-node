@@ -16,14 +16,12 @@ pub(super) async fn export(options: PrivateRecordExportOptions) -> anyhow::Resul
     let record_id = parse_record_id(&transaction_id, &validator_id)?;
     let data_directory =
         DataDirectory::load(data_directory).context("failed to load validator data directory")?;
-    let database = miden_validator::db::load(data_directory.database_path())
+    let db = miden_validator::db::load(data_directory.database_path())
         .await
         .context("failed to load validator database")?;
     let transaction_id = record_id.transaction_id();
-    let record = database
-        .read("load_private_record_for_export", move |tx| {
-            miden_validator::db::load_private_record(tx, transaction_id)
-        })
+    let record = db
+        .load_private_record(transaction_id)
         .await
         .context("failed to load private record")?
         .filter(|record| record.record_id() == record_id)

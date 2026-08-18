@@ -22,7 +22,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_store::state::State;
-use miden_node_utils::clap::{GrpcOptionsExternal, StorageOptions};
+use miden_node_utils::clap::GrpcOptionsExternal;
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
@@ -56,6 +56,7 @@ use tonic::Request;
 use tonic::metadata::MetadataMap;
 use url::Url;
 
+use crate::server::RpcBackend;
 use crate::server::api::RpcService;
 use crate::{PreAuthSubmission, Rpc, RpcMode, ValidatorClients};
 
@@ -94,7 +95,7 @@ impl TestStore {
     async fn start() -> Self {
         let data_directory = new_tempdir();
         let genesis_commitment = Self::bootstrap(&data_directory);
-        let state = load_state(&data_directory).await;
+        let (state, ..) = State::for_tests(&data_directory).await;
         Self {
             state,
             genesis_commitment,
@@ -115,11 +116,6 @@ impl TestStore {
     }
 }
 
-async fn load_state(path: &std::path::Path) -> Arc<State> {
-    let state = State::load(path, StorageOptions::default()).await.expect("state should load");
-    Arc::new(state)
-}
-
 /// Byte offset of the account delta commitment in serialized `ProvenTransaction`. Layout:
 /// `AccountId` (15) + `initial_commitment` (32) + `final_commitment` (32) = 79
 const DELTA_COMMITMENT_BYTE_OFFSET: usize = 15 + 32 + 32;
@@ -131,7 +127,7 @@ fn build_test_account(seed: [u8; 32]) -> (Account, AccountPatch) {
         .account_type(AccountType::Public)
         .with_assets(vec![])
         .with_component(BasicWallet)
-        .with_auth_component(NoopAuthComponent)
+        .with_component(NoopAuthComponent)
         .build_existing()
         .unwrap();
 
@@ -448,7 +444,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Assert that the error is due to the invalid account delta commitment.
     let err = response.as_ref().unwrap_err().message();
     assert!(
-        err.contains("failed to validate account patch in transaction account update"),
+        err.contains("expected account patch commitment"),
         "expected error message to contain patch commitment error but got: {err}"
     );
 }
@@ -520,7 +516,7 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
 
     let service = RpcService::new(
         Arc::clone(&store.state),
-        RpcMode::full_node(source_rpc_client(), 100, None),
+        RpcBackend::full_node(source_rpc_client(), None),
         None,
         NonZeroUsize::new(1_000_000).unwrap(),
         None,
@@ -631,8 +627,8 @@ async fn start_source_rpc(
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
-    let block_producer_state = load_state(&block_producer_dir).await;
-    let store_state = Arc::clone(&store.state);
+    let (block_producer_state, ..) = State::for_tests(&block_producer_dir).await;
+    let state = Arc::clone(&store.state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind source RPC");
     let addr = listener.local_addr().expect("Failed to get source RPC address");
@@ -644,8 +640,8 @@ async fn start_source_rpc(
             BlockProducerApiConfig::default(),
         );
         let source_rpc = RpcService::new(
-            store_state,
-            RpcMode::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
+            state,
+            RpcBackend::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
             Some(ntx_builder),
             NonZeroUsize::new(1_000_000).unwrap(),
             None,
@@ -862,9 +858,8 @@ async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(
+        RpcBackend::full_node(
             dummy_client::<RpcClient>(),
-            100,
             Some(
                 PreAuthSubmission::new(vec![validator], dummy_client::<SequencerClient>())
                     .expect("one validator is configured"),
@@ -904,7 +899,7 @@ async fn full_node_forwards_get_transaction_encryption_key_to_source_rpc() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -929,7 +924,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding_encryption
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -971,7 +966,7 @@ async fn full_node_forwards_get_network_note_status_to_source_rpc() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -1002,7 +997,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
-        RpcMode::full_node(source_rpc, 100, None),
+        RpcBackend::full_node(source_rpc, None),
         None,
         NonZeroUsize::new(1_000).unwrap(),
         None,
@@ -1108,8 +1103,8 @@ async fn start_rpc_with_options(
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
-    let block_producer_state = load_state(&block_producer_dir).await;
-    let store_state = Arc::clone(&store.state);
+    let (block_producer_state, ..) = State::for_tests(&block_producer_dir).await;
+    let state = Arc::clone(&store.state);
 
     // Start the rpc component.
     let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
@@ -1131,7 +1126,7 @@ async fn start_rpc_with_options(
             .connect_lazy::<ValidatorClient>();
         Rpc {
             listener: rpc_listener,
-            store: store_state,
+            state,
             mode: RpcMode::sequencer(
                 block_producer,
                 ValidatorClients::new(vec![validator]).unwrap(),

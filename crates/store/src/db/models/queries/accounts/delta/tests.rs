@@ -43,6 +43,7 @@ use miden_standards::code_builder::CodeBuilder;
 use crate::db::models::queries::accounts::{
     PrecomputedPublicAccountState,
     PrecomputedPublicAccountStates,
+    VALID_FOREVER,
     select_account_header_with_storage_header_at_block,
     select_account_vault_at_block,
     select_full_account,
@@ -135,7 +136,7 @@ fn callback_delta_test_account(seed: [u8; 32], slot_index: usize) -> Account {
     AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -269,7 +270,7 @@ fn optimized_delta_matches_full_account_method() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -476,7 +477,7 @@ fn optimized_delta_updates_non_empty_vault() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -712,7 +713,7 @@ fn optimized_delta_updates_storage_map_header() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -850,7 +851,7 @@ fn partial_public_upsert_requires_precomputed_state() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -921,7 +922,7 @@ fn partial_public_upsert_rejects_bad_precomputed_root() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1022,7 +1023,7 @@ fn upsert_private_account() {
     let (stored_commitment, stored_nonce, stored_code): (Vec<u8>, Option<i64>, Option<Vec<u8>>) =
         accounts::table
             .filter(accounts::account_id.eq(account_id.to_bytes()))
-            .filter(accounts::is_latest.eq(true))
+            .filter(accounts::valid_until.eq(VALID_FOREVER))
             .select((accounts::account_commitment, accounts::nonce, accounts::code_commitment))
             .first(&mut conn)
             .expect("Account should exist in DB");
@@ -1081,7 +1082,7 @@ fn upsert_full_state_delta() {
     let account = AccountBuilder::new(ACCOUNT_SEED)
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))

@@ -43,17 +43,13 @@ pub async fn bootstrap(
     let _ = BlockStore::bootstrap(dirs.block_store_dir(), &genesis_block)?;
 
     let (genesis_header, ..) = genesis_block.into_inner().into_parts();
-    let db = miden_validator::db::setup_with_pool_size(
+    miden_validator::db::bootstrap(
         dirs.database_path(),
         sqlite_connection_pool_size,
+        genesis_header,
     )
     .await
-    .context("failed to initialize validator database during bootstrap")?;
-    db.write("upsert_block_header", move |tx| {
-        miden_validator::db::upsert_block_header(tx, &genesis_header)
-    })
-    .await
-    .context("failed to persist genesis block header as chain tip")?;
+    .context("failed to bootstrap the validator database")?;
 
     tracing::info!(
         target: miden_validator::LOG_TARGET,
@@ -92,11 +88,15 @@ mod tests {
         assert!(genesis_directory.join("genesis.dat").is_file());
         assert!(data_directory.join("validator.sqlite3").is_file());
         assert!(
-            fs_err::read_dir(accounts_directory)
+            fs_err::read_dir(&accounts_directory)
                 .expect("accounts directory should be readable")
                 .next()
                 .is_some(),
             "genesis should write generated account files",
+        );
+        assert!(
+            accounts_directory.join("native_faucet.mac").is_file(),
+            "genesis should write the generated native faucet account file",
         );
     }
 }

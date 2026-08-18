@@ -1,4 +1,5 @@
 mod bootstrap;
+mod dkg;
 mod export_private_record;
 mod genesis;
 mod issue_private_record_share;
@@ -50,7 +51,7 @@ pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
 // VALIDATOR COMMAND
 // ================================================================================================
 
-/// Local inputs for issuing one Golden private-record share.
+/// Local inputs for issuing one private-record share.
 #[derive(clap::Args)]
 pub struct PrivateRecordShareOptions {
     /// Canonical private-record bundle for which to issue a share.
@@ -61,7 +62,7 @@ pub struct PrivateRecordShareOptions {
     #[arg(long, value_name = "FILE")]
     output: PathBuf,
 
-    /// Canonical Golden storage key material for this validator.
+    /// Canonical storage key material for this validator.
     #[command(flatten)]
     storage_key: ValidatorStorageKey,
 }
@@ -158,7 +159,10 @@ pub enum ValidatorCommand {
         data_directory: PathBuf,
     },
 
-    /// Issues this validator's Golden decryption share for one stored private record.
+    /// Runs the storage-key setup ceremony.
+    Dkg(dkg::DkgOptions),
+
+    /// Issues this validator's decryption share for one stored private record.
     IssuePrivateRecordShare(PrivateRecordShareOptions),
 
     /// Exports one validator-qualified private-record bundle.
@@ -248,7 +252,7 @@ pub enum ValidatorCommand {
         )]
         encryption_key_kms_ciphertext: Option<String>,
 
-        /// Canonical Golden storage key material provisioned after setup.
+        /// Canonical Storage key material provisioned after setup.
         #[command(flatten)]
         storage_key: ValidatorStorageKey,
     },
@@ -290,6 +294,7 @@ impl ValidatorCommand {
                     .context("failed to apply validator database migrations")?;
                 Ok(())
             },
+            Self::Dkg(options) => dkg::run(options).await,
             Self::IssuePrivateRecordShare(options) => {
                 issue_private_record_share::issue_from_options(options)
             },
@@ -352,6 +357,7 @@ impl ValidatorCommand {
             Self::Genesis { .. }
             | Self::Bootstrap { .. }
             | Self::Pubkey { .. }
+            | Self::Dkg(_)
             | Self::ExportPrivateRecord(_)
             | Self::IssuePrivateRecordShare(_)
             | Self::Migrate { .. } => OpenTelemetry::Disabled,
@@ -392,7 +398,7 @@ async fn resolve_decrypter(
     Ok(Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key)))
 }
 
-/// Canonical Golden files needed to restore one validator storage key share.
+/// Canonical files needed to restore one validator storage key share.
 #[derive(clap::Args)]
 pub struct ValidatorStorageKey {
     /// Hex-encoded 32-byte storage key epoch.
@@ -402,21 +408,21 @@ pub struct ValidatorStorageKey {
         value_name = "STORAGE_KEY_EPOCH"
     )]
     key_epoch: String,
-    /// File containing canonical Golden `SetupContext` bytes.
+    /// File containing canonical `SetupContext` bytes.
     #[arg(
         long = "storage-key.setup-context",
         env = ENV_STORAGE_KEY_SETUP_CONTEXT,
         value_name = "FILE"
     )]
     setup_context: PathBuf,
-    /// File containing canonical Golden `PublicKeySet` bytes.
+    /// File containing canonical `PublicKeySet` bytes.
     #[arg(
         long = "storage-key.public-key-set",
         env = ENV_STORAGE_KEY_PUBLIC_SET,
         value_name = "FILE"
     )]
     public_key_set: PathBuf,
-    /// File containing this operator's canonical Golden `SecretShare` bytes.
+    /// File containing this operator's canonical `SecretShare` bytes.
     #[arg(
         long = "storage-key.secret-share",
         env = ENV_STORAGE_KEY_SECRET_SHARE,
@@ -454,7 +460,7 @@ impl ValidatorStorageKey {
             })?,
         )
         .decode()
-        .context("failed to validate Golden storage key material")?;
+        .context("failed to validate storage key material")?;
         Ok(operator_key)
     }
 }
@@ -642,15 +648,10 @@ mod tests {
     }
 
     async fn store_private_record(
-        database: &miden_node_db::sqlite::Database,
+        writer: &miden_validator::db::ValidatorDbWriter,
         record: miden_validator::StoredPrivateRecord,
     ) {
-        database
-            .write("insert_private_record", move |tx| {
-                miden_validator::db::insert_validated_private_transaction(tx, &record)
-            })
-            .await
-            .unwrap();
+        writer.insert_validated_private_transaction(record).await.unwrap();
     }
 
     async fn export_record_file(
@@ -835,7 +836,7 @@ mod tests {
     #[tokio::test]
     async fn two_validators_issue_shares_for_third_validator_record() {
         let directory = tempfile::tempdir().unwrap();
-        let database = miden_validator::db::setup(directory.path().join("validator.sqlite3"))
+        let writer = miden_validator::db::setup(directory.path().join("validator.sqlite3"))
             .await
             .unwrap();
         let operator_keys = test_operator_keys(9, 3);
@@ -866,7 +867,7 @@ mod tests {
         assert_ne!(records[1].encrypted_record_key(), records[2].encrypted_record_key());
 
         let target = records.remove(2);
-        store_private_record(&database, target.clone()).await;
+        store_private_record(&writer, target.clone()).await;
         let target_file = directory.path().join("target-record.bin");
         let encoded_transaction_id = hex::encode(transaction_id.to_bytes());
         let encoded_validator_id = hex::encode(target.record_id().validator_id());

@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context;
-use miden_node_store::state::State;
+use miden_node_store::state::{BlockWriter, State};
 use miden_node_utils::formatting::format_array;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
@@ -31,23 +31,33 @@ pub struct BlockBuilder {
     /// The frequency at which blocks are produced.
     pub block_interval: Duration,
 
-    /// The store state for committing blocks.
-    pub store: Arc<State>,
+    /// Read-only store state, used to fetch block inputs.
+    pub state: Arc<State>,
+
+    /// The store's block-write capability, used for committing blocks.
+    pub block_writer: BlockWriter,
 
     /// The validator RPC client for validating blocks.
     pub validator: BlockProducerValidatorClient,
 }
 
 impl BlockBuilder {
-    /// Creates a new [`BlockBuilder`] with the given store state and optional block prover URL.
+    /// Creates a new [`BlockBuilder`] with the given block-write capability and optional block
+    /// prover URL.
     ///
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
-        store: Arc<State>,
+        state: Arc<State>,
+        block_writer: BlockWriter,
         validator: BlockProducerValidatorClient,
         block_interval: Duration,
     ) -> Self {
-        Self { block_interval, store, validator }
+        Self {
+            block_interval,
+            state,
+            block_writer,
+            validator,
+        }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
     ///
@@ -60,7 +70,7 @@ impl BlockBuilder {
     ///   3. Proving the block (this is simulated using random sleeps)
     ///   4. Committing the block to the store
     pub async fn run(
-        self,
+        mut self,
         mempool: SharedMempool,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
@@ -109,7 +119,7 @@ impl BlockBuilder {
         target = COMPONENT,
         name = "block_builder.build_block",
     )]
-    async fn build_block(&self, mempool: &SharedMempool) -> Result<(), BuildBlockError> {
+    async fn build_block(&mut self, mempool: &SharedMempool) -> Result<(), BuildBlockError> {
         use futures::TryFutureExt;
 
         let selected = Self::select_block(mempool)?;
@@ -123,33 +133,42 @@ impl BlockBuilder {
         );
         let block_num = selected.block_number;
 
-        self.get_block_inputs(selected)
-            .inspect_ok(|inputs| {
-                let telemetry = inputs.telemetry();
-                miden_span_record!(
-                    block.updated_accounts.count = telemetry.updated_accounts_count,
-                    block.erased_note_proofs.count = telemetry.erased_note_proofs_count,
-                );
-            })
-            .and_then(|inputs| self.propose_block(inputs))
-            .inspect_ok(|proposed_block| {
-                let telemetry = proposed_block_telemetry(&proposed_block.proposed_block);
-                miden_span_record!(
-                    block.nullifiers.count = telemetry.nullifiers_count,
-                    block.output_notes.count = telemetry.output_notes_count,
-                    block.batches.output_notes.count = telemetry.batch_output_notes_count,
-                    block.erased_notes.count = telemetry.erased_notes_count,
-                );
-            })
-            .and_then(|proposed_block| self.build_and_validate_block(proposed_block))
-            .and_then(|block_commit| self.commit_block(mempool, block_commit))
-            // Handle errors by propagating the error to the root span and rolling back the block.
-            .inspect_err(|err| Span::current().set_error(err))
-            .or_else(|err| async {
-                Self::rollback_block(mempool, block_num)?;
-                Err(err)
-            })
-            .await
+        // The stages run inside one async block so that its borrows are sequential: the combinator
+        // chain's shared borrows of `self` end at its `.await`, after which `commit_block` may take
+        // `&mut self` (the block-write capability). The `?` exits only this block, so the error
+        // handling below still sees failures from every stage.
+        async {
+            let block_commit = self
+                .get_block_inputs(selected)
+                .inspect_ok(|inputs| {
+                    let telemetry = inputs.telemetry();
+                    miden_span_record!(
+                        block.updated_accounts.count = telemetry.updated_accounts_count,
+                        block.erased_note_proofs.count = telemetry.erased_note_proofs_count,
+                    );
+                })
+                .and_then(|inputs| self.propose_block(inputs))
+                .inspect_ok(|proposed_block| {
+                    let telemetry = proposed_block_telemetry(&proposed_block.proposed_block);
+                    miden_span_record!(
+                        block.nullifiers.count = telemetry.nullifiers_count,
+                        block.output_notes.count = telemetry.output_notes_count,
+                        block.batches.output_notes.count = telemetry.batch_output_notes_count,
+                        block.erased_notes.count = telemetry.erased_notes_count,
+                    );
+                })
+                .and_then(|proposed_block| self.build_and_validate_block(proposed_block))
+                .await?;
+
+            self.commit_block(mempool, block_commit).await
+        }
+        // Handle errors by propagating the error to the root span and rolling back the block.
+        .inspect_err(|err| Span::current().set_error(err))
+        .or_else(|err| async {
+            Self::rollback_block(mempool, block_num)?;
+            Err(err)
+        })
+        .await
     }
 
     #[miden_instrument(
@@ -210,7 +229,8 @@ impl BlockBuilder {
             batch_iter.map(Deref::deref).flat_map(ProvenBatch::created_nullifiers);
 
         let inputs = self
-            .store
+            .state
+            .view()
             .get_block_inputs(
                 account_ids_iter.collect(),
                 created_nullifiers_iter.collect(),
@@ -341,7 +361,7 @@ impl BlockBuilder {
         err,
     )]
     async fn commit_block(
-        &self,
+        &mut self,
         mempool: &SharedMempool,
         block_commit: BlockCommit,
     ) -> Result<(), BuildBlockError> {
@@ -365,7 +385,7 @@ impl BlockBuilder {
             tracing::debug!(target: LOG_TARGET, transactions = %format_array(transaction_ids), "Included transactions");
         }
 
-        self.store
+        self.block_writer
             .apply_block_with_proving_inputs(ordered_batches, block_inputs, signed_block)
             .await
             .map_err(StoreError::ApplyBlockFailed)

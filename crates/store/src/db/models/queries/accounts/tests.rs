@@ -154,7 +154,7 @@ fn create_test_account_with_storage() -> (Account, AccountId) {
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -238,7 +238,7 @@ fn create_account_with_map_storage(
     AccountBuilder::new([9u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -462,7 +462,7 @@ fn test_upsert_accounts_inserts_storage_header() {
     // Verify exactly 1 latest account with storage exists
     let header_count: i64 = schema::accounts::table
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .filter(schema::accounts::storage_header.is_not_null())
         .count()
         .get_result(&mut conn)
@@ -472,7 +472,7 @@ fn test_upsert_accounts_inserts_storage_header() {
 }
 
 #[test]
-fn test_upsert_accounts_updates_is_latest_flag() {
+fn test_upsert_accounts_closes_previous_validity_interval() {
     let mut conn = setup_test_db();
     let (account, account_id) = create_test_account_with_storage();
 
@@ -524,7 +524,7 @@ fn test_upsert_accounts_updates_is_latest_flag() {
     let account_2 = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::Public)
         .with_component(component_2)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -556,10 +556,10 @@ fn test_upsert_accounts_updates_is_latest_flag() {
 
     assert_eq!(total_accounts, 2, "Expected 2 total account records");
 
-    // Verify only 1 is marked as latest
+    // Verify only 1 is open-ended (latest)
     let latest_accounts: i64 = schema::accounts::table
         .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .filter(schema::accounts::is_latest.eq(true))
+        .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
         .count()
         .get_result(&mut conn)
         .expect("Failed to count latest accounts");
@@ -624,7 +624,7 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     let account = AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -700,7 +700,7 @@ fn test_upsert_accounts_with_empty_storage() {
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -745,7 +745,7 @@ fn test_upsert_accounts_with_empty_storage() {
     let storage_header_exists: Option<bool> = SelectDsl::select(
         schema::accounts::table
             .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-            .filter(schema::accounts::is_latest.eq(true)),
+            .filter(schema::accounts::valid_until.eq(VALID_FOREVER)),
         schema::accounts::storage_header.is_not_null(),
     )
     .first(&mut conn)
@@ -852,7 +852,7 @@ fn test_select_latest_account_storage_multiple_slots() {
     let account = AccountBuilder::new([9u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1305,7 +1305,7 @@ fn build_account_with_code(push_value: u32) -> Account {
     AccountBuilder::new([2u8; 32])
         .account_type(AccountType::Public)
         .with_component(component)
-        .with_auth_component(AuthSingleSig::new(Approver::new(
+        .with_component(AuthSingleSig::new(Approver::new(
             PublicKeyCommitment::from(EMPTY_WORD),
             AuthScheme::Falcon512Poseidon2,
         )))
@@ -1480,6 +1480,84 @@ fn test_prune_account_code_retains_revisited_code() {
     );
 }
 
+/// Prune test 4: a code referenced only by an account's baseline row — the newest row below the
+/// cutoff — must be retained, because that row is still the applicable state for in-window blocks
+/// preceding the account's first in-window update. Once a newer row falls below the cutoff, the
+/// code becomes prunable.
+#[test]
+fn test_prune_account_code_retains_baseline_code() {
+    let mut conn = setup_test_db();
+
+    // Block 0:             code A.
+    // Block 2*RETENTION:   code B.
+    // Block 2*RETENTION+1: prune → cutoff = RETENTION+1.
+    //   Code A's row (block 0) is the account's newest row below the cutoff: reads at any block in
+    //   [cutoff, 2*RETENTION) resolve to it, so code A must be retained.
+    // Block 3*RETENTION+1: prune → cutoff = 2*RETENTION+1.
+    //   The code-B row (block 2*RETENTION) is now the baseline, so code A becomes prunable.
+    let block_0 = BlockNumber::from(0u32);
+    let block_code_b = BlockNumber::from(2 * HISTORICAL_BLOCK_RETENTION);
+    let block_first_prune = BlockNumber::from(2 * HISTORICAL_BLOCK_RETENTION + 1);
+    let block_second_prune = BlockNumber::from(3 * HISTORICAL_BLOCK_RETENTION + 1);
+
+    insert_block_header(&mut conn, block_0);
+    insert_block_header(&mut conn, block_code_b);
+    insert_block_header(&mut conn, block_first_prune);
+    insert_block_header(&mut conn, block_second_prune);
+
+    let account_a = build_account_with_code(1);
+    let account_b = build_account_with_code(2);
+
+    assert_eq!(account_a.id(), account_b.id(), "accounts must share the same ID");
+
+    let code_commitment_a = account_a.code().commitment();
+    let code_commitment_b = account_b.code().commitment();
+
+    // Block 0: code A.
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_a)],
+        block_0,
+        &precomputed_states_from_account(&account_a),
+    )
+    .expect("block 0 upsert failed");
+    // Block 2*RETENTION: code B.
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_b)],
+        block_code_b,
+        &precomputed_states_from_account(&account_b),
+    )
+    .expect("code-change upsert failed");
+
+    assert_eq!(count_account_codes(&mut conn), 2, "both codes must exist before pruning");
+
+    // First prune: the block-0 row is the baseline (its successor is above the cutoff), so code A
+    // must survive.
+    let (_, _, codes_deleted) =
+        prune_history(&mut conn, block_first_prune).expect("prune_history failed");
+    assert_eq!(codes_deleted, 0, "no code may be pruned while code A backs the baseline row");
+    assert!(
+        account_code_exists(&mut conn, code_commitment_a),
+        "baseline code A must be retained"
+    );
+    assert!(
+        account_code_exists(&mut conn, code_commitment_b),
+        "current code B must be retained"
+    );
+
+    // Second prune: the code-B row is now at or below the cutoff and supersedes the block-0 row, so
+    // code A is no longer reachable from any in-window read.
+    let (_, _, codes_deleted) =
+        prune_history(&mut conn, block_second_prune).expect("prune_history failed");
+    assert_eq!(codes_deleted, 1, "exactly one code (A) must be pruned");
+    assert!(!account_code_exists(&mut conn, code_commitment_a), "old code A must be pruned");
+    assert!(
+        account_code_exists(&mut conn, code_commitment_b),
+        "current code B must be retained"
+    );
+}
+
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn network_accounts_subset_classifies_correctly() {
@@ -1494,7 +1572,7 @@ fn network_accounts_subset_classifies_correctly() {
     insert_block_header(&mut conn, block_num);
 
     // Three accounts with distinct classifications. AccountIds are dummies — the queries only care
-    // about the (account_id, network_account_type, is_latest) tuple, not protocol-level validity.
+    // about the (account_id, network_account_type, valid_until) tuple, not protocol-level validity.
     let network_id = AccountId::dummy(
         [1u8; 15],
         AccountIdVersion::Version1,

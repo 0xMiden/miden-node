@@ -93,8 +93,8 @@ impl ProofRequestExt for ProofRequest {
         let mock_chain = mock_chain_builder.build().unwrap();
 
         let tx_context = mock_chain
-            .build_tx_context(account.id(), &[note_1.id()], &[])
-            .unwrap()
+            .build_transaction(account.id())
+            .authenticated_input_note(note_1.id())
             .build()
             .unwrap();
 
@@ -126,8 +126,8 @@ impl ProofRequestExt for ProofRequest {
         let mock_chain = mock_chain_builder.build().unwrap();
 
         let tx = mock_chain
-            .build_tx_context(account.id(), &[note_1.id()], &[])
-            .unwrap()
+            .build_transaction(account.id())
+            .authenticated_input_note(note_1.id())
             .build()
             .unwrap();
 

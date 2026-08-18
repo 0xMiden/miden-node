@@ -4405,7 +4405,6 @@ dependencies = [
  "clap",
  "fs-err",
  "governor",
- "hex",
  "http 1.5.0",
  "http-body-util",
  "humantime",

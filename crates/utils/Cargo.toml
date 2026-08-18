@@ -29,7 +29,6 @@ bytes                    = { version = "1.10" }
 clap                     = { workspace = true }
 fs-err                   = { workspace = true }
 governor                 = { version = "0.10" }
-hex                      = { workspace = true }
 http                     = { workspace = true }
 http-body-util           = { version = "0.1" }
 humantime                = { workspace = true }

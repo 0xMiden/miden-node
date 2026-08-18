@@ -77,7 +77,11 @@ impl Db {
         E: From<DatabaseError>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        self.pinned_connection().await.map_err(E::from)?.transact(msg, query).await
+        self.pinned_connection()
+            .await
+            .map_err(E::from)?
+            .transact(msg, query)
+            .await
     }
 
     /// Run the query _without_ a transaction
@@ -89,7 +93,11 @@ impl Db {
         E: From<DatabaseError>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        self.pinned_connection().await.map_err(E::from)?.query(msg, query).await
+        self.pinned_connection()
+            .await
+            .map_err(E::from)?
+            .query(msg, query)
+            .await
     }
 }
 

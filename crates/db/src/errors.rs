@@ -94,7 +94,9 @@ impl DatabaseError {
         E: std::error::Error + Send + Sync + 'static,
     {
         DatabaseError::ConversionSqlToRust {
-            inner: err.into().map(|err| Box::new(err) as Box<dyn std::error::Error + Send + Sync>),
+            inner: err
+                .into()
+                .map(|err| Box::new(err) as Box<dyn std::error::Error + Send + Sync>),
             to: type_name::<RT>(),
         }
     }

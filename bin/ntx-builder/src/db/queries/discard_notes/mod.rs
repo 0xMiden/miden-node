@@ -26,7 +26,10 @@ pub fn discard_notes(
     let block_num_val = block_num.to_raw_sql();
     let reason = reason.to_string();
     for nullifier in nullifiers {
-        tx.execute(SQL, &[nullifier, &(max_attempts as i64), &block_num_val, &reason])?;
+        tx.execute(
+            SQL,
+            &[nullifier, &(max_attempts as i64), &block_num_val, &reason],
+        )?;
     }
     Ok(())
 }

@@ -69,7 +69,10 @@ pub enum ActorRequest {
     },
     /// A note script was fetched from the remote RPC service and should be persisted to the local
     /// DB.
-    CacheNoteScript { script_root: Word, script: NoteScript },
+    CacheNoteScript {
+        script_root: Word,
+        script: NoteScript,
+    },
 }
 
 // ACTOR SUB-STRUCTS
@@ -345,7 +348,7 @@ impl AccountActor {
             let tx_permit_acquisition = match mode {
                 ActorMode::NoViableNotes | ActorMode::WaitForBlock { .. } => {
                     std::future::pending().boxed()
-                },
+                }
                 ActorMode::NotesAvailable => semaphore.acquire().boxed(),
             };
 
@@ -353,7 +356,7 @@ impl AccountActor {
             let idle_timeout_sleep = match mode {
                 ActorMode::NoViableNotes if next_retry_block.is_none() => {
                     tokio::time::sleep_until(idle_deadline).boxed()
-                },
+                }
                 _ => std::future::pending().boxed(),
             };
 
@@ -441,7 +444,7 @@ impl AccountActor {
                 } else {
                     ActorMode::NoViableNotes
                 }
-            },
+            }
 
             // Waiting on a submission: detect landing or expiry from the view, not the DB.
             ActorMode::WaitForBlock {
@@ -449,7 +452,10 @@ impl AccountActor {
                 submitted_at,
                 pending_patch,
             } => {
-                let elapsed = view.chain_tip.checked_sub(submitted_at.as_u32()).unwrap_or_default();
+                let elapsed = view
+                    .chain_tip
+                    .checked_sub(submitted_at.as_u32())
+                    .unwrap_or_default();
                 if view.last_committed_tx == Some(submitted_tx_id) {
                     // The landed transaction is the one we executed, so the committed state is our
                     // in-memory account plus the patch it produced. `make_mut` does not clone here:
@@ -493,7 +499,7 @@ impl AccountActor {
                         pending_patch,
                     }
                 }
-            },
+            }
         };
 
         // Whenever the actor resumes selection it accounts for every note seen so far, so sync the
@@ -549,7 +555,11 @@ impl AccountActor {
             self.mark_notes_failed(&failed_notes, block_num).await;
         }
 
-        let notes: Vec<_> = partitioned_notes.allowed.into_iter().take(max_notes).collect();
+        let notes: Vec<_> = partitioned_notes
+            .allowed
+            .into_iter()
+            .take(max_notes)
+            .collect();
         if notes.is_empty() {
             // Notes just marked failed re-enter eligibility via backoff; re-check on the next block
             // so the actor does not deactivate while it still has notes aging through their budget.
@@ -670,7 +680,7 @@ impl AccountActor {
                     submitted_at: block_num,
                     pending_patch: account_patch,
                 }
-            },
+            }
             // Transaction execution failed.
             Err(err) => {
                 let error_msg = err.as_report();
@@ -710,7 +720,7 @@ impl AccountActor {
                                 (note.as_note().nullifier(), error.clone())
                             })
                             .collect()
-                    },
+                    }
                 };
                 self.mark_notes_failed(&failed_notes, block_num).await;
 
@@ -732,7 +742,7 @@ impl AccountActor {
                 }
 
                 ActorMode::NoViableNotes
-            },
+            }
         })
     }
 
@@ -741,7 +751,10 @@ impl AccountActor {
         for (script_root, script) in scripts {
             if self
                 .request
-                .send(ActorRequest::CacheNoteScript { script_root, script })
+                .send(ActorRequest::CacheNoteScript {
+                    script_root,
+                    script,
+                })
                 .await
                 .is_err()
             {
@@ -945,7 +958,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(mode, ActorMode::NotesAvailable), "a landed tx must resume selection");
+        assert!(
+            matches!(mode, ActorMode::NotesAvailable),
+            "a landed tx must resume selection"
+        );
         assert_eq!(
             in_memory.to_commitment(),
             expected.to_commitment(),
@@ -983,9 +999,14 @@ mod tests {
             .unwrap();
 
         match mode {
-            ActorMode::WaitForBlock { submitted_tx_id, .. } => {
-                assert_eq!(submitted_tx_id, submitted, "the actor must keep waiting on its own tx");
-            },
+            ActorMode::WaitForBlock {
+                submitted_tx_id, ..
+            } => {
+                assert_eq!(
+                    submitted_tx_id, submitted,
+                    "the actor must keep waiting on its own tx"
+                );
+            }
             other => panic!("expected to stay in WaitForBlock, got {other:?}"),
         }
         assert_eq!(
@@ -1022,7 +1043,10 @@ mod tests {
             matches!(mode, ActorMode::NoViableNotes),
             "no new notes and no due retry must leave the actor idle",
         );
-        assert_eq!(notes_cursor, 3, "the cursor is untouched while the actor stays idle");
+        assert_eq!(
+            notes_cursor, 3,
+            "the cursor is untouched while the actor stays idle"
+        );
     }
 
     /// New notes (the view's counter moving past the local cursor) wake an idle actor.
@@ -1046,8 +1070,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(mode, ActorMode::NotesAvailable), "a new note must trigger a re-select");
-        assert_eq!(notes_cursor, 4, "the cursor advances to the observed note count");
+        assert!(
+            matches!(mode, ActorMode::NotesAvailable),
+            "a new note must trigger a re-select"
+        );
+        assert_eq!(
+            notes_cursor, 4,
+            "the cursor advances to the observed note count"
+        );
     }
 
     /// A scheduled retry wakes an idle actor exactly when the chain tip reaches `next_retry_block`,
@@ -1071,7 +1101,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(matches!(early, ActorMode::NoViableNotes), "a retry is not due before its block");
+        assert!(
+            matches!(early, ActorMode::NoViableNotes),
+            "a retry is not due before its block"
+        );
 
         // Tip reaches the retry block: re-select.
         let due = actor
@@ -1084,7 +1117,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(matches!(due, ActorMode::NotesAvailable), "a due retry must trigger a re-select");
+        assert!(
+            matches!(due, ActorMode::NotesAvailable),
+            "a due retry must trigger a re-select"
+        );
     }
 
     /// The idle timeout must still fire while the coordinator keeps pushing a view every block. The

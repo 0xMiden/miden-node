@@ -3,19 +3,11 @@ use std::ops::RangeInclusive;
 use diesel::prelude::{Insertable, Queryable};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
-    BoolExpressionMethods,
-    ExpressionMethods,
-    QueryDsl,
-    QueryableByName,
-    RunQueryDsl,
-    Selectable,
-    SelectableHelper,
-    SqliteConnection,
+    BoolExpressionMethods, ExpressionMethods, QueryDsl, QueryableByName, RunQueryDsl, Selectable,
+    SelectableHelper, SqliteConnection,
 };
 use miden_node_utils::limiter::{
-    MAX_RESPONSE_PAYLOAD_BYTES,
-    QueryParamAccountIdLimit,
-    QueryParamLimiter,
+    MAX_RESPONSE_PAYLOAD_BYTES, QueryParamAccountIdLimit, QueryParamLimiter,
     QueryParamNoteCommitmentLimit,
 };
 use miden_node_utils::tracing::miden_instrument;
@@ -23,11 +15,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteHeader, NoteId, Nullifier};
 use miden_protocol::transaction::{
-    InputNoteCommitment,
-    InputNotes,
-    OrderedTransactionHeaders,
-    TransactionHeader,
-    TransactionId,
+    InputNoteCommitment, InputNotes, OrderedTransactionHeaders, TransactionHeader, TransactionId,
 };
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 
@@ -76,7 +64,9 @@ pub(crate) fn insert_transactions(
         .map(|tx| TransactionSummaryRowInsert::new(tx, block_num))
         .collect();
 
-    let count = diesel::insert_into(schema::transactions::table).values(rows).execute(conn)?;
+    let count = diesel::insert_into(schema::transactions::table)
+        .values(rows)
+        .execute(conn)?;
     Ok(count)
 }
 
@@ -232,12 +222,14 @@ pub fn select_transactions_records(
     let mut truncated_at_block: Option<i64> = None;
 
     loop {
-        let mut query =
-            SelectDsl::select(schema::transactions::table, TransactionRecordRaw::as_select())
-                .filter(schema::transactions::block_num.ge(block_range.start().to_raw_sql()))
-                .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
-                .filter(schema::transactions::account_id.eq_any(&desired_account_ids))
-                .into_boxed();
+        let mut query = SelectDsl::select(
+            schema::transactions::table,
+            TransactionRecordRaw::as_select(),
+        )
+        .filter(schema::transactions::block_num.ge(block_range.start().to_raw_sql()))
+        .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
+        .filter(schema::transactions::account_id.eq_any(&desired_account_ids))
+        .into_boxed();
 
         // Apply cursor-based pagination using the last seen (block_num, transaction_id)
         if let (Some(last_block), Some(last_tx_id)) = (last_block_num, &last_transaction_id) {
@@ -285,7 +277,10 @@ pub fn select_transactions_records(
 
     let Some(truncation_block) = truncated_at_block else {
         // Every matching transaction in the range fit within the payload cap.
-        return Ok((*block_range.end(), with_output_note_proofs(conn, transactions)?));
+        return Ok((
+            *block_range.end(),
+            with_output_note_proofs(conn, transactions)?,
+        ));
     };
 
     // We stopped within `truncation_block`, so that block may be partial. Block-based pagination
@@ -309,7 +304,10 @@ pub fn select_transactions_records(
     // SAFETY: block_num came from the database and was previously validated. Subtraction is safe
     // under the assumption that genesis block (where it could fail) does not have any transactions.
     let last_included_block = BlockNumber::from_raw_sql(truncation_block.saturating_sub(1))?;
-    Ok((last_included_block, with_output_note_proofs(conn, transactions)?))
+    Ok((
+        last_included_block,
+        with_output_note_proofs(conn, transactions)?,
+    ))
 }
 
 fn with_output_note_proofs(
@@ -378,7 +376,9 @@ fn with_output_note_proofs(
                 .filter(|commitment| commitment.header().is_none())
                 .filter_map(|commitment| {
                     let nullifier = commitment.nullifier();
-                    note_ids_by_nullifier.get(&nullifier).map(|note_id| (nullifier, *note_id))
+                    note_ids_by_nullifier
+                        .get(&nullifier)
+                        .map(|note_id| (nullifier, *note_id))
                 })
                 .collect();
 

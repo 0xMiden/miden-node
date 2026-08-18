@@ -30,7 +30,12 @@ impl InList {
     /// Builds a BLOB-keyed `IN` list. Pair with `... IN (SELECT value FROM rarray(?))`; the column
     /// is compared directly against the bound blobs, with no hex conversion.
     pub fn from_blobs<'a>(items: impl IntoIterator<Item = &'a [u8]>) -> Self {
-        Self(items.into_iter().map(|bytes| Value::Blob(bytes.to_vec())).collect())
+        Self(
+            items
+                .into_iter()
+                .map(|bytes| Value::Blob(bytes.to_vec()))
+                .collect(),
+        )
     }
 }
 

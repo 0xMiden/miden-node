@@ -39,9 +39,15 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
 
     let prover_rxs = tasks.spawn_prover_tasks(&config);
 
-    let faucet_rx = config.faucet_url.is_some().then(|| tasks.spawn_faucet(&config));
+    let faucet_rx = config
+        .faucet_url
+        .is_some()
+        .then(|| tasks.spawn_faucet(&config));
 
-    let explorer_rx = config.explorer_url.is_some().then(|| tasks.spawn_explorer_checker(&config));
+    let explorer_rx = config
+        .explorer_url
+        .is_some()
+        .then(|| tasks.spawn_explorer_checker(&config));
 
     let (ntx_increment_rx, ntx_tracking_rx) = if config.disable_ntx_service {
         (None, None)
@@ -55,8 +61,10 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         .is_some()
         .then(|| tasks.spawn_note_transport_checker(&config));
 
-    let validator_rx =
-        config.validator_url.is_some().then(|| tasks.spawn_validator_checker(&config));
+    let validator_rx = config
+        .validator_url
+        .is_some()
+        .then(|| tasks.spawn_validator_checker(&config));
 
     // Build the flat services Vec in the order the dashboard expects to render cards.
     let services = std::iter::once(rpc_rx)

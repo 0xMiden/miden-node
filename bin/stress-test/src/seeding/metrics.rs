@@ -68,7 +68,10 @@ impl SeedingMetrics {
         self.blocks.push(BlockMetric {
             kind,
             insertion_time,
-            get_block_inputs_time: self.pending_get_block_inputs_time.take().unwrap_or_default(),
+            get_block_inputs_time: self
+                .pending_get_block_inputs_time
+                .take()
+                .unwrap_or_default(),
             block_size,
             transaction_count,
             public_account_updates,
@@ -78,14 +81,17 @@ impl SeedingMetrics {
     /// Tracks the size of the store file.
     pub fn record_store_size(&mut self) {
         if let Some(block_index) = self.blocks.len().checked_sub(1) {
-            self.store_file_sizes.push((block_index, get_store_size(&self.store_file)));
+            self.store_file_sizes
+                .push((block_index, get_store_size(&self.store_file)));
         }
     }
 
     /// Tracks the time it takes to query the block inputs.
     pub fn add_get_block_inputs(&mut self, query_time: Duration) {
         assert!(
-            self.pending_get_block_inputs_time.replace(query_time).is_none(),
+            self.pending_get_block_inputs_time
+                .replace(query_time)
+                .is_none(),
             "block input query time should be consumed before the next query"
         );
     }
@@ -120,9 +126,12 @@ impl SeedingMetrics {
         }) {
             let block_size_kb = metric.block_size as f64 / 1024.0;
             let store_size_mb =
-                self.store_file_sizes.iter().rev().find_map(|(sample_index, size)| {
-                    (*sample_index == block_index).then_some(*size as f64 / (1024.0 * 1024.0))
-                });
+                self.store_file_sizes
+                    .iter()
+                    .rev()
+                    .find_map(|(sample_index, size)| {
+                        (*sample_index == block_index).then_some(*size as f64 / (1024.0 * 1024.0))
+                    });
             let store_size =
                 store_size_mb.map_or_else(|| "-".to_string(), |size| format!("{size:.1}"));
 
@@ -174,13 +183,19 @@ impl SeedingMetrics {
             let stdout = String::from_utf8(db_stats.stdout).expect("invalid utf8");
             let stats: Vec<&str> = stdout.trim_end().split('|').collect();
 
-            let size_mb = stats.get(1).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.0)
+            let size_mb = stats
+                .get(1)
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(0.0)
                 / (1024.0 * 1024.0);
             let kb_per_entry = stats.get(2).map_or("-".to_string(), |bytes_per_entry| {
                 if bytes_per_entry.trim().is_empty() {
                     "-".to_string()
                 } else {
-                    format!("{:.1}", bytes_per_entry.trim().parse::<f64>().unwrap_or(0.0) / 1024.0)
+                    format!(
+                        "{:.1}",
+                        bytes_per_entry.trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+                    )
                 }
             });
 
@@ -232,7 +247,10 @@ impl SeedingMetrics {
             let stdout = String::from_utf8(db_stats.stdout).expect("invalid utf8");
             let stats: Vec<&str> = stdout.trim_end().split('|').collect();
 
-            let size_mb = stats.get(1).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.0)
+            let size_mb = stats
+                .get(1)
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(0.0)
                 / (1024.0 * 1024.0);
 
             writeln!(f, "{:<55} {:<15.1}", stats[0], size_mb)?;
@@ -248,7 +266,10 @@ impl Display for SeedingMetrics {
             f,
             "Inserted {} blocks with avg insertion time {} ms",
             self.blocks.len(),
-            self.blocks.iter().map(|metric| metric.insertion_time.as_millis()).sum::<u128>()
+            self.blocks
+                .iter()
+                .map(|metric| metric.insertion_time.as_millis())
+                .sum::<u128>()
                 / self.blocks.len().max(1) as u128
         )?;
         writeln!(
@@ -265,7 +286,10 @@ impl Display for SeedingMetrics {
         let growth_rate_mb = final_size.saturating_sub(self.initial_store_size) as f64
             / self.blocks.len().max(1) as f64
             / (1024.0 * 1024.0);
-        writeln!(f, "Average DB growth rate: {growth_rate_mb:.1} MB per block")?;
+        writeln!(
+            f,
+            "Average DB growth rate: {growth_rate_mb:.1} MB per block"
+        )?;
 
         // Print out the store file size every 50 blocks to track growth and performance
         self.print_block_metrics(f)?;
@@ -282,7 +306,9 @@ impl Display for SeedingMetrics {
 
 /// Gets the size of the store file and its WAL file.
 fn get_store_size(dump_file: &Path) -> u64 {
-    let store_file_size = fs_err::metadata(dump_file).expect("Dumpfile always exists").len();
+    let store_file_size = fs_err::metadata(dump_file)
+        .expect("Dumpfile always exists")
+        .len();
     let wal_file = format!("{}-wal", dump_file.to_str().unwrap());
     let wal_file_size = fs_err::metadata(&wal_file)
         .inspect_err(|_err| {

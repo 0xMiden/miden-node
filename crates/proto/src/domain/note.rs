@@ -2,20 +2,9 @@ use std::sync::Arc;
 
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
-    Note,
-    NoteAttachmentHeader,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteDetails,
-    NoteDetailsCommitment,
-    NoteHeader,
-    NoteId,
-    NoteInclusionProof,
-    NoteMetadata,
-    NoteScript,
-    NoteTag,
-    NoteType,
-    PartialNoteMetadata,
+    Note, NoteAttachmentHeader, NoteAttachmentScheme, NoteAttachments, NoteDetails,
+    NoteDetailsCommitment, NoteHeader, NoteId, NoteInclusionProof, NoteMetadata, NoteScript,
+    NoteTag, NoteType, PartialNoteMetadata,
 };
 use miden_protocol::utils::serde::Serializable;
 use miden_protocol::{MastForest, MastNodeId, Word};
@@ -44,9 +33,9 @@ impl TryFrom<proto::note::NoteType> for NoteType {
         match note_type {
             proto::note::NoteType::Public => Ok(NoteType::Public),
             proto::note::NoteType::Private => Ok(NoteType::Private),
-            proto::note::NoteType::Unspecified => {
-                Err(ConversionError::message("enum variant discriminant out of range"))
-            },
+            proto::note::NoteType::Unspecified => Err(ConversionError::message(
+                "enum variant discriminant out of range",
+            )),
         }
     }
 }
@@ -104,7 +93,11 @@ impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
         }
 
         let partial = PartialNoteMetadata::new(sender, note_type).with_tag(tag);
-        Ok(NoteMetadata::from_parts(partial, attachment_headers, attachments_commitment))
+        Ok(NoteMetadata::from_parts(
+            partial,
+            attachment_headers,
+            attachments_commitment,
+        ))
     }
 }
 
@@ -116,7 +109,11 @@ impl From<Note> for proto::note::NetworkNote {
         let metadata = Some(proto::note::NoteMetadata::from(*note.metadata()));
         let attachments = note.attachments().to_bytes();
         let details = NoteDetails::from(note).to_bytes();
-        Self { metadata, details, attachments }
+        Self {
+            metadata,
+            details,
+            attachments,
+        }
     }
 }
 
@@ -125,7 +122,11 @@ impl From<Note> for proto::note::Note {
         let metadata = Some(proto::note::NoteMetadata::from(*note.metadata()));
         let attachments = note.attachments().to_bytes();
         let details = Some(NoteDetails::from(note).to_bytes());
-        Self { metadata, details, attachments }
+        Self {
+            metadata,
+            details,
+            attachments,
+        }
     }
 }
 
@@ -140,7 +141,11 @@ impl TryFrom<proto::note::NetworkNote> for AccountTargetNetworkNote {
 
     fn try_from(value: proto::note::NetworkNote) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::note::NetworkNote { metadata, details, attachments } = value;
+        let proto::note::NetworkNote {
+            metadata,
+            details,
+            attachments,
+        } = value;
 
         let metadata = decode!(decoder, metadata)?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
@@ -159,7 +164,11 @@ impl TryFrom<proto::note::Note> for Note {
 
     fn try_from(proto_note: proto::note::Note) -> Result<Self, Self::Error> {
         let decoder = proto_note.decoder();
-        let proto::note::Note { metadata, details, attachments } = proto_note;
+        let proto::note::Note {
+            metadata,
+            details,
+            attachments,
+        } = proto_note;
 
         let metadata = decode!(decoder, metadata)?;
         let partial_metadata = partial_note_metadata_from_proto(metadata)?;
@@ -169,7 +178,12 @@ impl TryFrom<proto::note::Note> for Note {
         let (assets, recipient) = note_details.into_parts();
         let attachments = decode_attachments(&attachments)?;
 
-        Ok(Note::with_attachments(assets, partial_metadata, recipient, attachments))
+        Ok(Note::with_attachments(
+            assets,
+            partial_metadata,
+            recipient,
+            attachments,
+        ))
     }
 }
 
@@ -178,7 +192,9 @@ impl TryFrom<proto::note::Note> for Note {
 
 impl From<Word> for proto::note::NoteId {
     fn from(digest: Word) -> Self {
-        Self { id: Some(digest.into()) }
+        Self {
+            id: Some(digest.into()),
+        }
     }
 }
 
@@ -193,7 +209,9 @@ impl TryFrom<proto::note::NoteId> for Word {
 
 impl From<&NoteId> for proto::note::NoteId {
     fn from(note_id: &NoteId) -> Self {
-        Self { id: Some(note_id.into()) }
+        Self {
+            id: Some(note_id.into()),
+        }
     }
 }
 
@@ -223,7 +241,10 @@ impl TryFrom<&proto::note::NoteInclusionInBlockProof> for (NoteId, NoteInclusion
             NoteId::from_raw(note_id),
             NoteInclusionProof::new(
                 proof.block_num.into(),
-                proof.note_index_in_block.try_into().context("note_index_in_block")?,
+                proof
+                    .note_index_in_block
+                    .try_into()
+                    .context("note_index_in_block")?,
                 inclusion_path,
             )?,
         ))

@@ -6,10 +6,7 @@ use accept::AcceptHeaderLayer;
 use anyhow::Context;
 use miden_node_block_producer::{BlockProducerApi, RpcReadiness, RpcSync};
 use miden_node_proto::clients::{
-    NtxBuilderClient,
-    RpcClient as SourceRpcClient,
-    SequencerClient,
-    ValidatorClient,
+    NtxBuilderClient, RpcClient as SourceRpcClient, SequencerClient, ValidatorClient,
 };
 use miden_node_proto::server::{rpc_api, sequencer_api};
 use miden_node_proto_build::rpc_api_descriptor;
@@ -236,11 +233,18 @@ impl RpcMode {
     /// [`RpcService`](api::RpcService).
     fn backend(&self) -> RpcBackend {
         match self {
-            Self::Sequencer { block_producer, validators } => RpcBackend::Sequencer {
+            Self::Sequencer {
+                block_producer,
+                validators,
+            } => RpcBackend::Sequencer {
                 block_producer: block_producer.clone(),
                 validators: validators.clone(),
             },
-            Self::FullNode { source_rpc, pre_auth, .. } => RpcBackend::FullNode {
+            Self::FullNode {
+                source_rpc,
+                pre_auth,
+                ..
+            } => RpcBackend::FullNode {
                 source_rpc: source_rpc.clone(),
                 pre_auth: pre_auth.clone(),
             },
@@ -257,7 +261,10 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let endpoint = self.listener.local_addr().context("failed to read RPC listen address")?;
+        let endpoint = self
+            .listener
+            .local_addr()
+            .context("failed to read RPC listen address")?;
         let mode = self.mode.as_str();
         let mut api = api::RpcService::new(
             self.state.clone(),
@@ -290,7 +297,7 @@ impl Rpc {
                     .await;
                 let chain_tip = self.state.committed_tip();
                 log_node_ready(mode, endpoint, chain_tip);
-            },
+            }
             RpcMode::FullNode {
                 source_rpc,
                 readiness_threshold,
@@ -311,7 +318,7 @@ impl Rpc {
                     proof_writer,
                 )
                 .await;
-            },
+            }
         }
 
         let reflection_service = server::Builder::configure()
@@ -367,7 +374,9 @@ impl Rpc {
                 TcpListenerStream::new(self.listener),
                 shutdown.clone().cancelled_owned(),
             );
-        tasks.spawn("RPC server", async move { rpc.await.map_err(|e| anyhow::anyhow!(e)) });
+        tasks.spawn("RPC server", async move {
+            rpc.await.map_err(|e| anyhow::anyhow!(e))
+        });
 
         tasks.join_next_or_cancelled(shutdown).await
     }
@@ -390,7 +399,10 @@ impl Rpc {
         proof_writer: ProofWriter,
     ) {
         health_reporter
-            .set_service_status(rpc_api::service_name(), tonic_health::ServingStatus::NotServing)
+            .set_service_status(
+                rpc_api::service_name(),
+                tonic_health::ServingStatus::NotServing,
+            )
             .await;
         let readiness = RpcReadiness::new(health_reporter, readiness_threshold);
         tasks.spawn(
@@ -472,7 +484,9 @@ impl SequencerInternal {
             "Internal sequencer server ready",
         );
 
-        let service = SequencerInternalService { block_producer: self.block_producer };
+        let service = SequencerInternalService {
+            block_producer: self.block_producer,
+        };
 
         // Note: deliberately no accept-header / rate-limit / auth layers; this is a private,
         // trusted interface and is expected to be network-isolated.

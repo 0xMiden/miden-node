@@ -9,31 +9,16 @@ use miden_node_utils::fee::test_fee_params;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountIdVersion,
-    AccountPatch,
-    AccountStoragePatch,
-    AccountType,
-    AccountUpdateDetails,
-    AccountVaultPatch,
-    AssetCallbackFlag,
-    StorageMap,
-    StorageMapKey,
-    StorageMapPatch,
-    StorageSlot,
-    StorageSlotName,
-    StorageSlotPatch,
+    Account, AccountBuilder, AccountComponent, AccountId, AccountIdVersion, AccountPatch,
+    AccountStoragePatch, AccountType, AccountUpdateDetails, AccountVaultPatch, AssetCallbackFlag,
+    StorageMap, StorageMapKey, StorageMapPatch, StorageSlot, StorageSlotName, StorageSlotPatch,
     StorageValuePatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber, ValidatorKeys};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
 };
 use miden_protocol::utils::serde::Serializable;
 use miden_protocol::{EMPTY_WORD, Felt, Word};
@@ -41,13 +26,9 @@ use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::code_builder::CodeBuilder;
 
 use crate::db::models::queries::accounts::{
-    PrecomputedPublicAccountState,
-    PrecomputedPublicAccountStates,
-    VALID_FOREVER,
-    select_account_header_with_storage_header_at_block,
-    select_account_vault_at_block,
-    select_full_account,
-    upsert_accounts,
+    PrecomputedPublicAccountState, PrecomputedPublicAccountStates, VALID_FOREVER,
+    select_account_header_with_storage_header_at_block, select_account_vault_at_block,
+    select_full_account, upsert_accounts,
 };
 use crate::db::schema::accounts;
 use crate::errors::DatabaseError;
@@ -97,7 +78,7 @@ fn precomputed_state_from_account(account: &Account) -> PrecomputedPublicAccount
             .filter_map(|slot| match slot.content() {
                 miden_protocol::account::StorageSlotContent::Map(map) => {
                     Some((slot.name().clone(), map.root()))
-                },
+                }
                 miden_protocol::account::StorageSlotContent::Value(_) => None,
             })
             .collect(),
@@ -121,10 +102,15 @@ fn callback_enabled_faucet_id() -> AccountId {
 }
 
 fn callback_delta_test_account(seed: [u8; 32], slot_index: usize) -> Account {
-    let component_storage =
-        vec![StorageSlot::with_value(StorageSlotName::mock(slot_index), EMPTY_WORD)];
+    let component_storage = vec![StorageSlot::with_value(
+        StorageSlotName::mock(slot_index),
+        EMPTY_WORD,
+    )];
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "@account_procedure pub proc vault push.1 end")
+        .compile_component_code(
+            "test::interface",
+            "@account_procedure pub proc vault push.1 end",
+        )
         .unwrap();
     let component = AccountComponent::new(
         account_component_code,
@@ -205,8 +191,16 @@ fn apply_callback_delta(
     .expect("partial delta upsert failed");
 
     let after = select_full_account(conn, account_id).expect("load account after");
-    assert_eq!(after.vault().root(), expected.vault().root(), "vault root mismatch");
-    assert_eq!(after.to_commitment(), expected.to_commitment(), "commitment mismatch");
+    assert_eq!(
+        after.vault().root(),
+        expected.vault().root(),
+        "vault root mismatch"
+    );
+    assert_eq!(
+        after.to_commitment(),
+        expected.to_commitment(),
+        "commitment mismatch"
+    );
     after
 }
 
@@ -252,12 +246,18 @@ fn optimized_delta_matches_full_account_method() {
     ]);
 
     let component_storage = vec![
-        StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX_PRIMARY), slot_value_initial),
+        StorageSlot::with_value(
+            StorageSlotName::mock(SLOT_INDEX_PRIMARY),
+            slot_value_initial,
+        ),
         StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX_SECONDARY), EMPTY_WORD),
     ];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
+        .compile_component_code(
+            "test::interface",
+            "@account_procedure pub proc foo push.1 end",
+        )
         .unwrap();
 
     let component = AccountComponent::new(
@@ -320,14 +320,22 @@ fn optimized_delta_matches_full_account_method() {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
 
     // Find the slot name from the account's storage
-    let value_slot_name =
-        full_account_before.storage().slots().iter().next().unwrap().name().clone();
+    let value_slot_name = full_account_before
+        .storage()
+        .slots()
+        .iter()
+        .next()
+        .unwrap()
+        .name()
+        .clone();
 
     // Build the storage delta (value slot update only)
     let storage_patch = {
         let deltas = BTreeMap::from_iter([(
             value_slot_name.clone(),
-            StorageSlotPatch::Value(StorageValuePatch::Update { value: new_slot_value }),
+            StorageSlotPatch::Value(StorageValuePatch::Update {
+                value: new_slot_value,
+            }),
         )]);
         AccountStoragePatch::from_raw(deltas).unwrap()
     };
@@ -351,7 +359,10 @@ fn optimized_delta_matches_full_account_method() {
         Some(expected_nonce),
     )
     .unwrap();
-    assert!(!partial_patch.is_full_state(), "Patch should be partial, not full state");
+    assert!(
+        !partial_patch.is_full_state(),
+        "Patch should be partial, not full state"
+    );
 
     // Construct the expected final account by applying the patch
     let expected_code_commitment = full_account_before.code().commitment();
@@ -371,8 +382,13 @@ fn optimized_delta_matches_full_account_method() {
         final_commitment,
         AccountUpdateDetails::Public(partial_patch),
     );
-    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
-        .expect("Partial delta upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_2,
+        &precomputed_public_states,
+    )
+    .expect("Partial delta upsert failed");
 
     // ----- VERIFY: Query the DB and check that optimized path produced correct results -----
 
@@ -425,7 +441,11 @@ fn optimized_delta_matches_full_account_method() {
     let full_account_after = select_full_account(&mut conn, account.id())
         .expect("Failed to load full account after update");
 
-    assert_eq!(full_account_after.nonce(), expected_nonce, "Full account nonce mismatch");
+    assert_eq!(
+        full_account_after.nonce(),
+        expected_nonce,
+        "Full account nonce mismatch"
+    );
     assert_eq!(
         full_account_after.storage().to_commitment(),
         expected_storage_commitment,
@@ -460,11 +480,16 @@ fn optimized_delta_updates_non_empty_vault() {
     let faucet_id_1 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
     let initial_asset = Asset::Fungible(FungibleAsset::new(faucet_id, INITIAL_AMOUNT).unwrap());
 
-    let component_storage =
-        vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
+    let component_storage = vec![StorageSlot::with_value(
+        StorageSlotName::mock(SLOT_INDEX),
+        EMPTY_WORD,
+    )];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "@account_procedure pub proc vault push.1 end")
+        .compile_component_code(
+            "test::interface",
+            "@account_procedure pub proc vault push.1 end",
+        )
         .unwrap();
 
     let component = AccountComponent::new(
@@ -540,8 +565,13 @@ fn optimized_delta_updates_non_empty_vault() {
         expected_commitment,
         AccountUpdateDetails::Public(partial_patch),
     );
-    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
-        .expect("Partial delta upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_2,
+        &precomputed_public_states,
+    )
+    .expect("Partial delta upsert failed");
 
     let vault_assets_after = select_account_vault_at_block(&mut conn, account.id(), block_2)
         .expect("Query vault should succeed");
@@ -586,8 +616,13 @@ fn optimized_delta_updates_non_empty_vault() {
         commitment_3,
         AccountUpdateDetails::Public(partial_patch_3),
     );
-    upsert_accounts(&mut conn, &[account_update_3], block_3, &precomputed_public_states_3)
-        .expect("Block 3 upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update_3],
+        block_3,
+        &precomputed_public_states_3,
+    )
+    .expect("Block 3 upsert failed");
 
     let full_account_final =
         select_full_account(&mut conn, account.id()).expect("Failed to load after block 3");
@@ -696,11 +731,16 @@ fn optimized_delta_updates_storage_map_header() {
     ]);
 
     let storage_map = StorageMap::with_entries(vec![(map_key, map_value_initial)]).unwrap();
-    let component_storage =
-        vec![StorageSlot::with_map(StorageSlotName::mock(SLOT_INDEX_MAP), storage_map)];
+    let component_storage = vec![StorageSlot::with_map(
+        StorageSlotName::mock(SLOT_INDEX_MAP),
+        storage_map,
+    )];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "@account_procedure pub proc map push.1 end")
+        .compile_component_code(
+            "test::interface",
+            "@account_procedure pub proc map push.1 end",
+        )
         .unwrap();
 
     let component = AccountComponent::new(
@@ -771,8 +811,13 @@ fn optimized_delta_updates_storage_map_header() {
         expected_commitment,
         AccountUpdateDetails::Public(partial_patch),
     );
-    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
-        .expect("Partial delta upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[account_update],
+        block_2,
+        &precomputed_public_states,
+    )
+    .expect("Partial delta upsert failed");
 
     let (header_after, storage_header_after) =
         select_account_header_with_storage_header_at_block(&mut conn, account.id(), block_2)
@@ -834,8 +879,10 @@ fn partial_public_upsert_requires_precomputed_state() {
     insert_block_header(&mut conn, block_1);
     insert_block_header(&mut conn, block_2);
 
-    let component_storage =
-        vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
+    let component_storage = vec![StorageSlot::with_value(
+        StorageSlotName::mock(SLOT_INDEX),
+        EMPTY_WORD,
+    )];
     let account_component_code = CodeBuilder::default()
         .compile_component_code(
             "test::interface",
@@ -877,7 +924,9 @@ fn partial_public_upsert_requires_precomputed_state() {
         AccountStoragePatch::new(),
         AccountVaultPatch::default(),
         None,
-        Some(Felt::new_unchecked(current_account.nonce().as_canonical_u64() + 1)),
+        Some(Felt::new_unchecked(
+            current_account.nonce().as_canonical_u64() + 1,
+        )),
     )
     .unwrap();
     current_account.apply_patch(&patch).unwrap();
@@ -908,10 +957,15 @@ fn partial_public_upsert_rejects_bad_precomputed_root() {
     insert_block_header(&mut conn, block_1);
     insert_block_header(&mut conn, block_2);
 
-    let component_storage =
-        vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), EMPTY_WORD)];
+    let component_storage = vec![StorageSlot::with_value(
+        StorageSlotName::mock(SLOT_INDEX),
+        EMPTY_WORD,
+    )];
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "@account_procedure pub proc badroot push.1 end")
+        .compile_component_code(
+            "test::interface",
+            "@account_procedure pub proc badroot push.1 end",
+        )
         .unwrap();
     let component = AccountComponent::new(
         account_component_code,
@@ -948,7 +1002,9 @@ fn partial_public_upsert_rejects_bad_precomputed_root() {
         AccountStoragePatch::new(),
         AccountVaultPatch::default(),
         None,
-        Some(Felt::new_unchecked(expected_account.nonce().as_canonical_u64() + 1)),
+        Some(Felt::new_unchecked(
+            expected_account.nonce().as_canonical_u64() + 1,
+        )),
     )
     .unwrap();
     expected_account.apply_patch(&patch).unwrap();
@@ -1007,8 +1063,11 @@ fn upsert_private_account() {
     ]);
 
     // Insert as private account
-    let account_update =
-        BlockAccountUpdate::new(account_id, account_commitment, AccountUpdateDetails::Private);
+    let account_update = BlockAccountUpdate::new(
+        account_id,
+        account_commitment,
+        AccountUpdateDetails::Private,
+    );
 
     upsert_accounts(
         &mut conn,
@@ -1024,7 +1083,11 @@ fn upsert_private_account() {
         accounts::table
             .filter(accounts::account_id.eq(account_id.to_bytes()))
             .filter(accounts::valid_until.eq(VALID_FOREVER))
-            .select((accounts::account_commitment, accounts::nonce, accounts::code_commitment))
+            .select((
+                accounts::account_commitment,
+                accounts::nonce,
+                accounts::code_commitment,
+            ))
             .first(&mut conn)
             .expect("Account should exist in DB");
 
@@ -1035,8 +1098,14 @@ fn upsert_private_account() {
     );
 
     // Private accounts have NULL for nonce, code_commitment, storage_header, vault_root
-    assert!(stored_nonce.is_none(), "Private account should have NULL nonce");
-    assert!(stored_code.is_none(), "Private account should have NULL code_commitment");
+    assert!(
+        stored_nonce.is_none(),
+        "Private account should have NULL nonce"
+    );
+    assert!(
+        stored_code.is_none(),
+        "Private account should have NULL code_commitment"
+    );
 }
 
 /// Tests that a full-state delta (new account creation) is handled correctly.
@@ -1065,11 +1134,16 @@ fn upsert_full_state_delta() {
         Felt::new_unchecked(SLOT_VALUES[2]),
         Felt::new_unchecked(SLOT_VALUES[3]),
     ]);
-    let component_storage =
-        vec![StorageSlot::with_value(StorageSlotName::mock(SLOT_INDEX), slot_value)];
+    let component_storage = vec![StorageSlot::with_value(
+        StorageSlotName::mock(SLOT_INDEX),
+        slot_value,
+    )];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("test::interface", "@account_procedure pub proc bar push.2 end")
+        .compile_component_code(
+            "test::interface",
+            "@account_procedure pub proc bar push.2 end",
+        )
         .unwrap();
 
     let component = AccountComponent::new(
@@ -1130,8 +1204,14 @@ fn upsert_full_state_delta() {
         select_full_account(&mut conn, account.id()).expect("Should load full account");
 
     assert_eq!(loaded_account.nonce(), account.nonce());
-    assert_eq!(loaded_account.code().commitment(), account.code().commitment());
-    assert_eq!(loaded_account.storage().to_commitment(), account.storage().to_commitment());
+    assert_eq!(
+        loaded_account.code().commitment(),
+        account.code().commitment()
+    );
+    assert_eq!(
+        loaded_account.storage().to_commitment(),
+        account.storage().to_commitment()
+    );
 }
 
 /// Tests that `apply_storage_patch` mirrors the protocol's patch semantics for slot creation,
@@ -1141,10 +1221,7 @@ fn apply_storage_patch_handles_create_update_and_remove() {
     use std::collections::HashMap;
 
     use miden_protocol::account::{
-        AccountStorageHeader,
-        StorageMapPatchEntries,
-        StorageSlotHeader,
-        StorageSlotType,
+        AccountStorageHeader, StorageMapPatchEntries, StorageSlotHeader, StorageSlotType,
     };
 
     use super::apply_storage_patch;
@@ -1161,23 +1238,41 @@ fn apply_storage_patch_handles_create_update_and_remove() {
     let old_map_root = StorageMap::with_entries(std::iter::empty()).unwrap().root();
 
     let mut slots = vec![
-        StorageSlotHeader::new(removed_value_name.clone(), StorageSlotType::Value, old_value),
+        StorageSlotHeader::new(
+            removed_value_name.clone(),
+            StorageSlotType::Value,
+            old_value,
+        ),
         StorageSlotHeader::new(removed_map_name.clone(), StorageSlotType::Map, old_map_root),
-        StorageSlotHeader::new(updated_value_name.clone(), StorageSlotType::Value, old_value),
+        StorageSlotHeader::new(
+            updated_value_name.clone(),
+            StorageSlotType::Value,
+            old_value,
+        ),
     ];
     slots.sort_by_key(StorageSlotHeader::id);
     let header = AccountStorageHeader::new(slots).unwrap();
 
     let patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([
-        (removed_value_name.clone(), StorageSlotPatch::Value(StorageValuePatch::Remove)),
-        (removed_map_name.clone(), StorageSlotPatch::Map(StorageMapPatch::Remove)),
+        (
+            removed_value_name.clone(),
+            StorageSlotPatch::Value(StorageValuePatch::Remove),
+        ),
+        (
+            removed_map_name.clone(),
+            StorageSlotPatch::Map(StorageMapPatch::Remove),
+        ),
         (
             updated_value_name.clone(),
-            StorageSlotPatch::Value(StorageValuePatch::Update { value: updated_value }),
+            StorageSlotPatch::Value(StorageValuePatch::Update {
+                value: updated_value,
+            }),
         ),
         (
             created_value_name.clone(),
-            StorageSlotPatch::Value(StorageValuePatch::Create { value: created_value }),
+            StorageSlotPatch::Value(StorageValuePatch::Create {
+                value: created_value,
+            }),
         ),
         (
             created_map_name.clone(),
@@ -1193,23 +1288,37 @@ fn apply_storage_patch_handles_create_update_and_remove() {
 
     assert_eq!(new_header.num_slots(), 3, "two slots removed, two created");
     assert!(
-        new_header.find_slot_header_by_name(&removed_value_name).is_none(),
+        new_header
+            .find_slot_header_by_name(&removed_value_name)
+            .is_none(),
         "removed value slot should be dropped from the header"
     );
     assert!(
-        new_header.find_slot_header_by_name(&removed_map_name).is_none(),
+        new_header
+            .find_slot_header_by_name(&removed_map_name)
+            .is_none(),
         "removed map slot should be dropped from the header"
     );
 
-    let updated_slot = new_header.find_slot_header_by_name(&updated_value_name).unwrap();
+    let updated_slot = new_header
+        .find_slot_header_by_name(&updated_value_name)
+        .unwrap();
     assert_eq!(updated_slot.value(), updated_value);
     assert_eq!(updated_slot.slot_type(), StorageSlotType::Value);
 
-    let created_slot = new_header.find_slot_header_by_name(&created_value_name).unwrap();
+    let created_slot = new_header
+        .find_slot_header_by_name(&created_value_name)
+        .unwrap();
     assert_eq!(created_slot.value(), created_value);
     assert_eq!(created_slot.slot_type(), StorageSlotType::Value);
 
-    let created_map_slot = new_header.find_slot_header_by_name(&created_map_name).unwrap();
-    assert_eq!(created_map_slot.value(), old_map_root, "empty map root expected");
+    let created_map_slot = new_header
+        .find_slot_header_by_name(&created_map_name)
+        .unwrap();
+    assert_eq!(
+        created_map_slot.value(),
+        old_map_root,
+        "empty map root expected"
+    );
     assert_eq!(created_map_slot.slot_type(), StorageSlotType::Map);
 }

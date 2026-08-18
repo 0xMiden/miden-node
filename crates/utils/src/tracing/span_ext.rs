@@ -14,7 +14,9 @@ where
     fn set_error(&self, err: &dyn std::error::Error) {
         tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
             self,
-            Status::Error { description: err.as_report().into() },
+            Status::Error {
+                description: err.as_report().into(),
+            },
         );
     }
 }

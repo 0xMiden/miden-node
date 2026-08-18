@@ -42,7 +42,11 @@ impl StateView {
             let account_commitment = inner.account_tree.get_latest_commitment(account_id);
 
             let new_account_id_prefix_is_unique = if account_commitment.is_empty() {
-                Some(!inner.account_tree.contains_account_id_prefix_in_latest(account_id.prefix()))
+                Some(
+                    !inner
+                        .account_tree
+                        .contains_account_id_prefix_in_latest(account_id.prefix()),
+                )
             } else {
                 None
             };
@@ -60,11 +64,18 @@ impl StateView {
                 .iter()
                 .map(|nullifier| NullifierInfo {
                     nullifier: *nullifier,
-                    block_num: inner.nullifier_tree.get_block_num(nullifier).unwrap_or_default(),
+                    block_num: inner
+                        .nullifier_tree
+                        .get_block_num(nullifier)
+                        .unwrap_or_default(),
                 })
                 .collect();
 
-            ControlFlow::Continue((account_commitment, nullifiers, new_account_id_prefix_is_unique))
+            ControlFlow::Continue((
+                account_commitment,
+                nullifiers,
+                new_account_id_prefix_is_unique,
+            ))
         });
         // `Break` carries a complete response (duplicate account ID prefix), so it is returned
         // as-is without the note lookup below; `Continue` carries the tree reads needed to build

@@ -12,5 +12,8 @@ pub fn lookup_note_script(
     tx: &ReadTx<'_>,
     script_root: &Word,
 ) -> Result<Option<NoteScript>, DatabaseError> {
-    Ok(tx.query(SQL, &[script_root], |row| row.get::<NoteScript>(0))?.first().cloned())
+    Ok(tx
+        .query(SQL, &[script_root], |row| row.get::<NoteScript>(0))?
+        .first()
+        .cloned())
 }

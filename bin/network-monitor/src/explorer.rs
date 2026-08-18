@@ -111,7 +111,7 @@ impl Service for ExplorerService {
         match parse_response(&body) {
             Ok(details) => {
                 ServiceStatus::healthy(self.name(), ServiceDetails::ExplorerStatus(details))
-            },
+            }
             Err(e) => ServiceStatus::error(self.name(), e),
         }
     }
@@ -177,7 +177,10 @@ struct OverviewStats {
     nullifiers: u64,
     #[serde(rename = "total_count_notes", deserialize_with = "u64_from_str")]
     notes: u64,
-    #[serde(rename = "total_count_account_updates", deserialize_with = "u64_from_str")]
+    #[serde(
+        rename = "total_count_account_updates",
+        deserialize_with = "u64_from_str"
+    )]
     account_updates: u64,
 }
 

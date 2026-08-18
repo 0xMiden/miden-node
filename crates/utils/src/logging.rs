@@ -67,7 +67,7 @@ impl OpenTelemetry {
         match self {
             OpenTelemetry::Enabled(config) => {
                 OpenTelemetry::Enabled(config.with_name(service_name))
-            },
+            }
             OpenTelemetry::Disabled => OpenTelemetry::Disabled,
         }
     }
@@ -77,7 +77,7 @@ impl OpenTelemetry {
         match self {
             OpenTelemetry::Enabled(config) => {
                 OpenTelemetry::Enabled(config.with_attribute(key, value))
-            },
+            }
             OpenTelemetry::Disabled => OpenTelemetry::Disabled,
         }
     }
@@ -291,7 +291,11 @@ fn resource_from_detected(
     }
 
     Resource::builder_empty()
-        .with_attributes(attributes.into_iter().map(|(key, value)| KeyValue::new(key, value)))
+        .with_attributes(
+            attributes
+                .into_iter()
+                .map(|(key, value)| KeyValue::new(key, value)),
+        )
         .build()
 }
 
@@ -303,9 +307,12 @@ fn otel_service_name_override() -> Option<Value> {
 }
 
 fn otlp_endpoint_configured() -> bool {
-    ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"]
-        .into_iter()
-        .any(|key| std::env::var(key).is_ok_and(|value| !value.trim().is_empty()))
+    [
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+    ]
+    .into_iter()
+    .any(|key| std::env::var(key).is_ok_and(|value| !value.trim().is_empty()))
 }
 
 /// Initializes tracing to a test exporter.
@@ -380,10 +387,22 @@ mod tests {
             None,
         );
 
-        assert_eq!(resource_value(&resource, "service.name"), Some(Value::from("node")),);
-        assert_eq!(resource_value(&resource, "service.namespace"), Some(Value::from("miden")),);
-        assert_eq!(resource_value(&resource, "miden.node.role"), Some(Value::from("sequencer")),);
-        assert_eq!(resource_value(&resource, "telemetry.sdk.language"), Some(Value::from("rust")),);
+        assert_eq!(
+            resource_value(&resource, "service.name"),
+            Some(Value::from("node")),
+        );
+        assert_eq!(
+            resource_value(&resource, "service.namespace"),
+            Some(Value::from("miden")),
+        );
+        assert_eq!(
+            resource_value(&resource, "miden.node.role"),
+            Some(Value::from("sequencer")),
+        );
+        assert_eq!(
+            resource_value(&resource, "telemetry.sdk.language"),
+            Some(Value::from("rust")),
+        );
     }
 
     #[test]
@@ -404,12 +423,18 @@ mod tests {
             None,
         );
 
-        assert_eq!(resource_value(&resource, "service.name"), Some(Value::from("custom-node")),);
+        assert_eq!(
+            resource_value(&resource, "service.name"),
+            Some(Value::from("custom-node")),
+        );
         assert_eq!(
             resource_value(&resource, "service.namespace"),
             Some(Value::from("custom-namespace")),
         );
-        assert_eq!(resource_value(&resource, "miden.node.role"), Some(Value::from("custom-role")),);
+        assert_eq!(
+            resource_value(&resource, "miden.node.role"),
+            Some(Value::from("custom-role")),
+        );
     }
 
     #[test]

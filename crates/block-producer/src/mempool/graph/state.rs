@@ -56,7 +56,9 @@ where
             .filter(|note| self.notes_created.contains_key(note))
             .collect::<Vec<_>>();
         if !duplicate_output_notes.is_empty() {
-            return Err(StateConflict::OutputNotesAlreadyExist(duplicate_output_notes));
+            return Err(StateConflict::OutputNotesAlreadyExist(
+                duplicate_output_notes,
+            ));
         }
 
         let missing_input_notes = node
@@ -64,7 +66,9 @@ where
             .filter(|note| !self.notes_created.contains_key(note))
             .collect::<Vec<_>>();
         if !missing_input_notes.is_empty() {
-            return Err(StateConflict::UnauthenticatedNotesMissing(missing_input_notes));
+            return Err(StateConflict::UnauthenticatedNotesMissing(
+                missing_input_notes,
+            ));
         }
 
         for (account_id, from, _to, store) in node.account_updates() {
@@ -96,7 +100,8 @@ where
         let mut parents = HashSet::new();
 
         self.nullifiers.extend(node.nullifiers());
-        self.notes_created.extend(node.output_notes().map(|note| (note, node_id)));
+        self.notes_created
+            .extend(node.output_notes().map(|note| (note, node_id)));
 
         parents.extend(node.unauthenticated_notes().map(|note| {
             *self
@@ -348,7 +353,7 @@ mod tests {
         match state.validate_append(&node_b) {
             Err(StateConflict::NullifiersAlreadyExist(duplicates)) => {
                 assert_eq!(duplicates, vec![nullifier(1)]);
-            },
+            }
             other => panic!("expected duplicate nullifier error, found {other:?}"),
         }
     }
@@ -398,7 +403,7 @@ mod tests {
         match state.validate_append(&node_b) {
             Err(StateConflict::OutputNotesAlreadyExist(duplicates)) => {
                 assert_eq!(duplicates, vec![word(200)]);
-            },
+            }
             other => panic!("expected duplicate output note error, found {other:?}"),
         }
     }
@@ -415,7 +420,7 @@ mod tests {
         match state.validate_append(&node) {
             Err(StateConflict::UnauthenticatedNotesMissing(missing)) => {
                 assert_eq!(missing, vec![word(300)]);
-            },
+            }
             other => panic!("expected missing unauthenticated note error, found {other:?}"),
         }
     }
@@ -428,10 +433,12 @@ mod tests {
         let node = TestNode::new(50).with_account_update((account_id, 400, 401, None));
 
         match state.validate_append(&node) {
-            Err(StateConflict::AccountCommitmentMismatch { expected, current, .. }) => {
+            Err(StateConflict::AccountCommitmentMismatch {
+                expected, current, ..
+            }) => {
                 assert_eq!(expected, word(400));
                 assert_eq!(current, Word::default());
-            },
+            }
             other => panic!("expected account commitment mismatch error, found {other:?}"),
         }
     }

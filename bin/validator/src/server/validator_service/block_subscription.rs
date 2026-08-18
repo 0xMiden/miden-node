@@ -67,9 +67,13 @@ impl grpc::server::validator_api::BlockSubscription for ValidatorService {
 
         // Hold the exclusive backup lock for the entire lifetime of the stream. While a backup
         // subscription is active no other RPCs may run, and vice versa.
-        let guard = Arc::clone(&self.serve_lock).try_write_owned().map_err(|_| {
-            Status::resource_exhausted("cannot stream backup while validator is serving requests")
-        })?;
+        let guard = Arc::clone(&self.serve_lock)
+            .try_write_owned()
+            .map_err(|_| {
+                Status::resource_exhausted(
+                    "cannot stream backup while validator is serving requests",
+                )
+            })?;
 
         let from = BlockNumber::from(request.block_from);
         // The tip should never move since we are in recovery mode and therefore there is no active

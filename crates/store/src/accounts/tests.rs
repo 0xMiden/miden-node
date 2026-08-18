@@ -30,7 +30,8 @@ mod account_tree_with_history_tests {
     fn assert_verify(root: Word, witness: AccountWitness) {
         let proof = witness.into_proof();
         let (path, leaf) = proof.into_parts();
-        path.verify(leaf.index().position(), leaf.hash(), &root).unwrap();
+        path.verify(leaf.index().position(), leaf.hash(), &root)
+            .unwrap();
     }
 
     #[test]
@@ -59,14 +60,18 @@ mod account_tree_with_history_tests {
             ],
         ];
 
-        let trees: Vec<_> = states.iter().map(|s| create_account_tree(s.clone())).collect();
+        let trees: Vec<_> = states
+            .iter()
+            .map(|s| create_account_tree(s.clone()))
+            .collect();
 
         // Create a separate tree for history tracking
         let hist_tree = create_account_tree(states[0].clone());
         let mut hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
         hist.compute_and_apply_mutations([(ids[0], states[1][0].1), (ids[2], states[1][2].1)])
             .unwrap();
-        hist.compute_and_apply_mutations([(ids[1], states[2][1].1)]).unwrap();
+        hist.compute_and_apply_mutations([(ids[1], states[2][1].1)])
+            .unwrap();
 
         for (block, tree) in trees.iter().enumerate() {
             let hist_root = hist.root_at(BlockNumber::from(block as u32)).unwrap();
@@ -118,33 +123,83 @@ mod account_tree_with_history_tests {
         let hist_tree = create_account_tree(vec![(id0, v0)]);
         let mut hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
         hist.compute_and_apply_mutations([(id1, v1)]).unwrap();
-        hist.compute_and_apply_mutations([(id0, Word::default())]).unwrap();
+        hist.compute_and_apply_mutations([(id0, Word::default())])
+            .unwrap();
 
         assert_eq!(hist.block_number_latest(), BlockNumber::from(2));
 
         assert_verify(tree2.root(), tree2.open(id0));
-        assert_verify(tree2.root(), hist.open_at(id0, BlockNumber::from(2)).unwrap());
+        assert_verify(
+            tree2.root(),
+            hist.open_at(id0, BlockNumber::from(2)).unwrap(),
+        );
         assert_verify(tree1.root(), tree1.open(id0));
-        assert_verify(tree1.root(), hist.open_at(id0, BlockNumber::from(1)).unwrap());
+        assert_verify(
+            tree1.root(),
+            hist.open_at(id0, BlockNumber::from(1)).unwrap(),
+        );
         assert_verify(tree0.root(), tree0.open(id0));
-        assert_verify(tree0.root(), hist.open_at(id0, BlockNumber::GENESIS).unwrap());
+        assert_verify(
+            tree0.root(),
+            hist.open_at(id0, BlockNumber::GENESIS).unwrap(),
+        );
 
-        assert_eq!(hist.open_at(id0, BlockNumber::GENESIS).unwrap(), tree0.open(id0));
-        assert_eq!(hist.open_at(id0, BlockNumber::from(1)).unwrap(), tree1.open(id0));
-        assert_eq!(hist.open_at(id0, BlockNumber::from(2)).unwrap(), tree2.open(id0));
-
-        assert_eq!(hist.open_at(id1, BlockNumber::GENESIS).unwrap(), tree0.open(id1));
-        assert_eq!(hist.open_at(id1, BlockNumber::from(1)).unwrap(), tree1.open(id1));
-        assert_eq!(hist.open_at(id1, BlockNumber::from(2)).unwrap(), tree2.open(id1));
-
-        assert_eq!(hist.open_at(id0, BlockNumber::GENESIS).unwrap().state_commitment(), v0);
-        assert_eq!(hist.open_at(id0, BlockNumber::from(1)).unwrap().state_commitment(), v0);
-        assert_eq!(hist.open_at(id1, BlockNumber::from(1)).unwrap().state_commitment(), v1);
         assert_eq!(
-            hist.open_at(id0, BlockNumber::from(2)).unwrap().state_commitment(),
+            hist.open_at(id0, BlockNumber::GENESIS).unwrap(),
+            tree0.open(id0)
+        );
+        assert_eq!(
+            hist.open_at(id0, BlockNumber::from(1)).unwrap(),
+            tree1.open(id0)
+        );
+        assert_eq!(
+            hist.open_at(id0, BlockNumber::from(2)).unwrap(),
+            tree2.open(id0)
+        );
+
+        assert_eq!(
+            hist.open_at(id1, BlockNumber::GENESIS).unwrap(),
+            tree0.open(id1)
+        );
+        assert_eq!(
+            hist.open_at(id1, BlockNumber::from(1)).unwrap(),
+            tree1.open(id1)
+        );
+        assert_eq!(
+            hist.open_at(id1, BlockNumber::from(2)).unwrap(),
+            tree2.open(id1)
+        );
+
+        assert_eq!(
+            hist.open_at(id0, BlockNumber::GENESIS)
+                .unwrap()
+                .state_commitment(),
+            v0
+        );
+        assert_eq!(
+            hist.open_at(id0, BlockNumber::from(1))
+                .unwrap()
+                .state_commitment(),
+            v0
+        );
+        assert_eq!(
+            hist.open_at(id1, BlockNumber::from(1))
+                .unwrap()
+                .state_commitment(),
+            v1
+        );
+        assert_eq!(
+            hist.open_at(id0, BlockNumber::from(2))
+                .unwrap()
+                .state_commitment(),
             Word::default()
         );
-        assert_eq!(hist.open_at(id1, BlockNumber::from(2)).unwrap().state_commitment(), v1);
+        assert_eq!(
+            hist.open_at(id1, BlockNumber::from(2))
+                .unwrap()
+                .state_commitment(),
+            v1
+        );
     }
 
     #[test]
@@ -179,7 +234,10 @@ mod account_tree_with_history_tests {
         }
 
         // Verify we can query historical states
-        assert_eq!(hist.block_number_latest(), BlockNumber::from(num_blocks as u32));
+        assert_eq!(
+            hist.block_number_latest(),
+            BlockNumber::from(num_blocks as u32)
+        );
 
         // Check genesis state for a few accounts
         for i in 0..4 {
@@ -196,8 +254,9 @@ mod account_tree_with_history_tests {
         for block in 1..=num_blocks {
             for i in 0..5 {
                 let idx = ((block - 1) * 5 + i) % account_count;
-                let witness =
-                    hist.open_at(account_ids[idx], BlockNumber::from(block as u32)).unwrap();
+                let witness = hist
+                    .open_at(account_ids[idx], BlockNumber::from(block as u32))
+                    .unwrap();
                 let expected = Word::from([idx as u32 + block as u32 * 100, 0, 0, 0]);
                 assert_eq!(
                     witness.state_commitment(),
@@ -367,8 +426,13 @@ mod account_tree_with_history_tests {
         for i in 0..10 {
             let idx = i * 10;
             if idx < 100 {
-                let witness = hist.open_at(account_ids[idx], BlockNumber::from(2)).unwrap();
-                assert_eq!(witness.state_commitment(), Word::from([idx as u32, 2, 0, 0]));
+                let witness = hist
+                    .open_at(account_ids[idx], BlockNumber::from(2))
+                    .unwrap();
+                assert_eq!(
+                    witness.state_commitment(),
+                    Word::from([idx as u32, 2, 0, 0])
+                );
             }
         }
 
@@ -397,12 +461,19 @@ mod account_tree_with_history_tests {
         let mut hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Block 1: Delete half the accounts (set to empty word)
-        let deletes: Vec<_> = ids.iter().take(10).map(|&id| (id, Word::default())).collect();
+        let deletes: Vec<_> = ids
+            .iter()
+            .take(10)
+            .map(|&id| (id, Word::default()))
+            .collect();
         hist.compute_and_apply_mutations(deletes).unwrap();
 
         // Block 2: Recreate some deleted accounts with new values
-        let recreates: Vec<_> =
-            ids.iter().take(5).map(|&id| (id, Word::from([999u32, 0, 0, 0]))).collect();
+        let recreates: Vec<_> = ids
+            .iter()
+            .take(5)
+            .map(|&id| (id, Word::from([999u32, 0, 0, 0])))
+            .collect();
         hist.compute_and_apply_mutations(recreates).unwrap();
 
         // Verify genesis state
@@ -453,8 +524,14 @@ mod account_tree_with_history_tests {
         for i in 10..20 {
             let witness_b1 = hist.open_at(ids[i], BlockNumber::from(1)).unwrap();
             let witness_b2 = hist.open_at(ids[i], BlockNumber::from(2)).unwrap();
-            assert_eq!(witness_b1.state_commitment(), Word::from([i as u32 + 1, 0, 0, 0]));
-            assert_eq!(witness_b2.state_commitment(), Word::from([i as u32 + 1, 0, 0, 0]));
+            assert_eq!(
+                witness_b1.state_commitment(),
+                Word::from([i as u32 + 1, 0, 0, 0])
+            );
+            assert_eq!(
+                witness_b2.state_commitment(),
+                Word::from([i as u32 + 1, 0, 0, 0])
+            );
         }
     }
 
@@ -485,7 +562,9 @@ mod account_tree_with_history_tests {
         assert_eq!(witness.state_commitment(), genesis_commitment);
 
         // Get the proof and verify it against the genesis root
-        let root = hist.root_at(BlockNumber::GENESIS).expect("Root should exist at genesis");
+        let root = hist
+            .root_at(BlockNumber::GENESIS)
+            .expect("Root should exist at genesis");
         let proof = witness.into_proof();
         let (path, leaf) = proof.into_parts();
 

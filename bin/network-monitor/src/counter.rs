@@ -18,16 +18,8 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachments,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteType,
-    PartialNote,
-    PartialNoteMetadata,
+    Note, NoteAssets, NoteAttachment, NoteAttachments, NoteRecipient, NoteScript, NoteStorage,
+    NoteType, PartialNote, PartialNoteMetadata,
 };
 use miden_protocol::transaction::{InputNotes, TransactionArgs, TransactionScript};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -44,20 +36,12 @@ use crate::config::MonitorConfig;
 use crate::deploy::counter::COUNTER_SLOT_NAME;
 use crate::deploy::wallet::WALLET_COUNTER_SLOT_NAME;
 use crate::deploy::{
-    CounterAnchor,
-    DeployedMonitorAccounts,
-    MonitorDataStore,
-    TransactionSubmissionClient,
-    create_and_deploy_accounts,
-    create_genesis_aware_rpc_client,
+    CounterAnchor, DeployedMonitorAccounts, MonitorDataStore, TransactionSubmissionClient,
+    create_and_deploy_accounts, create_genesis_aware_rpc_client,
 };
 use crate::service::Service;
 use crate::status::{
-    CounterTrackingDetails,
-    IncrementDetails,
-    PendingLatencyDetails,
-    ServiceDetails,
-    ServiceStatus,
+    CounterTrackingDetails, IncrementDetails, PendingLatencyDetails, ServiceDetails, ServiceStatus,
 };
 use crate::{COMPONENT, LOG_TARGET, current_unix_timestamp_secs};
 
@@ -362,7 +346,11 @@ impl IncrementService {
 
         let mut tx_args = TransactionArgs::default().with_tx_script(script);
         let (auth_args, conversion_info_preimage) = fee_conversion_auth_args(
-            self.tx.counter_anchor.block_header.fee_parameters().fee_faucet_id(),
+            self.tx
+                .counter_anchor
+                .block_header
+                .fee_parameters()
+                .fee_faucet_id(),
             &mut self.tx.rng,
         );
         tx_args = tx_args.with_auth_args(auth_args);
@@ -397,14 +385,19 @@ impl IncrementService {
             // The patch captures the wallet's nonce bump and counter-slot write; the increment task
             // applies it to keep its local wallet copy in sync with chain.
             let account_patch = executed_tx.account_patch().clone();
-            let proven_tx = prover.prove(executed_tx).context("failed to prove transaction")?;
+            let proven_tx = prover
+                .prove(executed_tx)
+                .context("failed to prove transaction")?;
 
             Ok::<_, anyhow::Error>((proven_tx, tx_inputs, account_patch))
         })
         .await
         .context("counter increment task failed")??;
 
-        let block_height = self.submission_client.submit(&proven_tx, &tx_inputs).await?;
+        let block_height = self
+            .submission_client
+            .submit(&proven_tx, &tx_inputs)
+            .await?;
 
         info!(target: LOG_TARGET, "Submitted proven transaction to RPC");
 
@@ -443,7 +436,7 @@ impl Service for IncrementService {
                     target_value,
                 });
                 guard.pending_started = Some(Instant::now());
-            },
+            }
             Err(e) => {
                 error!(target: LOG_TARGET, error = ?e, "Failed to create and submit network note");
                 self.details.failure_count += 1;
@@ -468,10 +461,10 @@ impl Service for IncrementService {
                         Err(regen_err) => {
                             self.failures.mark_regeneration_failed();
                             error!(target: LOG_TARGET, error = ?regen_err, "Account regeneration failed");
-                        },
+                        }
                     }
                 }
-            },
+            }
         }
 
         {
@@ -522,8 +515,13 @@ impl CounterTrackingService {
         } = accounts_receiver.borrow().clone();
 
         let mut details = CounterTrackingDetails::default();
-        initialize_tracking_state(&mut rpc_client, &wallet_account, &counter_account, &mut details)
-            .await;
+        initialize_tracking_state(
+            &mut rpc_client,
+            &wallet_account,
+            &counter_account,
+            &mut details,
+        )
+        .await;
 
         Ok(Self {
             config,
@@ -594,7 +592,7 @@ impl CounterTrackingService {
             Err(e) => {
                 error!(target: LOG_TARGET, error = ?e, "Failed to fetch counter value");
                 return Some(format!("fetch counter value failed: {e}"));
-            },
+            }
         };
 
         self.details.current_value = Some(observed);
@@ -609,9 +607,9 @@ impl CounterTrackingService {
         {
             Ok(Some(expected)) => {
                 update_expected_and_pending(&mut self.details, expected, observed);
-            },
+            }
             // Wallet not on-chain yet (no committed increment): leave `expected` unknown.
-            Ok(None) => {},
+            Ok(None) => {}
             Err(e) => {
                 error!(
                     target: LOG_TARGET,
@@ -619,10 +617,11 @@ impl CounterTrackingService {
                     "Failed to fetch expected wallet counter value"
                 );
                 last_error = Some(format!("fetch expected value failed: {e}"));
-            },
+            }
         }
 
-        self.handle_latency_tracking(observed, &mut last_error).await;
+        self.handle_latency_tracking(observed, &mut last_error)
+            .await;
 
         last_error
     }
@@ -653,10 +652,10 @@ impl CounterTrackingService {
                         guard.pending = None;
                         guard.pending_started = None;
                     }
-                },
+                }
                 Err(e) => {
                     *last_error = Some(format!("Failed to fetch chain tip for latency calc: {e}"));
-                },
+                }
             }
         } else if let Some(started) = pending_started {
             if Instant::now().saturating_duration_since(started)
@@ -694,7 +693,10 @@ impl Service for CounterTrackingService {
     }
 
     fn initial_status(&self) -> ServiceStatus {
-        ServiceStatus::unknown(self.name(), ServiceDetails::NtxTracking(self.details.clone()))
+        ServiceStatus::unknown(
+            self.name(),
+            ServiceDetails::NtxTracking(self.details.clone()),
+        )
     }
 
     async fn check(&mut self) -> ServiceStatus {
@@ -768,18 +770,23 @@ async fn initialize_tracking_state(
             details.current_value = Some(observed);
             details.last_updated = Some(current_unix_timestamp_secs());
             info!(target: LOG_TARGET, observed_value = observed, "Initialized counter tracking");
-        },
+        }
         Ok(None) => warn!(target: LOG_TARGET, "Counter account not found at init"),
         Err(e) => error!(target: LOG_TARGET, error = ?e, "Failed to fetch initial counter value"),
     }
 
-    match fetch_slot_value(rpc_client, wallet_account.id(), WALLET_COUNTER_SLOT_NAME.as_str()).await
+    match fetch_slot_value(
+        rpc_client,
+        wallet_account.id(),
+        WALLET_COUNTER_SLOT_NAME.as_str(),
+    )
+    .await
     {
         Ok(Some(expected)) => details.expected_value = Some(expected),
-        Ok(None) => {},
+        Ok(None) => {}
         Err(e) => {
             error!(target: LOG_TARGET, error = ?e, "Failed to fetch initial expected wallet value");
-        },
+        }
     }
 
     if let (Some(expected), Some(observed)) = (details.expected_value, details.current_value) {
@@ -799,7 +806,10 @@ fn build_increment_status(details: &IncrementDetails, last_error: Option<String>
     } else if details.success_count == 0 && details.failure_count > 0 {
         ServiceStatus::unhealthy(
             IncrementService::NAME,
-            format!("no successful increments ({} failures)", details.failure_count),
+            format!(
+                "no successful increments ({} failures)",
+                details.failure_count
+            ),
             service_details,
         )
     } else {
@@ -933,8 +943,9 @@ fn build_account_request(
     include_code_and_vault: bool,
 ) -> miden_node_proto::generated::rpc::AccountRequest {
     let id_bytes: [u8; 15] = account_id.into();
-    let account_id_proto =
-        miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
+    let account_id_proto = miden_node_proto::generated::account::AccountId {
+        id: id_bytes.to_vec(),
+    };
 
     let (code_commitment, asset_vault_commitment) = if include_code_and_vault {
         let dummy: miden_node_proto::generated::primitives::Digest = Word::default().into();
@@ -946,11 +957,13 @@ fn build_account_request(
     miden_node_proto::generated::rpc::AccountRequest {
         account_id: Some(account_id_proto),
         block_num: None,
-        details: Some(miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
-            code_commitment,
-            asset_vault_commitment,
-            storage_request: None,
-        }),
+        details: Some(
+            miden_node_proto::generated::rpc::account_request::AccountDetailRequest {
+                code_commitment,
+                asset_vault_commitment,
+                storage_request: None,
+            },
+        ),
     }
 }
 
@@ -976,7 +989,7 @@ async fn fetch_wallet_account(
                 "Failed to fetch wallet account via RPC"
             );
             return Ok(None);
-        },
+        }
     };
 
     let Some(details) = response.details else {
@@ -1003,7 +1016,7 @@ async fn fetch_wallet_account(
     let vault = match details.vault_details {
         Some(vault_details) if vault_details.too_many_assets => {
             anyhow::bail!("account {account_id} has too many assets, cannot fetch full account");
-        },
+        }
         Some(vault_details) => {
             let assets: Vec<miden_protocol::asset::Asset> = vault_details
                 .assets
@@ -1012,15 +1025,22 @@ async fn fetch_wallet_account(
                 .collect::<Result<_, _>>()
                 .context("failed to convert assets")?;
             AssetVault::new(&assets).context("failed to create vault")?
-        },
+        }
         None => anyhow::bail!("server did not return asset vault for account {account_id}"),
     };
 
     let storage_details = details.storage_details.context("missing storage details")?;
     let storage = build_account_storage(storage_details)?;
 
-    let account = Account::new(account_id, vault, storage, code, Felt::new_unchecked(nonce), None)
-        .context("failed to create account")?;
+    let account = Account::new(
+        account_id,
+        vault,
+        storage,
+        code,
+        Felt::new_unchecked(nonce),
+        None,
+    )
+    .context("failed to create account")?;
 
     // Sanity check: verify reconstructed account matches header commitments
     let expected_code_commitment: Word = header
@@ -1097,8 +1117,10 @@ fn build_account_storage(
 
 /// Create the increment procedure script.
 pub(crate) fn create_increment_script() -> Result<NoteScript> {
-    let script =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
+    let script = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/assets/counter_program.masm"
+    ));
 
     let script_builder = CodeBuilder::new()
         .with_linked_module("external_contract::counter_contract", script)
@@ -1264,15 +1286,9 @@ mod tests {
     use miden_tx::auth::BasicAuthenticator;
 
     use crate::counter::{
-        FailureTracker,
-        PENDING_UNHEALTHY_CONFIRMATION_POLLS,
-        REGENERATE_FAILURE_THRESHOLD,
-        RESYNC_FAILURE_THRESHOLD,
-        build_tracking_status,
-        create_increment_script,
-        create_increment_tx_script,
-        create_network_note,
-        fee_conversion_auth_args,
+        FailureTracker, PENDING_UNHEALTHY_CONFIRMATION_POLLS, REGENERATE_FAILURE_THRESHOLD,
+        RESYNC_FAILURE_THRESHOLD, build_tracking_status, create_increment_script,
+        create_increment_tx_script, create_network_note, fee_conversion_auth_args,
     };
     use crate::deploy::counter::create_counter_account;
     use crate::deploy::wallet::{WALLET_COUNTER_SLOT_NAME, create_wallet_account};
@@ -1351,7 +1367,9 @@ mod tests {
             "the increment transaction must emit exactly the network note"
         );
         let updated_wallet = Account::try_from(executed_tx.account_patch())?;
-        let counter_slot = updated_wallet.storage().get_item(&WALLET_COUNTER_SLOT_NAME)?;
+        let counter_slot = updated_wallet
+            .storage()
+            .get_item(&WALLET_COUNTER_SLOT_NAME)?;
         assert_eq!(
             counter_slot.as_elements()[0].as_canonical_u64(),
             1,
@@ -1400,7 +1418,10 @@ mod tests {
         failures.reset();
 
         assert_eq!(failures.regeneration_cooldown, super::REGENERATE_COOLDOWN);
-        assert!(!failures.should_regenerate(), "a cleared streak must not regenerate");
+        assert!(
+            !failures.should_regenerate(),
+            "a cleared streak must not regenerate"
+        );
 
         for _ in 0..REGENERATE_FAILURE_THRESHOLD {
             failures.record_failure();
@@ -1421,18 +1442,27 @@ mod tests {
         for _ in 0..RESYNC_FAILURE_THRESHOLD {
             failures.record_failure();
         }
-        assert!(failures.should_resync(), "a re-sync should be attempted at the threshold");
+        assert!(
+            failures.should_resync(),
+            "a re-sync should be attempted at the threshold"
+        );
         assert!(!failures.should_regenerate());
 
         // A re-sync that succeeded must not repeat, so the counter can climb.
         failures.mark_resynced();
         failures.record_failure();
-        assert!(!failures.should_resync(), "a successful re-sync must not repeat");
+        assert!(
+            !failures.should_resync(),
+            "a successful re-sync must not repeat"
+        );
 
         while failures.consecutive_failures < REGENERATE_FAILURE_THRESHOLD {
             failures.record_failure();
         }
-        assert!(failures.should_regenerate(), "regeneration must become reachable");
+        assert!(
+            failures.should_regenerate(),
+            "regeneration must become reachable"
+        );
 
         // A successful increment clears the escalation.
         failures.reset();
@@ -1518,7 +1548,10 @@ mod tests {
         );
         assert_eq!(status.status, Status::Unhealthy);
         let err = status.error.expect("error message should be set");
-        assert!(err.contains("10"), "should mention pending count, got: {err}");
+        assert!(
+            err.contains("10"),
+            "should mention pending count, got: {err}"
+        );
         assert!(err.contains('5'), "should mention threshold, got: {err}");
     }
 

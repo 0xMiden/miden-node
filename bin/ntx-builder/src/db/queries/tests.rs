@@ -40,7 +40,11 @@ async fn upsert_account_replaces_existing_row() {
         .await
         .unwrap();
 
-    assert_eq!(db.count_accounts().await, 1, "second upsert must overwrite, not insert");
+    assert_eq!(
+        db.count_accounts().await,
+        1,
+        "second upsert must overwrite, not insert"
+    );
     assert!(db.get_account(account_id).await.unwrap().is_some());
 }
 
@@ -67,7 +71,9 @@ async fn mark_notes_consumed_keeps_rows_and_sets_committed_at() {
     let note_a = mock_single_target_note(account_id, 1);
     let note_b = mock_single_target_note(account_id, 2);
 
-    db.insert_network_notes(vec![note_a.clone(), note_b.clone()]).await.unwrap();
+    db.insert_network_notes(vec![note_a.clone(), note_b.clone()])
+        .await
+        .unwrap();
     assert_eq!(db.count_notes().await, 2);
 
     let consumed_at = BlockNumber::from(42);
@@ -78,10 +84,18 @@ async fn mark_notes_consumed_keeps_rows_and_sets_committed_at() {
     // Both rows are still present so the gRPC status endpoint can report them.
     assert_eq!(db.count_notes().await, 2);
 
-    let status_a = db.get_note_status(note_a.as_note().id()).await.unwrap().unwrap();
+    let status_a = db
+        .get_note_status(note_a.as_note().id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(status_a.committed_at, Some(i64::from(consumed_at.as_u32())));
 
-    let status_b = db.get_note_status(note_b.as_note().id()).await.unwrap().unwrap();
+    let status_b = db
+        .get_note_status(note_b.as_note().id())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(status_b.committed_at.is_none());
 }
 
@@ -93,11 +107,19 @@ async fn mark_notes_consumed_is_noop_when_unknown() {
     db.insert_network_notes(vec![note.clone()]).await.unwrap();
 
     // A nullifier we never inserted should not affect existing rows.
-    let phantom = mock_single_target_note(account_id, 99).as_note().nullifier();
-    db.mark_notes_consumed(vec![phantom], BlockNumber::from(5)).await.unwrap();
+    let phantom = mock_single_target_note(account_id, 99)
+        .as_note()
+        .nullifier();
+    db.mark_notes_consumed(vec![phantom], BlockNumber::from(5))
+        .await
+        .unwrap();
 
     assert_eq!(db.count_notes().await, 1);
-    let status = db.get_note_status(note.as_note().id()).await.unwrap().unwrap();
+    let status = db
+        .get_note_status(note.as_note().id())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(status.committed_at.is_none());
 }
 
@@ -140,7 +162,10 @@ async fn available_notes_returns_unconsumed_under_attempt_cap() {
     let note = mock_single_target_note(account_id, 11);
     db.insert_network_notes(vec![note]).await.unwrap();
 
-    let available = db.available_notes(account_id, BlockNumber::from(1), 30).await.unwrap();
+    let available = db
+        .available_notes(account_id, BlockNumber::from(1), 30)
+        .await
+        .unwrap();
     assert_eq!(available.eligible.len(), 1);
 }
 
@@ -154,12 +179,18 @@ async fn available_notes_excludes_attempts_at_cap() {
     // Push attempt_count up to the cap.
     let nullifier = note.as_note().nullifier();
     for _ in 0..30 {
-        db.notes_failed(vec![(nullifier, test_note_error("boom"))], BlockNumber::from(5))
-            .await
-            .unwrap();
+        db.notes_failed(
+            vec![(nullifier, test_note_error("boom"))],
+            BlockNumber::from(5),
+        )
+        .await
+        .unwrap();
     }
 
-    let available = db.available_notes(account_id, BlockNumber::from(1000), 30).await.unwrap();
+    let available = db
+        .available_notes(account_id, BlockNumber::from(1000), 30)
+        .await
+        .unwrap();
     assert!(
         available.eligible.is_empty(),
         "notes at the attempt cap should not be available"
@@ -179,7 +210,9 @@ async fn update_chain_state_tip_persists_and_roundtrips_mmr() {
     db.insert_genesis_chain_state(genesis.clone(), genesis.commitment())
         .await
         .unwrap();
-    db.update_chain_state_tip(header.clone(), mmr).await.unwrap();
+    db.update_chain_state_tip(header.clone(), mmr)
+        .await
+        .unwrap();
 
     let (loaded_num, loaded_header, _loaded_mmr) = db.select_chain_state().await.unwrap().unwrap();
     assert_eq!(loaded_num, header.block_num());
@@ -197,13 +230,21 @@ async fn update_chain_state_tip_keeps_singleton() {
     db.insert_genesis_chain_state(genesis.clone(), genesis.commitment())
         .await
         .unwrap();
-    db.update_chain_state_tip(header_1, mmr.clone()).await.unwrap();
-    db.update_chain_state_tip(header_2.clone(), mmr).await.unwrap();
+    db.update_chain_state_tip(header_1, mmr.clone())
+        .await
+        .unwrap();
+    db.update_chain_state_tip(header_2.clone(), mmr)
+        .await
+        .unwrap();
 
     let (loaded_num, ..) = db.select_chain_state().await.unwrap().unwrap();
     assert_eq!(loaded_num, header_2.block_num());
 
-    assert_eq!(db.count_chain_state().await, 1, "chain_state must remain a singleton");
+    assert_eq!(
+        db.count_chain_state().await,
+        1,
+        "chain_state must remain a singleton"
+    );
 }
 
 #[tokio::test]
@@ -246,9 +287,14 @@ async fn accounts_with_pending_notes_distinct_and_filters_consumed_and_capped() 
     let bob_note = mock_single_target_note(bob, 3);
     let carol_note = mock_single_target_note(carol, 4);
 
-    db.insert_network_notes(vec![alice_note_1, alice_note_2, bob_note.clone(), carol_note.clone()])
-        .await
-        .unwrap();
+    db.insert_network_notes(vec![
+        alice_note_1,
+        alice_note_2,
+        bob_note.clone(),
+        carol_note.clone(),
+    ])
+    .await
+    .unwrap();
 
     // Alice has two notes — must still appear exactly once (DISTINCT). Bob's only note is already
     // consumed — exclude.
@@ -282,9 +328,13 @@ async fn account_last_tx_roundtrips_and_updates() {
     // The first upsert records its transaction id; a later upsert overwrites it.
     let first = mock_transaction_id(1);
     let second = mock_transaction_id(2);
-    db.upsert_account_for_test(account_id, account.clone(), first).await.unwrap();
+    db.upsert_account_for_test(account_id, account.clone(), first)
+        .await
+        .unwrap();
     assert_eq!(db.account_last_tx(account_id).await.unwrap(), Some(first));
-    db.upsert_account_for_test(account_id, account, second).await.unwrap();
+    db.upsert_account_for_test(account_id, account, second)
+        .await
+        .unwrap();
     assert_eq!(db.account_last_tx(account_id).await.unwrap(), Some(second));
 }
 
@@ -321,7 +371,9 @@ async fn apply_committed_block_seeds_genesis_network_account() {
 
     // Genesis has no transactions, so this used to panic on the "must originate from a transaction"
     // invariant. It must now bootstrap the account successfully.
-    db.apply_committed_block(effects, PartialMmr::default()).await.unwrap();
+    db.apply_committed_block(effects, PartialMmr::default())
+        .await
+        .unwrap();
 
     assert!(
         db.get_account(account_id).await.unwrap().is_some(),
@@ -358,14 +410,24 @@ async fn notes_failed_increments_attempt_and_records_error() {
     db.insert_network_notes(vec![note.clone()]).await.unwrap();
 
     let nullifier = note.as_note().nullifier();
-    db.notes_failed(vec![(nullifier, test_note_error("nope"))], BlockNumber::from(5))
-        .await
-        .unwrap();
-    db.notes_failed(vec![(nullifier, test_note_error("nope"))], BlockNumber::from(6))
-        .await
-        .unwrap();
+    db.notes_failed(
+        vec![(nullifier, test_note_error("nope"))],
+        BlockNumber::from(5),
+    )
+    .await
+    .unwrap();
+    db.notes_failed(
+        vec![(nullifier, test_note_error("nope"))],
+        BlockNumber::from(6),
+    )
+    .await
+    .unwrap();
 
-    let row = db.get_note_status(note.as_note().id()).await.unwrap().unwrap();
+    let row = db
+        .get_note_status(note.as_note().id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(row.attempt_count, 2);
     assert_eq!(row.last_attempt, Some(6));
     assert!(row.last_error.is_some());
@@ -379,12 +441,21 @@ async fn discard_notes_pins_attempts_to_cap_and_drops_from_pending() {
     db.insert_network_notes(vec![note.clone()]).await.unwrap();
 
     let nullifier = note.as_note().nullifier();
-    db.discard_notes_with_reason(vec![nullifier], BlockNumber::from(9), 30, "too big".to_string())
-        .await
-        .unwrap();
+    db.discard_notes_with_reason(
+        vec![nullifier],
+        BlockNumber::from(9),
+        30,
+        "too big".to_string(),
+    )
+    .await
+    .unwrap();
 
     // Pinned to the cap, so it is no longer pending or available for selection.
-    let row = db.get_note_status(note.as_note().id()).await.unwrap().unwrap();
+    let row = db
+        .get_note_status(note.as_note().id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(row.attempt_count, 30);
     assert_eq!(row.last_attempt, Some(9));
     assert_eq!(row.last_error.as_deref(), Some("too big"));
@@ -398,7 +469,10 @@ async fn discard_notes_pins_attempts_to_cap_and_drops_from_pending() {
         "a discarded note must not be selectable",
     );
     assert!(
-        !db.accounts_with_pending_notes(30).await.unwrap().contains(&account_id),
+        !db.accounts_with_pending_notes(30)
+            .await
+            .unwrap()
+            .contains(&account_id),
         "an account whose only note was discarded must not count as pending",
     );
 }

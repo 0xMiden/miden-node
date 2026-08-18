@@ -242,7 +242,8 @@ impl DbWriter {
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(|err| E::from(DatabaseError::from(err)))?;
             let result = query(&WriteTx::new(&tx))?;
-            tx.commit().map_err(|err| E::from(DatabaseError::from(err)))?;
+            tx.commit()
+                .map_err(|err| E::from(DatabaseError::from(err)))?;
             Ok(result)
         })
         .await
@@ -370,8 +371,10 @@ mod tests {
 
     impl TempDb {
         fn new(name: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("miden-node-db-pool-{name}-{}.sqlite3", std::process::id()));
+            let path = std::env::temp_dir().join(format!(
+                "miden-node-db-pool-{name}-{}.sqlite3",
+                std::process::id()
+            ));
             let db = Self { path };
             db.remove_files();
             let conn = Connection::open(&db.path).expect("create db file");
@@ -404,10 +407,12 @@ mod tests {
     async fn count_items(reader: &DbReader) -> i64 {
         reader
             .read::<_, DatabaseError, _>("count", |r| {
-                Ok(r.query("SELECT COUNT(*) FROM items", &[], |row| row.get::<i64>(0))?
-                    .into_iter()
-                    .next()
-                    .unwrap_or(0))
+                Ok(
+                    r.query("SELECT COUNT(*) FROM items", &[], |row| row.get::<i64>(0))?
+                        .into_iter()
+                        .next()
+                        .unwrap_or(0),
+                )
             })
             .await
             .unwrap()

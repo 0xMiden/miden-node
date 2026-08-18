@@ -203,14 +203,18 @@ impl BlockStore {
 
     fn epoch_block_path(&self, block_num: BlockNumber) -> std::io::Result<(PathBuf, PathBuf)> {
         let block_path = self.block_path(block_num);
-        let epoch_path = block_path.parent().ok_or(std::io::Error::from(ErrorKind::NotFound))?;
+        let epoch_path = block_path
+            .parent()
+            .ok_or(std::io::Error::from(ErrorKind::NotFound))?;
 
         Ok((epoch_path.to_path_buf(), block_path))
     }
 
     fn epoch_proof_path(&self, block_num: BlockNumber) -> std::io::Result<(PathBuf, PathBuf)> {
         let proof_path = self.proof_path(block_num);
-        let epoch_path = proof_path.parent().ok_or(std::io::Error::from(ErrorKind::NotFound))?;
+        let epoch_path = proof_path
+            .parent()
+            .ok_or(std::io::Error::from(ErrorKind::NotFound))?;
 
         Ok((epoch_path.to_path_buf(), proof_path))
     }
@@ -224,7 +228,9 @@ impl BlockStore {
 
     fn epoch_inputs_path(&self, block_num: BlockNumber) -> std::io::Result<(PathBuf, PathBuf)> {
         let inputs_path = self.inputs_path(block_num);
-        let epoch_path = inputs_path.parent().ok_or(std::io::Error::from(ErrorKind::NotFound))?;
+        let epoch_path = inputs_path
+            .parent()
+            .ok_or(std::io::Error::from(ErrorKind::NotFound))?;
 
         Ok((epoch_path.to_path_buf(), inputs_path))
     }

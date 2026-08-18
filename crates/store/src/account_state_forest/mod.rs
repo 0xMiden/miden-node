@@ -6,34 +6,20 @@ use miden_crypto::hash::rpo::Rpo256;
 use miden_crypto::merkle::smt::ForestPersistentBackend;
 use miden_crypto::merkle::smt::{Backend, BackendReader, ForestInMemoryBackend};
 use miden_node_proto::domain::account::{
-    AccountStorageMapDetails,
-    AccountVaultDetails,
-    StorageMapEntries,
+    AccountStorageMapDetails, AccountVaultDetails, StorageMapEntries,
 };
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::{
-    AccountId,
-    AccountPatch,
-    StorageMapKey,
-    StorageMapKeyHash,
-    StoragePatchOperation,
+    AccountId, AccountPatch, StorageMapKey, StorageMapKeyHash, StoragePatchOperation,
     StorageSlotName,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetIdHash};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::{
-    LargeSmtForest,
-    LargeSmtForestError,
-    LineageId,
-    RootInfo,
-    SMT_DEPTH,
-    SmtForestMutationSet,
-    SmtForestOperation,
-    SmtForestUpdateBatch,
-    SmtUpdateBatch,
-    TreeId,
+    LargeSmtForest, LargeSmtForestError, LineageId, RootInfo, SMT_DEPTH, SmtForestMutationSet,
+    SmtForestOperation, SmtForestUpdateBatch, SmtUpdateBatch, TreeId,
 };
 use miden_protocol::crypto::merkle::{EmptySubtreeRoots, MerkleError};
 use miden_protocol::errors::{AssetError, StorageMapError};
@@ -283,10 +269,15 @@ impl<B: BackendReader> AccountStateForest<B> {
         }
 
         let operations = Self::build_forest_operations(
-            patch.vault().iter().map(|(key, value)| (key.hash().as_word(), *value)),
+            patch
+                .vault()
+                .iter()
+                .map(|(key, value)| (key.hash().as_word(), *value)),
         );
         let updates = Self::update_batch_from_operations(operations);
-        batch.operations(lineage).add_operations(updates.into_iter());
+        batch
+            .operations(lineage)
+            .add_operations(updates.into_iter());
         lineages.vault.insert(account_id, lineage);
         Ok(())
     }
@@ -312,14 +303,18 @@ impl<B: BackendReader> AccountStateForest<B> {
                     .entries()
                     .into_iter()
                     .flat_map(|entries| entries.as_map().iter())
-                    .filter_map(
-                        |(&key, &value)| {
-                            if value == EMPTY_WORD { None } else { Some((key, value)) }
-                        },
-                    ),
+                    .filter_map(|(&key, &value)| {
+                        if value == EMPTY_WORD {
+                            None
+                        } else {
+                            Some((key, value))
+                        }
+                    }),
             );
             let operations = Self::build_forest_operations(
-                raw_map_entries.iter().map(|(raw_key, value)| (raw_key.hash().into(), *value)),
+                raw_map_entries
+                    .iter()
+                    .map(|(raw_key, value)| (raw_key.hash().into(), *value)),
             );
             let lineage = Self::storage_lineage_id(account_id, slot_name);
             if self.forest.latest_version(lineage).is_some() {
@@ -330,7 +325,9 @@ impl<B: BackendReader> AccountStateForest<B> {
             }
 
             let updates = Self::update_batch_from_operations(operations);
-            batch.operations(lineage).add_operations(updates.into_iter());
+            batch
+                .operations(lineage)
+                .add_operations(updates.into_iter());
             lineages
                 .storage
                 .entry(account_id)
@@ -380,7 +377,10 @@ impl<B: BackendReader> AccountStateForest<B> {
                 Vec::new()
             };
             operations.extend(Self::build_forest_operations(
-                entries.as_map().iter().map(|(key, value)| (key.hash().into(), *value)),
+                entries
+                    .as_map()
+                    .iter()
+                    .map(|(key, value)| (key.hash().into(), *value)),
             ));
 
             if operations.is_empty() && self.forest.latest_version(lineage).is_none() {
@@ -391,7 +391,9 @@ impl<B: BackendReader> AccountStateForest<B> {
             }
 
             let updates = Self::update_batch_from_operations(operations);
-            batch.operations(lineage).add_operations(updates.into_iter());
+            batch
+                .operations(lineage)
+                .add_operations(updates.into_iter());
             lineages
                 .storage
                 .entry(account_id)
@@ -472,7 +474,10 @@ impl<B: BackendReader> AccountStateForest<B> {
 
             account_states.insert(
                 account_id,
-                PrecomputedPublicAccountState { vault_root, storage_map_roots },
+                PrecomputedPublicAccountState {
+                    vault_root,
+                    storage_map_roots,
+                },
             );
         }
 
@@ -481,18 +486,27 @@ impl<B: BackendReader> AccountStateForest<B> {
 
     fn cache_hashed_keys_from_patch(&mut self, patch: &AccountPatch) {
         let raw_keys = patch.storage().maps().flat_map(|(_slot_name, map_patch)| {
-            map_patch.entries().into_iter().flat_map(|e| e.as_map().keys().copied())
+            map_patch
+                .entries()
+                .into_iter()
+                .flat_map(|e| e.as_map().keys().copied())
         });
         self.cache_storage_map_keys(raw_keys);
 
         let raw_keys = patch.vault().iter().map(|(vault_key, _)| *vault_key);
-        self.vault_key_cache
-            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
+        self.vault_key_cache.put_many(
+            raw_keys
+                .into_iter()
+                .map(|raw_key| (raw_key.hash(), raw_key)),
+        );
     }
 
     pub(crate) fn cache_storage_map_keys(&self, raw_keys: impl IntoIterator<Item = StorageMapKey>) {
-        self.storage_map_key_cache
-            .put_many(raw_keys.into_iter().map(|raw_key| (raw_key.hash(), raw_key)));
+        self.storage_map_key_cache.put_many(
+            raw_keys
+                .into_iter()
+                .map(|raw_key| (raw_key.hash(), raw_key)),
+        );
     }
 
     #[cfg(test)]
@@ -528,7 +542,7 @@ impl<B: BackendReader> AccountStateForest<B> {
                 } else {
                     None
                 }
-            },
+            }
         }
     }
 
@@ -582,16 +596,23 @@ impl<B: BackendReader> AccountStateForest<B> {
         block_num: BlockNumber,
     ) -> Result<Option<AccountVaultDetails>, WitnessError> {
         let lineage = Self::vault_lineage_id(account_id);
-        let tree = self.get_tree_id(lineage, block_num).ok_or(WitnessError::RootNotFound)?;
+        let tree = self
+            .get_tree_id(lineage, block_num)
+            .ok_or(WitnessError::RootNotFound)?;
 
         // Return "limit exceeded" if the number of vault entries is above the limit.
-        let num_entries =
-            self.forest.entry_count(tree).map_err(Self::map_forest_error_to_witness)?;
+        let num_entries = self
+            .forest
+            .entry_count(tree)
+            .map_err(Self::map_forest_error_to_witness)?;
         if num_entries > AccountVaultDetails::MAX_RETURN_ENTRIES {
             return Ok(Some(AccountVaultDetails::LimitExceeded));
         }
 
-        let entries = self.forest.entries(tree).map_err(Self::map_forest_error_to_witness)?;
+        let entries = self
+            .forest
+            .entries(tree)
+            .map_err(Self::map_forest_error_to_witness)?;
         let hashed_entries = entries
             .map(|entry| {
                 let entry = entry.map_err(Self::map_forest_error_to_witness)?;
@@ -637,7 +658,9 @@ impl<B: BackendReader> AccountStateForest<B> {
 
         let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {
             let key_hashed = raw_key.hash().into();
-            self.forest.open(tree, key_hashed).map_err(Self::map_forest_error)
+            self.forest
+                .open(tree, key_hashed)
+                .map_err(Self::map_forest_error)
         }));
 
         Some(proofs.map(|proofs| AccountStorageMapDetails::from_proofs(slot_name, proofs)))
@@ -659,15 +682,20 @@ impl<B: BackendReader> AccountStateForest<B> {
         let lineage = Self::storage_lineage_id(account_id, slot_name);
         let tree = self.get_tree_id(lineage, block_num)?;
 
-        Some(self.forest.entries(tree).map_err(Self::map_forest_error).and_then(|entries| {
-            entries
-                .map(|entry| {
-                    entry
-                        .map(|e| (StorageMapKeyHash::from_raw(e.key), e.value))
-                        .map_err(Self::map_forest_error)
-                })
-                .collect()
-        }))
+        Some(
+            self.forest
+                .entries(tree)
+                .map_err(Self::map_forest_error)
+                .and_then(|entries| {
+                    entries
+                        .map(|entry| {
+                            entry
+                                .map(|e| (StorageMapKeyHash::from_raw(e.key), e.value))
+                                .map_err(Self::map_forest_error)
+                        })
+                        .collect()
+                }),
+        )
     }
 
     /// Returns the number of storage map entries.
@@ -679,7 +707,11 @@ impl<B: BackendReader> AccountStateForest<B> {
     ) -> Option<Result<usize, MerkleError>> {
         let lineage = Self::storage_lineage_id(account_id, slot_name);
         let tree = self.get_tree_id(lineage, block_num)?;
-        Some(self.forest.entry_count(tree).map_err(Self::map_forest_error))
+        Some(
+            self.forest
+                .entry_count(tree)
+                .map_err(Self::map_forest_error),
+        )
     }
 
     /// Returns all storage map entries when the forest and reverse-key cache contain enough data.
@@ -699,8 +731,9 @@ impl<B: BackendReader> AccountStateForest<B> {
         block_num: BlockNumber,
     ) -> Result<AccountStorageMapResult, MerkleError> {
         // Check if number of entries is not larger than the limit.
-        let Some(num_entries) =
-            self.num_storage_map_entries(account_id, &slot_name, block_num).transpose()?
+        let Some(num_entries) = self
+            .num_storage_map_entries(account_id, &slot_name, block_num)
+            .transpose()?
         else {
             return Ok(AccountStorageMapResult::NotFound);
         };
@@ -712,8 +745,9 @@ impl<B: BackendReader> AccountStateForest<B> {
         }
 
         // Fetch (hashed_key, value) pairs.
-        let Some(hashed_entries) =
-            self.get_storage_map_entries(account_id, &slot_name, block_num).transpose()?
+        let Some(hashed_entries) = self
+            .get_storage_map_entries(account_id, &slot_name, block_num)
+            .transpose()?
         else {
             return Ok(AccountStorageMapResult::NotFound);
         };
@@ -733,16 +767,18 @@ impl<B: BackendReader> AccountStateForest<B> {
             .collect::<Vec<_>>();
         entries.sort_by_key(|(key, _)| *key);
 
-        Ok(AccountStorageMapResult::Details(AccountStorageMapDetails::from_forest_entries(
-            slot_name, entries,
-        )))
+        Ok(AccountStorageMapResult::Details(
+            AccountStorageMapDetails::from_forest_entries(slot_name, entries),
+        ))
     }
 
     /// Retrieves the most recent vault SMT root for an account. If no vault root is found for the
     /// account, returns an empty SMT root.
     pub(crate) fn get_latest_vault_root(&self, account_id: AccountId) -> Word {
         let lineage = Self::vault_lineage_id(account_id);
-        self.forest.latest_root(lineage).unwrap_or_else(empty_smt_root)
+        self.forest
+            .latest_root(lineage)
+            .unwrap_or_else(empty_smt_root)
     }
 
     /// Retrieves the most recent storage map SMT root for an account slot.
@@ -752,7 +788,9 @@ impl<B: BackendReader> AccountStateForest<B> {
         slot_name: &StorageSlotName,
     ) -> Word {
         let lineage = Self::storage_lineage_id(account_id, slot_name);
-        self.forest.latest_root(lineage).unwrap_or_else(empty_smt_root)
+        self.forest
+            .latest_root(lineage)
+            .unwrap_or_else(empty_smt_root)
     }
 }
 
@@ -790,7 +828,9 @@ impl<B: Backend> AccountStateForest<B> {
     ) -> Result<PreparedAccountStateForestBlockUpdate<B>, AccountStateForestUpdateError> {
         let account_patches = account_updates.into_iter().collect::<Vec<_>>();
         let (batch, lineages) = self.prepare_block_update_batch(&account_patches)?;
-        let mutations = self.forest.compute_forest_mutations(block_num.as_u64(), batch)?;
+        let mutations = self
+            .forest
+            .compute_forest_mutations(block_num.as_u64(), batch)?;
         let account_states = self.precomputed_account_states_from_mutations(
             &account_patches,
             &lineages,

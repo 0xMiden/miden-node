@@ -2,10 +2,7 @@ use core::error::Error as CoreError;
 
 use miden_node_proto::errors::GrpcError;
 use miden_node_store::{
-    ApplyBlockWithProvingInputsError,
-    DatabaseError,
-    GetBatchInputsError,
-    GetBlockInputsError,
+    ApplyBlockWithProvingInputsError, DatabaseError, GetBatchInputsError, GetBlockInputsError,
 };
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
@@ -43,9 +40,7 @@ pub enum MempoolSubmissionError {
     #[grpc(internal)]
     AuthenticationFailed(#[source] StateConflict),
 
-    #[error(
-        "transaction input data from block {input_block} exceeds the chain tip {chain_tip}"
-    )]
+    #[error("transaction input data from block {input_block} exceeds the chain tip {chain_tip}")]
     #[grpc(internal)]
     FutureInputs {
         input_block: BlockNumber,
@@ -175,7 +170,10 @@ impl BuildBlockError {
     /// Creates a custom error using the [`BuildBlockError::Other`] variant from an error message.
     pub fn other(message: impl Into<String>) -> Self {
         let message: String = message.into();
-        Self::Other { error_msg: message.into(), source: None }
+        Self::Other {
+            error_msg: message.into(),
+            source: None,
+        }
     }
 }
 

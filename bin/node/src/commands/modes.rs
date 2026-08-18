@@ -5,12 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_block_producer::{DEFAULT_VALIDATOR_TIMEOUT, Sequencer};
 use miden_node_proto::clients::{
-    Builder,
-    NtxBuilderClient,
-    RemoteProverClient,
-    RpcClient,
-    SequencerClient,
-    ValidatorClient,
+    Builder, NtxBuilderClient, RemoteProverClient, RpcClient, SequencerClient, ValidatorClient,
     WantsConnection,
 };
 use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
@@ -133,7 +128,10 @@ impl SequencerCommand {
                 block_producer,
                 grpc_options: GrpcOptionsInternal::from(runtime.external_grpc_options),
             };
-            tasks.spawn("sequencer internal server", sequencer_internal.serve(shutdown.clone()));
+            tasks.spawn(
+                "sequencer internal server",
+                sequencer_internal.serve(shutdown.clone()),
+            );
         }
 
         tasks.join_next_or_cancelled(shutdown).await
@@ -199,7 +197,11 @@ pub struct SequencerExternalServiceOptions {
     pub validator_timeout: Duration,
 
     /// The network transaction builder service gRPC URL.
-    #[arg(long = "ntx-builder.url", env = "MIDEN_NODE_NTX_BUILDER_URL", value_name = "URL")]
+    #[arg(
+        long = "ntx-builder.url",
+        env = "MIDEN_NODE_NTX_BUILDER_URL",
+        value_name = "URL"
+    )]
     pub ntx_builder_url: Url,
 }
 
@@ -219,8 +221,11 @@ impl SequencerExternalServiceOptions {
                     .with_otel_context_injection())
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let clients =
-            builders.iter().cloned().map(Builder::connect_lazy::<ValidatorClient>).collect();
+        let clients = builders
+            .iter()
+            .cloned()
+            .map(Builder::connect_lazy::<ValidatorClient>)
+            .collect();
         let clients = ValidatorClients::new(clients)?;
         Ok((clients, builders))
     }

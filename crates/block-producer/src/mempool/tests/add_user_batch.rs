@@ -80,7 +80,9 @@ fn user_batch_with_internal_state_conflicts_are_rejected() {
 
     assert_matches!(
         result,
-        Err(MempoolSubmissionError::StateConflict(StateConflict::NullifiersAlreadyExist(..)))
+        Err(MempoolSubmissionError::StateConflict(
+            StateConflict::NullifiersAlreadyExist(..)
+        ))
     );
 
     assert_eq!(uut, reference);
@@ -101,7 +103,9 @@ fn user_batch_conflicts_with_existing_state_are_rejected() {
 
     assert_matches!(
         result,
-        Err(MempoolSubmissionError::StateConflict(StateConflict::NullifiersAlreadyExist(..)))
+        Err(MempoolSubmissionError::StateConflict(
+            StateConflict::NullifiersAlreadyExist(..)
+        ))
     );
 
     assert_eq!(uut, reference);

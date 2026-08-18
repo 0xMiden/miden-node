@@ -12,12 +12,8 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_store::state::State;
 use miden_node_store::{DatabaseError, GetBlockHeaderError};
 use miden_node_utils::limiter::{
-    QueryParamAccountIdLimit,
-    QueryParamLimiter,
-    QueryParamNoteIdLimit,
-    QueryParamNoteTagLimit,
-    QueryParamNullifierPrefixLimit,
-    QueryParamStorageMapKeyTotalLimit,
+    QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
+    QueryParamNullifierPrefixLimit, QueryParamStorageMapKeyTotalLimit,
     QueryParamStorageMapSlotLimit,
 };
 use miden_node_utils::lru_cache::LruCache;
@@ -65,7 +61,11 @@ pub(crate) async fn submit_batch_to_validators(
 ) -> tonic::Result<()> {
     futures::future::try_join_all(validators.iter().map(|validator| {
         let mut validator = validator.clone();
-        async move { validator.submit_batch(proposed_batch, sealed_transaction_inputs).await }
+        async move {
+            validator
+                .submit_batch(proposed_batch, sealed_transaction_inputs)
+                .await
+        }
     }))
     .await?;
     Ok(())
@@ -170,7 +170,10 @@ impl RpcService {
             )
             .await
         })
-        .retry(retry::exponential(Duration::from_millis(500), Duration::from_secs(30)))
+        .retry(retry::exponential(
+            Duration::from_millis(500),
+            Duration::from_secs(30),
+        ))
         .when(|err| err.code() == tonic::Code::Unavailable)
         .notify(|err, backoff| {
             tracing::warn!(
@@ -182,7 +185,10 @@ impl RpcService {
         })
         .await?;
 
-        let header = header.into_inner().block_header.context("response is missing the header")?;
+        let header = header
+            .into_inner()
+            .block_header
+            .context("response is missing the header")?;
         BlockHeader::try_from(header).context("failed to parse response")
     }
 
@@ -244,8 +250,12 @@ impl RpcService {
             return Ok(());
         }
 
-        let network_accounts =
-            self.state.view().filter_network_accounts(&account_ids).await.map_err(|err| {
+        let network_accounts = self
+            .state
+            .view()
+            .filter_network_accounts(&account_ids)
+            .await
+            .map_err(|err| {
                 Status::internal(format!("network-account classification failed: {err}"))
             })?;
 
@@ -263,7 +273,9 @@ impl RpcService {
             return false;
         };
 
-        metadata.get(NETWORK_TX_AUTH_HEADER_NAME).is_some_and(|value| value == auth.0)
+        metadata
+            .get(NETWORK_TX_AUTH_HEADER_NAME)
+            .is_some_and(|value| value == auth.0)
     }
 }
 
@@ -316,7 +328,10 @@ fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
 /// Helper to build an [`EndpointLimits`](proto::rpc::EndpointLimits) from (name, limit) pairs.
 fn endpoint_limits(params: &[(&str, usize)]) -> proto::rpc::EndpointLimits {
     proto::rpc::EndpointLimits {
-        parameters: params.iter().map(|(k, v)| ((*k).to_string(), *v as u32)).collect(),
+        parameters: params
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), *v as u32))
+            .collect(),
     }
 }
 
@@ -339,8 +354,14 @@ static RPC_LIMITS: LazyLock<proto::rpc::RpcLimits> = LazyLock::new(|| {
                 "SyncTransactions".into(),
                 endpoint_limits(&[(AccountId::PARAM_NAME, AccountId::LIMIT)]),
             ),
-            ("SyncNotes".into(), endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)])),
-            ("GetNotesById".into(), endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)])),
+            (
+                "SyncNotes".into(),
+                endpoint_limits(&[(NoteTag::PARAM_NAME, NoteTag::LIMIT)]),
+            ),
+            (
+                "GetNotesById".into(),
+                endpoint_limits(&[(NoteId::PARAM_NAME, NoteId::LIMIT)]),
+            ),
             (
                 "GetAccount".into(),
                 endpoint_limits(&[

@@ -6,29 +6,13 @@ use std::time::Instant;
 use anyhow::{Context, ensure};
 use golden_core::wire::{from_wire_bytes as from_core_wire_bytes, to_wire_bytes};
 use golden_core::{
-    DealerMessage,
-    DkgConfig,
-    DkgDealing,
-    EvrfProofBackend,
-    GoldenGroup,
-    GoldenScalar,
-    ParticipantIndex,
-    ParticipantRegistry,
-    SessionId,
-    Share,
-    TranscriptBuilder,
-    complete,
-    create_dealing,
-    create_dealing_with_secret,
-    verify_dealing,
+    DealerMessage, DkgConfig, DkgDealing, EvrfProofBackend, GoldenGroup, GoldenScalar,
+    ParticipantIndex, ParticipantRegistry, SessionId, Share, TranscriptBuilder, complete,
+    create_dealing, create_dealing_with_secret, verify_dealing,
 };
 use golden_ehtdh1::wire::to_wire_bytes as to_ehtdh1_wire_bytes;
 use golden_ehtdh1::{
-    Ehtdh1Material,
-    PublicKeySet,
-    PublicShare,
-    SetupContext,
-    derive_context_session_id,
+    Ehtdh1Material, PublicKeySet, PublicShare, SetupContext, derive_context_session_id,
     material_from_dkg_outputs,
 };
 use golden_evrf::paper::secp_secq::SecpSecqBackend;
@@ -347,14 +331,20 @@ pub async fn run(options: DkgOptions) -> anyhow::Result<()> {
         } => {
             let signer = signing_key.into_signer().await?;
             generate_identity(&genesis, &epoch, &signer, &output_directory).await
-        },
+        }
         DkgCommand::Prepare {
             genesis,
             threshold,
             epoch,
             registration,
             output_directory,
-        } => prepare(&genesis, threshold, &epoch, &registration, &output_directory),
+        } => prepare(
+            &genesis,
+            threshold,
+            &epoch,
+            &registration,
+            &output_directory,
+        ),
         DkgCommand::Deal {
             genesis,
             ceremony_directory,
@@ -385,7 +375,7 @@ pub async fn run(options: DkgOptions) -> anyhow::Result<()> {
                 &output_directory,
             )
             .await
-        },
+        }
         DkgCommand::Finalize {
             genesis,
             ceremony_directory,
@@ -412,12 +402,16 @@ pub async fn run(options: DkgOptions) -> anyhow::Result<()> {
             ceremony_directory,
             validator_public_key,
             bundle_directory,
-        } => {
-            validate_bundle(&genesis, &ceremony_directory, &validator_public_key, &bundle_directory)
-        },
-        DkgCommand::ValidateFixture { bundle_directory, expected_participant } => {
-            validate_fixture_bundle(&bundle_directory, expected_participant)
-        },
+        } => validate_bundle(
+            &genesis,
+            &ceremony_directory,
+            &validator_public_key,
+            &bundle_directory,
+        ),
+        DkgCommand::ValidateFixture {
+            bundle_directory,
+            expected_participant,
+        } => validate_fixture_bundle(&bundle_directory, expected_participant),
     }
 }
 
@@ -442,7 +436,10 @@ async fn generate_identity(
         "validator signing key is not committed by genesis",
     );
     let identity_secret = StorageScalar::random(&mut OsRng);
-    ensure!(!bool::from(identity_secret.is_zero()), "generated a zero DKG identity secret");
+    ensure!(
+        !bool::from(identity_secret.is_zero()),
+        "generated a zero DKG identity secret"
+    );
     let identity_public_key = StorageGroup::mul_generator(&identity_secret);
     let (proof_commitment, proof_response) = create_identity_proof(
         genesis_commitment,
@@ -480,7 +477,11 @@ async fn generate_identity(
 
     publish_directory(output_directory, |directory| {
         write_new_file(&directory.join(IDENTITY_SECRET_FILE), &secret, true)?;
-        write_new_file(&directory.join(REGISTRATION_FILE), registration.as_bytes(), false)
+        write_new_file(
+            &directory.join(REGISTRATION_FILE),
+            registration.as_bytes(),
+            false,
+        )
     })?;
 
     println!("DKG identity written to {}.", output_directory.display());
@@ -514,8 +515,9 @@ fn prepare(
     let mut participants = Vec::with_capacity(validator_keys.len());
     for (offset, validator_key) in validator_keys.iter().enumerate() {
         let validator_key_hex = hex::encode(validator_key.to_bytes());
-        let identity_key =
-            registrations.remove(validator_key.to_bytes().as_slice()).with_context(|| {
+        let identity_key = registrations
+            .remove(validator_key.to_bytes().as_slice())
+            .with_context(|| {
                 format!("missing registration for genesis validator {validator_key_hex}")
             })?;
         let participant =
@@ -561,11 +563,18 @@ fn prepare(
 
     publish_directory(output_directory, |directory| {
         write_new_file(&directory.join(MANIFEST_FILE), manifest.as_bytes(), false)?;
-        write_new_file(&directory.join(DECRYPTION_CONFIG_FILE), &decryption_config, false)?;
+        write_new_file(
+            &directory.join(DECRYPTION_CONFIG_FILE),
+            &decryption_config,
+            false,
+        )?;
         write_new_file(&directory.join(CONTEXT_CONFIG_FILE), &context_config, false)
     })?;
 
-    println!("DKG configuration written to {}.", output_directory.display());
+    println!(
+        "DKG configuration written to {}.",
+        output_directory.display()
+    );
     Ok(())
 }
 
@@ -583,12 +592,18 @@ where
     let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
     let identity_secret_bytes =
         Zeroizing::new(fs_err::read(identity_secret_path).with_context(|| {
-            format!("failed to read DKG identity secret {}", identity_secret_path.display())
+            format!(
+                "failed to read DKG identity secret {}",
+                identity_secret_path.display()
+            )
         })?);
     let identity_secret = decode_identity_secret(&identity_secret_bytes)?;
     let participant = participant_for_identity(&ceremony.manifest, &identity_secret)?;
 
-    println!("Creating decryption dealing for participant {}.", participant.get());
+    println!(
+        "Creating decryption dealing for participant {}.",
+        participant.get()
+    );
     let started = Instant::now();
     let decryption = create_dealing::<StorageGroup, B>(
         participant,
@@ -603,7 +618,10 @@ where
         started.elapsed(),
     );
 
-    println!("Creating context dealing for participant {}.", participant.get());
+    println!(
+        "Creating context dealing for participant {}.",
+        participant.get()
+    );
     let started = Instant::now();
     let context = create_dealing_with_secret::<StorageGroup, B>(
         participant,
@@ -633,8 +651,16 @@ where
     let state = encode_private_state(&state);
 
     publish_directory(output_directory, |directory| {
-        write_new_file(&directory.join(DECRYPTION_DEALING_FILE), &decryption_message, false)?;
-        write_new_file(&directory.join(CONTEXT_DEALING_FILE), &context_message, false)?;
+        write_new_file(
+            &directory.join(DECRYPTION_DEALING_FILE),
+            &decryption_message,
+            false,
+        )?;
+        write_new_file(
+            &directory.join(CONTEXT_DEALING_FILE),
+            &context_message,
+            false,
+        )?;
         write_new_file(&directory.join(PRIVATE_STATE_FILE), &state, true)
     })?;
 
@@ -683,11 +709,18 @@ where
     };
     let acceptance =
         toml::to_string_pretty(&acceptance).context("failed to encode transcript acceptance")?;
-    debug_assert_eq!(transcript.manifest_sha256, hex::encode(ceremony.manifest_sha256));
+    debug_assert_eq!(
+        transcript.manifest_sha256,
+        hex::encode(ceremony.manifest_sha256)
+    );
 
     publish_directory(output_directory, |directory| {
         write_new_file(&directory.join(TRANSCRIPT_FILE), &transcript_bytes, false)?;
-        write_new_file(&directory.join(TRANSCRIPT_ACCEPTANCE_FILE), acceptance.as_bytes(), false)
+        write_new_file(
+            &directory.join(TRANSCRIPT_ACCEPTANCE_FILE),
+            acceptance.as_bytes(),
+            false,
+        )
     })?;
     println!("DKG transcript accepted in {}.", output_directory.display());
     Ok(())
@@ -715,13 +748,19 @@ where
     let ceremony = read_ceremony(genesis_path, ceremony_directory)?;
     let identity_secret_bytes =
         Zeroizing::new(fs_err::read(identity_secret_path).with_context(|| {
-            format!("failed to read DKG identity secret {}", identity_secret_path.display())
+            format!(
+                "failed to read DKG identity secret {}",
+                identity_secret_path.display()
+            )
         })?);
     let identity_secret = decode_identity_secret(&identity_secret_bytes)?;
     let participant = participant_for_identity(&ceremony.manifest, &identity_secret)?;
     let private_state_bytes =
         Zeroizing::new(fs_err::read(private_state_path).with_context(|| {
-            format!("failed to read private DKG state {}", private_state_path.display())
+            format!(
+                "failed to read private DKG state {}",
+                private_state_path.display()
+            )
         })?);
     let private_state = decode_private_state(&private_state_bytes)?;
     validate_private_state(&private_state, participant, &ceremony)?;
@@ -733,7 +772,10 @@ where
         sha256(&transcript_bytes),
     )?;
 
-    let decryption = read_dealings(decryption_dealing_paths, ceremony.manifest.participants.len())?;
+    let decryption = read_dealings(
+        decryption_dealing_paths,
+        ceremony.manifest.participants.len(),
+    )?;
     let context = read_dealings(context_dealing_paths, ceremony.manifest.participants.len())?;
     validate_dealings_against_transcript(
         &decryption.messages,
@@ -807,7 +849,10 @@ where
         &acceptances,
         output_directory,
     )?;
-    println!("Storage key bundle written to {}.", output_directory.display());
+    println!(
+        "Storage key bundle written to {}.",
+        output_directory.display()
+    );
     Ok(())
 }
 
@@ -838,7 +883,11 @@ fn publish_operator_bundle(
     .context("generated invalid storage key")?;
 
     publish_directory(output_directory, |directory| {
-        write_new_file(&directory.join(EPOCH_FILE), ceremony.manifest.epoch.as_bytes(), false)?;
+        write_new_file(
+            &directory.join(EPOCH_FILE),
+            ceremony.manifest.epoch.as_bytes(),
+            false,
+        )?;
         write_new_file(&directory.join(SETUP_CONTEXT_FILE), &setup_context, false)?;
         write_new_file(&directory.join(PUBLIC_KEY_SET_FILE), &public_key_set, false)?;
         write_new_file(&directory.join(SECRET_SHARE_FILE), &secret_share, true)?;
@@ -916,7 +965,10 @@ fn validate_bundle(
                 )?,
         "bundle transcript roots do not match accepted transcript",
     );
-    println!("Storage key bundle is valid for participant {}.", expected_participant.get());
+    println!(
+        "Storage key bundle is valid for participant {}.",
+        expected_participant.get()
+    );
     Ok(())
 }
 
@@ -943,7 +995,10 @@ fn validate_fixture_bundle(
         operator_key.participant().get(),
         expected_participant.get(),
     );
-    println!("Storage key fixture is valid for participant {}.", expected_participant.get());
+    println!(
+        "Storage key fixture is valid for participant {}.",
+        expected_participant.get()
+    );
     Ok(())
 }
 
@@ -975,8 +1030,10 @@ fn read_validated_registrations(
         let identity_key = decode_identity_public_key(&registration.dkg_identity_public_key)?;
         let proof_commitment =
             decode_non_identity_element(&registration.identity_proof_commitment, "identity proof")?;
-        let proof_response =
-            decode_scalar(&registration.identity_proof_response, "identity proof response")?;
+        let proof_response = decode_scalar(
+            &registration.identity_proof_response,
+            "identity proof response",
+        )?;
         let signature = decode_validator_signature(&registration.validator_signature)?;
 
         ensure!(
@@ -1017,12 +1074,18 @@ fn read_validated_registrations(
             path.display(),
         );
         ensure!(
-            identity_keys.insert(StorageGroup::encode_element(&identity_key).as_ref().to_vec()),
+            identity_keys.insert(
+                StorageGroup::encode_element(&identity_key)
+                    .as_ref()
+                    .to_vec()
+            ),
             "duplicate DKG identity public key in {}",
             path.display(),
         );
         ensure!(
-            registrations.insert(validator_key.to_bytes(), identity_key).is_none(),
+            registrations
+                .insert(validator_key.to_bytes(), identity_key)
+                .is_none(),
             "duplicate validator registration in {}",
             path.display(),
         );
@@ -1037,7 +1100,10 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
         fs_err::read_to_string(&manifest_path).context("failed to read DKG manifest")?;
     let manifest: Manifest =
         toml::from_str(&manifest_text).context("failed to decode DKG manifest")?;
-    ensure!(manifest.version == MANIFEST_VERSION, "unsupported DKG manifest version");
+    ensure!(
+        manifest.version == MANIFEST_VERSION,
+        "unsupported DKG manifest version"
+    );
 
     let genesis = read_trusted_genesis(genesis_path)?;
     let genesis_commitment = genesis.inner().header().commitment();
@@ -1064,8 +1130,14 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
     let context_config = from_core_wire_bytes::<DkgConfig<StorageGroup>>(&context_bytes)
         .context("invalid context configuration")?;
 
-    ensure!(decryption_config.threshold == manifest.threshold, "threshold mismatch");
-    ensure!(context_config.threshold == manifest.threshold, "context threshold mismatch");
+    ensure!(
+        decryption_config.threshold == manifest.threshold,
+        "threshold mismatch"
+    );
+    ensure!(
+        context_config.threshold == manifest.threshold,
+        "context threshold mismatch"
+    );
     let expected_beta = setup_beta()?;
     ensure!(
         decryption_config.beta == expected_beta
@@ -1104,7 +1176,10 @@ fn read_ceremony(genesis_path: &Path, directory: &Path) -> anyhow::Result<Ceremo
     {
         let participant =
             ParticipantIndex::new(u32::try_from(offset + 1).context("too many DKG participants")?)?;
-        ensure!(entry.participant_index == participant.get(), "non-canonical participant order");
+        ensure!(
+            entry.participant_index == participant.get(),
+            "non-canonical participant order"
+        );
         ensure!(
             entry.validator_public_key == hex::encode(validator_key.to_bytes()),
             "manifest validator order does not match genesis",
@@ -1174,7 +1249,11 @@ fn participant_for_identity(
 
 /// Reads exactly one public dealing from every ceremony participant.
 fn read_dealings(paths: &[PathBuf], expected: usize) -> anyhow::Result<DealingSet> {
-    ensure!(paths.len() == expected, "expected {expected} dealings, got {}", paths.len());
+    ensure!(
+        paths.len() == expected,
+        "expected {expected} dealings, got {}",
+        paths.len()
+    );
     let mut dealings = BTreeMap::new();
     let mut hashes = BTreeMap::new();
     for path in paths {
@@ -1198,7 +1277,10 @@ fn read_dealings(paths: &[PathBuf], expected: usize) -> anyhow::Result<DealingSe
             sha256,
         })
         .collect();
-    Ok(DealingSet { messages: dealings, hashes })
+    Ok(DealingSet {
+        messages: dealings,
+        hashes,
+    })
 }
 
 /// Builds the canonical transcript over one manifest and both dealing rounds.
@@ -1251,17 +1333,29 @@ fn read_transcript(
     let text = std::str::from_utf8(&bytes).context("DKG transcript is not UTF-8")?;
     let transcript: CeremonyTranscript =
         toml::from_str(text).context("failed to decode DKG transcript")?;
-    ensure!(transcript.version == TRANSCRIPT_VERSION, "unsupported DKG transcript version");
+    ensure!(
+        transcript.version == TRANSCRIPT_VERSION,
+        "unsupported DKG transcript version"
+    );
     ensure!(
         transcript.manifest_sha256 == hex::encode(ceremony.manifest_sha256),
         "DKG transcript belongs to another manifest",
     );
-    decode_fixed_hex::<32>(&transcript.decryption_transcript_root, "decryption transcript root")?;
-    decode_fixed_hex::<32>(&transcript.context_transcript_root, "context transcript root")?;
+    decode_fixed_hex::<32>(
+        &transcript.decryption_transcript_root,
+        "decryption transcript root",
+    )?;
+    decode_fixed_hex::<32>(
+        &transcript.context_transcript_root,
+        "context transcript root",
+    )?;
     decode_fixed_hex::<32>(&transcript.public_key_set_sha256, "public key set digest")?;
     let canonical =
         toml::to_string_pretty(&transcript).context("failed to encode DKG transcript")?;
-    ensure!(canonical.as_bytes() == bytes, "non-canonical DKG transcript");
+    ensure!(
+        canonical.as_bytes() == bytes,
+        "non-canonical DKG transcript"
+    );
     Ok((transcript, bytes))
 }
 
@@ -1296,7 +1390,9 @@ fn read_transcript_acceptances(
                 .to_owned(),
         );
     }
-    Ok(TranscriptAcceptances { acceptances: ordered })
+    Ok(TranscriptAcceptances {
+        acceptances: ordered,
+    })
 }
 
 /// Verifies unanimous genesis-validator acceptance of one exact transcript.
@@ -1341,7 +1437,10 @@ fn validate_transcript_acceptances(
         .iter()
         .map(|participant| participant.validator_public_key.clone())
         .collect::<BTreeSet<_>>();
-    ensure!(accepted == expected, "transcript acceptances do not match genesis validators");
+    ensure!(
+        accepted == expected,
+        "transcript acceptances do not match genesis validators"
+    );
     Ok(())
 }
 
@@ -1352,7 +1451,10 @@ fn validate_dealings_against_transcript(
     expected_hashes: &[TranscriptDealing],
     expected_root: &str,
 ) -> anyhow::Result<()> {
-    ensure!(actual_hashes == expected_hashes, "dealings do not match accepted transcript");
+    ensure!(
+        actual_hashes == expected_hashes,
+        "dealings do not match accepted transcript"
+    );
     ensure!(
         hex::encode(completion_root(dealings)) == expected_root,
         "dealing roots do not match accepted transcript",
@@ -1448,14 +1550,19 @@ fn complete_round<B>(
 where
     B: EvrfProofBackend<StorageGroup>,
 {
-    let own_message = dealings.remove(&participant).context("missing local dealing")?;
+    let own_message = dealings
+        .remove(&participant)
+        .context("missing local dealing")?;
     ensure!(
         sha256(&to_wire_bytes(&own_message)) == expected_own_message_sha256,
         "local dealing does not match private state",
     );
     let own_dealing = DkgDealing {
         message: own_message,
-        private_share: Share { participant, value: *private_share },
+        private_share: Share {
+            participant,
+            value: *private_share,
+        },
     };
     Ok(complete::<StorageGroup, B>(
         participant,
@@ -1468,7 +1575,10 @@ where
 
 /// Checks a generated setup context against the public ceremony.
 fn validate_setup_context(context: &SetupContext, ceremony: &Ceremony) -> anyhow::Result<()> {
-    ensure!(context.threshold == ceremony.manifest.threshold, "setup threshold mismatch");
+    ensure!(
+        context.threshold == ceremony.manifest.threshold,
+        "setup threshold mismatch"
+    );
     ensure!(
         context.registry_root == ceremony.decryption_config.registry.root(),
         "setup registry mismatch",
@@ -1488,7 +1598,10 @@ fn validate_setup_context(context: &SetupContext, ceremony: &Ceremony) -> anyhow
         .iter()
         .map(|entry| ParticipantIndex::new(entry.participant_index))
         .collect::<Result<Vec<_>, _>>()?;
-    ensure!(context.participants == participants, "setup participant mismatch");
+    ensure!(
+        context.participants == participants,
+        "setup participant mismatch"
+    );
     Ok(())
 }
 
@@ -1643,8 +1756,10 @@ fn verify_identity_proof(
         identity_public_key,
         commitment,
     )?;
-    let expected =
-        StorageGroup::add(commitment, &StorageGroup::mul(identity_public_key, &challenge));
+    let expected = StorageGroup::add(
+        commitment,
+        &StorageGroup::mul(identity_public_key, &challenge),
+    );
     Ok(StorageGroup::mul_generator(response) == expected)
 }
 
@@ -1679,7 +1794,10 @@ fn identity_proof_challenge(
 fn decode_validator_public_key(value: &str) -> anyhow::Result<PublicKey> {
     let bytes = decode_hex(value, "validator public key")?;
     let public_key = PublicKey::read_from_bytes(&bytes).context("invalid validator public key")?;
-    ensure!(public_key.to_bytes() == bytes, "non-canonical validator public key");
+    ensure!(
+        public_key.to_bytes() == bytes,
+        "non-canonical validator public key"
+    );
     Ok(public_key)
 }
 
@@ -1687,7 +1805,10 @@ fn decode_validator_public_key(value: &str) -> anyhow::Result<PublicKey> {
 fn decode_validator_signature(value: &str) -> anyhow::Result<Signature> {
     let bytes = decode_hex(value, "validator signature")?;
     let signature = Signature::read_from_bytes(&bytes).context("invalid validator signature")?;
-    ensure!(signature.to_bytes() == bytes, "non-canonical validator signature");
+    ensure!(
+        signature.to_bytes() == bytes,
+        "non-canonical validator signature"
+    );
     Ok(signature)
 }
 
@@ -1705,7 +1826,10 @@ fn decode_non_identity_element(value: &str, name: &str) -> anyhow::Result<Storag
         .map_err(|_| anyhow::anyhow!("invalid {name} length"))?;
     let public_key =
         StorageGroup::decode_element(&repr).with_context(|| format!("invalid {name}"))?;
-    ensure!(!bool::from(StorageGroup::is_identity(&public_key)), "{name} is the identity");
+    ensure!(
+        !bool::from(StorageGroup::is_identity(&public_key)),
+        "{name} is the identity"
+    );
     Ok(public_key)
 }
 
@@ -1719,8 +1843,9 @@ fn decode_scalar(value: &str, name: &str) -> anyhow::Result<StorageScalar> {
 
 /// Encodes a private DKG identity with a fixed format marker.
 fn encode_identity_secret(secret: &StorageScalar) -> Zeroizing<Vec<u8>> {
-    let mut encoded =
-        Zeroizing::new(Vec::with_capacity(IDENTITY_SECRET_MAGIC.len() + StorageScalar::REPR_BYTES));
+    let mut encoded = Zeroizing::new(Vec::with_capacity(
+        IDENTITY_SECRET_MAGIC.len() + StorageScalar::REPR_BYTES,
+    ));
     encoded.extend_from_slice(IDENTITY_SECRET_MAGIC);
     encoded.extend_from_slice(secret.to_repr().as_ref());
     encoded
@@ -1747,7 +1872,10 @@ fn publish_directory(
     output_directory: &Path,
     write: impl FnOnce(&Path) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    ensure!(!output_directory.exists(), "output directory already exists");
+    ensure!(
+        !output_directory.exists(),
+        "output directory already exists"
+    );
     let parent = output_directory.parent().unwrap_or_else(|| Path::new("."));
     fs_err::create_dir_all(parent).context("failed to create output parent directory")?;
     let temporary = tempfile::Builder::new()
@@ -1774,14 +1902,17 @@ fn write_new_file(path: &Path, bytes: &[u8], private: bool) -> anyhow::Result<()
         .with_context(|| format!("failed to create {}", path.display()))?;
     file.write_all(bytes)
         .with_context(|| format!("failed to write {}", path.display()))?;
-    file.sync_all().with_context(|| format!("failed to sync {}", path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to sync {}", path.display()))?;
     Ok(())
 }
 
 /// Parses canonical lowercase hex.
 fn decode_hex(value: &str, name: &str) -> anyhow::Result<Vec<u8>> {
     ensure!(
-        value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
         "{name} must use lowercase hex",
     );
     let bytes = hex::decode(value).with_context(|| format!("invalid {name}"))?;

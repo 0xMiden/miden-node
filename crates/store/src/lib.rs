@@ -16,37 +16,17 @@ pub use data_directory::DataDirectory;
 pub use db::models::conv::SqlTypeConvert;
 pub use db::models::queries::StorageMapValuesPage;
 pub use db::{
-    AccountVaultValue,
-    DatabaseOptions,
-    Db,
-    NoteRecord,
-    NoteSyncRecord,
-    NoteSyncUpdate,
-    NullifierInfo,
-    TransactionRecord,
+    AccountVaultValue, DatabaseOptions, Db, NoteRecord, NoteSyncRecord, NoteSyncUpdate,
+    NullifierInfo, TransactionRecord,
 };
 pub use errors::{
-    AccountStateForestUpdateError,
-    ApplyBlockError,
-    ApplyBlockWithProvingInputsError,
-    DatabaseError,
-    GetAccountError,
-    GetBatchInputsError,
-    GetBlockHeaderError,
-    GetBlockInputsError,
-    NoteSyncError,
-    RangeBeyondTip,
-    StateSyncError,
+    AccountStateForestUpdateError, ApplyBlockError, ApplyBlockWithProvingInputsError,
+    DatabaseError, GetAccountError, GetBatchInputsError, GetBlockHeaderError, GetBlockInputsError,
+    NoteSyncError, RangeBeyondTip, StateSyncError,
 };
 pub use genesis::GenesisState;
 pub use state::{
-    BlockWriter,
-    LoadedState,
-    ProofWriter,
-    ScopedBlockNum,
-    ScopedBlockRange,
-    State,
-    StateView,
+    BlockWriter, LoadedState, ProofWriter, ScopedBlockNum, ScopedBlockRange, State, StateView,
     WriterTask,
 };
 

@@ -23,7 +23,11 @@ impl NoteTransportService {
     pub fn new(url: Url, interval: Duration, timeout: Duration) -> Self {
         let channel = create_channel(&url, timeout).expect("failed to create channel");
         let client = HealthClient::new(channel);
-        Self { url, client, interval }
+        Self {
+            url,
+            client,
+            interval,
+        }
     }
 }
 
@@ -49,7 +53,9 @@ impl Service for NoteTransportService {
         ret(level = "info"),
     )]
     async fn check(&mut self) -> ServiceStatus {
-        let request = HealthCheckRequest { service: String::new() };
+        let request = HealthCheckRequest {
+            service: String::new(),
+        };
         let url = self.url.to_string();
 
         match self.client.check(request).await {
@@ -71,7 +77,7 @@ impl Service for NoteTransportService {
                         details,
                     )
                 }
-            },
+            }
             Err(e) => ServiceStatus::error(self.name(), e),
         }
     }
@@ -79,7 +85,9 @@ impl Service for NoteTransportService {
 
 /// Creates a `tonic` channel for the given URL, enabling TLS for `https` schemes.
 fn create_channel(url: &Url, timeout: Duration) -> Result<Channel, tonic::transport::Error> {
-    let mut endpoint = Channel::from_shared(url.to_string()).expect("valid URL").timeout(timeout);
+    let mut endpoint = Channel::from_shared(url.to_string())
+        .expect("valid URL")
+        .timeout(timeout);
 
     if url.scheme() == "https" {
         endpoint = endpoint.tls_config(ClientTlsConfig::new().with_native_roots())?;

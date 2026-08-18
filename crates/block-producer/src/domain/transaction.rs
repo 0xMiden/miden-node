@@ -55,10 +55,19 @@ impl AuthenticatedTransaction {
     ) -> Result<AuthenticatedTransaction, StateConflict> {
         let nullifiers_already_spent = tx
             .nullifiers()
-            .filter(|nullifier| inputs.nullifiers.get(nullifier).copied().flatten().is_some())
+            .filter(|nullifier| {
+                inputs
+                    .nullifiers
+                    .get(nullifier)
+                    .copied()
+                    .flatten()
+                    .is_some()
+            })
             .collect::<Vec<_>>();
         if !nullifiers_already_spent.is_empty() {
-            return Err(StateConflict::NullifiersAlreadyExist(nullifiers_already_spent));
+            return Err(StateConflict::NullifiersAlreadyExist(
+                nullifiers_already_spent,
+            ));
         }
 
         Ok(AuthenticatedTransaction {
@@ -106,7 +115,10 @@ impl AuthenticatedTransaction {
     }
 
     pub fn reference_block(&self) -> (BlockNumber, Word) {
-        (self.inner.ref_block_num(), self.inner.ref_block_commitment())
+        (
+            self.inner.ref_block_num(),
+            self.inner.ref_block_commitment(),
+        )
     }
 
     /// Note IDs which were unauthenticated in the transaction __and__ which were not authenticated
@@ -193,7 +205,10 @@ impl AuthenticatedTransaction {
         let inputs = TransactionInputs {
             account_id: inner.account_id(),
             account_commitment: store_account_state,
-            nullifiers: inner.nullifiers().map(|nullifier| (nullifier, None)).collect(),
+            nullifiers: inner
+                .nullifiers()
+                .map(|nullifier| (nullifier, None))
+                .collect(),
             found_unauthenticated_notes: HashSet::default(),
             current_block_height: 0.into(),
         };

@@ -94,8 +94,13 @@ pub(crate) fn select_account_header_with_storage_header_at_block(
         .transpose()?
         .unwrap_or(Word::default());
 
-    let account_header =
-        AccountHeader::new(account_id, nonce, vault_root, storage_commitment, code_commitment);
+    let account_header = AccountHeader::new(
+        account_id,
+        nonce,
+        vault_root,
+        storage_commitment,
+        code_commitment,
+    );
 
     Ok(Some((account_header, storage_header)))
 }

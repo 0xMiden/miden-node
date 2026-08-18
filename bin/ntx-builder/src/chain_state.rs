@@ -76,8 +76,11 @@ impl ChainState {
         self.chain_tip_header = tip;
 
         // Keep MMR pruned.
-        let pruned_block_height =
-            (self.chain_mmr.chain_length().as_usize().saturating_sub(max_block_count)) as u32;
+        let pruned_block_height = (self
+            .chain_mmr
+            .chain_length()
+            .as_usize()
+            .saturating_sub(max_block_count)) as u32;
         Arc::make_mut(&mut self.chain_mmr).prune_to(..pruned_block_height.into());
     }
 }
@@ -93,13 +96,20 @@ impl SharedChainState {
     }
 
     pub(crate) fn chain_tip_block_number(&self) -> BlockNumber {
-        self.0.read().expect("chain state lock poisoned").chain_tip_header.block_num()
+        self.0
+            .read()
+            .expect("chain state lock poisoned")
+            .chain_tip_header
+            .block_num()
     }
 
     /// Returns a clone of the current partial chain MMR. Cheap enough for per-block persistence
     /// since the MMR is bounded by `max_block_count` headers.
     pub(crate) fn current_mmr(&self) -> PartialMmr {
-        self.0.read().expect("chain state lock poisoned").current_mmr()
+        self.0
+            .read()
+            .expect("chain state lock poisoned")
+            .current_mmr()
     }
 
     pub(crate) fn update_chain_tip(&self, tip: BlockHeader, max_block_count: usize) {

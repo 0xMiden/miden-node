@@ -6,11 +6,7 @@ use miden_protocol::account::{AccountId, AccountUpdateDetails};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteAttachments, Nullifier};
 use miden_protocol::transaction::{
-    InputNote,
-    InputNoteCommitment,
-    OutputNote,
-    PrivateOutputNote,
-    ProvenTransaction,
+    InputNote, InputNoteCommitment, OutputNote, PrivateOutputNote, ProvenTransaction,
     TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
@@ -35,7 +31,11 @@ impl MockProvenTxBuilder {
     pub fn with_account_index(account_index: u32) -> Self {
         let mock_account: MockPrivateAccount = account_index.into();
 
-        Self::with_account(mock_account.id, mock_account.states[0], mock_account.states[1])
+        Self::with_account(
+            mock_account.id,
+            mock_account.states[0],
+            mock_account.states[1],
+        )
     }
 
     /// Generates 3 random, sequential transactions acting on the same account.
@@ -152,7 +152,12 @@ impl MockProvenTxBuilder {
             .unwrap_or_default()
             .into_iter()
             .map(InputNoteCommitment::from)
-            .chain(self.nullifiers.unwrap_or_default().into_iter().map(InputNoteCommitment::from))
+            .chain(
+                self.nullifiers
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(InputNoteCommitment::from),
+            )
             .collect();
         ProvenTransaction::new(
             account_update,

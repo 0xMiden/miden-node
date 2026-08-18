@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 
 use miden_node_proto::domain::encryption::{
-    TransactionEncryptionScheme,
-    TrustedTransactionEncryptionState,
-    transaction_inputs_associated_data,
-    verify_transaction_encryption_key,
+    TransactionEncryptionScheme, TrustedTransactionEncryptionState,
+    transaction_inputs_associated_data, verify_transaction_encryption_key,
 };
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::validator_api;
@@ -21,13 +19,8 @@ use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{
-    InputNoteCommitment,
-    OutputNote,
-    PartialBlockchain,
-    ProvenTransaction,
-    TransactionId,
-    TransactionInputs,
-    TxAccountUpdate,
+    InputNoteCommitment, OutputNote, PartialBlockchain, ProvenTransaction, TransactionId,
+    TransactionInputs, TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
 use miden_testing::{Auth, MockChainBuilder};
@@ -40,9 +33,7 @@ use crate::db::{ValidatorDbWriter, setup};
 use crate::metrics::InitialMetrics;
 use crate::storage_key::tests::operator_keys;
 use crate::{
-    LocalX25519TransactionInputDecrypter,
-    PrivateRecordSealer,
-    TransactionInputDecrypter,
+    LocalX25519TransactionInputDecrypter, PrivateRecordSealer, TransactionInputDecrypter,
     ValidatorSigner,
 };
 
@@ -216,14 +207,23 @@ impl TestValidator {
         match self.try_call_block_subscription(block_from).await {
             Ok(_) => panic!("backup subscription should have been rejected"),
             Err(status) => {
-                assert_eq!(status.code(), tonic::Code::ResourceExhausted, "got: {status:?}");
-            },
+                assert_eq!(
+                    status.code(),
+                    tonic::Code::ResourceExhausted,
+                    "got: {status:?}"
+                );
+            }
         }
     }
 
     /// Loads the current chain tip from the validator's database.
     async fn load_chain_tip(&self) -> BlockHeader {
-        self.server.db.load_chain_tip().await.unwrap().expect("chain tip should exist")
+        self.server
+            .db
+            .load_chain_tip()
+            .await
+            .unwrap()
+            .expect("chain tip should exist")
     }
 
     /// Builds, submits, and applies an empty block, advancing the chain tip.
@@ -243,7 +243,12 @@ impl TestValidator {
 /// of `key`. Returns the database handle and the genesis block header.
 async fn setup_db_with_genesis(
     key: &SigningKey,
-) -> (tempfile::TempDir, ValidatorDbWriter, BlockStore, BlockHeader) {
+) -> (
+    tempfile::TempDir,
+    ValidatorDbWriter,
+    BlockStore,
+    BlockHeader,
+) {
     let genesis_state = GenesisState::new(
         vec![],
         test_fee_params(),
@@ -259,7 +264,9 @@ async fn setup_db_with_genesis(
     let block_store =
         BlockStore::bootstrap(dir.path().join("blocks").clone(), &genesis_block).unwrap();
 
-    db.upsert_block_header(genesis_header.clone()).await.unwrap();
+    db.upsert_block_header(genesis_header.clone())
+        .await
+        .unwrap();
 
     (dir, db, block_store, genesis_header)
 }
@@ -355,14 +362,20 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
                 .unwrap();
             let executed_a = Box::pin(context_a.execute()).await.unwrap();
             let inputs = executed_a.tx_inputs().clone();
-            let transaction = LocalTransactionProver::default().prove(inputs.clone()).unwrap();
+            let transaction = LocalTransactionProver::default()
+                .prove(inputs.clone())
+                .unwrap();
 
             let context_b = chain
                 .build_transaction(account_b.id())
                 .authenticated_input_note(note_b.id())
                 .build()
                 .unwrap();
-            let mismatch_inputs = Box::pin(context_b.execute()).await.unwrap().tx_inputs().clone();
+            let mismatch_inputs = Box::pin(context_b.execute())
+                .await
+                .unwrap()
+                .tx_inputs()
+                .clone();
             let mut execution_failure_inputs = inputs.clone();
             execution_failure_inputs.set_input_notes(vec![note_b]);
 
@@ -391,7 +404,10 @@ async fn signing_key_mismatch_rejected() {
     // Start a validator with a different key, modelling a validator configured with the wrong key.
     let rogue_signer = ValidatorSigner::new_local(random_secret_key());
     assert!(
-        !genesis_header.validator_keys().as_keys().contains(&rogue_signer.public_key()),
+        !genesis_header
+            .validator_keys()
+            .as_keys()
+            .contains(&rogue_signer.public_key()),
         "test requires a signing key that is not a member of the genesis validator set",
     );
 
@@ -418,7 +434,10 @@ async fn sign_block_returns_signed_commitment() {
     let tv = TestValidator::new().await;
 
     let proposed = tv.propose_empty_block();
-    let response = tv.call_sign_block(&proposed).await.expect("block should be signed");
+    let response = tv
+        .call_sign_block(&proposed)
+        .await
+        .expect("block should be signed");
 
     let (header, _) = proposed.into_header_and_body().unwrap();
     let returned: Word = response
@@ -441,7 +460,11 @@ async fn chain_tip_plus_one_succeeds() {
     let proposed = tv.propose_empty_block();
     let result = tv.call_sign_block(&proposed).await;
 
-    assert!(result.is_ok(), "chain tip + 1 should succeed, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "chain tip + 1 should succeed, got: {:?}",
+        result.err()
+    );
 }
 
 /// A replacement block at the same height as the current chain tip should be accepted.
@@ -477,7 +500,11 @@ async fn chain_tip_replacement_succeeds() {
     );
 
     let result = tv.call_sign_block(&replacement).await;
-    assert!(result.is_ok(), "chain tip replacement should succeed, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "chain tip replacement should succeed, got: {:?}",
+        result.err()
+    );
 
     // Verify that the chain tip in the database is now the replacement block, not the original.
     let new_chain_tip = tv.load_chain_tip().await;
@@ -598,7 +625,10 @@ async fn replacement_commitment_mismatch_rejected() {
     let mismatched_replacement = empty_block(&other_genesis_header, &PartialBlockchain::default());
 
     let result = tv.call_sign_block(&mismatched_replacement).await;
-    assert!(result.is_err(), "replacement with mismatched commitment should be rejected");
+    assert!(
+        result.is_err(),
+        "replacement with mismatched commitment should be rejected"
+    );
     let status = result.unwrap_err();
     assert!(
         status.message().contains("previous block commitment"),
@@ -613,10 +643,18 @@ async fn empty_block_succeeds() {
     let tv = TestValidator::new().await;
 
     let proposed = tv.propose_empty_block();
-    assert_eq!(proposed.transactions().count(), 0, "block should have no transactions");
+    assert_eq!(
+        proposed.transactions().count(),
+        0,
+        "block should have no transactions"
+    );
 
     let result = tv.call_sign_block(&proposed).await;
-    assert!(result.is_ok(), "empty block should succeed, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "empty block should succeed, got: {:?}",
+        result.err()
+    );
 }
 
 /// A block containing transactions that were not previously validated should be rejected.
@@ -627,10 +665,7 @@ async fn unknown_transactions_rejected() {
     use miden_protocol::block::BlockNumber;
     use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
     use miden_protocol::transaction::{
-        InputNoteCommitment,
-        InputNotes,
-        OrderedTransactionHeaders,
-        TransactionHeader,
+        InputNoteCommitment, InputNotes, OrderedTransactionHeaders, TransactionHeader,
     };
     use miden_protocol::vm::ExecutionProof;
 
@@ -682,11 +717,14 @@ async fn unknown_transactions_rejected() {
     let proposed = ProposedBlock::new(block_inputs, vec![batch]).unwrap();
 
     let result = tv.server.validate_block(proposed, genesis_header).await;
-    assert!(result.is_err(), "block with unknown transactions should be rejected");
+    assert!(
+        result.is_err(),
+        "block with unknown transactions should be rejected"
+    );
     match result.unwrap_err() {
         ValidatorError::UnvalidatedTransactions(ids) => {
             assert_eq!(ids, vec![tx_id], "should report the unknown transaction ID");
-        },
+        }
         other => panic!("expected UnvalidatedTransactions error, got: {other}"),
     }
 }
@@ -759,7 +797,10 @@ async fn validate_block_number_mismatch() {
     let result = tv.server.validate_block(block_3, block_1_header).await;
     assert!(result.is_err());
     assert!(
-        matches!(result.unwrap_err(), ValidatorError::BlockNumberMismatch { .. }),
+        matches!(
+            result.unwrap_err(),
+            ValidatorError::BlockNumberMismatch { .. }
+        ),
         "expected BlockNumberMismatch error"
     );
 }
@@ -802,7 +843,11 @@ async fn block_subscription_replays_then_freezes_signing() {
         .call_sign_block(&proposed)
         .await
         .expect_err("sign_block must be rejected while a backup subscription is live");
-    assert_eq!(status.code(), tonic::Code::ResourceExhausted, "got: {status:?}");
+    assert_eq!(
+        status.code(),
+        tonic::Code::ResourceExhausted,
+        "got: {status:?}"
+    );
 
     // Once the subscriber disconnects, signing resumes.
     drop(stream);
@@ -834,7 +879,11 @@ async fn backup_stream_blocks_sign_block_until_dropped() {
         .call_sign_block(&proposed)
         .await
         .expect_err("sign_block must be rejected while a backup is streaming");
-    assert_eq!(status.code(), tonic::Code::ResourceExhausted, "got: {status:?}");
+    assert_eq!(
+        status.code(),
+        tonic::Code::ResourceExhausted,
+        "got: {status:?}"
+    );
 
     // Dropping the subscription releases the lock, so the same request now succeeds.
     drop(stream);
@@ -875,7 +924,11 @@ async fn in_flight_request_blocks_backup() {
 
     // Simulate an in-flight RPC by holding the read side of the lock, exactly as the RPC handlers
     // do for their duration.
-    let read_guard = tv.server.serve_lock.try_read().expect("read side should be available");
+    let read_guard = tv
+        .server
+        .serve_lock
+        .try_read()
+        .expect("read side should be available");
 
     tv.assert_backup_rejected(0).await;
 
@@ -907,7 +960,11 @@ async fn requests_run_concurrently() {
 
     // Multiple readers may hold the lock at once, so requests are not serialized against each
     // other.
-    let first = tv.server.serve_lock.try_read().expect("first reader should acquire");
+    let first = tv
+        .server
+        .serve_lock
+        .try_read()
+        .expect("first reader should acquire");
     let second = tv
         .server
         .serve_lock
@@ -934,7 +991,10 @@ async fn transaction_encryption_key_is_attested() {
     let genesis = tv.chain_tip.commitment();
     let response = tv.call_get_transaction_encryption_key().await;
 
-    let info = test_decrypter().encryption_key().await.expect("key info should be available");
+    let info = test_decrypter()
+        .encryption_key()
+        .await
+        .expect("key info should be available");
     let scheme = TransactionEncryptionScheme::try_from(response.scheme).unwrap();
     assert_eq!(scheme, info.scheme);
     assert_eq!(response.key_id, info.key_id);
@@ -991,8 +1051,10 @@ async fn tampered_attestation_fails_verification() {
     let mut changed_key_id = response.clone();
     changed_key_id.key_id[0] ^= 0x01;
     let mut changed_public_key = response.clone();
-    changed_public_key.public_key =
-        KeyExchangeKey::read_from_bytes(&[4u8; 32]).unwrap().public_key().to_bytes();
+    changed_public_key.public_key = KeyExchangeKey::read_from_bytes(&[4u8; 32])
+        .unwrap()
+        .public_key()
+        .to_bytes();
     let mut injected_next_key = response.clone();
     injected_next_key.next_key = Some(proto::transaction::NextTransactionEncryptionKey {
         scheme: response.scheme,
@@ -1001,7 +1063,12 @@ async fn tampered_attestation_fails_verification() {
         rotation_block_num: 100,
     });
 
-    for tampered in [changed_scheme, changed_key_id, changed_public_key, injected_next_key] {
+    for tampered in [
+        changed_scheme,
+        changed_key_id,
+        changed_public_key,
+        injected_next_key,
+    ] {
         assert!(
             verify_transaction_encryption_key(tampered, trusted).is_err(),
             "attestation must not verify over tampered fields",
@@ -1092,7 +1159,11 @@ async fn submit_rejects_missing_encrypted_inputs() {
         .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    assert!(status.message().contains("Missing sealed transaction inputs"));
+    assert!(
+        status
+            .message()
+            .contains("Missing sealed transaction inputs")
+    );
     tv.assert_transaction_absent(tx.id(), 0).await;
 }
 
@@ -1107,10 +1178,17 @@ async fn submit_rejects_plaintext_inputs() {
         ciphertext: b"not a sealed message, just bytes".to_vec(),
     };
 
-    let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
+    let status = tv
+        .call_submit_proven_transaction(&tx, sealed)
+        .await
+        .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    assert!(status.message().contains("unseal"), "got: {}", status.message());
+    assert!(
+        status.message().contains("unseal"),
+        "got: {}",
+        status.message()
+    );
     tv.assert_transaction_absent(tx.id(), 0).await;
 }
 
@@ -1124,7 +1202,10 @@ async fn submit_rejects_unknown_key_id() {
     let mut sealed = tv.seal(tx.id(), b"transaction inputs");
     sealed.key_id = vec![0xAA, 0xBB, 0xCC, 0xDD];
 
-    let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
+    let status = tv
+        .call_submit_proven_transaction(&tx, sealed)
+        .await
+        .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::FailedPrecondition);
     assert!(
@@ -1153,10 +1234,17 @@ async fn submit_rejects_inputs_sealed_for_a_different_transaction() {
 
     let sealed_for_a = tv.seal(tx_a.id(), b"transaction inputs");
 
-    let status = tv.call_submit_proven_transaction(&tx_b, sealed_for_a).await.unwrap_err();
+    let status = tv
+        .call_submit_proven_transaction(&tx_b, sealed_for_a)
+        .await
+        .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    assert!(status.message().contains("unseal"), "got: {}", status.message());
+    assert!(
+        status.message().contains("unseal"),
+        "got: {}",
+        status.message()
+    );
     tv.assert_transaction_absent(tx_b.id(), 0).await;
 }
 
@@ -1168,7 +1256,10 @@ async fn correctly_sealed_inputs_reach_the_deserialization_stage() {
     let tx = dummy_proven_tx(10);
     let sealed = tv.seal(tx.id(), b"not really transaction inputs");
 
-    let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
+    let status = tv
+        .call_submit_proven_transaction(&tx, sealed)
+        .await
+        .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert!(
@@ -1192,10 +1283,17 @@ async fn failed_proof_verification_does_not_store_inputs() {
     let fixture = proven_transaction_fixture().await;
     let sealed = tv.seal(tx.id(), &fixture.inputs.to_bytes());
 
-    let status = tv.call_submit_proven_transaction(&tx, sealed).await.unwrap_err();
+    let status = tv
+        .call_submit_proven_transaction(&tx, sealed)
+        .await
+        .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    assert!(status.message().contains("proof verification"), "got: {}", status.message());
+    assert!(
+        status.message().contains("proof verification"),
+        "got: {}",
+        status.message()
+    );
     tv.assert_transaction_absent(tx.id(), 0).await;
 }
 
@@ -1207,10 +1305,17 @@ async fn failed_reexecution_does_not_store_inputs() {
     let tx = &fixture.transaction;
     let sealed = tv.seal(tx.id(), &fixture.execution_failure_inputs.to_bytes());
 
-    let status = tv.call_submit_proven_transaction(tx, sealed).await.unwrap_err();
+    let status = tv
+        .call_submit_proven_transaction(tx, sealed)
+        .await
+        .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    assert!(status.message().contains("re-executed"), "got: {}", status.message());
+    assert!(
+        status.message().contains("re-executed"),
+        "got: {}",
+        status.message()
+    );
     tv.assert_transaction_absent(tx.id(), 0).await;
 }
 
@@ -1222,10 +1327,17 @@ async fn header_mismatch_does_not_store_inputs() {
     let tx = &fixture.transaction;
     let sealed = tv.seal(tx.id(), &fixture.mismatch_inputs.to_bytes());
 
-    let status = tv.call_submit_proven_transaction(tx, sealed).await.unwrap_err();
+    let status = tv
+        .call_submit_proven_transaction(tx, sealed)
+        .await
+        .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    assert!(status.message().contains("did not match"), "got: {}", status.message());
+    assert!(
+        status.message().contains("did not match"),
+        "got: {}",
+        status.message()
+    );
     tv.assert_transaction_absent(tx.id(), 0).await;
 }
 
@@ -1239,13 +1351,27 @@ async fn valid_submission_stores_one_protected_record() {
     let second = tv.seal(tx.id(), &fixture.inputs.to_bytes());
     assert_ne!(first.ciphertext, second.ciphertext);
 
-    tv.call_submit_proven_transaction(tx, first.clone()).await.unwrap();
+    tv.call_submit_proven_transaction(tx, first.clone())
+        .await
+        .unwrap();
     let transaction_id = tx.id();
-    let first_record = tv.server.db.load_private_record(transaction_id).await.unwrap().unwrap();
+    let first_record = tv
+        .server
+        .db
+        .load_private_record(transaction_id)
+        .await
+        .unwrap()
+        .unwrap();
     tv.call_submit_proven_transaction(tx, second).await.unwrap();
 
     assert!(tv.transaction_exists(tx.id()).await);
-    let stored_record = tv.server.db.load_private_record(transaction_id).await.unwrap().unwrap();
+    let stored_record = tv
+        .server
+        .db
+        .load_private_record(transaction_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(stored_record, first_record);
     assert_eq!(tv.validated_transaction_count().await, 1);
     assert_eq!(tv.call_status().await.validated_transactions_count, 1);

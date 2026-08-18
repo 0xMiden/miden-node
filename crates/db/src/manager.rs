@@ -55,7 +55,11 @@ impl deadpool::managed::Manager for ConnectionManager {
     type Error = ConnectionManagerError;
 
     async fn create(&self) -> Result<Self::Type, Self::Error> {
-        let conn = self.manager.create().await.map_err(ConnectionManagerError::ConnectionCreate)?;
+        let conn = self
+            .manager
+            .create()
+            .await
+            .map_err(ConnectionManagerError::ConnectionCreate)?;
 
         conn.interact(configure_connection_on_creation)
             .await

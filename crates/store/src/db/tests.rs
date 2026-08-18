@@ -7,33 +7,14 @@ use miden_node_utils::fee::test_fee_params;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountCode,
-    AccountComponent,
-    AccountId,
-    AccountIdVersion,
-    AccountPatch,
-    AccountStoragePatch,
-    AccountType,
-    AccountUpdateDetails,
-    AccountVaultPatch,
-    AssetCallbackFlag,
-    StorageMapKey,
-    StorageMapPatchEntries,
-    StorageSlot,
-    StorageSlotContent,
-    StorageSlotName,
-    StorageSlotPatch,
+    Account, AccountBuilder, AccountCode, AccountComponent, AccountId, AccountIdVersion,
+    AccountPatch, AccountStoragePatch, AccountType, AccountUpdateDetails, AccountVaultPatch,
+    AssetCallbackFlag, StorageMapKey, StorageMapPatchEntries, StorageSlot, StorageSlotContent,
+    StorageSlotName, StorageSlotPatch,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::block::{
-    BlockAccountUpdate,
-    BlockHeader,
-    BlockNoteIndex,
-    BlockNoteTree,
-    BlockNumber,
-    BlockSignatures,
+    BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber, BlockSignatures,
     ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -41,36 +22,19 @@ use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::crypto::merkle::mmr::{Forest, Mmr};
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{
-    Note,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteAttachments,
-    NoteDetails,
-    NoteDetailsCommitment,
-    NoteHeader,
-    NoteId,
-    NoteMetadata,
-    NoteTag,
-    NoteType,
-    Nullifier,
+    Note, NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteDetails,
+    NoteDetailsCommitment, NoteHeader, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
     PartialNoteMetadata,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{
-    InputNoteCommitment,
-    InputNotes,
-    OrderedTransactionHeaders,
-    TransactionHeader,
-    TransactionId,
+    InputNoteCommitment, InputNotes, OrderedTransactionHeaders, TransactionHeader, TransactionId,
 };
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::{EMPTY_WORD, Felt, Word};
@@ -84,14 +48,10 @@ use tempfile::tempdir;
 use super::{AccountInfo, NoteRecord, NoteSyncRecord, NullifierInfo, TransactionRecord};
 use crate::ScopedBlockNum;
 use crate::account_state_forest::{
-    AccountStorageMapResult,
-    HISTORICAL_BLOCK_RETENTION,
-    TestAccountStateForestExt,
+    AccountStorageMapResult, HISTORICAL_BLOCK_RETENTION, TestAccountStateForestExt,
 };
 use crate::db::models::queries::{
-    PrecomputedPublicAccountState,
-    PrecomputedPublicAccountStates,
-    StorageMapValue,
+    PrecomputedPublicAccountState, PrecomputedPublicAccountStates, StorageMapValue,
     insert_account_storage_map_value,
 };
 use crate::db::models::{queries, utils};
@@ -167,7 +127,10 @@ fn sql_insert_nullifiers_for_block() {
     // Inserting the nullifier twice is an error
     {
         let res = queries::insert_nullifiers_for_block(conn, &nullifiers, block_num);
-        assert!(res.is_err(), "Inserting the same nullifier twice is an error");
+        assert!(
+            res.is_err(),
+            "Inserting the same nullifier twice is an error"
+        );
     }
 
     // even if the block number is different
@@ -217,7 +180,10 @@ fn sql_select_nullifiers() {
     let mut state = vec![];
     for i in 0..10 {
         let nullifier = num_to_nullifier(i);
-        state.push(NullifierInfo { nullifier, block_num });
+        state.push(NullifierInfo {
+            nullifier,
+            block_num,
+        });
 
         let res = queries::insert_nullifiers_for_block(conn, &[nullifier], block_num);
         assert_eq!(res.unwrap(), 1, "One element must have been inserted");
@@ -229,7 +195,9 @@ fn sql_select_nullifiers() {
 
 pub fn create_note(account_id: AccountId) -> Note {
     let coin_seed: [u64; 4] = rand::rng().random();
-    let rng = Arc::new(Mutex::new(RandomCoin::new(coin_seed.map(Felt::new_unchecked).into())));
+    let rng = Arc::new(Mutex::new(RandomCoin::new(
+        coin_seed.map(Felt::new_unchecked).into(),
+    )));
     let mut rng = rng.lock().unwrap();
 
     P2idNote::builder()
@@ -450,13 +418,23 @@ fn sync_account_vault_basic_validation() {
 
     // Should return assets we inserted
     assert!(!values.is_empty(), "vault assets should have data");
-    assert!(last_block >= block_from, "response block num should be higher than request");
+    assert!(
+        last_block >= block_from,
+        "response block num should be higher than request"
+    );
 
     // Verify that we get the updated asset for vault_key_1
-    let vault_key_1_asset =
-        values.iter().find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
-    assert!(vault_key_1_asset.is_some(), "should find updated vault asset");
-    assert_eq!(vault_key_1_asset.unwrap().asset, Some(updated_fungible_asset_1));
+    let vault_key_1_asset = values
+        .iter()
+        .find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
+    assert!(
+        vault_key_1_asset.is_some(),
+        "should find updated vault asset"
+    );
+    assert_eq!(
+        vault_key_1_asset.unwrap().asset,
+        Some(updated_fungible_asset_1)
+    );
 }
 
 #[test]
@@ -505,7 +483,10 @@ fn select_nullifiers_by_prefix_works() {
     queries::insert_nullifiers_for_block(conn, &[nullifier2], block_number2).unwrap();
 
     let nullifiers = queries::select_all_nullifiers(conn).unwrap();
-    assert_eq!(nullifiers, vec![(nullifier1, block_number1), (nullifier2, block_number2)]);
+    assert_eq!(
+        nullifiers,
+        vec![(nullifier1, block_number1), (nullifier2, block_number2)]
+    );
 
     // only the nullifiers matching the prefix are included
     let (nullifiers, _) = queries::select_nullifiers_by_prefix(
@@ -897,7 +878,11 @@ fn note_sync_across_multiple_blocks() {
 
     assert_eq!(
         collected_block_nums,
-        vec![BlockNumber::from(1), BlockNumber::from(2), BlockNumber::from(3)],
+        vec![
+            BlockNumber::from(1),
+            BlockNumber::from(2),
+            BlockNumber::from(3)
+        ],
         "should return all 3 blocks with matching notes in a single query"
     );
 
@@ -907,7 +892,11 @@ fn note_sync_across_multiple_blocks() {
             mmr.open_at(block_num.as_usize(), mmr_forest).is_ok(),
             "should be able to open MMR proof for block {block_num}"
         );
-        assert_eq!(update.notes.len(), 1, "each block should have exactly one note");
+        assert_eq!(
+            update.notes.len(),
+            1,
+            "each block should have exactly one note"
+        );
     }
 }
 
@@ -1048,7 +1037,11 @@ fn insert_account_patch(
     patch: &AccountPatch,
 ) {
     for (slot_name, slot_patch) in patch.storage().maps() {
-        for (k, v) in slot_patch.entries().into_iter().flat_map(StorageMapPatchEntries::as_map) {
+        for (k, v) in slot_patch
+            .entries()
+            .into_iter()
+            .flat_map(StorageMapPatchEntries::as_map)
+        {
             insert_account_storage_map_value(
                 conn,
                 account_id,
@@ -1147,7 +1140,11 @@ fn sql_account_storage_map_values_insertion() {
     )
     .unwrap();
 
-    assert_eq!(storage_map_values.values.len(), 3, "three rows (with duplicate key)");
+    assert_eq!(
+        storage_map_values.values.len(),
+        3,
+        "three rows (with duplicate key)"
+    );
     // key1 should now be value3 at block2; key2 remains value2 at block1
     assert!(
         storage_map_values
@@ -1276,7 +1273,10 @@ fn select_storage_map_sync_values() {
         },
     ];
 
-    assert_eq!(page.values, expected, "should return latest values ordered by key");
+    assert_eq!(
+        page.values, expected,
+        "should return latest values ordered by key"
+    );
 }
 
 #[test]
@@ -1311,7 +1311,12 @@ fn select_storage_map_sync_values_for_network_account() {
 
     assert_eq!(
         page.values,
-        vec![StorageMapValue { block_num, slot_name, key, value }],
+        vec![StorageMapValue {
+            block_num,
+            slot_name,
+            key,
+            value
+        }],
         "network accounts with public state should be accepted",
     );
 }
@@ -1388,7 +1393,10 @@ fn select_storage_map_sync_values_paginates_until_last_block() {
     )
     .unwrap();
 
-    assert_eq!(page.last_block_included, block1, "should truncate at block 1");
+    assert_eq!(
+        page.last_block_included, block1,
+        "should truncate at block 1"
+    );
     assert_eq!(page.values.len(), 1, "should include block 1 only");
 }
 
@@ -1482,8 +1490,14 @@ fn select_storage_map_sync_values_all_entries_in_single_non_genesis_block() {
         queries::select_account_storage_map_values_paged(&mut conn, account_id, block5..=block5, 1)
             .unwrap();
 
-    assert!(page.values.is_empty(), "should have no values when single block exceeds limit");
-    assert_eq!(page.last_block_included, block5, "should signal no progress at block 5");
+    assert!(
+        page.values.is_empty(),
+        "should have no values when single block exceeds limit"
+    );
+    assert_eq!(
+        page.last_block_included, block5,
+        "should signal no progress at block 5"
+    );
 }
 
 /// Tests that normal multi-block pagination still works correctly: entries in blocks 1, 2, 3 with
@@ -1562,8 +1576,15 @@ fn select_storage_map_sync_values_multi_block_pagination() {
     )
     .unwrap();
 
-    assert_eq!(page.values.len(), 2, "should include entries from blocks 1 and 2");
-    assert_eq!(page.last_block_included, block2, "last included block should be 2");
+    assert_eq!(
+        page.values.len(),
+        2,
+        "should include entries from blocks 1 and 2"
+    );
+    assert_eq!(
+        page.last_block_included, block2,
+        "last included block should be 2"
+    );
 }
 
 #[tokio::test]
@@ -1720,7 +1741,12 @@ fn num_to_word(n: u64) -> Word {
 }
 
 fn num_to_storage_map_key(n: u64) -> StorageMapKey {
-    StorageMapKey::new(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new_unchecked(n)]))
+    StorageMapKey::new(Word::from([
+        Felt::ZERO,
+        Felt::ZERO,
+        Felt::ZERO,
+        Felt::new_unchecked(n),
+    ]))
 }
 
 fn num_to_nullifier(n: u64) -> Nullifier {
@@ -1952,7 +1978,10 @@ fn test_select_account_code_by_commitment() {
     let non_existent_commitment = Word::read_from_bytes(&non_existent_commitment).unwrap();
     let code_other =
         queries::select_account_code_by_commitment(&mut conn, non_existent_commitment).unwrap();
-    assert!(code_other.is_none(), "Code should not exist for non-existent commitment");
+    assert!(
+        code_other.is_none(),
+        "Code should not exist for non-existent commitment"
+    );
 }
 
 #[test]
@@ -2031,13 +2060,19 @@ fn test_select_account_code_by_commitment_multiple_codes() {
         queries::select_account_code_by_commitment(&mut conn, code_v1_commitment)
             .unwrap()
             .expect("v1 code should exist");
-    assert_eq!(code_from_v1_commitment, code_v1, "v1 commitment should return v1 code");
+    assert_eq!(
+        code_from_v1_commitment, code_v1,
+        "v1 commitment should return v1 code"
+    );
 
     let code_from_v2_commitment =
         queries::select_account_code_by_commitment(&mut conn, code_v2_commitment)
             .unwrap()
             .expect("v2 code should exist");
-    assert_eq!(code_from_v2_commitment, code_v2, "v2 commitment should return v2 code");
+    assert_eq!(
+        code_from_v2_commitment, code_v2,
+        "v2 commitment should return v2 code"
+    );
 }
 
 // GENESIS REGRESSION TESTS
@@ -2236,7 +2271,10 @@ async fn genesis_with_multiple_accounts() {
     use crate::genesis::GenesisState;
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("foo::interface", "@account_procedure pub proc foo push.1 end")
+        .compile_component_code(
+            "foo::interface",
+            "@account_procedure pub proc foo push.1 end",
+        )
         .unwrap();
     let account_component1 = AccountComponent::new(
         account_component_code,
@@ -2259,7 +2297,10 @@ async fn genesis_with_multiple_accounts() {
     let fungible_asset = FungibleAsset::new(faucet_id, 2000).unwrap();
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("bar::interface", "@account_procedure pub proc bar push.2 end")
+        .compile_component_code(
+            "bar::interface",
+            "@account_procedure pub proc bar push.2 end",
+        )
         .unwrap();
     let account_component2 = AccountComponent::new(
         account_component_code,
@@ -2293,7 +2334,10 @@ async fn genesis_with_multiple_accounts() {
     let component_storage = vec![StorageSlot::with_map(StorageSlotName::mock(0), storage_map)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code("baz::interface", "@account_procedure pub proc baz push.3 end")
+        .compile_component_code(
+            "baz::interface",
+            "@account_procedure pub proc baz push.3 end",
+        )
         .unwrap();
     let account_component3 = AccountComponent::new(
         account_component_code,
@@ -2390,7 +2434,10 @@ fn serialization_symmetry_core_types() {
     let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
     let bytes = account_id.to_bytes();
     let restored = AccountId::read_from_bytes(&bytes).unwrap();
-    assert_eq!(account_id, restored, "AccountId serialization must be symmetric");
+    assert_eq!(
+        account_id, restored,
+        "AccountId serialization must be symmetric"
+    );
 
     // Word
     let word = num_to_word(0x1234_5678_9ABC_DEF0);
@@ -2402,13 +2449,24 @@ fn serialization_symmetry_core_types() {
     let nullifier = num_to_nullifier(0xDEAD_BEEF);
     let bytes = nullifier.to_bytes();
     let restored = Nullifier::read_from_bytes(&bytes).unwrap();
-    assert_eq!(nullifier, restored, "Nullifier serialization must be symmetric");
+    assert_eq!(
+        nullifier, restored,
+        "Nullifier serialization must be symmetric"
+    );
 
     // TransactionId
-    let tx_id = TransactionId::new(num_to_word(1), num_to_word(2), num_to_word(3), num_to_word(4));
+    let tx_id = TransactionId::new(
+        num_to_word(1),
+        num_to_word(2),
+        num_to_word(3),
+        num_to_word(4),
+    );
     let bytes = tx_id.to_bytes();
     let restored = TransactionId::read_from_bytes(&bytes).unwrap();
-    assert_eq!(tx_id, restored, "TransactionId serialization must be symmetric");
+    assert_eq!(
+        tx_id, restored,
+        "TransactionId serialization must be symmetric"
+    );
 
     // NoteId
     let note_id = NoteId::from_raw(num_to_word(1));
@@ -2436,7 +2494,10 @@ fn serialization_symmetry_block_header() {
 
     let bytes = block_header.to_bytes();
     let restored = BlockHeader::read_from_bytes(&bytes).unwrap();
-    assert_eq!(block_header, restored, "BlockHeader serialization must be symmetric");
+    assert_eq!(
+        block_header, restored,
+        "BlockHeader serialization must be symmetric"
+    );
 }
 
 #[test]
@@ -2448,7 +2509,10 @@ fn serialization_symmetry_assets() {
     let asset: Asset = fungible.into();
     let bytes = asset.to_bytes();
     let restored = Asset::read_from_bytes(&bytes).unwrap();
-    assert_eq!(asset, restored, "Asset (fungible) serialization must be symmetric");
+    assert_eq!(
+        asset, restored,
+        "Asset (fungible) serialization must be symmetric"
+    );
 }
 
 #[test]
@@ -2458,7 +2522,10 @@ fn serialization_symmetry_account_code() {
     let code = account.code();
     let bytes = code.to_bytes();
     let restored = AccountCode::read_from_bytes(&bytes).unwrap();
-    assert_eq!(*code, restored, "AccountCode serialization must be symmetric");
+    assert_eq!(
+        *code, restored,
+        "AccountCode serialization must be symmetric"
+    );
 }
 
 #[test]
@@ -2466,7 +2533,10 @@ fn serialization_symmetry_sparse_merkle_path() {
     let path = SparseMerklePath::default();
     let bytes = path.to_bytes();
     let restored = SparseMerklePath::read_from_bytes(&bytes).unwrap();
-    assert_eq!(path, restored, "SparseMerklePath serialization must be symmetric");
+    assert_eq!(
+        path, restored,
+        "SparseMerklePath serialization must be symmetric"
+    );
 }
 
 #[test]
@@ -2482,7 +2552,10 @@ fn serialization_symmetry_note_metadata() {
 
     let bytes = metadata.to_bytes();
     let restored = NoteMetadata::read_from_bytes(&bytes).unwrap();
-    assert_eq!(metadata, restored, "NoteMetadata serialization must be symmetric");
+    assert_eq!(
+        metadata, restored,
+        "NoteMetadata serialization must be symmetric"
+    );
 }
 
 #[test]
@@ -2490,7 +2563,10 @@ fn serialization_symmetry_nullifier_vec() {
     let nullifiers: Vec<Nullifier> = (0..5).map(num_to_nullifier).collect();
     let bytes = nullifiers.to_bytes();
     let restored: Vec<Nullifier> = Deserializable::read_from_bytes(&bytes).unwrap();
-    assert_eq!(nullifiers, restored, "Vec<Nullifier> serialization must be symmetric");
+    assert_eq!(
+        nullifiers, restored,
+        "Vec<Nullifier> serialization must be symmetric"
+    );
 }
 
 #[test]
@@ -2498,7 +2574,10 @@ fn serialization_symmetry_note_id_vec() {
     let note_ids: Vec<NoteId> = (0..5).map(|i| NoteId::from_raw(num_to_word(i))).collect();
     let bytes = note_ids.to_bytes();
     let restored: Vec<NoteId> = Deserializable::read_from_bytes(&bytes).unwrap();
-    assert_eq!(note_ids, restored, "Vec<NoteId> serialization must be symmetric");
+    assert_eq!(
+        note_ids, restored,
+        "Vec<NoteId> serialization must be symmetric"
+    );
 }
 
 #[test]
@@ -2532,7 +2611,10 @@ fn db_roundtrip_block_header() {
             .unwrap()
             .expect("Block header should exist");
 
-    assert_eq!(block_header, retrieved, "BlockHeader DB roundtrip must be symmetric");
+    assert_eq!(
+        block_header, retrieved,
+        "BlockHeader DB roundtrip must be symmetric"
+    );
 }
 
 #[test]
@@ -2550,9 +2632,16 @@ fn db_roundtrip_nullifiers() {
     // Retrieve
     let retrieved = queries::select_all_nullifiers(&mut conn).unwrap();
 
-    assert_eq!(nullifiers.len(), retrieved.len(), "Should retrieve same number of nullifiers");
+    assert_eq!(
+        nullifiers.len(),
+        retrieved.len(),
+        "Should retrieve same number of nullifiers"
+    );
     for (orig, info) in nullifiers.iter().zip(retrieved.iter()) {
-        assert_eq!(*orig, info.nullifier, "Nullifier DB roundtrip must be symmetric");
+        assert_eq!(
+            *orig, info.nullifier,
+            "Nullifier DB roundtrip must be symmetric"
+        );
         assert_eq!(block_num, info.block_num, "Block number must match");
     }
 }
@@ -2596,7 +2685,10 @@ fn db_roundtrip_account() {
         retrieved_info.summary.account_commitment, account_commitment,
         "Account commitment DB roundtrip must be symmetric"
     );
-    assert_eq!(retrieved_info.summary.block_num, block_num, "Block number must match");
+    assert_eq!(
+        retrieved_info.summary.block_num, block_num,
+        "Block number must match"
+    );
 }
 
 #[test]
@@ -2639,7 +2731,10 @@ fn db_roundtrip_notes() {
     assert_eq!(retrieved.len(), 1, "Should have one note");
     let retrieved_note = &retrieved[0];
 
-    assert_eq!(note.note_id, retrieved_note.note_id, "NoteId DB roundtrip must be symmetric");
+    assert_eq!(
+        note.note_id, retrieved_note.note_id,
+        "NoteId DB roundtrip must be symmetric"
+    );
     assert_eq!(
         note.metadata, retrieved_note.metadata,
         "Metadata DB roundtrip must be symmetric"
@@ -2692,8 +2787,15 @@ fn db_roundtrip_vault_assets() {
     assert_eq!(vault_assets.len(), 1, "Should have one vault asset");
     let retrieved = &vault_assets[0];
 
-    assert_eq!(retrieved.asset, Some(asset), "Asset DB roundtrip must be symmetric");
-    assert_eq!(retrieved.vault_key, vault_key, "VaultKey DB roundtrip must be symmetric");
+    assert_eq!(
+        retrieved.asset,
+        Some(asset),
+        "Asset DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        retrieved.vault_key, vault_key,
+        "VaultKey DB roundtrip must be symmetric"
+    );
     assert_eq!(retrieved.block_num, block_num, "Block number must match");
 }
 
@@ -2747,9 +2849,18 @@ fn db_roundtrip_storage_map_values() {
     assert_eq!(page.values.len(), 1, "Should have one storage map value");
     let retrieved = &page.values[0];
 
-    assert_eq!(retrieved.slot_name, slot_name, "StorageSlotName DB roundtrip must be symmetric");
-    assert_eq!(retrieved.key, key, "Key (Word) DB roundtrip must be symmetric");
-    assert_eq!(retrieved.value, value, "Value (Word) DB roundtrip must be symmetric");
+    assert_eq!(
+        retrieved.slot_name, slot_name,
+        "StorageSlotName DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        retrieved.key, key,
+        "Key (Word) DB roundtrip must be symmetric"
+    );
+    assert_eq!(
+        retrieved.value, value,
+        "Value (Word) DB roundtrip must be symmetric"
+    );
     assert_eq!(retrieved.block_num, block_num, "Block number must match");
 }
 
@@ -2850,23 +2961,41 @@ fn db_roundtrip_account_storage_with_maps() {
     );
 
     // Verify each slot
-    for (original_slot, retrieved_slot) in
-        original_storage.slots().iter().zip(retrieved_storage.slots().iter())
+    for (original_slot, retrieved_slot) in original_storage
+        .slots()
+        .iter()
+        .zip(retrieved_storage.slots().iter())
     {
-        assert_eq!(original_slot.name(), retrieved_slot.name(), "Slot names must match");
-        assert_eq!(original_slot.slot_type(), retrieved_slot.slot_type(), "Slot types must match");
+        assert_eq!(
+            original_slot.name(),
+            retrieved_slot.name(),
+            "Slot names must match"
+        );
+        assert_eq!(
+            original_slot.slot_type(),
+            retrieved_slot.slot_type(),
+            "Slot types must match"
+        );
 
         match (original_slot.content(), retrieved_slot.content()) {
             (StorageSlotContent::Value(orig), StorageSlotContent::Value(retr)) => {
                 assert_eq!(orig, retr, "Value slot contents must match");
-            },
+            }
             (StorageSlotContent::Map(orig_map), StorageSlotContent::Map(retr_map)) => {
-                assert_eq!(orig_map.root(), retr_map.root(), "Map slot roots must match");
+                assert_eq!(
+                    orig_map.root(),
+                    retr_map.root(),
+                    "Map slot roots must match"
+                );
                 for (key, value) in orig_map.entries() {
                     let retrieved_value = retr_map.get(key);
-                    assert_eq!(*value, retrieved_value, "Map entry for key {:?} must match", key);
+                    assert_eq!(
+                        *value, retrieved_value,
+                        "Map entry for key {:?} must match",
+                        key
+                    );
                 }
-            },
+            }
             // The slot_type assertion above guarantees matching variants, so this is unreachable
             _ => unreachable!(),
         }
@@ -2874,7 +3003,10 @@ fn db_roundtrip_account_storage_with_maps() {
 
     // Also verify full account reconstruction via select_account (which calls select_full_account)
     let account_info = queries::select_account(&mut conn, account_id).unwrap();
-    assert!(account_info.details.is_some(), "Public account should have details");
+    assert!(
+        account_info.details.is_some(),
+        "Public account should have details"
+    );
     let retrieved_account = account_info.details.unwrap();
     assert_eq!(
         account.to_commitment(),
@@ -2899,8 +3031,10 @@ fn db_roundtrip_note_metadata_attachment() {
 
     // Create NoteMetadata with the attachment
     let attachments = NoteAttachments::from(attachment.clone());
-    let metadata =
-        NoteMetadata::new(PartialNoteMetadata::new(account_id, NoteType::Public), &attachments);
+    let metadata = NoteMetadata::new(
+        PartialNoteMetadata::new(account_id, NoteType::Public),
+        &attachments,
+    );
 
     let note = NoteRecord {
         block_num,
@@ -3117,7 +3251,11 @@ fn test_prune_history() {
     // Verify initial state - should have 5 vault assets and 5 storage map values
     let (_, initial_vault_assets) =
         queries::select_account_vault_assets(conn, public_account_id, block_0..=block_tip).unwrap();
-    assert_eq!(initial_vault_assets.len(), 5, "should have 5 vault assets before cleanup");
+    assert_eq!(
+        initial_vault_assets.len(),
+        5,
+        "should have 5 vault assets before cleanup"
+    );
 
     let initial_storage_values = queries::select_account_storage_map_values_paged(
         conn,
@@ -3141,34 +3279,51 @@ fn test_prune_history() {
     // the cutoff. The block_old rows are superseded only above the cutoff, so they remain the
     // baseline for reads at block_cutoff.
     assert_eq!(vault_deleted, 1, "should delete 1 stale vault asset");
-    assert_eq!(storage_deleted, 1, "should delete 1 stale storage map value");
+    assert_eq!(
+        storage_deleted, 1,
+        "should delete 1 stale storage map value"
+    );
 
     // Verify remaining vault assets - should have 4 (baseline at block_old, cutoff, update, tip)
     let (_, remaining_vault_assets) =
         queries::select_account_vault_assets(conn, public_account_id, block_0..=block_tip).unwrap();
-    assert_eq!(remaining_vault_assets.len(), 4, "should have 4 vault assets after cleanup");
+    assert_eq!(
+        remaining_vault_assets.len(),
+        4,
+        "should have 4 vault assets after cleanup"
+    );
 
     // Verify no vault asset at block_0 remains
     assert!(
-        !remaining_vault_assets.iter().any(|v| v.block_num == block_0),
+        !remaining_vault_assets
+            .iter()
+            .any(|v| v.block_num == block_0),
         "block_0 vault asset should be deleted"
     );
 
     // Verify vault assets at block_old, block_cutoff, block_update, block_tip remain
     assert!(
-        remaining_vault_assets.iter().any(|v| v.block_num == block_old),
+        remaining_vault_assets
+            .iter()
+            .any(|v| v.block_num == block_old),
         "block_old vault asset should be retained (baseline for reads at the cutoff)"
     );
     assert!(
-        remaining_vault_assets.iter().any(|v| v.block_num == block_cutoff),
+        remaining_vault_assets
+            .iter()
+            .any(|v| v.block_num == block_cutoff),
         "block_cutoff vault asset should be retained (at cutoff)"
     );
     assert!(
-        remaining_vault_assets.iter().any(|v| v.block_num == block_update),
+        remaining_vault_assets
+            .iter()
+            .any(|v| v.block_num == block_update),
         "block_update vault asset should be retained"
     );
     assert!(
-        remaining_vault_assets.iter().any(|v| v.block_num == block_tip),
+        remaining_vault_assets
+            .iter()
+            .any(|v| v.block_num == block_tip),
         "block_tip vault asset should be retained"
     );
 
@@ -3189,25 +3344,40 @@ fn test_prune_history() {
 
     // Verify no storage map value at block_0 remains
     assert!(
-        !remaining_storage_values.values.iter().any(|v| v.block_num == block_0),
+        !remaining_storage_values
+            .values
+            .iter()
+            .any(|v| v.block_num == block_0),
         "block_0 storage map value should be deleted"
     );
 
     // Verify storage map values at block_old, block_cutoff, block_update, block_tip remain
     assert!(
-        remaining_storage_values.values.iter().any(|v| v.block_num == block_old),
+        remaining_storage_values
+            .values
+            .iter()
+            .any(|v| v.block_num == block_old),
         "block_old storage map value should be retained (baseline for reads at the cutoff)"
     );
     assert!(
-        remaining_storage_values.values.iter().any(|v| v.block_num == block_cutoff),
+        remaining_storage_values
+            .values
+            .iter()
+            .any(|v| v.block_num == block_cutoff),
         "block_cutoff storage map value should be retained (at cutoff)"
     );
     assert!(
-        remaining_storage_values.values.iter().any(|v| v.block_num == block_update),
+        remaining_storage_values
+            .values
+            .iter()
+            .any(|v| v.block_num == block_update),
         "block_update storage map value should be retained"
     );
     assert!(
-        remaining_storage_values.values.iter().any(|v| v.block_num == block_tip),
+        remaining_storage_values
+            .values
+            .iter()
+            .any(|v| v.block_num == block_tip),
         "block_tip storage map value should be retained"
     );
 
@@ -3238,7 +3408,10 @@ fn test_prune_history() {
     let (vault_deleted_2, ..) = queries::prune_history(conn, block_tip).unwrap();
 
     // The old open-ended entry should not be deleted (vault_deleted_2 should be 0)
-    assert_eq!(vault_deleted_2, 0, "should not delete any open-ended entries");
+    assert_eq!(
+        vault_deleted_2, 0,
+        "should not delete any open-ended entries"
+    );
 
     // Verify the old open-ended entry still exists
     let (_, vault_assets_with_latest) =
@@ -3382,7 +3555,9 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     forest.update_account(block1, &patch_1);
 
     // Verify forest matches DB for block 1
-    let forest_root_1 = forest.get_storage_map_root(account_id, &slot_map, block1).unwrap();
+    let forest_root_1 = forest
+        .get_storage_map_root(account_id, &slot_map, block1)
+        .unwrap();
     let db_root_1 = reconstruct_storage_map_root_from_db(&mut conn, account_id, &slot_map, block1)
         .expect("DB should have storage map root");
 
@@ -3415,7 +3590,9 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     forest.update_account(block2, &patch_2);
 
     // Verify forest matches DB for block 2
-    let forest_root_2 = forest.get_storage_map_root(account_id, &slot_map, block2).unwrap();
+    let forest_root_2 = forest
+        .get_storage_map_root(account_id, &slot_map, block2)
+        .unwrap();
     let db_root_2 = reconstruct_storage_map_root_from_db(&mut conn, account_id, &slot_map, block2)
         .expect("DB should have storage map root");
 
@@ -3448,7 +3625,9 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     forest.update_account(block3, &patch_3);
 
     // Verify forest matches DB for block 3
-    let forest_root_3 = forest.get_storage_map_root(account_id, &slot_map, block3).unwrap();
+    let forest_root_3 = forest
+        .get_storage_map_root(account_id, &slot_map, block3)
+        .unwrap();
     let db_root_3 = reconstruct_storage_map_root_from_db(&mut conn, account_id, &slot_map, block3)
         .expect("DB should have storage map root");
 
@@ -3458,7 +3637,9 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     );
 
     // Verify we can query historical roots
-    let forest_root_1_check = forest.get_storage_map_root(account_id, &slot_map, block1).unwrap();
+    let forest_root_1_check = forest
+        .get_storage_map_root(account_id, &slot_map, block1)
+        .unwrap();
     let db_root_1_check =
         reconstruct_storage_map_root_from_db(&mut conn, account_id, &slot_map, block1)
             .expect("DB should have storage map root");
@@ -3468,8 +3649,14 @@ fn account_state_forest_matches_db_storage_map_roots_across_updates() {
     );
 
     // Verify roots are different across blocks (since we modified the map)
-    assert_ne!(forest_root_1, forest_root_2, "Roots should differ after deletion");
-    assert_ne!(forest_root_2, forest_root_3, "Roots should differ after modification");
+    assert_ne!(
+        forest_root_1, forest_root_2,
+        "Roots should differ after deletion"
+    );
+    assert_ne!(
+        forest_root_2, forest_root_3,
+        "Roots should differ after modification"
+    );
 }
 
 #[test]
@@ -3544,9 +3731,15 @@ fn account_state_forest_shared_roots_not_deleted_prematurely() {
     forest.update_account(block02, &patch3);
 
     // All three accounts should have the same root (structural sharing in SmtForest)
-    let root1 = forest.get_storage_map_root(account1, &slot_name, block01).unwrap();
-    let root2 = forest.get_storage_map_root(account2, &slot_name, block02).unwrap();
-    let root3 = forest.get_storage_map_root(account3, &slot_name, block02).unwrap();
+    let root1 = forest
+        .get_storage_map_root(account1, &slot_name, block01)
+        .unwrap();
+    let root2 = forest
+        .get_storage_map_root(account2, &slot_name, block02)
+        .unwrap();
+    let root3 = forest
+        .get_storage_map_root(account3, &slot_name, block02)
+        .unwrap();
 
     // identical maps means identical roots
     assert_eq!(root1, root2);
@@ -3603,9 +3796,15 @@ fn account_state_forest_shared_roots_not_deleted_prematurely() {
     assert_eq!(total_roots_removed, 0);
 
     // Account2 and Account3 should still be accessible at their recent blocks
-    forest.get_storage_map_root(account1, &slot_name, block53).unwrap();
-    forest.get_storage_map_root(account2, &slot_name, block51).unwrap();
-    forest.get_storage_map_root(account3, &slot_name, block52).unwrap();
+    forest
+        .get_storage_map_root(account1, &slot_name, block53)
+        .unwrap();
+    forest
+        .get_storage_map_root(account2, &slot_name, block51)
+        .unwrap();
+    forest
+        .get_storage_map_root(account3, &slot_name, block52)
+        .unwrap();
 }
 
 #[test]
@@ -3654,8 +3853,9 @@ fn account_state_forest_retains_latest_after_100_blocks_and_pruning() {
 
     // Capture the roots from block 1
     let initial_vault_root = forest.get_vault_root(account_id, block_1).unwrap();
-    let initial_storage_map_root =
-        forest.get_storage_map_root(account_id, &slot_map, block_1).unwrap();
+    let initial_storage_map_root = forest
+        .get_storage_map_root(account_id, &slot_map, block_1)
+        .unwrap();
 
     // Blocks 2-100: Do nothing (no updates to this account) Simulate other activity by just
     // advancing to block 100
@@ -3671,7 +3871,10 @@ fn account_state_forest_retains_latest_after_100_blocks_and_pruning() {
     let total_roots_removed = forest.prune(block_100);
 
     let cutoff_block = 100 - HISTORICAL_BLOCK_RETENTION;
-    assert_eq!(cutoff_block, 50, "Cutoff should be block 50 (100 - HISTORICAL_BLOCK_RETENTION)");
+    assert_eq!(
+        cutoff_block, 50,
+        "Cutoff should be block 50 (100 - HISTORICAL_BLOCK_RETENTION)"
+    );
     assert_eq!(total_roots_removed, 0);
 
     assert!(forest.get_vault_root(account_id, block_100).is_some());
@@ -3766,7 +3969,10 @@ fn account_state_forest_preserves_most_recent_vault_only() {
     let vault_root_at_1 = forest
         .get_vault_root(account_id, block_1)
         .expect("Should still have vault root at block 1");
-    assert_eq!(vault_root_at_1, initial_vault_root, "Vault root should be preserved");
+    assert_eq!(
+        vault_root_at_1, initial_vault_root,
+        "Vault root should be preserved"
+    );
 }
 
 #[test]
@@ -3986,8 +4192,15 @@ fn select_transactions_records_reports_truncation_below_payload_cap() {
         queries::select_transactions_records(&mut conn, &[bob], BlockNumber::GENESIS..=block2)
             .unwrap();
 
-    assert_eq!(last_block_included, block1, "cursor must point at the last complete block");
-    assert_eq!(records.len(), 1, "only the complete block's transaction should be returned");
+    assert_eq!(
+        last_block_included, block1,
+        "cursor must point at the last complete block"
+    );
+    assert_eq!(
+        records.len(),
+        1,
+        "only the complete block's transaction should be returned"
+    );
     assert_eq!(records[0].header.id(), tx1.id());
 }
 
@@ -4063,7 +4276,9 @@ fn account_state_forest_preserves_most_recent_storage_map_only() {
 
     forest.update_account(block_1, &delta_1);
 
-    let initial_storage_root = forest.get_storage_map_root(account_id, &slot_map, block_1).unwrap();
+    let initial_storage_root = forest
+        .get_storage_map_root(account_id, &slot_map, block_1)
+        .unwrap();
 
     // Advance 100 blocks without any updates
     let block_100 = BlockNumber::from(100);
@@ -4078,7 +4293,10 @@ fn account_state_forest_preserves_most_recent_storage_map_only() {
     let storage_root_at_1 = forest
         .get_storage_map_root(account_id, &slot_map, block_1)
         .expect("Should still have storage root at block 1");
-    assert_eq!(storage_root_at_1, initial_storage_root, "Storage root should be preserved");
+    assert_eq!(
+        storage_root_at_1, initial_storage_root,
+        "Storage root should be preserved"
+    );
 
     // Verify we can get all entries
     let result = forest
@@ -4182,7 +4400,9 @@ fn account_state_forest_preserves_mixed_slots_independently() {
         (slot_map_b.clone(), StorageSlotPatch::Map(map_patch_b)),
         (
             slot_value.clone(),
-            StorageSlotPatch::Value(StorageValuePatch::Update { value: value_slot_data }),
+            StorageSlotPatch::Value(StorageValuePatch::Update {
+                value: value_slot_data,
+            }),
         ),
     ]);
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
@@ -4199,8 +4419,12 @@ fn account_state_forest_preserves_mixed_slots_independently() {
     forest.update_account(block_1, &delta_1);
 
     let initial_vault_root = forest.get_vault_root(account_id, block_1).unwrap();
-    let initial_map_a_root = forest.get_storage_map_root(account_id, &slot_map_a, block_1).unwrap();
-    let initial_map_b_root = forest.get_storage_map_root(account_id, &slot_map_b, block_1).unwrap();
+    let initial_map_a_root = forest
+        .get_storage_map_root(account_id, &slot_map_a, block_1)
+        .unwrap();
+    let initial_map_b_root = forest
+        .get_storage_map_root(account_id, &slot_map_b, block_1)
+        .unwrap();
 
     // Block 51: Update only map_a (within retention window)
     let block_51 = BlockNumber::from(51);
@@ -4208,8 +4432,10 @@ fn account_state_forest_preserves_mixed_slots_independently() {
 
     let map_patch_a_update = StorageMapPatch::from_iters([], [(key1, value2)]);
 
-    let raw_51 =
-        BTreeMap::from_iter([(slot_map_a.clone(), StorageSlotPatch::Map(map_patch_a_update))]);
+    let raw_51 = BTreeMap::from_iter([(
+        slot_map_a.clone(),
+        StorageSlotPatch::Map(map_patch_a_update),
+    )]);
     let storage_patch_51 = AccountStoragePatch::from_raw(raw_51).unwrap();
 
     let delta_51 = AccountPatch::new(
@@ -4237,9 +4463,13 @@ fn account_state_forest_preserves_mixed_slots_independently() {
     );
 
     // Verify vault is still accessible
-    let vault_root_at_1 =
-        forest.get_vault_root(account_id, block_1).expect("Vault should be accessible");
-    assert_eq!(vault_root_at_1, initial_vault_root, "Vault should be from block 1");
+    let vault_root_at_1 = forest
+        .get_vault_root(account_id, block_1)
+        .expect("Vault should be accessible");
+    assert_eq!(
+        vault_root_at_1, initial_vault_root,
+        "Vault should be from block 1"
+    );
 
     // Verify map_a is accessible (from block 51)
     let map_a_root_at_51 = forest

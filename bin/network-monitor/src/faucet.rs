@@ -162,26 +162,30 @@ impl Service for FaucetService {
             ),
         }
 
-        let last_error =
-            match perform_mint_test(&self.client, &self.url, &self.account_id, self.solve_timeout)
-                .await
-            {
-                Ok(minted_tokens) => {
-                    self.success_count += 1;
-                    self.last_tx_id = Some(minted_tokens.tx_id.clone());
-                    info!(
-                        target: LOG_TARGET,
-                        { transaction.id = %minted_tokens.tx_id },
-                        "Faucet test successful"
-                    );
-                    None
-                },
-                Err(e) => {
-                    self.failure_count += 1;
-                    warn!(target: LOG_TARGET, error = %e, "Faucet test failed");
-                    Some(format!("{e:#}"))
-                },
-            };
+        let last_error = match perform_mint_test(
+            &self.client,
+            &self.url,
+            &self.account_id,
+            self.solve_timeout,
+        )
+        .await
+        {
+            Ok(minted_tokens) => {
+                self.success_count += 1;
+                self.last_tx_id = Some(minted_tokens.tx_id.clone());
+                info!(
+                    target: LOG_TARGET,
+                    { transaction.id = %minted_tokens.tx_id },
+                    "Faucet test successful"
+                );
+                None
+            }
+            Err(e) => {
+                self.failure_count += 1;
+                warn!(target: LOG_TARGET, error = %e, "Faucet test failed");
+                Some(format!("{e:#}"))
+            }
+        };
 
         let details = ServiceDetails::FaucetTest(FaucetTestDetails {
             url: self.url.to_string(),
@@ -216,8 +220,9 @@ async fn fetch_faucet_metadata(
 
     let response = client.get(metadata_url).send().await?;
 
-    let response_text =
-        read_success_body(response).await.context("/get_metadata request failed")?;
+    let response_text = read_success_body(response)
+        .await
+        .context("/get_metadata request failed")?;
 
     parse_faucet_response(&response_text).context("unexpected response from /get_metadata")
 }
@@ -265,7 +270,9 @@ async fn perform_mint_test(
 
     let response = client.get(pow_url).send().await?;
 
-    let response_text = read_success_body(response).await.context("/pow request failed")?;
+    let response_text = read_success_body(response)
+        .await
+        .context("/pow request failed")?;
     debug!(target: LOG_TARGET, response = %response_text, "Faucet PoW response");
 
     let challenge_response: PowChallengeResponse =
@@ -303,7 +310,9 @@ async fn perform_mint_test(
 
     let response = client.get(tokens_url).send().await?;
 
-    let response_text = read_success_body(response).await.context("/get_tokens request failed")?;
+    let response_text = read_success_body(response)
+        .await
+        .context("/get_tokens request failed")?;
     debug!(target: LOG_TARGET, response = %response_text, "Faucet /get_tokens response");
 
     let tokens_response: GetTokensResponse =

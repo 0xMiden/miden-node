@@ -5,8 +5,7 @@ use miden_protocol::account::{Account, AccountComponent, AccountId, AccountType}
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::NoteScriptRoot;
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    AccountIdBuilder,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, AccountIdBuilder,
 };
 use miden_protocol::transaction::TransactionId;
 use miden_standards::note::{AccountTargetNetworkNote, NetworkAccountTarget, NoteExecutionHint};
@@ -16,7 +15,9 @@ use rand_chacha::rand_core::SeedableRng;
 
 /// Creates a network account ID from a test constant.
 pub fn mock_network_account_id() -> AccountId {
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap()
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE
+        .try_into()
+        .unwrap()
 }
 
 /// Creates a distinct [`TransactionId`] from a seed, for landing-detection tests.
@@ -144,7 +145,10 @@ pub fn mock_network_account_update() -> (Account, miden_protocol::account::Accou
     use miden_protocol::account::{AccountPatch, AccountUpdateDetails};
 
     // The allowlist content is irrelevant here, any non-empty set yields a valid network account.
-    let root = mock_single_target_note(mock_network_account_id(), 1).as_note().script().root();
+    let root = mock_single_target_note(mock_network_account_id(), 1)
+        .as_note()
+        .script()
+        .root();
     let account = mock_network_account([root]);
     let details = AccountUpdateDetails::Public(
         AccountPatch::try_from(account.clone()).expect("full-state patch should build"),
@@ -173,5 +177,8 @@ pub fn mock_genesis_block_with_network_account() -> (miden_protocol::block::Sign
         OrderedTransactionHeaders::new_unchecked(Vec::new()),
     );
     let signatures = BlockSignatures::new(Vec::new()).unwrap();
-    (SignedBlock::new_unchecked(header, body, signatures), account_id)
+    (
+        SignedBlock::new_unchecked(header, body, signatures),
+        account_id,
+    )
 }

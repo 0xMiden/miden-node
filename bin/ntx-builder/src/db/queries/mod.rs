@@ -134,7 +134,7 @@ pub fn apply_committed_block(
         match effect {
             NetworkAccountEffect::Created(account) => {
                 upsert_account(tx, *account_id, &account, last_tx_id)?;
-            },
+            }
             NetworkAccountEffect::Updated(patch) => {
                 // If the account is not already tracked locally, skip it.
                 let Some(mut current) = get_account(tx, *account_id)? else {
@@ -144,7 +144,7 @@ pub fn apply_committed_block(
                     .apply_patch(&patch)
                     .expect("network account patch should apply since the block was committed");
                 upsert_account(tx, *account_id, &current, last_tx_id)?;
-            },
+            }
         }
     }
 

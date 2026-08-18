@@ -1,15 +1,8 @@
 use diesel::prelude::Insertable;
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
-    ExpressionMethods,
-    OptionalExtension,
-    QueryDsl,
-    Queryable,
-    QueryableByName,
-    RunQueryDsl,
-    Selectable,
-    SelectableHelper,
-    SqliteConnection,
+    ExpressionMethods, OptionalExtension, QueryDsl, Queryable, QueryableByName, RunQueryDsl,
+    Selectable, SelectableHelper, SqliteConnection,
 };
 use miden_crypto::Word;
 use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
@@ -143,12 +136,17 @@ pub fn select_block_headers(
 pub fn select_all_block_header_commitments(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<BlockHeaderCommitment>, DatabaseError> {
-    let raw_commitments =
-        QueryDsl::select(schema::block_headers::table, schema::block_headers::commitment)
-            .order(schema::block_headers::block_num.asc())
-            .load::<Vec<u8>>(conn)?;
-    let commitments =
-        Result::from_iter(raw_commitments.into_iter().map(BlockHeaderCommitment::from_raw_sql))?;
+    let raw_commitments = QueryDsl::select(
+        schema::block_headers::table,
+        schema::block_headers::commitment,
+    )
+    .order(schema::block_headers::block_num.asc())
+    .load::<Vec<u8>>(conn)?;
+    let commitments = Result::from_iter(
+        raw_commitments
+            .into_iter()
+            .map(BlockHeaderCommitment::from_raw_sql),
+    )?;
     Ok(commitments)
 }
 
@@ -234,6 +232,8 @@ pub(crate) fn insert_block_header(
         signature: signatures.to_bytes(),
         commitment: BlockHeaderCommitment::new(block_header).to_raw_sql(),
     };
-    let count = diesel::insert_into(schema::block_headers::table).values(&[row]).execute(conn)?;
+    let count = diesel::insert_into(schema::block_headers::table)
+        .values(&[row])
+        .execute(conn)?;
     Ok(count)
 }

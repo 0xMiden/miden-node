@@ -3,8 +3,7 @@ use std::fmt;
 use miden_protocol::account::Account;
 use miden_protocol::note::{NoteScriptRoot, Nullifier};
 use miden_standards::account::auth::{
-    NetworkAccountNoteAllowlist,
-    NetworkAccountNoteAllowlistError,
+    NetworkAccountNoteAllowlist, NetworkAccountNoteAllowlistError,
 };
 use miden_standards::note::AccountTargetNetworkNote;
 
@@ -69,10 +68,7 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        mock_account,
-        mock_network_account,
-        mock_network_account_id,
-        mock_single_target_note,
+        mock_account, mock_network_account, mock_network_account_id, mock_single_target_note,
         mock_single_target_note_with_code,
     };
 
@@ -93,7 +89,10 @@ end";
             partition_by_allowlist(&account, vec![note.clone()]).expect("allowlist should load");
 
         assert_eq!(partitioned_notes.allowed.len(), 1);
-        assert_eq!(partitioned_notes.allowed[0].as_note().nullifier(), note.as_note().nullifier());
+        assert_eq!(
+            partitioned_notes.allowed[0].as_note().nullifier(),
+            note.as_note().nullifier()
+        );
         assert!(partitioned_notes.rejected.is_empty());
     }
 
@@ -152,6 +151,9 @@ end";
 
         let result = partition_by_allowlist(&account, Vec::new());
 
-        assert!(matches!(result, Err(NetworkAccountNoteAllowlistError::SlotNotFound)));
+        assert!(matches!(
+            result,
+            Err(NetworkAccountNoteAllowlistError::SlotNotFound)
+        ));
     }
 }

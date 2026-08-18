@@ -20,7 +20,11 @@ pub struct ValidatorService {
 impl ValidatorService {
     pub fn new(url: Url, interval: Duration, timeout: Duration) -> Self {
         let client = build_tls_client::<ValidatorClient>(url.clone(), timeout);
-        Self { url, client, interval }
+        Self {
+            url,
+            client,
+            interval,
+        }
     }
 }
 
@@ -59,7 +63,7 @@ impl Service for ValidatorService {
                         signed_blocks_count: status.signed_blocks_count,
                     }),
                 )
-            },
+            }
             Err(e) => ServiceStatus::error(self.name(), e),
         }
     }

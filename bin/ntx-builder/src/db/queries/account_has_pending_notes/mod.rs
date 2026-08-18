@@ -18,7 +18,9 @@ pub fn account_has_pending_notes(
     max_attempts: usize,
 ) -> Result<bool, DatabaseError> {
     Ok(tx
-        .query(SQL, &[&account_id, &(max_attempts as i64)], |row| row.get::<bool>(0))?
+        .query(SQL, &[&account_id, &(max_attempts as i64)], |row| {
+            row.get::<bool>(0)
+        })?
         .into_iter()
         .next()
         .unwrap_or(false))

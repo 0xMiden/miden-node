@@ -7,11 +7,7 @@ use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::transaction::{
-    OutputNote,
-    ProvenTransaction,
-    PublicOutputNote,
-    TransactionVerifier,
-    TxAccountUpdate,
+    OutputNote, ProvenTransaction, PublicOutputNote, TransactionVerifier, TxAccountUpdate,
 };
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tonic::{Request, Status};
@@ -105,13 +101,15 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
 
         let tx_id = tx.id();
         spawn_blocking_in_current_span(move || {
-            TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL).verify(&tx).map_err(|err| {
-                Status::invalid_argument(format!(
-                    "Invalid proof for transaction {}: {}",
-                    tx_id,
-                    err.as_report()
-                ))
-            })
+            TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL)
+                .verify(&tx)
+                .map_err(|err| {
+                    Status::invalid_argument(format!(
+                        "Invalid proof for transaction {}: {}",
+                        tx_id,
+                        err.as_report()
+                    ))
+                })
         })
         .await
         .map_err(|err| {
@@ -119,15 +117,21 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         })??;
 
         match &self.backend {
-            RpcBackend::Sequencer { block_producer, validators } => {
+            RpcBackend::Sequencer {
+                block_producer,
+                validators,
+            } => {
                 submit_tx_to_validators(validators.as_slice(), &request).await?;
                 block_producer
                     .submit_proven_tx(rebuilt_tx)
                     .await
                     .map(Into::into)
                     .map_err(Into::into)
-            },
-            RpcBackend::FullNode { pre_auth: Some(pre_auth), .. } => {
+            }
+            RpcBackend::FullNode {
+                pre_auth: Some(pre_auth),
+                ..
+            } => {
                 // Pre-authenticated transactions: validate and authenticate locally, then submit
                 // the authenticated transaction to the sequencer's pre-authenticated API.
                 self.submit_authenticated_to_sequencer(
@@ -137,12 +141,18 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
                     rebuilt_tx,
                 )
                 .await
-            },
-            RpcBackend::FullNode { source_rpc, pre_auth: None, .. } => {
+            }
+            RpcBackend::FullNode {
+                source_rpc,
+                pre_auth: None,
+                ..
+            } => {
                 // Unauthenticated transactions: forward the request to the source verbatim.
                 let mut forwarded_request = Request::new(request);
                 if let Some(accept) = original_accept_header {
-                    forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
+                    forwarded_request
+                        .metadata_mut()
+                        .insert(http::header::ACCEPT.as_str(), accept);
                 }
                 source_rpc
                     .as_ref()
@@ -150,7 +160,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
                     .submit_proven_tx(forwarded_request)
                     .await
                     .map(tonic::Response::into_inner)
-            },
+            }
         }
     }
 }
@@ -168,9 +178,11 @@ impl RpcService {
         request: proto::transaction::ProvenTransaction,
         rebuilt_tx: ProvenTransaction,
     ) -> tonic::Result<proto::blockchain::BlockNumber> {
-        let tx_inputs = get_tx_inputs(&self.state, &rebuilt_tx).await.map_err(|err| {
-            Status::internal(err.as_report_context("failed to get transaction inputs"))
-        })?;
+        let tx_inputs = get_tx_inputs(&self.state, &rebuilt_tx)
+            .await
+            .map_err(|err| {
+                Status::internal(err.as_report_context("failed to get transaction inputs"))
+            })?;
 
         let authenticated_tx =
             AuthenticatedTransaction::new_unchecked(rebuilt_tx.into(), tx_inputs).map_err(
@@ -210,7 +222,7 @@ fn strip_output_note_decorators<'a>(
             let rebuilt = PublicOutputNote::new(public_note.as_note().clone())
                 .expect("rebuilding an already-valid public output note should not fail");
             OutputNote::Public(rebuilt)
-        },
+        }
         OutputNote::Private(header) => OutputNote::Private(header.clone()),
     })
 }

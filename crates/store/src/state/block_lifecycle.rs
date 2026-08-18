@@ -3,11 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
-    AccountId,
-    AccountUpdateDetails,
-    StorageMapKey,
-    StoragePatchOperation,
-    StorageSlotName,
+    AccountId, AccountUpdateDetails, StorageMapKey, StoragePatchOperation, StorageSlotName,
 };
 use miden_protocol::block::{BlockBody, BlockNumber};
 use miden_protocol::note::{NoteId, Nullifier};
@@ -32,8 +28,10 @@ impl BlockLifecycle {
         name = "block_lifecycle.from_block_body",
     )]
     pub(super) fn from_block_body(block_num: BlockNumber, body: &BlockBody) -> Self {
-        let persisted_note_ids =
-            body.output_notes().map(|(_, note)| note.id()).collect::<BTreeSet<_>>();
+        let persisted_note_ids = body
+            .output_notes()
+            .map(|(_, note)| note.id())
+            .collect::<BTreeSet<_>>();
 
         let mut registered_accounts = Vec::new();
         let mut created_notes = Vec::new();
@@ -61,14 +59,20 @@ impl BlockLifecycle {
 
             consumed_notes.extend(transaction.input_notes().iter().map(|commitment| {
                 ConsumedNote {
-                    note_id: commitment.header().map(miden_protocol::note::NoteHeader::id),
+                    note_id: commitment
+                        .header()
+                        .map(miden_protocol::note::NoteHeader::id),
                     nullifier: commitment.nullifier(),
                     transaction_id,
                 }
             }));
         }
 
-        let storage_changes = body.updated_accounts().iter().flat_map(storage_changes).collect();
+        let storage_changes = body
+            .updated_accounts()
+            .iter()
+            .flat_map(storage_changes)
+            .collect();
 
         Self {
             block_num,
@@ -119,7 +123,9 @@ impl BlockLifecycle {
         }
 
         for note in self.consumed_notes {
-            let note_id = note.note_id.or_else(|| resolved_note_ids.get(&note.nullifier).copied());
+            let note_id = note
+                .note_id
+                .or_else(|| resolved_note_ids.get(&note.nullifier).copied());
             if let Some(note_id) = note_id {
                 tracing::debug!(
                     target: LOG_TARGET,
@@ -217,7 +223,7 @@ impl StorageChange {
                     },
                     "Account storage updated",
                 );
-            },
+            }
             StorageChange::Value {
                 account_id,
                 slot_name,
@@ -235,7 +241,7 @@ impl StorageChange {
                     },
                     "Account storage updated",
                 );
-            },
+            }
             StorageChange::MapEntry {
                 account_id,
                 slot_name,
@@ -258,7 +264,7 @@ impl StorageChange {
                     },
                     "Account storage updated",
                 );
-            },
+            }
             StorageChange::MapSlot {
                 account_id,
                 slot_name,
@@ -277,7 +283,7 @@ impl StorageChange {
                     },
                     "Account storage updated",
                 );
-            },
+            }
         }
     }
 }
@@ -290,12 +296,17 @@ fn storage_changes(update: &miden_protocol::block::BlockAccountUpdate) -> Vec<St
     let account_id = update.account_id();
     let mut changes = Vec::with_capacity(patch.storage().num_slots());
 
-    changes.extend(patch.storage().values().map(|(slot_name, value_patch)| StorageChange::Value {
-        account_id,
-        slot_name: slot_name.clone(),
-        operation: value_patch.patch_op(),
-        value: value_patch.value(),
-    }));
+    changes.extend(
+        patch
+            .storage()
+            .values()
+            .map(|(slot_name, value_patch)| StorageChange::Value {
+                account_id,
+                slot_name: slot_name.clone(),
+                operation: value_patch.patch_op(),
+                value: value_patch.value(),
+            }),
+    );
 
     for (slot_name, map_patch) in patch.storage().maps() {
         let operation = map_patch.patch_op();
@@ -310,7 +321,7 @@ fn storage_changes(update: &miden_protocol::block::BlockAccountUpdate) -> Vec<St
                         value: *value,
                     }
                 }));
-            },
+            }
             Some(entries) => {
                 changes.push(StorageChange::MapSlot {
                     account_id,
@@ -318,7 +329,7 @@ fn storage_changes(update: &miden_protocol::block::BlockAccountUpdate) -> Vec<St
                     operation,
                     entries_count: entries.num_entries(),
                 });
-            },
+            }
             None => {
                 changes.push(StorageChange::MapSlot {
                     account_id,
@@ -326,7 +337,7 @@ fn storage_changes(update: &miden_protocol::block::BlockAccountUpdate) -> Vec<St
                     operation,
                     entries_count: 0,
                 });
-            },
+            }
         }
     }
 
@@ -347,34 +358,19 @@ mod tests {
 
     use miden_protocol::Felt;
     use miden_protocol::account::{
-        AccountPatch,
-        AccountStoragePatch,
-        AccountVaultPatch,
-        StorageMapPatch,
-        StorageMapPatchEntries,
-        StorageSlotPatch,
-        StorageValuePatch,
+        AccountPatch, AccountStoragePatch, AccountVaultPatch, StorageMapPatch,
+        StorageMapPatchEntries, StorageSlotPatch, StorageValuePatch,
     };
     use miden_protocol::block::{BlockAccountUpdate, BlockBody};
     use miden_protocol::note::{
-        NoteAttachments,
-        NoteDetailsCommitment,
-        NoteHeader,
-        NoteMetadata,
-        NoteTag,
-        NoteType,
+        NoteAttachments, NoteDetailsCommitment, NoteHeader, NoteMetadata, NoteTag, NoteType,
         PartialNoteMetadata,
     };
     use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-        ACCOUNT_ID_SENDER,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, ACCOUNT_ID_SENDER,
     };
     use miden_protocol::transaction::{
-        InputNoteCommitment,
-        InputNotes,
-        OrderedTransactionHeaders,
-        OutputNote,
-        PrivateOutputNote,
+        InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote, PrivateOutputNote,
         TransactionHeader,
     };
 
@@ -413,14 +409,23 @@ mod tests {
 
         assert_eq!(lifecycle.registered_accounts.len(), 1);
         assert_eq!(lifecycle.registered_accounts[0].account_id, account_id);
-        assert_eq!(lifecycle.registered_accounts[0].transaction_id, transaction_id);
+        assert_eq!(
+            lifecycle.registered_accounts[0].transaction_id,
+            transaction_id
+        );
         assert_eq!(lifecycle.created_notes.len(), 2);
         assert!(!lifecycle.created_notes[0].erased);
         assert!(lifecycle.created_notes[1].erased);
         assert_eq!(lifecycle.consumed_notes.len(), 2);
         assert_eq!(lifecycle.consumed_notes[0].note_id, None);
-        assert_eq!(lifecycle.consumed_notes[1].note_id, Some(erased_header.id()));
-        assert_eq!(lifecycle.unresolved_note_nullifiers(), vec![unresolved_nullifier],);
+        assert_eq!(
+            lifecycle.consumed_notes[1].note_id,
+            Some(erased_header.id())
+        );
+        assert_eq!(
+            lifecycle.unresolved_note_nullifiers(),
+            vec![unresolved_nullifier],
+        );
     }
 
     #[test]
@@ -433,10 +438,15 @@ mod tests {
         let value = word(9);
         let map_entries = StorageMapPatchEntries::from_raw(BTreeMap::from([(map_key, value)]));
         let storage = AccountStoragePatch::from_raw(BTreeMap::from([
-            (value_slot.clone(), StorageSlotPatch::Value(StorageValuePatch::Update { value })),
+            (
+                value_slot.clone(),
+                StorageSlotPatch::Value(StorageValuePatch::Update { value }),
+            ),
             (
                 map_slot.clone(),
-                StorageSlotPatch::Map(StorageMapPatch::Update { entries: map_entries }),
+                StorageSlotPatch::Map(StorageMapPatch::Update {
+                    entries: map_entries,
+                }),
             ),
         ]))
         .unwrap();

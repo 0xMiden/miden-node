@@ -9,9 +9,7 @@
 
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::{
-    BlockHeaderByNumberRequest,
-    FinalityLevel,
-    SyncChainMmrRequest,
+    BlockHeaderByNumberRequest, FinalityLevel, SyncChainMmrRequest,
 };
 use miden_protocol::block::BlockHeader;
 use miden_protocol::crypto::merkle::mmr::{MmrDelta, MmrPeaks, PartialMmr};
@@ -82,12 +80,15 @@ pub(crate) async fn fetch_partial_blockchain(
             .await
             .expect("failed to call sync_chain_mmr")
             .into_inner();
-        let mmr_delta_proto =
-            response.mmr_delta.expect("sync_chain_mmr response missing mmr_delta");
+        let mmr_delta_proto = response
+            .mmr_delta
+            .expect("sync_chain_mmr response missing mmr_delta");
         let mmr_delta: MmrDelta = mmr_delta_proto
             .try_into()
             .expect("failed to decode MmrDelta from sync_chain_mmr response");
-        partial_mmr.apply(mmr_delta).expect("failed to apply chain MMR delta");
+        partial_mmr
+            .apply(mmr_delta)
+            .expect("failed to apply chain MMR delta");
     }
 
     PartialBlockchain::new(partial_mmr, Vec::new())

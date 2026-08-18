@@ -7,11 +7,7 @@ use miden_node_store::BlockStore;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use miden_protocol::block::{
-    BlockHeader,
-    BlockNumber,
-    BlockSignatures,
-    ProposedBlock,
-    SignedBlock,
+    BlockHeader, BlockNumber, BlockSignatures, ProposedBlock, SignedBlock,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::crypto::utils::Serializable;
@@ -22,10 +18,7 @@ use tokio::sync::{Semaphore, watch};
 use crate::db::ValidatorDbWriter;
 use crate::metrics::InitialMetrics;
 use crate::{
-    COMPONENT,
-    PrivateRecordChainId,
-    PrivateRecordSealer,
-    TransactionInputDecrypter,
+    COMPONENT, PrivateRecordChainId, PrivateRecordSealer, TransactionInputDecrypter,
     ValidatorSigner,
 };
 
@@ -135,7 +128,9 @@ impl ValidatorService {
             .ok_or(ValidatorError::NoChainTip)?;
         let signing_key = signer.public_key();
         if !chain_tip.validator_keys().as_keys().contains(&signing_key) {
-            return Err(ValidatorError::ValidatorKeyNotInSet { actual: signing_key });
+            return Err(ValidatorError::ValidatorKeyNotInSet {
+                actual: signing_key,
+            });
         }
 
         // Both keys are fixed for the process lifetime, so the attestation is computed once. This
@@ -198,8 +193,10 @@ impl ValidatorService {
         miden_span_record!(tip.number = chain_tip.block_num().as_u32(),);
 
         // Search for any proposed transactions that have not previously been validated.
-        let proposed_tx_ids =
-            proposed_block.transactions().map(TransactionHeader::id).collect::<Vec<_>>();
+        let proposed_tx_ids = proposed_block
+            .transactions()
+            .map(TransactionHeader::id)
+            .collect::<Vec<_>>();
         let unvalidated_txs = self
             .db
             .find_unvalidated_transactions(proposed_tx_ids)
@@ -224,8 +221,10 @@ impl ValidatorService {
         // replacement block. Validate it against the previous block header.
         let prev = if proposed_header.block_num() == chain_tip.block_num() {
             // The genesis block cannot be replaced (genesis block has no parent).
-            let prev_block_num =
-                chain_tip.block_num().parent().ok_or(ValidatorError::NoPrevBlockHeader)?;
+            let prev_block_num = chain_tip
+                .block_num()
+                .parent()
+                .ok_or(ValidatorError::NoPrevBlockHeader)?;
             self.db
                 .load_block_header(prev_block_num)
                 .await
@@ -257,7 +256,9 @@ impl ValidatorService {
         // signature set.
         let signing_key = self.signer.public_key();
         if !prev.validator_keys().as_keys().contains(&signing_key) {
-            return Err(ValidatorError::ValidatorKeyNotInSet { actual: signing_key });
+            return Err(ValidatorError::ValidatorKeyNotInSet {
+                actual: signing_key,
+            });
         }
 
         let signature = self.sign_header(&proposed_header).await?;

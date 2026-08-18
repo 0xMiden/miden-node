@@ -26,7 +26,9 @@ impl StateView {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
         let block_range = self.scope_range(block_range)?;
-        self.db.select_transactions_records(account_ids, block_range).await
+        self.db
+            .select_transactions_records(account_ids, block_range)
+            .await
     }
 
     /// Returns the chain MMR delta and the block header at the range's end for the specified
@@ -120,19 +122,24 @@ impl StateView {
         // view's blockchain MMR always has at least tip + 1 leaves.
         let mmr_checkpoint = block_end + 1;
 
-        let note_syncs = self.db.get_note_sync_multi(block_range, note_tags.into()).await?;
+        let note_syncs = self
+            .db
+            .get_note_sync_multi(block_range, note_tags.into())
+            .await?;
 
         let mut results = Vec::new();
 
         for note_sync in note_syncs {
-            let mmr_proof =
-                self.blockchain().open_at(note_sync.block_header.block_num(), mmr_checkpoint)?;
+            let mmr_proof = self
+                .blockchain()
+                .open_at(note_sync.block_header.block_num(), mmr_checkpoint)?;
             results.push((note_sync, mmr_proof));
         }
 
         // if results is empty, return `block_end` since the sync is complete.
-        let last_block_checked =
-            results.last().map_or(block_end, |(update, _)| update.block_header.block_num());
+        let last_block_checked = results
+            .last()
+            .map_or(block_end, |(update, _)| update.block_header.block_num());
 
         Ok((results, last_block_checked))
     }
@@ -166,7 +173,9 @@ impl StateView {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
         let block_range = self.scope_range(block_range)?;
-        self.db.get_account_vault_sync(account_id, block_range).await
+        self.db
+            .get_account_vault_sync(account_id, block_range)
+            .await
     }
 
     /// Returns storage map values for syncing within a block range.
@@ -179,6 +188,8 @@ impl StateView {
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<StorageMapValuesPage, DatabaseError> {
         let block_range = self.scope_range(block_range)?;
-        self.db.select_storage_map_sync_values(account_id, block_range, None).await
+        self.db
+            .select_storage_map_sync_values(account_id, block_range, None)
+            .await
     }
 }

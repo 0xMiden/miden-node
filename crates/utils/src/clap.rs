@@ -38,13 +38,17 @@ pub struct GrpcOptionsInternal {
 
 impl Default for GrpcOptionsInternal {
     fn default() -> Self {
-        Self { request_timeout: DEFAULT_REQUEST_TIMEOUT }
+        Self {
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+        }
     }
 }
 
 impl From<GrpcOptionsExternal> for GrpcOptionsInternal {
     fn from(value: GrpcOptionsExternal) -> Self {
-        let GrpcOptionsExternal { request_timeout, .. } = value;
+        let GrpcOptionsExternal {
+            request_timeout, ..
+        } = value;
         Self { request_timeout }
     }
 }

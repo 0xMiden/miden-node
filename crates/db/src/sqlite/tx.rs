@@ -156,9 +156,17 @@ mod tests {
         assert_eq!(inserted, 1);
 
         let got: (i64, Vec<u8>, String) = w
-            .query("SELECT id, payload, label FROM items WHERE id = ?1", &[&1i64], |row| {
-                Ok((row.get::<i64>(0)?, row.get::<Vec<u8>>(1)?, row.get::<String>(2)?))
-            })
+            .query(
+                "SELECT id, payload, label FROM items WHERE id = ?1",
+                &[&1i64],
+                |row| {
+                    Ok((
+                        row.get::<i64>(0)?,
+                        row.get::<Vec<u8>>(1)?,
+                        row.get::<String>(2)?,
+                    ))
+                },
+            )
             .unwrap()
             .into_iter()
             .next()
@@ -172,8 +180,11 @@ mod tests {
         let tx = conn.transaction().unwrap();
         let w = WriteTx::new(&tx);
 
-        w.execute("INSERT INTO items (id, payload) VALUES (?1, NULL)", &[&1i64])
-            .unwrap();
+        w.execute(
+            "INSERT INTO items (id, payload) VALUES (?1, NULL)",
+            &[&1i64],
+        )
+        .unwrap();
         let payload: Option<Vec<u8>> = w
             .query("SELECT payload FROM items WHERE id = ?1", &[&1i64], |row| {
                 row.get::<Option<Vec<u8>>>(0)
@@ -192,7 +203,9 @@ mod tests {
         let r = ReadTx::new(&tx);
 
         let got = r
-            .query("SELECT id FROM items WHERE id = ?1", &[&404i64], |row| row.get::<i64>(0))
+            .query("SELECT id FROM items WHERE id = ?1", &[&404i64], |row| {
+                row.get::<i64>(0)
+            })
             .unwrap();
         assert!(got.is_empty());
     }
@@ -205,7 +218,8 @@ mod tests {
         let tx = conn.transaction().unwrap();
         let w = WriteTx::new(&tx);
         for id in [1i64, 2, 3, 4] {
-            w.execute("INSERT INTO items (id) VALUES (?1)", &[&id]).unwrap();
+            w.execute("INSERT INTO items (id) VALUES (?1)", &[&id])
+                .unwrap();
         }
 
         let wanted = InList::from_i64s([1, 3]);
@@ -227,8 +241,10 @@ mod tests {
         let w = WriteTx::new(&tx);
         let a = vec![0xAAu8, 0xBB];
         let b = vec![0x01u8];
-        w.execute("INSERT INTO items (id, payload) VALUES (1, ?1)", &[&a]).unwrap();
-        w.execute("INSERT INTO items (id, payload) VALUES (2, ?1)", &[&b]).unwrap();
+        w.execute("INSERT INTO items (id, payload) VALUES (1, ?1)", &[&a])
+            .unwrap();
+        w.execute("INSERT INTO items (id, payload) VALUES (2, ?1)", &[&b])
+            .unwrap();
 
         let wanted = InList::from_blobs([a.as_slice()]);
         let ids = w

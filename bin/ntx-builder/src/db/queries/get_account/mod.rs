@@ -11,5 +11,8 @@ pub fn get_account(
     tx: &ReadTx<'_>,
     account_id: AccountId,
 ) -> Result<Option<Account>, DatabaseError> {
-    Ok(tx.query(SQL, &[&account_id], |row| row.get::<Account>(0))?.into_iter().next())
+    Ok(tx
+        .query(SQL, &[&account_id], |row| row.get::<Account>(0))?
+        .into_iter()
+        .next())
 }

@@ -89,12 +89,20 @@ struct Replacement {
 pub fn reflow_source(source: &str, config: Config) -> Result<String> {
     let mut parser = Parser::new();
     let language = tree_sitter::Language::from(tree_sitter_rust::LANGUAGE);
-    parser.set_language(&language).context("loading tree-sitter Rust grammar")?;
+    parser
+        .set_language(&language)
+        .context("loading tree-sitter Rust grammar")?;
 
-    let tree = parser.parse(source, None).context("tree-sitter returned no parse tree")?;
+    let tree = parser
+        .parse(source, None)
+        .context("tree-sitter returned no parse tree")?;
     let line_starts = line_starts(source);
-    let comment_lines =
-        comment_lines(source, tree.root_node(), &line_starts, config.include_normal_comments);
+    let comment_lines = comment_lines(
+        source,
+        tree.root_node(),
+        &line_starts,
+        config.include_normal_comments,
+    );
     let replacements = replacements(&comment_lines, config.width);
 
     Ok(apply_replacements(source, &replacements))
@@ -200,7 +208,10 @@ fn comment_line(
 
     // Reflow only full-line comments. Trailing comments are often attached to nearby code and can
     // be semantically or stylistically different from prose blocks.
-    if !source[line_start..range.start].chars().all(char::is_whitespace) {
+    if !source[line_start..range.start]
+        .chars()
+        .all(char::is_whitespace)
+    {
         return None;
     }
 
@@ -219,7 +230,10 @@ fn comment_line(
 
 fn line_end(source: &str, line_idx: usize, line_starts: &[usize]) -> usize {
     let line_start = line_starts[line_idx];
-    let next_line_start = line_starts.get(line_idx + 1).copied().unwrap_or(source.len());
+    let next_line_start = line_starts
+        .get(line_idx + 1)
+        .copied()
+        .unwrap_or(source.len());
     let mut end = next_line_start;
 
     if end > line_start && source.as_bytes()[end - 1] == b'\n' {
@@ -426,7 +440,14 @@ mod tests {
     use super::{Config, reflow_source};
 
     fn reflow(source: &str, width: usize) -> String {
-        reflow_source(source, Config { width, include_normal_comments: false }).unwrap()
+        reflow_source(
+            source,
+            Config {
+                width,
+                include_normal_comments: false,
+            },
+        )
+        .unwrap()
     }
 
     #[test]
@@ -472,8 +493,14 @@ fn main() {}
 fn main() {}
 ";
 
-        let reflowed =
-            reflow_source(source, Config { width: 45, include_normal_comments: true }).unwrap();
+        let reflowed = reflow_source(
+            source,
+            Config {
+                width: 45,
+                include_normal_comments: true,
+            },
+        )
+        .unwrap();
 
         assert_eq!(
             reflowed,
@@ -493,8 +520,14 @@ fn main() {}
 fn main() {}
 ";
 
-        let reflowed =
-            reflow_source(source, Config { width: 60, include_normal_comments: true }).unwrap();
+        let reflowed = reflow_source(
+            source,
+            Config {
+                width: 60,
+                include_normal_comments: true,
+            },
+        )
+        .unwrap();
 
         assert_eq!(reflowed, source);
     }

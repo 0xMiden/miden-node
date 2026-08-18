@@ -55,14 +55,8 @@ mod tests {
     use miden_protocol::Word;
     use miden_protocol::account::AccountId;
     use miden_protocol::note::{
-        NoteAttachments,
-        NoteDetailsCommitment,
-        NoteHeader,
-        NoteMetadata,
-        NoteTag,
-        NoteType,
-        Nullifier,
-        PartialNoteMetadata,
+        NoteAttachments, NoteDetailsCommitment, NoteHeader, NoteMetadata, NoteTag, NoteType,
+        Nullifier, PartialNoteMetadata,
     };
     use miden_protocol::transaction::{InputNoteCommitment, InputNotes};
     use url::Url;

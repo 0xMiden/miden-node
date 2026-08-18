@@ -4,10 +4,7 @@ use miden_protocol::Word;
 use miden_protocol::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
-    InputNotes,
-    OrderedTransactionHeaders,
-    ProvenTransaction,
-    TransactionHeader,
+    InputNotes, OrderedTransactionHeaders, ProvenTransaction, TransactionHeader,
 };
 use miden_protocol::vm::ExecutionProof;
 

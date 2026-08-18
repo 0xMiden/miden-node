@@ -39,7 +39,10 @@ impl Client {
     }
 
     async fn submit_request(&mut self, request: ProofRequest) -> Result<Proof, tonic::Status> {
-        self.inner.prove(request).await.map(tonic::Response::into_inner)
+        self.inner
+            .prove(request)
+            .await
+            .map(tonic::Response::into_inner)
     }
 }
 
@@ -132,7 +135,9 @@ impl ProofRequestExt for ProofRequest {
             .unwrap();
 
         let tx = Box::pin(tx.execute()).await.unwrap();
-        let tx = LocalTransactionProver::default().prove(tx.tx_inputs().clone()).unwrap();
+        let tx = LocalTransactionProver::default()
+            .prove(tx.tx_inputs().clone())
+            .unwrap();
 
         ProposedBatch::new(
             vec![Arc::new(tx)],
@@ -360,7 +365,9 @@ async fn transaction_proof_is_correct() {
     let response = ProvenTransaction::read_from_bytes(&response.payload).unwrap();
 
     assert_eq!(response.id(), tx.id());
-    TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL).verify(&response).unwrap();
+    TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL)
+        .verify(&response)
+        .unwrap();
 
     server.abort();
 }
@@ -385,7 +392,9 @@ async fn batch_proof_is_correct() {
     let response = ProvenBatch::read_from_bytes(&response.payload).unwrap();
 
     assert_eq!(response.id(), batch.id());
-    BatchVerifier::new(MIN_PROOF_SECURITY_LEVEL).verify(&response).unwrap();
+    BatchVerifier::new(MIN_PROOF_SECURITY_LEVEL)
+        .verify(&response)
+        .unwrap();
 
     server.abort();
 }

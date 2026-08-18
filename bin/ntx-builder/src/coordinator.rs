@@ -292,7 +292,7 @@ impl Coordinator {
                 self.actor_registry.remove(&account_id);
                 let should_respawn = self.account_has_pending_notes(account_id).await?;
                 Ok(should_respawn.then_some(account_id))
-            },
+            }
             Some(Ok((account_id, Err(err)))) => {
                 let count = self.crash_counts.entry(account_id).or_insert(0);
                 *count += 1;
@@ -306,15 +306,15 @@ impl Coordinator {
                 );
                 self.actor_registry.remove(&account_id);
                 Ok(None)
-            },
+            }
             Some(Err(err)) => {
                 tracing::error!(target: LOG_TARGET, error = %err, "Actor task failed");
                 Ok(None)
-            },
+            }
             None => {
                 // There are no actors to wait for. Wait indefinitely until actors are spawned.
                 std::future::pending().await
-            },
+            }
         }
     }
 
@@ -333,13 +333,13 @@ impl Coordinator {
     pub async fn shutdown(&mut self) -> anyhow::Result<()> {
         while let Some(result) = self.actor_join_set.join_next().await {
             match result {
-                Ok((_account_id, Ok(()))) => {},
+                Ok((_account_id, Ok(()))) => {}
                 Ok((account_id, Err(err))) => {
                     return Err(err).with_context(|| {
                         format!("account actor {account_id} failed during shutdown")
                     });
-                },
-                Err(err) if err.is_cancelled() => {},
+                }
+                Err(err) if err.is_cancelled() => {}
                 Err(err) => return Err(err).context("account actor failed to join"),
             }
         }
@@ -353,13 +353,22 @@ impl Coordinator {
     /// Creates a coordinator with default settings backed by a temp DB. Returns the coordinator,
     /// the temp dir holding the DB file, and the actor request receiver (drop it to discard, or
     /// drive it from the test to inspect actor requests).
-    pub async fn test()
-    -> (Self, NtxDbWriter, tempfile::TempDir, tokio::sync::mpsc::Receiver<ActorRequest>) {
+    pub async fn test() -> (
+        Self,
+        NtxDbWriter,
+        tempfile::TempDir,
+        tokio::sync::mpsc::Receiver<ActorRequest>,
+    ) {
         let (db, dir) = crate::db::test_setup().await;
         let (tx, rx) = tokio::sync::mpsc::channel(8);
         let mut actor_context = AccountActorContext::test(&db);
         actor_context.request_tx = tx;
-        (Self::new(4, 10, actor_context, CancellationToken::new()), db, dir, rx)
+        (
+            Self::new(4, 10, actor_context, CancellationToken::new()),
+            db,
+            dir,
+            rx,
+        )
     }
 }
 
@@ -379,7 +388,9 @@ mod tests {
             last_committed_tx: None,
             notes_seen: 0,
         });
-        coordinator.actor_registry.insert(account_id, ActorHandle::new(view_tx));
+        coordinator
+            .actor_registry
+            .insert(account_id, ActorHandle::new(view_tx));
         view_rx
     }
 
@@ -494,7 +505,9 @@ mod tests {
         let (mut coordinator, _db, _dir, _rx) = Coordinator::test().await;
 
         let account_id = mock_network_account_id();
-        coordinator.crash_counts.insert(account_id, coordinator.max_account_crashes);
+        coordinator
+            .crash_counts
+            .insert(account_id, coordinator.max_account_crashes);
 
         coordinator.spawn_actor(account_id);
 
@@ -509,9 +522,10 @@ mod tests {
         let (mut coordinator, _db, _dir, _rx) = Coordinator::test().await;
 
         let account_id = mock_network_account_id();
-        coordinator
-            .crash_counts
-            .insert(account_id, coordinator.max_account_crashes.saturating_sub(1));
+        coordinator.crash_counts.insert(
+            account_id,
+            coordinator.max_account_crashes.saturating_sub(1),
+        );
 
         coordinator.spawn_actor(account_id);
 
@@ -548,8 +562,15 @@ mod tests {
             "every registered actor should receive a view update on a committed block",
         );
         let view = bystander_rx.borrow_and_update();
-        assert_eq!(view.chain_tip, 1_u32.into(), "the view carries the new chain tip");
-        assert_eq!(view.notes_seen, 0, "a bystander targeted by no note sees no new work");
+        assert_eq!(
+            view.chain_tip,
+            1_u32.into(),
+            "the view carries the new chain tip"
+        );
+        assert_eq!(
+            view.notes_seen, 0,
+            "a bystander targeted by no note sees no new work"
+        );
         drop(view);
 
         assert!(
@@ -589,6 +610,9 @@ mod tests {
             Some(tx_id),
             "the account's latest committed tx is pushed for in-memory landing detection",
         );
-        assert_eq!(view.notes_seen, 1, "one note targeting the account bumps the work counter");
+        assert_eq!(
+            view.notes_seen, 1,
+            "one note targeting the account bumps the work counter"
+        );
     }
 }

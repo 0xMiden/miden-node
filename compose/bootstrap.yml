@@ -43,10 +43,15 @@ services:
         mkdir -p /data/genesis /data/validators /data/accounts
 
         echo "Building genesis block..."
+        # The validator set consists of the public keys derived from the three
+        # signing keys configured in validator.yml, ordered by validator service.
         miden-validator genesis \
           --genesis-block-directory /data/genesis \
           --accounts-directory /data/accounts \
-          --config /genesis.toml
+          --config /genesis.toml \
+          --validator.key "$$(miden-validator pubkey --signing-key.hex "$${MIDEN_VALIDATOR_1_SIGNING_KEY}")" \
+          --validator.key "$$(miden-validator pubkey --signing-key.hex "$${MIDEN_VALIDATOR_2_SIGNING_KEY}")" \
+          --validator.key "$$(miden-validator pubkey --signing-key.hex "$${MIDEN_VALIDATOR_3_SIGNING_KEY}")"
 
         for VALIDATOR in 1 2 3; do
           echo "Bootstrapping validator $${VALIDATOR}..."
@@ -222,14 +227,6 @@ configs:
     content: |
       timestamp = 1717344256
       version = 1
-
-      # Public keys for the three insecure development signing keys configured
-      # in validator.yml, ordered by validator service.
-      validators = [
-        "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
-        "02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337",
-        "03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b",
-      ]
 
       [fee_parameters]
       verification_base_fee = 0

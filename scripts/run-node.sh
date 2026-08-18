@@ -29,6 +29,9 @@ fi
 # genesis validator set rejects duplicate keys.
 VALIDATOR_1_KEY_HEX="0101010101010101010101010101010101010101010101010101010101010101"
 VALIDATOR_2_KEY_HEX="0202020202020202020202020202020202020202020202020202020202020202"
+# Insecure, hard-coded local dev shared transaction encryption key. Unlike the signing keys,
+# this value must be identical across both validators.
+ENCRYPTION_KEY_HEX="0303030303030303030303030303030303030303030303030303030303030303"
 
 # Insecure, hard-coded local dev storage encryption setup.
 VALIDATOR_STORAGE_KEY_EPOCH="0909090909090909090909090909090909090909090909090909090909090909"
@@ -160,19 +163,12 @@ if [[ "$SKIP_BOOTSTRAP" != "true" ]]; then
         VALIDATOR_2_PUBKEY=$("$VALIDATOR_BINARY" pubkey --signing-key.hex "$VALIDATOR_2_KEY_HEX")
     fi
 
-    # The validator set is part of the genesis config. Prepend the top-level `validators` key to
-    # the sample config (top-level keys must precede its table sections). The sample references no
-    # account files, so resolving relative paths against /tmp is safe.
-    BOOTSTRAP_GENESIS_CONFIG="/tmp/genesis-config.toml"
-    {
-        printf 'validators = ["%s", "%s"]\n' "$VALIDATOR_1_PUBKEY" "$VALIDATOR_2_PUBKEY"
-        cat "$GENESIS_CONFIG"
-    } > "$BOOTSTRAP_GENESIS_CONFIG"
-
     "$VALIDATOR_BINARY" genesis \
         --genesis-block-directory "$GENESIS_DIR" \
         --accounts-directory "$ACCOUNTS_DIR" \
-        --config "$BOOTSTRAP_GENESIS_CONFIG"
+        --config "$GENESIS_CONFIG" \
+        --validator.key "$VALIDATOR_1_PUBKEY" \
+        --validator.key "$VALIDATOR_2_PUBKEY"
 
     echo "Bootstrapping validator 1 (seeds from the genesis block)..."
     "$VALIDATOR_BINARY" bootstrap \
@@ -212,6 +208,7 @@ fi
 echo "Starting validator 1..."
 "$VALIDATOR_BINARY" start --listen "0.0.0.0:$VALIDATOR_1_PORT" \
     --data-directory "$VALIDATOR_1_DIR" \
+    --encryption-key.hex "$ENCRYPTION_KEY_HEX" \
     --storage-key.epoch "$VALIDATOR_STORAGE_KEY_EPOCH" \
     --storage-key.setup-context "$VALIDATOR_INSECURE_STORAGE_KEY_SETUP_CONTEXT" \
     --storage-key.public-key-set "$VALIDATOR_INSECURE_STORAGE_KEY_PUBLIC_KEY_SET" \
@@ -223,6 +220,7 @@ PIDS+=($!)
 echo "Starting validator 2..."
 "$VALIDATOR_BINARY" start --listen "0.0.0.0:$VALIDATOR_2_PORT" \
     --data-directory "$VALIDATOR_2_DIR" \
+    --encryption-key.hex "$ENCRYPTION_KEY_HEX" \
     --storage-key.epoch "$VALIDATOR_STORAGE_KEY_EPOCH" \
     --storage-key.setup-context "$VALIDATOR_INSECURE_STORAGE_KEY_SETUP_CONTEXT" \
     --storage-key.public-key-set "$VALIDATOR_INSECURE_STORAGE_KEY_PUBLIC_KEY_SET" \

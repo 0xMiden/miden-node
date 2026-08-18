@@ -41,9 +41,7 @@ pub enum MempoolSubmissionError {
 
     #[error("failed to authenticate transaction")]
     #[grpc(internal)]
-    AuthenticationFailed(#[source] StateConflict),
-
-    #[error(
+    #[error("transaction input data from block {input_block} exceeds the chain tip {chain_tip}")]
         "transaction input data from block {input_block} exceeds the chain tip {chain_tip}"
     )]
     #[grpc(internal)]

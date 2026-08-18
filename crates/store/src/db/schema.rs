@@ -90,6 +90,13 @@ diesel::table! {
 }
 
 diesel::table! {
+    prune_progress (id) {
+        id -> Integer,
+        codes_cutoff -> BigInt,
+    }
+}
+
+diesel::table! {
     transactions (transaction_id) {
         transaction_id -> Binary,
         account_id -> Binary,
@@ -111,5 +118,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     note_scripts,
     notes,
     nullifiers,
+    prune_progress,
     transactions,
 );

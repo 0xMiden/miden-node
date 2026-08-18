@@ -1,0 +1,10 @@
+# Note script to increment the external counter contract.
+# This script is executed as a note and calls the
+# `counter_contract::increment` entrypoint.
+
+use external_contract::counter_contract
+
+@note_script
+pub proc main
+    call.counter_contract::increment
+end

@@ -9,12 +9,8 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use url::Url;
 
 use crate::{
-    DEFAULT_BATCH_WORKERS,
-    DEFAULT_MAX_BATCHES_PER_BLOCK,
-    DEFAULT_MAX_CONCURRENT_PROOFS,
-    DEFAULT_MAX_TXS_PER_BATCH,
-    DEFAULT_VALIDATOR_TIMEOUT,
-    Sequencer,
+    DEFAULT_BATCH_WORKERS, DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_CONCURRENT_PROOFS,
+    DEFAULT_MAX_TXS_PER_BATCH, DEFAULT_VALIDATOR_TIMEOUT, Sequencer,
 };
 
 #[tokio::test]
@@ -56,7 +52,9 @@ fn bootstrap_store(path: &std::path::Path) {
         1,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),
     );
-    let genesis_block = genesis_state.into_block().expect("genesis block should be created");
+    let genesis_block = genesis_state
+        .into_block()
+        .expect("genesis block should be created");
 
     State::bootstrap(genesis_block, path).expect("store should bootstrap");
 }

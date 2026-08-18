@@ -9,21 +9,11 @@ use miden_protocol::account::{AccountId, AccountIdPrefix};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::{AccountMutationSet, AccountTree, AccountWitness};
 use miden_protocol::crypto::merkle::smt::{
-    LargeSmt,
-    LeafIndex,
-    MemoryStorage,
-    NodeMutation,
-    SMT_DEPTH,
-    SmtLeaf,
-    SmtStorage,
+    LargeSmt, LeafIndex, MemoryStorage, NodeMutation, SMT_DEPTH, SmtLeaf, SmtStorage,
     SmtStorageReader,
 };
 use miden_protocol::crypto::merkle::{
-    EmptySubtreeRoots,
-    MerkleError,
-    MerklePath,
-    NodeIndex,
-    SparseMerklePath,
+    EmptySubtreeRoots, MerkleError, MerklePath, NodeIndex, SparseMerklePath,
 };
 use miden_protocol::errors::AccountTreeError;
 use miden_protocol::{EMPTY_WORD, Word};
@@ -84,8 +74,8 @@ impl HistoricalOverlay {
         let root = rev_set.as_mutation_set().root();
         let mut_set = rev_set.into_mutation_set();
 
-        let node_mutations =
-            HashMap::from_iter(mut_set.node_mutations().iter().map(|(node_index, mutation)| {
+        let node_mutations = HashMap::from_iter(mut_set.node_mutations().iter().map(
+            |(node_index, mutation)| {
                 match mutation {
                     NodeMutation::Addition(inner_node) => (*node_index, inner_node.hash()),
                     NodeMutation::Removal => {
@@ -93,12 +83,16 @@ impl HistoricalOverlay {
                         // from leaf, so we use it directly for EmptySubtreeRoots
                         let empty_root = *EmptySubtreeRoots::entry(SMT_DEPTH, node_index.depth());
                         (*node_index, empty_root)
-                    },
+                    }
                 }
-            }));
+            },
+        ));
 
         let account_updates = HashMap::from_iter(
-            mut_set.new_pairs().iter().map(|(&k, &v)| (LeafIndex::from(k), (k, v))),
+            mut_set
+                .new_pairs()
+                .iter()
+                .map(|(&k, &v)| (LeafIndex::from(k), (k, v))),
         );
 
         Self {
@@ -174,7 +168,7 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
                 let overlay = self.overlays.get(&block_number)?;
                 debug_assert_eq!(overlay.block_number, block_number);
                 Some(overlay.root)
-            },
+            }
             HistoricalSelector::Future | HistoricalSelector::TooAncient => None,
         }
     }
@@ -219,7 +213,7 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
                 // Ensure overlay exists before reconstruction
                 self.overlays.get(&block_number)?;
                 Self::reconstruct_historical_witness(self, account_id, block_number)
-            },
+            }
             HistoricalSelector::Future | HistoricalSelector::TooAncient => None,
         }
     }
@@ -244,7 +238,11 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
         }
 
         // Check if block is in the future
-        if self.block_number.checked_sub(desired_block_number.as_u32()).is_none() {
+        if self
+            .block_number
+            .checked_sub(desired_block_number.as_u32())
+            .is_none()
+        {
             return HistoricalSelector::Future;
         }
 
@@ -276,7 +274,10 @@ impl<S: SmtStorageReader> AccountTreeWithHistory<S> {
         // iteration (newest to oldest) to walk backwards in time from the latest state to the
         // target block.
         let (path, leaf) = Self::apply_reversion_overlays(
-            self.overlays.range(block_target..).rev().map(|(_, overlay)| overlay),
+            self.overlays
+                .range(block_target..)
+                .rev()
+                .map(|(_, overlay)| overlay),
             path_nodes,
             leaf_index,
             leaf,
@@ -410,7 +411,10 @@ impl<S: SmtStorage> AccountTreeWithHistory<S> {
 
     /// Returns a read-only snapshot of this tree backed by a reader view of the storage.
     pub fn reader(&self) -> AccountTreeWithHistory<S::Reader> {
-        let latest = self.latest.reader().expect("snapshot creation should not fail");
+        let latest = self
+            .latest
+            .reader()
+            .expect("snapshot creation should not fail");
         AccountTreeWithHistory {
             block_number: self.block_number,
             latest,

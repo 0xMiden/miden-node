@@ -111,11 +111,15 @@ impl tonic::service::Interceptor for Interceptor {
         }
 
         if request.metadata().get(ACCEPT.as_str()).is_none() {
-            request.metadata_mut().insert(ACCEPT.as_str(), self.accept.clone());
+            request
+                .metadata_mut()
+                .insert(ACCEPT.as_str(), self.accept.clone());
         }
 
         if let Some(value) = &self.auth_header_value {
-            request.metadata_mut().insert(Self::NETWORK_TX_AUTH_HEADER_NAME, value.clone());
+            request
+                .metadata_mut()
+                .insert(Self::NETWORK_TX_AUTH_HEADER_NAME, value.clone());
         }
 
         Ok(request)
@@ -131,13 +135,18 @@ mod tests {
         let original_accept =
             AsciiMetadataValue::from_static("application/vnd.miden; version=1.2; genesis=0x1234");
         let mut request = Request::new(());
-        request.metadata_mut().insert(ACCEPT.as_str(), original_accept.clone());
+        request
+            .metadata_mut()
+            .insert(ACCEPT.as_str(), original_accept.clone());
 
         let mut interceptor = Interceptor::new(false, Some("9.9"), Some("0xabcd"), None);
         let request = tonic::service::Interceptor::call(&mut interceptor, request)
             .expect("interceptor should succeed");
 
-        assert_eq!(request.metadata().get(ACCEPT.as_str()), Some(&original_accept));
+        assert_eq!(
+            request.metadata().get(ACCEPT.as_str()),
+            Some(&original_accept)
+        );
     }
 
     #[test]
@@ -148,7 +157,10 @@ mod tests {
             .expect("interceptor should succeed");
 
         assert_eq!(
-            request.metadata().get(ACCEPT.as_str()).and_then(|value| value.to_str().ok()),
+            request
+                .metadata()
+                .get(ACCEPT.as_str())
+                .and_then(|value| value.to_str().ok()),
             Some("application/vnd.miden; version=9.9, genesis=0xabcd"),
         );
     }
@@ -298,37 +310,55 @@ pub trait GrpcClient {
 
 impl GrpcClient for RpcClient {
     fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
-        Self(GeneratedRpcClient::new(InterceptedService::new(channel, interceptor)))
+        Self(GeneratedRpcClient::new(InterceptedService::new(
+            channel,
+            interceptor,
+        )))
     }
 }
 
 impl GrpcClient for RemoteProverProxyStatusClient {
     fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
-        Self(GeneratedProxyStatusClient::new(InterceptedService::new(channel, interceptor)))
+        Self(GeneratedProxyStatusClient::new(InterceptedService::new(
+            channel,
+            interceptor,
+        )))
     }
 }
 
 impl GrpcClient for RemoteProverClient {
     fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
-        Self(GeneratedProverClient::new(InterceptedService::new(channel, interceptor)))
+        Self(GeneratedProverClient::new(InterceptedService::new(
+            channel,
+            interceptor,
+        )))
     }
 }
 
 impl GrpcClient for ValidatorClient {
     fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
-        Self(GeneratedValidatorClient::new(InterceptedService::new(channel, interceptor)))
+        Self(GeneratedValidatorClient::new(InterceptedService::new(
+            channel,
+            interceptor,
+        )))
     }
 }
 
 impl GrpcClient for NtxBuilderClient {
     fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
-        Self(GeneratedNtxBuilderClient::new(InterceptedService::new(channel, interceptor)))
+        Self(GeneratedNtxBuilderClient::new(InterceptedService::new(
+            channel,
+            interceptor,
+        )))
     }
 }
 
 impl GrpcClient for SequencerClient {
     fn with_interceptor(channel: Channel, interceptor: Interceptor) -> Self {
-        Self(GeneratedSequencerClient::new(InterceptedService::new(channel, interceptor)))
+        Self(GeneratedSequencerClient::new(InterceptedService::new(
+            channel,
+            interceptor,
+        )))
     }
 }
 
@@ -439,7 +469,9 @@ impl Builder<WantsTls> {
 
     /// Explicitly enable TLS.
     pub fn with_tls(mut self) -> Result<Builder<WantsTimeout>, TransportError> {
-        self.endpoint = self.endpoint.tls_config(ClientTlsConfig::new().with_native_roots())?;
+        self.endpoint = self
+            .endpoint
+            .tls_config(ClientTlsConfig::new().with_native_roots())?;
 
         Ok(self.next_state())
     }
@@ -575,7 +607,7 @@ impl Builder<WantsConnection> {
                     );
                     shutdown.cancelled().await;
                     return;
-                },
+                }
                 Ok(Err(err)) if first_failure => {
                     tracing::warn!(
                         dependency.name = dependency_name,
@@ -583,7 +615,7 @@ impl Builder<WantsConnection> {
                         %err,
                         "Configured service unreachable",
                     );
-                },
+                }
                 Err(_elapsed) if first_failure => {
                     tracing::warn!(
                         dependency.name = dependency_name,
@@ -591,7 +623,7 @@ impl Builder<WantsConnection> {
                         timeout = ?CONNECT_TIMEOUT,
                         "Configured service connection timed out",
                     );
-                },
+                }
                 Ok(Err(err)) => {
                     tracing::debug!(
                         dependency.name = dependency_name,
@@ -599,7 +631,7 @@ impl Builder<WantsConnection> {
                         %err,
                         "Configured service still unreachable",
                     );
-                },
+                }
                 Err(_elapsed) => {
                     tracing::debug!(
                         dependency.name = dependency_name,
@@ -607,7 +639,7 @@ impl Builder<WantsConnection> {
                         timeout = ?CONNECT_TIMEOUT,
                         "Configured service connection still timing out",
                     );
-                },
+                }
             }
             first_failure = false;
 
@@ -650,7 +682,11 @@ impl ValidatorClient {
                 "transaction inputs do not match the batch's transactions",
             ));
         }
-        for (tx, inputs) in proposed_batch.transactions().iter().zip(sealed_transaction_inputs) {
+        for (tx, inputs) in proposed_batch
+            .transactions()
+            .iter()
+            .zip(sealed_transaction_inputs)
+        {
             let proven_tx = GeneratedProvenTransaction {
                 transaction: tx.to_bytes(),
                 sealed_transaction_inputs: Some(inputs.clone()),

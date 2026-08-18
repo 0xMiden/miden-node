@@ -75,7 +75,7 @@ impl BlockProver {
                 })
                 .await
                 .map_err(ProverError::LocalProvingTaskJoin)?
-            },
+            }
             Self::Remote(prover) => prover
                 .prove(tx_batches, block_header, block_inputs)
                 .await
@@ -117,16 +117,24 @@ impl RemoteBlockProver {
         block_header: &BlockHeader,
         block_inputs: BlockInputs,
     ) -> Result<BlockProof, RemoteProverError> {
-        let proposed_block =
-            ProposedBlock::new_at(block_inputs, tx_batches.into_vec(), block_header.timestamp())
-                .map_err(RemoteProverError::ProposeBlock)?;
+        let proposed_block = ProposedBlock::new_at(
+            block_inputs,
+            tx_batches.into_vec(),
+            block_header.timestamp(),
+        )
+        .map_err(RemoteProverError::ProposeBlock)?;
 
         let request = tonic::Request::new(ProofRequest {
             proof_type: ProofType::Block.into(),
             payload: proposed_block.to_bytes(),
         });
 
-        let response = self.client.clone().prove(request).await.map_err(RemoteProverError::Grpc)?;
+        let response = self
+            .client
+            .clone()
+            .prove(request)
+            .await
+            .map_err(RemoteProverError::Grpc)?;
 
         BlockProof::read_from_bytes(&response.into_inner().payload)
             .map_err(RemoteProverError::Deserialize)

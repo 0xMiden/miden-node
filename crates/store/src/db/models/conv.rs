@@ -122,7 +122,9 @@ impl SqlTypeConvert for BlockNumber {
     type Raw = i64;
 
     fn from_raw_sql(raw: Self::Raw) -> Result<Self, DatabaseTypeConversionError> {
-        u32::try_from(raw).map(BlockNumber::from).map_err(Self::map_err)
+        u32::try_from(raw)
+            .map(BlockNumber::from)
+            .map_err(Self::map_err)
     }
 
     fn to_raw_sql(self) -> Self::Raw {
@@ -159,7 +161,7 @@ impl SqlTypeConvert for StorageSlotType {
             1 => StorageSlotType::Map,
             invalid => {
                 return Err(Self::map_err(ValueError(invalid)));
-            },
+            }
         })
     }
 

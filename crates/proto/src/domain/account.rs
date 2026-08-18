@@ -3,15 +3,8 @@ use std::fmt::{Debug, Display, Formatter};
 use miden_node_utils::limiter::{QueryParamLimiter, QueryParamStorageMapKeyTotalLimit};
 use miden_protocol::Word;
 use miden_protocol::account::{
-    Account,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    StorageMap,
-    StorageMapKey,
-    StorageSlotHeader,
-    StorageSlotName,
-    StorageSlotType,
+    Account, AccountHeader, AccountId, AccountStorageHeader, StorageMap, StorageMapKey,
+    StorageSlotHeader, StorageSlotName, StorageSlotType,
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
@@ -71,7 +64,9 @@ impl From<&AccountId> for proto::account::AccountId {
 
 impl From<AccountId> for proto::account::AccountId {
     fn from(account_id: AccountId) -> Self {
-        Self { id: account_id.to_bytes() }
+        Self {
+            id: account_id.to_bytes(),
+        }
     }
 }
 
@@ -152,14 +147,25 @@ impl TryFrom<proto::rpc::AccountRequest> for AccountRequest {
 
     fn try_from(value: proto::rpc::AccountRequest) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::rpc::AccountRequest { account_id, block_num, details } = value;
+        let proto::rpc::AccountRequest {
+            account_id,
+            block_num,
+            details,
+        } = value;
 
         let account_id = decode!(decoder, account_id)?;
         let block_num = block_num.map(Into::into);
 
-        let details = details.map(TryFrom::try_from).transpose().context("details")?;
+        let details = details
+            .map(TryFrom::try_from)
+            .transpose()
+            .context("details")?;
 
-        Ok(AccountRequest { account_id, block_num, details })
+        Ok(AccountRequest {
+            account_id,
+            block_num,
+            details,
+        })
     }
 }
 
@@ -192,8 +198,10 @@ impl TryFrom<proto::rpc::account_request::AccountDetailRequest> for AccountDetai
             storage_request,
         } = value;
 
-        let code_commitment =
-            code_commitment.map(TryFrom::try_from).transpose().context("code_commitment")?;
+        let code_commitment = code_commitment
+            .map(TryFrom::try_from)
+            .transpose()
+            .context("code_commitment")?;
         let asset_vault_commitment = asset_vault_commitment
             .map(TryFrom::try_from)
             .transpose()
@@ -203,16 +211,18 @@ impl TryFrom<proto::rpc::account_request::AccountDetailRequest> for AccountDetai
             None => AccountStorageRequest::None,
             Some(ProtoStorageRequest::AllStorageMaps(true)) => {
                 AccountStorageRequest::AllStorageMaps
-            },
+            }
             Some(ProtoStorageRequest::AllStorageMaps(false)) => {
-                return Err(ConversionError::message("all_storage_maps must be true when set"));
-            },
+                return Err(ConversionError::message(
+                    "all_storage_maps must be true when set",
+                ));
+            }
             Some(ProtoStorageRequest::StorageMaps(requests)) => {
                 let requests = try_convert(requests.storage_maps)
                     .collect::<Result<_, _>>()
                     .context("storage_maps")?;
                 AccountStorageRequest::Explicit(requests)
-            },
+            }
         };
 
         Ok(AccountDetailRequest {
@@ -246,7 +256,10 @@ impl TryFrom<proto::rpc::account_request::account_detail_request::StorageMapDeta
         let slot_name = StorageSlotName::new(slot_name).context("slot_name")?;
         let slot_data = decode!(decoder, slot_data)?;
 
-        Ok(StorageMapRequest { slot_name, slot_data })
+        Ok(StorageMapRequest {
+            slot_name,
+            slot_data,
+        })
     }
 }
 
@@ -272,12 +285,14 @@ impl
         Ok(match value {
             ProtoSlotData::AllEntries(true) => SlotData::All,
             ProtoSlotData::AllEntries(false) => {
-                return Err(ConversionError::message("enum variant discriminant out of range"));
-            },
+                return Err(ConversionError::message(
+                    "enum variant discriminant out of range",
+                ));
+            }
             ProtoSlotData::MapKeys(keys) => {
                 let keys = try_convert(keys.map_keys).collect::<Result<Vec<_>, _>>()?;
                 SlotData::MapKeys(keys)
-            },
+            }
         })
     }
 }
@@ -333,11 +348,13 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
     fn from(value: AccountStorageHeader) -> Self {
         let slots = value
             .slots()
-            .map(|slot_header| proto::account::account_storage_header::StorageSlot {
-                slot_name: slot_header.name().to_string(),
-                slot_type: storage_slot_type_to_raw(slot_header.slot_type()),
-                commitment: Some(proto::primitives::Digest::from(slot_header.value())),
-            })
+            .map(
+                |slot_header| proto::account::account_storage_header::StorageSlot {
+                    slot_name: slot_header.name().to_string(),
+                    slot_type: storage_slot_type_to_raw(slot_header.slot_type()),
+                    commitment: Some(proto::primitives::Digest::from(slot_header.value())),
+                },
+            )
             .collect();
 
         Self { slots }
@@ -386,7 +403,10 @@ impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
     type Error = ConversionError;
 
     fn try_from(value: proto::rpc::AccountVaultDetails) -> Result<Self, Self::Error> {
-        let proto::rpc::AccountVaultDetails { too_many_assets, assets } = value;
+        let proto::rpc::AccountVaultDetails {
+            too_many_assets,
+            assets,
+        } = value;
 
         if too_many_assets {
             Ok(Self::LimitExceeded)
@@ -533,9 +553,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
         value: proto::rpc::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
         use proto::rpc::account_storage_details::account_storage_map_details::{
-            AllMapEntries,
-            Entries as ProtoEntries,
-            MapEntriesWithProofs,
+            AllMapEntries, Entries as ProtoEntries, MapEntriesWithProofs,
         };
 
         let decoder = value.decoder();
@@ -563,7 +581,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
                         .collect::<Result<Vec<_>, ConversionError>>()
                         .context("entries")?;
                     StorageMapEntries::AllEntries(entries)
-                },
+                }
                 ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries }) => {
                     let proofs = entries
                         .into_iter()
@@ -574,7 +592,7 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
                         .collect::<Result<Vec<_>, ConversionError>>()
                         .context("entries")?;
                     StorageMapEntries::EntriesWithProofs(proofs)
-                },
+                }
             }
         };
 
@@ -587,9 +605,7 @@ impl From<AccountStorageMapDetails>
 {
     fn from(value: AccountStorageMapDetails) -> Self {
         use proto::rpc::account_storage_details::account_storage_map_details::{
-            AllMapEntries,
-            Entries as ProtoEntries,
-            MapEntriesWithProofs,
+            AllMapEntries, Entries as ProtoEntries, MapEntriesWithProofs,
         };
 
         let AccountStorageMapDetails { slot_name, entries } = value;
@@ -606,7 +622,7 @@ impl From<AccountStorageMapDetails>
                     })),
                 };
                 (false, Some(ProtoEntries::AllEntries(all)))
-            },
+            }
             StorageMapEntries::EntriesWithProofs(proofs) => {
                 use miden_protocol::crypto::merkle::smt::SmtLeaf;
 
@@ -632,7 +648,7 @@ impl From<AccountStorageMapDetails>
                     })),
                 };
                 (false, Some(ProtoEntries::EntriesWithProofs(with_proofs)))
-            },
+            }
         };
 
         Self {
@@ -658,7 +674,9 @@ impl AccountStorageDetails {
         Self {
             header,
             map_details: Vec::from_iter(
-                slot_names.into_iter().map(AccountStorageMapDetails::limit_exceeded),
+                slot_names
+                    .into_iter()
+                    .map(AccountStorageMapDetails::limit_exceeded),
             ),
         }
     }
@@ -669,20 +687,30 @@ impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
 
     fn try_from(value: proto::rpc::AccountStorageDetails) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::rpc::AccountStorageDetails { header, map_details } = value;
+        let proto::rpc::AccountStorageDetails {
+            header,
+            map_details,
+        } = value;
 
         let header = decode!(decoder, header)?;
 
-        let map_details =
-            try_convert(map_details).collect::<Result<Vec<_>, _>>().context("map_details")?;
+        let map_details = try_convert(map_details)
+            .collect::<Result<Vec<_>, _>>()
+            .context("map_details")?;
 
-        Ok(Self { header, map_details })
+        Ok(Self {
+            header,
+            map_details,
+        })
     }
 }
 
 impl From<AccountStorageDetails> for proto::rpc::AccountStorageDetails {
     fn from(value: AccountStorageDetails) -> Self {
-        let AccountStorageDetails { header, map_details } = value;
+        let AccountStorageDetails {
+            header,
+            map_details,
+        } = value;
 
         Self {
             header: Some(header.into()),
@@ -696,8 +724,10 @@ fn storage_slot_type_from_raw(slot_type: u32) -> Result<StorageSlotType, Convers
         0 => StorageSlotType::Value,
         1 => StorageSlotType::Map,
         _ => {
-            return Err(ConversionError::message("enum variant discriminant out of range"));
-        },
+            return Err(ConversionError::message(
+                "enum variant discriminant out of range",
+            ));
+        }
     })
 }
 
@@ -723,21 +753,36 @@ impl TryFrom<proto::rpc::AccountResponse> for AccountResponse {
 
     fn try_from(value: proto::rpc::AccountResponse) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::rpc::AccountResponse { block_num, witness, details } = value;
+        let proto::rpc::AccountResponse {
+            block_num,
+            witness,
+            details,
+        } = value;
 
         let block_num = decode!(decoder, block_num)?;
 
         let witness = decode!(decoder, witness)?;
 
-        let details = details.map(TryFrom::try_from).transpose().context("details")?;
+        let details = details
+            .map(TryFrom::try_from)
+            .transpose()
+            .context("details")?;
 
-        Ok(AccountResponse { block_num, witness, details })
+        Ok(AccountResponse {
+            block_num,
+            witness,
+            details,
+        })
     }
 }
 
 impl From<AccountResponse> for proto::rpc::AccountResponse {
     fn from(value: AccountResponse) -> Self {
-        let AccountResponse { block_num, witness, details } = value;
+        let AccountResponse {
+            block_num,
+            witness,
+            details,
+        } = value;
 
         Self {
             witness: Some(witness.into()),
@@ -887,7 +932,10 @@ impl TryFrom<proto::account::AccountWitness> for AccountWitnessRecord {
             )
         })?;
 
-        Ok(Self { account_id, witness })
+        Ok(Self {
+            account_id,
+            witness,
+        })
     }
 }
 

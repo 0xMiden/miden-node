@@ -45,8 +45,9 @@ impl StateView {
             .map_err(GetBlockInputsError::SelectNoteInclusionProofError)?;
 
         // The set of blocks that the notes are included in.
-        let note_proof_reference_blocks =
-            unauthenticated_note_proofs.values().map(|proof| proof.location().block_num());
+        let note_proof_reference_blocks = unauthenticated_note_proofs
+            .values()
+            .map(|proof| proof.location().block_num());
 
         // Collect all blocks we need to prove inclusion for, without duplicates.
         let mut blocks = reference_blocks;

@@ -101,14 +101,18 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                         && tx.account_id().is_public()
                 })
                 .map(|tx| tx.account_id());
-            self.reject_if_any_network_accounts(non_deployment_ids).await?;
+            self.reject_if_any_network_accounts(non_deployment_ids)
+                .await?;
         }
 
         // Verify batch transaction proofs.
         verify_batch_proof(proven_batch, &proposed_batch).await?;
 
         match &self.backend {
-            RpcBackend::Sequencer { block_producer, validators } => {
+            RpcBackend::Sequencer {
+                block_producer,
+                validators,
+            } => {
                 submit_batch_to_validators(
                     validators.as_slice(),
                     &proposed_batch,
@@ -120,8 +124,11 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                     .await
                     .map(Into::into)
                     .map_err(Into::into)
-            },
-            RpcBackend::FullNode { pre_auth: Some(pre_auth), .. } => {
+            }
+            RpcBackend::FullNode {
+                pre_auth: Some(pre_auth),
+                ..
+            } => {
                 // Pre-authenticated transactions: validate and authenticate locally, then submit
                 // the authenticated batch to the sequencer's pre-authenticated API.
                 self.submit_authenticated_batch_to_sequencer(
@@ -131,12 +138,18 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                     &request.sealed_transaction_inputs,
                 )
                 .await
-            },
-            RpcBackend::FullNode { source_rpc, pre_auth: None, .. } => {
+            }
+            RpcBackend::FullNode {
+                source_rpc,
+                pre_auth: None,
+                ..
+            } => {
                 // Unauthenticated transactions: forward the request to the source verbatim.
                 let mut forwarded_request = Request::new(request);
                 if let Some(accept) = original_accept_header {
-                    forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
+                    forwarded_request
+                        .metadata_mut()
+                        .insert(http::header::ACCEPT.as_str(), accept);
                 }
                 source_rpc
                     .as_ref()
@@ -144,7 +157,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
                     .submit_proven_tx_batch(forwarded_request)
                     .await
                     .map(tonic::Response::into_inner)
-            },
+            }
         }
     }
 }

@@ -33,8 +33,11 @@ fn dev_validators_line() -> String {
 fn parsing_yields_expected_default_values() -> TestResult {
     // Copy sample file to temp dir since read_toml_file needs a real file path
     let temp_dir = tempfile::tempdir()?;
-    let sample_content =
-        format!("{}{}", dev_validators_line(), include_str!("./samples/01-simple.toml"));
+    let sample_content = format!(
+        "{}{}",
+        dev_validators_line(),
+        include_str!("./samples/01-simple.toml")
+    );
     let config_path = write_toml_file(temp_dir.path(), &sample_content);
 
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
@@ -111,7 +114,10 @@ verification_base_fee = 0
 fn default_config_uses_insecure_dev_key() -> TestResult {
     let gcfg = GenesisConfig::default();
     let (state, _) = gcfg.into_state()?;
-    assert_eq!(state.validator_keys.as_keys(), &[insecure_dev_validator_public_key()]);
+    assert_eq!(
+        state.validator_keys.as_keys(),
+        &[insecure_dev_validator_public_key()]
+    );
     Ok(())
 }
 
@@ -126,7 +132,9 @@ verification_base_fee = 0
 ";
 
     let gcfg = GenesisConfig::read_toml(toml, Path::new(".")).unwrap();
-    let err = gcfg.into_state().expect_err("config without validators must be rejected");
+    let err = gcfg
+        .into_state()
+        .expect_err("config without validators must be rejected");
     assert!(
         matches!(err, GenesisConfigError::MissingValidators),
         "Expected MissingValidators error, got: {err:?}"
@@ -140,10 +148,16 @@ async fn genesis_accounts_have_nonce_one() -> TestResult {
     let (state, secrets) = gcfg.into_state().unwrap();
 
     // The default configuration generates the native faucet and its operator.
-    let account_files = secrets.as_account_files(&state).collect::<Result<Vec<_>, _>>()?;
+    let account_files = secrets
+        .as_account_files(&state)
+        .collect::<Result<Vec<_>, _>>()?;
     assert_eq!(account_files.len(), 2);
     for AccountFileWithName { account_file, name } in account_files {
-        assert_eq!(account_file.account.nonce(), ONE, "{name} should be deployed at genesis");
+        assert_eq!(
+            account_file.account.nonce(),
+            ONE,
+            "{name} should be deployed at genesis"
+        );
     }
 
     let _block = state.into_block()?;
@@ -166,7 +180,10 @@ fn parsing_account_from_file() -> TestResult {
     let init_seed: [u8; 32] = rand::random();
     let mut rng = rand_chacha::ChaCha20Rng::from_seed(rand::random());
     let secret_key = SecretKey::with_rng(&mut rng);
-    let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
+    let auth = Approver::new(
+        secret_key.public_key().into(),
+        AuthScheme::Falcon512Poseidon2,
+    );
 
     let test_account = create_basic_wallet(init_seed, auth, AccountType::Public)?;
 
@@ -360,7 +377,10 @@ fn native_faucet_from_file_must_be_faucet_type() -> TestResult {
     let init_seed: [u8; 32] = rand::random();
     let mut rng = rand_chacha::ChaCha20Rng::from_seed(rand::random());
     let secret_key = SecretKey::with_rng(&mut rng);
-    let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
+    let auth = Approver::new(
+        secret_key.public_key().into(),
+        AuthScheme::Falcon512Poseidon2,
+    );
 
     let regular_account = create_basic_wallet(init_seed, auth, AccountType::Public)?;
 

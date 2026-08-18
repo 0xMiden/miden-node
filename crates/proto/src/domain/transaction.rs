@@ -23,7 +23,9 @@ impl From<TransactionId> for proto::primitives::Digest {
 
 impl From<&TransactionId> for proto::transaction::TransactionId {
     fn from(value: &TransactionId) -> Self {
-        proto::transaction::TransactionId { id: Some(value.into()) }
+        proto::transaction::TransactionId {
+            id: Some(value.into()),
+        }
     }
 }
 
@@ -73,8 +75,11 @@ impl TryFrom<proto::transaction::InputNoteCommitment> for InputNoteCommitment {
         let decoder = value.decoder();
         let nullifier: Nullifier = decode!(decoder, value.nullifier)?;
 
-        let header: Option<miden_protocol::note::NoteHeader> =
-            value.header.map(TryInto::try_into).transpose().context("header")?;
+        let header: Option<miden_protocol::note::NoteHeader> = value
+            .header
+            .map(TryInto::try_into)
+            .transpose()
+            .context("header")?;
 
         Ok(InputNoteCommitment::from_parts_unchecked(nullifier, header))
     }

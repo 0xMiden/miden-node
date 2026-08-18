@@ -156,7 +156,11 @@ mod authentication_height {
     fn stale_inputs_are_rejected() {
         let mut uut = setup();
 
-        let oldest_mempool = uut.committed_blocks.front().map(|block| block.block_number).unwrap();
+        let oldest_mempool = uut
+            .committed_blocks
+            .front()
+            .map(|block| block.block_number)
+            .unwrap();
 
         let tx = MockProvenTxBuilder::with_account_index(0).build();
         let tx = AuthenticatedTransaction::from_inner(tx)
@@ -234,7 +238,9 @@ fn duplicate_nullifiers_are_rejected() {
     // We overlap with one nullifier.
     assert_matches!(
         result,
-        Err(MempoolSubmissionError::StateConflict(StateConflict::NullifiersAlreadyExist(..)))
+        Err(MempoolSubmissionError::StateConflict(
+            StateConflict::NullifiersAlreadyExist(..)
+        ))
     );
 }
 
@@ -267,9 +273,9 @@ fn duplicate_output_notes_are_rejected() {
 
     assert_matches!(
         result,
-        Err(MempoolSubmissionError::StateConflict(StateConflict::OutputNotesAlreadyExist(
-            ..
-        )))
+        Err(MempoolSubmissionError::StateConflict(
+            StateConflict::OutputNotesAlreadyExist(..)
+        ))
     );
 }
 

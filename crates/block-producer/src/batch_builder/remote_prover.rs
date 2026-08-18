@@ -78,14 +78,23 @@ impl RemoteBatchProver {
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, RemoteProverError> {
         // Keep the set of transactions we passed in for later validation.
-        let proposed_txs: Vec<_> = proposed_batch.transactions().iter().map(Arc::clone).collect();
+        let proposed_txs: Vec<_> = proposed_batch
+            .transactions()
+            .iter()
+            .map(Arc::clone)
+            .collect();
 
         let request = tonic::Request::new(ProofRequest {
             proof_type: ProofType::Batch.into(),
             payload: proposed_batch.to_bytes(),
         });
 
-        let response = self.client.clone().prove(request).await.map_err(RemoteProverError::Grpc)?;
+        let response = self
+            .client
+            .clone()
+            .prove(request)
+            .await
+            .map_err(RemoteProverError::Grpc)?;
 
         let proven_batch = ProvenBatch::read_from_bytes(&response.into_inner().payload)
             .map_err(RemoteProverError::Deserialize)?;
@@ -118,8 +127,9 @@ impl RemoteBatchProver {
 
         // Because we checked the length matches we can zip the iterators up. We expect the
         // transactions to be in the same order.
-        for (proposed_header, proven_header) in
-            proposed_txs.into_iter().zip(proven_batch.transactions().as_slice())
+        for (proposed_header, proven_header) in proposed_txs
+            .into_iter()
+            .zip(proven_batch.transactions().as_slice())
         {
             if proven_header.account_id() != proposed_header.account_id() {
                 return Err(RemoteProverError::Validation(format!(
@@ -157,8 +167,9 @@ impl RemoteBatchProver {
 
             // Because we checked the length matches we can zip the iterators up. We expect the
             // nullifiers to be in the same order.
-            for (proposed_nullifier, input_note_commitment) in
-                proposed_header.nullifiers().zip(proven_header.input_notes().iter())
+            for (proposed_nullifier, input_note_commitment) in proposed_header
+                .nullifiers()
+                .zip(proven_header.input_notes().iter())
             {
                 if proposed_nullifier != input_note_commitment.nullifier() {
                     return Err(RemoteProverError::Validation(format!(

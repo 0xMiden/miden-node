@@ -75,7 +75,10 @@ mod bootstrap_tests {
 
         let err = GenesisBlock::try_from(block).expect_err("signed genesis block should fail");
 
-        assert!(err.to_string().contains("must not carry signatures"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("must not carry signatures"),
+            "unexpected error: {err}"
+        );
     }
 }
 
@@ -429,8 +432,11 @@ impl NtxBuilderConfig {
         // The database is bootstrapped with the genesis block before startup (see
         // `miden-ntx-builder bootstrap`), so a persisted chain state is always present. Load it and
         // resume the subscription from the block after the last applied one.
-        let (last_applied_block, header, mmr) =
-            db.select_chain_state().await.context("failed to read chain state")?.context(
+        let (last_applied_block, header, mmr) = db
+            .select_chain_state()
+            .await
+            .context("failed to read chain state")?
+            .context(
                 "ntx-builder database has not been bootstrapped; \
                  run `miden-ntx-builder bootstrap` first",
             )?;

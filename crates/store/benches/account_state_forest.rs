@@ -3,14 +3,8 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use miden_crypto::hash::rpo::Rpo256;
 use miden_crypto::merkle::smt::{
-    ForestInMemoryBackend,
-    LargeSmtForest,
-    LineageId,
-    SmtForestMutationSet,
-    SmtForestOperation,
-    SmtForestUpdateBatch,
-    SmtUpdateBatch,
-    TreeId,
+    ForestInMemoryBackend, LargeSmtForest, LineageId, SmtForestMutationSet, SmtForestOperation,
+    SmtForestUpdateBatch, SmtUpdateBatch, TreeId,
 };
 use miden_protocol::Word;
 
@@ -35,7 +29,9 @@ fn forest_with_entries(entry_count: u32) -> LargeSmtForest<ForestInMemoryBackend
         SmtUpdateBatch::new((0..entry_count).map(|index| {
             SmtForestOperation::insert(key(index + 1), word(entry_count + index + 1))
         }));
-    forest.add_lineage(lineage(), INITIAL_VERSION, updates).unwrap();
+    forest
+        .add_lineage(lineage(), INITIAL_VERSION, updates)
+        .unwrap();
     forest
 }
 
@@ -51,9 +47,13 @@ fn prepare_recreation(
         .map(|entry| SmtForestOperation::remove(entry.unwrap().key));
     let mut batch = SmtForestUpdateBatch::empty();
     batch.add_operations(lineage, removals);
-    batch.operations(lineage).add_insert(key(u32::MAX - 1), word(u32::MAX));
+    batch
+        .operations(lineage)
+        .add_insert(key(u32::MAX - 1), word(u32::MAX));
 
-    forest.compute_forest_mutations(RECREATED_VERSION, batch).unwrap()
+    forest
+        .compute_forest_mutations(RECREATED_VERSION, batch)
+        .unwrap()
 }
 
 fn bench_storage_map_recreation(c: &mut Criterion) {
@@ -61,9 +61,13 @@ fn bench_storage_map_recreation(c: &mut Criterion) {
 
     for entry_count in [16, 256, 4_096, 16_384] {
         let forest = forest_with_entries(entry_count);
-        group.bench_with_input(BenchmarkId::from_parameter(entry_count), &entry_count, |b, _| {
-            b.iter(|| black_box(prepare_recreation(black_box(&forest))));
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(entry_count),
+            &entry_count,
+            |b, _| {
+                b.iter(|| black_box(prepare_recreation(black_box(&forest))));
+            },
+        );
     }
 
     group.finish();

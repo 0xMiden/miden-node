@@ -26,8 +26,14 @@ const STORE_CONFIGURATION_HELP_DESCRIPTION: &str = concat!(
 );
 
 const HELP_SECTION_DESCRIPTIONS: &[(&str, &str)] = &[
-    (RPC_RATE_LIMITING_HELP_HEADING, RPC_RATE_LIMITING_HELP_DESCRIPTION),
-    (STORE_CONFIGURATION_HELP_HEADING, STORE_CONFIGURATION_HELP_DESCRIPTION),
+    (
+        RPC_RATE_LIMITING_HELP_HEADING,
+        RPC_RATE_LIMITING_HELP_DESCRIPTION,
+    ),
+    (
+        STORE_CONFIGURATION_HELP_HEADING,
+        STORE_CONFIGURATION_HELP_DESCRIPTION,
+    ),
 ];
 
 /// Inserts explanatory text below clap-generated help section headings.
@@ -64,7 +70,10 @@ mod tests {
     fn assert_injectable_section_headings(command: &str) {
         let headings = subcommand_help_headings(command);
 
-        for heading in [RPC_RATE_LIMITING_HELP_HEADING, STORE_CONFIGURATION_HELP_HEADING] {
+        for heading in [
+            RPC_RATE_LIMITING_HELP_HEADING,
+            STORE_CONFIGURATION_HELP_HEADING,
+        ] {
             assert!(
                 headings.iter().any(|candidate| candidate == heading),
                 "{command} is missing the {heading} heading targeted by help injection"

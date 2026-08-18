@@ -67,7 +67,9 @@ pub async fn bench_get_account(
 
     let request = |_| {
         let state = Arc::clone(&store_state);
-        let account_id = account_ids.next().expect("cycled public account ids never end");
+        let account_id = account_ids
+            .next()
+            .expect("cycled public account ids never end");
         let storage_map_slot = storage_map_slot.clone();
         tokio::spawn(async move { get_account(&state, account_id, storage_map_slot).await })
     };
@@ -83,12 +85,18 @@ pub async fn bench_get_account(
     print_summary(&timers_accumulator);
 
     let total_runs = results.len();
-    let storage_map_limit_exceeded =
-        results.iter().filter(|r| r.storage_map_limit_exceeded).count();
+    let storage_map_limit_exceeded = results
+        .iter()
+        .filter(|r| r.storage_map_limit_exceeded)
+        .count();
     let vault_limit_exceeded = results.iter().filter(|r| r.vault_limit_exceeded).count();
     #[expect(clippy::cast_precision_loss)]
     let average_storage_map_entries = if total_runs > 0 {
-        results.iter().map(|r| r.storage_map_entries as f64).sum::<f64>() / total_runs as f64
+        results
+            .iter()
+            .map(|r| r.storage_map_entries as f64)
+            .sum::<f64>()
+            / total_runs as f64
     } else {
         0.0
     };
@@ -168,13 +176,13 @@ fn get_account_request(
     use proto::rpc::account_request::AccountDetailRequest;
     use proto::rpc::account_request::account_detail_request::storage_map_detail_request::SlotData;
     use proto::rpc::account_request::account_detail_request::{
-        StorageMapDetailRequest,
-        StorageMapDetailRequests,
-        StorageRequest,
+        StorageMapDetailRequest, StorageMapDetailRequests, StorageRequest,
     };
 
     proto::rpc::AccountRequest {
-        account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+        account_id: Some(proto::account::AccountId {
+            id: account_id.to_bytes(),
+        }),
         block_num: None,
         details: Some(AccountDetailRequest {
             code_commitment: None,
@@ -228,7 +236,10 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
     let accounts = fs::read_to_string(&accounts_file)
         .await
         .unwrap_or_else(|e| panic!("missing file {}: {e:?}", accounts_file.display()));
-    let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
+    let mut account_ids = accounts
+        .lines()
+        .map(|a| AccountId::from_hex(a).unwrap())
+        .cycle();
 
     let store_state = start_store(data_directory).await;
 
@@ -270,7 +281,10 @@ pub async fn sync_notes(
     let start = Instant::now();
     state
         .view()
-        .sync_notes(note_tags, BlockNumber::from(0)..=BlockNumber::from(chain_tip))
+        .sync_notes(
+            note_tags,
+            BlockNumber::from(0)..=BlockNumber::from(chain_tip),
+        )
         .await
         .unwrap();
     start.elapsed()
@@ -337,8 +351,11 @@ pub async fn bench_sync_nullifiers(
             .collect();
 
         // Get the notes nullifiers, limiting to 20 notes maximum.
-        let note_ids_to_fetch: Vec<_> =
-            note_ids.iter().take(NOTE_IDS_PER_NULLIFIERS_CHECK).copied().collect();
+        let note_ids_to_fetch: Vec<_> = note_ids
+            .iter()
+            .take(NOTE_IDS_PER_NULLIFIERS_CHECK)
+            .copied()
+            .collect();
         if !note_ids_to_fetch.is_empty() {
             let notes = store_state
                 .view()
@@ -479,7 +496,10 @@ pub async fn bench_sync_transactions(
     let average_transactions_per_response = if responses.is_empty() {
         0.0
     } else {
-        responses.iter().map(|r| r.transactions.len()).sum::<usize>() as f64
+        responses
+            .iter()
+            .map(|r| r.transactions.len())
+            .sum::<usize>() as f64
             / responses.len() as f64
     };
     println!("Average transactions per response: {average_transactions_per_response}");
@@ -533,7 +553,10 @@ pub async fn sync_transactions(
             chain_tip: chain_tip.as_u32(),
             block_num: last_block_included.as_u32(),
         }),
-        transactions: records.into_iter().map(transaction_record_to_proto).collect(),
+        transactions: records
+            .into_iter()
+            .map(transaction_record_to_proto)
+            .collect(),
     };
     (start.elapsed(), response)
 }
@@ -568,16 +591,20 @@ async fn sync_transactions_paginated(
         total_duration += elapsed;
         pages += 1;
 
-        let info = response.pagination_info.unwrap_or(proto::rpc::PaginationInfo {
-            chain_tip: target_block_to,
-            block_num: target_block_to,
-        });
+        let info = response
+            .pagination_info
+            .unwrap_or(proto::rpc::PaginationInfo {
+                chain_tip: target_block_to,
+                block_num: target_block_to,
+            });
 
         aggregated_records.extend(response.transactions);
         let reached_block = info.block_num;
         let chain_tip = info.chain_tip;
-        final_pagination_info =
-            Some(proto::rpc::PaginationInfo { chain_tip, block_num: reached_block });
+        final_pagination_info = Some(proto::rpc::PaginationInfo {
+            chain_tip,
+            block_num: reached_block,
+        });
 
         if reached_block >= chain_tip {
             break;
@@ -684,8 +711,20 @@ fn transaction_record_to_proto(
             account_id: Some(record.header.account_id().into()),
             initial_state_commitment: Some(record.header.initial_state_commitment().into()),
             final_state_commitment: Some(record.header.final_state_commitment().into()),
-            input_notes: record.header.input_notes().iter().cloned().map(Into::into).collect(),
-            output_notes: record.header.output_notes().iter().copied().map(Into::into).collect(),
+            input_notes: record
+                .header
+                .input_notes()
+                .iter()
+                .cloned()
+                .map(Into::into)
+                .collect(),
+            output_notes: record
+                .header
+                .output_notes()
+                .iter()
+                .copied()
+                .map(Into::into)
+                .collect(),
         }),
         block_num: record.block_num.as_u32(),
         output_note_proofs,
@@ -700,7 +739,9 @@ pub async fn load_state(data_directory: &Path) {
     let start = Instant::now();
     // The writer is never started: this bench only measures load time, and dropping the un-started
     // state releases the tree storage the writer owns.
-    let _loaded = State::load(data_directory, StorageOptions::default()).await.unwrap();
+    let _loaded = State::load(data_directory, StorageOptions::default())
+        .await
+        .unwrap();
     let elapsed = start.elapsed();
 
     // Get database path and run SQL commands to count records

@@ -3,12 +3,7 @@ use std::fmt;
 use golden_core::{GoldenGroup, ParticipantIndex};
 use golden_ehtdh1::wire::{from_wire_bytes, to_wire_bytes};
 use golden_ehtdh1::{
-    Ciphertext,
-    PublicKeySet,
-    SealingKey,
-    SecretShare,
-    SetupContext,
-    UnsealingShare,
+    Ciphertext, PublicKeySet, SealingKey, SecretShare, SetupContext, UnsealingShare,
     derive_context_session_id,
 };
 use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
@@ -75,19 +70,33 @@ impl EncodedGoldenOperatorKey {
 
     /// Splits the bundle into its epoch, setup, public key set, and protected secret share.
     pub fn into_parts(self) -> (StorageKeyEpoch, Vec<u8>, Vec<u8>, Zeroizing<Vec<u8>>) {
-        (self.key_epoch, self.setup_context, self.public_key_set, self.secret_share)
+        (
+            self.key_epoch,
+            self.setup_context,
+            self.public_key_set,
+            self.secret_share,
+        )
     }
 
     /// Decodes and validates the operator key.
     pub fn decode(self) -> Result<GoldenOperatorKey, GoldenOperatorKeyError> {
         let setup_context = from_wire_bytes(&self.setup_context).map_err(|source| {
-            GoldenOperatorKeyError::InvalidWireValue { field: "setup context", source }
+            GoldenOperatorKeyError::InvalidWireValue {
+                field: "setup context",
+                source,
+            }
         })?;
         let public_key_set = from_wire_bytes(&self.public_key_set).map_err(|source| {
-            GoldenOperatorKeyError::InvalidWireValue { field: "public key set", source }
+            GoldenOperatorKeyError::InvalidWireValue {
+                field: "public key set",
+                source,
+            }
         })?;
         let secret_share = from_wire_bytes(&self.secret_share).map_err(|source| {
-            GoldenOperatorKeyError::InvalidWireValue { field: "secret share", source }
+            GoldenOperatorKeyError::InvalidWireValue {
+                field: "secret share",
+                source,
+            }
         })?;
 
         GoldenOperatorKey::new(self.key_epoch, setup_context, public_key_set, secret_share)
@@ -150,15 +159,20 @@ impl GoldenOperatorKey {
             });
         }
 
-        let participants =
-            public_key_set.public_shares.keys().copied().collect::<Vec<ParticipantIndex>>();
+        let participants = public_key_set
+            .public_shares
+            .keys()
+            .copied()
+            .collect::<Vec<ParticipantIndex>>();
         if setup_context.participants != participants {
             return Err(GoldenOperatorKeyError::ParticipantSetMismatch);
         }
 
-        let public_share = public_key_set.public_share(secret_share.participant).ok_or(
-            GoldenOperatorKeyError::UnknownLocalParticipant(secret_share.participant.get()),
-        )?;
+        let public_share = public_key_set
+            .public_share(secret_share.participant)
+            .ok_or(GoldenOperatorKeyError::UnknownLocalParticipant(
+                secret_share.participant.get(),
+            ))?;
         if public_share.decryption != StorageGroup::mul_generator(&secret_share.decryption)
             || public_share.context != StorageGroup::mul_generator(&secret_share.context)
         {
@@ -278,7 +292,10 @@ pub enum GoldenOperatorKeyError {
     },
     /// The setup names a different group backend.
     #[error("Golden backend mismatch: expected {expected}, got {actual}")]
-    BackendMismatch { expected: &'static str, actual: String },
+    BackendMismatch {
+        expected: &'static str,
+        actual: String,
+    },
     /// The context session was not derived from the decryption session.
     #[error("Golden context session does not match the decryption session")]
     ContextSessionMismatch,
@@ -337,7 +354,11 @@ pub(crate) mod tests {
 
     fn values_for(
         local_participant: ParticipantIndex,
-    ) -> (SetupContext, PublicKeySet<StorageGroup>, SecretShare<StorageGroup>) {
+    ) -> (
+        SetupContext,
+        PublicKeySet<StorageGroup>,
+        SecretShare<StorageGroup>,
+    ) {
         let participants = [participant(1), participant(2), participant(3)];
         let decryption_secret = scalar(11);
         let decryption_coefficient = scalar(7);
@@ -356,7 +377,11 @@ pub(crate) mod tests {
                 },
             );
             if participant == local_participant {
-                local_secret_share = Some(SecretShare { participant, decryption, context });
+                local_secret_share = Some(SecretShare {
+                    participant,
+                    decryption,
+                    context,
+                });
             }
         }
 
@@ -372,14 +397,21 @@ pub(crate) mod tests {
             context_transcript_root: [4; 32],
             epoch: *EPOCH.as_bytes(),
         };
-        let public_key_set =
-            PublicKeySet::new(2, StorageGroup::mul_generator(&decryption_secret), public_shares)
-                .unwrap();
+        let public_key_set = PublicKeySet::new(
+            2,
+            StorageGroup::mul_generator(&decryption_secret),
+            public_shares,
+        )
+        .unwrap();
 
         (setup_context, public_key_set, local_secret_share.unwrap())
     }
 
-    fn values() -> (SetupContext, PublicKeySet<StorageGroup>, SecretShare<StorageGroup>) {
+    fn values() -> (
+        SetupContext,
+        PublicKeySet<StorageGroup>,
+        SecretShare<StorageGroup>,
+    ) {
         values_for(participant(1))
     }
 
@@ -423,15 +455,26 @@ pub(crate) mod tests {
         fs_err::create_dir_all(&dir).unwrap();
 
         let (setup_context, public_key_set, _) = values_for(participant(1));
-        fs_err::write(dir.join("setup-context.wire"), to_wire_bytes(&setup_context)).unwrap();
-        fs_err::write(dir.join("public-key-set.wire"), to_wire_bytes(&public_key_set)).unwrap();
+        fs_err::write(
+            dir.join("setup-context.wire"),
+            to_wire_bytes(&setup_context),
+        )
+        .unwrap();
+        fs_err::write(
+            dir.join("public-key-set.wire"),
+            to_wire_bytes(&public_key_set),
+        )
+        .unwrap();
 
         for index in [1u32, 2, 3] {
             let (.., secret_share) = values_for(participant(index));
             let validator_dir = dir.join(format!("validator-{index}"));
             fs_err::create_dir_all(&validator_dir).unwrap();
-            fs_err::write(validator_dir.join("secret-share.wire"), to_wire_bytes(&secret_share))
-                .unwrap();
+            fs_err::write(
+                validator_dir.join("secret-share.wire"),
+                to_wire_bytes(&secret_share),
+            )
+            .unwrap();
         }
     }
 
@@ -532,7 +575,10 @@ pub(crate) mod tests {
 
         assert!(matches!(
             encoded.decode(),
-            Err(GoldenOperatorKeyError::InvalidWireValue { field: "setup context", .. })
+            Err(GoldenOperatorKeyError::InvalidWireValue {
+                field: "setup context",
+                ..
+            })
         ));
     }
 }

@@ -43,9 +43,9 @@ pub fn grpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
 
     // Pull the open-telemetry parent context using the HTTP extractor
     let otel_ctx = opentelemetry::global::get_text_map_propagator(|propagator| {
-        propagator.extract(&MetadataExtractor(&tonic::metadata::MetadataMap::from_headers(
-            request.headers().clone(),
-        )))
+        propagator.extract(&MetadataExtractor(
+            &tonic::metadata::MetadataMap::from_headers(request.headers().clone()),
+        ))
     });
     let _ = tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&span, otel_ctx);
 

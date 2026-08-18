@@ -29,8 +29,12 @@ pub(super) async fn export(options: PrivateRecordExportOptions) -> anyhow::Resul
             format!("private record ({transaction_id}, {validator_id}) was not found")
         })?;
 
-    fs_err::write(&output, record.to_bytes())
-        .with_context(|| format!("failed to write private record bundle to {}", output.display()))
+    fs_err::write(&output, record.to_bytes()).with_context(|| {
+        format!(
+            "failed to write private record bundle to {}",
+            output.display()
+        )
+    })
 }
 
 /// Parses one validator-qualified private-record identity.
@@ -53,6 +57,9 @@ fn parse_record_id(
 fn parse_transaction_id(encoded: &str) -> anyhow::Result<TransactionId> {
     let bytes = hex::decode(encoded).context("transaction id is not valid hex")?;
     let actual = bytes.len();
-    anyhow::ensure!(actual == 32, "transaction id has {actual} bytes, expected 32");
+    anyhow::ensure!(
+        actual == 32,
+        "transaction id has {actual} bytes, expected 32"
+    );
     TransactionId::read_from_bytes(&bytes).context("transaction id is not canonical")
 }

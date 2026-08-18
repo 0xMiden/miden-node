@@ -18,7 +18,11 @@ impl ProverService {
     pub fn with_capacity(kind: ProofKind, capacity: NonZeroUsize) -> Self {
         let permits = Arc::new(Semaphore::new(capacity.get()));
         let prover = Arc::new(Mutex::new(Prover::new(kind)));
-        Self { permits, prover, kind }
+        Self {
+            permits,
+            prover,
+            kind,
+        }
     }
 
     pub(super) fn is_supported(&self, kind: ProofKind) -> bool {

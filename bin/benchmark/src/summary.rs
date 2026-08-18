@@ -49,7 +49,10 @@ pub(crate) fn print_proving_summary(
         format_duration_secs(prove_total),
         format_duration_secs(prove_mean),
     );
-    println!("  exec+prove per tx:   mean={}/tx", format_duration_secs(per_tx_mean));
+    println!(
+        "  exec+prove per tx:   mean={}/tx",
+        format_duration_secs(per_tx_mean)
+    );
 }
 
 // SUBMISSION SUMMARIES
@@ -83,7 +86,10 @@ pub(crate) fn print_summary(
     println!();
     print_phase_summary("Mint phase (sequential)", mint);
     println!();
-    print_phase_summary(&format!("Consume phase (concurrent, c={concurrency})"), consume);
+    print_phase_summary(
+        &format!("Consume phase (concurrent, c={concurrency})"),
+        consume,
+    );
     println!();
     print_inclusion_summary(inclusion);
 }
@@ -142,7 +148,10 @@ fn print_inclusion_summary(inclusion: &InclusionResult) {
     let n_blocks = u32::try_from(counts.len()).unwrap_or(u32::MAX);
     let mean_count = f64::from(sum_counts) / f64::from(n_blocks);
 
-    let peak_block = hits.iter().max_by_key(|h| h.hit_count).expect("non-empty hits");
+    let peak_block = hits
+        .iter()
+        .max_by_key(|h| h.hit_count)
+        .expect("non-empty hits");
     let first_block = hits.first().expect("non-empty hits");
     let last_block = hits.last().expect("non-empty hits");
 
@@ -220,13 +229,13 @@ fn print_per_block_series(hits: &[BlockHit], block_interval: Option<Duration>) {
                     "    block {} (ts={}): {} txs   ({rate:.1} tx/s @ block_interval)",
                     hit.block_num, hit.block_ts, hit.hit_count,
                 );
-            },
+            }
             None => {
                 println!(
                     "    block {} (ts={}): {} txs",
                     hit.block_num, hit.block_ts, hit.hit_count,
                 );
-            },
+            }
         }
     }
 }
@@ -243,7 +252,11 @@ fn print_per_block_series(hits: &[BlockHit], block_interval: Option<Duration>) {
 )]
 fn rate_per_second(count: u64, elapsed: Duration) -> f64 {
     let secs = elapsed.as_secs_f64();
-    if secs > 0.0 { (count as f64) / secs } else { 0.0 }
+    if secs > 0.0 {
+        (count as f64) / secs
+    } else {
+        0.0
+    }
 }
 
 /// Computes `100 * num / den` as a percentage, returning 0 when `den == 0`.

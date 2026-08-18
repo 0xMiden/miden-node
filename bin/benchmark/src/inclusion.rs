@@ -124,7 +124,7 @@ pub(crate) async fn scan_with_drain(
                     );
                     next_block += 1;
                     continue;
-                },
+                }
             };
             let Some(bytes) = response.block else {
                 next_block += 1;
@@ -138,7 +138,7 @@ pub(crate) async fn scan_with_drain(
                     );
                     next_block += 1;
                     continue;
-                },
+                }
             };
 
             let block_ts = signed_block.header().timestamp();

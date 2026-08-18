@@ -212,7 +212,7 @@ fn split_top_level_args(tokens: TokenStream2) -> Vec<TokenStream2> {
             TokenTree::Punct(punct) if punct.as_char() == ',' => {
                 args.push(current);
                 current = TokenStream2::new();
-            },
+            }
             _ => current.extend([token]),
         }
     }
@@ -293,7 +293,11 @@ fn collect_recorded_fields(function: &ItemFn) -> Vec<FieldPath> {
     visitor.visit_block(&function.block);
 
     let mut names = BTreeSet::new();
-    visitor.fields.into_iter().filter(|field| names.insert(field.name())).collect()
+    visitor
+        .fields
+        .into_iter()
+        .filter(|field| names.insert(field.name()))
+        .collect()
 }
 
 #[derive(Default)]
@@ -310,7 +314,8 @@ impl<'ast> Visit<'ast> for MacroVisitor {
             .is_some_and(|segment| segment.ident == "miden_span_record")
         {
             if let Ok(records) = syn::parse2::<RecordFields>(mac.tokens.clone()) {
-                self.fields.extend(records.fields.into_iter().map(|field| field.path));
+                self.fields
+                    .extend(records.fields.into_iter().map(|field| field.path));
             }
         }
 

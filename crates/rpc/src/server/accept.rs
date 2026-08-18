@@ -119,7 +119,7 @@ fn pre_release_label(pre: &semver::Prerelease) -> Option<String> {
     match s.rsplit_once('.') {
         Some((label, suffix)) if suffix.bytes().all(|b| b.is_ascii_digit()) => {
             Some(label.to_string())
-        },
+        }
         _ => Some(s.to_string()),
     }
 }
@@ -128,7 +128,10 @@ impl<S> Layer<S> for AcceptHeaderLayer {
     type Service = AcceptHeaderService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        AcceptHeaderService { inner, verifier: self.clone() }
+        AcceptHeaderService {
+            inner,
+            verifier: self.clone(),
+        }
     }
 }
 
@@ -169,7 +172,7 @@ impl AcceptHeaderLayer {
             //
             // Note that `application/*` is invalid so we cannot collapse the conditions.
             match (media_type.ty.as_str(), media_type.subty.as_str()) {
-                ("*", "*") | ("*" | "application", "vnd.miden") => {},
+                ("*", "*") | ("*" | "application", "vnd.miden") => {}
                 _ => continue,
             }
 
@@ -234,7 +237,7 @@ impl AcceptHeaderLayer {
             match (genesis_mode, genesis) {
                 (_, Some(value)) if value != self.genesis_commitment => continue,
                 (GenesisNegotiation::Mandatory, None) => continue,
-                _ => {},
+                _ => {}
             }
 
             // All preconditions met, this is a valid media type that we can serve.
@@ -316,7 +319,7 @@ where
                 let response = tonic::Status::invalid_argument(err.as_report()).into_http();
 
                 futures::future::ready(Ok(response)).boxed()
-            },
+            }
         }
     }
 }
@@ -390,7 +393,7 @@ impl FromStr for QValue {
                 // the remainder must still be valid utf8.
                 let digits = str::from_utf8(&digits).unwrap();
                 u16::from_str(digits).map_err(|_| QParsingError::InvalidDecimalDigits)?
-            },
+            }
             _ => return Err(Self::Err::BadFormat),
         };
 
@@ -415,7 +418,10 @@ mod tests {
 
     impl AcceptHeaderLayer {
         fn for_tests() -> Self {
-            Self::new(&TEST_RPC_VERSION, Word::try_from(TEST_GENESIS_COMMITMENT).unwrap())
+            Self::new(
+                &TEST_RPC_VERSION,
+                Word::try_from(TEST_GENESIS_COMMITMENT).unwrap(),
+            )
         }
     }
 
@@ -476,16 +482,27 @@ mod tests {
         // Missing genesis parameter
         assert!(
             layer
-                .negotiate("application/vnd.miden", super::GenesisNegotiation::Mandatory)
+                .negotiate(
+                    "application/vnd.miden",
+                    super::GenesisNegotiation::Mandatory
+                )
                 .is_err()
         );
 
         // Empty header value
-        assert!(layer.negotiate("", super::GenesisNegotiation::Mandatory).is_err());
+        assert!(
+            layer
+                .negotiate("", super::GenesisNegotiation::Mandatory)
+                .is_err()
+        );
 
         // Present but mismatched genesis parameter
         let mismatched = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeee";
-        assert!(layer.negotiate(mismatched, super::GenesisNegotiation::Mandatory).is_err());
+        assert!(
+            layer
+                .negotiate(mismatched, super::GenesisNegotiation::Mandatory)
+                .is_err()
+        );
     }
 
     #[rstest::rstest]

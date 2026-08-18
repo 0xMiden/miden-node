@@ -39,7 +39,10 @@ impl ProofWriter {
 
         verify_block_proof(block_num, &proof_bytes)?;
 
-        self.state.block_store.commit_proof(block_num, &proof_bytes).await?;
+        self.state
+            .block_store
+            .commit_proof(block_num, &proof_bytes)
+            .await?;
         self.state
             .proof_cache
             .push(block_num, ProofNotification::new(block_num, proof_bytes))

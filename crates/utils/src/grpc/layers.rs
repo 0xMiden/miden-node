@@ -147,11 +147,16 @@ impl GrpcIpExtractor {
 impl KeyExtractor for GrpcIpExtractor {
     type Key = IpAddr;
 
-    #[expect(clippy::result_large_err, reason = "error type is dictated by tower-governor")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "error type is dictated by tower-governor"
+    )]
     fn extract<T>(
         &self,
         request: &http::Request<T>,
     ) -> Result<Self::Key, tower_governor::GovernorError> {
-        self.0.extract(request).or_else(|_| Self::extract_tonic_address(request))
+        self.0
+            .extract(request)
+            .or_else(|_| Self::extract_tonic_address(request))
     }
 }

@@ -21,7 +21,10 @@ const EXPECTED_SCHEMA_HASHES: [SchemaHash; 4] = [
 fn migration_schema_hashes_are_stable() -> Result<()> {
     let migrator = migrator()?;
 
-    pretty_assertions::assert_eq!(migrator.schema_hashes(), SchemaHashes(&EXPECTED_SCHEMA_HASHES));
+    pretty_assertions::assert_eq!(
+        migrator.schema_hashes(),
+        SchemaHashes(&EXPECTED_SCHEMA_HASHES)
+    );
     Ok(())
 }
 
@@ -32,8 +35,9 @@ fn migration_schema_hashes_are_stable() -> Result<()> {
 fn migration_004_validity_intervals_backfills_valid_until() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let database_filepath = temp_dir.path().join("store.sqlite3");
-    let database_path_str =
-        database_filepath.to_str().context("database path should be valid UTF-8")?;
+    let database_path_str = database_filepath
+        .to_str()
+        .context("database path should be valid UTF-8")?;
 
     {
         let mut conn = SqliteConnection::establish(database_path_str)?;

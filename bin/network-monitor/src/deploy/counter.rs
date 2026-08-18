@@ -6,13 +6,7 @@ use anyhow::Result;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountType,
-    StorageSlot,
-    StorageSlotName,
+    Account, AccountBuilder, AccountComponent, AccountId, AccountType, StorageSlot, StorageSlotName,
 };
 use miden_protocol::asset::AssetAmount;
 use miden_protocol::utils::sync::LazyLock;
@@ -46,8 +40,10 @@ pub fn create_counter_account(
     fee_faucet_id: AccountId,
 ) -> Result<Account> {
     // Load and customize the MASM script
-    let script =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
+    let script = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/assets/counter_program.masm"
+    ));
 
     // Compile the account code
     let owner_account_id_prefix = owner_account_id.prefix().as_felt();
@@ -55,7 +51,12 @@ pub fn create_counter_account(
 
     let owner_id_slot = StorageSlot::with_value(
         OWNER_SLOT_NAME.clone(),
-        Word::from([owner_account_id_suffix, owner_account_id_prefix, Felt::ZERO, Felt::ZERO]),
+        Word::from([
+            owner_account_id_suffix,
+            owner_account_id_prefix,
+            Felt::ZERO,
+            Felt::ZERO,
+        ]),
     );
 
     let counter_slot = StorageSlot::with_value(COUNTER_SLOT_NAME.clone(), Word::empty());

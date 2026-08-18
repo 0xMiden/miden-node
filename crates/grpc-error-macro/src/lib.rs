@@ -58,7 +58,7 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
             return syn::Error::new_spanned(name, "GrpcError can only be derived for enums")
                 .to_compile_error()
                 .into();
-        },
+        }
     };
 
     // Build the GrpcError enum variants
@@ -82,8 +82,11 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
         });
 
         // Extract doc comments
-        let docs: Vec<_> =
-            variant.attrs.iter().filter(|attr| attr.path().is_ident("doc")).collect();
+        let docs: Vec<_> = variant
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("doc"))
+            .collect();
 
         if is_internal {
             // Map to Internal variant

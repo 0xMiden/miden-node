@@ -13,21 +13,36 @@ fn benchmark_fungible_faucet_ids(vault_entries: usize) -> Vec<AccountId> {
 fn account_batches_honor_the_exact_requested_count() {
     assert_eq!(
         plan_account_batches(1, 100, ACCOUNT_UPDATES_PER_BLOCK),
-        vec![AccountBatch { public: 1, private: 0 }]
+        vec![AccountBatch {
+            public: 1,
+            private: 0
+        }]
     );
     assert_eq!(
         plan_account_batches(254, 50, ACCOUNT_UPDATES_PER_BLOCK),
-        vec![AccountBatch { public: 127, private: 127 }]
+        vec![AccountBatch {
+            public: 127,
+            private: 127
+        }]
     );
     assert_eq!(
         plan_account_batches(255, 50, ACCOUNT_UPDATES_PER_BLOCK),
-        vec![AccountBatch { public: 128, private: 127 }]
+        vec![AccountBatch {
+            public: 128,
+            private: 127
+        }]
     );
     assert_eq!(
         plan_account_batches(256, 50, ACCOUNT_UPDATES_PER_BLOCK),
         vec![
-            AccountBatch { public: 128, private: 127 },
-            AccountBatch { public: 0, private: 1 },
+            AccountBatch {
+                public: 128,
+                private: 127
+            },
+            AccountBatch {
+                public: 0,
+                private: 1
+            },
         ]
     );
 }
@@ -36,9 +51,16 @@ fn account_batches_honor_the_exact_requested_count() {
 fn account_batches_distribute_public_accounts_across_partial_batches() {
     let batches = plan_account_batches(1_000, 37, ACCOUNT_UPDATES_PER_BLOCK);
 
-    assert!(batches.iter().all(|batch| batch.public + batch.private <= 255));
+    assert!(
+        batches
+            .iter()
+            .all(|batch| batch.public + batch.private <= 255)
+    );
     assert_eq!(batches.iter().map(|batch| batch.public).sum::<usize>(), 370);
-    assert_eq!(batches.iter().map(|batch| batch.private).sum::<usize>(), 630);
+    assert_eq!(
+        batches.iter().map(|batch| batch.private).sum::<usize>(),
+        630
+    );
 }
 
 #[test]
@@ -96,14 +118,24 @@ fn public_account_note_contains_requested_distinct_vault_assets() {
     drop(key_rng);
 
     let faucet_ids = benchmark_fungible_faucet_ids(5);
-    let (_, notes) =
-        create_accounts_and_notes(1, AccountType::Public, &key_pair, &rng, &faucet_ids, 0, 0, 5);
+    let (_, notes) = create_accounts_and_notes(
+        1,
+        AccountType::Public,
+        &key_pair,
+        &rng,
+        &faucet_ids,
+        0,
+        0,
+        5,
+    );
 
     let assets = notes[0].assets();
     assert_eq!(assets.num_assets(), 5);
 
-    let distinct_vault_keys =
-        assets.iter().map(Asset::id).collect::<std::collections::BTreeSet<_>>();
+    let distinct_vault_keys = assets
+        .iter()
+        .map(Asset::id)
+        .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(distinct_vault_keys.len(), 5);
 }
 
@@ -116,8 +148,16 @@ fn private_account_note_keeps_single_vault_asset() {
     drop(key_rng);
 
     let faucet_ids = benchmark_fungible_faucet_ids(5);
-    let (_, notes) =
-        create_accounts_and_notes(1, AccountType::Private, &key_pair, &rng, &faucet_ids, 0, 0, 5);
+    let (_, notes) = create_accounts_and_notes(
+        1,
+        AccountType::Private,
+        &key_pair,
+        &rng,
+        &faucet_ids,
+        0,
+        0,
+        5,
+    );
 
     assert_eq!(notes[0].assets().num_assets(), 1);
 }
@@ -130,11 +170,17 @@ fn public_account_storage_map_entry_can_be_updated_for_benchmark_blocks() {
     let mut account = create_account(key_pair.public_key(), 42, AccountType::Public, 4);
 
     let key = StorageMapKey::from_index(2);
-    let old_value = account.storage().get_map_item(&benchmark_storage_map_slot(), key).unwrap();
+    let old_value = account
+        .storage()
+        .get_map_item(&benchmark_storage_map_slot(), key)
+        .unwrap();
 
     let updated = update_benchmark_storage_map_entry(&mut account, 3, 9, 4);
 
-    let new_value = account.storage().get_map_item(&benchmark_storage_map_slot(), key).unwrap();
+    let new_value = account
+        .storage()
+        .get_map_item(&benchmark_storage_map_slot(), key)
+        .unwrap();
     assert!(updated);
     assert_ne!(new_value, old_value);
     assert_eq!(new_value, benchmark_storage_map_update_value(3, 9, 2));
@@ -155,10 +201,7 @@ fn private_account_storage_map_update_is_skipped() {
 #[tokio::test(flavor = "multi_thread")]
 async fn seed_store_persists_one_public_account_and_applies_one_map_update() {
     use miden_node_proto::domain::account::{
-        AccountDetailRequest,
-        AccountRequest,
-        AccountStorageRequest,
-        StorageMapEntries,
+        AccountDetailRequest, AccountRequest, AccountStorageRequest, StorageMapEntries,
     };
 
     let temp_dir = tempfile::tempdir().unwrap();
@@ -184,7 +227,9 @@ async fn seed_store_persists_one_public_account_and_applies_one_map_update() {
         })
         .await
         .unwrap();
-    let details = response.details.expect("public account details should be returned");
+    let details = response
+        .details
+        .expect("public account details should be returned");
     assert_eq!(details.storage_details.map_details.len(), 1);
     let map_details = &details.storage_details.map_details[0];
     assert_eq!(map_details.slot_name, benchmark_storage_map_slot());

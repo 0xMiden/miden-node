@@ -3,11 +3,7 @@ use std::path::PathBuf;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::ValidatorKeysError;
 use miden_protocol::errors::{
-    AccountDeltaError,
-    AccountError,
-    AssetError,
-    AssetVaultError,
-    TokenSymbolError,
+    AccountDeltaError, AccountError, AssetError, AssetVaultError, TokenSymbolError,
 };
 use miden_protocol::utils::serde::DeserializationError;
 use miden_standards::account::faucets::FungibleFaucetError;

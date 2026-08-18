@@ -37,7 +37,10 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
 
         let range = read_block_range::<Status>(request.block_range, "SyncNotesRequest")?;
 
-        miden_span_record!(block_range.from = range.block_from, block_range.to = range.block_to,);
+        miden_span_record!(
+            block_range.from = range.block_from,
+            block_range.to = range.block_to,
+        );
 
         debug!(target: LOG_TARGET, "Syncing notes");
 
@@ -57,11 +60,17 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
             .await?;
         let blocks = results
             .into_iter()
-            .map(|(state, mmr_proof)| proto::rpc::sync_notes_response::NoteSyncBlock {
-                block_header: Some(state.block_header.into()),
-                mmr_path: Some(mmr_proof.merkle_path().clone().into()),
-                notes: state.notes.into_iter().map(note_sync_record_to_proto).collect(),
-            })
+            .map(
+                |(state, mmr_proof)| proto::rpc::sync_notes_response::NoteSyncBlock {
+                    block_header: Some(state.block_header.into()),
+                    mmr_path: Some(mmr_proof.merkle_path().clone().into()),
+                    notes: state
+                        .notes
+                        .into_iter()
+                        .map(note_sync_record_to_proto)
+                        .collect(),
+                },
+            )
             .collect();
 
         Ok(proto::rpc::SyncNotesResponse {
@@ -110,7 +119,10 @@ fn note_sync_record_to_proto(note: NoteSyncRecord) -> proto::note::NoteSyncRecor
         note_index_in_block: note.note_index.leaf_index_value().into(),
         inclusion_path: Some(note.inclusion_path.into()),
     });
-    proto::note::NoteSyncRecord { metadata, inclusion_proof }
+    proto::note::NoteSyncRecord {
+        metadata,
+        inclusion_proof,
+    }
 }
 
 fn note_sync_error_to_status(err: NoteSyncError) -> Status {
@@ -132,14 +144,8 @@ mod tests {
     use miden_protocol::block::{BlockNoteIndex, BlockNumber};
     use miden_protocol::crypto::merkle::SparseMerklePath;
     use miden_protocol::note::{
-        NoteAttachment,
-        NoteAttachmentScheme,
-        NoteAttachments,
-        NoteId,
-        NoteMetadata,
-        NoteTag,
-        NoteType,
-        PartialNoteMetadata,
+        NoteAttachment, NoteAttachmentScheme, NoteAttachments, NoteId, NoteMetadata, NoteTag,
+        NoteType, PartialNoteMetadata,
     };
     use miden_protocol::{Hasher, Word};
 
@@ -184,7 +190,10 @@ mod tests {
         let proto_record = note_sync_record_to_proto(record);
         let proto_metadata = proto_record.metadata.unwrap();
         assert_eq!(proto_metadata.sender, Some(sender.into()));
-        assert_eq!(proto_metadata.note_type, proto::note::NoteType::Private as i32);
+        assert_eq!(
+            proto_metadata.note_type,
+            proto::note::NoteType::Private as i32
+        );
         assert_eq!(proto_metadata.tag, 7);
         assert_eq!(proto_metadata.attachments.len(), 2);
 
@@ -192,7 +201,9 @@ mod tests {
         assert_eq!(first.scheme, u32::from(single_word_scheme.as_u16()));
         assert_eq!(
             first.payload,
-            Some(proto::note::note_sync_attachment::Payload::Value(single_word.into()))
+            Some(proto::note::note_sync_attachment::Payload::Value(
+                single_word.into()
+            ))
         );
 
         let second = &proto_metadata.attachments[1];
@@ -211,15 +222,21 @@ mod tests {
                 proto::note::note_sync_attachment::Payload::Value(value) => {
                     let value = Word::try_from(value).unwrap();
                     Hasher::hash_elements(value.as_elements())
-                },
+                }
                 proto::note::note_sync_attachment::Payload::Commitment(commitment) => {
                     Word::try_from(commitment).unwrap()
-                },
+                }
             })
             .collect();
-        let commitment_elements: Vec<_> =
-            attachment_commitments.iter().flat_map(Word::as_elements).copied().collect();
-        assert_eq!(Hasher::hash_elements(&commitment_elements), attachments.to_commitment());
+        let commitment_elements: Vec<_> = attachment_commitments
+            .iter()
+            .flat_map(Word::as_elements)
+            .copied()
+            .collect();
+        assert_eq!(
+            Hasher::hash_elements(&commitment_elements),
+            attachments.to_commitment()
+        );
     }
 
     #[test]

@@ -16,10 +16,7 @@ use miden_crypto::merkle::mmr::Mmr;
 use miden_crypto::merkle::smt::{Backend, ForestInMemoryBackend};
 #[cfg(feature = "rocksdb")]
 use miden_crypto::merkle::smt::{
-    ForestPersistentBackend,
-    PersistentBackendConfig,
-    RocksDbStorage,
-    SmtStorageReader,
+    ForestPersistentBackend, PersistentBackendConfig, RocksDbStorage, SmtStorageReader,
 };
 #[cfg(feature = "rocksdb")]
 use miden_node_utils::clap::RocksDbOptions;
@@ -88,13 +85,13 @@ pub fn account_tree_large_smt_error_to_init_error(e: LargeSmtError) -> StateInit
     match e {
         LargeSmtError::Merkle(merkle_error) => {
             StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
-        },
+        }
         LargeSmtError::Storage(err) => {
             StateInitializationError::AccountTreeIoError(err.as_report())
-        },
+        }
         err @ (LargeSmtError::RootMismatch { .. } | LargeSmtError::StorageNotEmpty) => {
             StateInitializationError::AccountTreeIoError(err.as_report())
-        },
+        }
     }
 }
 
@@ -238,7 +235,9 @@ impl TreeStorageLoader for MemoryStorage {
         // Load nullifiers in pages to avoid loading millions of entries at once
         let mut cursor = None;
         loop {
-            let page = db.select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor).await?;
+            let page = db
+                .select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor)
+                .await?;
 
             cursor = page.next_cursor;
             if page.nullifiers.is_empty() {
@@ -246,7 +245,10 @@ impl TreeStorageLoader for MemoryStorage {
             }
 
             let entries = page.nullifiers.into_iter().map(|info| {
-                (info.nullifier.as_word(), block_num_to_nullifier_leaf(info.block_num))
+                (
+                    info.nullifier.as_word(),
+                    block_num_to_nullifier_leaf(info.block_num),
+                )
             });
 
             let mutations = smt
@@ -362,7 +364,9 @@ impl TreeStorageLoader for RocksDbStorage {
         // Load nullifiers in pages to avoid loading millions of entries at once
         let mut cursor = None;
         loop {
-            let page = db.select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor).await?;
+            let page = db
+                .select_nullifiers_paged(NULLIFIERS_PAGE_SIZE, cursor)
+                .await?;
 
             cursor = page.next_cursor;
             if page.nullifiers.is_empty() {
@@ -370,7 +374,10 @@ impl TreeStorageLoader for RocksDbStorage {
             }
 
             let entries = page.nullifiers.into_iter().map(|info| {
-                (info.nullifier.as_word(), block_num_to_nullifier_leaf(info.block_num))
+                (
+                    info.nullifier.as_word(),
+                    block_num_to_nullifier_leaf(info.block_num),
+                )
             });
 
             let mutations = smt
@@ -496,8 +503,12 @@ pub async fn load_mmr(db: &mut Db) -> Result<Blockchain, StateInitializationErro
     let block_commitments = db.select_all_block_header_commitments().await?;
 
     // SAFETY: We assume the loaded MMR is valid and does not have more than u32::MAX entries.
-    let mmr = Mmr::try_from_iter(block_commitments.into_iter().map(BlockHeaderCommitment::word))
-        .expect("loaded MMR exceeds maximum allowed size");
+    let mmr = Mmr::try_from_iter(
+        block_commitments
+            .into_iter()
+            .map(BlockHeaderCommitment::word),
+    )
+    .expect("loaded MMR exceeds maximum allowed size");
     let chain_mmr = Blockchain::from_mmr_unchecked(mmr);
 
     verify_chain_mmr_consistency(&chain_mmr, latest_header.as_ref())?;
@@ -548,7 +559,9 @@ pub async fn rebuild_account_state_forest(
     let mut cursor = None;
 
     loop {
-        let page = db.select_public_account_ids_paged(PUBLIC_ACCOUNT_IDS_PAGE_SIZE, cursor).await?;
+        let page = db
+            .select_public_account_ids_paged(PUBLIC_ACCOUNT_IDS_PAGE_SIZE, cursor)
+            .await?;
 
         if page.account_ids.is_empty() {
             break;
@@ -559,9 +572,9 @@ pub async fn rebuild_account_state_forest(
             // TODO: Loading the full account from the database is inefficient and will need to go
             // away. <https://github.com/0xMiden/node/issues/1556>
             let account_info = db.select_account(account_id).await?;
-            let account = account_info
-                .details
-                .ok_or(StateInitializationError::PublicAccountMissingDetails(account_id))?;
+            let account = account_info.details.ok_or(
+                StateInitializationError::PublicAccountMissingDetails(account_id),
+            )?;
 
             // Convert the full account to a full-state patch
             let patch = AccountPatch::try_from(account).map_err(|e| {
@@ -612,7 +625,13 @@ pub async fn verify_tree_consistency(
     let latest_header = db.select_block_header_by_block_num(None).await?;
 
     let (block_num, expected_account_root, expected_nullifier_root) = latest_header
-        .map(|header| (header.block_num(), header.account_root(), header.nullifier_root()))
+        .map(|header| {
+            (
+                header.block_num(),
+                header.account_root(),
+                header.nullifier_root(),
+            )
+        })
         .unwrap_or_default();
 
     // Verify account tree root
@@ -687,12 +706,14 @@ fn verify_account_state_forest_record(
 ) -> Result<(), StateInitializationError> {
     let forest_vault_root = forest.get_latest_vault_root(account_id);
     if forest_vault_root != vault_root {
-        return Err(StateInitializationError::AccountStateForestStorageDiverged {
-            account_id,
-            slot_name: None,
-            forest_root: forest_vault_root,
-            database_root: vault_root,
-        });
+        return Err(
+            StateInitializationError::AccountStateForestStorageDiverged {
+                account_id,
+                slot_name: None,
+                forest_root: forest_vault_root,
+                database_root: vault_root,
+            },
+        );
     }
 
     for slot in storage_header.slots() {
@@ -703,12 +724,14 @@ fn verify_account_state_forest_record(
         let forest_root = forest.get_latest_storage_map_root(account_id, slot.name());
         let database_root = slot.value();
         if forest_root != database_root {
-            return Err(StateInitializationError::AccountStateForestStorageDiverged {
-                account_id,
-                slot_name: Some(slot.name().to_string()),
-                forest_root,
-                database_root,
-            });
+            return Err(
+                StateInitializationError::AccountStateForestStorageDiverged {
+                    account_id,
+                    slot_name: Some(slot.name().to_string()),
+                    forest_root,
+                    database_root,
+                },
+            );
         }
     }
 
@@ -719,11 +742,7 @@ fn verify_account_state_forest_record(
 mod tests {
     use diesel::{ExpressionMethods, RunQueryDsl};
     use miden_protocol::account::{
-        AccountId,
-        AccountStorageHeader,
-        StorageSlotHeader,
-        StorageSlotName,
-        StorageSlotType,
+        AccountId, AccountStorageHeader, StorageSlotHeader, StorageSlotName, StorageSlotType,
     };
     use miden_protocol::block::BlockHeader;
     use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -739,9 +758,15 @@ mod tests {
 
         for block_num in 0..count {
             let chain_commitment = mmr.peaks().hash_peaks();
-            let header =
-                BlockHeader::mock(block_num, Some(chain_commitment), None, &[], Word::default());
-            mmr.add(header.commitment()).expect("test MMR should accept block commitment");
+            let header = BlockHeader::mock(
+                block_num,
+                Some(chain_commitment),
+                None,
+                &[],
+                Word::default(),
+            );
+            mmr.add(header.commitment())
+                .expect("test MMR should accept block commitment");
             headers.push(header);
         }
 
@@ -762,7 +787,10 @@ mod tests {
     #[test]
     fn chain_mmr_consistency_rejects_corrupted_loaded_chain() {
         let headers = build_headers(5);
-        let mut commitments = headers.iter().map(BlockHeader::commitment).collect::<Vec<_>>();
+        let mut commitments = headers
+            .iter()
+            .map(BlockHeader::commitment)
+            .collect::<Vec<_>>();
         commitments[2] = Word::from([42, 0, 0, 0u32]);
 
         let mmr = Mmr::try_from_iter(commitments).expect("test MMR should build");
@@ -792,7 +820,9 @@ mod tests {
 
         let headers = build_headers(5);
         let signing_key = SigningKey::new();
-        let mut db = crate::db::Db::load(db_path).await.expect("test database should load");
+        let mut db = crate::db::Db::load(db_path)
+            .await
+            .expect("test database should load");
 
         db.query("insert corrupted block headers", move |conn| {
             for header in &headers {

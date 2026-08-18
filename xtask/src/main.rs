@@ -68,20 +68,21 @@ impl Changelog {
                 result.inspect_err(|err| {
                     emit_github_error_annotation("Invalid changelog metadata", err);
                 })
-            },
+            }
             Self::Render(args) => {
                 let notes = if args.current {
                     changelog::render_current_changelog()?
                 } else {
-                    let release_tag =
-                        args.release_tag.expect("clap requires either --release-tag or --current");
+                    let release_tag = args
+                        .release_tag
+                        .expect("clap requires either --release-tag or --current");
                     changelog::render_release_notes(&release_tag)?
                 };
                 let mut stdout = io::stdout().lock();
                 stdout.write_all(notes.as_bytes())?;
                 stdout.flush()?;
                 Ok(())
-            },
+            }
         }
     }
 }
@@ -132,11 +133,16 @@ fn emit_github_error_annotation(title: &str, err: &anyhow::Error) {
 }
 
 fn github_escape_property(value: &str) -> String {
-    github_escape_data(value).replace(':', "%3A").replace(',', "%2C")
+    github_escape_data(value)
+        .replace(':', "%3A")
+        .replace(',', "%2C")
 }
 
 fn github_escape_data(value: &str) -> String {
-    value.replace('%', "%25").replace('\r', "%0D").replace('\n', "%0A")
+    value
+        .replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
 }
 
 fn run_fmt_comments(args: &FmtCommentsArgs) -> Result<()> {
@@ -177,7 +183,11 @@ fn run_fmt_comments(args: &FmtCommentsArgs) -> Result<()> {
         eprintln!("comments need reflow: {}", path.display());
     }
 
-    let mode = if args.check { "--check" } else { "default check" };
+    let mode = if args.check {
+        "--check"
+    } else {
+        "default check"
+    };
     bail!(
         "{} file(s) need comment reflow ({mode}); run `cargo xtask fmt-comments --write`",
         changed.len()
@@ -194,7 +204,7 @@ fn comment_width(explicit: Option<usize>, rustfmt_config: &Path) -> Result<usize
         Err(err) if err.kind() == ErrorKind::NotFound => return Ok(100),
         Err(err) => {
             return Err(err).with_context(|| format!("reading {}", rustfmt_config.display()));
-        },
+        }
     };
 
     let config = toml::from_str::<toml::Value>(&source)

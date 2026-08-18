@@ -29,9 +29,12 @@ fn parse_cli() -> Cli {
         Ok(cli) => cli,
         // We inject custom section descriptions into help output to improve readability.
         Err(err) if err.kind() == ErrorKind::DisplayHelp => {
-            print!("{}", commands::section::inject_section_descriptions(err.to_string()));
+            print!(
+                "{}",
+                commands::section::inject_section_descriptions(err.to_string())
+            );
             std::process::exit(err.exit_code());
-        },
+        }
         Err(err) => err.exit(),
     }
 }

@@ -61,7 +61,11 @@ pub(super) fn truncate(value: &str, max_len: usize) -> &str {
 /// Renders the numeric value when the service is healthy, otherwise `-`. Mirrors the convention
 /// used across cards: stale numbers from an unhealthy probe are not shown.
 pub(super) fn num_or_dash(value: u64, healthy: bool) -> String {
-    if healthy { value.to_string() } else { "-".to_string() }
+    if healthy {
+        value.to_string()
+    } else {
+        "-".to_string()
+    }
 }
 
 /// Renders a truncated commitment with copy button when healthy and non-empty, `-` otherwise.

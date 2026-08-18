@@ -10,11 +10,7 @@ use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{AccountInputs, PartialBlockchain, TransactionInputs};
 use miden_protocol::vm::FutureMaybeSend;
 use miden_tx::{
-    DataStore,
-    DataStoreError,
-    LoadedMastForest,
-    MastForestStore,
-    TransactionMastStore,
+    DataStore, DataStoreError, LoadedMastForest, MastForestStore, TransactionMastStore,
 };
 
 // TRANSACTION INPUTS DATA STORE
@@ -33,7 +29,10 @@ impl TransactionInputsDataStore {
         for code in tx_inputs.foreign_account_code() {
             mast_store.load_account_code(code);
         }
-        Self { tx_inputs, mast_store }
+        Self {
+            tx_inputs,
+            mast_store,
+        }
     }
 }
 
@@ -63,9 +62,11 @@ impl DataStore for TransactionInputsDataStore {
         _ref_block: BlockNumber,
     ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
         async move {
-            self.tx_inputs.read_foreign_account_inputs(foreign_account_id).map_err(|err| {
-                DataStoreError::other_with_source("failed to read foreign account inputs", err)
-            })
+            self.tx_inputs
+                .read_foreign_account_inputs(foreign_account_id)
+                .map_err(|err| {
+                    DataStoreError::other_with_source("failed to read foreign account inputs", err)
+                })
         }
     }
 

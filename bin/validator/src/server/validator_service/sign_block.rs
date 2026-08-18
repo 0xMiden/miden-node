@@ -25,7 +25,9 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
     fn encode(output: Self::Output) -> tonic::Result<grpc::blockchain::SignBlockResponse> {
         let (signature, block_commitment, public_key) = output;
         Ok(grpc::blockchain::SignBlockResponse {
-            signature: Some(grpc::blockchain::BlockSignature { signature: signature.to_bytes() }),
+            signature: Some(grpc::blockchain::BlockSignature {
+                signature: signature.to_bytes(),
+            }),
             block_commitment: Some(block_commitment.into()),
             public_key: Some((&public_key).into()),
         })
@@ -59,8 +61,10 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
             .ok_or_else(|| tonic::Status::internal("Chain tip not found in database"))?;
 
         // Validate the block against the current chain tip.
-        let (signature, header) =
-            self.validate_block(proposed_block, chain_tip).await.map_err(|err| {
+        let (signature, header) = self
+            .validate_block(proposed_block, chain_tip)
+            .await
+            .map_err(|err| {
                 tonic::Status::invalid_argument(format!(
                     "Failed to validate block: {}",
                     err.as_report()
@@ -74,13 +78,17 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
         // Persist the signed header.
         let new_block_num = header.block_num().as_u32();
         self.db.upsert_block_header(header).await.map_err(|err| {
-            tonic::Status::internal(format!("Failed to persist block header: {}", err.as_report()))
+            tonic::Status::internal(format!(
+                "Failed to persist block header: {}",
+                err.as_report()
+            ))
         })?;
 
         // Update the in-memory counters after successful persistence. The block has already been
         // backed up to the block store by `validate_block`, so it is available to subscribers by
         // the time they observe this new tip.
-        self.committed_tip.send_replace(BlockNumber::from(new_block_num));
+        self.committed_tip
+            .send_replace(BlockNumber::from(new_block_num));
         self.signed_blocks_count.fetch_add(1, Ordering::Relaxed);
 
         Ok((signature, block_commitment, self.signer.public_key()))

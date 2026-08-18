@@ -18,7 +18,9 @@ impl proto::server::rpc_api::GetNoteScriptByRoot for RpcService {
     }
 
     fn encode(output: Self::Output) -> tonic::Result<proto::rpc::MaybeNoteScript> {
-        Ok(proto::rpc::MaybeNoteScript { script: output.map(Into::into) })
+        Ok(proto::rpc::MaybeNoteScript {
+            script: output.map(Into::into),
+        })
     }
 
     #[miden_instrument(

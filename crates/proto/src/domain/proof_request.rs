@@ -4,11 +4,7 @@
 use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::{BlockHeader, BlockInputs};
 use miden_protocol::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 pub struct BlockProofRequest {
@@ -19,7 +15,11 @@ pub struct BlockProofRequest {
 
 impl Serializable for BlockProofRequest {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        let Self { tx_batches, block_header, block_inputs } = self;
+        let Self {
+            tx_batches,
+            block_header,
+            block_inputs,
+        } = self;
         tx_batches.write_into(target);
         block_header.write_into(target);
         block_inputs.write_into(target);

@@ -133,7 +133,9 @@ impl RpcClient {
             Some(value) => builder.with_auth_header_value(value),
             None => builder.without_auth_header(),
         };
-        let rpc = builder.with_otel_context_injection().connect_lazy::<InnerRpcClient>();
+        let rpc = builder
+            .with_otel_context_injection()
+            .connect_lazy::<InnerRpcClient>();
 
         let backoff = retry::exponential(backoff_initial, backoff_max);
 
@@ -152,7 +154,12 @@ impl RpcClient {
             return Ok(sealer);
         }
 
-        let key = self.inner.clone().get_transaction_encryption_key(()).await?.into_inner();
+        let key = self
+            .inner
+            .clone()
+            .get_transaction_encryption_key(())
+            .await?
+            .into_inner();
         let verified = verify_transaction_encryption_key(
             key,
             TrustedTransactionEncryptionState::new(
@@ -195,8 +202,9 @@ impl RpcClient {
         block_from: BlockNumber,
     ) -> Result<BoxStream<'static, BlockSubscriptionItem>, RpcError> {
         (|| async move {
-            let request =
-                tonic::Request::new(BlockSubscriptionRequest { block_from: block_from.as_u32() });
+            let request = tonic::Request::new(BlockSubscriptionRequest {
+                block_from: block_from.as_u32(),
+            });
             let stream = self
                 .inner
                 .clone()
@@ -255,7 +263,7 @@ impl RpcClient {
                                 // against the next block's arrival.
                                 last_block = Instant::now();
                                 inner.insert(stream)
-                            },
+                            }
                             Err(err) => {
                                 tracing::warn!(
                                     target: COMPONENT, err = %err.as_report(), %next_from,
@@ -263,7 +271,7 @@ impl RpcClient {
                                 );
                                 tokio::time::sleep(RECONNECT_DELAY).await;
                                 continue;
-                            },
+                            }
                         },
                     };
 
@@ -278,7 +286,7 @@ impl RpcClient {
                                 Ok((block, committed_tip)),
                                 (client, next_from, inner, last_block),
                             ));
-                        },
+                        }
                         Ok(Some(Err(err))) => tracing::warn!(
                             target: COMPONENT, err = %err.as_report(), %next_from,
                             "block subscription failed, reconnecting",
@@ -305,7 +313,7 @@ impl RpcClient {
                                 stall_timeout = %humantime::format_duration(STALL_TIMEOUT),
                                 "no block received within stall timeout; treating subscription as stalled, reconnecting",
                             );
-                        },
+                        }
                     }
 
                     // Reached on an error/close/stall branch: discard the stream, pace the
@@ -397,7 +405,9 @@ impl RpcClient {
     ) -> Result<AccountInputs, RpcError> {
         // Only request account code
         let request = proto::rpc::AccountRequest {
-            account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+            account_id: Some(proto::account::AccountId {
+                id: account_id.to_bytes(),
+            }),
             block_num: Some(block_num.into()),
             // TODO: should these commitments be cached on the NTX builder?
             details: Some(proto::rpc::account_request::AccountDetailRequest {
@@ -428,7 +438,9 @@ impl RpcClient {
         }
 
         let request = proto::rpc::AccountRequest {
-            account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+            account_id: Some(proto::account::AccountId {
+                id: account_id.to_bytes(),
+            }),
             block_num: block_num.map(Into::into),
             details: Some(proto::rpc::account_request::AccountDetailRequest {
                 code_commitment: None,
@@ -447,7 +459,7 @@ impl RpcClient {
                 // request to RPC, but this needs double-checking. If it able to exceed them,
                 // batching needs to be implemented as a workaround.
                 panic!("should never exceed maximum number of requested keys")
-            },
+            }
             None => Vec::new(),
         };
 
@@ -466,7 +478,9 @@ impl RpcClient {
         block_num: Option<BlockNumber>,
     ) -> Result<StorageMapWitness, RpcError> {
         let request = proto::rpc::AccountRequest {
-            account_id: Some(proto::account::AccountId { id: account_id.to_bytes() }),
+            account_id: Some(proto::account::AccountId {
+                id: account_id.to_bytes(),
+            }),
             block_num: block_num.map(Into::into),
             details: Some(proto::rpc::account_request::AccountDetailRequest {
                 code_commitment: None,
@@ -524,7 +538,9 @@ impl RpcClient {
         &self,
         script_root: Word,
     ) -> Result<Option<NoteScript>, RpcError> {
-        let request = proto::note::NoteScriptRoot { root: Some(script_root.into()) };
+        let request = proto::note::NoteScriptRoot {
+            root: Some(script_root.into()),
+        };
 
         let script = self
             .inner
@@ -535,7 +551,10 @@ impl RpcClient {
             .into_inner()
             .script;
 
-        script.map(NoteScript::try_from).transpose().map_err(RpcError::Conversion)
+        script
+            .map(NoteScript::try_from)
+            .transpose()
+            .map_err(RpcError::Conversion)
     }
 
     /// Issues a `GetAccount` request and decodes the response into the domain [`AccountResponse`].

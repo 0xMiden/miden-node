@@ -68,12 +68,23 @@ impl KmsSigner {
         let key_id = key_id.into();
 
         // Retrieve DER-encoded SPKI.
-        let pub_key_output = client.get_public_key().key_id(key_id.clone()).send().await?;
-        let spki_der = pub_key_output.public_key().ok_or(KmsSignerError::EmptyBlob)?.as_ref();
+        let pub_key_output = client
+            .get_public_key()
+            .key_id(key_id.clone())
+            .send()
+            .await?;
+        let spki_der = pub_key_output
+            .public_key()
+            .ok_or(KmsSignerError::EmptyBlob)?
+            .as_ref();
 
         // Decode the compressed SPKI as a Miden public key.
         let pub_key = PublicKey::from_der(spki_der)?;
-        Ok(Self { key_id, pub_key, client })
+        Ok(Self {
+            key_id,
+            pub_key,
+            client,
+        })
     }
 
     pub async fn sign(&self, commitment: Word) -> Result<Signature, KmsSignerError> {
@@ -141,6 +152,8 @@ pub async fn decrypt_key_material(ciphertext: Vec<u8>) -> anyhow::Result<Vec<u8>
         .await
         .context("KMS decrypt request failed")?;
 
-    let plaintext = output.plaintext().context("KMS decrypt returned no plaintext")?;
+    let plaintext = output
+        .plaintext()
+        .context("KMS decrypt returned no plaintext")?;
     Ok(plaintext.as_ref().to_vec())
 }

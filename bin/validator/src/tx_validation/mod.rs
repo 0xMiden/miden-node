@@ -6,7 +6,10 @@ use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::transaction::{
-    ProvenTransaction, TransactionHeader, TransactionInputs, TransactionVerifier,
+    ProvenTransaction,
+    TransactionHeader,
+    TransactionInputs,
+    TransactionVerifier,
 };
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{TransactionExecutor, TransactionExecutorError};

@@ -56,12 +56,7 @@ impl TransactionInputs {
         let nullifiers = inputs
             .nullifiers
             .into_iter()
-            .map(|nullifier| {
-                (
-                    nullifier.nullifier,
-                    NonZeroU32::new(nullifier.block_num.as_u32()),
-                )
-            })
+            .map(|nullifier| (nullifier.nullifier, NonZeroU32::new(nullifier.block_num.as_u32())))
             .collect();
 
         Self {
@@ -186,10 +181,8 @@ pub async fn get_tx_inputs(
     proven_tx: &ProvenTransaction,
 ) -> Result<TransactionInputs, StoreError> {
     let nullifiers = proven_tx.nullifiers().collect::<Vec<_>>();
-    let unauthenticated_note_commitments = proven_tx
-        .unauthenticated_notes()
-        .map(|header| header.id().as_word())
-        .collect();
+    let unauthenticated_note_commitments =
+        proven_tx.unauthenticated_notes().map(|header| header.id().as_word()).collect();
 
     let (current_block_height, store_inputs) = state
         .with_view(async |view| {
@@ -206,10 +199,7 @@ pub async fn get_tx_inputs(
 
     if !store_inputs.new_account_id_prefix_is_unique.unwrap_or(true) {
         debug_assert!(
-            proven_tx
-                .account_update()
-                .initial_state_commitment()
-                .is_empty(),
+            proven_tx.account_update().initial_state_commitment().is_empty(),
             "account id prefix uniqueness should not be validated unless transaction creates a new account"
         );
         return Err(StoreError::DuplicateAccountIdPrefix(proven_tx.account_id()));

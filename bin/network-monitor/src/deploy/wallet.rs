@@ -7,8 +7,14 @@ use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountComponentCode, AccountComponentMetadata,
-    AccountType, StorageSlot, StorageSlotName,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountComponentCode,
+    AccountComponentMetadata,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_standards::account::auth::{Approver, AuthSingleSig};
@@ -37,10 +43,8 @@ pub static WALLET_COUNTER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
 pub const WALLET_COUNTER_COMPONENT_PATH: &str = "wallet::program";
 
 /// The wallet self-counter component source (bumps [`WALLET_COUNTER_SLOT_NAME`]).
-const WALLET_COUNTER_PROGRAM: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/assets/wallet_counter_program.masm"
-));
+const WALLET_COUNTER_PROGRAM: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/wallet_counter_program.masm"));
 
 /// Compiles the wallet's self-counter [`AccountComponentCode`].
 ///

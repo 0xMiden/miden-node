@@ -2,8 +2,12 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use miden_node_block_producer::{
-    DEFAULT_BATCH_INTERVAL, DEFAULT_BATCH_WORKERS, DEFAULT_BLOCK_INTERVAL,
-    DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_CONCURRENT_PROOFS, DEFAULT_MAX_TXS_PER_BATCH,
+    DEFAULT_BATCH_INTERVAL,
+    DEFAULT_BATCH_WORKERS,
+    DEFAULT_BLOCK_INTERVAL,
+    DEFAULT_MAX_BATCHES_PER_BLOCK,
+    DEFAULT_MAX_CONCURRENT_PROOFS,
+    DEFAULT_MAX_TXS_PER_BATCH,
 };
 use miden_node_utils::clap::duration_to_human_readable_string;
 use url::Url;
@@ -51,10 +55,16 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use super::{
-        BatchOptions, BlockOptions, BlockProducerOptions, BlockProverOptions, MempoolOptions,
+        BatchOptions,
+        BlockOptions,
+        BlockProducerOptions,
+        BlockProverOptions,
+        MempoolOptions,
     };
     use crate::commands::block_producer::{
-        DEFAULT_BATCH_INTERVAL, DEFAULT_BLOCK_INTERVAL, DEFAULT_MAX_TXS_PER_BATCH,
+        DEFAULT_BATCH_INTERVAL,
+        DEFAULT_BLOCK_INTERVAL,
+        DEFAULT_MAX_TXS_PER_BATCH,
     };
 
     fn options(max_batches: usize, max_txs: usize) -> BlockProducerOptions {

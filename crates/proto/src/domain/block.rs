@@ -1,7 +1,13 @@
 use std::ops::RangeInclusive;
 
 use miden_protocol::block::{
-    BlockBody, BlockHeader, BlockNumber, BlockSignatures, FeeParameters, SignedBlock, ValidatorKeys,
+    BlockBody,
+    BlockHeader,
+    BlockNumber,
+    BlockSignatures,
+    FeeParameters,
+    SignedBlock,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::utils::serde::Serializable;
@@ -16,9 +22,7 @@ use crate::{decode, generated as proto};
 
 impl From<BlockNumber> for proto::blockchain::BlockNumber {
     fn from(value: BlockNumber) -> Self {
-        proto::blockchain::BlockNumber {
-            block_num: value.as_u32(),
-        }
+        proto::blockchain::BlockNumber { block_num: value.as_u32() }
     }
 }
 
@@ -43,12 +47,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.tx_commitment().into()),
             tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
-            validator_keys: header
-                .validator_keys()
-                .as_keys()
-                .iter()
-                .map(Into::into)
-                .collect(),
+            validator_keys: header.validator_keys().as_keys().iter().map(Into::into).collect(),
             timestamp: header.timestamp(),
             fee_parameters: Some(header.fee_parameters().into()),
         }
@@ -114,9 +113,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
 
 impl From<&BlockBody> for proto::blockchain::BlockBody {
     fn from(body: &BlockBody) -> Self {
-        Self {
-            block_body: body.to_bytes(),
-        }
+        Self { block_body: body.to_bytes() }
     }
 }
 
@@ -149,12 +146,7 @@ impl From<&SignedBlock> for proto::blockchain::SignedBlock {
         Self {
             header: Some(block.header().into()),
             body: Some(block.body().into()),
-            signatures: block
-                .signatures()
-                .as_signatures()
-                .iter()
-                .map(Into::into)
-                .collect(),
+            signatures: block.signatures().as_signatures().iter().map(Into::into).collect(),
         }
     }
 }
@@ -211,9 +203,7 @@ impl From<PublicKey> for proto::blockchain::ValidatorPublicKey {
 
 impl From<&PublicKey> for proto::blockchain::ValidatorPublicKey {
     fn from(value: &PublicKey) -> Self {
-        Self {
-            validator_key: value.to_bytes(),
-        }
+        Self { validator_key: value.to_bytes() }
     }
 }
 
@@ -235,9 +225,7 @@ impl From<Signature> for proto::blockchain::BlockSignature {
 
 impl From<&Signature> for proto::blockchain::BlockSignature {
     fn from(value: &Signature) -> Self {
-        Self {
-            signature: value.to_bytes(),
-        }
+        Self { signature: value.to_bytes() }
     }
 }
 
@@ -249,10 +237,7 @@ impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
     fn try_from(fee_params: proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
         let decoder = fee_params.decoder();
         let native_asset_id = decode!(decoder, fee_params.native_asset_id)?;
-        Ok(FeeParameters::new(
-            native_asset_id,
-            fee_params.verification_base_fee,
-        ))
+        Ok(FeeParameters::new(native_asset_id, fee_params.verification_base_fee))
     }
 }
 
@@ -277,15 +262,9 @@ impl From<&FeeParameters> for proto::blockchain::FeeParameters {
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum InvalidBlockRange {
     #[error("start ({start}) greater than end ({end})")]
-    StartGreaterThanEnd {
-        start: BlockNumber,
-        end: BlockNumber,
-    },
+    StartGreaterThanEnd { start: BlockNumber, end: BlockNumber },
     #[error("empty range: start ({start})..end ({end})")]
-    EmptyRange {
-        start: BlockNumber,
-        end: BlockNumber,
-    },
+    EmptyRange { start: BlockNumber, end: BlockNumber },
 }
 
 impl proto::rpc::BlockRange {

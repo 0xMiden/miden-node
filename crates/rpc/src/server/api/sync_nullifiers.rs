@@ -6,7 +6,10 @@ use tonic::Status;
 use tracing::debug;
 
 use super::{
-    RpcInvalidBlockRange, RpcService, check, database_error_to_status,
+    RpcInvalidBlockRange,
+    RpcService,
+    check,
+    database_error_to_status,
     invalid_block_range_to_status,
 };
 use crate::{COMPONENT, LOG_TARGET};
@@ -39,10 +42,7 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
 
         let range = read_block_range::<Status>(request.block_range, "SyncNullifiersRequest")?;
 
-        miden_span_record!(
-            block_range.from = range.block_from,
-            block_range.to = range.block_to,
-        );
+        miden_span_record!(block_range.from = range.block_from, block_range.to = range.block_to,);
 
         debug!(target: LOG_TARGET, "Syncing nullifiers");
 
@@ -68,12 +68,10 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
             .await?;
         let nullifiers = nullifiers
             .into_iter()
-            .map(
-                |nullifier_info| proto::rpc::sync_nullifiers_response::NullifierUpdate {
-                    nullifier: Some(nullifier_info.nullifier.into()),
-                    block_num: nullifier_info.block_num.as_u32(),
-                },
-            )
+            .map(|nullifier_info| proto::rpc::sync_nullifiers_response::NullifierUpdate {
+                nullifier: Some(nullifier_info.nullifier.into()),
+                block_num: nullifier_info.block_num.as_u32(),
+            })
             .collect();
 
         Ok(proto::rpc::SyncNullifiersResponse {

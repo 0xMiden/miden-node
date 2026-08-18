@@ -42,29 +42,15 @@ pub(crate) async fn run(
 ) {
     let in_dir = PathBuf::from(PROOFS_DIR);
 
-    println!(
-        "Loading mint txs from {}",
-        in_dir.join("mint_txs.bin").display()
-    );
+    println!("Loading mint txs from {}", in_dir.join("mint_txs.bin").display());
     let mint_txs: Vec<ProvenTransaction> = read_from_file(&in_dir.join("mint_txs.bin"));
     let mint_tx_inputs: Vec<Vec<u8>> = read_from_file(&in_dir.join("mint_tx_inputs.bin"));
-    assert_eq!(
-        mint_txs.len(),
-        mint_tx_inputs.len(),
-        "mint tx/inputs length mismatch"
-    );
+    assert_eq!(mint_txs.len(), mint_tx_inputs.len(), "mint tx/inputs length mismatch");
 
-    println!(
-        "Loading consume txs from {}",
-        in_dir.join("consume_txs.bin").display()
-    );
+    println!("Loading consume txs from {}", in_dir.join("consume_txs.bin").display());
     let consume_txs: Vec<ProvenTransaction> = read_from_file(&in_dir.join("consume_txs.bin"));
     let consume_tx_inputs: Vec<Vec<u8>> = read_from_file(&in_dir.join("consume_tx_inputs.bin"));
-    assert_eq!(
-        consume_txs.len(),
-        consume_tx_inputs.len(),
-        "consume tx/inputs length mismatch"
-    );
+    assert_eq!(consume_txs.len(), consume_tx_inputs.len(), "consume tx/inputs length mismatch");
 
     // Compute the consume tx-id master list up front so we can match it against on-chain block
     // contents later, without having to interrogate the node. (Mints are not tracked on-chain.)
@@ -103,14 +89,8 @@ pub(crate) async fn run(
         consume_txs.len(),
         pool.len(),
     );
-    let consume_stats = submit_all(
-        pool.clone(),
-        consume_txs,
-        consume_tx_inputs,
-        concurrency,
-        &sealer,
-    )
-    .await;
+    let consume_stats =
+        submit_all(pool.clone(), consume_txs, consume_tx_inputs, concurrency, &sealer).await;
     print_phase_progress("consume", &consume_stats);
 
     let ack_by_id = build_ack_map(&consume_ids, &consume_stats);
@@ -121,14 +101,7 @@ pub(crate) async fn run(
     let (h_final, inclusion) =
         scan_with_drain(pool[0].clone(), h_start, wait_blocks, ack_by_id).await;
 
-    print_summary(
-        h_start,
-        h_final,
-        &mint_stats,
-        &consume_stats,
-        concurrency,
-        &inclusion,
-    );
+    print_summary(h_start, h_final, &mint_stats, &consume_stats, concurrency, &inclusion);
 }
 
 // SUBMISSION STATS
@@ -167,10 +140,7 @@ impl PhaseStats {
     }
 
     pub(crate) fn submit_latencies(&self) -> Vec<Duration> {
-        self.outcomes
-            .iter()
-            .filter_map(|o| o.result.as_ref().ok().copied())
-            .collect()
+        self.outcomes.iter().filter_map(|o| o.result.as_ref().ok().copied()).collect()
     }
 
     pub(crate) fn err_by_code(&self) -> HashMap<tonic::Code, u64> {
@@ -215,9 +185,8 @@ async fn submit_all(
         let printed = printed.clone();
         let sealer = sealer.clone();
         set.spawn(async move {
-            let sealed_inputs = sealer
-                .seal(tx.id(), &inputs)
-                .expect("failed to seal transaction inputs");
+            let sealed_inputs =
+                sealer.seal(tx.id(), &inputs).expect("failed to seal transaction inputs");
             let request = proto::transaction::ProvenTransaction {
                 transaction: tx.to_bytes(),
                 sealed_transaction_inputs: Some(sealed_inputs),
@@ -242,7 +211,7 @@ async fn submit_all(
                         result: Err(status.code()),
                         ack_at: None,
                     }
-                }
+                },
             };
             drop(permit);
             outcome
@@ -256,10 +225,7 @@ async fn submit_all(
         outcomes.push(res.expect("submission task panicked"));
     }
 
-    PhaseStats {
-        elapsed: start.elapsed(),
-        outcomes,
-    }
+    PhaseStats { elapsed: start.elapsed(), outcomes }
 }
 
 /// Submit txs one at a time, awaiting each RPC response before sending the next. Used for the mint
@@ -278,9 +244,8 @@ async fn submit_sequential(
     let mut outcomes = Vec::with_capacity(total);
 
     for (i, (tx, inputs)) in txs.into_iter().zip(tx_inputs).enumerate() {
-        let sealed_inputs = sealer
-            .seal(tx.id(), &inputs)
-            .expect("failed to seal transaction inputs");
+        let sealed_inputs =
+            sealer.seal(tx.id(), &inputs).expect("failed to seal transaction inputs");
         let request = proto::transaction::ProvenTransaction {
             transaction: tx.to_bytes(),
             sealed_transaction_inputs: Some(sealed_inputs),
@@ -300,15 +265,12 @@ async fn submit_sequential(
                     result: Err(status.code()),
                     ack_at: None,
                 }
-            }
+            },
         };
         outcomes.push(outcome);
     }
 
-    PhaseStats {
-        elapsed: start.elapsed(),
-        outcomes,
-    }
+    PhaseStats { elapsed: start.elapsed(), outcomes }
 }
 
 /// Build a lookup from the on-chain `TransactionId` of every successfully submitted consume tx to

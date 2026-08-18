@@ -31,26 +31,11 @@ mod tests {
     #[test]
     fn test_all_variants_mapped() {
         // Test that all variants map correctly
-        assert_eq!(
-            TestError::InternalError1.api_error(),
-            TestErrorGrpcError::Internal
-        );
-        assert_eq!(
-            TestError::ClientError1.api_error(),
-            TestErrorGrpcError::ClientError1
-        );
-        assert_eq!(
-            TestError::InternalError2.api_error(),
-            TestErrorGrpcError::Internal
-        );
-        assert_eq!(
-            TestError::ClientError2.api_error(),
-            TestErrorGrpcError::ClientError2
-        );
-        assert_eq!(
-            TestError::ClientError3.api_error(),
-            TestErrorGrpcError::ClientError3
-        );
+        assert_eq!(TestError::InternalError1.api_error(), TestErrorGrpcError::Internal);
+        assert_eq!(TestError::ClientError1.api_error(), TestErrorGrpcError::ClientError1);
+        assert_eq!(TestError::InternalError2.api_error(), TestErrorGrpcError::Internal);
+        assert_eq!(TestError::ClientError2.api_error(), TestErrorGrpcError::ClientError2);
+        assert_eq!(TestError::ClientError3.api_error(), TestErrorGrpcError::ClientError3);
     }
 
     #[test]

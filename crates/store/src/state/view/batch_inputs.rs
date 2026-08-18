@@ -54,9 +54,7 @@ impl StateView {
             .map_err(GetBatchInputsError::SelectNoteInclusionProofError)?;
 
         // The set of blocks that the notes are included in.
-        let note_blocks = note_proofs
-            .values()
-            .map(|proof| proof.location().block_num());
+        let note_blocks = note_proofs.values().map(|proof| proof.location().block_num());
 
         // Collect all blocks we need to query without duplicates, which is:
         // - all blocks for which we need to prove note inclusion.
@@ -91,10 +89,8 @@ impl StateView {
         //   *and* the latest block num was removed from the set. Therefore only block numbers
         //   smaller than latest block num remain in the set. Therefore all the block numbers are
         //   guaranteed to exist in the chain state at latest block num.
-        let partial_mmr = self
-            .blockchain()
-            .partial_mmr_from_blocks(&blocks, *latest_block_num)
-            .expect(
+        let partial_mmr =
+            self.blockchain().partial_mmr_from_blocks(&blocks, *latest_block_num).expect(
                 "latest block num should exist and all blocks in set should be < than latest block",
             );
 
@@ -103,9 +99,7 @@ impl StateView {
         let mut headers = self
             .db
             .select_block_headers(
-                scoped_blocks
-                    .into_iter()
-                    .chain(std::iter::once(latest_block_num)),
+                scoped_blocks.into_iter().chain(std::iter::once(latest_block_num)),
             )
             .await
             .map_err(GetBatchInputsError::SelectBlockHeaderError)?;

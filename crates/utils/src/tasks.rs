@@ -59,10 +59,7 @@ impl Tasks {
             Ok((id, _)) => *id,
             Err(err) => err.id(),
         };
-        let name = self
-            .names
-            .remove(&id)
-            .unwrap_or_else(|| "unknown".to_string());
+        let name = self.names.remove(&id).unwrap_or_else(|| "unknown".to_string());
         let result = result.map(|(_, output)| output);
 
         Some((name, result))
@@ -126,9 +123,9 @@ impl Tasks {
                 // knock-on effects of it, so log them rather than mask it.
                 (Err(_), Err(err)) => {
                     tracing::warn!(task = %task, error = %format!("{err:#}"), "task failed during shutdown");
-                }
+                },
                 // A failure is already recorded and this task exited cleanly: nothing to add.
-                (Err(_), Ok(())) => {}
+                (Err(_), Ok(())) => {},
             }
         }
 
@@ -237,14 +234,8 @@ mod tests {
             .expect_err("the failing task's error should be returned");
 
         assert_eq!(err.to_string(), "task failing failed");
-        assert!(
-            token.is_cancelled(),
-            "a task failure should trigger shutdown"
-        );
-        assert!(
-            tasks.is_empty(),
-            "all tasks should be drained before returning"
-        );
+        assert!(token.is_cancelled(), "a task failure should trigger shutdown");
+        assert!(tasks.is_empty(), "all tasks should be drained before returning");
         assert!(
             survivor_finished.load(Ordering::Relaxed),
             "surviving tasks should shut down gracefully, not be aborted",
@@ -286,10 +277,7 @@ mod tests {
             .expect_err("a failure during shutdown should be reported");
 
         assert_eq!(err.to_string(), "task failing failed during shutdown");
-        assert!(
-            tasks.is_empty(),
-            "draining should continue past the failed task"
-        );
+        assert!(tasks.is_empty(), "draining should continue past the failed task");
         assert!(
             survivor_finished.load(Ordering::Relaxed),
             "surviving tasks should shut down gracefully, not be aborted",

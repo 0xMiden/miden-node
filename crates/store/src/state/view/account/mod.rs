@@ -1,9 +1,17 @@
 use std::collections::HashSet;
 
 use miden_node_proto::domain::account::{
-    AccountDetailRequest, AccountDetails, AccountRequest, AccountResponse, AccountStorageDetails,
-    AccountStorageMapDetails, AccountStorageRequest, AccountVaultDetails, SlotData,
-    StorageMapEntries, StorageMapRequest,
+    AccountDetailRequest,
+    AccountDetails,
+    AccountRequest,
+    AccountResponse,
+    AccountStorageDetails,
+    AccountStorageMapDetails,
+    AccountStorageRequest,
+    AccountVaultDetails,
+    SlotData,
+    StorageMapEntries,
+    StorageMapRequest,
 };
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::{AccountId, AccountStorageHeader, StorageSlotName, StorageSlotType};
@@ -32,11 +40,7 @@ impl StateView {
         &self,
         account_request: AccountRequest,
     ) -> Result<AccountResponse, GetAccountError> {
-        let AccountRequest {
-            block_num,
-            account_id,
-            details,
-        } = account_request;
+        let AccountRequest { block_num, account_id, details } = account_request;
 
         if details.is_some() && !account_id.is_public() {
             return Err(GetAccountError::AccountNotPublic(account_id));
@@ -132,10 +136,7 @@ impl StateView {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<AccountVaultDetails, DatabaseError> {
-        let assets = self
-            .db
-            .select_account_vault_at_block(account_id, block_num)
-            .await?;
+        let assets = self.db.select_account_vault_at_block(account_id, block_num).await?;
 
         if assets.len() > AccountVaultDetails::MAX_RETURN_ENTRIES {
             return Ok(AccountVaultDetails::LimitExceeded);
@@ -227,7 +228,7 @@ impl StateView {
                 self.db
                     .select_account_code_by_commitment(account_header.code_commitment())
                     .await?
-            }
+            },
             None => None,
         };
 
@@ -239,7 +240,7 @@ impl StateView {
         let vault_details = match asset_vault_commitment {
             Some(commitment) if commitment == account_header.vault_root() => {
                 AccountVaultDetails::empty()
-            }
+            },
             Some(_) => {
                 let forest_details = self.with_forest_read_blocking(|forest| {
                     forest.get_vault_details(account_id, *scoped_block).map_err(|err| {
@@ -253,11 +254,10 @@ impl StateView {
                 match forest_details {
                     Some(details) => details,
                     None => {
-                        self.reconstruct_vault_details_from_db(account_id, scoped_block)
-                            .await?
-                    }
+                        self.reconstruct_vault_details_from_db(account_id, scoped_block).await?
+                    },
                 }
-            }
+            },
             None => AccountVaultDetails::empty(),
         };
 
@@ -270,22 +270,17 @@ impl StateView {
         let mut all_entries_requests = Vec::new();
         let mut storage_request_slots = Vec::with_capacity(storage_requests.len());
 
-        for (
-            index,
-            StorageMapRequest {
-                slot_name,
-                slot_data,
-            },
-        ) in storage_requests.into_iter().enumerate()
+        for (index, StorageMapRequest { slot_name, slot_data }) in
+            storage_requests.into_iter().enumerate()
         {
             storage_request_slots.push(slot_name.clone());
             match slot_data {
                 SlotData::MapKeys(keys) => {
                     map_keys_requests.push((index, slot_name, keys));
-                }
+                },
                 SlotData::All => {
                     all_entries_requests.push((index, slot_name));
-                }
+                },
             }
         }
 
@@ -329,14 +324,13 @@ impl StateView {
                         scoped_block,
                     )
                     .await?
-                }
+                },
             };
             storage_map_details_by_index[index] = Some(details);
         }
 
-        for (details, slot_name) in storage_map_details_by_index
-            .into_iter()
-            .zip(storage_request_slots.iter())
+        for (details, slot_name) in
+            storage_map_details_by_index.into_iter().zip(storage_request_slots.iter())
         {
             let details = details.ok_or_else(|| DatabaseError::StorageRootNotFound {
                 account_id,
@@ -413,8 +407,6 @@ impl StateView {
         &self,
         account_ids: &[AccountId],
     ) -> Result<HashSet<AccountId>, DatabaseError> {
-        self.db
-            .select_network_accounts_subset(account_ids.to_vec())
-            .await
+        self.db.select_network_accounts_subset(account_ids.to_vec()).await
     }
 }

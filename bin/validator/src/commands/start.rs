@@ -8,8 +8,13 @@ use miden_node_utils::clap::GrpcOptionsInternal;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_validator::{
-    DataDirectory, GoldenOperatorKey, PrivateRecordSealer, TransactionInputDecrypter,
-    ValidatorAdminServer, ValidatorServer, ValidatorSigner,
+    DataDirectory,
+    GoldenOperatorKey,
+    PrivateRecordSealer,
+    TransactionInputDecrypter,
+    ValidatorAdminServer,
+    ValidatorServer,
+    ValidatorSigner,
 };
 
 pub(crate) struct ValidatorKeys {
@@ -51,10 +56,7 @@ pub async fn start(
     };
 
     let mut tasks = Tasks::new();
-    tasks.spawn(
-        "validator public API",
-        public_server.serve(shutdown.clone()),
-    );
+    tasks.spawn("validator public API", public_server.serve(shutdown.clone()));
     if let Some(address) = admin_address {
         let admin_server = ValidatorAdminServer {
             address,

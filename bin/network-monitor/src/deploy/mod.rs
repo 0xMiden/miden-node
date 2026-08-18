@@ -12,10 +12,14 @@ use backon::{ExponentialBuilder, Retryable};
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::domain::account::AccountResponse;
 use miden_node_proto::domain::encryption::{
-    TransactionInputsSealer, TrustedTransactionEncryptionState, verify_transaction_encryption_key,
+    TransactionInputsSealer,
+    TrustedTransactionEncryptionState,
+    verify_transaction_encryption_key,
 };
 use miden_node_proto::generated::rpc::{
-    AccountRequest as ProtoAccountRequest, BlockHeaderByNumberRequest, FinalityLevel,
+    AccountRequest as ProtoAccountRequest,
+    BlockHeaderByNumberRequest,
+    FinalityLevel,
     SyncChainMmrRequest,
 };
 use miden_node_proto::generated::transaction::ProvenTransaction as ProtoProvenTransaction;
@@ -24,7 +28,12 @@ use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
-    Account, AccountId, PartialAccount, StorageMapKey, StorageMapWitness, StorageSlotContent,
+    Account,
+    AccountId,
+    PartialAccount,
+    StorageMapKey,
+    StorageMapWitness,
+    StorageSlotContent,
 };
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::account_tree::AccountWitness;
@@ -34,14 +43,24 @@ use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrDelta, MmrPeaks, PartialMmr};
 use miden_protocol::note::{NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
-    AccountInputs, ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction,
-    TransactionArgs, TransactionInputs,
+    AccountInputs,
+    ExecutedTransaction,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
+    TransactionArgs,
+    TransactionInputs,
 };
 use miden_protocol::utils::serde::Serializable;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
-    DataStore, DataStoreError, LoadedMastForest, LocalTransactionProver, MastForestStore,
-    TransactionExecutor, TransactionMastStore,
+    DataStore,
+    DataStoreError,
+    LoadedMastForest,
+    LocalTransactionProver,
+    MastForestStore,
+    TransactionExecutor,
+    TransactionMastStore,
 };
 use tokio::sync::Mutex;
 use url::Url;
@@ -238,9 +257,8 @@ pub async fn create_genesis_aware_rpc_client(
             .block_header
             .ok_or_else(|| anyhow::anyhow!("No block header in response"))?;
 
-        let genesis_header: BlockHeader = genesis_block_header
-            .try_into()
-            .context("Failed to convert block header")?;
+        let genesis_header: BlockHeader =
+            genesis_block_header.try_into().context("Failed to convert block header")?;
         let genesis_commitment = genesis_header.commitment();
         // Rebuild the client, this time including the required genesis metadata so that write RPCs
         // like SubmitProvenTx are accepted by the node.
@@ -388,7 +406,7 @@ async fn resolve_counter_anchor(
                     "Resolved counter FPI anchor"
                 );
                 return Ok(anchor);
-            }
+            },
             Ok(None) => tracing::debug!(
                 target: LOG_TARGET,
                 { account.id = %committed_counter.id(), attempt },
@@ -401,7 +419,7 @@ async fn resolve_counter_anchor(
                     "Counter anchor resolution attempt failed; retrying"
                 );
                 last_error = Some(err);
-            }
+            },
         }
     }
 
@@ -484,11 +502,8 @@ async fn fetch_tip_chain_state(
         .context("failed to convert the MMR delta")?;
 
     let mut mmr = PartialMmr::from_peaks(
-        MmrPeaks::new(
-            Forest::new(0).context("empty forest should be valid")?,
-            Vec::new(),
-        )
-        .context("empty MMR peaks should be valid")?,
+        MmrPeaks::new(Forest::new(0).context("empty forest should be valid")?, Vec::new())
+            .context("empty MMR peaks should be valid")?,
     );
 
     if tip_header.block_num() != BlockNumber::GENESIS {
@@ -550,9 +565,7 @@ async fn fetch_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockH
         .block_header
         .ok_or_else(|| anyhow::anyhow!("No block header in response"))?;
 
-    root_block_header
-        .try_into()
-        .context("Failed to convert block header")
+    root_block_header.try_into().context("Failed to convert block header")
 }
 
 /// Execute the counter account's genesis (creation) transaction in-memory.
@@ -637,9 +650,7 @@ pub async fn deploy_counter_account(
         .context("prover task panicked")?
         .context("Failed to prove transaction")?;
 
-    submission_client
-        .submit(&proven_tx, &transaction_inputs)
-        .await?;
+    submission_client.submit(&proven_tx, &transaction_inputs).await?;
 
     Ok(committed_counter)
 }
@@ -682,12 +693,10 @@ impl MonitorDataStore {
 
     /// Returns a reference to the account or a standardized "unknown account" error.
     fn get_account(&self, account_id: AccountId) -> Result<&Account, DataStoreError> {
-        self.accounts
-            .get(&account_id)
-            .ok_or_else(|| DataStoreError::Other {
-                error_msg: "unknown account".into(),
-                source: None,
-            })
+        self.accounts.get(&account_id).ok_or_else(|| DataStoreError::Other {
+            error_msg: "unknown account".into(),
+            source: None,
+        })
     }
 }
 
@@ -700,11 +709,7 @@ impl DataStore for MonitorDataStore {
         let account = self.get_account(account_id)?;
         let partial_account = PartialAccount::from(account);
 
-        Ok((
-            partial_account,
-            self.block_header.clone(),
-            self.partial_block_chain.clone(),
-        ))
+        Ok((partial_account, self.block_header.clone(), self.partial_block_chain.clone()))
     }
 
     async fn get_storage_map_witness(
@@ -740,14 +745,15 @@ impl DataStore for MonitorDataStore {
         _ref_block: BlockNumber,
     ) -> Result<AccountInputs, DataStoreError> {
         let account = self.get_account(foreign_account_id)?;
-        let witness = self
-            .account_witnesses
-            .get(&foreign_account_id)
-            .cloned()
-            .ok_or_else(|| DataStoreError::Other {
-                error_msg: format!("no account witness for foreign account {foreign_account_id}")
+        let witness =
+            self.account_witnesses.get(&foreign_account_id).cloned().ok_or_else(|| {
+                DataStoreError::Other {
+                    error_msg: format!(
+                        "no account witness for foreign account {foreign_account_id}"
+                    )
                     .into(),
-                source: None,
+                    source: None,
+                }
             })?;
 
         Ok(AccountInputs::new(PartialAccount::from(account), witness))

@@ -20,9 +20,7 @@ pub fn bootstrap_database(database_filepath: &Path) -> std::result::Result<(), D
         "Bootstrapping database schema"
     );
 
-    migrator
-        .bootstrap(database_filepath)
-        .map_err(DatabaseError::migration)?;
+    migrator.bootstrap(database_filepath).map_err(DatabaseError::migration)?;
     Ok(())
 }
 
@@ -39,9 +37,7 @@ pub fn migrate_database(database_filepath: &Path) -> std::result::Result<(), Dat
         "Applying database migrations"
     );
 
-    migrator
-        .migrate(database_filepath)
-        .map_err(DatabaseError::migration)?;
+    migrator.migrate(database_filepath).map_err(DatabaseError::migration)?;
     Ok(())
 }
 
@@ -79,10 +75,7 @@ mod tests {
     fn migration_schema_hashes_are_stable() -> Result<()> {
         let migrator = migrator()?;
 
-        assert_eq!(
-            migrator.schema_hashes(),
-            SchemaHashes(&EXPECTED_SCHEMA_HASHES)
-        );
+        assert_eq!(migrator.schema_hashes(), SchemaHashes(&EXPECTED_SCHEMA_HASHES));
         Ok(())
     }
 }

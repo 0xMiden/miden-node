@@ -1,13 +1,15 @@
 mod kms;
 pub use kms::{KmsSigner, decrypt_key_material};
 use miden_node_proto::domain::encryption::{
-    TransactionEncryptionKeyInfo, TransactionEncryptionScheme,
+    TransactionEncryptionKeyInfo,
+    TransactionEncryptionScheme,
 };
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_protocol::Word;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature, SigningKey};
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::{
-    KeyExchangeKey, PublicKey as EncryptionPublicKey,
+    KeyExchangeKey,
+    PublicKey as EncryptionPublicKey,
 };
 #[cfg(test)]
 use miden_protocol::crypto::ies::SealingKey;
@@ -180,10 +182,7 @@ mod tests {
         let info_b = decrypter_from(&[7u8; 32]).encryption_key().await.unwrap();
 
         assert_eq!(info_a, info_b);
-        assert_eq!(
-            info_a.attestation_commitment(genesis),
-            info_b.attestation_commitment(genesis)
-        );
+        assert_eq!(info_a.attestation_commitment(genesis), info_b.attestation_commitment(genesis));
     }
 
     /// Different secrets must yield different public keys and key ids.
@@ -196,10 +195,7 @@ mod tests {
         assert_eq!(info_a.scheme, info_b.scheme);
         assert_ne!(info_a.public_key, info_b.public_key);
         assert_ne!(info_a.key_id, info_b.key_id);
-        assert_ne!(
-            info_a.attestation_commitment(genesis),
-            info_b.attestation_commitment(genesis)
-        );
+        assert_ne!(info_a.attestation_commitment(genesis), info_b.attestation_commitment(genesis));
     }
 
     /// A message sealed against the decrypter's sealing key must decrypt to the original plaintext,
@@ -216,10 +212,7 @@ mod tests {
             .seal_bytes_with_associated_data(&mut rng, plaintext, associated_data)
             .unwrap()
             .to_bytes();
-        let opened = decrypter
-            .decrypt_transaction_inputs(&sealed, associated_data)
-            .await
-            .unwrap();
+        let opened = decrypter.decrypt_transaction_inputs(&sealed, associated_data).await.unwrap();
         assert_eq!(opened.as_slice(), plaintext);
 
         // Mismatched associated data must fail authentication.
@@ -232,12 +225,7 @@ mod tests {
 
         // A different shared secret must fail to decrypt.
         let other = decrypter_from(&[8u8; 32]);
-        assert!(
-            other
-                .decrypt_transaction_inputs(&sealed, associated_data)
-                .await
-                .is_err()
-        );
+        assert!(other.decrypt_transaction_inputs(&sealed, associated_data).await.is_err());
 
         // Garbage ciphertext must fail to deserialize.
         assert!(

@@ -50,9 +50,7 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
 
         let mut forwarded_request = Request::new(note_id.as_word().into());
         if let Some(accept) = original_accept_header {
-            forwarded_request
-                .metadata_mut()
-                .insert(http::header::ACCEPT.as_str(), accept);
+            forwarded_request.metadata_mut().insert(http::header::ACCEPT.as_str(), accept);
         }
 
         let response = match &self.backend {
@@ -68,7 +66,7 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
                     .get_network_note_status(forwarded_request)
                     .await?
                     .into_inner()
-            }
+            },
             RpcBackend::FullNode { source_rpc, .. } => source_rpc
                 .as_ref()
                 .clone()

@@ -34,10 +34,7 @@ impl ValidatorAdminService {
 
 pub(super) fn router(operator_key: GoldenOperatorKey, reader: ValidatorDbReader) -> Router {
     Router::new()
-        .route(
-            LIST_TRANSACTIONS_PATH,
-            get(list_validated_private_transactions),
-        )
+        .route(LIST_TRANSACTIONS_PATH, get(list_validated_private_transactions))
         .route(ISSUE_SHARE_PATH, post(issue_decryption_share))
         .with_state(ValidatorAdminService::new(operator_key, reader))
 }
@@ -71,11 +68,10 @@ struct ListValidatedPrivateTransactionsResponse {
 async fn list_validated_private_transactions(
     State(service): State<ValidatorAdminService>,
 ) -> Result<Json<ListValidatedPrivateTransactionsResponse>, ApiError> {
-    let records = service
-        .reader
-        .load_all_transactions()
-        .await
-        .map_err(|_error| ApiError::internal("failed to list validated private transactions"))?;
+    let records =
+        service.reader.load_all_transactions().await.map_err(|_error| {
+            ApiError::internal("failed to list validated private transactions")
+        })?;
 
     Ok(Json(ListValidatedPrivateTransactionsResponse {
         transactions: records.into_iter().map(Into::into).collect(),
@@ -151,13 +147,7 @@ struct ErrorResponse {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (
-            self.status,
-            Json(ErrorResponse {
-                error: self.message,
-            }),
-        )
-            .into_response()
+        (self.status, Json(ErrorResponse { error: self.message })).into_response()
     }
 }
 
@@ -184,8 +174,13 @@ mod tests {
     use crate::db::ValidatorDbWriter;
     use crate::storage_key::tests::operator_keys;
     use crate::{
-        PrivateRecordChainId, PrivateRecordCombiner, PrivateRecordContext, PrivateRecordId,
-        PrivateRecordSealer, PrivateRecordShareRequest, StoredPrivateRecord,
+        PrivateRecordChainId,
+        PrivateRecordCombiner,
+        PrivateRecordContext,
+        PrivateRecordId,
+        PrivateRecordSealer,
+        PrivateRecordShareRequest,
+        StoredPrivateRecord,
     };
 
     fn target_record(
@@ -202,12 +197,7 @@ mod tests {
             transaction_id,
         );
         PrivateRecordSealer::from_operator_key(operator_key)
-            .seal(
-                &mut ChaCha20Rng::from_seed([seed; 32]),
-                record_id,
-                context,
-                plaintext,
-            )
+            .seal(&mut ChaCha20Rng::from_seed([seed; 32]), record_id, context, plaintext)
             .unwrap()
     }
 
@@ -218,18 +208,12 @@ mod tests {
                 auth_scheme: AuthScheme::Falcon512Poseidon2,
             })
             .unwrap();
-        builder
-            .build()
-            .unwrap()
-            .get_transaction_inputs(&account, &[], &[])
-            .unwrap()
+        builder.build().unwrap().get_transaction_inputs(&account, &[], &[]).unwrap()
     }
 
     async fn test_database() -> (tempfile::TempDir, ValidatorDbWriter, ValidatorDbReader) {
         let directory = tempfile::tempdir().unwrap();
-        let writer = crate::db::setup(directory.path().join("validator.sqlite3"))
-            .await
-            .unwrap();
+        let writer = crate::db::setup(directory.path().join("validator.sqlite3")).await.unwrap();
         let reader = writer.reader();
         (directory, writer, reader)
     }
@@ -264,45 +248,23 @@ mod tests {
         let inputs = transaction_inputs();
         let transaction_id = TransactionId::from_raw(Word::from([8u32, 7, 6, 5]));
         let record = target_record(&record_owner, transaction_id, 10, &inputs.to_bytes());
-        writer
-            .insert_validated_private_transaction(record.clone())
-            .await
-            .unwrap();
+        writer.insert_validated_private_transaction(record.clone()).await.unwrap();
 
-        let Json(response) = list_validated_private_transactions(State(first_service.clone()))
-            .await
-            .unwrap();
+        let Json(response) =
+            list_validated_private_transactions(State(first_service.clone())).await.unwrap();
         let [listed] = response.transactions.as_slice() else {
             panic!("expected one listed transaction");
         };
-        assert_eq!(
-            listed.transaction_id,
-            hex::encode(transaction_id.to_bytes())
-        );
-        assert_eq!(
-            listed.final_ciphertext,
-            hex::encode(record.encrypted_record())
-        );
+        assert_eq!(listed.transaction_id, hex::encode(transaction_id.to_bytes()));
+        assert_eq!(listed.final_ciphertext, hex::encode(record.encrypted_record()));
         assert_eq!(listed.cipher_nonce, hex::encode(record.nonce()));
-        assert_eq!(
-            listed.encrypted_record_key,
-            hex::encode(record.encrypted_record_key())
-        );
-        assert_eq!(
-            listed.decryption_context,
-            hex::encode(record.context().to_bytes())
-        );
+        assert_eq!(listed.encrypted_record_key, hex::encode(record.encrypted_record_key()));
+        assert_eq!(listed.decryption_context, hex::encode(record.context().to_bytes()));
 
         let request = share_request(&record);
         let share_bytes = [
-            issue(&first_service, request.clone())
-                .await
-                .unwrap()
-                .decryption_share,
-            issue(&second_service, request)
-                .await
-                .unwrap()
-                .decryption_share,
+            issue(&first_service, request.clone()).await.unwrap().decryption_share,
+            issue(&second_service, request).await.unwrap().decryption_share,
         ];
         let ciphertext: Ciphertext<Secp256k1GoldenGroup> =
             from_wire_bytes(record.encrypted_record_key()).unwrap();
@@ -329,10 +291,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(
-            TransactionInputs::read_from_bytes(&plaintext).unwrap(),
-            inputs
-        );
+        assert_eq!(TransactionInputs::read_from_bytes(&plaintext).unwrap(), inputs);
     }
 
     #[tokio::test]
@@ -346,16 +305,11 @@ mod tests {
         ];
         for (seed, transaction_id) in [11u8, 12, 13].into_iter().zip(transaction_ids) {
             let record = target_record(&keys[0], transaction_id, seed, b"record");
-            writer
-                .insert_validated_private_transaction(record)
-                .await
-                .unwrap();
+            writer.insert_validated_private_transaction(record).await.unwrap();
         }
 
         let service = ValidatorAdminService::new(keys.remove(0), reader);
-        let Json(response) = list_validated_private_transactions(State(service))
-            .await
-            .unwrap();
+        let Json(response) = list_validated_private_transactions(State(service)).await.unwrap();
         assert_eq!(
             response
                 .transactions
@@ -379,31 +333,21 @@ mod tests {
         let first_record = target_record(&record_owner, transaction_id, 2, b"same plaintext");
         let second_record = target_record(&record_owner, transaction_id, 3, b"same plaintext");
         assert_eq!(first_record.context(), second_record.context());
-        assert_ne!(
-            first_record.encrypted_record_key(),
-            second_record.encrypted_record_key()
-        );
+        assert_ne!(first_record.encrypted_record_key(), second_record.encrypted_record_key());
 
         let shares = [
-            issue(&first, share_request(&first_record))
-                .await
-                .unwrap()
-                .decryption_share,
-            issue(&second, share_request(&second_record))
-                .await
-                .unwrap()
-                .decryption_share,
+            issue(&first, share_request(&first_record)).await.unwrap().decryption_share,
+            issue(&second, share_request(&second_record)).await.unwrap().decryption_share,
         ]
         .map(|share| hex::decode(share).unwrap());
         let request = PrivateRecordShareRequest::for_record(&first_record);
-        let result = PrivateRecordCombiner::from_operator_key(&record_owner)
-            .unwrap()
-            .open(&request, &first_record, &shares);
+        let result = PrivateRecordCombiner::from_operator_key(&record_owner).unwrap().open(
+            &request,
+            &first_record,
+            &shares,
+        );
 
-        assert!(matches!(
-            result,
-            Err(PrivateRecordError::ShareCombination(_))
-        ));
+        assert!(matches!(result, Err(PrivateRecordError::ShareCombination(_))));
     }
 
     #[tokio::test]
@@ -422,12 +366,9 @@ mod tests {
             ciphertext: "not hex".to_owned(),
             decryption_context: hex::encode(&context),
         };
-        let error = issue(
-            &ValidatorAdminService::new(keys.remove(0), reader.clone()),
-            invalid_hex,
-        )
-        .await
-        .unwrap_err();
+        let error = issue(&ValidatorAdminService::new(keys.remove(0), reader.clone()), invalid_hex)
+            .await
+            .unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
 
         let mut short_rng = ChaCha20Rng::from_seed([5; 32]);
@@ -439,24 +380,19 @@ mod tests {
             ciphertext: hex::encode(to_wire_bytes(&short_ciphertext)),
             decryption_context: hex::encode(context),
         };
-        let error = issue(
-            &ValidatorAdminService::new(keys.remove(0), reader.clone()),
-            wrong_size,
-        )
-        .await
-        .unwrap_err();
+        let error = issue(&ValidatorAdminService::new(keys.remove(0), reader.clone()), wrong_size)
+            .await
+            .unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
 
         let wrong_context = IssueDecryptionShareRequest {
             ciphertext: hex::encode(record.encrypted_record_key()),
             decryption_context: hex::encode(b"wrong context"),
         };
-        let error = issue(
-            &ValidatorAdminService::new(operator_keys().remove(0), reader),
-            wrong_context,
-        )
-        .await
-        .unwrap_err();
+        let error =
+            issue(&ValidatorAdminService::new(operator_keys().remove(0), reader), wrong_context)
+                .await
+                .unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
     }
 
@@ -467,18 +403,11 @@ mod tests {
 
         let response = app
             .clone()
-            .oneshot(
-                Request::get(LIST_TRANSACTIONS_PATH)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get(LIST_TRANSACTIONS_PATH).body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "application/json",
-        );
+        assert_eq!(response.headers().get("content-type").unwrap(), "application/json",);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(body.as_ref(), br#"{"transactions":[]}"#);
 
@@ -487,19 +416,14 @@ mod tests {
             .oneshot(
                 Request::post(ISSUE_SHARE_PATH)
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"ciphertext":"not hex","decryption_context":""}"#,
-                    ))
+                    .body(Body::from(r#"{"ciphertext":"not hex","decryption_context":""}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        let response = app
-            .oneshot(Request::get("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let response = app.oneshot(Request::get("/").body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

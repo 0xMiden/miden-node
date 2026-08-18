@@ -97,10 +97,7 @@ impl MigrateCommand {
     pub fn handle(self) -> anyhow::Result<()> {
         let data_directory =
             DataDirectory::load(self.data_directory.clone()).with_context(|| {
-                format!(
-                    "failed to load data directory at {}",
-                    self.data_directory.display()
-                )
+                format!("failed to load data directory at {}", self.data_directory.display())
             })?;
 
         Db::migrate(data_directory.database_path())

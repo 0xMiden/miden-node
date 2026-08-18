@@ -72,8 +72,5 @@ fn note_record_to_proto(note: NoteRecord) -> proto::note::CommittedNote {
         details: note.details.map(|details| details.to_bytes()),
         attachments: note.attachments.to_bytes(),
     });
-    proto::note::CommittedNote {
-        inclusion_proof,
-        note,
-    }
+    proto::note::CommittedNote { inclusion_proof, note }
 }

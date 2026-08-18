@@ -1,7 +1,12 @@
 use golden_core::wire::from_wire_bytes;
 use golden_ehtdh1::wire::from_wire_bytes as from_ehtdh1_wire_bytes;
 use golden_ehtdh1::{
-    Combiner, PublicKeySet, SealingKey, SecretShare, SetupContext, UnsealingShare,
+    Combiner,
+    PublicKeySet,
+    SealingKey,
+    SecretShare,
+    SetupContext,
+    UnsealingShare,
 };
 use golden_evrf::prototype::ShareOpeningBackend;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
@@ -35,14 +40,8 @@ fn committed_fixture_has_one_valid_share_per_participant() -> TestResult {
         let bundle = root.path().join(format!("validator-{participant}"));
         fs_err::create_dir(&bundle)?;
         fs_err::write(bundle.join(EPOCH_FILE), "09".repeat(32))?;
-        fs_err::copy(
-            fixture.join(SETUP_CONTEXT_FILE),
-            bundle.join(SETUP_CONTEXT_FILE),
-        )?;
-        fs_err::copy(
-            fixture.join(PUBLIC_KEY_SET_FILE),
-            bundle.join(PUBLIC_KEY_SET_FILE),
-        )?;
+        fs_err::copy(fixture.join(SETUP_CONTEXT_FILE), bundle.join(SETUP_CONTEXT_FILE))?;
+        fs_err::copy(fixture.join(PUBLIC_KEY_SET_FILE), bundle.join(PUBLIC_KEY_SET_FILE))?;
         fs_err::copy(
             fixture.join(format!("validator-{participant}/{SECRET_SHARE_FILE}")),
             bundle.join(SECRET_SHARE_FILE),
@@ -62,9 +61,7 @@ fn write_genesis_with_validator_count(
     root: &Path,
     validator_count: usize,
 ) -> TestResultWith<TestGenesis> {
-    let signing_keys = (0..validator_count)
-        .map(|_| SigningKey::new())
-        .collect::<Vec<_>>();
+    let signing_keys = (0..validator_count).map(|_| SigningKey::new()).collect::<Vec<_>>();
     let validators = signing_keys
         .iter()
         .map(|key| format!("\"{}\"", hex::encode(key.public_key().to_bytes())))
@@ -116,16 +113,10 @@ async fn identity_round_trip_matches_public_registration() -> TestResult {
     let proof_commitment =
         decode_non_identity_element(&registration.identity_proof_commitment, "identity proof")?;
     let proof_response = decode_scalar(&registration.identity_proof_response, "proof response")?;
-    let genesis_commitment = read_trusted_genesis(&genesis.path)?
-        .inner()
-        .header()
-        .commitment();
+    let genesis_commitment = read_trusted_genesis(&genesis.path)?.inner().header().commitment();
     let epoch = decode_fixed_hex::<32>(&epoch, "storage-key epoch")?;
     assert_eq!(StorageGroup::mul_generator(&secret), public_key);
-    assert_eq!(
-        registration.validator_public_key,
-        hex::encode(validator_key.to_bytes())
-    );
+    assert_eq!(registration.validator_public_key, hex::encode(validator_key.to_bytes()));
     assert!(verify_identity_proof(
         genesis_commitment,
         &epoch,
@@ -149,10 +140,8 @@ async fn identity_round_trip_matches_public_registration() -> TestResult {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = fs_err::metadata(output.join(IDENTITY_SECRET_FILE))?
-            .permissions()
-            .mode()
-            & 0o777;
+        let mode =
+            fs_err::metadata(output.join(IDENTITY_SECRET_FILE))?.permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
     }
     Ok(())
@@ -198,36 +187,21 @@ async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
 
     assert_eq!(manifest.threshold, 2);
     assert_eq!(manifest.epoch, epoch);
-    assert_eq!(
-        manifest.decryption_config_sha256,
-        sha256_hex(&decryption_bytes)
-    );
+    assert_eq!(manifest.decryption_config_sha256, sha256_hex(&decryption_bytes));
     assert_eq!(manifest.context_config_sha256, sha256_hex(&context_bytes));
     assert_eq!(decryption.threshold, 2);
     assert_eq!(context.threshold, 2);
     assert_eq!(decryption.beta, setup_beta()?);
     assert_eq!(decryption.registry, context.registry);
-    assert_eq!(
-        context.session_id,
-        derive_context_session_id(decryption.session_id)
-    );
-    for ((position, participant), validator_key) in manifest
-        .participants
-        .iter()
-        .enumerate()
-        .zip(&genesis.validator_keys)
+    assert_eq!(context.session_id, derive_context_session_id(decryption.session_id));
+    for ((position, participant), validator_key) in
+        manifest.participants.iter().enumerate().zip(&genesis.validator_keys)
     {
         assert_eq!(participant.participant_index, u32::try_from(position + 1)?);
-        assert_eq!(
-            participant.validator_public_key,
-            hex::encode(validator_key.to_bytes())
-        );
+        assert_eq!(participant.validator_public_key, hex::encode(validator_key.to_bytes()));
     }
     for name in [MANIFEST_FILE, DECRYPTION_CONFIG_FILE, CONTEXT_CONFIG_FILE] {
-        assert_eq!(
-            fs_err::read(output.join(name))?,
-            fs_err::read(second_output.join(name))?
-        );
+        assert_eq!(fs_err::read(output.join(name))?, fs_err::read(second_output.join(name))?);
     }
     Ok(())
 }
@@ -236,21 +210,16 @@ async fn prepare_binds_configs_to_canonical_genesis_order() -> TestResult {
 async fn ceremony_rejects_a_substituted_session_with_matching_config_digests() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
-    let mut manifest: Manifest = toml::from_str(&fs_err::read_to_string(
-        ceremony.ceremony.join(MANIFEST_FILE),
-    )?)?;
+    let mut manifest: Manifest =
+        toml::from_str(&fs_err::read_to_string(ceremony.ceremony.join(MANIFEST_FILE))?)?;
     let decryption_bytes = fs_err::read(ceremony.ceremony.join(DECRYPTION_CONFIG_FILE))?;
     let decryption: DkgConfig<StorageGroup> = from_wire_bytes(&decryption_bytes)?;
     let wrong_session = SessionId([0x55; 32]);
     assert_ne!(wrong_session, decryption.session_id);
     let beta = decryption.beta;
 
-    let wrong_decryption = DkgConfig::new(
-        decryption.threshold,
-        wrong_session,
-        beta,
-        decryption.registry.clone(),
-    )?;
+    let wrong_decryption =
+        DkgConfig::new(decryption.threshold, wrong_session, beta, decryption.registry.clone())?;
     let wrong_context = DkgConfig::new(
         decryption.threshold,
         derive_context_session_id(wrong_session),
@@ -263,15 +232,9 @@ async fn ceremony_rejects_a_substituted_session_with_matching_config_digests() -
     manifest.context_session_id = hex::encode(derive_context_session_id(wrong_session).0);
     manifest.decryption_config_sha256 = sha256_hex(&wrong_decryption);
     manifest.context_config_sha256 = sha256_hex(&wrong_context);
-    fs_err::write(
-        ceremony.ceremony.join(DECRYPTION_CONFIG_FILE),
-        wrong_decryption,
-    )?;
+    fs_err::write(ceremony.ceremony.join(DECRYPTION_CONFIG_FILE), wrong_decryption)?;
     fs_err::write(ceremony.ceremony.join(CONTEXT_CONFIG_FILE), wrong_context)?;
-    fs_err::write(
-        ceremony.ceremony.join(MANIFEST_FILE),
-        toml::to_string_pretty(&manifest)?,
-    )?;
+    fs_err::write(ceremony.ceremony.join(MANIFEST_FILE), toml::to_string_pretty(&manifest)?)?;
 
     let Err(error) = read_ceremony(&ceremony.genesis.path, &ceremony.ceremony) else {
         panic!("substituted session was accepted");
@@ -326,14 +289,8 @@ async fn prepare_rejects_substituted_dkg_identity() -> TestResult {
     ));
     fs_err::write(&registrations[0], toml::to_string_pretty(&registration)?)?;
 
-    let error = prepare(
-        &genesis.path,
-        2,
-        &epoch,
-        &registrations,
-        &root.path().join("ceremony"),
-    )
-    .unwrap_err();
+    let error = prepare(&genesis.path, 2, &epoch, &registrations, &root.path().join("ceremony"))
+        .unwrap_err();
     assert!(
         format!("{error:#}").contains("invalid validator signature"),
         "unexpected error: {error:#}",
@@ -358,10 +315,7 @@ async fn prepare_rejects_a_signed_registration_without_a_valid_identity_proof() 
         decode_non_identity_element(&registration.identity_proof_commitment, "identity proof")?;
     let bad_response = StorageScalar::zero();
     registration.identity_proof_response = hex::encode(bad_response.to_repr());
-    let genesis_commitment = read_trusted_genesis(&genesis.path)?
-        .inner()
-        .header()
-        .commitment();
+    let genesis_commitment = read_trusted_genesis(&genesis.path)?.inner().header().commitment();
     let validator_key = signing_key.public_key();
     let signature = signer
         .sign_commitment(registration_signature_commitment(
@@ -376,14 +330,9 @@ async fn prepare_rejects_a_signed_registration_without_a_valid_identity_proof() 
     registration.validator_signature = hex::encode(signature.to_bytes());
     fs_err::write(&registration_path, toml::to_string_pretty(&registration)?)?;
 
-    let error = prepare(
-        &genesis.path,
-        1,
-        &epoch,
-        &[registration_path],
-        &root.path().join("ceremony"),
-    )
-    .unwrap_err();
+    let error =
+        prepare(&genesis.path, 1, &epoch, &[registration_path], &root.path().join("ceremony"))
+            .unwrap_err();
     assert!(
         format!("{error:#}").contains("invalid DKG identity proof"),
         "unexpected error: {error:#}",
@@ -450,11 +399,7 @@ async fn prepare_test_ceremony(
     }
     let ceremony = root.join("ceremony");
     prepare(&genesis.path, threshold, &epoch, &registrations, &ceremony)?;
-    Ok(TestCeremony {
-        genesis,
-        ceremony,
-        identities,
-    })
+    Ok(TestCeremony { genesis, ceremony, identities })
 }
 
 /// Creates both dealings for every validator with the selected proof backend.
@@ -492,10 +437,7 @@ where
 
 /// Returns one named dealing file from every participant directory.
 fn dealing_paths(outputs: &[PathBuf], name: &str) -> Vec<PathBuf> {
-    outputs
-        .iter()
-        .map(|directory| directory.join(name))
-        .collect()
+    outputs.iter().map(|directory| directory.join(name)).collect()
 }
 
 struct AcceptedTranscript {
@@ -535,10 +477,7 @@ where
     );
     Ok(AcceptedTranscript {
         transcript,
-        acceptances: outputs
-            .iter()
-            .map(|output| output.join(TRANSCRIPT_ACCEPTANCE_FILE))
-            .collect(),
+        acceptances: outputs.iter().map(|output| output.join(TRANSCRIPT_ACCEPTANCE_FILE)).collect(),
     })
 }
 
@@ -586,11 +525,7 @@ async fn three_validators_complete_dkg_and_recover_with_any_two_shares() -> Test
         validate_bundle(
             &ceremony.genesis.path,
             &ceremony.ceremony,
-            &hex::encode(
-                ceremony.genesis.signing_keys[position]
-                    .public_key()
-                    .to_bytes(),
-            ),
+            &hex::encode(ceremony.genesis.signing_keys[position].public_key().to_bytes()),
             &bundle,
         )?;
         bundles.push(bundle);
@@ -675,14 +610,8 @@ async fn validate_rejects_an_internally_consistent_substitute_key_set() -> TestR
         &alternate_accepted,
         0,
     )?;
-    fs_err::copy(
-        alternate_bundle.join(PUBLIC_KEY_SET_FILE),
-        bundle.join(PUBLIC_KEY_SET_FILE),
-    )?;
-    fs_err::copy(
-        alternate_bundle.join(SECRET_SHARE_FILE),
-        bundle.join(SECRET_SHARE_FILE),
-    )?;
+    fs_err::copy(alternate_bundle.join(PUBLIC_KEY_SET_FILE), bundle.join(PUBLIC_KEY_SET_FILE))?;
+    fs_err::copy(alternate_bundle.join(SECRET_SHARE_FILE), bundle.join(SECRET_SHARE_FILE))?;
 
     let error = validate_bundle(
         &ceremony.genesis.path,
@@ -721,11 +650,7 @@ async fn finalize_rejects_incomplete_or_duplicate_dealings() -> TestResult {
     );
     assert!(!output.exists());
 
-    let duplicate = vec![
-        decryption[0].clone(),
-        decryption[0].clone(),
-        decryption[2].clone(),
-    ];
+    let duplicate = vec![decryption[0].clone(), decryption[0].clone(), decryption[2].clone()];
     assert!(
         finalize::<ShareOpeningBackend>(
             &ceremony.genesis.path,
@@ -917,13 +842,7 @@ async fn private_state_cannot_cross_ceremonies() -> TestResult {
         .map(|identity| identity.join(REGISTRATION_FILE))
         .collect::<Vec<_>>();
     let second_ceremony = second_root.join("ceremony");
-    prepare(
-        &first.genesis.path,
-        3,
-        &"33".repeat(32),
-        &registrations,
-        &second_ceremony,
-    )?;
+    prepare(&first.genesis.path, 3, &"33".repeat(32), &registrations, &second_ceremony)?;
     let second = TestCeremony {
         genesis: first.genesis.clone(),
         ceremony: second_ceremony,
@@ -955,10 +874,7 @@ async fn deal_rejects_unknown_identity_and_existing_output() -> TestResult {
     let root = tempfile::tempdir()?;
     let ceremony = prepare_test_ceremony(root.path(), 3, 2).await?;
     let outsider = root.path().join("outsider.wire");
-    fs_err::write(
-        &outsider,
-        encode_identity_secret(&StorageScalar::random(&mut OsRng)),
-    )?;
+    fs_err::write(&outsider, encode_identity_secret(&StorageScalar::random(&mut OsRng)))?;
     let output = root.path().join("deal");
     let mut rng = ChaCha20Rng::from_seed([43; 32]);
     assert!(

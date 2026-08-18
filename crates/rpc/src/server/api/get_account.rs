@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
 use miden_node_proto::domain::account::{
-    AccountRequest, AccountResponse, AccountStorageRequest, SlotData,
+    AccountRequest,
+    AccountResponse,
+    AccountStorageRequest,
+    SlotData,
 };
 use miden_node_proto::generated as proto;
 use miden_node_store::GetAccountError;
@@ -148,10 +151,7 @@ mod tests {
     fn explicit_request_within_limits_is_valid() {
         let requests = vec![
             slot_request("a::0", SlotData::All),
-            slot_request(
-                "a::1",
-                SlotData::MapKeys(vec![StorageMapKey::from_index(1)]),
-            ),
+            slot_request("a::1", SlotData::MapKeys(vec![StorageMapKey::from_index(1)])),
         ];
 
         validate_storage_request(&AccountStorageRequest::Explicit(requests)).unwrap();
@@ -172,10 +172,8 @@ mod tests {
 
     #[test]
     fn duplicate_slots_are_rejected() {
-        let requests = vec![
-            slot_request("a::0", SlotData::All),
-            slot_request("a::0", SlotData::All),
-        ];
+        let requests =
+            vec![slot_request("a::0", SlotData::All), slot_request("a::0", SlotData::All)];
 
         let status = validate_storage_request(&AccountStorageRequest::Explicit(requests))
             .expect_err("duplicate slot must be rejected");

@@ -26,7 +26,11 @@ pub use errors::MempoolSubmissionError;
 pub use proof_scheduler::DEFAULT_MAX_CONCURRENT_PROOFS;
 pub use rpc_sync::{RpcReadiness, RpcSync};
 pub use server::{
-    BlockProducerApi, BlockProducerApiConfig, BlockProducerStatus, MempoolStats, Sequencer,
+    BlockProducerApi,
+    BlockProducerApiConfig,
+    BlockProducerStatus,
+    MempoolStats,
+    Sequencer,
     SequencerHandle,
 };
 

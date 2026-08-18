@@ -73,16 +73,15 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             })?;
 
         // Store the validated transaction and private record atomically.
-        let count = self
-            .db
-            .insert_validated_private_transaction(private_record)
-            .await
-            .map_err(|err| {
-                Status::internal(err.as_report_context("Failed to insert transaction"))
-            })?;
+        let count =
+            self.db
+                .insert_validated_private_transaction(private_record)
+                .await
+                .map_err(|err| {
+                    Status::internal(err.as_report_context("Failed to insert transaction"))
+                })?;
 
-        self.validated_transactions_count
-            .fetch_add(count as u64, Ordering::Relaxed);
+        self.validated_transactions_count.fetch_add(count as u64, Ordering::Relaxed);
         Ok(())
     }
 
@@ -97,9 +96,7 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
             )
         })?;
         if sealed.ciphertext.is_empty() {
-            return Err(Status::invalid_argument(
-                "Empty sealed transaction inputs ciphertext",
-            ));
+            return Err(Status::invalid_argument("Empty sealed transaction inputs ciphertext"));
         }
 
         Ok(Self::Input { tx, sealed })

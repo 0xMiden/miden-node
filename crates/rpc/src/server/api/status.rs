@@ -31,9 +31,9 @@ impl proto::server::rpc_api::Status for RpcService {
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
         let block_producer_status = match &self.backend {
-            RpcBackend::Sequencer { block_producer, .. } => Some(block_producer_status_to_proto(
-                block_producer.status().await,
-            )),
+            RpcBackend::Sequencer { block_producer, .. } => {
+                Some(block_producer_status_to_proto(block_producer.status().await))
+            },
             RpcBackend::FullNode { source_rpc, .. } => source_rpc
                 .as_ref()
                 .clone()

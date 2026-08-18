@@ -10,24 +10,47 @@ use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use miden_protocol::account::{
-    Account, AccountId, AccountPatch, AccountStorageHeader, PartialAccount, StorageMapKey,
-    StorageMapWitness, StorageSlotName, StorageSlotType,
+    Account,
+    AccountId,
+    AccountPatch,
+    AccountStorageHeader,
+    PartialAccount,
+    StorageMapKey,
+    StorageMapWitness,
+    StorageSlotName,
+    StorageSlotType,
 };
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::errors::TransactionInputError;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
-    AccountInputs, ExecutedTransaction, InputNote, InputNotes, PartialBlockchain,
-    ProvenTransaction, TransactionArgs, TransactionId, TransactionInputs,
+    AccountInputs,
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
+    TransactionArgs,
+    TransactionId,
+    TransactionInputs,
 };
 use miden_protocol::vm::FutureMaybeSend;
 use miden_standards::note::AccountTargetNetworkNote;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore, DataStoreError, ExecutionOptions, FailedNote, LoadedMastForest, MastForestStore,
-    NoteCheckerError, NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError,
-    TransactionMastStore, TransactionProverError,
+    DataStore,
+    DataStoreError,
+    ExecutionOptions,
+    FailedNote,
+    LoadedMastForest,
+    MastForestStore,
+    NoteCheckerError,
+    NoteConsumptionChecker,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionMastStore,
+    TransactionProverError,
 };
 use tracing::Instrument;
 
@@ -254,10 +277,8 @@ impl NtxContext {
 
         async move {
             Box::pin(async move {
-                let notes = notes
-                    .into_iter()
-                    .map(AccountTargetNetworkNote::into_note)
-                    .collect::<Vec<_>>();
+                let notes =
+                    notes.into_iter().map(AccountTargetNetworkNote::into_note).collect::<Vec<_>>();
 
                 // VM execution (note filtering + transaction execution) is CPU-intensive and may
                 // not yield between await points. Run it on a dedicated blocking thread while using
@@ -279,12 +300,8 @@ impl NtxContext {
                         );
                         handle.block_on(
                             async {
-                                let FilteredNotes {
-                                    successful,
-                                    failed,
-                                    deferred,
-                                    oversized,
-                                } = ctx.filter_notes(&data_store, notes).await?;
+                                let FilteredNotes { successful, failed, deferred, oversized } =
+                                    ctx.filter_notes(&data_store, notes).await?;
                                 let executed_tx =
                                     Box::pin(ctx.execute(&data_store, successful)).await?;
                                 let scripts_to_cache = data_store.take_fetched_scripts();
@@ -381,10 +398,8 @@ impl NtxContext {
                 }
 
                 // Map successful notes to input notes.
-                let successful_notes = successful
-                    .into_iter()
-                    .map(|s| s.note().clone())
-                    .collect::<Vec<_>>();
+                let successful_notes =
+                    successful.into_iter().map(|s| s.note().clone()).collect::<Vec<_>>();
                 let successful = InputNotes::from_unauthenticated_notes(successful_notes)
                     .map_err(NtxError::InputNotes)?;
 
@@ -397,13 +412,8 @@ impl NtxContext {
                 let (deferred, oversized) =
                     self.classify_cycle_limited(data_store, cycle_limited).await;
 
-                Ok(FilteredNotes {
-                    successful,
-                    failed,
-                    deferred,
-                    oversized,
-                })
-            }
+                Ok(FilteredNotes { successful, failed, deferred, oversized })
+            },
             Err(err) => return Err(NtxError::NoteFilter(err)),
         }
     }
@@ -418,10 +428,7 @@ impl NtxContext {
         let mut deferred = Vec::new();
         let mut oversized = Vec::new();
         for failed in cycle_limited {
-            if self
-                .note_exceeds_budget_alone(data_store, failed.note())
-                .await
-            {
+            if self.note_exceeds_budget_alone(data_store, failed.note()).await {
                 oversized.push(failed);
             } else {
                 deferred.push(failed);
@@ -448,7 +455,7 @@ impl NtxContext {
                 let (successful, failed) = info.into_parts();
                 // Alone and still cycle-limited: the note needs ~the entire budget for itself.
                 successful.is_empty() && failed.iter().any(|f| f.num_cycles().is_some())
-            }
+            },
             Err(err) => {
                 tracing::warn!(
                     target: LOG_TARGET,
@@ -459,7 +466,7 @@ impl NtxContext {
                     "isolation re-check for a cycle-limited note failed; treating it as deferrable",
                 );
                 false
-            }
+            },
         }
     }
 
@@ -538,9 +545,7 @@ impl NtxContext {
 
 /// Splits failed notes into `(cycle_limited, genuine)`.
 fn partition_cycle_limited(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<FailedNote>) {
-    failed
-        .into_iter()
-        .partition(|note| note.num_cycles().is_some())
+    failed.into_iter().partition(|note| note.num_cycles().is_some())
 }
 
 // NETWORK TRANSACTION DATA STORE
@@ -647,16 +652,10 @@ impl NtxDataStore {
         account_id: AccountId,
         storage_header: &AccountStorageHeader,
     ) {
-        let mut storage_slots = self
-            .storage_slots
-            .lock()
-            .expect("storage slots lock poisoned");
+        let mut storage_slots = self.storage_slots.lock().expect("storage slots lock poisoned");
         for slot_header in storage_header.slots() {
             if let StorageSlotType::Map = slot_header.slot_type() {
-                storage_slots.insert(
-                    (account_id, slot_header.value()),
-                    slot_header.name().clone(),
-                );
+                storage_slots.insert((account_id, slot_header.value()), slot_header.name().clone());
             }
         }
     }
@@ -676,7 +675,7 @@ impl DataStore for NtxDataStore {
 
             // The latest supplied reference block must match the current reference block.
             match ref_blocks.last().copied() {
-                Some(reference) if reference == self.reference_block.block_num() => {}
+                Some(reference) if reference == self.reference_block.block_num() => {},
                 Some(other) => return Err(DataStoreError::BlockNotFound(other)),
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
@@ -685,11 +684,7 @@ impl DataStore for NtxDataStore {
             self.register_storage_map_slots(account_id, &self.account.storage().to_header());
 
             let partial_account = PartialAccount::from(self.account.as_ref());
-            Ok((
-                partial_account,
-                self.reference_block.clone(),
-                (*self.chain_mmr).clone(),
-            ))
+            Ok((partial_account, self.reference_block.clone(), (*self.chain_mmr).clone()))
         }
     }
 
@@ -702,20 +697,17 @@ impl DataStore for NtxDataStore {
             debug_assert_eq!(ref_block, self.reference_block.block_num());
 
             // Get foreign account inputs from RPC, retrying on transient gRPC failures.
-            let account_inputs = (|| async {
-                self.rpc
-                    .get_account_inputs(foreign_account_id, ref_block)
+            let account_inputs =
+                (|| async { self.rpc.get_account_inputs(foreign_account_id, ref_block).await })
+                    .retry(self.rpc_backoff())
+                    .when(is_transient_rpc_error)
+                    .notify(|err, dur| {
+                        log_transient_retry("rpc.get_account_inputs", err, dur);
+                    })
                     .await
-            })
-            .retry(self.rpc_backoff())
-            .when(is_transient_rpc_error)
-            .notify(|err, dur| {
-                log_transient_retry("rpc.get_account_inputs", err, dur);
-            })
-            .await
-            .map_err(|err| {
-                DataStoreError::other_with_source("failed to get account inputs", err)
-            })?;
+                    .map_err(|err| {
+                        DataStoreError::other_with_source("failed to get account inputs", err)
+                    })?;
 
             // Ensure foreign account procedures are available to the executor via the mast store.
             // This assumes the code was not loaded from before
@@ -770,10 +762,7 @@ impl DataStore for NtxDataStore {
             // The slot name that corresponds to the given account ID and map root must have been
             // registered during previous calls of this data store.
             let slot_name = {
-                let storage_slots = self
-                    .storage_slots
-                    .lock()
-                    .expect("storage slots lock poisoned");
+                let storage_slots = self.storage_slots.lock().expect("storage slots lock poisoned");
                 let Some(slot_name) = storage_slots.get(&(account_id, map_root)) else {
                     return Err(DataStoreError::other(
                         "requested storage slot has not been registered",
@@ -825,17 +814,9 @@ impl DataStore for NtxDataStore {
             }
 
             // 2. Local DB.
-            if let Some(script) = self
-                .db
-                .lookup_note_script(script_root)
-                .await
-                .map_err(|err| {
-                    DataStoreError::other_with_source(
-                        "failed to look up note script in local DB",
-                        err,
-                    )
-                })?
-            {
+            if let Some(script) = self.db.lookup_note_script(script_root).await.map_err(|err| {
+                DataStoreError::other_with_source("failed to look up note script in local DB", err)
+            })? {
                 self.script_cache.put(script_root, script.clone());
                 return Ok(Some(script));
             }
@@ -905,17 +886,9 @@ mod tests {
 
         let (cycle_limited, genuine) = partition_cycle_limited(failed);
 
-        assert_eq!(
-            cycle_limited.len(),
-            1,
-            "exactly the cycle-limited note must be re-checked"
-        );
+        assert_eq!(cycle_limited.len(), 1, "exactly the cycle-limited note must be re-checked");
         assert_eq!(cycle_limited[0].note().id(), cycle_limited_id);
-        assert_eq!(
-            genuine.len(),
-            1,
-            "exactly the genuine failure must be penalized directly"
-        );
+        assert_eq!(genuine.len(), 1, "exactly the genuine failure must be penalized directly");
         assert_eq!(genuine[0].note().id(), genuine_id);
     }
 

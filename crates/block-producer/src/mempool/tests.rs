@@ -20,9 +20,7 @@ fn shared_mempool_lock_is_poisoned_after_panic() {
     let poisoned = mempool.clone();
 
     let _ = std::thread::spawn(move || {
-        let _guard = poisoned
-            .lock()
-            .expect("fresh mempool lock should not be poisoned");
+        let _guard = poisoned.lock().expect("fresh mempool lock should not be poisoned");
         panic!("poison shared mempool lock");
     })
     .join();
@@ -167,13 +165,8 @@ async fn add_transaction_traces_are_correct() {
     .await
     .expect("span for the added transaction should be exported");
 
-    assert!(
-        span_data
-            .attributes
-            .iter()
-            .any(|kv| kv.key == "code.module.name".into()
-                && kv.value == "miden_node_block_producer::mempool".into())
-    );
+    assert!(span_data.attributes.iter().any(|kv| kv.key == "code.module.name".into()
+        && kv.value == "miden_node_block_producer::mempool".into()));
     assert!(tx_id.starts_with("0x"));
 }
 
@@ -208,9 +201,8 @@ fn children_of_failed_batches_are_ignored() {
     uut.rollback_batch(child_batch_a.id());
     assert_eq!(uut, reference);
 
-    let proven_batch = Arc::new(ProvenBatch::mocked_from_transactions([
-        txs[2].raw_proven_transaction()
-    ]));
+    let proven_batch =
+        Arc::new(ProvenBatch::mocked_from_transactions([txs[2].raw_proven_transaction()]));
     uut.commit_batch(proven_batch);
     assert_eq!(uut, reference);
 }
@@ -260,7 +252,7 @@ fn block_commit_reverts_expired_txns() {
     uut.add_transaction(tx_to_commit.clone()).unwrap();
     uut.select_any_batch().unwrap();
     uut.commit_batch(Arc::new(ProvenBatch::mocked_from_transactions([
-        tx_to_commit.raw_proven_transaction(),
+        tx_to_commit.raw_proven_transaction()
     ])));
 
     // Add a new transaction which will expire when the block is committed.
@@ -279,7 +271,7 @@ fn block_commit_reverts_expired_txns() {
     reference.add_transaction(tx_to_commit.clone()).unwrap();
     reference.select_any_batch().unwrap();
     reference.commit_batch(Arc::new(ProvenBatch::mocked_from_transactions([
-        tx_to_commit.raw_proven_transaction(),
+        tx_to_commit.raw_proven_transaction()
     ])));
     reference.select_block();
     reference.commit_block(&arb_header);
@@ -349,12 +341,7 @@ fn pruned_committed_notes_are_authenticated_for_inflight_descendants() {
 
     assert_eq!(child_batch.transactions().len(), 1);
     assert_eq!(child_batch.transactions()[0].id(), child.id());
-    assert_eq!(
-        child_batch.transactions()[0]
-            .unauthenticated_note_ids()
-            .count(),
-        0
-    );
+    assert_eq!(child_batch.transactions()[0].unauthenticated_note_ids().count(), 0);
     assert_eq!(child_batch.unauthenticated_note_commitments().count(), 0);
 }
 
@@ -387,9 +374,7 @@ fn rollbacks_of_already_proven_batches_are_ignored() {
     uut.add_transaction(txs[0].clone()).unwrap();
     let batch = uut.select_any_batch().unwrap();
 
-    let proof = Arc::new(ProvenBatch::mocked_from_transactions([
-        txs[0].raw_proven_transaction()
-    ]));
+    let proof = Arc::new(ProvenBatch::mocked_from_transactions([txs[0].raw_proven_transaction()]));
     uut.commit_batch(Arc::clone(&proof));
     let reference = uut.clone();
 
@@ -410,7 +395,7 @@ fn block_failure_increments_tx_failures() {
     uut.add_transaction(reverted_txs[0].clone()).unwrap();
     uut.select_any_batch().unwrap();
     uut.commit_batch(Arc::new(ProvenBatch::mocked_from_transactions([
-        reverted_txs[0].raw_proven_transaction(),
+        reverted_txs[0].raw_proven_transaction()
     ])));
 
     // Block 1 will contain just the first batch.
@@ -429,15 +414,12 @@ fn block_failure_increments_tx_failures() {
     reference.add_transaction(reverted_txs[1].clone()).unwrap();
     reference.add_transaction(reverted_txs[2].clone()).unwrap();
 
-    reference
-        .transactions
-        .increment_failure_count(block.batches.iter().flat_map(|batch| {
-            batch
-                .transactions()
-                .as_slice()
-                .iter()
-                .map(TransactionHeader::id)
-        }));
+    reference.transactions.increment_failure_count(
+        block
+            .batches
+            .iter()
+            .flat_map(|batch| batch.transactions().as_slice().iter().map(TransactionHeader::id)),
+    );
 
     assert_eq!(uut, reference);
 }
@@ -453,16 +435,12 @@ fn transactions_exceeding_failure_limit_are_removed() {
     uut.add_transaction(failing_tx).unwrap();
 
     for _ in 0..TransactionGraph::FAILURE_LIMIT - 1 {
-        let reverted = uut
-            .transactions
-            .increment_failure_count(std::iter::once(tx_id));
+        let reverted = uut.transactions.increment_failure_count(std::iter::once(tx_id));
         assert!(reverted.is_empty());
         assert_eq!(uut.unbatched_transactions_count(), 1);
     }
 
-    let reverted = uut
-        .transactions
-        .increment_failure_count(std::iter::once(tx_id));
+    let reverted = uut.transactions.increment_failure_count(std::iter::once(tx_id));
     assert!(reverted.contains(&tx_id));
     assert_eq!(reverted.direct().collect::<Vec<_>>(), vec![tx_id]);
     assert!(reverted.dependents().next().is_none());
@@ -481,9 +459,7 @@ fn failure_eviction_distinguishes_direct_and_dependent_transactions() {
 
     let mut removal = TransactionRemoval::default();
     for _ in 0..TransactionGraph::FAILURE_LIMIT {
-        removal = uut
-            .transactions
-            .increment_failure_count(std::iter::once(parent_id));
+        removal = uut.transactions.increment_failure_count(std::iter::once(parent_id));
     }
 
     assert_eq!(removal.direct().collect::<Vec<_>>(), vec![parent_id]);
@@ -636,9 +612,7 @@ fn pass_through_txs_with_note_dependencies() {
     let tx_pass_through_a = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_a));
 
     // This includes a note (3) created by (a).
-    let tx_pass_through_b = tx_pass_through_base
-        .unauthenticated_notes_range(3..4)
-        .build();
+    let tx_pass_through_b = tx_pass_through_base.unauthenticated_notes_range(3..4).build();
     let tx_pass_through_b = Arc::new(AuthenticatedTransaction::from_inner(tx_pass_through_b));
 
     // Select batches such that (a) and (b) go into separate batches.
@@ -647,17 +621,11 @@ fn pass_through_txs_with_note_dependencies() {
     // relationship was correctly inferred by the mempool.
     uut.add_transaction(tx_pass_through_a.clone()).unwrap();
     let batch_a = uut.select_any_batch().unwrap();
-    assert_eq!(
-        batch_a.transactions(),
-        std::slice::from_ref(&tx_pass_through_a)
-    );
+    assert_eq!(batch_a.transactions(), std::slice::from_ref(&tx_pass_through_a));
 
     uut.add_transaction(tx_pass_through_b.clone()).unwrap();
     let batch_b = uut.select_any_batch().unwrap();
-    assert_eq!(
-        batch_b.transactions(),
-        std::slice::from_ref(&tx_pass_through_b)
-    );
+    assert_eq!(batch_b.transactions(), std::slice::from_ref(&tx_pass_through_b));
 
     // Rollback (a) and check that (b) also reverted by comparing to the reference.
     uut.rollback_batch(batch_a.id());

@@ -367,11 +367,8 @@ impl RemoteProverStatusDetails {
                 ProofType::from,
             );
 
-        let workers: Vec<WorkerStatusDetails> = status
-            .workers
-            .into_iter()
-            .map(WorkerStatusDetails::from)
-            .collect();
+        let workers: Vec<WorkerStatusDetails> =
+            status.workers.into_iter().map(WorkerStatusDetails::from).collect();
 
         Self {
             url,
@@ -388,10 +385,7 @@ impl RpcStatusDetails {
         Self {
             url,
             version: status.version,
-            genesis_commitment: status
-                .genesis_commitment
-                .as_ref()
-                .map(|gc| format!("{gc:?}")),
+            genesis_commitment: status.genesis_commitment.as_ref().map(|gc| format!("{gc:?}")),
             chain_tip: status.chain_tip,
             block_producer_status: status.block_producer.map(BlockProducerStatusDetails::from),
         }

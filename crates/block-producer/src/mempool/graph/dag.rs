@@ -82,14 +82,7 @@ where
     pub fn selection_candidates(&self) -> BTreeMap<&N::Id, &N> {
         self.selection_candidates
             .iter()
-            .map(|id| {
-                (
-                    id,
-                    self.nodes
-                        .get(id)
-                        .expect("selection_candidates is a subset of nodes"),
-                )
-            })
+            .map(|id| (id, self.nodes.get(id).expect("selection_candidates is a subset of nodes")))
             .collect()
     }
 
@@ -140,12 +133,7 @@ where
     /// Panics if the given node is not a selection candidate.
     pub fn select_candidate(&mut self, node: N::Id) {
         assert!(!self.selected.contains(&node));
-        assert!(
-            self.edges
-                .parents_of(&node)
-                .iter()
-                .all(|parent| self.selected.contains(parent))
-        );
+        assert!(self.edges.parents_of(&node).iter().all(|parent| self.selected.contains(parent)));
 
         self.selected.insert(node);
         self.selection_candidates.remove(&node);
@@ -235,10 +223,7 @@ where
             self.edges.parents_of(&id).is_empty(),
             "Cannot prune node {id} as it still has ancestors",
         );
-        assert!(
-            self.selected.contains(&id),
-            "Cannot prune node {id} as it was not selected"
-        );
+        assert!(self.selected.contains(&id), "Cannot prune node {id} as it was not selected");
 
         self.remove(id)
     }

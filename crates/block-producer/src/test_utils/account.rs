@@ -42,13 +42,8 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
         .unwrap();
 
         Self::new(
-            AccountId::new(
-                account_seed,
-                AccountIdVersion::Version1,
-                Word::empty(),
-                Word::empty(),
-            )
-            .unwrap(),
+            AccountId::new(account_seed, AccountIdVersion::Version1, Word::empty(), Word::empty())
+                .unwrap(),
             if new_account {
                 Word::empty()
             } else {

@@ -149,27 +149,18 @@ mod tests {
     #[test]
     fn test_context_builds_dotted_field_path() {
         let err = outer_conversion().unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "header.account_root: value is not in range 0..MODULUS"
-        );
+        assert_eq!(err.to_string(), "header.account_root: value is not in range 0..MODULUS");
     }
 
     #[test]
     fn test_context_single_field() {
         let err = inner_conversion().context("nullifier").unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "nullifier: value is not in range 0..MODULUS"
-        );
+        assert_eq!(err.to_string(), "nullifier: value is not in range 0..MODULUS");
     }
 
     #[test]
     fn test_context_deep_nesting() {
-        let err = outer_conversion()
-            .context("block")
-            .context("response")
-            .unwrap_err();
+        let err = outer_conversion().context("block").context("response").unwrap_err();
         assert_eq!(
             err.to_string(),
             "response.block.header.account_root: value is not in range 0..MODULUS"
@@ -186,10 +177,7 @@ mod tests {
     fn test_context_on_external_error_type() {
         let result: Result<u8, std::num::TryFromIntError> = u8::try_from(256u16);
         let err = result.context("fee_amount").unwrap_err();
-        assert!(
-            err.to_string().starts_with("fee_amount: "),
-            "expected field prefix, got: {err}"
-        );
+        assert!(err.to_string().starts_with("fee_amount: "), "expected field prefix, got: {err}");
     }
 
     #[test]
@@ -208,12 +196,7 @@ mod tests {
     fn test_decode_field_conversion_error() {
         let decoder = GrpcStructDecoder::<crate::generated::blockchain::BlockHeader>::default();
         // Create a digest with an out-of-range value.
-        let account_root = Some(Digest {
-            d0: u64::MAX,
-            d1: 0,
-            d2: 0,
-            d3: 0,
-        });
+        let account_root = Some(Digest { d0: u64::MAX, d1: 0, d2: 0, d3: 0 });
         let result: Result<[Felt; 4], _> = decode!(decoder, account_root);
         let err = result.unwrap_err();
         assert!(

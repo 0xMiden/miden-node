@@ -118,16 +118,11 @@ not match the current commitment {}",
 
     /// Finalizes the batch selection.
     pub(crate) fn build(self) -> SelectedBatch {
-        let Self {
-            txs,
-            account_updates,
-        } = self;
+        let Self { txs, account_updates } = self;
         let id = BatchId::from_ids(txs.iter().map(|tx| (tx.id(), tx.account_id())));
 
-        let mut unauthenticated_notes: HashSet<_> = txs
-            .iter()
-            .flat_map(|tx| tx.unauthenticated_note_ids())
-            .collect();
+        let mut unauthenticated_notes: HashSet<_> =
+            txs.iter().flat_map(|tx| tx.unauthenticated_note_ids()).collect();
 
         for output_note in txs.iter().flat_map(|tx| tx.output_note_ids()) {
             unauthenticated_notes.remove(&output_note);

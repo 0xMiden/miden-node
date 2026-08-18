@@ -51,10 +51,7 @@ impl ConversionError {
     pub fn missing_field<T: prost::Message>(field_name: &'static str) -> Self {
         Self {
             path: Vec::new(),
-            source: Box::new(MissingFieldError {
-                entity: type_name::<T>(),
-                field_name,
-            }),
+            source: Box::new(MissingFieldError { entity: type_name::<T>(), field_name }),
         }
     }
 

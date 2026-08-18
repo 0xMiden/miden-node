@@ -9,18 +9,30 @@ use anyhow::Context;
 use diesel::{Connection, SqliteConnection};
 use miden_node_proto::domain::account::AccountInfo;
 use miden_node_utils::limiter::{
-    MAX_RESPONSE_PAYLOAD_BYTES, QueryParamLimiter, QueryParamNoteCommitmentLimit,
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamLimiter,
+    QueryParamNoteCommitmentLimit,
 };
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetId};
 use miden_protocol::block::{
-    BlockHeader, BlockNoteIndex, BlockNumber, BlockSignatures, SignedBlock,
+    BlockHeader,
+    BlockNoteIndex,
+    BlockNumber,
+    BlockSignatures,
+    SignedBlock,
 };
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
-    NoteAttachments, NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, NoteScript, Nullifier,
+    NoteAttachments,
+    NoteDetails,
+    NoteId,
+    NoteInclusionProof,
+    NoteMetadata,
+    NoteScript,
+    Nullifier,
 };
 use miden_protocol::transaction::TransactionHeader;
 use miden_protocol::utils::serde::Deserializable;
@@ -30,10 +42,15 @@ use crate::db::migrations::{migrate_database, verify_latest_schema};
 use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::queries;
 pub use crate::db::models::queries::{
-    AccountCommitmentsPage, NullifiersPage, PublicAccountIdsPage, PublicAccountStateRootsPage,
+    AccountCommitmentsPage,
+    NullifiersPage,
+    PublicAccountIdsPage,
+    PublicAccountStateRootsPage,
 };
 use crate::db::models::queries::{
-    BlockHeaderCommitment, PrecomputedPublicAccountStates, StorageMapValuesPage,
+    BlockHeaderCommitment,
+    PrecomputedPublicAccountStates,
+    StorageMapValuesPage,
 };
 use crate::errors::{DatabaseError, NoteSyncError};
 use crate::genesis::GenesisBlock;
@@ -200,9 +217,7 @@ impl Db {
             .context("failed to bootstrap database schema")?;
 
         let mut conn: SqliteConnection = diesel::sqlite::SqliteConnection::establish(
-            database_filepath
-                .to_str()
-                .context("database filepath is invalid")?,
+            database_filepath.to_str().context("database filepath is invalid")?,
         )
         .context("failed to open a database connection")?;
 
@@ -227,11 +242,8 @@ impl Db {
         target = COMPONENT,
     )]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseError> {
-        Self::load_with_pool_size(
-            database_filepath,
-            miden_node_db::default_connection_pool_size(),
-        )
-        .await
+        Self::load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size())
+            .await
     }
 
     /// Open a connection to the DB with a specific pool size after verifying that it is at the
@@ -347,14 +359,11 @@ impl Db {
         &self,
         block_number: ScopedBlockNum,
     ) -> Result<Option<(BlockHeader, BlockSignatures)>> {
-        self.transact(
-            "block headers and signatures by block number",
-            move |conn| {
-                let val =
-                    queries::select_block_header_and_signatures_by_block_num(conn, *block_number)?;
-                Ok(val)
-            },
-        )
+        self.transact("block headers and signatures by block number", move |conn| {
+            let val =
+                queries::select_block_header_and_signatures_by_block_num(conn, *block_number)?;
+            Ok(val)
+        })
         .await
     }
 
@@ -447,10 +456,8 @@ impl Db {
         err,
     )]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.transact("Get account details", move |conn| {
-            queries::select_account(conn, id)
-        })
-        .await
+        self.transact("Get account details", move |conn| queries::select_account(conn, id))
+            .await
     }
 
     /// Returns the subset of the provided account IDs that classify as network accounts.
@@ -497,14 +504,11 @@ impl Db {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
-        self.transact(
-            "Get account header with storage header at block",
-            move |conn| {
-                queries::select_account_header_with_storage_header_at_block(
-                    conn, account_id, *block_num,
-                )
-            },
-        )
+        self.transact("Get account header with storage header at block", move |conn| {
+            queries::select_account_header_with_storage_header_at_block(
+                conn, account_id, *block_num,
+            )
+        })
         .await
     }
 
@@ -622,7 +626,7 @@ impl Db {
                             "Failed to resolve consumed note IDs for lifecycle events",
                         );
                         break;
-                    }
+                    },
                 }
             }
 

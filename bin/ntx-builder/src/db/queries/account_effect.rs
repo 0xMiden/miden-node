@@ -23,12 +23,12 @@ impl NetworkAccountEffect {
                 NetworkAccount::new(account)
                     .ok()
                     .map(|na| NetworkAccountEffect::Created(na.into_account()))
-            }
+            },
             AccountUpdateDetails::Public(update) => {
                 // Partial updates carry no storage we can inspect here. Forward them as updates and
                 // let the coordinator's actor registry filter to known network accounts.
                 Some(NetworkAccountEffect::Updated(update.clone()))
-            }
+            },
         }
     }
 }

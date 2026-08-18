@@ -14,10 +14,7 @@ fn test_slot_name() -> StorageSlotName {
 fn account_storage_map_details_from_forest_entries() {
     let slot_name = test_slot_name();
     let entries = vec![
-        (
-            StorageMapKey::new(word_from_u32([1, 2, 3, 4])),
-            word_from_u32([5, 6, 7, 8]),
-        ),
+        (StorageMapKey::new(word_from_u32([1, 2, 3, 4])), word_from_u32([5, 6, 7, 8])),
         (
             StorageMapKey::new(word_from_u32([9, 10, 11, 12])),
             word_from_u32([13, 14, 15, 16]),
@@ -60,10 +57,7 @@ fn account_detail_request_converts_all_storage_maps() {
 
     let request = AccountDetailRequest::try_from(request).unwrap();
 
-    assert_eq!(
-        request.storage_request,
-        AccountStorageRequest::AllStorageMaps
-    );
+    assert_eq!(request.storage_request, AccountStorageRequest::AllStorageMaps);
 }
 
 #[test]
@@ -84,7 +78,9 @@ fn account_detail_request_rejects_false_all_storage_maps() {
 #[test]
 fn account_detail_request_converts_explicit_storage_maps() {
     use crate::generated::rpc::account_request::account_detail_request::{
-        StorageMapDetailRequest, StorageMapDetailRequests, StorageRequest,
+        StorageMapDetailRequest,
+        StorageMapDetailRequests,
+        StorageRequest,
         storage_map_detail_request,
     };
 

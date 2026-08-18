@@ -13,11 +13,7 @@ use crate::{decode, generated as proto};
 
 impl From<&MerklePath> for proto::primitives::MerklePath {
     fn from(value: &MerklePath) -> Self {
-        let siblings = value
-            .nodes()
-            .iter()
-            .map(proto::primitives::Digest::from)
-            .collect();
+        let siblings = value.nodes().iter().map(proto::primitives::Digest::from).collect();
         proto::primitives::MerklePath { siblings }
     }
 }
@@ -52,10 +48,7 @@ impl From<SparseMerklePath> for proto::primitives::SparseMerklePath {
         let (empty_nodes_mask, siblings) = value.into_parts();
         proto::primitives::SparseMerklePath {
             empty_nodes_mask,
-            siblings: siblings
-                .into_iter()
-                .map(proto::primitives::Digest::from)
-                .collect(),
+            siblings: siblings.into_iter().map(proto::primitives::Digest::from).collect(),
         }
     }
 }
@@ -81,11 +74,7 @@ impl TryFrom<proto::primitives::SparseMerklePath> for SparseMerklePath {
 
 impl From<MmrDelta> for proto::primitives::MmrDelta {
     fn from(value: MmrDelta) -> Self {
-        let data = value
-            .data
-            .into_iter()
-            .map(proto::primitives::Digest::from)
-            .collect();
+        let data = value.data.into_iter().map(proto::primitives::Digest::from).collect();
         proto::primitives::MmrDelta {
             forest: value.forest.num_leaves() as u64,
             data,
@@ -104,10 +93,8 @@ impl TryFrom<proto::primitives::MmrDelta> for MmrDelta {
             .collect::<Result<_, _>>()
             .context("data")?;
 
-        let forest_size: usize = value
-            .forest
-            .try_into()
-            .context("forest size does not fit in usize")?;
+        let forest_size: usize =
+            value.forest.try_into().context("forest size does not fit in usize")?;
         let forest = Forest::new(forest_size).context("forest size out of range")?;
 
         Ok(MmrDelta { forest, data })
@@ -130,19 +117,18 @@ impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
         match leaf {
             proto::primitives::smt_leaf::Leaf::EmptyLeafIndex(leaf_index) => {
                 Ok(Self::new_empty(LeafIndex::new_max_depth(leaf_index)))
-            }
+            },
             proto::primitives::smt_leaf::Leaf::Single(entry) => {
                 let (key, value): (Word, Word) = entry.try_into().context("entry")?;
 
                 Ok(SmtLeaf::new_single(key, value))
-            }
+            },
             proto::primitives::smt_leaf::Leaf::Multiple(entries) => {
-                let domain_entries: Vec<(Word, Word)> = try_convert(entries.entries)
-                    .collect::<Result<_, _>>()
-                    .context("entries")?;
+                let domain_entries: Vec<(Word, Word)> =
+                    try_convert(entries.entries).collect::<Result<_, _>>().context("entries")?;
 
                 Ok(SmtLeaf::new_multiple(domain_entries)?)
-            }
+            },
         }
     }
 }

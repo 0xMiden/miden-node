@@ -7,16 +7,27 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{
-    ExpressionMethods, Insertable, QueryDsl, Queryable, QueryableByName, Selectable,
+    ExpressionMethods,
+    Insertable,
+    QueryDsl,
+    Queryable,
+    QueryableByName,
+    Selectable,
 };
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
 use diesel::{
-    JoinOnDsl, NullableExpressionMethods, OptionalExtension, RunQueryDsl, SelectableHelper,
+    JoinOnDsl,
+    NullableExpressionMethods,
+    OptionalExtension,
+    RunQueryDsl,
+    SelectableHelper,
     SqliteConnection,
 };
 use miden_node_utils::limiter::{
-    QueryParamLimiter, QueryParamNoteCommitmentLimit, QueryParamNoteTagLimit,
+    QueryParamLimiter,
+    QueryParamNoteCommitmentLimit,
+    QueryParamNoteTagLimit,
 };
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
@@ -24,15 +35,29 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNoteIndex, BlockNumber};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{
-    NoteAssets, NoteAttachments, NoteDetails, NoteId, NoteInclusionProof, NoteMetadata,
-    NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType, Nullifier, PartialNoteMetadata,
+    NoteAssets,
+    NoteAttachments,
+    NoteDetails,
+    NoteId,
+    NoteInclusionProof,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    Nullifier,
+    PartialNoteMetadata,
 };
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_standards::note::NetworkAccountTarget;
 
 use crate::COMPONENT;
 use crate::db::models::conv::{
-    SqlTypeConvert, idx_to_raw_sql, note_type_to_raw_sql, raw_sql_to_idx,
+    SqlTypeConvert,
+    idx_to_raw_sql,
+    note_type_to_raw_sql,
+    raw_sql_to_idx,
 };
 use crate::db::models::queries::select_block_header_by_block_num;
 use crate::db::models::{serialize_vec, vec_raw_try_into};
@@ -187,10 +212,7 @@ pub(crate) fn select_notes_by_id(
         .filter(schema::notes::note_id.eq_any(&note_ids));
     let raw: Vec<_> = SelectDsl::select(
         q,
-        (
-            NoteRecordRawRow::as_select(),
-            schema::note_scripts::script.nullable(),
-        ),
+        (NoteRecordRawRow::as_select(), schema::note_scripts::script.nullable()),
     )
     .load::<(NoteRecordRawRow, Option<Vec<u8>>)>(conn)?;
     let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRawJoined>(
@@ -378,12 +400,10 @@ pub(crate) fn select_note_ids_by_nullifier(
     }
 
     let nullifier_bytes: Vec<Vec<u8>> = nullifiers.iter().map(Nullifier::to_bytes).collect();
-    let pairs = SelectDsl::select(
-        schema::notes::table,
-        (schema::notes::nullifier, schema::notes::note_id),
-    )
-    .filter(schema::notes::nullifier.eq_any(nullifier_bytes))
-    .load::<(Option<Vec<u8>>, Vec<u8>)>(conn)?;
+    let pairs =
+        SelectDsl::select(schema::notes::table, (schema::notes::nullifier, schema::notes::note_id))
+            .filter(schema::notes::nullifier.eq_any(nullifier_bytes))
+            .load::<(Option<Vec<u8>>, Vec<u8>)>(conn)?;
 
     let mut note_ids_by_nullifier = BTreeMap::new();
     for (nullifier, note_id) in pairs {
@@ -451,10 +471,7 @@ pub(crate) fn get_note_sync_multi(
 
         let block_header = select_block_header_by_block_num(conn, Some(block_num))?
             .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
-        updates.push(NoteSyncUpdate {
-            notes,
-            block_header,
-        });
+        updates.push(NoteSyncUpdate { notes, block_header });
         current_from = block_num + 1;
     }
 
@@ -591,28 +608,14 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             script,
             ..
         } = raw;
-        let index = BlockNoteIndexRawRow {
-            batch_index,
-            note_index,
-        };
-        let metadata = NoteMetadataRawRow {
-            note_type,
-            sender,
-            tag,
-            attachment,
-        };
-        let details = NoteDetailsRawRow {
-            assets,
-            storage,
-            serial_num,
-        };
+        let index = BlockNoteIndexRawRow { batch_index, note_index };
+        let metadata = NoteMetadataRawRow { note_type, sender, tag, attachment };
+        let details = NoteDetailsRawRow { assets, storage, serial_num };
 
         let (metadata, attachments) = metadata.try_into()?;
         let committed_at = BlockNumber::from_raw_sql(committed_at)?;
         let note_id = Word::read_from_bytes(&note_id[..])?;
-        let script = script
-            .map(|script| NoteScript::read_from_bytes(&script[..]))
-            .transpose()?;
+        let script = script.map(|script| NoteScript::read_from_bytes(&script[..])).transpose()?;
         let details = if let NoteDetailsRawRow {
             assets: Some(assets),
             storage: Some(storage),
@@ -708,10 +711,7 @@ pub struct BlockNoteIndexRawRow {
     pub note_index: i32, // index within batch
 }
 
-#[expect(
-    clippy::cast_sign_loss,
-    reason = "Indices are cast to usize for ease of use"
-)]
+#[expect(clippy::cast_sign_loss, reason = "Indices are cast to usize for ease of use")]
 impl TryInto<BlockNoteIndex> for BlockNoteIndexRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockNoteIndex, Self::Error> {
@@ -746,9 +746,11 @@ pub(crate) fn insert_notes(
     notes: &[(NoteRecord, Option<Nullifier>)],
 ) -> Result<usize, DatabaseError> {
     let count = diesel::insert_into(schema::notes::table)
-        .values(Vec::from_iter(notes.iter().map(|(note, nullifier)| {
-            NoteInsertRow::from((note.clone(), *nullifier))
-        })))
+        .values(Vec::from_iter(
+            notes
+                .iter()
+                .map(|(note, nullifier)| NoteInsertRow::from((note.clone(), *nullifier))),
+        ))
         .execute(conn)?;
     Ok(count)
 }

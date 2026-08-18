@@ -124,10 +124,7 @@ impl NetworkTransactionBuilder {
 
         // Wait for either the event loop or the gRPC server to complete. Any completion is treated
         // as fatal.
-        tasks
-            .join_next_or_cancelled(shutdown)
-            .await
-            .context("ntx-builder task failed")
+        tasks.join_next_or_cancelled(shutdown).await.context("ntx-builder task failed")
     }
 
     async fn run_event_loop(mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
@@ -165,9 +162,7 @@ impl NetworkTransactionBuilder {
             "spawning actors for accounts with carry-over pending notes",
         );
         for account_id in pending_accounts {
-            self.coordinator
-                .spawn_actor_when_committed(account_id)
-                .await?;
+            self.coordinator.spawn_actor_when_committed(account_id).await?;
         }
 
         // Phase 3: drive actors per committed block, plus serialize their DB writes.
@@ -190,20 +185,18 @@ impl NetworkTransactionBuilder {
 
             match action {
                 SteadyStateAction::Block(block) => {
-                    let (block, committed_tip) = (*block)
-                        .context("block stream ended")?
-                        .context("block stream failed")?;
-                    let effects = self
-                        .apply_committed_block_with_effects(block, committed_tip)
-                        .await?;
+                    let (block, committed_tip) =
+                        (*block).context("block stream ended")?.context("block stream failed")?;
+                    let effects =
+                        self.apply_committed_block_with_effects(block, committed_tip).await?;
                     self.coordinator.handle_committed_block(&effects).await?;
-                }
+                },
                 SteadyStateAction::Request(request) => {
                     let Some(request) = request else {
                         anyhow::bail!("actor request channel closed unexpectedly");
                     };
                     handle_actor_request(&self.db, request, self.config.max_note_attempts).await?;
-                }
+                },
                 SteadyStateAction::Respawn(respawn) => {
                     if let Some(account_id) = respawn {
                         tracing::info!(
@@ -213,11 +206,11 @@ impl NetworkTransactionBuilder {
                         );
                         self.coordinator.spawn_actor(account_id);
                     }
-                }
+                },
                 SteadyStateAction::Shutdown => {
                     self.coordinator.shutdown().await?;
                     return Ok(());
-                }
+                },
             }
         }
     }
@@ -238,9 +231,7 @@ impl NetworkTransactionBuilder {
         block: SignedBlock,
         committed_tip: BlockNumber,
     ) -> anyhow::Result<()> {
-        self.apply_committed_block_with_effects(block, committed_tip)
-            .await
-            .map(drop)
+        self.apply_committed_block_with_effects(block, committed_tip).await.map(drop)
     }
 
     /// Applies a committed block and returns the computed `CommittedBlockEffects` so the
@@ -265,8 +256,7 @@ impl NetworkTransactionBuilder {
 
         // Advance the in-memory chain (adds the previous tip header as an MMR leaf and prunes older
         // tracked headers) before snapshotting the MMR for persistence.
-        self.chain
-            .update_chain_tip(header, self.config.max_block_count);
+        self.chain.update_chain_tip(header, self.config.max_block_count);
         let next_mmr = self.chain.current_mmr();
 
         let effects_for_db = effects.clone();
@@ -289,34 +279,23 @@ async fn handle_actor_request(
     max_note_attempts: usize,
 ) -> anyhow::Result<()> {
     match request {
-        ActorRequest::NotesFailed {
-            failed_notes,
-            block_num,
-            ack_tx,
-        } => {
+        ActorRequest::NotesFailed { failed_notes, block_num, ack_tx } => {
             db.notes_failed(failed_notes, block_num)
                 .await
                 .context("failed to persist note failure")?;
             let _ = ack_tx.send(());
-        }
-        ActorRequest::NotesDiscarded {
-            nullifiers,
-            block_num,
-            ack_tx,
-        } => {
+        },
+        ActorRequest::NotesDiscarded { nullifiers, block_num, ack_tx } => {
             db.discard_notes(nullifiers, block_num, max_note_attempts)
                 .await
                 .context("failed to persist note discard")?;
             let _ = ack_tx.send(());
-        }
-        ActorRequest::CacheNoteScript {
-            script_root,
-            script,
-        } => {
+        },
+        ActorRequest::CacheNoteScript { script_root, script } => {
             db.insert_note_scripts(script_root, script)
                 .await
                 .context("failed to cache note script")?;
-        }
+        },
     }
     Ok(())
 }

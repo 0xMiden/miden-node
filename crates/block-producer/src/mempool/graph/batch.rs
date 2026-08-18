@@ -25,11 +25,7 @@ impl GraphNode for SelectedBatch {
     }
 
     fn output_notes(&self) -> Box<dyn Iterator<Item = Word> + '_> {
-        Box::new(
-            self.transactions()
-                .iter()
-                .flat_map(|tx| tx.output_note_ids()),
-        )
+        Box::new(self.transactions().iter().flat_map(|tx| tx.output_note_ids()))
     }
 
     fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = Word> + '_> {
@@ -138,11 +134,8 @@ impl BatchGraph {
         let mut selected = Vec::default();
 
         // Only batches which are proven can be selected for inclusion in a block.
-        while let Some(candidate) = self
-            .inner
-            .selection_candidates()
-            .iter()
-            .find_map(|(id, _)| self.proven.get(id))
+        while let Some(candidate) =
+            self.inner.selection_candidates().iter().find_map(|(id, _)| self.proven.get(id))
         {
             if budget.check_then_subtract(candidate) == BudgetStatus::Exceeded {
                 break;

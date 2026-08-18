@@ -125,10 +125,7 @@ impl Migrator {
         let database_filepath = database_filepath.as_ref();
         ensure!(
             !fs_err::exists(database_filepath).with_context(|| {
-                format!(
-                    "failed to check database path {}",
-                    database_filepath.display()
-                )
+                format!("failed to check database path {}", database_filepath.display())
             })?,
             "database already exists: {}",
             database_filepath.display()
@@ -173,10 +170,7 @@ impl Migrator {
         let conn =
             Connection::open_with_flags(database_filepath, OpenFlags::SQLITE_OPEN_READ_WRITE)
                 .with_context(|| {
-                    format!(
-                        "failed to open existing database {}",
-                        database_filepath.display()
-                    )
+                    format!("failed to open existing database {}", database_filepath.display())
                 })?;
 
         self.verify_latest_connection_schema(&conn)
@@ -184,10 +178,7 @@ impl Migrator {
 
     fn migrate_connection(&self, conn: &mut Connection) -> Result<()> {
         let current_version = self.version_check(conn)?;
-        ensure!(
-            current_version > 0,
-            "database has not been bootstrapped; run bootstrap first"
-        );
+        ensure!(current_version > 0, "database has not been bootstrapped; run bootstrap first");
 
         self.apply_missing_migrations(conn, current_version)
     }
@@ -364,10 +355,8 @@ mod tests {
 
     impl TestDatabase {
         fn new(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "miden-node-db-migrator-{name}-{}.sqlite3",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("miden-node-db-migrator-{name}-{}.sqlite3", std::process::id()));
             let db = Self { path };
             db.remove_files();
             db
@@ -409,18 +398,14 @@ mod tests {
 
         let conn = db.open()?;
         assert_eq!(schema::get_version(&conn)?, 2);
-        conn.execute(
-            "INSERT INTO items (id, value, height) VALUES (1, 'a', 10)",
-            [],
-        )?;
+        conn.execute("INSERT INTO items (id, value, height) VALUES (1, 'a', 10)", [])?;
         Ok(())
     }
 
     #[test]
     fn bootstraps_new_database_with_code_only_migration() -> Result<()> {
-        let migrator = Migrator::builder()?
-            .push_code("create items", create_items_table)?
-            .build()?;
+        let migrator =
+            Migrator::builder()?.push_code("create items", create_items_table)?.build()?;
 
         let db = TestDatabase::new("bootstraps_new_database_with_code_only_migration");
         migrator.bootstrap(db.path())?;
@@ -434,10 +419,7 @@ mod tests {
     #[test]
     fn bootstraps_new_database_with_sql_only_migration() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT);")?
             .build()?;
 
         let db = TestDatabase::new("bootstraps_new_database_with_sql_only_migration");
@@ -479,10 +461,7 @@ mod tests {
     #[test]
     fn bootstrap_rejects_existing_database_file() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("bootstrap_rejects_existing_database_file");
@@ -490,9 +469,7 @@ mod tests {
             let _conn = db.open()?;
         }
 
-        let err = migrator
-            .bootstrap(db.path())
-            .expect_err("existing database should fail");
+        let err = migrator.bootstrap(db.path()).expect_err("existing database should fail");
         assert!(err.to_string().contains("database already exists"));
         Ok(())
     }
@@ -500,17 +477,12 @@ mod tests {
     #[test]
     fn migrate_rejects_missing_database() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("migrate_rejects_missing_database");
 
-        let err = migrator
-            .migrate(db.path())
-            .expect_err("missing database should fail");
+        let err = migrator.migrate(db.path()).expect_err("missing database should fail");
         assert!(err.to_string().contains("failed to read database"));
         assert!(!db.path().exists());
         Ok(())
@@ -519,10 +491,7 @@ mod tests {
     #[test]
     fn migrate_rejects_unbootstrapped_database() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("migrate_rejects_unbootstrapped_database");
@@ -530,27 +499,16 @@ mod tests {
             let _conn = db.open()?;
         }
 
-        let err = migrator
-            .migrate(db.path())
-            .expect_err("unbootstrapped database should fail");
-        assert!(
-            err.to_string()
-                .contains("database has not been bootstrapped")
-        );
+        let err = migrator.migrate(db.path()).expect_err("unbootstrapped database should fail");
+        assert!(err.to_string().contains("database has not been bootstrapped"));
         Ok(())
     }
 
     #[test]
     fn rejects_existing_database_inside_retired_migration_range() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_retired(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
-            .push_retired(
-                "create notes",
-                "CREATE TABLE notes (id INTEGER PRIMARY KEY);",
-            )?
+            .push_retired("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
+            .push_retired("create notes", "CREATE TABLE notes (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("rejects_existing_database_inside_retired_migration_range");
@@ -562,23 +520,15 @@ mod tests {
             )?;
         }
 
-        let err = migrator
-            .migrate(db.path())
-            .expect_err("migration should fail");
-        assert!(
-            err.to_string()
-                .contains("inside the retired migration range")
-        );
+        let err = migrator.migrate(db.path()).expect_err("migration should fail");
+        assert!(err.to_string().contains("inside the retired migration range"));
         Ok(())
     }
 
     #[test]
     fn verifies_current_schema_before_applying_missing_migrations() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_retired(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
+            .push_retired("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("verifies_current_schema_before_applying_missing_migrations");
@@ -588,27 +538,16 @@ mod tests {
             conn.execute_batch("CREATE TABLE tampered (id INTEGER PRIMARY KEY);")?;
         }
 
-        let err = migrator
-            .migrate(db.path())
-            .expect_err("migration should fail");
-        assert!(
-            err.to_string()
-                .contains("schema hash mismatch at database version 1")
-        );
+        let err = migrator.migrate(db.path()).expect_err("migration should fail");
+        assert!(err.to_string().contains("schema hash mismatch at database version 1"));
         Ok(())
     }
 
     #[test]
     fn rolls_back_code_migration_when_schema_hash_mismatches() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_retired(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
-            .push_code(
-                "conditionally create extra",
-                create_extra_table_when_items_exist,
-            )?
+            .push_retired("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
+            .push_code("conditionally create extra", create_extra_table_when_items_exist)?
             .build()?;
 
         let db = TestDatabase::new("rolls_back_code_migration_when_schema_hash_mismatches");
@@ -621,14 +560,9 @@ mod tests {
             )?;
         }
 
-        let err = migrator
-            .migrate(db.path())
-            .expect_err("migration should fail");
+        let err = migrator.migrate(db.path()).expect_err("migration should fail");
         assert!(err.to_string().contains("failed to apply migration 2"));
-        assert!(
-            err.chain()
-                .any(|cause| cause.to_string().contains("schema hash mismatch"))
-        );
+        assert!(err.chain().any(|cause| cause.to_string().contains("schema hash mismatch")));
 
         let conn = db.open()?;
         assert_eq!(schema::get_version(&conn)?, 1);
@@ -639,10 +573,7 @@ mod tests {
     #[test]
     fn verify_latest_schema_accepts_current_database() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("verify_latest_schema_accepts_current_database");
@@ -655,10 +586,7 @@ mod tests {
     #[test]
     fn verify_latest_schema_rejects_schema_hash_mismatch() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("verify_latest_schema_rejects_schema_hash_mismatch");
@@ -670,9 +598,7 @@ mod tests {
             )?;
         }
 
-        let err = migrator
-            .verify_latest_schema(db.path())
-            .expect_err("schema drift should fail");
+        let err = migrator.verify_latest_schema(db.path()).expect_err("schema drift should fail");
         assert!(err.to_string().contains("schema hash mismatch"));
         Ok(())
     }
@@ -680,10 +606,7 @@ mod tests {
     #[test]
     fn verify_latest_schema_rejects_missing_migrations_without_applying_them() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT);")?
             .push_code("index item values", add_items_index)?
             .build()?;
 
@@ -696,9 +619,7 @@ mod tests {
             )?;
         }
 
-        let err = migrator
-            .verify_latest_schema(db.path())
-            .expect_err("old database should fail");
+        let err = migrator.verify_latest_schema(db.path()).expect_err("old database should fail");
         assert!(err.to_string().contains("run the migrate command first"));
 
         let conn = db.open()?;
@@ -710,10 +631,7 @@ mod tests {
     #[test]
     fn verify_latest_schema_rejects_missing_database_without_creating_it() -> Result<()> {
         let migrator = Migrator::builder()?
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )?
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")?
             .build()?;
 
         let db = TestDatabase::new("verify_latest_schema_rejects_missing_database");

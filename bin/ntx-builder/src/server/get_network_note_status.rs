@@ -42,9 +42,7 @@ impl grpc::server::ntx_builder_api::GetNetworkNoteStatus for NtxBuilderRpcServer
             })?;
 
         let Some(row) = row else {
-            return Err(tonic::Status::not_found(
-                "note not found in ntx-builder database",
-            ));
+            return Err(tonic::Status::not_found("note not found in ntx-builder database"));
         };
 
         let attempt_count = usize::try_from(row.attempt_count)
@@ -52,18 +50,12 @@ impl grpc::server::ntx_builder_api::GetNetworkNoteStatus for NtxBuilderRpcServer
         let response_attempt_count = u32::try_from(row.attempt_count)
             .map_err(|_| tonic::Status::internal("invalid attempt count in database"))?;
         let last_attempt_block_num =
-            row.last_attempt
-                .map(u32::try_from)
-                .transpose()
-                .map_err(|_| {
-                    tonic::Status::internal("invalid last attempt block number in database")
-                })?;
+            row.last_attempt.map(u32::try_from).transpose().map_err(|_| {
+                tonic::Status::internal("invalid last attempt block number in database")
+            })?;
 
-        let status = derive_status(
-            row.committed_at.is_some(),
-            attempt_count,
-            self.max_note_attempts,
-        );
+        let status =
+            derive_status(row.committed_at.is_some(), attempt_count, self.max_note_attempts);
 
         Ok(grpc::rpc::GetNetworkNoteStatusResponse {
             status: status.into(),
@@ -127,13 +119,7 @@ mod tests {
     #[test]
     fn derive_status_committed() {
         // committed takes precedence over attempt count
-        assert_eq!(
-            derive_status(true, 0, 30),
-            NetworkNoteStatus::NullifierCommitted
-        );
-        assert_eq!(
-            derive_status(true, 30, 30),
-            NetworkNoteStatus::NullifierCommitted
-        );
+        assert_eq!(derive_status(true, 0, 30), NetworkNoteStatus::NullifierCommitted);
+        assert_eq!(derive_status(true, 30, 30), NetworkNoteStatus::NullifierCommitted);
     }
 }

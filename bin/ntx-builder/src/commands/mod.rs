@@ -203,11 +203,11 @@ impl NtxBuilderCommand {
                     "NTX builder bootstrap complete",
                 );
                 Ok(())
-            }
+            },
             Self::Migrate { data_directory } => {
                 miden_ntx_builder::migrate(data_directory.join("ntx-builder.sqlite3"))
                     .context("failed to apply ntx-builder database migrations")
-            }
+            },
         }
     }
 

@@ -67,7 +67,10 @@ use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{MempoolSubmissionError, StateConflict};
 use crate::mempool::budget::BudgetStatus;
 use crate::{
-    COMPONENT, DEFAULT_MEMPOOL_TX_CAPACITY, LOG_TARGET, SERVER_MEMPOOL_EXPIRATION_SLACK,
+    COMPONENT,
+    DEFAULT_MEMPOOL_TX_CAPACITY,
+    LOG_TARGET,
+    SERVER_MEMPOOL_EXPIRATION_SLACK,
     SERVER_MEMPOOL_STATE_RETENTION,
 };
 
@@ -329,9 +332,7 @@ impl Mempool {
         name = "mempool.select_any_batch",
     )]
     pub fn select_any_batch(&mut self) -> Option<SelectedBatch> {
-        let batch = self
-            .transactions
-            .select_any_batch(self.config.batch_budget)?;
+        let batch = self.transactions.select_any_batch(self.config.batch_budget)?;
         let batch = self.append_selected_batch(batch);
         let telemetry = self.telemetry();
         miden_span_record!(
@@ -356,9 +357,7 @@ impl Mempool {
         name = "mempool.select_full_batch",
     )]
     pub fn select_full_batch(&mut self) -> Option<SelectedBatch> {
-        let batch = self
-            .transactions
-            .select_full_batch(self.config.batch_budget)?;
+        let batch = self.transactions.select_full_batch(self.config.batch_budget)?;
         let batch = self.append_selected_batch(batch);
         let telemetry = self.telemetry();
         miden_span_record!(
@@ -375,10 +374,7 @@ impl Mempool {
 
     fn append_selected_batch(&mut self, batch: SelectedBatch) -> SelectedBatch {
         if let Err(err) = self.batches.append(batch.clone()) {
-            panic!(
-                "failed to append batch to dependency graph: {}",
-                err.as_report()
-            );
+            panic!("failed to append batch to dependency graph: {}", err.as_report());
         }
         batch
     }
@@ -416,15 +412,13 @@ impl Mempool {
         // This could occur if this batch is the descendent of a separate batch or block rollback.
         // The batch and transaction graphs already ignore unknown reversions, alternatively we
         // could check this precondition above.
-        let evicted = if let Some(batch) = reverted_batches
-            .iter()
-            .find(|reverted| reverted.id() == batch)
-        {
-            let failed_txs = batch.transactions().iter().map(|tx| tx.id());
-            self.transactions.increment_failure_count(failed_txs)
-        } else {
-            graph::TransactionRemoval::default()
-        };
+        let evicted =
+            if let Some(batch) = reverted_batches.iter().find(|reverted| reverted.id() == batch) {
+                let failed_txs = batch.transactions().iter().map(|tx| tx.id());
+                self.transactions.increment_failure_count(failed_txs)
+            } else {
+                graph::TransactionRemoval::default()
+            };
 
         let telemetry = self.telemetry();
         miden_span_record!(
@@ -480,10 +474,7 @@ impl Mempool {
 
         let block_number = self.chain_tip().child();
         let batches = self.batches.select_block(self.config.block_budget);
-        let block = SelectedBlock {
-            block_number,
-            batches,
-        };
+        let block = SelectedBlock { block_number, batches };
         self.pending_block = Some(block.clone());
         let telemetry = self.telemetry();
         miden_span_record!(
@@ -571,13 +562,10 @@ impl Mempool {
                 self.transactions.requeue_transactions(&batch);
             }
         }
-        let failed_txs = block.batches.iter().flat_map(|batch| {
-            batch
-                .transactions()
-                .as_slice()
-                .iter()
-                .map(TransactionHeader::id)
-        });
+        let failed_txs = block
+            .batches
+            .iter()
+            .flat_map(|batch| batch.transactions().as_slice().iter().map(TransactionHeader::id));
         let evicted = self.transactions.increment_failure_count(failed_txs);
         let telemetry = self.telemetry();
         miden_span_record!(

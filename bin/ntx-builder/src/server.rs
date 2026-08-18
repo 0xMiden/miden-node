@@ -28,10 +28,7 @@ pub struct NtxBuilderRpcServer {
 
 impl NtxBuilderRpcServer {
     pub(crate) fn new(db: NtxDbReader, max_note_attempts: usize) -> Self {
-        Self {
-            db,
-            max_note_attempts,
-        }
+        Self { db, max_note_attempts }
     }
 
     /// Starts the gRPC server on the given listener.
@@ -46,9 +43,8 @@ impl NtxBuilderRpcServer {
             .build_v1()
             .context("failed to build reflection service")?;
 
-        let endpoint = listener
-            .local_addr()
-            .context("failed to read NTX builder listen address")?;
+        let endpoint =
+            listener.local_addr().context("failed to read NTX builder listen address")?;
         tracing::info!(
             target: LOG_TARGET,
             {

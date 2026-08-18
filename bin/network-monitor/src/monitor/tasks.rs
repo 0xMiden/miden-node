@@ -23,7 +23,11 @@ use crate::note_transport::NoteTransportService;
 use crate::remote_prover::ProverStatusService;
 use crate::service::{Service, build_tls_client};
 use crate::status::{
-    CounterTrackingDetails, IncrementDetails, RpcService, ServiceDetails, ServiceStatus,
+    CounterTrackingDetails,
+    IncrementDetails,
+    RpcService,
+    ServiceDetails,
+    ServiceStatus,
 };
 use crate::validator::ValidatorService;
 
@@ -36,9 +40,7 @@ pub struct Tasks {
 impl Tasks {
     /// Create a new Tasks instance.
     pub fn new() -> Self {
-        Self {
-            handles: SupervisedTasks::new(),
-        }
+        Self { handles: SupervisedTasks::new() }
     }
 
     /// Spawn the RPC status checker task.
@@ -68,10 +70,8 @@ impl Tasks {
         &mut self,
         config: &MonitorConfig,
     ) -> Receiver<ServiceStatus> {
-        let note_transport_url = config
-            .note_transport_url
-            .clone()
-            .expect("Note transport URL exists");
+        let note_transport_url =
+            config.note_transport_url.clone().expect("Note transport URL exists");
         let svc = NoteTransportService::new(
             note_transport_url,
             config.status_check_interval,
@@ -121,11 +121,8 @@ impl Tasks {
     /// Spawn the faucet testing task.
     pub fn spawn_faucet(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
         let faucet_url = config.faucet_url.clone().expect("faucet URL exists");
-        let svc = FaucetService::new(
-            faucet_url,
-            config.faucet_test_interval,
-            config.request_timeout,
-        );
+        let svc =
+            FaucetService::new(faucet_url, config.faucet_test_interval, config.request_timeout);
         self.spawn_service(svc)
     }
 
@@ -149,8 +146,7 @@ impl Tasks {
         ));
 
         let config = config.clone();
-        self.handles
-            .spawn_infallible("ntx", run_ntx(config, increment_tx, tracking_tx));
+        self.handles.spawn_infallible("ntx", run_ntx(config, increment_tx, tracking_tx));
         debug!(target: LOG_TARGET, service = "ntx", "Spawned service");
 
         (increment_rx, tracking_rx)

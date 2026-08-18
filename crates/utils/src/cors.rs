@@ -6,11 +6,8 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 // CORS headers
 const DEFAULT_MAX_AGE: Duration = Duration::from_hours(24);
-const DEFAULT_EXPOSED_HEADERS: [HeaderName; 3] = [
-    Status::GRPC_STATUS,
-    Status::GRPC_MESSAGE,
-    Status::GRPC_STATUS_DETAILS,
-];
+const DEFAULT_EXPOSED_HEADERS: [HeaderName; 3] =
+    [Status::GRPC_STATUS, Status::GRPC_MESSAGE, Status::GRPC_STATUS_DETAILS];
 const DEFAULT_ALLOW_HEADERS: [HeaderName; 4] = [
     HeaderName::from_static("x-grpc-web"),
     http::header::CONTENT_TYPE,

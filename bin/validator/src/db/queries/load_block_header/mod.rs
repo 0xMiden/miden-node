@@ -14,9 +14,7 @@ pub fn load_block_header(
     block_num: BlockNumber,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
     Ok(tx
-        .query(SQL, &[&block_num.to_raw_sql()], |row| {
-            row.get::<BlockHeader>(0)
-        })?
+        .query(SQL, &[&block_num.to_raw_sql()], |row| row.get::<BlockHeader>(0))?
         .into_iter()
         .next())
 }

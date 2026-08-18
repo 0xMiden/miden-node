@@ -4,7 +4,11 @@
 use maud::{Markup, html};
 
 use super::super::helpers::{
-    copy_button, format_success_rate, format_timestamp, metric_row, truncate,
+    copy_button,
+    format_success_rate,
+    format_timestamp,
+    metric_row,
+    truncate,
 };
 use crate::status::{CounterTrackingDetails, IncrementDetails};
 

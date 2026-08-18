@@ -7,8 +7,12 @@ use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::Row;
 
 use crate::{
-    PrivateRecordChainId, PrivateRecordContext, PrivateRecordId, PrivateRecordStorageFields,
-    StorageKeyEpoch, StoredPrivateRecord,
+    PrivateRecordChainId,
+    PrivateRecordContext,
+    PrivateRecordId,
+    PrivateRecordStorageFields,
+    StorageKeyEpoch,
+    StoredPrivateRecord,
 };
 
 /// Decodes one row of the private-record column list into a [`StoredPrivateRecord`].

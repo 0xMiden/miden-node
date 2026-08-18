@@ -5,8 +5,12 @@ use clap::{Parser, Subcommand};
 use miden_node_utils::logging::OpenTelemetry;
 use seeding::seed_store;
 use store::{
-    bench_get_account, bench_sync_chain_mmr, bench_sync_notes, bench_sync_nullifiers,
-    bench_sync_transactions, load_state,
+    bench_get_account,
+    bench_sync_chain_mmr,
+    bench_sync_notes,
+    bench_sync_nullifiers,
+    bench_sync_transactions,
+    load_state,
 };
 
 mod seeding;
@@ -178,7 +182,7 @@ async fn main() {
                 account_update_blocks,
             ))
             .await;
-        }
+        },
         Command::BenchmarkMixed {
             data_directory,
             num_accounts,
@@ -198,7 +202,7 @@ async fn main() {
                 readers.get(),
             ))
             .await;
-        }
+        },
         Command::BenchmarkStore {
             endpoint,
             data_directory,
@@ -207,14 +211,11 @@ async fn main() {
         } => match endpoint {
             Endpoint::SyncNullifiers { prefixes } => {
                 bench_sync_nullifiers(data_directory, iterations, concurrency, prefixes).await;
-            }
+            },
             Endpoint::SyncNotes => {
                 bench_sync_notes(data_directory, iterations, concurrency).await;
-            }
-            Endpoint::SyncTransactions {
-                accounts,
-                block_range,
-            } => {
+            },
+            Endpoint::SyncTransactions { accounts, block_range } => {
                 bench_sync_transactions(
                     data_directory,
                     iterations,
@@ -223,16 +224,16 @@ async fn main() {
                     block_range,
                 )
                 .await;
-            }
+            },
             Endpoint::SyncChainMmr => {
                 bench_sync_chain_mmr(data_directory, iterations, concurrency).await;
-            }
+            },
             Endpoint::LoadState => {
                 load_state(&data_directory).await;
-            }
+            },
             Endpoint::GetAccount { storage_map_slot } => {
                 bench_get_account(data_directory, iterations, concurrency, storage_map_slot).await;
-            }
+            },
         },
     }
 }

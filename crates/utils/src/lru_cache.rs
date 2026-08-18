@@ -35,9 +35,7 @@ where
         K: 'a,
     {
         let mut cache = self.lock();
-        keys.into_iter()
-            .map(|key| cache.get(key).cloned())
-            .collect()
+        keys.into_iter().map(|key| cache.get(key).cloned()).collect()
     }
 
     /// Puts multiple values into the cache while holding the cache lock once.

@@ -20,6 +20,22 @@ The builder has its own persistent database and must be initialized from the sam
 the network before it starts. In a complete node deployment, `node` connects to this service so network-note status can
 be exposed through the public RPC API.
 
+## Benchmarks
+
+`benches/large_account.rs` measures the cost of a large network account, which each actor keeps fully resident for its
+lifetime and reloads from the database on start and after every expired submission. It synthesizes a network account
+with a populated storage map and reports resident/peak heap, serialized size, and per-operation timings. Per-candidate
+cost is not a factor: the account is shared via `Arc` and advanced with `Arc::make_mut`, and `PartialAccount::from` is
+constant-time in the map size for existing accounts.
+
+```bash
+# Default sizes (1k, 10k, 100k entries).
+cargo bench -p miden-ntx-builder --bench large_account
+
+# Custom sizes (entries per storage map). 1M needs several GiB of RAM, so it is opt-in:
+cargo bench -p miden-ntx-builder --bench large_account -- 1000 100000 1000000
+```
+
 ## License
 
 This project is [MIT licensed](../../LICENSE).

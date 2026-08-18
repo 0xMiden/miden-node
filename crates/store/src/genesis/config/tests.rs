@@ -40,11 +40,12 @@ fn parsing_yields_expected_default_values() -> TestResult {
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
     let (state, _secrets) = gcfg.into_state()?;
     let _ = state;
-    // faucets always precede wallet accounts
+    // faucets, then the generated faucet operator, then the wallet accounts
     let native_faucet = state.accounts[0].clone();
     let _excess = state.accounts[1].clone();
-    let wallet1 = state.accounts[2].clone();
-    let wallet2 = state.accounts[3].clone();
+    let _faucet_operator = state.accounts[2].clone();
+    let wallet1 = state.accounts[3].clone();
+    let wallet2 = state.accounts[4].clone();
 
     assert!(FungibleFaucet::try_from(&native_faucet).is_ok());
     assert!(FungibleFaucet::try_from(&wallet1).is_err());
@@ -137,11 +138,13 @@ verification_base_fee = 0
 async fn genesis_accounts_have_nonce_one() -> TestResult {
     let gcfg = GenesisConfig::default();
     let (state, secrets) = gcfg.into_state().unwrap();
-    let mut iter = secrets.as_account_files(&state);
-    let AccountFileWithName { account_file: status_quo, .. } = iter.next().unwrap().unwrap();
-    assert!(iter.next().is_none());
 
-    assert_eq!(status_quo.account.nonce(), ONE);
+    // The default configuration generates the native faucet and its operator.
+    let account_files = secrets.as_account_files(&state).collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(account_files.len(), 2);
+    for AccountFileWithName { account_file, name } in account_files {
+        assert_eq!(account_file.account.nonce(), ONE, "{name} should be deployed at genesis");
+    }
 
     let _block = state.into_block()?;
     Ok(())
@@ -196,6 +199,71 @@ path = "test_account.mac"
     // Convert to state and verify the account is included
     let (state, _secrets) = gcfg.into_state()?;
     assert!(state.accounts.iter().any(|a| a.id() == account_id));
+
+    Ok(())
+}
+
+#[test]
+fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestResult {
+    use miden_protocol::account::StorageMapKey;
+    use miden_standards::account::access::Ownable2Step;
+    use miden_standards::account::auth::AuthNetworkAccount;
+
+    let gcfg = GenesisConfig::default();
+    let (state, secrets) = gcfg.into_state()?;
+
+    // The native faucet is the fee faucet and precedes every other account.
+    let native_faucet = &state.accounts[0];
+    assert_eq!(native_faucet.id(), state.fee_parameters.fee_faucet_id());
+    assert!(FungibleFaucet::try_from(native_faucet).is_ok());
+    assert_eq!(native_faucet.nonce(), ONE);
+
+    // Both accounts are written out, but a network account is authenticated by the network and
+    // carries no key of its own, so only the operator has one.
+    let find = |file_name| {
+        secrets
+            .secrets
+            .iter()
+            .find(|(name, ..)| name == file_name)
+            .unwrap_or_else(|| panic!("{file_name} should be generated"))
+    };
+    assert_eq!(secrets.secrets.len(), 2);
+    let (_, faucet_id, faucet_secret) = find(NATIVE_FAUCET_FILE_NAME);
+    let (_, operator_id, operator_secret) = find(FAUCET_OPERATOR_FILE_NAME);
+    assert_eq!(*faucet_id, native_faucet.id());
+    assert!(faucet_secret.is_none());
+    assert!(operator_secret.is_some());
+    assert_ne!(*operator_id, native_faucet.id());
+
+    // The operator is deployed alongside the faucet.
+    let operator = state
+        .accounts
+        .iter()
+        .find(|account| account.id() == *operator_id)
+        .expect("the operator account is part of the genesis state");
+    assert_eq!(operator.nonce(), ONE);
+    assert!(FungibleFaucet::try_from(operator).is_err());
+
+    // The faucet is network authenticated: `AuthNetworkAccount` checks an allowlist of note scripts
+    // instead of a signature. Only mint and burn notes are accepted.
+    for script_root in [MintNote::script_root(), BurnNote::script_root()] {
+        let allowed = native_faucet.storage().get_map_item(
+            AuthNetworkAccount::allowed_note_scripts_slot(),
+            StorageMapKey::new(script_root.as_word()),
+        )?;
+        // The allowlist flags an allowed entry as `[1, 0, 0, 0]`.
+        assert_eq!(allowed, [ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into());
+    }
+
+    // Check the operator is the faucet owner and the active mint policy allows the owner only
+    let ownership = Ownable2Step::try_from_storage(native_faucet.storage())?;
+    assert_eq!(ownership.owner(), Some(*operator_id));
+    assert_eq!(
+        native_faucet
+            .storage()
+            .get_item(TokenPolicyManager::active_mint_policy_slot())?,
+        MintPolicy::owner_only().root().as_word(),
+    );
 
     Ok(())
 }

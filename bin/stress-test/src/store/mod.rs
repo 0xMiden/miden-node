@@ -696,12 +696,25 @@ fn transaction_record_to_proto(
 // LOAD STATE
 // ================================================================================================
 
-pub async fn load_state(data_directory: &Path) {
-    let start = Instant::now();
-    // The writer is never started: this bench only measures load time, and dropping the un-started
-    // state releases the tree storage the writer owns.
-    let _loaded = State::load(data_directory, StorageOptions::default()).await.unwrap();
-    let elapsed = start.elapsed();
+pub async fn load_state(data_directory: &Path, iterations: usize) {
+    let mut durations = Vec::with_capacity(iterations);
+    for iteration in 0..iterations {
+        let start = Instant::now();
+        // The writer is never started: this bench only measures load time, and dropping the
+        // un-started state releases the tree storage the writer owns.
+        let loaded = State::load(data_directory, StorageOptions::default()).await.unwrap();
+        let elapsed = start.elapsed();
+        drop(loaded);
+
+        // The first iteration may pay RocksDB WAL recovery and a cold OS page cache; later
+        // iterations measure a clean warm restart.
+        println!("Iteration {iteration}: state loaded in {elapsed:?}");
+        durations.push(elapsed);
+    }
+
+    if durations.len() > 1 {
+        print_summary(&durations);
+    }
 
     // Get database path and run SQL commands to count records
     let data_directory =
@@ -727,6 +740,5 @@ pub async fn load_state(data_directory: &Path) {
             |output| String::from_utf8_lossy(&output.stdout).trim().to_string(),
         );
 
-    println!("State loaded in {elapsed:?}");
     println!("Database contains {account_count} accounts and {nullifier_count} nullifiers");
 }

@@ -1,0 +1,33 @@
+[package]
+authors.workspace      = true
+description            = "A binary for benchmarking the ntx-builder against very large network accounts"
+edition.workspace      = true
+exclude.workspace      = true
+homepage.workspace     = true
+keywords               = ["benchmark", "genesis", "miden"]
+license.workspace      = true
+name                   = "miden-large-account-benchmark"
+publish                = false
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow           = { workspace = true }
+clap             = { features = ["derive", "env"], workspace = true }
+fs-err           = { workspace = true }
+hex              = { workspace = true }
+humantime        = { workspace = true }
+miden-node-proto = { workspace = true }
+miden-protocol   = { features = ["std"], workspace = true }
+miden-standards  = { workspace = true }
+miden-tx         = { workspace = true }
+rand             = { workspace = true }
+rand_chacha      = { workspace = true }
+tokio            = { features = ["macros", "rt-multi-thread", "time"], workspace = true }
+tonic            = { workspace = true }
+url              = { workspace = true }

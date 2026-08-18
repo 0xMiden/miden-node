@@ -397,8 +397,8 @@ pub(crate) mod tests {
         operator_keys().remove(0)
     }
 
-    /// Regenerates the committed insecure Golden storage-key fixture under
-    /// `scripts/testdata/insecure-golden-storage-key/`.
+    /// Regenerates the committed insecure storage-key fixture under
+    /// `scripts/testdata/insecure-storage-key/`.
     ///
     /// The fixture holds a full two-of-three setup: one shared
     /// `setup-context.wire` and `public-key-set.wire`, plus a *distinct*
@@ -411,15 +411,15 @@ pub(crate) mod tests {
     /// Ignored by default so it never runs in CI; regenerate the fixture with:
     ///
     /// ```text
-    /// cargo test -p miden-validator --lib storage_key::tests::write_insecure_golden_fixture -- --ignored
+    /// cargo test -p miden-validator --lib storage_key::tests::write_insecure_storage_key_fixture -- --ignored
     /// ```
     #[test]
     #[ignore = "writes fixture files; run explicitly to regenerate"]
-    fn write_insecure_golden_fixture() {
+    fn write_insecure_storage_key_fixture() {
         use std::path::Path;
 
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../scripts/testdata/insecure-golden-storage-key");
+            .join("../../scripts/testdata/insecure-storage-key");
         fs_err::create_dir_all(&dir).unwrap();
 
         let (setup_context, public_key_set, _) = values_for(participant(1));

@@ -30,7 +30,7 @@ services:
     environment:
       MIDEN_FAUCET_API_PUBLIC_URL: http://faucet.localhost/api
       MIDEN_FAUCET_ENABLE_OTEL: "true"
-      MIDEN_FAUCET_IMPORT_ACCOUNT_PATH: /data/accounts/faucet_miden.mac
+      MIDEN_FAUCET_IMPORT_OPERATOR_ACCOUNT_PATH: /data/accounts/faucet_operator.mac
       MIDEN_FAUCET_NETWORK: localhost
       MIDEN_FAUCET_NODE_URL: http://rpc.localhost
       MIDEN_FAUCET_REMOTE_TX_PROVER_URL: http://tx-prover:50051

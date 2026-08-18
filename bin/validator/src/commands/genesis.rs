@@ -44,14 +44,16 @@ pub fn generate(
     for item in secrets.as_account_files(&genesis_state) {
         let AccountFileWithName { account_file, name } = item?;
         let account_path = accounts_directory.join(name);
-        // Do not override existing keys.
+        // Do not override existing account files.
         fs_err::OpenOptions::new()
             .create_new(true)
             .write(true)
             .open(&account_path)
-            .context("key file already exists")?;
+            .context("account file already exists")?;
         account_file.write(account_path)?;
     }
+
+    let native_faucet_id = genesis_state.fee_parameters.fee_faucet_id();
 
     let genesis_block = genesis_state.into_block().context("failed to build the genesis block")?;
 
@@ -60,6 +62,9 @@ pub fn generate(
         .context("failed to write genesis block")?;
 
     println!("Genesis block written to {}.", genesis_block_path.display());
+    println!();
+    println!("Native faucet account id: {}", native_faucet_id.to_hex());
+    println!();
     println!("Seed each validator's database with:");
     println!();
     println!(

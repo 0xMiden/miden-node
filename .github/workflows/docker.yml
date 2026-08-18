@@ -235,7 +235,8 @@ jobs:
           persist-credentials: false
 
       - name: Dry-run Compose publishing
-        uses: ./.github/actions/publish-compose
+        # Pin independently so the checked-out caller-provided ref cannot replace this action's code.
+        uses: 0xMiden/node/.github/actions/publish-compose@3df9adbec870c8039d38cc946b2dc79ec9cf7e59
         env:
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-node:${{ needs.preflight.outputs.tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-validator:${{ needs.preflight.outputs.tag }}
@@ -340,7 +341,8 @@ jobs:
           password: ${{ github.token }}
 
       - name: Publish Compose application
-        uses: ./.github/actions/publish-compose
+        # Pin independently so the checked-out caller-provided ref cannot replace this action's code.
+        uses: 0xMiden/node/.github/actions/publish-compose@3df9adbec870c8039d38cc946b2dc79ec9cf7e59
         env:
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-node:${{ needs.preflight.outputs.immutable_tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-validator:${{ needs.preflight.outputs.immutable_tag }}

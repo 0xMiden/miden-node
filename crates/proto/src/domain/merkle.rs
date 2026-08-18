@@ -365,25 +365,7 @@ impl TryFrom<proto::primitives::PartialSmt> for UniqueNodes {
 
 impl From<PartialSmt> for proto::primitives::PartialSmt {
     fn from(partial_smt: PartialSmt) -> Self {
-        let mut unique_nodes = partial_smt.to_unique_nodes();
-
-        // Workaround for a PartialSmt issue: https://github.com/0xMiden/miden-vm/issues/3470.
-        if PartialSmt::from_unique_nodes(unique_nodes.clone()).is_err() {
-            for (index, node) in partial_smt.inner_node_indices() {
-                if index.depth() == 0 {
-                    continue;
-                }
-
-                let level = unique_nodes.nodes.entry(index.depth()).or_default();
-                if !level.iter().any(|(position, _)| *position == index.position()) {
-                    level.push((index.position(), NodeValue::Present(node.hash())));
-                }
-            }
-
-            debug_assert!(PartialSmt::from_unique_nodes(unique_nodes.clone()).is_ok());
-        }
-
-        unique_nodes.into()
+        partial_smt.to_unique_nodes().into()
     }
 }
 
@@ -402,34 +384,6 @@ mod tests {
     use miden_protocol::crypto::merkle::smt::Smt;
 
     use super::*;
-
-    // Test if the PartialSmt::from_unique_nodes() issue is still there:
-    // https://github.com/0xMiden/miden-vm/issues/3470
-    //
-    // We can remove our workaround from the conversion above once that has been
-    // fixed.
-    #[test]
-    fn unique_nodes_cannot_reconstruct_mixed_inclusion_and_exclusion_branches() {
-        let included_key = Word::from([1, 2, 3, 4u32]);
-        let other_key = Word::from([5, 6, 7, 8u32]);
-        let missing_key = Word::from([9, 10, 11, 12u32]);
-        let included_value = Word::from([13, 14, 15, 16u32]);
-        let other_value = Word::from([17, 18, 19, 20u32]);
-        let smt =
-            Smt::with_entries([(included_key, included_value), (other_key, other_value)]).unwrap();
-        let partial_smt =
-            PartialSmt::from_proofs([smt.open(&included_key), smt.open(&missing_key)]).unwrap();
-
-        // The partial tree itself is valid and tracks both the inclusion and exclusion.
-        assert_eq!(partial_smt.get_value(&included_key).unwrap(), included_value);
-        assert_eq!(partial_smt.get_value(&missing_key).unwrap(), Word::empty());
-
-        let err = PartialSmt::from_unique_nodes(partial_smt.to_unique_nodes()).expect_err(
-            "mixed inclusion and exclusion branches should expose the reconstruction bug",
-        );
-
-        assert!(err.to_string().contains("not found but is required"));
-    }
 
     #[test]
     fn partial_smt_round_trip() {

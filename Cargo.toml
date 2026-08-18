@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "bin/benchmark",
+  "bin/large-account-benchmark",
   "bin/network-monitor",
   "bin/node",
   "bin/ntx-builder",

@@ -5,6 +5,7 @@ use assert_matches::assert_matches;
 use miden_protocol::ONE;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
+use miden_protocol::utils::serde::Deserializable;
 
 use super::*;
 
@@ -18,11 +19,12 @@ fn write_toml_file(dir: &Path, content: &str) -> std::path::PathBuf {
     path
 }
 
-/// A validator set holding only the insecure development key, for tests exercising unrelated config
-/// features.
+/// A validator set holding a single fixed test key, for tests exercising unrelated config features.
 fn dev_validator_keys() -> ValidatorKeys {
-    ValidatorKeys::new(vec![miden_node_utils::genesis::insecure_validator_public_key()])
-        .expect("a single development key is a valid validator set")
+    let key = SigningKey::read_from_bytes(&[7; 32])
+        .expect("test signing key should decode")
+        .public_key();
+    ValidatorKeys::new(vec![key]).expect("a single test key is a valid validator set")
 }
 
 #[test]

@@ -37,9 +37,8 @@ after genesis. Each validator operator first prints their public key and sends i
 miden-validator pubkey --signing-key.kms-id <validator-N-kms-key-id>
 ```
 
-The full validator set is passed on the command line, as one `--validator.key` flag per validator. Passing `--config`
-requires an explicit validator set. Only when neither flag is given does the set fall back to the public key of the
-predefined, insecure development signing key — never rely on that fallback outside local development.
+The full validator set is passed on the command line, as one `--validator.key` flag per validator. There is no default
+set: the flag is required.
 
 **One** operator then runs `genesis` with the genesis configuration and the collected keys. Building the genesis block
 requires no signing key:
@@ -102,10 +101,10 @@ Each validator operator's own KMS key ID must be used when that operator starts 
   <TabItem value="unofficial" label="Unofficial network">
 
 **One** operator builds the genesis block; no signing key is needed. The genesis header commits to the full validator
-set, passed as one `--validator.key` flag per validator. Each validator operator prints their public key with
-`miden-validator pubkey --signing-key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator. Passing
-`--config` requires an explicit validator set. Only when neither flag is given does the set fall back to the public key
-of the predefined, insecure development signing key — never rely on that fallback outside local development.
+set, passed as one `--validator.key` flag per validator; there is no default set. Each validator operator generates a
+key-pair with `miden-validator keygen` (or prints the public key of an existing secret with
+`miden-validator pubkey --signing-key.hex <validator-N-key-hex>`) and sends the public key to the bootstrapping
+operator.
 
 ```bash
 miden-validator genesis \
@@ -162,8 +161,7 @@ drops out or any transcript differs, discard the incomplete ceremony and start a
 sessions. See [storage key setup](./validator.md#storage-key-setup) for the commands and file rules.
 
 Bootstrap takes no transaction encryption key: that key is configured separately when the validator is started, and
-nothing cross-checks it against the genesis block. A validator started without one falls back to a publicly known
-insecure default, which after bootstrap means every submission on the network is encrypted to a key anyone can read. See
-[Validator](./validator.md) for how to provision it.
+nothing cross-checks it against the genesis block. Every validator must be started with the same encryption key; the
+validator refuses to start without one. See [Validator](./validator.md) for how to provision it.
 
 <!-- markdownlint-enable MD033 MD041 -->

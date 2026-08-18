@@ -65,6 +65,9 @@ pub async fn bootstrap(
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+    use miden_protocol::utils::serde::Deserializable;
+
     use super::*;
 
     #[tokio::test]
@@ -74,11 +77,14 @@ mod tests {
         let accounts_directory = root.path().join("accounts");
         let data_directory = root.path().join("data");
 
+        let validator_key = SigningKey::read_from_bytes(&[7; 32])
+            .expect("test signing key should decode")
+            .public_key();
         super::super::genesis::generate(
             &genesis_directory,
             &accounts_directory,
             None,
-            vec![miden_node_utils::genesis::insecure_validator_public_key()],
+            vec![validator_key],
         )
         .expect("genesis should complete");
 

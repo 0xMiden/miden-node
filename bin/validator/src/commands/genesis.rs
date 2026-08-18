@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::fs::ensure_empty_directory;
-use miden_node_utils::genesis::insecure_validator_public_key;
 use miden_protocol::block::ValidatorKeys;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::utils::serde::Serializable;
@@ -33,12 +32,6 @@ pub fn generate(
         ensure_empty_directory(directory)?;
     }
 
-    if validator_keys.contains(&insecure_validator_public_key()) {
-        eprintln!(
-            "WARNING: the genesis validator set contains the predefined, insecure development \
-             key; configure --validator.key for production deployments."
-        );
-    }
     let validator_keys =
         ValidatorKeys::new(validator_keys).context("invalid genesis validator set")?;
 

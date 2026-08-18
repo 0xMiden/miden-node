@@ -20,13 +20,25 @@ use crate::db::Db;
 use crate::errors::StateInitializationError;
 use crate::proven_tip::ProvenTipWriter;
 use crate::state::loader::{
-    ACCOUNT_STATE_FOREST_STORAGE_DIR, ACCOUNT_TREE_STORAGE_DIR, AccountForestLoader,
-    NULLIFIER_TREE_STORAGE_DIR, TreeStorage, TreeStorageLoader, load_mmr,
-    verify_account_state_forest_consistency, verify_tree_consistency,
+    ACCOUNT_STATE_FOREST_STORAGE_DIR,
+    ACCOUNT_TREE_STORAGE_DIR,
+    AccountForestLoader,
+    NULLIFIER_TREE_STORAGE_DIR,
+    TreeStorage,
+    TreeStorageLoader,
+    load_mmr,
+    verify_account_state_forest_consistency,
+    verify_tree_consistency,
 };
 use crate::state::writer::{WriteRequest, WriteWorker, WriterTask};
 use crate::state::{
-    BlockCache, BlockWriter, ProofCache, ProofWriter, SnapshotGuard, State, StateSnapshot,
+    BlockCache,
+    BlockWriter,
+    ProofCache,
+    ProofWriter,
+    SnapshotGuard,
+    State,
+    StateSnapshot,
 };
 use crate::{COMPONENT, DataDirectory, DatabaseOptions};
 
@@ -79,9 +91,7 @@ impl LoadedState {
             block_store: Arc::clone(&state.block_store),
             write_tx: self.write_tx,
         };
-        let proof_writer = ProofWriter {
-            state: Arc::clone(&state),
-        };
+        let proof_writer = ProofWriter { state: Arc::clone(&state) };
         (state, block_writer, proof_writer, WriterTask(writer_task))
     }
 }
@@ -153,11 +163,8 @@ impl State {
             TreeStorage::create(data_path, &account_storage_config, ACCOUNT_TREE_STORAGE_DIR)?;
         let account_tree = account_storage.load_account_tree(&mut db).await?;
 
-        let nullifier_storage = TreeStorage::create(
-            data_path,
-            &nullifier_storage_config,
-            NULLIFIER_TREE_STORAGE_DIR,
-        )?;
+        let nullifier_storage =
+            TreeStorage::create(data_path, &nullifier_storage_config, NULLIFIER_TREE_STORAGE_DIR)?;
         let nullifier_tree = nullifier_storage.load_nullifier_tree(&mut db).await?;
 
         // Verify that tree roots match the expected roots from the database. This catches any
@@ -172,9 +179,7 @@ impl State {
             &forest_storage_config,
             ACCOUNT_STATE_FOREST_STORAGE_DIR,
         )?;
-        let forest = forest_backend
-            .load_account_state_forest(&mut db, latest_block_num)
-            .await?;
+        let forest = forest_backend.load_account_state_forest(&mut db, latest_block_num).await?;
         verify_account_state_forest_consistency(&forest, &mut db).await?;
 
         let db = Arc::new(db);
@@ -239,11 +244,7 @@ impl State {
             proof_cache,
         };
 
-        Ok(LoadedState {
-            state,
-            writer: block_writer,
-            write_tx,
-        })
+        Ok(LoadedState { state, writer: block_writer, write_tx })
     }
 
     /// Loads the state with default options and starts its write worker, detaching the worker

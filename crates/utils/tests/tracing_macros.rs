@@ -45,10 +45,7 @@ struct FieldVisitor(Arc<Mutex<BTreeMap<String, String>>>);
 
 impl Visit for FieldVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(field.name().to_owned(), format!("{value:?}"));
+        self.0.lock().unwrap().insert(field.name().to_owned(), format!("{value:?}"));
     }
 }
 
@@ -102,10 +99,7 @@ fn records_explicit_and_inferred_fields() {
     );
 }
 
-#[miden_instrument(
-    target = "miden-node-utils-test",
-    name = "records_fields_from_multiple_calls"
-)]
+#[miden_instrument(target = "miden-node-utils-test", name = "records_fields_from_multiple_calls")]
 fn records_fields_from_multiple_calls() {
     let block_number = 14;
     let tx_id = "multi-call-tx";
@@ -134,10 +128,7 @@ fn explicit_fields_can_be_recorded_after_span_creation() {
 
     tracing::subscriber::with_default(subscriber, records_explicit_fields);
 
-    assert_eq!(
-        recorded.get("account.id").as_deref(),
-        Some("explicit-account")
-    );
+    assert_eq!(recorded.get("account.id").as_deref(), Some("explicit-account"));
     assert_eq!(recorded.get("account.updated").as_deref(), Some("true"));
 }
 
@@ -150,10 +141,7 @@ fn explicit_argument_fields_are_recorded_at_span_creation() {
         records_explicit_argument_field("argument-account");
     });
 
-    assert_eq!(
-        recorded.get("account.id").as_deref(),
-        Some("argument-account")
-    );
+    assert_eq!(recorded.get("account.id").as_deref(), Some("argument-account"));
 }
 
 #[test]
@@ -176,10 +164,7 @@ fn multiple_span_record_macros_can_record_fields_after_span_creation() {
     tracing::subscriber::with_default(subscriber, records_fields_from_multiple_calls);
 
     assert_eq!(recorded.get("block.number").as_deref(), Some("14"));
-    assert_eq!(
-        recorded.get("transaction.id").as_deref(),
-        Some("multi-call-tx")
-    );
+    assert_eq!(recorded.get("transaction.id").as_deref(), Some("multi-call-tx"));
 }
 
 #[test]

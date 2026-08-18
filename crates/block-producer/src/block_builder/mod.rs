@@ -9,7 +9,11 @@ use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
 use miden_protocol::block::{
-    BlockInputs, BlockNumber, BlockSignatures, ProposedBlock, SignedBlock,
+    BlockInputs,
+    BlockNumber,
+    BlockSignatures,
+    ProposedBlock,
+    SignedBlock,
 };
 use miden_protocol::transaction::TransactionHeader;
 use tokio::time::Duration;
@@ -86,22 +90,15 @@ impl BlockBuilder {
             //
             // No need for error logging since this is handled inside the function.
             match self.build_block(&mempool).await {
-                Err(
-                    err @ BuildBlockError::Desync {
-                        local_chain_tip, ..
-                    },
-                ) => {
+                Err(err @ BuildBlockError::Desync { local_chain_tip, .. }) => {
                     return Err(err).with_context(|| {
-                        format!(
-                            "fatal error while building block {}",
-                            local_chain_tip.child()
-                        )
+                        format!("fatal error while building block {}", local_chain_tip.child())
                     });
-                }
+                },
                 Err(err @ BuildBlockError::MempoolPoisoned(_)) => {
                     return Err(err).context("fatal error while accessing mempool");
-                }
-                Err(_) | Ok(()) => {}
+                },
+                Err(_) | Ok(()) => {},
             }
         }
     }
@@ -179,10 +176,7 @@ impl BlockBuilder {
         name = "block_builder.select_block",
     )]
     fn select_block(mempool: &SharedMempool) -> Result<SelectedBlock, BuildBlockError> {
-        Ok(mempool
-            .lock()
-            .map_err(BuildBlockError::MempoolPoisoned)?
-            .select_block())
+        Ok(mempool.lock().map_err(BuildBlockError::MempoolPoisoned)?.select_block())
     }
 
     /// Fetches block inputs from the store for the [`SelectedBlock`].
@@ -210,10 +204,7 @@ impl BlockBuilder {
         &self,
         selected_block: SelectedBlock,
     ) -> Result<BlockBatchesAndInputs, BuildBlockError> {
-        let SelectedBlock {
-            block_number,
-            batches,
-        } = selected_block;
+        let SelectedBlock { block_number, batches } = selected_block;
 
         let batch_iter = batches.iter();
 
@@ -230,17 +221,12 @@ impl BlockBuilder {
                 .cloned()
                 .filter_map(|note| note.header().map(|header| header.id().as_word()))
         });
-        let block_references_iter = batch_iter
-            .clone()
-            .map(Deref::deref)
-            .map(ProvenBatch::reference_block_num);
-        let account_ids_iter = batch_iter
-            .clone()
-            .map(Deref::deref)
-            .flat_map(ProvenBatch::updated_accounts);
-        let created_nullifiers_iter = batch_iter
-            .map(Deref::deref)
-            .flat_map(ProvenBatch::created_nullifiers);
+        let block_references_iter =
+            batch_iter.clone().map(Deref::deref).map(ProvenBatch::reference_block_num);
+        let account_ids_iter =
+            batch_iter.clone().map(Deref::deref).flat_map(ProvenBatch::updated_accounts);
+        let created_nullifiers_iter =
+            batch_iter.map(Deref::deref).flat_map(ProvenBatch::created_nullifiers);
 
         let inputs = self
             .state
@@ -289,10 +275,7 @@ impl BlockBuilder {
         let proposed_block =
             ProposedBlock::new(inputs, batches).map_err(BuildBlockError::ProposeBlockFailed)?;
 
-        Ok(ProposedBlockAndInputs {
-            proposed_block,
-            block_inputs,
-        })
+        Ok(ProposedBlockAndInputs { proposed_block, block_inputs })
     }
 
     #[miden_instrument(
@@ -304,10 +287,7 @@ impl BlockBuilder {
         &self,
         proposal: ProposedBlockAndInputs,
     ) -> Result<BlockCommit, BuildBlockError> {
-        let ProposedBlockAndInputs {
-            proposed_block,
-            block_inputs,
-        } = proposal;
+        let ProposedBlockAndInputs { proposed_block, block_inputs } = proposal;
 
         // Concurrently build the block and validate it via the validators.
         let build_result = spawn_blocking_in_current_span({
@@ -400,12 +380,8 @@ impl BlockBuilder {
         );
 
         if num_transactions > 0 {
-            let transaction_ids = signed_block
-                .body()
-                .transactions()
-                .as_slice()
-                .iter()
-                .map(TransactionHeader::id);
+            let transaction_ids =
+                signed_block.body().transactions().as_slice().iter().map(TransactionHeader::id);
             tracing::debug!(target: LOG_TARGET, transactions = %format_array(transaction_ids), "Included transactions");
         }
 
@@ -415,10 +391,7 @@ impl BlockBuilder {
             .map_err(StoreError::ApplyBlockFailed)
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        mempool
-            .lock()
-            .map_err(BuildBlockError::MempoolPoisoned)?
-            .commit_block(&header);
+        mempool.lock().map_err(BuildBlockError::MempoolPoisoned)?.commit_block(&header);
 
         Ok(())
     }
@@ -428,10 +401,7 @@ impl BlockBuilder {
         name = "block_builder.rollback_block",
     )]
     fn rollback_block(mempool: &SharedMempool, block: BlockNumber) -> Result<(), BuildBlockError> {
-        mempool
-            .lock()
-            .map_err(BuildBlockError::MempoolPoisoned)?
-            .rollback_block(block);
+        mempool.lock().map_err(BuildBlockError::MempoolPoisoned)?.rollback_block(block);
         Ok(())
     }
 }
@@ -459,13 +429,7 @@ impl SelectedBlock {
             (Vec::new(), Vec::new(), 0),
             |(mut batch_ids, mut tx_ids, tx_count), batch| {
                 let tx_count = tx_count + batch.transactions().as_slice().len();
-                tx_ids.extend(
-                    batch
-                        .transactions()
-                        .as_slice()
-                        .iter()
-                        .map(TransactionHeader::id),
-                );
+                tx_ids.extend(batch.transactions().as_slice().iter().map(TransactionHeader::id));
                 batch_ids.push(batch.id());
                 (batch_ids, tx_ids, tx_count)
             },

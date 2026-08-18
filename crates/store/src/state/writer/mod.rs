@@ -114,9 +114,7 @@ impl BlockWriter {
     /// Panics if the writer task panicked.
     pub async fn stop(self, writer_task: WriterTask) {
         drop(self);
-        writer_task
-            .await
-            .expect("write worker task should not panic");
+        writer_task.await.expect("write worker task should not panic");
     }
 
     /// Apply changes of a new block to the DB and in-memory data structures.
@@ -132,10 +130,7 @@ impl BlockWriter {
     pub async fn apply_block(&mut self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
         let (result_tx, result_rx) = oneshot::channel();
         self.write_tx
-            .send(WriteRequest {
-                signed_block,
-                result_tx,
-            })
+            .send(WriteRequest { signed_block, result_tx })
             .await
             .map_err(|e| ApplyBlockError::WriterTaskSendFailed(e.as_report()))?;
         result_rx.await?

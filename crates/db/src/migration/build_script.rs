@@ -81,17 +81,9 @@ impl Migrator {
         let migrations = discover_migrations(&migration_dir)?;
         fs::write(
             &out_path,
-            render_migrator(
-                &migrations.retired_migrations,
-                &migrations.active_migrations,
-            )?,
+            render_migrator(&migrations.retired_migrations, &migrations.active_migrations)?,
         )
-        .with_context(|| {
-            format!(
-                "failed to write generated migrator to {}",
-                out_path.display()
-            )
-        })?;
+        .with_context(|| format!("failed to write generated migrator to {}", out_path.display()))?;
         Ok(out_path)
     }
 }
@@ -144,10 +136,7 @@ fn discover_migrations(migration_dir: &Path) -> Result<DiscoveredMigrations> {
         migration_dir.display()
     );
 
-    Ok(DiscoveredMigrations {
-        retired_migrations,
-        active_migrations,
-    })
+    Ok(DiscoveredMigrations { retired_migrations, active_migrations })
 }
 
 fn discover_retired_migrations(migration_dir: &Path) -> Result<Vec<SqlMigration>> {
@@ -166,11 +155,7 @@ fn discover_retired_migrations(migration_dir: &Path) -> Result<Vec<SqlMigration>
     let mut migrations = Vec::new();
     for entry in read_dir_sorted(&retired_dir)? {
         let path = entry.path();
-        ensure!(
-            path.is_file(),
-            "retired migration entry is not a file: {}",
-            path.display()
-        );
+        ensure!(path.is_file(), "retired migration entry is not a file: {}", path.display());
         ensure!(
             path.extension() == Some(OsStr::new("sql")),
             "retired migration file must use .sql extension: {}",
@@ -184,10 +169,7 @@ fn discover_retired_migrations(migration_dir: &Path) -> Result<Vec<SqlMigration>
             "duplicate retired migration prefix {prefix:?}"
         );
 
-        migrations.push(SqlMigration {
-            name,
-            path: absolute_path(&path)?,
-        });
+        migrations.push(SqlMigration { name, path: absolute_path(&path)? });
     }
 
     Ok(migrations)
@@ -202,11 +184,7 @@ fn discover_active_migrations(migration_dir: &Path) -> Result<Vec<ActiveMigratio
             continue;
         }
 
-        ensure!(
-            path.is_file(),
-            "active migration entry is not a file: {}",
-            path.display()
-        );
+        ensure!(path.is_file(), "active migration entry is not a file: {}", path.display());
 
         let name = file_stem(&path)?;
         let prefix = migration_prefix(&name, &path)?;
@@ -217,11 +195,9 @@ fn discover_active_migrations(migration_dir: &Path) -> Result<Vec<ActiveMigratio
 
         match path.extension().and_then(OsStr::to_str) {
             Some("sql") => {
-                migrations.push(ActiveMigration::Sql(SqlMigration {
-                    name,
-                    path: absolute_path(&path)?,
-                }));
-            }
+                migrations
+                    .push(ActiveMigration::Sql(SqlMigration { name, path: absolute_path(&path)? }));
+            },
             Some("rs") => {
                 let module_ident = module_ident(&name)?;
 
@@ -230,13 +206,10 @@ fn discover_active_migrations(migration_dir: &Path) -> Result<Vec<ActiveMigratio
                     module_ident,
                     path: absolute_path(&path)?,
                 }));
-            }
+            },
             _ => {
-                bail!(
-                    "active migration file must use .sql or .rs extension: {}",
-                    path.display()
-                );
-            }
+                bail!("active migration file must use .sql or .rs extension: {}", path.display());
+            },
         }
     }
 
@@ -293,14 +266,12 @@ fn render_migrator(
                 let name = format!("{:?}", migration.name);
                 let path = format!("{:?}", rust_path(&migration.path)?);
                 function.line(format!("    .push_sql({name}, include_str!({path}))?"));
-            }
+            },
             ActiveMigration::Code(migration) => {
                 let name = format!("{:?}", migration.name);
-                function.line(format!(
-                    "    .push_code({name}, {}::migrate)?",
-                    migration.module_ident
-                ));
-            }
+                function
+                    .line(format!("    .push_code({name}, {}::migrate)?", migration.module_ident));
+            },
         }
     }
 
@@ -317,10 +288,7 @@ fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
         .with_context(|| format!("failed to read migration directory {}", dir.display()))?
         .collect::<std::result::Result<Vec<_>, _>>()
         .with_context(|| {
-            format!(
-                "failed to read migration directory entry in {}",
-                dir.display()
-            )
+            format!("failed to read migration directory entry in {}", dir.display())
         })?;
     entries.sort_by_key(fs::DirEntry::file_name);
     Ok(entries)
@@ -332,15 +300,9 @@ fn absolute_path(path: &Path) -> Result<PathBuf> {
 }
 
 fn file_stem(path: &Path) -> Result<String> {
-    path.file_stem()
-        .and_then(OsStr::to_str)
-        .map(str::to_owned)
-        .with_context(|| {
-            format!(
-                "migration file has invalid UTF-8 stem or no stem: {}",
-                path.display()
-            )
-        })
+    path.file_stem().and_then(OsStr::to_str).map(str::to_owned).with_context(|| {
+        format!("migration file has invalid UTF-8 stem or no stem: {}", path.display())
+    })
 }
 
 fn migration_prefix<'a>(name: &'a str, path: &Path) -> Result<&'a str> {
@@ -407,33 +369,21 @@ mod tests {
         let root = unique_temp_dir("renders_migrations_in_lexicographic_order")?;
         fs::create_dir_all(root.join("retired"))?;
         fs::create_dir_all(root.join("003_backfill"))?;
-        fs::write(
-            root.join("retired").join("001_legacy.sql"),
-            "CREATE TABLE t (id INTEGER);",
-        )?;
+        fs::write(root.join("retired").join("001_legacy.sql"), "CREATE TABLE t (id INTEGER);")?;
         fs::write(root.join("002_indexes.sql"), "CREATE INDEX idx ON t(id);")?;
         fs::write(
             root.join("003_backfill.rs"),
             "pub fn migrate(_: &rusqlite::Transaction<'_>) -> anyhow::Result<()> { Ok(()) }",
         )?;
-        fs::write(
-            root.join("003_backfill").join("fixture.bin"),
-            "supporting data",
-        )?;
+        fs::write(root.join("003_backfill").join("fixture.bin"), "supporting data")?;
 
         let retired = discover_retired_migrations(&root)?;
         let active = discover_active_migrations(&root)?;
         let rendered = render_migrator(&retired, &active)?;
 
-        let legacy = rendered
-            .find("\"001_legacy\"")
-            .expect("legacy migration is rendered");
-        let indexes = rendered
-            .find("\"002_indexes\"")
-            .expect("index migration is rendered");
-        let backfill = rendered
-            .find("\"003_backfill\"")
-            .expect("code migration is rendered");
+        let legacy = rendered.find("\"001_legacy\"").expect("legacy migration is rendered");
+        let indexes = rendered.find("\"002_indexes\"").expect("index migration is rendered");
+        let backfill = rendered.find("\"003_backfill\"").expect("code migration is rendered");
 
         assert!(legacy < indexes);
         assert!(indexes < backfill);
@@ -465,10 +415,7 @@ mod tests {
     fn rejects_invalid_retired_migration_entries() -> Result<()> {
         let root = unique_temp_dir("rejects_invalid_retired_migration_entries")?;
         fs::create_dir_all(root.join("retired"))?;
-        fs::write(
-            root.join("retired").join("001_init.txt"),
-            "CREATE TABLE t (id INTEGER);",
-        )?;
+        fs::write(root.join("retired").join("001_init.txt"), "CREATE TABLE t (id INTEGER);")?;
 
         let err =
             discover_retired_migrations(&root).expect_err("invalid retired entry should fail");
@@ -506,10 +453,7 @@ mod tests {
     fn rejects_retired_migrations_without_three_digit_prefix() -> Result<()> {
         let root = unique_temp_dir("rejects_retired_migrations_without_three_digit_prefix")?;
         fs::create_dir_all(root.join("retired"))?;
-        fs::write(
-            root.join("retired").join("init.sql"),
-            "CREATE TABLE t (id INTEGER);",
-        )?;
+        fs::write(root.join("retired").join("init.sql"), "CREATE TABLE t (id INTEGER);")?;
 
         let err = discover_retired_migrations(&root).expect_err("invalid prefix should fail");
 
@@ -526,10 +470,7 @@ mod tests {
 
         let err = discover_active_migrations(&root).expect_err("duplicate prefix should fail");
 
-        assert!(
-            err.to_string()
-                .contains("duplicate active migration prefix")
-        );
+        assert!(err.to_string().contains("duplicate active migration prefix"));
         fs::remove_dir_all(root)?;
         Ok(())
     }
@@ -538,21 +479,12 @@ mod tests {
     fn rejects_duplicate_retired_migration_prefixes() -> Result<()> {
         let root = unique_temp_dir("rejects_duplicate_retired_migration_prefixes")?;
         fs::create_dir_all(root.join("retired"))?;
-        fs::write(
-            root.join("retired").join("001_init.sql"),
-            "CREATE TABLE t (id INTEGER);",
-        )?;
-        fs::write(
-            root.join("retired").join("001_indexes.sql"),
-            "CREATE INDEX idx ON t(id);",
-        )?;
+        fs::write(root.join("retired").join("001_init.sql"), "CREATE TABLE t (id INTEGER);")?;
+        fs::write(root.join("retired").join("001_indexes.sql"), "CREATE INDEX idx ON t(id);")?;
 
         let err = discover_retired_migrations(&root).expect_err("duplicate prefix should fail");
 
-        assert!(
-            err.to_string()
-                .contains("duplicate retired migration prefix")
-        );
+        assert!(err.to_string().contains("duplicate retired migration prefix"));
         fs::remove_dir_all(root)?;
         Ok(())
     }

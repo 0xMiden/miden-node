@@ -8,7 +8,10 @@ use tonic::Status;
 use tracing::debug;
 
 use super::{
-    RpcInvalidBlockRange, RpcService, check, database_error_to_status,
+    RpcInvalidBlockRange,
+    RpcService,
+    check,
+    database_error_to_status,
     invalid_block_range_to_status,
 };
 use crate::{COMPONENT, LOG_TARGET};
@@ -68,10 +71,8 @@ impl proto::server::rpc_api::SyncTransactions for RpcService {
                     .map_err(|err| database_error_to_status(&err))
             })
             .await?;
-        let transactions = transaction_records_db
-            .into_iter()
-            .map(transaction_record_to_proto)
-            .collect();
+        let transactions =
+            transaction_records_db.into_iter().map(transaction_record_to_proto).collect();
 
         Ok(proto::rpc::SyncTransactionsResponse {
             pagination_info: Some(proto::rpc::PaginationInfo {
@@ -108,20 +109,8 @@ fn transaction_record_to_proto(record: TransactionRecord) -> proto::rpc::Transac
             account_id: Some(record.header.account_id().into()),
             initial_state_commitment: Some(record.header.initial_state_commitment().into()),
             final_state_commitment: Some(record.header.final_state_commitment().into()),
-            input_notes: record
-                .header
-                .input_notes()
-                .iter()
-                .cloned()
-                .map(Into::into)
-                .collect(),
-            output_notes: record
-                .header
-                .output_notes()
-                .iter()
-                .copied()
-                .map(Into::into)
-                .collect(),
+            input_notes: record.header.input_notes().iter().cloned().map(Into::into).collect(),
+            output_notes: record.header.output_notes().iter().copied().map(Into::into).collect(),
         }),
         block_num: record.block_num.as_u32(),
         output_note_proofs,

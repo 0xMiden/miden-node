@@ -38,9 +38,7 @@ impl MigrationEntry for SqlMigration {
 
 impl fmt::Debug for SqlMigration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SqlMigration")
-            .field("name", &self.name)
-            .finish_non_exhaustive()
+        f.debug_struct("SqlMigration").field("name", &self.name).finish_non_exhaustive()
     }
 }
 
@@ -132,10 +130,7 @@ pub(super) fn apply_migration_and_verify_schema(
     expected: SchemaHash,
 ) -> Result<()> {
     apply_migration_transaction(conn, version, migration, |actual| {
-        ensure!(
-            actual == expected,
-            "schema hash mismatch: expected {expected}, got {actual}"
-        );
+        ensure!(actual == expected, "schema hash mismatch: expected {expected}, got {actual}");
         Ok(())
     })
 }
@@ -148,9 +143,7 @@ fn apply_migration_transaction<T>(
 ) -> Result<T> {
     let tx = conn.transaction().context("failed to start transaction")?;
 
-    migration
-        .execute_migration(&tx)
-        .context("failed to execute migration")?;
+    migration.execute_migration(&tx).context("failed to execute migration")?;
     let schema_hash = SchemaHash::new(&tx).context("failed to compute schema hash")?;
     let result = verify_hash(schema_hash)?;
     schema::set_version(&tx, version).context("failed to update user_version")?;

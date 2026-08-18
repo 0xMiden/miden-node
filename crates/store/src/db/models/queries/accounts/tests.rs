@@ -8,10 +8,27 @@ use miden_node_utils::fee::test_fee_params;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountIdVersion, AccountPatch,
-    AccountStorage, AccountStorageHeader, AccountStoragePatch, AccountType, AccountUpdateDetails,
-    AccountVaultPatch, AssetCallbackFlag, StorageMap, StorageMapKey, StorageMapPatch, StorageSlot,
-    StorageSlotContent, StorageSlotName, StorageSlotPatch, StorageSlotType,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountIdVersion,
+    AccountPatch,
+    AccountStorage,
+    AccountStorageHeader,
+    AccountStoragePatch,
+    AccountType,
+    AccountUpdateDetails,
+    AccountVaultPatch,
+    AssetCallbackFlag,
+    StorageMap,
+    StorageMapKey,
+    StorageMapPatch,
+    StorageSlot,
+    StorageSlotContent,
+    StorageSlotName,
+    StorageSlotPatch,
+    StorageSlotType,
 };
 use miden_protocol::asset::{NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::block::{BlockAccountUpdate, BlockHeader, BlockNumber, ValidatorKeys};
@@ -65,11 +82,7 @@ fn reconstruct_account_storage_at_block(
     // Query all map values for this account up to and including this block.
     let map_values: Vec<(i64, String, Vec<u8>, Vec<u8>)> =
         SelectDsl::select(t::table, (t::block_num, t::slot_name, t::key, t::value))
-            .filter(
-                t::account_id
-                    .eq(&account_id_bytes)
-                    .and(t::block_num.le(block_num_sql)),
-            )
+            .filter(t::account_id.eq(&account_id_bytes).and(t::block_num.le(block_num_sql)))
             .order((t::slot_name.asc(), t::key.asc(), t::block_num.desc()))
             .load(conn)?;
 
@@ -88,10 +101,7 @@ fn reconstruct_account_storage_at_block(
     let mut map_entries_by_slot: BTreeMap<StorageSlotName, Vec<(StorageMapKey, Word)>> =
         BTreeMap::new();
     for ((slot_name, key), value) in latest_map_entries {
-        map_entries_by_slot
-            .entry(slot_name)
-            .or_default()
-            .push((key, value));
+        map_entries_by_slot.entry(slot_name).or_default().push((key, value));
     }
 
     // Reconstruct StorageSlots from header slots + map entries
@@ -100,14 +110,12 @@ fn reconstruct_account_storage_at_block(
         let slot = match slot_header.slot_type() {
             StorageSlotType::Value => {
                 StorageSlot::with_value(slot_header.name().clone(), slot_header.value())
-            }
+            },
             StorageSlotType::Map => {
-                let entries = map_entries_by_slot
-                    .remove(slot_header.name())
-                    .unwrap_or_default();
+                let entries = map_entries_by_slot.remove(slot_header.name()).unwrap_or_default();
                 let storage_map = StorageMap::with_entries(entries)?;
                 StorageSlot::with_map(slot_header.name().clone(), storage_map)
-            }
+            },
         };
         slots.push(slot);
     }
@@ -130,16 +138,10 @@ fn create_test_account_with_storage() -> (Account, AccountId) {
         Felt::new_unchecked(3),
         Felt::new_unchecked(4),
     ]);
-    let component_storage = vec![StorageSlot::with_value(
-        StorageSlotName::mock(0),
-        storage_value,
-    )];
+    let component_storage = vec![StorageSlot::with_value(StorageSlotName::mock(0), storage_value)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code(
-            "test::interface",
-            "@account_procedure pub proc foo push.1 end",
-        )
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -223,10 +225,7 @@ fn create_account_with_map_storage(
     let component_storage = vec![StorageSlot::with_map(slot_name, storage_map)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code(
-            "test::interface",
-            "@account_procedure pub proc map push.1 end",
-        )
+        .compile_component_code("test::interface", "@account_procedure pub proc map push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -287,10 +286,7 @@ fn test_select_account_header_at_block_returns_none_for_nonexistent() {
         select_account_header_with_storage_header_at_block(&mut conn, account_id, block_num)
             .expect("Query should succeed");
 
-    assert!(
-        result.is_none(),
-        "Should return None for non-existent account"
-    );
+    assert!(result.is_none(), "Should return None for non-existent account");
 }
 
 #[test]
@@ -375,11 +371,7 @@ fn test_select_account_header_at_block_historical_query() {
             .expect("Query should succeed")
             .expect("Header should exist at block 2");
 
-    assert_eq!(
-        header_2.nonce(),
-        nonce_1,
-        "Nonce at block 2 should match block 1"
-    );
+    assert_eq!(header_2.nonce(), nonce_1, "Nonce at block 2 should match block 1");
 }
 
 // ACCOUNT VAULT AT BLOCK TESTS
@@ -465,11 +457,7 @@ fn test_upsert_accounts_inserts_storage_header() {
     );
 
     // Verify number of slots matches
-    assert_eq!(
-        queried_storage.slots().len(),
-        storage_slots_len,
-        "Storage slots count mismatch"
-    );
+    assert_eq!(queried_storage.slots().len(), storage_slots_len, "Storage slots count mismatch");
 
     // Verify exactly 1 latest account with storage exists
     let header_count: i64 = schema::accounts::table
@@ -480,10 +468,7 @@ fn test_upsert_accounts_inserts_storage_header() {
         .get_result(&mut conn)
         .expect("Failed to count accounts with storage");
 
-    assert_eq!(
-        header_count, 1,
-        "Expected exactly 1 latest account with storage"
-    );
+    assert_eq!(header_count, 1, "Expected exactly 1 latest account with storage");
 }
 
 #[test]
@@ -522,16 +507,11 @@ fn test_upsert_accounts_closes_previous_validity_interval() {
         Felt::new_unchecked(30),
         Felt::new_unchecked(40),
     ]);
-    let component_storage_modified = vec![StorageSlot::with_value(
-        StorageSlotName::mock(0),
-        storage_value_modified,
-    )];
+    let component_storage_modified =
+        vec![StorageSlot::with_value(StorageSlotName::mock(0), storage_value_modified)];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code(
-            "test::interface",
-            "@account_procedure pub proc foo push.1 end",
-        )
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component_2 = AccountComponent::new(
@@ -631,10 +611,7 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
     ];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code(
-            "test::interface",
-            "@account_procedure pub proc foo push.1 end",
-        )
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -710,10 +687,7 @@ fn test_upsert_accounts_with_empty_storage() {
     );
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code(
-            "test::interface",
-            "@account_procedure pub proc foo push.1 end",
-        )
+        .compile_component_code("test::interface", "@account_procedure pub proc foo push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -765,11 +739,7 @@ fn test_upsert_accounts_with_empty_storage() {
     );
 
     // Note: AuthSingleSig adds 2 storage slots (pub key + scheme id)
-    assert_eq!(
-        queried_storage.slots().len(),
-        2,
-        "Expected 2 storage slots (auth component)"
-    );
+    assert_eq!(queried_storage.slots().len(), 2, "Expected 2 storage slots (auth component)");
 
     // Verify the storage header blob exists in database
     let storage_header_exists: Option<bool> = SelectDsl::select(
@@ -869,10 +839,7 @@ fn test_select_latest_account_storage_multiple_slots() {
     ];
 
     let account_component_code = CodeBuilder::default()
-        .compile_component_code(
-            "test::interface",
-            "@account_procedure pub proc map push.1 end",
-        )
+        .compile_component_code("test::interface", "@account_procedure pub proc map push.1 end")
         .unwrap();
 
     let component = AccountComponent::new(
@@ -946,13 +913,8 @@ fn test_select_latest_account_storage_slot_updates() {
         AccountUpdateDetails::Public(patch),
     );
 
-    upsert_accounts(
-        &mut conn,
-        &[account_update],
-        block_1,
-        &PrecomputedPublicAccountStates::new(),
-    )
-    .expect("upsert_accounts failed");
+    upsert_accounts(&mut conn, &[account_update], block_1, &PrecomputedPublicAccountStates::new())
+        .expect("upsert_accounts failed");
 
     let map_patch = StorageMapPatch::from_iters([], [(key_1, value_2), (key_2, value_3)]);
     let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
@@ -982,13 +944,8 @@ fn test_select_latest_account_storage_slot_updates() {
         AccountUpdateDetails::Public(partial_patch),
     );
 
-    upsert_accounts(
-        &mut conn,
-        &[account_update],
-        block_2,
-        &precomputed_public_states,
-    )
-    .expect("upsert_accounts failed");
+    upsert_accounts(&mut conn, &[account_update], block_2, &precomputed_public_states)
+        .expect("upsert_accounts failed");
 
     let storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
@@ -1010,7 +967,8 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     use assert_matches::assert_matches;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     };
 
     let mut conn = setup_test_db();
@@ -1062,14 +1020,8 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
     let asset_key2 = Asset::Fungible(FungibleAsset::new(faucet_id_2, 500).unwrap());
     let vault_key_2 = asset_key2.id();
-    insert_account_vault_asset(
-        &mut conn,
-        account_id,
-        block_2,
-        vault_key_2,
-        Some(asset_key2),
-    )
-    .expect("insert second vault asset failed");
+    insert_account_vault_asset(&mut conn, account_id, block_2, vault_key_2, Some(asset_key2))
+        .expect("insert second vault asset failed");
 
     // Update vault_key_1 again at block 3: vault_key_1 = 3000 tokens
     let asset_v3 = Asset::Fungible(FungibleAsset::new(faucet_id, 3000).unwrap());
@@ -1087,11 +1039,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
     let assets_at_block_2 = select_account_vault_at_block(&mut conn, account_id, block_2)
         .expect("Query at block 2 should succeed");
 
-    assert_eq!(
-        assets_at_block_2.len(),
-        2,
-        "Should have 2 assets at block 2"
-    );
+    assert_eq!(assets_at_block_2.len(), 2, "Should have 2 assets at block 2");
 
     // Find the amounts (order may vary)
     let amounts: Vec<u64> = assets_at_block_2
@@ -1099,38 +1047,22 @@ fn test_select_account_vault_at_block_historical_with_updates() {
         .map(|a| assert_matches!(a, Asset::Fungible(f) => f.amount().as_u64()))
         .collect();
 
-    assert!(
-        amounts.contains(&2000),
-        "Block 2 should have vault_key_1 with 2000 tokens"
-    );
-    assert!(
-        amounts.contains(&500),
-        "Block 2 should have vault_key_2 with 500 tokens"
-    );
+    assert!(amounts.contains(&2000), "Block 2 should have vault_key_1 with 2000 tokens");
+    assert!(amounts.contains(&500), "Block 2 should have vault_key_2 with 500 tokens");
 
     // Query at block 3: should see vault_key_1 with 3000 tokens AND vault_key_2 with 500 tokens
     let assets_at_block_3 = select_account_vault_at_block(&mut conn, account_id, block_3)
         .expect("Query at block 3 should succeed");
 
-    assert_eq!(
-        assets_at_block_3.len(),
-        2,
-        "Should have 2 assets at block 3"
-    );
+    assert_eq!(assets_at_block_3.len(), 2, "Should have 2 assets at block 3");
 
     let amounts: Vec<u64> = assets_at_block_3
         .iter()
         .map(|a| assert_matches!(a, Asset::Fungible(f) => f.amount().as_u64()))
         .collect();
 
-    assert!(
-        amounts.contains(&3000),
-        "Block 3 should have vault_key_1 with 3000 tokens"
-    );
-    assert!(
-        amounts.contains(&500),
-        "Block 3 should have vault_key_2 with 500 tokens"
-    );
+    assert!(amounts.contains(&3000), "Block 3 should have vault_key_1 with 3000 tokens");
+    assert!(amounts.contains(&500), "Block 3 should have vault_key_2 with 500 tokens");
 }
 
 /// Tests that the query bounds the number of rows it reads, so an over-the-limit vault is detected
@@ -1302,10 +1234,7 @@ fn test_select_account_vault_at_block_with_deletion() {
     // Query at block 2: should NOT see the asset (it was deleted)
     let assets_at_block_2 = select_account_vault_at_block(&mut conn, account_id, block_2)
         .expect("Query at block 2 should succeed");
-    assert!(
-        assets_at_block_2.is_empty(),
-        "Should have no assets at block 2 (deleted)"
-    );
+    assert!(assets_at_block_2.is_empty(), "Should have no assets at block 2 (deleted)");
 
     // Query at block 3: should see the re-added asset with new amount
     let assets_at_block_3 = select_account_vault_at_block(&mut conn, account_id, block_3)
@@ -1321,12 +1250,10 @@ fn test_select_account_vault_at_block_with_deletion() {
 fn count_account_codes(conn: &mut SqliteConnection) -> usize {
     use schema::account_codes;
 
-    let val = SelectDsl::select(
-        account_codes::table,
-        diesel::dsl::count(account_codes::code_commitment),
-    )
-    .get_result::<i64>(conn)
-    .expect("Failed to count account_codes");
+    let val =
+        SelectDsl::select(account_codes::table, diesel::dsl::count(account_codes::code_commitment))
+            .get_result::<i64>(conn)
+            .expect("Failed to count account_codes");
     usize::try_from(u64::try_from(val).unwrap()).unwrap()
 }
 
@@ -1334,13 +1261,11 @@ fn count_account_codes(conn: &mut SqliteConnection) -> usize {
 fn account_code_exists(conn: &mut SqliteConnection, code_commitment: Word) -> bool {
     use schema::account_codes;
 
-    let n = SelectDsl::select(
-        account_codes::table,
-        diesel::dsl::count(account_codes::code_commitment),
-    )
-    .filter(account_codes::code_commitment.eq(code_commitment.to_bytes()))
-    .get_result::<i64>(conn)
-    .expect("Failed to query account_codes");
+    let n =
+        SelectDsl::select(account_codes::table, diesel::dsl::count(account_codes::code_commitment))
+            .filter(account_codes::code_commitment.eq(code_commitment.to_bytes()))
+            .get_result::<i64>(conn)
+            .expect("Failed to query account_codes");
 
     n == 1
 }
@@ -1411,11 +1336,7 @@ fn test_prune_account_code_retains_latest_after_code_change() {
     let account_b = build_account_with_code(2);
 
     // Both accounts must have the same ID for this to test code replacement.
-    assert_eq!(
-        account_a.id(),
-        account_b.id(),
-        "accounts must share the same ID"
-    );
+    assert_eq!(account_a.id(), account_b.id(), "accounts must share the same ID");
     assert_ne!(
         account_a.code().commitment(),
         account_b.code().commitment(),
@@ -1444,11 +1365,7 @@ fn test_prune_account_code_retains_latest_after_code_change() {
     )
     .expect("code-change upsert failed");
 
-    assert_eq!(
-        count_account_codes(&mut conn),
-        2,
-        "both codes must exist before pruning"
-    );
+    assert_eq!(count_account_codes(&mut conn), 2, "both codes must exist before pruning");
 
     // Advance past retention window and prune. cutoff = block_prunable - RETENTION = 2*RETENTION+1
     // - RETENTION = RETENTION+1 = block_code_b
@@ -1457,10 +1374,7 @@ fn test_prune_account_code_retains_latest_after_code_change() {
 
     // Only code A was dropped; code B is still referenced by the latest accounts row.
     assert_eq!(codes_deleted, 1, "exactly one code (A) must be pruned");
-    assert!(
-        !account_code_exists(&mut conn, code_commitment_a),
-        "old code A must be pruned"
-    );
+    assert!(!account_code_exists(&mut conn, code_commitment_a), "old code A must be pruned");
     assert!(
         account_code_exists(&mut conn, code_commitment_b),
         "current code B must be retained"
@@ -1504,11 +1418,7 @@ fn test_prune_account_code_retains_revisited_code() {
     let account_a = build_account_with_code(1);
     let account_b = build_account_with_code(2);
 
-    assert_eq!(
-        account_a.id(),
-        account_b.id(),
-        "accounts must share the same ID"
-    );
+    assert_eq!(account_a.id(), account_b.id(), "accounts must share the same ID");
     assert_ne!(
         account_a.code().commitment(),
         account_b.code().commitment(),
@@ -1546,11 +1456,7 @@ fn test_prune_account_code_retains_revisited_code() {
 
     // Before pruning: both codes must be in account_codes (code A inserted once via ON CONFLICT DO
     // NOTHING, code B inserted once).
-    assert_eq!(
-        count_account_codes(&mut conn),
-        2,
-        "both codes must exist before pruning"
-    );
+    assert_eq!(count_account_codes(&mut conn), 2, "both codes must exist before pruning");
 
     // Advance past retention window and prune.
     let (_, _, codes_deleted) =
@@ -1559,14 +1465,8 @@ fn test_prune_account_code_retains_revisited_code() {
     // Code B is no longer referenced by any account row within the retention window → pruned. Code
     // A is still referenced by the block_code_a_again accounts row (within cutoff) → retained.
     assert_eq!(codes_deleted, 1, "exactly one code (B) must be pruned");
-    assert!(
-        account_code_exists(&mut conn, code_commitment_a),
-        "code A must be retained"
-    );
-    assert!(
-        !account_code_exists(&mut conn, code_commitment_b),
-        "code B must be pruned"
-    );
+    assert!(account_code_exists(&mut conn, code_commitment_a), "code A must be retained");
+    assert!(!account_code_exists(&mut conn, code_commitment_b), "code B must be pruned");
 
     // Confirm the latest account row still points to code A.
     let (latest_header, _) =
@@ -1608,11 +1508,7 @@ fn test_prune_account_code_retains_baseline_code() {
     let account_a = build_account_with_code(1);
     let account_b = build_account_with_code(2);
 
-    assert_eq!(
-        account_a.id(),
-        account_b.id(),
-        "accounts must share the same ID"
-    );
+    assert_eq!(account_a.id(), account_b.id(), "accounts must share the same ID");
 
     let code_commitment_a = account_a.code().commitment();
     let code_commitment_b = account_b.code().commitment();
@@ -1634,20 +1530,13 @@ fn test_prune_account_code_retains_baseline_code() {
     )
     .expect("code-change upsert failed");
 
-    assert_eq!(
-        count_account_codes(&mut conn),
-        2,
-        "both codes must exist before pruning"
-    );
+    assert_eq!(count_account_codes(&mut conn), 2, "both codes must exist before pruning");
 
     // First prune: the block-0 row is the baseline (its successor is above the cutoff), so code A
     // must survive.
     let (_, _, codes_deleted) =
         prune_history(&mut conn, block_first_prune).expect("prune_history failed");
-    assert_eq!(
-        codes_deleted, 0,
-        "no code may be pruned while code A backs the baseline row"
-    );
+    assert_eq!(codes_deleted, 0, "no code may be pruned while code A backs the baseline row");
     assert!(
         account_code_exists(&mut conn, code_commitment_a),
         "baseline code A must be retained"
@@ -1662,10 +1551,7 @@ fn test_prune_account_code_retains_baseline_code() {
     let (_, _, codes_deleted) =
         prune_history(&mut conn, block_second_prune).expect("prune_history failed");
     assert_eq!(codes_deleted, 1, "exactly one code (A) must be pruned");
-    assert!(
-        !account_code_exists(&mut conn, code_commitment_a),
-        "old code A must be pruned"
-    );
+    assert!(!account_code_exists(&mut conn, code_commitment_a), "old code A must be pruned");
     assert!(
         account_code_exists(&mut conn, code_commitment_b),
         "current code B must be retained"
@@ -1676,7 +1562,9 @@ fn test_prune_account_code_retains_baseline_code() {
 #[miden_node_test_macro::enable_logging]
 fn network_accounts_subset_classifies_correctly() {
     use crate::db::models::queries::accounts::{
-        AccountRowInsert, NetworkAccountType, select_network_accounts_subset,
+        AccountRowInsert,
+        NetworkAccountType,
+        select_network_accounts_subset,
     };
 
     let mut conn = setup_test_db();

@@ -74,8 +74,7 @@ impl ProofTaskJoinSet {
     ) {
         let state = Arc::clone(state);
         let block_prover = Arc::clone(block_prover);
-        self.0
-            .spawn(async move { prove_block(&state, &block_prover, block_num).await });
+        self.0.spawn(async move { prove_block(&state, &block_prover, block_num).await });
     }
 
     /// Returns the result of the next completed task, or pends forever if the set is empty.
@@ -210,19 +209,16 @@ async fn prove_block(
                     Ok(Err(ProveBlockError::Transient(err))) => {
                         tracing::Span::current().record("error", tracing::field::display(&err));
                         Err(ProveBlockError::Transient(err))
-                    }
+                    },
                     Err(elapsed) => {
                         tracing::Span::current().record("timed_out", elapsed.to_string());
                         Err(ProveBlockError::Transient(Box::new(elapsed)))
-                    }
+                    },
                 }
             }
             .instrument(attempt_span)
         })
-        .retry(retry::constant(
-            Duration::ZERO,
-            Some((MAX_PROVE_ATTEMPTS - 1) as usize),
-        ))
+        .retry(retry::constant(Duration::ZERO, Some((MAX_PROVE_ATTEMPTS - 1) as usize)))
         .when(|err| matches!(err, ProveBlockError::Transient(_)))
         .await;
 
@@ -230,11 +226,8 @@ async fn prove_block(
             Ok(proof) => Ok(proof),
             Err(ProveBlockError::Fatal(err)) => Err(err).context("fatal error"),
             Err(ProveBlockError::Transient(_)) => {
-                anyhow::bail!(
-                    "block {} failed after {attempt} attempts",
-                    block_num.as_u32()
-                )
-            }
+                anyhow::bail!("block {} failed after {attempt} attempts", block_num.as_u32())
+            },
         }
     })
     .await
@@ -269,11 +262,7 @@ async fn generate_block_proof(
         .map_err(|e| ProveBlockError::Fatal(ProofSchedulerError::DeserializationFailed(e)))?;
 
     let proof = block_prover
-        .prove(
-            request.tx_batches,
-            request.block_inputs,
-            &request.block_header,
-        )
+        .prove(request.tx_batches, request.block_inputs, &request.block_header)
         .await
         .map_err(ProveBlockError::from_prover_error)?;
 

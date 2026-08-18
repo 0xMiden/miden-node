@@ -18,7 +18,9 @@ use miden_protocol::crypto::merkle::smt::LargeSmt;
 
 use crate::COMPONENT;
 use crate::account_state_forest::{
-    AccountStateForest, AccountStateForestBackendReader, HISTORICAL_BLOCK_RETENTION,
+    AccountStateForest,
+    AccountStateForestBackendReader,
+    HISTORICAL_BLOCK_RETENTION,
 };
 use crate::accounts::AccountTreeWithHistory;
 use crate::state::loader::TreeStorageReader;
@@ -70,9 +72,7 @@ pub(in crate::state) struct PublishedGenerations<T = StateSnapshot> {
 
 impl<T> PublishedGenerations<T> {
     pub(in crate::state) fn new() -> Self {
-        Self {
-            entries: VecDeque::new(),
-        }
+        Self { entries: VecDeque::new() }
     }
 
     /// Records a newly published generation. Heights must be recorded in ascending order.
@@ -104,9 +104,7 @@ impl<T> PublishedGenerations<T> {
             }
         }
         // Return the prune tip, which is the oldest pinned generation or the chain tip.
-        self.entries
-            .front()
-            .map_or(chain_tip, |(height, _)| (*height).min(chain_tip))
+        self.entries.front().map_or(chain_tip, |(height, _)| (*height).min(chain_tip))
     }
 }
 
@@ -264,10 +262,7 @@ mod tests {
         assert_eq!(published.prune_tip(tip), BlockNumber::from(99));
 
         // A pinned generation never advances pruning past the tip.
-        assert_eq!(
-            published.prune_tip(BlockNumber::from(98)),
-            BlockNumber::from(98)
-        );
+        assert_eq!(published.prune_tip(BlockNumber::from(98)), BlockNumber::from(98));
 
         drop(gen_99);
         assert_eq!(published.prune_tip(tip), tip);

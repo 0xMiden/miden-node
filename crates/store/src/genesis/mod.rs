@@ -2,8 +2,15 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountPatch, AccountUpdateDetails};
 use miden_protocol::block::account_tree::{AccountIdKey, AccountTree};
 use miden_protocol::block::{
-    BlockAccountUpdate, BlockBody, BlockHeader, BlockNoteTree, BlockNumber, BlockSignatures,
-    FeeParameters, SignedBlock, ValidatorKeys,
+    BlockAccountUpdate,
+    BlockBody,
+    BlockHeader,
+    BlockNoteTree,
+    BlockNumber,
+    BlockSignatures,
+    FeeParameters,
+    SignedBlock,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::merkle::mmr::{Forest, MmrPeaks};
 use miden_protocol::crypto::merkle::smt::Smt;
@@ -132,9 +139,7 @@ impl GenesisState {
             self.version,
             Word::empty(),
             BlockNumber::GENESIS,
-            MmrPeaks::new(Forest::empty(), Vec::new())
-                .unwrap()
-                .hash_peaks(),
+            MmrPeaks::new(Forest::empty(), Vec::new()).unwrap().hash_peaks(),
             account_smt.root(),
             empty_nullifier_tree.root(),
             empty_block_note_tree.root(),

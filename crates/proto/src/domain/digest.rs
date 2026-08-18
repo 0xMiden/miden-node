@@ -78,7 +78,7 @@ impl FromHex for proto::primitives::Digest {
                 let d3 = u64::from_be_bytes(data[24..32].try_into().unwrap());
 
                 Ok(proto::primitives::Digest { d0, d1, d2, d3 })
-            }
+            },
         }
     }
 }
@@ -174,13 +174,8 @@ impl TryFrom<proto::primitives::Digest> for [Felt; 4] {
     type Error = ConversionError;
 
     fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
-        if [value.d0, value.d1, value.d2, value.d3]
-            .iter()
-            .any(|v| *v >= Felt::ORDER)
-        {
-            return Err(ConversionError::message(
-                "value is not in the range 0..MODULUS",
-            ));
+        if [value.d0, value.d1, value.d2, value.d3].iter().any(|v| *v >= Felt::ORDER) {
+            return Err(ConversionError::message("value is not in the range 0..MODULUS"));
         }
 
         Ok([
@@ -247,12 +242,7 @@ mod test {
             FromHex::from_hex::<&[u8]>(encoded.as_ref());
         assert_eq!(digest, round_trip.unwrap());
 
-        let digest = proto::primitives::Digest {
-            d0: 0,
-            d1: 0,
-            d2: 0,
-            d3: 0,
-        };
+        let digest = proto::primitives::Digest { d0: 0, d1: 0, d2: 0, d3: 0 };
         let encoded: String = ToHex::encode_hex(&digest);
         let round_trip: Result<proto::primitives::Digest, _> =
             FromHex::from_hex::<&[u8]>(encoded.as_ref());

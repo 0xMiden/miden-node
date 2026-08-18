@@ -15,7 +15,11 @@ use tower_http::trace::TraceLayer;
 
 use crate::db::{ValidatorDbReader, ValidatorDbWriter};
 use crate::{
-    DataDirectory, GoldenOperatorKey, LOG_TARGET, PrivateRecordSealer, TransactionInputDecrypter,
+    DataDirectory,
+    GoldenOperatorKey,
+    LOG_TARGET,
+    PrivateRecordSealer,
+    TransactionInputDecrypter,
     ValidatorSigner,
 };
 
@@ -70,9 +74,8 @@ pub struct ValidatorAdminServer {
 impl ValidatorAdminServer {
     /// Serves the private validator administration API.
     pub async fn serve(self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let listener = TcpListener::bind(self.address)
-            .await
-            .context("failed to bind admin address")?;
+        let listener =
+            TcpListener::bind(self.address).await.context("failed to bind admin address")?;
         self.serve_on(listener, shutdown).await
     }
 
@@ -81,9 +84,8 @@ impl ValidatorAdminServer {
         listener: TcpListener,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
-        let endpoint = listener
-            .local_addr()
-            .context("failed to read validator admin listen address")?;
+        let endpoint =
+            listener.local_addr().context("failed to read validator admin listen address")?;
         tracing::info!(
             target: LOG_TARGET,
             {
@@ -93,13 +95,10 @@ impl ValidatorAdminServer {
             "Validator admin server ready",
         );
 
-        axum::serve(
-            listener,
-            admin_service::router(self.operator_key, self.reader),
-        )
-        .with_graceful_shutdown(shutdown.cancelled_owned())
-        .await
-        .context("failed to serve validator admin API")
+        axum::serve(listener, admin_service::router(self.operator_key, self.reader))
+            .with_graceful_shutdown(shutdown.cancelled_owned())
+            .await
+            .context("failed to serve validator admin API")
     }
 }
 
@@ -118,10 +117,7 @@ impl ValidatorServer {
             .context("failed to load block store")?;
 
         // Load initial metrics from the database for the in-memory counters.
-        let metrics = db
-            .load_initial_metrics()
-            .await
-            .context("failed to load initial metrics")?;
+        let metrics = db.load_initial_metrics().await.context("failed to load initial metrics")?;
 
         let listener = TcpListener::bind(self.address)
             .await
@@ -142,9 +138,7 @@ impl ValidatorServer {
         )
         .await
         .context("failed to initialize validator server")?;
-        let endpoint = listener
-            .local_addr()
-            .context("failed to read validator listen address")?;
+        let endpoint = listener.local_addr().context("failed to read validator listen address")?;
         tracing::info!(
             target: LOG_TARGET,
             {

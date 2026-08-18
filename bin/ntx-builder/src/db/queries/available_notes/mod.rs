@@ -37,11 +37,7 @@ pub fn available_notes(
     max_attempts: usize,
 ) -> Result<AvailableNotes, DatabaseError> {
     let rows = tx.query(SQL, &[&account_id, &(max_attempts as i64)], |row| {
-        Ok((
-            row.get::<Note>(0)?,
-            row.get::<i64>(1)?,
-            row.get::<Option<i64>>(2)?,
-        ))
+        Ok((row.get::<Note>(0)?, row.get::<i64>(1)?, row.get::<Option<i64>>(2)?))
     })?;
 
     let mut eligible = Vec::new();
@@ -73,10 +69,7 @@ pub fn available_notes(
         }
     }
 
-    Ok(AvailableNotes {
-        eligible,
-        next_retry_block,
-    })
+    Ok(AvailableNotes { eligible, next_retry_block })
 }
 
 // HELPERS
@@ -158,11 +151,7 @@ fn hint_next_consumable_block(hint: NoteExecutionHint, from: BlockNumber) -> Opt
     match hint {
         NoteExecutionHint::None | NoteExecutionHint::Always => None,
         NoteExecutionHint::AfterBlock { block_num } => Some(block_num),
-        NoteExecutionHint::OnBlockSlot {
-            round_len,
-            slot_len,
-            slot_offset,
-        } => {
+        NoteExecutionHint::OnBlockSlot { round_len, slot_len, slot_offset } => {
             let block = u64::from(from.as_u32());
             // `1 << round_len` as `can_be_consumed` computes it, in u64 to avoid the overflow its
             // u32 shift would hit; bail to the next-block default for degenerate exponents.
@@ -183,7 +172,7 @@ fn hint_next_consumable_block(hint: NoteExecutionHint, from: BlockNumber) -> Opt
             // Beyond the representable block range the note is effectively never consumable; clamp
             // so the caller schedules at most a far-future recheck rather than wrapping.
             Some(BlockNumber::from(u32::try_from(next).unwrap_or(u32::MAX)))
-        }
+        },
     }
 }
 

@@ -22,7 +22,9 @@ use tokio::sync::{mpsc, watch};
 
 use super::WriteRequest;
 use crate::account_state_forest::{
-    AccountStateForest, AccountStateForestBackend, PreparedAccountStateForestBlockUpdate,
+    AccountStateForest,
+    AccountStateForestBackend,
+    PreparedAccountStateForestBlockUpdate,
 };
 use crate::accounts::AccountTreeWithHistory;
 use crate::blocks::BlockStore;
@@ -31,7 +33,10 @@ use crate::errors::{ApplyBlockError, InvalidBlockError};
 use crate::state::block_lifecycle::{BlockLifecycle, lifecycle_events_enabled};
 use crate::state::loader::TreeStorage;
 use crate::state::view::{
-    PublishedGenerations, SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot,
+    PublishedGenerations,
+    SNAPSHOTS_LIVE_WARN_THRESHOLD,
+    SnapshotGuard,
+    StateSnapshot,
 };
 use crate::state::{BlockCache, BlockNotification};
 use crate::{COMPONENT, HistoricalError, LOG_TARGET};
@@ -113,11 +118,8 @@ impl WriteWorker {
         if apply_block_thread_priority {
             pool_builder = pool_builder.start_handler(|_| raise_thread_priority());
         }
-        let apply_pool = Arc::new(
-            pool_builder
-                .build()
-                .expect("apply_block thread pool should build"),
-        );
+        let apply_pool =
+            Arc::new(pool_builder.build().expect("apply_block thread pool should build"));
 
         Self {
             db,
@@ -215,9 +217,7 @@ impl WriteWorker {
         // Save the block to the block store. In a case of a failed DB transaction, the in-memory
         // state will be unchanged, but the file might still be written. Such blocks should be
         // considered candidates, not finalized blocks.
-        self.block_store
-            .save_block(block_num, &signed_block_bytes)
-            .await?;
+        self.block_store.save_block(block_num, &signed_block_bytes).await?;
 
         // Commit to the DB. Readers continue to see the previous in-memory snapshot while the DB
         // commits; queries that combine DB and in-memory data are scoped by block number.
@@ -260,10 +260,7 @@ impl WriteWorker {
 
         // Push to cache and notify replica subscribers.
         self.block_cache
-            .push(
-                block_num,
-                BlockNotification::new(block_num, signed_block_bytes),
-            )
+            .push(block_num, BlockNotification::new(block_num, signed_block_bytes))
             .expect("block cache receives sequential block numbers");
         // `send` is a no-op (and reports an error) when there are no subscribers, which would leave
         // `committed_tip()` stuck reporting a stale value. Use `send_replace` so the tip is always
@@ -329,10 +326,8 @@ impl WriteWorker {
 
             // Public account updates carry patches; private accounts are filtered out since they
             // don't expose their state changes.
-            let account_patches = body
-                .updated_accounts()
-                .iter()
-                .filter_map(|update| match update.details() {
+            let account_patches =
+                body.updated_accounts().iter().filter_map(|update| match update.details() {
                     AccountUpdateDetails::Public(patch) => Some(patch.clone()),
                     AccountUpdateDetails::Private => None,
                 });
@@ -384,11 +379,9 @@ impl WriteWorker {
                     panic!("nullifier tree update failed after database commit: {error}")
                 });
 
-            self.account_tree
-                .apply_mutations(account_tree_update)
-                .unwrap_or_else(|error| {
-                    panic!("account tree update failed after database commit: {error}")
-                });
+            self.account_tree.apply_mutations(account_tree_update).unwrap_or_else(|error| {
+                panic!("account tree update failed after database commit: {error}")
+            });
 
             self.blockchain.push(block_commitment);
 
@@ -404,9 +397,7 @@ impl WriteWorker {
                     .expect("nullifier tree snapshot creation should not fail"),
                 self.blockchain.clone(),
                 self.account_tree.reader(),
-                self.forest
-                    .reader()
-                    .expect("forest snapshot creation should not fail"),
+                self.forest.reader().expect("forest snapshot creation should not fail"),
                 SnapshotGuard::new(Arc::clone(&self.snapshots_live), block_num),
             ))
         })
@@ -479,9 +470,7 @@ impl WriteWorker {
         let nullifier_tree_update = self
             .nullifier_tree
             .compute_mutations(
-                body.created_nullifiers()
-                    .iter()
-                    .map(|nullifier| (*nullifier, block_num)),
+                body.created_nullifiers().iter().map(|nullifier| (*nullifier, block_num)),
             )
             .map_err(InvalidBlockError::NewBlockNullifierAlreadySpent)?;
 
@@ -501,10 +490,10 @@ impl WriteWorker {
             .map_err(|e| match e {
                 HistoricalError::AccountTreeError(err) => {
                     InvalidBlockError::NewBlockDuplicateAccountIdPrefix(err)
-                }
+                },
                 HistoricalError::MerkleError(_) => {
                     panic!("Unexpected MerkleError during account tree mutation computation")
-                }
+                },
             })?;
 
         if account_tree_update.as_mutation_set().root() != header.account_root() {

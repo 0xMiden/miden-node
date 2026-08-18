@@ -15,8 +15,15 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, Sqlite
 #[cfg(test)]
 use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::{
-    Account, AccountCode, AccountId, AccountStorageHeader, AccountStoragePatch,
-    StoragePatchOperation, StorageSlotHeader, StorageSlotName, StorageSlotType,
+    Account,
+    AccountCode,
+    AccountId,
+    AccountStorageHeader,
+    AccountStoragePatch,
+    StoragePatchOperation,
+    StorageSlotHeader,
+    StorageSlotName,
+    StorageSlotType,
 };
 #[cfg(test)]
 use miden_protocol::account::{StorageMap, StorageMapKey};
@@ -78,11 +85,7 @@ impl LatestAccountStateRow {
             None => AccountStorageHeader::new(Vec::new())?,
         };
 
-        Ok(AccountStateHeadersForDelta {
-            nonce,
-            code_commitment,
-            storage_header,
-        })
+        Ok(AccountStateHeadersForDelta { nonce, code_commitment, storage_header })
     }
 }
 
@@ -191,10 +194,10 @@ pub(super) fn apply_storage_patch(
         match value_patch.value() {
             Some(value) => {
                 value_updates.insert(slot_name, value);
-            }
+            },
             None => {
                 removed.insert(slot_name);
-            }
+            },
         }
     }
 
@@ -223,36 +226,24 @@ pub(super) fn apply_storage_patch(
         map_updates.insert(slot_name, storage_map.root());
     }
 
-    let mut slots = Vec::from_iter(
-        header
-            .slots()
-            .filter(|slot| !removed.contains(slot.name()))
-            .map(|slot| {
-                let slot_name = slot.name();
-                if let Some(new_value) = value_updates.remove(slot_name) {
-                    StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
-                } else if let Some(new_root) = map_updates.remove(slot_name) {
-                    StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
-                } else {
-                    slot.clone()
-                }
-            }),
-    );
+    let mut slots =
+        Vec::from_iter(header.slots().filter(|slot| !removed.contains(slot.name())).map(|slot| {
+            let slot_name = slot.name();
+            if let Some(new_value) = value_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
+            } else if let Some(new_root) = map_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
+            } else {
+                slot.clone()
+            }
+        }));
 
     // Any updates left over belong to slots created by the patch.
     for (slot_name, value) in value_updates {
-        slots.push(StorageSlotHeader::new(
-            slot_name.clone(),
-            StorageSlotType::Value,
-            value,
-        ));
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Value, value));
     }
     for (slot_name, root) in map_updates {
-        slots.push(StorageSlotHeader::new(
-            slot_name.clone(),
-            StorageSlotType::Map,
-            root,
-        ));
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Map, root));
     }
 
     slots.sort_by_key(StorageSlotHeader::id);
@@ -280,10 +271,10 @@ pub(super) fn apply_storage_patch_with_roots(
         match value_patch.value() {
             Some(value) => {
                 value_updates.insert(slot_name, value);
-            }
+            },
             None => {
                 removed.insert(slot_name);
-            }
+            },
         }
     }
 
@@ -298,47 +289,32 @@ pub(super) fn apply_storage_patch_with_roots(
             continue;
         }
 
-        let root = precomputed_map_roots
-            .get(slot_name)
-            .copied()
-            .ok_or_else(|| {
-                DatabaseError::DataCorrupted(format!(
-                    "missing precomputed storage map root for slot {slot_name}"
-                ))
-            })?;
+        let root = precomputed_map_roots.get(slot_name).copied().ok_or_else(|| {
+            DatabaseError::DataCorrupted(format!(
+                "missing precomputed storage map root for slot {slot_name}"
+            ))
+        })?;
         map_updates.insert(slot_name, root);
     }
 
-    let mut slots = Vec::from_iter(
-        header
-            .slots()
-            .filter(|slot| !removed.contains(slot.name()))
-            .map(|slot| {
-                let slot_name = slot.name();
-                if let Some(new_value) = value_updates.remove(slot_name) {
-                    StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
-                } else if let Some(new_root) = map_updates.remove(slot_name) {
-                    StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
-                } else {
-                    slot.clone()
-                }
-            }),
-    );
+    let mut slots =
+        Vec::from_iter(header.slots().filter(|slot| !removed.contains(slot.name())).map(|slot| {
+            let slot_name = slot.name();
+            if let Some(new_value) = value_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
+            } else if let Some(new_root) = map_updates.remove(slot_name) {
+                StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_root)
+            } else {
+                slot.clone()
+            }
+        }));
 
     // Any updates left over belong to slots created by the patch.
     for (slot_name, value) in value_updates {
-        slots.push(StorageSlotHeader::new(
-            slot_name.clone(),
-            StorageSlotType::Value,
-            value,
-        ));
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Value, value));
     }
     for (slot_name, root) in map_updates {
-        slots.push(StorageSlotHeader::new(
-            slot_name.clone(),
-            StorageSlotType::Map,
-            root,
-        ));
+        slots.push(StorageSlotHeader::new(slot_name.clone(), StorageSlotType::Map, root));
     }
 
     slots.sort_by_key(StorageSlotHeader::id);

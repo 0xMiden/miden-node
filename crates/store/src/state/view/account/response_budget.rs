@@ -6,8 +6,12 @@
 //! markers up front.
 
 use miden_node_proto::domain::account::{
-    AccountDetails, AccountResponse, AccountStorageDetails, AccountStorageMapDetails,
-    AccountVaultDetails, StorageMapEntries,
+    AccountDetails,
+    AccountResponse,
+    AccountStorageDetails,
+    AccountStorageMapDetails,
+    AccountVaultDetails,
+    StorageMapEntries,
 };
 use miden_node_proto::generated as proto;
 use miden_node_proto::prost::Message as _;
@@ -46,7 +50,7 @@ fn estimate_storage_map_details_field_len(details: &AccountStorageMapDetails) ->
             let details_len = slot_name_field_len + all_entries_field_len;
 
             protobuf_bytes_field_len(2, details_len)
-        }
+        },
         // `apply_all_storage_maps_response_budget()` is only used for `all_storage_maps` requests,
         // which never request proofs. Be conservative and force the fallback path if this changes.
         StorageMapEntries::EntriesWithProofs(_) => usize::MAX,
@@ -126,12 +130,24 @@ pub(super) fn apply_all_storage_maps_response_budget(
 #[cfg(test)]
 mod tests {
     use miden_node_proto::domain::account::{
-        AccountDetails, AccountResponse, AccountStorageDetails, AccountStorageMapDetails,
-        AccountStorageRequest, AccountVaultDetails, SlotData, StorageMapEntries, StorageMapRequest,
+        AccountDetails,
+        AccountResponse,
+        AccountStorageDetails,
+        AccountStorageMapDetails,
+        AccountStorageRequest,
+        AccountVaultDetails,
+        SlotData,
+        StorageMapEntries,
+        StorageMapRequest,
     };
     use miden_protocol::account::{
-        AccountHeader, AccountId, AccountStorageHeader, StorageMapKey, StorageSlotHeader,
-        StorageSlotName, StorageSlotType,
+        AccountHeader,
+        AccountId,
+        AccountStorageHeader,
+        StorageMapKey,
+        StorageSlotHeader,
+        StorageSlotName,
+        StorageSlotType,
     };
     use miden_protocol::block::BlockNumber;
     use miden_protocol::block::account_tree::{AccountIdKey, AccountTree, AccountWitness};
@@ -204,11 +220,7 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].slot_name, StorageSlotName::mock(1));
         assert_eq!(requests[1].slot_name, StorageSlotName::mock(2));
-        assert!(
-            requests
-                .iter()
-                .all(|request| request.slot_data == SlotData::All)
-        );
+        assert!(requests.iter().all(|request| request.slot_data == SlotData::All));
     }
 
     #[test]

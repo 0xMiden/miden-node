@@ -195,10 +195,7 @@ impl BatchBuilder {
     fn select_full_batch(
         mempool: &SharedMempool,
     ) -> Result<Option<SelectedBatch>, BuildBatchError> {
-        Ok(mempool
-            .lock()
-            .map_err(BuildBatchError::MempoolPoisoned)?
-            .select_full_batch())
+        Ok(mempool.lock().map_err(BuildBatchError::MempoolPoisoned)?.select_full_batch())
     }
 
     #[miden_instrument(
@@ -206,10 +203,7 @@ impl BatchBuilder {
         name = "batch_builder.select_any_batch",
     )]
     fn select_any_batch(mempool: &SharedMempool) -> Result<Option<SelectedBatch>, BuildBatchError> {
-        Ok(mempool
-            .lock()
-            .map_err(BuildBatchError::MempoolPoisoned)?
-            .select_any_batch())
+        Ok(mempool.lock().map_err(BuildBatchError::MempoolPoisoned)?.select_any_batch())
     }
 
     fn has_available_worker(&self) -> bool {
@@ -229,7 +223,7 @@ impl BatchBuilder {
             Err(crash) => {
                 tracing::error!(target: LOG_TARGET, message=%crash, "Batch worker pool panic'd");
                 panic!("Batch worker pool panic: {crash}");
-            }
+            },
         }
     }
 }
@@ -283,7 +277,7 @@ impl BatchJob {
             Err(_) => {
                 self.rollback_batch(batch_id)?;
                 Ok(())
-            }
+            },
         }
     }
 
@@ -366,13 +360,11 @@ impl BatchJob {
                     let executed_batch = BatchExecutor::new()
                         .execute(proposed_batch)
                         .map_err(BuildBatchError::ProveBatchError)?;
-                    prover
-                        .prove(executed_batch)
-                        .map_err(BuildBatchError::ProveBatchError)
+                    prover.prove(executed_batch).map_err(BuildBatchError::ProveBatchError)
                 })
                 .await
                 .map_err(BuildBatchError::JoinError)?
-            }
+            },
         }?;
 
         if proven_batch.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
@@ -439,12 +431,7 @@ impl SelectedBatch {
                     input_notes_count += tx.input_note_count();
                     output_notes_count += tx.output_note_count();
                     unauth_notes_count += tx.unauthenticated_note_ids().count();
-                    (
-                        tx_ids,
-                        input_notes_count,
-                        output_notes_count,
-                        unauth_notes_count,
-                    )
+                    (tx_ids, input_notes_count, output_notes_count, unauth_notes_count)
                 },
             );
         SelectedBatchTelemetry {

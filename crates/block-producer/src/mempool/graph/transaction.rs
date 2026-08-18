@@ -180,7 +180,7 @@ impl TransactionGraph {
                 // Full-batch selection is speculative; partial selections must not reserve txs.
                 self.deselect_batch(batch);
                 None
-            }
+            },
             BatchSelection::Empty => None,
         }
     }
@@ -241,10 +241,7 @@ impl TransactionGraph {
             // Select arbitrary candidate which is _not_ part of a user batch.
             let candidates = self.inner.selection_candidates();
 
-            for tx in candidates
-                .values()
-                .filter(|tx| !self.user_batches.contains_tx(&tx.id()))
-            {
+            for tx in candidates.values().filter(|tx| !self.user_batches.contains_tx(&tx.id())) {
                 if budget.check_then_subtract(tx) == BudgetStatus::Exceeded {
                     assert!(
                         !selected.is_empty(),
@@ -427,10 +424,7 @@ impl TransactionGraph {
 
         let tx_id = tx.id();
         let descendants = self.inner.descendants(&tx_id);
-        for descendant in descendants
-            .into_iter()
-            .filter(|descendant| *descendant != tx_id)
-        {
+        for descendant in descendants.into_iter().filter(|descendant| *descendant != tx_id) {
             if let Some(descendant) = self.inner.get_mut(&descendant) {
                 Arc::make_mut(descendant).mark_notes_authenticated(output_notes.iter().copied());
             }

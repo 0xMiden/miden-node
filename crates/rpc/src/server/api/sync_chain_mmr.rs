@@ -46,7 +46,7 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         let sync_target = match request.finality_level() {
             proto::rpc::FinalityLevel::Committed | proto::rpc::FinalityLevel::Unspecified => {
                 self.state.committed_tip()
-            }
+            },
             proto::rpc::FinalityLevel::Proven => self.state.proven_tip(),
         };
 
@@ -57,15 +57,13 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         }
 
         let block_range = current_client_block_height..=sync_target;
-        let (mmr_delta, block_header, block_signatures) = self
-            .state
-            .view()
-            .sync_chain_mmr(block_range.clone())
-            .await
-            .map_err(|err| match err {
-                StateSyncError::RangeBeyondTip(_) => Status::invalid_argument(err.to_string()),
-                _ => Status::internal(err.to_string()),
-            })?;
+        let (mmr_delta, block_header, block_signatures) =
+            self.state.view().sync_chain_mmr(block_range.clone()).await.map_err(
+                |err| match err {
+                    StateSyncError::RangeBeyondTip(_) => Status::invalid_argument(err.to_string()),
+                    _ => Status::internal(err.to_string()),
+                },
+            )?;
 
         Ok(proto::rpc::SyncChainMmrResponse {
             block_range: Some(proto::rpc::BlockRange {
@@ -74,11 +72,7 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
             }),
             mmr_delta: Some(mmr_delta.into()),
             block_header: Some(block_header.into()),
-            block_signatures: block_signatures
-                .as_signatures()
-                .iter()
-                .map(Into::into)
-                .collect(),
+            block_signatures: block_signatures.as_signatures().iter().map(Into::into).collect(),
         })
     }
 }

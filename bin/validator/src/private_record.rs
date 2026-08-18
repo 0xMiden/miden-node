@@ -6,7 +6,11 @@ use golden_halo2curves::golden_group::Secp256k1GoldenGroup;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use miden_protocol::transaction::TransactionId;
 use miden_protocol::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use rand_core_06::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
@@ -55,10 +59,7 @@ impl PrivateRecordId {
             .to_bytes()
             .try_into()
             .expect("validator public keys have a fixed canonical length");
-        Self {
-            transaction_id,
-            validator_id,
-        }
+        Self { transaction_id, validator_id }
     }
 
     /// Rebuilds a record identity from its canonical fields.
@@ -68,10 +69,7 @@ impl PrivateRecordId {
     ) -> Result<Self, PrivateRecordError> {
         PublicKey::read_from_bytes(&validator_id)
             .map_err(PrivateRecordError::InvalidValidatorId)?;
-        Ok(Self {
-            transaction_id,
-            validator_id,
-        })
+        Ok(Self { transaction_id, validator_id })
     }
 
     /// Returns the transaction identifier.
@@ -100,11 +98,7 @@ impl PrivateRecordContext {
         key_epoch: StorageKeyEpoch,
         transaction_id: TransactionId,
     ) -> Self {
-        Self {
-            chain_id,
-            key_epoch,
-            transaction_id,
-        }
+        Self { chain_id, key_epoch, transaction_id }
     }
 
     /// Returns the chain identifier.
@@ -151,11 +145,7 @@ pub struct PrivateRecordShareRequest {
 impl PrivateRecordShareRequest {
     /// Creates a request for one transaction, epoch, and canonical context.
     pub fn new(record_id: PrivateRecordId, key_epoch: StorageKeyEpoch, context: Vec<u8>) -> Self {
-        Self {
-            record_id,
-            key_epoch,
-            context,
-        }
+        Self { record_id, key_epoch, context }
     }
 
     /// Creates a request from one checked stored record.
@@ -232,13 +222,7 @@ impl PrivateRecordSealer {
         let cipher = XChaCha20Poly1305::new_from_slice(content_key.as_ref())
             .map_err(|_| PrivateRecordError::RecordEncryption)?;
         let encrypted_record = cipher
-            .encrypt(
-                &XNonce::from(nonce),
-                Payload {
-                    msg: plaintext,
-                    aad: &context_bytes,
-                },
-            )
+            .encrypt(&XNonce::from(nonce), Payload { msg: plaintext, aad: &context_bytes })
             .map_err(|_| PrivateRecordError::RecordEncryption)?;
         let encrypted_record_key = self
             .sealing_key
@@ -379,9 +363,7 @@ impl StoredPrivateRecord {
             return Err(PrivateRecordError::UnsupportedFormat(fields.format_version));
         }
         let nonce = fields.nonce.try_into().map_err(|nonce: Vec<u8>| {
-            PrivateRecordError::InvalidNonceLength {
-                actual: nonce.len(),
-            }
+            PrivateRecordError::InvalidNonceLength { actual: nonce.len() }
         })?;
         if fields.encrypted_record.len() < TAG_BYTES {
             return Err(PrivateRecordError::InvalidRecordCiphertext);
@@ -673,9 +655,7 @@ mod tests {
         seed: u8,
     ) -> Vec<u8> {
         let mut rng = ChaCha20Rng::from_seed([seed; 32]);
-        operator_key
-            .issue_private_record_share(&mut rng, request, record)
-            .unwrap()
+        operator_key.issue_private_record_share(&mut rng, request, record).unwrap()
     }
 
     fn transaction_inputs() -> TransactionInputs {
@@ -685,11 +665,7 @@ mod tests {
                 auth_scheme: AuthScheme::Falcon512Poseidon2,
             })
             .unwrap();
-        builder
-            .build()
-            .unwrap()
-            .get_transaction_inputs(&account, &[], &[])
-            .unwrap()
+        builder.build().unwrap().get_transaction_inputs(&account, &[], &[]).unwrap()
     }
 
     #[test]
@@ -710,10 +686,7 @@ mod tests {
             &bytes[CONTEXT_DOMAIN_V1.len() + 64..CONTEXT_DOMAIN_V1.len() + 96],
             transaction_id,
         );
-        assert_eq!(
-            &bytes[CONTEXT_DOMAIN_V1.len() + 96..],
-            &PRIVATE_RECORD_FORMAT_V1.to_be_bytes(),
-        );
+        assert_eq!(&bytes[CONTEXT_DOMAIN_V1.len() + 96..], &PRIVATE_RECORD_FORMAT_V1.to_be_bytes(),);
     }
 
     #[test]
@@ -765,10 +738,7 @@ mod tests {
         );
 
         let encrypted_record_key = first.decode_encrypted_record_key().unwrap();
-        assert_eq!(
-            encrypted_record_key.encrypted_payload.len(),
-            CONTENT_KEY_BYTES
-        );
+        assert_eq!(encrypted_record_key.encrypted_payload.len(), CONTENT_KEY_BYTES);
         assert_eq!(encrypted_record_key.associated_data(), context().to_bytes());
     }
 
@@ -784,10 +754,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(actual, expected);
-        assert_eq!(
-            StoredPrivateRecord::read_from_bytes(&expected.to_bytes()).unwrap(),
-            expected
-        );
+        assert_eq!(StoredPrivateRecord::read_from_bytes(&expected.to_bytes()).unwrap(), expected);
     }
 
     #[test]
@@ -842,12 +809,7 @@ mod tests {
             PrivateRecordContext::new(CHAIN_ID, StorageKeyEpoch::new([99; 32]), transaction_id());
 
         assert!(matches!(
-            sealer().seal(
-                &mut rng,
-                record_id(transaction_id()),
-                wrong_context,
-                b"record",
-            ),
+            sealer().seal(&mut rng, record_id(transaction_id()), wrong_context, b"record",),
             Err(PrivateRecordError::KeyEpochMismatch),
         ));
     }
@@ -864,10 +826,7 @@ mod tests {
         let mut first_rng = ChaCha20Rng::from_seed([31; 32]);
         let mut second_rng = ChaCha20Rng::from_seed([32; 32]);
 
-        assert_eq!(
-            operator_keys[0].sealing_key(),
-            operator_keys[1].sealing_key()
-        );
+        assert_eq!(operator_keys[0].sealing_key(), operator_keys[1].sealing_key());
         assert_ne!(first_record_id, second_record_id);
 
         let first = PrivateRecordSealer::from_operator_key(&operator_keys[0])
@@ -879,14 +838,8 @@ mod tests {
 
         assert_eq!(first.context(), second.context());
         assert_eq!(
-            first
-                .decode_encrypted_record_key()
-                .unwrap()
-                .associated_data(),
-            second
-                .decode_encrypted_record_key()
-                .unwrap()
-                .associated_data(),
+            first.decode_encrypted_record_key().unwrap().associated_data(),
+            second.decode_encrypted_record_key().unwrap().associated_data(),
         );
         assert_ne!(first.nonce(), second.nonce());
         assert_ne!(first.encrypted_record(), second.encrypted_record());
@@ -923,10 +876,7 @@ mod tests {
         let plaintext = transaction_inputs().to_bytes();
         let first_record = threshold_record(&operator_keys[0], transaction_id(), 31, &plaintext);
         let second_record = threshold_record(&operator_keys[0], transaction_id(), 32, &plaintext);
-        assert_ne!(
-            first_record.encrypted_record_key(),
-            second_record.encrypted_record_key(),
-        );
+        assert_ne!(first_record.encrypted_record_key(), second_record.encrypted_record_key(),);
 
         let first_request = PrivateRecordShareRequest::for_record(&first_record);
         let second_request = PrivateRecordShareRequest::for_record(&second_record);
@@ -936,13 +886,12 @@ mod tests {
             issue_share(&operator_keys[1], &second_request, &second_record, 34),
         ];
 
-        let result = PrivateRecordCombiner::from_operator_key(&operator_keys[2])
-            .unwrap()
-            .open(&first_request, &first_record, &shares);
-        assert!(matches!(
-            result,
-            Err(PrivateRecordError::ShareCombination(_))
-        ));
+        let result = PrivateRecordCombiner::from_operator_key(&operator_keys[2]).unwrap().open(
+            &first_request,
+            &first_record,
+            &shares,
+        );
+        assert!(matches!(result, Err(PrivateRecordError::ShareCombination(_))));
     }
 
     #[test]

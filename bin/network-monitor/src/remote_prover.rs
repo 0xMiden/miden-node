@@ -26,8 +26,12 @@ use url::Url;
 use crate::COMPONENT;
 use crate::service::{Service, build_tls_client};
 use crate::service_status::{
-    ProverTestOutcome, RemoteProverDetails, RemoteProverStatusDetails, ServiceDetails,
-    ServiceStatus, Status,
+    ProverTestOutcome,
+    RemoteProverDetails,
+    RemoteProverStatusDetails,
+    ServiceDetails,
+    ServiceStatus,
+    Status,
 };
 
 // PROOF TYPE
@@ -173,7 +177,7 @@ impl ProverStatusService {
             None => {
                 debug!(target: COMPONENT, prover = %self.name, "spawning probe task");
                 self.probe_handle = Some(self.probe_spawner.spawn());
-            }
+            },
             Some(handle) if handle.is_finished() => {
                 warn!(
                     target: COMPONENT,
@@ -195,18 +199,15 @@ impl ProverStatusService {
                     });
                 });
                 self.probe_handle = Some(self.probe_spawner.spawn());
-            }
-            Some(_) => {}
+            },
+            Some(_) => {},
         }
     }
 
     /// Classifies the current status + probe state into a [`ServiceStatus`].
     fn build_status(&self, probe: &ProbeSnapshot) -> ServiceStatus {
         let Some(status_details) = self.last_status.clone() else {
-            let msg = self
-                .last_status_err
-                .clone()
-                .unwrap_or_else(|| "discovering".to_string());
+            let msg = self.last_status_err.clone().unwrap_or_else(|| "discovering".to_string());
             let mut status = ServiceStatus::unknown(&self.name, ServiceDetails::Error);
             status.error = Some(msg);
             return status;
@@ -230,10 +231,7 @@ impl ProverStatusService {
 
         if let Some(outcome) = &test_outcome {
             if outcome.status == Status::Unhealthy {
-                let msg = outcome
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| "prover test failed".to_string());
+                let msg = outcome.error.clone().unwrap_or_else(|| "prover test failed".to_string());
                 return ServiceStatus::unhealthy(&self.name, msg, details);
             }
         }
@@ -290,11 +288,11 @@ impl Service for ProverStatusService {
                     self.url.clone(),
                 ));
                 self.last_status_err = None;
-            }
+            },
             Err(e) => {
                 debug!(target: COMPONENT, prover = %self.name, error = %e, "Remote prover status check failed");
                 self.last_status_err = Some(e.to_string());
-            }
+            },
         }
         self.ensure_probe_running();
         if self.probe_rx.has_changed().unwrap_or(false) {
@@ -397,7 +395,7 @@ async fn run_prover_test(
                     });
                 });
                 tokio::time::sleep(PAYLOAD_RETRY_DELAY).await;
-            }
+            },
         }
     };
 
@@ -425,7 +423,7 @@ async fn run_prover_test(
                     status: Status::Healthy,
                     error: None,
                 });
-            }
+            },
             Err(e) => {
                 state.failure_count += 1;
                 state.latest = Some(ProverTestOutcome {
@@ -439,7 +437,7 @@ async fn run_prover_test(
                     status: Status::Unhealthy,
                     error: Some(tonic_status_to_json(&e)),
                 });
-            }
+            },
         }
 
         if probe_tx.send(state.clone()).is_err() {
@@ -550,9 +548,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(classified.status, Status::Unknown);
-        let err = classified
-            .error
-            .expect("stale outcome should carry an error note");
+        let err = classified.error.expect("stale outcome should carry an error note");
         assert!(err.contains("stale"), "got: {err}");
         // Numeric details from the last real probe are preserved.
         assert_eq!(classified.details.success_count, 3);

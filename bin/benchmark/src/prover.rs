@@ -95,15 +95,11 @@ impl BenchmarkProver {
                     .await
                     .context("local prover task panicked")?
                     .context("local proving failed")
-            }
-            Self::Remote {
-                prover,
-                limiter,
-                permits,
-            } => {
+            },
+            Self::Remote { prover, limiter, permits } => {
                 let tx_inputs: TransactionInputs = executed_tx.into();
                 prove_remote_with_retry(prover, limiter, permits, &tx_inputs).await
-            }
+            },
         }
     }
 }
@@ -144,7 +140,7 @@ async fn prove_remote_with_retry(
                     "remote prover returned retryable error (attempt {attempt}/{RETRY_MAX_ATTEMPTS}, backoff {backoff:?}): {err}"
                 );
                 tokio::time::sleep(backoff).await;
-            }
+            },
         }
     }
 }
@@ -246,10 +242,7 @@ impl RampingRateLimiter {
         let now = Instant::now();
         Self {
             start: now,
-            inner: Mutex::new(Inner {
-                next_release: now,
-                frozen_at: None,
-            }),
+            inner: Mutex::new(Inner { next_release: now, frozen_at: None }),
             reported_rate: AtomicU32::new(0),
         }
     }

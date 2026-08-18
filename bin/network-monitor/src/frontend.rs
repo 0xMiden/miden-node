@@ -53,9 +53,7 @@ pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     let listener = tokio::net::TcpListener::bind(&bind_address)
         .await
         .expect("Failed to bind to address");
-    axum::serve(listener, app)
-        .await
-        .expect("Failed to start web server");
+    axum::serve(listener, app).await.expect("Failed to start web server");
 }
 
 // HTML ROUTES
@@ -99,10 +97,7 @@ async fn get_status(
 
 async fn serve_css() -> Response {
     (
-        [(
-            header::CONTENT_TYPE,
-            header::HeaderValue::from_static("text/css"),
-        )],
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("text/css"))],
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.css")),
     )
         .into_response()
@@ -110,10 +105,7 @@ async fn serve_css() -> Response {
 
 async fn serve_htmx() -> Response {
     (
-        [(
-            header::CONTENT_TYPE,
-            header::HeaderValue::from_static("text/javascript"),
-        )],
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("text/javascript"))],
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/htmx.min.js")),
     )
         .into_response()
@@ -121,10 +113,7 @@ async fn serve_htmx() -> Response {
 
 async fn serve_probes_js() -> Response {
     (
-        [(
-            header::CONTENT_TYPE,
-            header::HeaderValue::from_static("text/javascript"),
-        )],
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("text/javascript"))],
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/probes.js")),
     )
         .into_response()
@@ -132,10 +121,7 @@ async fn serve_probes_js() -> Response {
 
 async fn serve_favicon() -> Response {
     (
-        [(
-            header::CONTENT_TYPE,
-            header::HeaderValue::from_static("image/x-icon"),
-        )],
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/x-icon"))],
         include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/favicon.ico")),
     )
         .into_response()

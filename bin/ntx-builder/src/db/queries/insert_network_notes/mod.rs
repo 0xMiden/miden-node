@@ -15,15 +15,7 @@ pub fn insert_network_notes(
 ) -> Result<(), DatabaseError> {
     for note in notes {
         let inner = note.as_note();
-        tx.execute(
-            SQL,
-            &[
-                &inner.nullifier(),
-                &note.target_account_id(),
-                inner,
-                &inner.id(),
-            ],
-        )?;
+        tx.execute(SQL, &[&inner.nullifier(), &note.target_account_id(), inner, &inner.id()])?;
     }
     Ok(())
 }

@@ -62,10 +62,7 @@ fn proto_files_in_directory(directory: &Path) -> Result<Vec<PathBuf>, miette::Er
         }
 
         // Skip non-protobuf files
-        if PathBuf::from(entry.file_name())
-            .extension()
-            .is_none_or(|ext| ext != "proto")
-        {
+        if PathBuf::from(entry.file_name()).extension().is_none_or(|ext| ext != "proto") {
             continue;
         }
 
@@ -101,9 +98,7 @@ fn generate_file_descriptor(
     let mut f = codegen::Function::new(format!("{file_name}_api_descriptor"));
     f.vis("pub")
         .ret("FileDescriptorSet")
-        .line(format!(
-            "FileDescriptorSet::decode(vec!{file_descriptor:?}.as_slice())"
-        ))
+        .line(format!("FileDescriptorSet::decode(vec!{file_descriptor:?}.as_slice())"))
         .line(".expect(\"we just encoded this so it should decode\")");
 
     Ok(f)

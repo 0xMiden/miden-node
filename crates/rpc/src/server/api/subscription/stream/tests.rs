@@ -29,10 +29,7 @@ impl Default for TestSubscription {
 
 impl TestSubscription {
     fn failing_at(block: BlockNumber) -> Self {
-        Self {
-            fail_at: Some(block),
-            ..Self::default()
-        }
+        Self { fail_at: Some(block), ..Self::default() }
     }
 
     fn fetch_count(&self) -> Arc<AtomicUsize> {
@@ -180,10 +177,7 @@ async fn full_buffer_reports_slow_subscriber_before_eos() {
         assert_eq!(item.block, BlockNumber::from(expected_block as u32));
     }
 
-    let terminal = stream
-        .next()
-        .await
-        .expect("terminal status must precede end of stream");
+    let terminal = stream.next().await.expect("terminal status must precede end of stream");
     assert_stream_status(terminal, tonic::Code::ResourceExhausted);
 }
 

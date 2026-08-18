@@ -27,7 +27,10 @@ pub use scoped::{ScopedBlockNum, ScopedBlockRange};
 
 mod snapshot;
 pub(in crate::state) use snapshot::{
-    PublishedGenerations, SNAPSHOTS_LIVE_WARN_THRESHOLD, SnapshotGuard, StateSnapshot,
+    PublishedGenerations,
+    SNAPSHOTS_LIVE_WARN_THRESHOLD,
+    SnapshotGuard,
+    StateSnapshot,
 };
 
 mod account;
@@ -133,10 +136,7 @@ impl StateView {
     ) -> Result<ScopedBlockRange, RangeBeyondTip> {
         let tip = *self.tip();
         if *range.end() > tip {
-            return Err(RangeBeyondTip {
-                chain_tip: tip,
-                block_to: *range.end(),
-            });
+            return Err(RangeBeyondTip { chain_tip: tip, block_to: *range.end() });
         }
         Ok(ScopedBlockRange::new(range))
     }

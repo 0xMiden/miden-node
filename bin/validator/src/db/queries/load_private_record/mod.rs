@@ -15,8 +15,5 @@ pub fn load_private_record(
     tx: &ReadTx<'_>,
     transaction_id: TransactionId,
 ) -> Result<Option<StoredPrivateRecord>, DatabaseError> {
-    Ok(tx
-        .query(SQL, &[&transaction_id], private_record_from_row)?
-        .into_iter()
-        .next())
+    Ok(tx.query(SQL, &[&transaction_id], private_record_from_row)?.into_iter().next())
 }

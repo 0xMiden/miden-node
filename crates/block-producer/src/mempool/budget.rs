@@ -1,6 +1,8 @@
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::{
-    MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH,
+    MAX_ACCOUNTS_PER_BATCH,
+    MAX_INPUT_NOTES_PER_BATCH,
+    MAX_OUTPUT_NOTES_PER_BATCH,
 };
 
 use crate::domain::transaction::AuthenticatedTransaction;

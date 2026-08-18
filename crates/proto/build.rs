@@ -5,8 +5,11 @@ use std::process::Command;
 use codegen::{Function, Impl, Module, Trait, Type};
 use fs_err as fs;
 use miden_node_proto_build::{
-    ntx_builder_api_descriptor, remote_prover_api_descriptor, rpc_api_descriptor,
-    sequencer_api_descriptor, validator_api_descriptor,
+    ntx_builder_api_descriptor,
+    remote_prover_api_descriptor,
+    rpc_api_descriptor,
+    sequencer_api_descriptor,
+    validator_api_descriptor,
 };
 use miette::{Context, IntoDiagnostic};
 use prost_types::{MethodDescriptorProto, ServiceDescriptorProto};
@@ -45,9 +48,7 @@ fn main() -> miette::Result<()> {
         .into_diagnostic()
         .wrap_err("generating server mod.rs")?;
 
-    generate_mod_rs(&dst_dir)
-        .into_diagnostic()
-        .wrap_err("generating mod.rs")?;
+    generate_mod_rs(&dst_dir).into_diagnostic().wrap_err("generating mod.rs")?;
 
     rustfmt_generated(&dst_dir)?;
     Ok(())
@@ -119,13 +120,9 @@ fn generate_mod_rs(dst_dir: impl AsRef<Path>) -> std::io::Result<()> {
         let path = entry.path();
 
         let module = if path.is_file() {
-            path.file_stem()
-                .and_then(|f| f.to_str())
-                .expect("Could not get file name")
+            path.file_stem().and_then(|f| f.to_str()).expect("Could not get file name")
         } else if path.is_dir() {
-            path.file_name()
-                .and_then(|f| f.to_str())
-                .expect("Could not get directory name")
+            path.file_name().and_then(|f| f.to_str()).expect("Could not get directory name")
         } else {
             continue;
         };
@@ -159,15 +156,11 @@ fn generate_server_modules(
                 let service_name = to_snake_case(service_name);
                 let module_name = format!("{}_{}", &package, service_name);
 
-                let contents = Service::from_descriptor(service, &package)?
-                    .generate()
-                    .scope()
-                    .to_string();
+                let contents =
+                    Service::from_descriptor(service, &package)?.generate().scope().to_string();
 
                 let path = dst_dir.join(format!("{module_name}.rs"));
-                fs::write(path, contents)
-                    .into_diagnostic()
-                    .wrap_err("writing server module")?;
+                fs::write(path, contents).into_diagnostic().wrap_err("writing server module")?;
             }
         }
     }
@@ -213,10 +206,7 @@ impl Service {
 
         // We don't have any client streams, so no need to support them.
         miette::ensure!(
-            !descriptor
-                .method
-                .iter()
-                .any(MethodDescriptorProto::client_streaming),
+            !descriptor.method.iter().any(MethodDescriptorProto::client_streaming),
             "client streams are not supported"
         );
 
@@ -375,13 +365,10 @@ impl Service {
     /// Returns the gRPC service name used by tonic routing and health reporting.
     fn service_name(&self) -> Function {
         let mut ret = Function::new("service_name");
-        ret.vis("pub")
-            .attr("allow(deprecated)")
-            .ret("&'static str")
-            .line(format!(
-                "<{}::<()> as tonic::server::NamedService>::NAME",
-                self.tonic_server_path()
-            ));
+        ret.vis("pub").attr("allow(deprecated)").ret("&'static str").line(format!(
+            "<{}::<()> as tonic::server::NamedService>::NAME",
+            self.tonic_server_path()
+        ));
 
         ret
     }
@@ -409,11 +396,7 @@ impl UnaryMethod {
         let request = grpc_path_to_generated(descriptor.input_type());
         let response = grpc_path_to_generated(descriptor.output_type());
 
-        Self {
-            name,
-            request,
-            response,
-        }
+        Self { name, request, response }
     }
 
     /// Function invoking the method handler and mapping from/to tonic's request/response.
@@ -521,11 +504,7 @@ impl ServerStream {
         let request = grpc_path_to_generated(descriptor.input_type());
         let response = grpc_path_to_generated(descriptor.output_type());
 
-        Self {
-            name,
-            request,
-            response,
-        }
+        Self { name, request, response }
     }
 
     /// This stream's per-method trait definition.
@@ -611,10 +590,7 @@ impl ServerStream {
         ret.set_async(true)
             .arg_ref_self()
             .arg("request", format!("tonic::Request<{}>", self.request))
-            .ret(format!(
-                "tonic::Result<tonic::Response<Self::{}>>",
-                self.associated_type().0
-            ))
+            .ret(format!("tonic::Result<tonic::Response<Self::{}>>", self.associated_type().0))
             .line("#[allow(clippy::unit_arg)]")
             .line(format!(
                 "<T as {}>::full(self, request).await.map(tonic::Response::new)",

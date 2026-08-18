@@ -66,9 +66,7 @@ impl RpcReadiness {
         } else {
             ServingStatus::NotServing
         };
-        self.reporter
-            .set_service_status(Self::SERVICE_NAME, status)
-            .await;
+        self.reporter.set_service_status(Self::SERVICE_NAME, status).await;
 
         match self.record_transition(ready) {
             ReadinessTransition::BecameReady => {
@@ -85,7 +83,7 @@ impl RpcReadiness {
                     },
                     "Node ready",
                 );
-            }
+            },
             ReadinessTransition::BecameNotReady => {
                 warn!(
                     target: LOG_TARGET,
@@ -97,7 +95,7 @@ impl RpcReadiness {
                     },
                     "Node no longer ready",
                 );
-            }
+            },
             ReadinessTransition::InitialNotReady => {
                 tracing::debug!(
                     target: LOG_TARGET,
@@ -109,8 +107,8 @@ impl RpcReadiness {
                     },
                     "Node synchronizing",
                 );
-            }
-            ReadinessTransition::Unchanged => {}
+            },
+            ReadinessTransition::Unchanged => {},
         }
     }
 
@@ -214,13 +212,8 @@ impl BlockSync {
     async fn sync(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
         let local_tip = self.state.committed_tip();
         let mut client = self.source_rpc.clone();
-        let upstream_tip = BlockNumber::from(
-            client
-                .status(tonic::Request::new(()))
-                .await?
-                .into_inner()
-                .chain_tip,
-        );
+        let upstream_tip =
+            BlockNumber::from(client.status(tonic::Request::new(())).await?.into_inner().chain_tip);
         self.readiness.update(upstream_tip, local_tip).await;
 
         let block_from = local_tip.child().as_u32();
@@ -305,9 +298,7 @@ impl ProofSync {
         );
         let mut client = self.source_rpc.clone();
         let mut stream = client
-            .proof_subscription(ProofSubscriptionRequest {
-                block_from: starting_block.as_u32(),
-            })
+            .proof_subscription(ProofSubscriptionRequest { block_from: starting_block.as_u32() })
             .await?
             .into_inner();
 
@@ -354,25 +345,10 @@ mod readiness_tests {
         let (reporter, _service) = tonic_health::server::health_reporter();
         let readiness = RpcReadiness::new(reporter, 10);
 
-        assert_eq!(
-            readiness.record_transition(false),
-            ReadinessTransition::InitialNotReady,
-        );
-        assert_eq!(
-            readiness.record_transition(false),
-            ReadinessTransition::Unchanged,
-        );
-        assert_eq!(
-            readiness.record_transition(true),
-            ReadinessTransition::BecameReady,
-        );
-        assert_eq!(
-            readiness.record_transition(true),
-            ReadinessTransition::Unchanged,
-        );
-        assert_eq!(
-            readiness.record_transition(false),
-            ReadinessTransition::BecameNotReady,
-        );
+        assert_eq!(readiness.record_transition(false), ReadinessTransition::InitialNotReady,);
+        assert_eq!(readiness.record_transition(false), ReadinessTransition::Unchanged,);
+        assert_eq!(readiness.record_transition(true), ReadinessTransition::BecameReady,);
+        assert_eq!(readiness.record_transition(true), ReadinessTransition::Unchanged,);
+        assert_eq!(readiness.record_transition(false), ReadinessTransition::BecameNotReady,);
     }
 }

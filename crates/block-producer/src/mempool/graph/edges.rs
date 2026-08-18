@@ -76,10 +76,7 @@ where
     ///
     /// Panics if the node is not tracked.
     pub fn remove(&mut self, node: &Id) {
-        let parents = self
-            .parents
-            .remove(node)
-            .expect("node must exist when removing from edges");
+        let parents = self.parents.remove(node).expect("node must exist when removing from edges");
 
         for parent in parents {
             if let Some(children) = self.children.get_mut(&parent) {
@@ -87,10 +84,8 @@ where
             }
         }
 
-        let children = self
-            .children
-            .remove(node)
-            .expect("node must exist when removing from edges");
+        let children =
+            self.children.remove(node).expect("node must exist when removing from edges");
 
         for child in children {
             if let Some(parents) = self.parents.get_mut(&child) {

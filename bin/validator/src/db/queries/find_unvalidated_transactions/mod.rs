@@ -25,9 +25,5 @@ pub fn find_unvalidated_transactions(
         .into_iter()
         .collect::<BTreeSet<_>>();
 
-    Ok(tx_ids
-        .iter()
-        .filter(|tx_id| !validated.contains(tx_id))
-        .copied()
-        .collect())
+    Ok(tx_ids.iter().filter(|tx_id| !validated.contains(tx_id)).copied().collect())
 }

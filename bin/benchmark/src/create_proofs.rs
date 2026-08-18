@@ -14,7 +14,12 @@ use std::time::{Duration, Instant};
 
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountType, PartialAccount,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    PartialAccount,
     StorageMapKey,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetWitness, FungibleAsset, TokenSymbol};
@@ -23,8 +28,13 @@ use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{Note, NoteScript, NoteScriptRoot, PartialNote};
 use miden_protocol::transaction::{
-    AccountInputs, ExecutedTransaction, InputNote, InputNotes, PartialBlockchain,
-    ProvenTransaction, TransactionArgs,
+    AccountInputs,
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
+    TransactionArgs,
 };
 use miden_protocol::utils::serde::Serializable;
 use miden_protocol::{Felt, Word};
@@ -36,7 +46,11 @@ use miden_standards::note::P2idNote;
 use miden_standards::tx_script::SendNotesTransactionScript;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
-    DataStore, DataStoreError, LoadedMastForest, MastForestStore, TransactionExecutor,
+    DataStore,
+    DataStoreError,
+    LoadedMastForest,
+    MastForestStore,
+    TransactionExecutor,
     TransactionMastStore,
 };
 use rand::RngExt;
@@ -47,7 +61,10 @@ use crate::prover::BenchmarkProver;
 use crate::rpc_state::{fetch_chain_tip_header, fetch_partial_blockchain};
 use crate::summary::print_proving_summary;
 use crate::{
-    PROOFS_DIR, create_genesis_aware_rpc_client, get_genesis_header_request, write_to_file,
+    PROOFS_DIR,
+    create_genesis_aware_rpc_client,
+    get_genesis_header_request,
+    write_to_file,
 };
 
 /// Maximum attempts to observe a stable chain tip.
@@ -101,14 +118,14 @@ impl ProofCollector {
                     let result = prover.prove(executed_tx).await;
                     (result, prove_t0.elapsed())
                 }));
-            }
+            },
             Self::Sequential(outcomes) => {
                 let prove_t0 = Instant::now();
                 // Box the proof future so it doesn't inflate the caller's (`run`) future, which the
                 // spawned remote path keeps off-stack via `tokio::spawn`.
                 let result = Box::pin(prover.prove(executed_tx)).await;
                 outcomes.push((result, prove_t0.elapsed()));
-            }
+            },
         }
     }
 
@@ -128,7 +145,7 @@ impl ProofCollector {
                     }));
                 }
                 outcomes
-            }
+            },
         };
 
         let mut proofs = Vec::with_capacity(outcomes.len());
@@ -140,7 +157,7 @@ impl ProofCollector {
                 Err(err) => {
                     eprintln!("{label} proving failed for tx {i}: {err:#}");
                     std::process::exit(1);
-                }
+                },
             }
         }
         (proofs, total)
@@ -225,7 +242,7 @@ pub(crate) async fn run(rpc_url: Url, num_transactions: u64, remote_prover_url: 
         Some(url) => {
             println!("Using remote prover at {url} (rate-limited ramp from 1 to 10 req/s).");
             BenchmarkProver::remote(&url).expect("remote prover client should be constructed")
-        }
+        },
         None => BenchmarkProver::local(),
     });
     let faucet_id = faucet.id();
@@ -300,9 +317,7 @@ pub(crate) async fn run(rpc_url: Url, num_transactions: u64, remote_prover_url: 
             faucet =
                 Account::try_from(&patch).expect("failed to build faucet from full-state patch");
         } else {
-            faucet
-                .apply_patch(&patch)
-                .expect("failed to apply faucet patch");
+            faucet.apply_patch(&patch).expect("failed to apply faucet patch");
         }
         data_store.add_account(faucet.clone());
 
@@ -470,12 +485,10 @@ impl BenchmarkDataStore {
     }
 
     fn get_account(&self, account_id: AccountId) -> Result<&Account, DataStoreError> {
-        self.accounts
-            .get(&account_id)
-            .ok_or_else(|| DataStoreError::Other {
-                error_msg: "unknown account".into(),
-                source: None,
-            })
+        self.accounts.get(&account_id).ok_or_else(|| DataStoreError::Other {
+            error_msg: "unknown account".into(),
+            source: None,
+        })
     }
 }
 
@@ -487,11 +500,7 @@ impl DataStore for BenchmarkDataStore {
     ) -> Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError> {
         let account = self.get_account(account_id)?;
         let partial_account = PartialAccount::from(account);
-        Ok((
-            partial_account,
-            self.block_header.clone(),
-            self.partial_block_chain.clone(),
-        ))
+        Ok((partial_account, self.block_header.clone(), self.partial_block_chain.clone()))
     }
 
     async fn get_storage_map_witness(

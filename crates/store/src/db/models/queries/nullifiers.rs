@@ -3,11 +3,19 @@ use std::ops::RangeInclusive;
 
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
-    ExpressionMethods, QueryDsl, Queryable, QueryableByName, RunQueryDsl, Selectable,
-    SelectableHelper, SqliteConnection,
+    ExpressionMethods,
+    QueryDsl,
+    Queryable,
+    QueryableByName,
+    RunQueryDsl,
+    Selectable,
+    SelectableHelper,
+    SqliteConnection,
 };
 use miden_node_utils::limiter::{
-    MAX_RESPONSE_PAYLOAD_BYTES, QueryParamLimiter, QueryParamNullifierPrefixLimit,
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamLimiter,
+    QueryParamNullifierPrefixLimit,
 };
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
@@ -76,9 +84,7 @@ pub(crate) fn select_nullifiers_by_prefix(
 
     QueryParamNullifierPrefixLimit::check(nullifier_prefixes.len())?;
 
-    let prefixes = nullifier_prefixes
-        .iter()
-        .map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
+    let prefixes = nullifier_prefixes.iter().map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
     let raw = SelectDsl::select(
         schema::nullifiers::table,
         NullifierWithoutPrefixRawRow::as_select(),
@@ -98,8 +104,7 @@ pub(crate) fn select_nullifiers_by_prefix(
         let last_block_num_i64 = last.block_num;
 
         let nullifiers = vec_raw_try_into(
-            raw.into_iter()
-                .take_while(|row| row.block_num != last_block_num_i64),
+            raw.into_iter().take_while(|row| row.block_num != last_block_num_i64),
         )?;
 
         let last_block_included = BlockNumber::from_raw_sql(last_block_num_i64.saturating_sub(1))?;
@@ -131,11 +136,9 @@ pub(crate) fn select_nullifiers_by_prefix(
 pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
-    let nullifiers_raw = SelectDsl::select(
-        schema::nullifiers::table,
-        NullifierWithoutPrefixRawRow::as_select(),
-    )
-    .load::<NullifierWithoutPrefixRawRow>(conn)?;
+    let nullifiers_raw =
+        SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
+            .load::<NullifierWithoutPrefixRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }
 
@@ -176,13 +179,11 @@ pub(crate) fn select_nullifiers_paged(
     #[expect(clippy::cast_possible_wrap)]
     let limit = (page_size.get() + 1) as i64;
 
-    let mut query = SelectDsl::select(
-        schema::nullifiers::table,
-        NullifierWithoutPrefixRawRow::as_select(),
-    )
-    .order_by(schema::nullifiers::nullifier.asc())
-    .limit(limit)
-    .into_boxed();
+    let mut query =
+        SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
+            .order_by(schema::nullifiers::nullifier.asc())
+            .limit(limit)
+            .into_boxed();
 
     if let Some(cursor) = after_nullifier {
         query = query.filter(schema::nullifiers::nullifier.gt(cursor.to_bytes()));
@@ -199,10 +200,7 @@ pub(crate) fn select_nullifiers_paged(
         None
     };
 
-    Ok(NullifiersPage {
-        nullifiers,
-        next_cursor,
-    })
+    Ok(NullifiersPage { nullifiers, next_cursor })
 }
 
 /// Insert nullifiers for a block into the database.
@@ -249,19 +247,16 @@ pub(crate) fn insert_nullifiers_for_block(
         .execute(conn)?;
 
     count += diesel::insert_into(schema::nullifiers::table)
-        .values(Vec::from_iter(
-            nullifiers
-                .iter()
-                .zip(serialized_nullifiers.iter())
-                .map(|(nullifier, bytes)| {
-                    (
-                        schema::nullifiers::nullifier.eq(bytes),
-                        schema::nullifiers::nullifier_prefix
-                            .eq(nullifier_prefix_to_raw_sql(get_nullifier_prefix(nullifier))),
-                        schema::nullifiers::block_num.eq(block_num.to_raw_sql()),
-                    )
-                }),
-        ))
+        .values(Vec::from_iter(nullifiers.iter().zip(serialized_nullifiers.iter()).map(
+            |(nullifier, bytes)| {
+                (
+                    schema::nullifiers::nullifier.eq(bytes),
+                    schema::nullifiers::nullifier_prefix
+                        .eq(nullifier_prefix_to_raw_sql(get_nullifier_prefix(nullifier))),
+                    schema::nullifiers::block_num.eq(block_num.to_raw_sql()),
+                )
+            },
+        )))
         .execute(conn)?;
 
     Ok(count)
@@ -280,9 +275,6 @@ impl TryInto<NullifierInfo> for NullifierWithoutPrefixRawRow {
     fn try_into(self) -> Result<NullifierInfo, Self::Error> {
         let nullifier = Nullifier::read_from_bytes(&self.nullifier)?;
         let block_num = BlockNumber::from_raw_sql(self.block_num)?;
-        Ok(NullifierInfo {
-            nullifier,
-            block_num,
-        })
+        Ok(NullifierInfo { nullifier, block_num })
     }
 }

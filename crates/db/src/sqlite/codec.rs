@@ -86,23 +86,17 @@ impl<'a> DbValueRef<'a> {
 
     /// Reads the value as an `i64`.
     pub fn as_i64(self) -> Result<i64, DatabaseError> {
-        self.0
-            .as_i64()
-            .map_err(|err| DatabaseError::deserialization("i64", err))
+        self.0.as_i64().map_err(|err| DatabaseError::deserialization("i64", err))
     }
 
     /// Reads the value as a borrowed BLOB.
     pub fn as_blob(self) -> Result<&'a [u8], DatabaseError> {
-        self.0
-            .as_blob()
-            .map_err(|err| DatabaseError::deserialization("blob", err))
+        self.0.as_blob().map_err(|err| DatabaseError::deserialization("blob", err))
     }
 
     /// Reads the value as a borrowed string.
     pub fn as_str(self) -> Result<&'a str, DatabaseError> {
-        self.0
-            .as_str()
-            .map_err(|err| DatabaseError::deserialization("str", err))
+        self.0.as_str().map_err(|err| DatabaseError::deserialization("str", err))
     }
 
     /// Returns `true` if the value is SQL `NULL`.

@@ -84,15 +84,13 @@ impl CommittedBlockEffects {
     /// The coordinator uses this to release actor spawns that were deferred until the account's
     /// creation transaction committed.
     pub fn created_network_accounts(&self) -> impl Iterator<Item = AccountId> + '_ {
-        self.network_account_updates
-            .iter()
-            .filter_map(|(account_id, details)| {
-                matches!(
-                    NetworkAccountEffect::from_protocol(details),
-                    Some(NetworkAccountEffect::Created(_))
-                )
-                .then_some(*account_id)
-            })
+        self.network_account_updates.iter().filter_map(|(account_id, details)| {
+            matches!(
+                NetworkAccountEffect::from_protocol(details),
+                Some(NetworkAccountEffect::Created(_))
+            )
+            .then_some(*account_id)
+        })
     }
 
     /// The latest transaction committed against each account in this block.

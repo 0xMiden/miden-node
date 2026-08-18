@@ -28,10 +28,7 @@ pub struct BlockNotification(Arc<Block>);
 
 impl BlockNotification {
     pub fn new(block_num: BlockNumber, block_bytes: Vec<u8>) -> Self {
-        Self(Arc::new(Block {
-            block_num,
-            block_bytes,
-        }))
+        Self(Arc::new(Block { block_num, block_bytes }))
     }
 
     pub fn block_num(&self) -> BlockNumber {
@@ -58,10 +55,7 @@ pub struct ProofNotification(Arc<Proof>);
 
 impl ProofNotification {
     pub fn new(block_num: BlockNumber, proof_bytes: Vec<u8>) -> Self {
-        Self(Arc::new(Proof {
-            block_num,
-            proof_bytes,
-        }))
+        Self(Arc::new(Proof { block_num, proof_bytes }))
     }
 
     pub fn block_num(&self) -> BlockNumber {
@@ -104,10 +98,7 @@ impl State {
         if let Some(block) = self.block_cache.get(block_num) {
             return Ok(Some(block.block_bytes().to_vec()));
         }
-        self.block_store
-            .load_block(block_num)
-            .await
-            .map_err(Into::into)
+        self.block_store.load_block(block_num).await.map_err(Into::into)
     }
 
     /// Loads a block proof from the in-memory replica cache or block store. Returns `Ok(None)` if
@@ -122,10 +113,7 @@ impl State {
         if let Some(proof) = self.proof_cache.get(block_num) {
             return Ok(Some(proof.proof_bytes().to_vec()));
         }
-        self.block_store
-            .load_proof(block_num)
-            .await
-            .map_err(Into::into)
+        self.block_store.load_proof(block_num).await.map_err(Into::into)
     }
 
     /// Loads serialized block proving inputs from the block store.

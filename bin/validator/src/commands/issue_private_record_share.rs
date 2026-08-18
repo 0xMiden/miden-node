@@ -9,11 +9,7 @@ use super::PrivateRecordShareOptions;
 
 /// Loads the required operator key and issues one administrative share.
 pub(super) fn issue_from_options(options: PrivateRecordShareOptions) -> anyhow::Result<()> {
-    let PrivateRecordShareOptions {
-        record,
-        output,
-        storage_key,
-    } = options;
+    let PrivateRecordShareOptions { record, output, storage_key } = options;
     let operator_key = storage_key.load()?;
     issue(&record, &output, &operator_key)
 }
@@ -25,10 +21,7 @@ pub(super) fn issue(
     operator_key: &GoldenOperatorKey,
 ) -> anyhow::Result<()> {
     let record_bytes = fs_err::read(record_path).with_context(|| {
-        format!(
-            "failed to read private record bundle from {}",
-            record_path.display()
-        )
+        format!("failed to read private record bundle from {}", record_path.display())
     })?;
     let record = StoredPrivateRecord::read_from_bytes(&record_bytes)
         .context("private record bundle is invalid")?;
@@ -43,12 +36,8 @@ pub(super) fn issue(
 
 /// Writes canonical share bytes without adding a text encoding or delimiter.
 fn write_share(output: &Path, share: &[u8]) -> anyhow::Result<()> {
-    fs_err::write(output, share).with_context(|| {
-        format!(
-            "failed to write private record share to {}",
-            output.display()
-        )
-    })
+    fs_err::write(output, share)
+        .with_context(|| format!("failed to write private record share to {}", output.display()))
 }
 
 #[cfg(test)]

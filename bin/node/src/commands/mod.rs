@@ -80,7 +80,7 @@ impl Command {
                 .with_attribute("miden.node.role", "full"),
             Command::Bootstrap(_) | Command::Migrate(_) | Command::Recover(_) => {
                 OpenTelemetry::Disabled
-            }
+            },
         }
     }
 

@@ -46,10 +46,7 @@ pub(crate) struct NtxDbReader {
 impl NtxDbReader {
     pub(crate) async fn select_genesis_commitment(&self) -> Result<Option<Word>, DatabaseError> {
         self.reader
-            .read(
-                "select_genesis_commitment",
-                db::queries::select_genesis_commitment,
-            )
+            .read("select_genesis_commitment", db::queries::select_genesis_commitment)
             .await
     }
 
@@ -58,10 +55,7 @@ impl NtxDbReader {
         &self,
     ) -> Result<Option<ValidatorKeys>, DatabaseError> {
         self.reader
-            .read(
-                "select_genesis_validator_keys",
-                db::queries::select_genesis_validator_keys,
-            )
+            .read("select_genesis_validator_keys", db::queries::select_genesis_validator_keys)
             .await
     }
 
@@ -70,9 +64,7 @@ impl NtxDbReader {
         account_id: AccountId,
     ) -> Result<Option<Account>, DatabaseError> {
         self.reader
-            .read("get_account", move |tx| {
-                queries::get_account(tx, account_id)
-            })
+            .read("get_account", move |tx| queries::get_account(tx, account_id))
             .await
     }
 
@@ -110,9 +102,7 @@ impl NtxDbReader {
     pub(crate) async fn select_chain_state(
         &self,
     ) -> Result<Option<(BlockNumber, BlockHeader, PartialMmr)>, DatabaseError> {
-        self.reader
-            .read("select_chain_state", queries::select_chain_state)
-            .await
+        self.reader.read("select_chain_state", queries::select_chain_state).await
     }
 
     pub(crate) async fn account_exists(
@@ -120,9 +110,7 @@ impl NtxDbReader {
         account_id: AccountId,
     ) -> Result<bool, DatabaseError> {
         self.reader
-            .read("account_exists", move |tx| {
-                db::queries::account_exists(tx, account_id)
-            })
+            .read("account_exists", move |tx| db::queries::account_exists(tx, account_id))
             .await
     }
 
@@ -146,9 +134,7 @@ impl NtxDbReader {
         account_id: AccountId,
     ) -> Result<Option<TransactionId>, DatabaseError> {
         self.reader
-            .read("account_last_tx", move |tx| {
-                queries::account_last_tx(tx, account_id)
-            })
+            .read("account_last_tx", move |tx| queries::account_last_tx(tx, account_id))
             .await
     }
 
@@ -157,9 +143,7 @@ impl NtxDbReader {
         script_root: Word,
     ) -> Result<Option<NoteScript>, DatabaseError> {
         self.reader
-            .read("lookup_note_script", move |tx| {
-                queries::lookup_note_script(tx, &script_root)
-            })
+            .read("lookup_note_script", move |tx| queries::lookup_note_script(tx, &script_root))
             .await
     }
 
@@ -168,9 +152,7 @@ impl NtxDbReader {
         note_id: NoteId,
     ) -> Result<Option<NoteStatusRow>, DatabaseError> {
         self.reader
-            .read("get_note_status", move |tx| {
-                crate::db::queries::get_note_status(tx, note_id)
-            })
+            .read("get_note_status", move |tx| crate::db::queries::get_note_status(tx, note_id))
             .await
     }
 }
@@ -230,9 +212,7 @@ impl NtxDbWriter {
         block_num: BlockNumber,
     ) -> Result<(), DatabaseError> {
         self.writer
-            .write("notes_failed", move |tx| {
-                queries::notes_failed(tx, &failed_notes, block_num)
-            })
+            .write("notes_failed", move |tx| queries::notes_failed(tx, &failed_notes, block_num))
             .await
     }
 
@@ -279,11 +259,7 @@ impl NtxDbWriter {
     err,
 )]
 pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDbWriter> {
-    load_with_pool_size(
-        database_filepath,
-        miden_node_db::default_connection_pool_size(),
-    )
-    .await
+    load_with_pool_size(database_filepath, miden_node_db::default_connection_pool_size()).await
 }
 
 /// Opens an async connection pool with a specific pool size after verifying the database is at the
@@ -325,10 +301,7 @@ fn open_with_pool_size(
         "Connected to the database"
     );
 
-    Ok(NtxDbWriter {
-        writer,
-        reader: NtxDbReader { reader },
-    })
+    Ok(NtxDbWriter { writer, reader: NtxDbReader { reader } })
 }
 
 /// Creates and initializes the database, then seeds it with the genesis block.
@@ -347,10 +320,8 @@ fn open_with_pool_size(
 )]
 pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> anyhow::Result<()> {
     bootstrap_database(&database_filepath).context("failed to bootstrap database schema")?;
-    let db = open_with_pool_size(
-        &database_filepath,
-        miden_node_db::default_connection_pool_size(),
-    )?;
+    let db =
+        open_with_pool_size(&database_filepath, miden_node_db::default_connection_pool_size())?;
 
     let genesis_commitment = genesis.header().commitment();
     let genesis_header = genesis.header().clone();
@@ -391,11 +362,8 @@ impl NtxDbReader {
     pub(crate) async fn count(&self, sql: &'static str) -> i64 {
         self.reader
             .read("count", move |tx| {
-                let n = tx
-                    .query(sql, &[], |row| row.get::<i64>(0))?
-                    .into_iter()
-                    .next()
-                    .unwrap_or(0);
+                let n =
+                    tx.query(sql, &[], |row| row.get::<i64>(0))?.into_iter().next().unwrap_or(0);
                 Ok::<i64, DatabaseError>(n)
             })
             .await
@@ -442,9 +410,7 @@ impl NtxDbWriter {
         notes: Vec<AccountTargetNetworkNote>,
     ) -> Result<(), DatabaseError> {
         self.writer
-            .write("insert_network_notes", move |tx| {
-                queries::insert_network_notes(tx, &notes)
-            })
+            .write("insert_network_notes", move |tx| queries::insert_network_notes(tx, &notes))
             .await
     }
 
@@ -507,17 +473,9 @@ mod tests {
             .await
             .expect("bootstrap should succeed with a network account in genesis");
 
-        let db = load(db_path)
-            .await
-            .expect("load should open the bootstrapped database");
-        let account = db
-            .get_account(account_id)
-            .await
-            .expect("query should succeed");
-        assert!(
-            account.is_some(),
-            "genesis network account should be committed after bootstrap"
-        );
+        let db = load(db_path).await.expect("load should open the bootstrapped database");
+        let account = db.get_account(account_id).await.expect("query should succeed");
+        assert!(account.is_some(), "genesis network account should be committed after bootstrap");
     }
 
     #[tokio::test]
@@ -531,9 +489,7 @@ mod tests {
             .await
             .expect("bootstrap should succeed on a fresh database");
 
-        let db = load(db_path)
-            .await
-            .expect("load should open the bootstrapped database");
+        let db = load(db_path).await.expect("load should open the bootstrapped database");
         let (block_num, ..) = db
             .select_chain_state()
             .await
@@ -563,8 +519,7 @@ mod tests {
             .await
             .expect_err("second bootstrap should fail");
         assert!(
-            err.chain()
-                .any(|source| source.to_string().contains("database already exists")),
+            err.chain().any(|source| source.to_string().contains("database already exists")),
             "unexpected error: {err}"
         );
     }

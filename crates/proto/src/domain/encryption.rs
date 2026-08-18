@@ -7,7 +7,8 @@
 
 use miden_protocol::Word;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{
-    PublicKey as ValidatorPublicKey, Signature as ValidatorSignature,
+    PublicKey as ValidatorPublicKey,
+    Signature as ValidatorSignature,
 };
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::PublicKey as EncryptionPublicKey;
 use miden_protocol::crypto::ies::SealingKey;
@@ -271,10 +272,7 @@ pub fn verify_transaction_encryption_key(
             continue;
         };
 
-        if !trusted
-            .validator_signing_keys
-            .contains(&validator_public_key)
-        {
+        if !trusted.validator_signing_keys.contains(&validator_public_key) {
             continue;
         }
         found_trusted_signer = true;
@@ -353,10 +351,7 @@ fn validate_key_id(
         return Err(TransactionEncryptionKeyError::EmptyKeyId { field });
     }
     if key_id.len() > MAX_KEY_ID_LEN {
-        return Err(TransactionEncryptionKeyError::KeyIdTooLong {
-            field,
-            len: key_id.len(),
-        });
+        return Err(TransactionEncryptionKeyError::KeyIdTooLong { field, len: key_id.len() });
     }
     Ok(())
 }
@@ -517,9 +512,7 @@ mod tests {
         let (info, _) = decode_key_info(&key).unwrap();
         key.attestations = vec![proto::transaction::ValidatorKeyAttestation {
             validator_public_key: signer.public_key().to_bytes(),
-            signature: signer
-                .sign(info.attestation_commitment(genesis_commitment))
-                .to_bytes(),
+            signature: signer.sign(info.attestation_commitment(genesis_commitment)).to_bytes(),
         }];
         key
     }
@@ -538,10 +531,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(verified.info().key_id, TEST_KEY_ID);
-        assert_eq!(
-            verified.info().scheme,
-            TransactionEncryptionScheme::X25519XChaCha20Poly1305
-        );
+        assert_eq!(verified.info().scheme, TransactionEncryptionScheme::X25519XChaCha20Poly1305);
         assert_eq!(verified.genesis_commitment(), genesis());
     }
 
@@ -622,10 +612,8 @@ mod tests {
         let mut changed_key_id = key.clone();
         changed_key_id.key_id[0] ^= 1;
         let mut changed_public_key = key.clone();
-        changed_public_key.public_key = KeyExchangeKey::read_from_bytes(&[8u8; 32])
-            .unwrap()
-            .public_key()
-            .to_bytes();
+        changed_public_key.public_key =
+            KeyExchangeKey::read_from_bytes(&[8u8; 32]).unwrap().public_key().to_bytes();
         let mut injected_next_key = key.clone();
         injected_next_key.next_key = Some(proto::transaction::NextTransactionEncryptionKey {
             scheme: key.scheme,
@@ -637,12 +625,7 @@ mod tests {
             rotation_block_num: 100,
         });
 
-        for changed in [
-            changed_scheme,
-            changed_key_id,
-            changed_public_key,
-            injected_next_key,
-        ] {
+        for changed in [changed_scheme, changed_key_id, changed_public_key, injected_next_key] {
             assert!(verify_transaction_encryption_key(changed, trusted).is_err());
         }
 

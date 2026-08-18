@@ -4,7 +4,10 @@ use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use tonic::Status;
 
 use super::{
-    RpcInvalidBlockRange, RpcService, database_error_to_status, invalid_block_range_to_status,
+    RpcInvalidBlockRange,
+    RpcService,
+    database_error_to_status,
+    invalid_block_range_to_status,
 };
 use crate::{COMPONENT, LOG_TARGET};
 
@@ -49,9 +52,7 @@ impl proto::server::rpc_api::SyncAccountStorageMaps for RpcService {
         tracing::debug!(target: LOG_TARGET, "Syncing account storage maps");
 
         if !account_id.is_public() {
-            return Err(Status::invalid_argument(format!(
-                "account {account_id} is not public"
-            )));
+            return Err(Status::invalid_argument(format!("account {account_id} is not public")));
         }
         let block_range = range
             .into_inclusive_range::<RpcInvalidBlockRange>()

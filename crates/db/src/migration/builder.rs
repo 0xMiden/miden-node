@@ -58,10 +58,7 @@ impl MigratorBuilder {
         let reference = Connection::open_in_memory()
             .context("failed to create in-memory migration database")?;
 
-        Ok(Self {
-            reference,
-            migrator: Migrator::empty(),
-        })
+        Ok(Self { reference, migrator: Migrator::empty() })
     }
 
     /// Adds a pure SQL retired migration.
@@ -122,13 +119,8 @@ mod tests {
 
     #[test]
     fn empty_builder_returns_error() -> Result<()> {
-        let err = Migrator::builder()?
-            .build()
-            .expect_err("empty builder should fail");
-        assert!(
-            err.to_string()
-                .contains("cannot build migrator without migrations")
-        );
+        let err = Migrator::builder()?.build().expect_err("empty builder should fail");
+        assert!(err.to_string().contains("cannot build migrator without migrations"));
         Ok(())
     }
 
@@ -137,10 +129,7 @@ mod tests {
     fn panics_when_adding_retired_after_active_migration() {
         let _builder = Migrator::builder()
             .expect("builder should be created")
-            .push_sql(
-                "create items",
-                "CREATE TABLE items (id INTEGER PRIMARY KEY);",
-            )
+            .push_sql("create items", "CREATE TABLE items (id INTEGER PRIMARY KEY);")
             .expect("SQL migration should be added")
             .push_retired("add notes", "CREATE TABLE notes (id INTEGER PRIMARY KEY);");
     }
@@ -160,17 +149,11 @@ mod tests {
                 "create items",
                 "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT);",
             )?
-            .push_sql(
-                "index item values",
-                "CREATE INDEX idx_items_value ON items(value);",
-            )?
+            .push_sql("index item values", "CREATE INDEX idx_items_value ON items(value);")?
             .push_code("add item height", add_item_height)?
             .build()?;
 
-        assert_eq!(
-            migrator.schema_hashes(),
-            SchemaHashes(&[retired_hash, sql_hash, final_hash])
-        );
+        assert_eq!(migrator.schema_hashes(), SchemaHashes(&[retired_hash, sql_hash, final_hash]));
         Ok(())
     }
 }

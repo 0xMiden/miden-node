@@ -134,9 +134,7 @@ impl SubscriptionStream {
         };
         producer.spawn();
 
-        Ok(Self {
-            inner: ReceiverStream::new(rx),
-        })
+        Ok(Self { inner: ReceiverStream::new(rx) })
     }
 
     /// Rejects subscriptions whose starting block is too far ahead of the current chain tip.
@@ -231,11 +229,7 @@ where
         }
 
         let data = self.load_data().await?;
-        let event = StreamItem {
-            data,
-            block: self.next,
-            tip,
-        };
+        let event = StreamItem { data, block: self.next, tip };
         self.send_event(event).await?;
 
         self.next = self.next.child();
@@ -313,7 +307,7 @@ impl StreamError {
             StreamError::ConnectionClosed => tonic::Status::aborted("client closed the stream"),
             StreamError::SlowSubscriber => {
                 tonic::Status::resource_exhausted("client is too slow to keep up with the chain")
-            }
+            },
             StreamError::Internal => tonic::Status::internal("internal error"),
         }
     }
@@ -331,10 +325,7 @@ struct SubscriberLagTracker {
 impl Default for SubscriberLagTracker {
     /// Creates a tracker with no accumulated lag.
     fn default() -> Self {
-        Self {
-            previous_gap: u32::MAX,
-            running_total: 0,
-        }
+        Self { previous_gap: u32::MAX, running_total: 0 }
     }
 }
 

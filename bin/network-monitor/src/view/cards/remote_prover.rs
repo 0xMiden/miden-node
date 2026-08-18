@@ -4,8 +4,13 @@
 use maud::{Markup, html};
 
 use super::super::helpers::{
-    copy_button, format_success_rate, metric_row, probe_section_placeholder, proof_type_label,
-    status_label, truncate,
+    copy_button,
+    format_success_rate,
+    metric_row,
+    probe_section_placeholder,
+    proof_type_label,
+    status_label,
+    truncate,
 };
 use crate::status::{ProverTestOutcome, RemoteProverDetails, Status, WorkerStatusDetails};
 

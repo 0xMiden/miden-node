@@ -75,8 +75,7 @@ trait ProveRequest: Send + Sync {
     )]
     fn prove_request(&self, request: proto::ProofRequest) -> Result<proto::Proof, tonic::Status> {
         let input = Self::decode_request(request)?;
-        self.prove(input)
-            .map(|output| Self::encode_response(output))
+        self.prove(input).map(|output| Self::encode_response(output))
     }
 
     #[miden_instrument(
@@ -97,9 +96,7 @@ trait ProveRequest: Send + Sync {
     fn encode_response(output: Self::Output) -> proto::Proof {
         use miden_protocol::utils::serde::Serializable;
 
-        proto::Proof {
-            payload: output.to_bytes(),
-        }
+        proto::Proof { payload: output.to_bytes() }
     }
 }
 
@@ -132,11 +129,7 @@ impl ProveRequest for LocalBlockProver {
     type Output = BlockProof;
 
     fn prove(&self, input: Self::Input) -> Result<Self::Output, tonic::Status> {
-        let BlockProofRequest {
-            tx_batches,
-            block_header,
-            block_inputs,
-        } = input;
+        let BlockProofRequest { tx_batches, block_header, block_inputs } = input;
 
         self.prove(tx_batches, &block_header, block_inputs)
             .map_err(|e| tonic::Status::internal(e.as_report_context("failed to prove block")))

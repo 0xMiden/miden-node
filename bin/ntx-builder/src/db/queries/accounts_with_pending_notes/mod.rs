@@ -13,7 +13,5 @@ pub fn accounts_with_pending_notes(
     tx: &ReadTx<'_>,
     max_attempts: usize,
 ) -> Result<Vec<AccountId>, DatabaseError> {
-    tx.query(SQL, &[&(max_attempts as i64)], |row| {
-        row.get::<AccountId>(0)
-    })
+    tx.query(SQL, &[&(max_attempts as i64)], |row| row.get::<AccountId>(0))
 }

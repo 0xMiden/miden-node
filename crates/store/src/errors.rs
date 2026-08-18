@@ -11,8 +11,14 @@ use miden_protocol::crypto::merkle::mmr::MmrError;
 use miden_protocol::crypto::merkle::smt::{LargeSmtForestError, LineageId};
 use miden_protocol::crypto::utils::DeserializationError;
 use miden_protocol::errors::{
-    AccountDeltaError, AccountError, AccountTreeError, AssetError, AssetVaultError, NoteError,
-    NullifierTreeError, StorageMapError,
+    AccountDeltaError,
+    AccountError,
+    AccountTreeError,
+    AssetError,
+    AssetVaultError,
+    NoteError,
+    NullifierTreeError,
+    StorageMapError,
 };
 use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::OutputNote;
@@ -363,7 +369,12 @@ mod compile_tests {
     use std::marker::PhantomData;
 
     use super::{
-        AccountDeltaError, AccountError, DatabaseError, DeserializationError, NoteError, RecvError,
+        AccountDeltaError,
+        AccountError,
+        DatabaseError,
+        DeserializationError,
+        NoteError,
+        RecvError,
         StateInitializationError,
     };
 

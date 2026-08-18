@@ -9,7 +9,12 @@ use miden_node_store::{BlockWriter, State, WriterTask};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::block::{
-    BlockBody, BlockHeader, BlockNumber, BlockSignatures, SignedBlock, ValidatorKeys,
+    BlockBody,
+    BlockHeader,
+    BlockNumber,
+    BlockSignatures,
+    SignedBlock,
+    ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
 use miden_protocol::utils::serde::Deserializable;
@@ -171,12 +176,8 @@ async fn recover_from_validators(
     }
 
     let (coalesced_tx, mut coalesced_rx) = mpsc::channel(BLOCK_CHANNEL_CAPACITY);
-    let coalescer = tokio::spawn(coalesce_blocks(
-        block_streams,
-        parent,
-        recovery_tip,
-        coalesced_tx,
-    ));
+    let coalescer =
+        tokio::spawn(coalesce_blocks(block_streams, parent, recovery_tip, coalesced_tx));
 
     while let Some(block) = coalesced_rx.recv().await {
         let block_num = block.header().block_num();
@@ -305,9 +306,7 @@ async fn next_coalesced_block(
     // Fully validate the reconstructed block before it is persisted, including verifying the
     // signature set against the parent's validator keys; `BlockWriter::apply_block` does not verify
     // signatures.
-    block
-        .validate(Some(parent))
-        .context("coalesced block failed validation")?;
+    block.validate(Some(parent)).context("coalesced block failed validation")?;
 
     Ok(block)
 }
@@ -370,11 +369,7 @@ mod tests {
         let keys = validator_keys(&signers);
 
         // Collect the signatures in reverse order to prove they get reordered.
-        let shuffled = signers
-            .iter()
-            .rev()
-            .map(|signer| signer.sign(commitment))
-            .collect();
+        let shuffled = signers.iter().rev().map(|signer| signer.sign(commitment)).collect();
 
         let coalesced = coalesce_signatures(shuffled, commitment, &keys).unwrap();
         coalesced.verify_against(commitment, &keys).unwrap();
@@ -386,11 +381,7 @@ mod tests {
         let signers = signers(3);
         let keys = validator_keys(&signers);
 
-        let missing_one = signers
-            .iter()
-            .take(2)
-            .map(|signer| signer.sign(commitment))
-            .collect();
+        let missing_one = signers.iter().take(2).map(|signer| signer.sign(commitment)).collect();
 
         let err = coalesce_signatures(missing_one, commitment, &keys).unwrap_err();
         assert!(err.to_string().contains("collected 2 signatures"), "{err}");
@@ -411,10 +402,7 @@ mod tests {
         ];
 
         let err = coalesce_signatures(duplicated, commitment, &keys).unwrap_err();
-        assert!(
-            err.to_string().contains("no unmatched signature verifies"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("no unmatched signature verifies"), "{err}");
     }
 
     #[test]
@@ -431,9 +419,6 @@ mod tests {
         ];
 
         let err = coalesce_signatures(with_foreign, commitment, &keys).unwrap_err();
-        assert!(
-            err.to_string().contains("no unmatched signature verifies"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("no unmatched signature verifies"), "{err}");
     }
 }

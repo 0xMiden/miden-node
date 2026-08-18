@@ -12,7 +12,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::domain::encryption::{
-    TransactionInputsSealer, TrustedTransactionEncryptionState, verify_transaction_encryption_key,
+    TransactionInputsSealer,
+    TrustedTransactionEncryptionState,
+    verify_transaction_encryption_key,
 };
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_protocol::Word;
@@ -107,7 +109,7 @@ impl Cli {
                 remote_prover_url,
             } => {
                 create_proofs::run(rpc_url, num_transactions, remote_prover_url).await;
-            }
+            },
             Command::RunBenchmark {
                 rpc_url,
                 concurrency,
@@ -123,7 +125,7 @@ impl Cli {
                     validator_signing_public_key,
                 )
                 .await;
-            }
+            },
         }
     }
 }
@@ -142,15 +144,11 @@ async fn build_rpc_client(
 
     let tls_stage = Builder::new(rpc_url.clone());
     let timeout_stage = if use_tls {
-        tls_stage
-            .with_tls()
-            .context("Failed to configure TLS for RPC client")?
+        tls_stage.with_tls().context("Failed to configure TLS for RPC client")?
     } else {
         tls_stage.without_tls()
     };
-    let genesis_stage = timeout_stage
-        .with_timeout(timeout)
-        .without_metadata_version();
+    let genesis_stage = timeout_stage.with_timeout(timeout).without_metadata_version();
     let otel_stage = match genesis {
         Some(genesis) => genesis_stage.with_metadata_genesis(genesis),
         None => genesis_stage.without_metadata_genesis(),
@@ -179,9 +177,8 @@ async fn discover_genesis(rpc_url: &Url, timeout: Duration) -> Result<Word> {
         .block_header
         .ok_or_else(|| anyhow::anyhow!("No block header in response"))?;
 
-    let genesis_header: BlockHeader = genesis_block_header
-        .try_into()
-        .context("Failed to convert block header")?;
+    let genesis_header: BlockHeader =
+        genesis_block_header.try_into().context("Failed to convert block header")?;
 
     Ok(genesis_header.commitment())
 }
@@ -241,10 +238,7 @@ pub(crate) fn get_genesis_header_request() -> BlockHeaderByNumberRequest {
 
 pub(crate) fn read_from_file<T: Deserializable>(path: &Path) -> T {
     let bytes = fs_err::read(path).unwrap_or_else(|_| {
-        panic!(
-            "failed to read {} — run `create-proofs` first",
-            path.display()
-        )
+        panic!("failed to read {} — run `create-proofs` first", path.display())
     });
     T::read_from_bytes(&bytes)
         .unwrap_or_else(|_| panic!("failed to deserialize {}", path.display()))

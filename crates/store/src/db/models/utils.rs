@@ -10,8 +10,7 @@ pub(crate) fn vec_raw_try_into<D, R: TryInto<D>>(
     raw: impl IntoIterator<Item = R>,
 ) -> std::result::Result<Vec<D>, <R as TryInto<D>>::Error> {
     std::result::Result::<Vec<D>, <R as TryInto<D>>::Error>::from_iter(
-        raw.into_iter()
-            .map(<R as std::convert::TryInto<D>>::try_into),
+        raw.into_iter().map(<R as std::convert::TryInto<D>>::try_into),
     )
 }
 

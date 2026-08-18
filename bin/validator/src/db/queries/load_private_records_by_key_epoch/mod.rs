@@ -13,9 +13,5 @@ pub fn load_private_records_by_key_epoch(
     tx: &ReadTx<'_>,
     key_epoch: StorageKeyEpoch,
 ) -> Result<Vec<StoredPrivateRecord>, DatabaseError> {
-    tx.query(
-        SQL,
-        &[&key_epoch.as_bytes().to_vec()],
-        private_record_from_row,
-    )
+    tx.query(SQL, &[&key_epoch.as_bytes().to_vec()], private_record_from_row)
 }

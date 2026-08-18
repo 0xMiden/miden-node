@@ -116,10 +116,6 @@ impl BlockProducerValidatorClient {
         let block_commitment = decode!(decoder, response.block_commitment)?;
         let public_key = decode!(decoder, response.public_key)?;
 
-        Ok(SignBlockResponse {
-            signature,
-            block_commitment,
-            public_key,
-        })
+        Ok(SignBlockResponse { signature, block_commitment, public_key })
     }
 }

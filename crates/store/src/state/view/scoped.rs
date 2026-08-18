@@ -36,11 +36,7 @@ impl ScopedBlockNum {
     /// queries reject as an invalid block range. Used for paginating over a validated bound in
     /// sub-ranges.
     pub(crate) fn range_from(self, start: BlockNumber) -> ScopedBlockRange {
-        debug_assert!(
-            start <= self.0,
-            "derived range start {start} exceeds its end {}",
-            self.0
-        );
+        debug_assert!(start <= self.0, "derived range start {start} exceeds its end {}", self.0);
         ScopedBlockRange(start..=self.0)
     }
 }

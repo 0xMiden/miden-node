@@ -6,20 +6,42 @@ use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
 use diesel::{
-    AsChangeset, BoolExpressionMethods, ExpressionMethods, Insertable, JoinOnDsl,
-    NullableExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, Selectable,
-    SelectableHelper, SqliteConnection,
+    AsChangeset,
+    BoolExpressionMethods,
+    ExpressionMethods,
+    Insertable,
+    JoinOnDsl,
+    NullableExpressionMethods,
+    OptionalExtension,
+    QueryDsl,
+    RunQueryDsl,
+    Selectable,
+    SelectableHelper,
+    SqliteConnection,
 };
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, AccountVaultDetails};
 use miden_node_utils::limiter::{
-    MAX_RESPONSE_PAYLOAD_BYTES, QueryParamAccountIdLimit, QueryParamLimiter,
+    MAX_RESPONSE_PAYLOAD_BYTES,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
 };
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
-    Account, AccountCode, AccountId, AccountPatch, AccountStorage, AccountStorageHeader,
-    AccountUpdateDetails, StorageMap, StorageMapKey, StorageMapPatchEntries, StorageSlot,
-    StorageSlotContent, StorageSlotName, StorageSlotType,
+    Account,
+    AccountCode,
+    AccountId,
+    AccountPatch,
+    AccountStorage,
+    AccountStorageHeader,
+    AccountUpdateDetails,
+    StorageMap,
+    StorageMapKey,
+    StorageMapPatchEntries,
+    StorageSlot,
+    StorageSlotContent,
+    StorageSlotName,
+    StorageSlotType,
 };
 use miden_protocol::asset::{Asset, AssetId, AssetVault};
 use miden_protocol::block::{BlockAccountUpdate, BlockNumber};
@@ -38,18 +60,20 @@ pub(crate) use at_block::select_account_header_with_storage_header_at_block;
 
 mod delta;
 use delta::{
-    AccountStateForInsert, LatestAccountStateRow, PartialAccountState, PrecomputedFullAccountState,
-    apply_storage_patch_with_roots, select_latest_account_state,
+    AccountStateForInsert,
+    LatestAccountStateRow,
+    PartialAccountState,
+    PrecomputedFullAccountState,
+    apply_storage_patch_with_roots,
+    select_latest_account_state,
 };
 
 #[cfg(test)]
 mod tests;
 
 type StorageMapValueRow = (i64, String, Vec<u8>, Vec<u8>);
-type StorageHeaderWithEntries = (
-    AccountStorageHeader,
-    HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>,
-);
+type StorageHeaderWithEntries =
+    (AccountStorageHeader, HashMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>);
 
 /// Sentinel `valid_until` value marking a row as the current, open-ended version of its key.
 ///
@@ -174,15 +198,13 @@ pub(crate) fn select_full_account(
         schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
     ));
 
-    let (nonce, code_bytes): (Option<i64>, Vec<u8>) = SelectDsl::select(
-        joined,
-        (schema::accounts::nonce, schema::account_codes::code),
-    )
-    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-    .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
-    .get_result(conn)
-    .optional()?
-    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    let (nonce, code_bytes): (Option<i64>, Vec<u8>) =
+        SelectDsl::select(joined, (schema::accounts::nonce, schema::account_codes::code))
+            .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+            .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
+            .get_result(conn)
+            .optional()?
+            .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
 
     let nonce = raw_sql_to_nonce(nonce.ok_or_else(|| {
         DatabaseError::DataCorrupted(format!("No nonce found for account {account_id}"))
@@ -196,10 +218,7 @@ pub(crate) fn select_full_account(
     // Reconstruct vault from account_vault_assets table
     let vault_entries: Vec<(Vec<u8>, Option<Vec<u8>>)> = SelectDsl::select(
         schema::account_vault_assets::table,
-        (
-            schema::account_vault_assets::vault_key,
-            schema::account_vault_assets::asset,
-        ),
+        (schema::account_vault_assets::vault_key, schema::account_vault_assets::asset),
     )
     .filter(schema::account_vault_assets::account_id.eq(account_id.to_bytes()))
     .filter(schema::account_vault_assets::valid_until.eq(VALID_FOREVER))
@@ -258,10 +277,7 @@ pub(crate) fn select_account_commitments_paged(
 
     let mut query = SelectDsl::select(
         schema::accounts::table,
-        (
-            schema::accounts::account_id,
-            schema::accounts::account_commitment,
-        ),
+        (schema::accounts::account_id, schema::accounts::account_commitment),
     )
     .filter(schema::accounts::valid_until.eq(VALID_FOREVER))
     .order_by(schema::accounts::account_id.asc())
@@ -276,10 +292,7 @@ pub(crate) fn select_account_commitments_paged(
 
     let mut commitments = Result::<Vec<_>, DatabaseError>::from_iter(raw.into_iter().map(
         |(ref account, ref commitment)| {
-            Ok((
-                AccountId::read_from_bytes(account)?,
-                Word::read_from_bytes(commitment)?,
-            ))
+            Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
         },
     ))?;
 
@@ -291,10 +304,7 @@ pub(crate) fn select_account_commitments_paged(
         None
     };
 
-    Ok(AccountCommitmentsPage {
-        commitments,
-        next_cursor,
-    })
+    Ok(AccountCommitmentsPage { commitments, next_cursor })
 }
 
 /// Page of public account IDs returned by [`select_public_account_ids_paged`].
@@ -389,10 +399,7 @@ pub(crate) fn select_public_account_ids_paged(
         None
     };
 
-    Ok(PublicAccountIdsPage {
-        account_ids,
-        next_cursor,
-    })
+    Ok(PublicAccountIdsPage { account_ids, next_cursor })
 }
 
 /// Selects public account vault roots and storage headers with pagination.
@@ -480,10 +487,7 @@ pub(crate) fn select_public_account_state_roots_paged(
         None
     };
 
-    Ok(PublicAccountStateRootsPage {
-        accounts,
-        next_cursor,
-    })
+    Ok(PublicAccountStateRootsPage { accounts, next_cursor })
 }
 
 /// Select account vault assets within a block range (inclusive).
@@ -564,9 +568,7 @@ pub(crate) fn select_account_vault_assets(
     } else {
         (
             *block_range.end(),
-            raw.into_iter()
-                .map(AccountVaultValue::from_raw_row)
-                .collect::<Result<_, _>>()?,
+            raw.into_iter().map(AccountVaultValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };
 
@@ -794,10 +796,7 @@ pub(crate) fn select_account_storage_map_values_paged(
         )
     };
 
-    Ok(StorageMapValuesPage {
-        last_block_included,
-        values,
-    })
+    Ok(StorageMapValuesPage { last_block_included, values })
 }
 
 /// Select latest account storage by querying `accounts.storage_header` for the account's
@@ -818,16 +817,14 @@ pub(crate) fn select_latest_account_storage(
                 StorageSlotType::Value => {
                     // For value slots, the header value IS the slot value
                     StorageSlot::with_value(slot_header.name().clone(), slot_header.value())
-                }
+                },
                 StorageSlotType::Map => {
                     // For map slots, reconstruct from map entries
-                    let entries = map_entries_by_slot
-                        .get(slot_header.name())
-                        .cloned()
-                        .unwrap_or_default();
+                    let entries =
+                        map_entries_by_slot.get(slot_header.name()).cloned().unwrap_or_default();
                     let storage_map = StorageMap::with_entries(entries)?;
                     StorageSlot::with_map(slot_header.name().clone(), storage_map)
-                }
+                },
             };
             Ok(slot)
         }))?;
@@ -887,10 +884,7 @@ fn group_storage_map_entries(
         })?;
         let key = StorageMapKey::read_from_bytes(&key_bytes)?;
         let value = Word::read_from_bytes(&value_bytes)?;
-        map_entries_by_slot
-            .entry(slot_name)
-            .or_default()
-            .insert(key, value);
+        map_entries_by_slot.entry(slot_name).or_default().insert(key, value);
     }
 
     Ok(map_entries_by_slot)
@@ -913,17 +907,10 @@ impl TryFrom<AccountVaultUpdateRaw> for AccountVaultValue {
 
     fn try_from(raw: AccountVaultUpdateRaw) -> Result<Self, Self::Error> {
         let vault_key = AssetId::try_from(Word::read_from_bytes(&raw.vault_key)?)?;
-        let asset = raw
-            .asset
-            .map(|bytes| Asset::read_from_bytes(&bytes))
-            .transpose()?;
+        let asset = raw.asset.map(|bytes| Asset::read_from_bytes(&bytes)).transpose()?;
         let block_num = BlockNumber::from_raw_sql(raw.block_num)?;
 
-        Ok(AccountVaultValue {
-            block_num,
-            vault_key,
-            asset,
-        })
+        Ok(AccountVaultValue { block_num, vault_key, asset })
     }
 }
 
@@ -1078,14 +1065,7 @@ type PendingAssetInserts = Vec<(AccountId, AssetId, Option<Asset>)>;
 fn prepare_full_account_update(
     update: &BlockAccountUpdate,
     account: Account,
-) -> Result<
-    (
-        AccountStateForInsert,
-        PendingStorageInserts,
-        PendingAssetInserts,
-    ),
-    DatabaseError,
-> {
+) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
     let account_id = account.id();
 
     // sanity check the commitment of account matches the final state commitment
@@ -1138,14 +1118,7 @@ fn prepare_precomputed_full_account_update(
     update: &BlockAccountUpdate,
     patch: &AccountPatch,
     precomputed: &PrecomputedPublicAccountState,
-) -> Result<
-    (
-        AccountStateForInsert,
-        PendingStorageInserts,
-        PendingAssetInserts,
-    ),
-    DatabaseError,
-> {
+) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
     let account_id = patch.id();
     let code = patch.code().cloned().ok_or_else(|| {
         DatabaseError::DataCorrupted(format!(
@@ -1211,11 +1184,7 @@ fn prepare_precomputed_full_account_update(
         is_network_account,
     };
 
-    Ok((
-        AccountStateForInsert::PrecomputedFullState(state),
-        storage,
-        assets,
-    ))
+    Ok((AccountStateForInsert::PrecomputedFullState(state), storage, assets))
 }
 
 /// Prepares a partial public-account update using the latest row and precomputed forest roots.
@@ -1235,14 +1204,7 @@ fn prepare_partial_account_update(
     patch: &AccountPatch,
     precomputed: &PrecomputedPublicAccountState,
     existing: &LatestAccountStateRow,
-) -> Result<
-    (
-        AccountStateForInsert,
-        PendingStorageInserts,
-        PendingAssetInserts,
-    ),
-    DatabaseError,
-> {
+) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
     // Build the minimal account state needed for partial patch application from the latest row that
     // was loaded with the account's creation metadata.
     let state_headers = existing.state_headers(account_id)?;
@@ -1263,10 +1225,7 @@ fn prepare_partial_account_update(
 
     let mut storage = Vec::new();
     for (slot_name, map_patch) in patch.storage().maps() {
-        for (key, value) in map_patch
-            .entries()
-            .into_iter()
-            .flat_map(StorageMapPatchEntries::as_map)
+        for (key, value) in map_patch.entries().into_iter().flat_map(StorageMapPatchEntries::as_map)
         {
             storage.push((account_id, slot_name.clone(), *key, *value));
         }
@@ -1307,11 +1266,7 @@ fn prepare_partial_account_update(
         });
     }
 
-    Ok((
-        AccountStateForInsert::PartialState(account_state),
-        storage,
-        assets,
-    ))
+    Ok((AccountStateForInsert::PartialState(account_state), storage, assets))
 }
 
 /// Returns the subset of `account_ids` whose latest committed state is a network account.
@@ -1322,10 +1277,8 @@ pub(crate) fn select_network_accounts_subset(
     account_ids: &[AccountId],
 ) -> Result<HashSet<AccountId>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
-    let id_bytes: Vec<Vec<u8>> = account_ids
-        .iter()
-        .map(miden_crypto::utils::Serializable::to_bytes)
-        .collect();
+    let id_bytes: Vec<Vec<u8>> =
+        account_ids.iter().map(miden_crypto::utils::Serializable::to_bytes).collect();
 
     let rows: Vec<Vec<u8>> =
         SelectDsl::select(schema::accounts::table, schema::accounts::account_id)
@@ -1398,7 +1351,7 @@ pub(crate) fn upsert_accounts(
                         })?;
                     prepare_precomputed_full_account_update(update, patch, precomputed)?
                 }
-            }
+            },
 
             // Update of an existing account
             AccountUpdateDetails::Public(patch) => {
@@ -1407,11 +1360,10 @@ pub(crate) fn upsert_accounts(
                         "missing precomputed public account state for account {account_id}"
                     ))
                 })?;
-                let existing = existing
-                    .as_ref()
-                    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+                let existing =
+                    existing.as_ref().ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
                 prepare_partial_account_update(update, account_id, patch, precomputed, existing)?
-            }
+            },
         };
 
         // Inherit the classification when the account already exists; otherwise classify it once at
@@ -1423,10 +1375,10 @@ pub(crate) fn upsert_accounts(
                     if NetworkAccount::new(account.clone()).is_ok() =>
                 {
                     NetworkAccountType::Network
-                }
+                },
                 AccountStateForInsert::PrecomputedFullState(state) if state.is_network_account => {
                     NetworkAccountType::Network
-                }
+                },
                 _ => NetworkAccountType::None,
             },
         };
@@ -1491,7 +1443,7 @@ pub(crate) fn upsert_accounts(
                     created_at_block,
                     state,
                 )
-            }
+            },
             AccountStateForInsert::PartialState(state) => AccountRowInsert::new_from_partial(
                 account_id,
                 network_account_type,
@@ -1717,11 +1669,7 @@ pub(crate) fn prune_history(
     conn: &mut SqliteConnection,
     chain_tip: BlockNumber,
 ) -> Result<(usize, usize, usize), DatabaseError> {
-    let cutoff_block = i64::from(
-        chain_tip
-            .as_u32()
-            .saturating_sub(HISTORICAL_BLOCK_RETENTION),
-    );
+    let cutoff_block = i64::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
     tracing::Span::current().record("cutoff_block", cutoff_block);
     let vault_deleted = prune_account_vault_assets(conn, cutoff_block)?;
     let storage_deleted = prune_account_storage_map_values(conn, cutoff_block)?;

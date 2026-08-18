@@ -33,10 +33,7 @@ pub fn generate(
     let config = genesis_config
         .map(|file_path| {
             GenesisConfig::read_toml_file(file_path).with_context(|| {
-                format!(
-                    "failed to parse genesis config from file {}",
-                    file_path.display()
-                )
+                format!("failed to parse genesis config from file {}", file_path.display())
             })
         })
         .transpose()?
@@ -58,9 +55,7 @@ pub fn generate(
 
     let native_faucet_id = genesis_state.fee_parameters.fee_faucet_id();
 
-    let genesis_block = genesis_state
-        .into_block()
-        .context("failed to build the genesis block")?;
+    let genesis_block = genesis_state.into_block().context("failed to build the genesis block")?;
 
     let genesis_block_path = genesis_block_directory.join(GENESIS_BLOCK_FILE_NAME);
     fs_err::write(&genesis_block_path, genesis_block.inner().to_bytes())

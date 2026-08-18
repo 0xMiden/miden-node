@@ -17,11 +17,16 @@ use miden_protocol::{Felt, ONE};
 use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{
-    FungibleFaucet, TokenName, create_network_fungible_faucet,
+    FungibleFaucet,
+    TokenName,
+    create_network_fungible_faucet,
 };
 use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
 use miden_standards::account::policies::{
-    BurnPolicy, MintPolicy, TokenPolicyManager, TransferPolicy,
+    BurnPolicy,
+    MintPolicy,
+    TokenPolicyManager,
+    TransferPolicy,
 };
 use miden_standards::account::wallets::create_basic_wallet;
 use miden_standards::note::{BurnNote, MintNote};
@@ -114,9 +119,7 @@ impl Default for GenesisConfig {
             .expect("Timestamp should fit into u32"),
             wallet: vec![],
             native_faucet: None,
-            fee_parameters: FeeParameterConfig {
-                verification_base_fee: 0,
-            },
+            fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
             account: vec![],
             validators: vec![insecure_dev_validator_public_key_hex()],
@@ -135,9 +138,7 @@ impl GenesisConfig {
     pub fn read_toml_file(path: &Path) -> Result<Self, GenesisConfigError> {
         let toml_str = fs_err::read_to_string(path)
             .map_err(|e| GenesisConfigError::ConfigFileRead(e, path.to_path_buf()))?;
-        let config_dir = path
-            .parent()
-            .expect("config file path must have a parent directory");
+        let config_dir = path.parent().expect("config file path must have a parent directory");
         Self::read_toml(&toml_str, config_dir)
     }
 
@@ -239,7 +240,7 @@ impl GenesisConfig {
                     Some(operator_secret),
                 ));
                 Some(operator)
-            }
+            },
             None => None,
         };
 
@@ -251,18 +252,12 @@ impl GenesisConfig {
             let symbol = fungible_faucet_config.symbol.clone();
             let (faucet_account, secret_key) = fungible_faucet_config.build_account()?;
 
-            if faucet_accounts
-                .insert(symbol.clone(), faucet_account.clone())
-                .is_some()
-            {
+            if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol });
             }
 
             secrets.push((
-                format!(
-                    "faucet_{symbol}.mac",
-                    symbol = symbol.to_string().to_lowercase()
-                ),
+                format!("faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
                 faucet_account.id(),
                 Some(secret_key),
             ));
@@ -270,10 +265,8 @@ impl GenesisConfig {
             // remaining supply in the faucets.
         }
 
-        let fee_parameters = FeeParameters::new(
-            native_faucet_account_id,
-            fee_parameters.verification_base_fee,
-        );
+        let fee_parameters =
+            FeeParameters::new(native_faucet_account_id, fee_parameters.verification_base_fee);
 
         // Track all adjustments, one per faucet account id
         let mut faucet_issuance = IndexMap::<AccountId, u64>::new();
@@ -281,22 +274,14 @@ impl GenesisConfig {
         let zero_padding_width = usize::ilog10(std::cmp::max(10, wallet_configs.len())) as usize;
 
         // Setup all wallet accounts, which reference the faucet's for their provided assets.
-        for (
-            index,
-            WalletConfig {
-                account_type,
-                assets,
-            },
-        ) in wallet_configs.into_iter().enumerate()
+        for (index, WalletConfig { account_type, assets }) in wallet_configs.into_iter().enumerate()
         {
             tracing::debug!(target: LOG_TARGET, index, assets = ?assets, "Adding wallet account");
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = RpoSecretKey::with_rng(&mut rng);
-            let auth = Approver::new(
-                secret_key.public_key().into(),
-                AuthScheme::Falcon512Poseidon2,
-            );
+            let auth =
+                Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
             let init_seed: [u8; 32] = rng.random();
 
             let mut wallet_account = create_basic_wallet(init_seed, auth, account_type.into())?;
@@ -349,9 +334,7 @@ impl GenesisConfig {
                 }
                 let updated_faucet = current_faucet.with_token_supply(new_token_supply)?;
                 let slot = updated_faucet.token_config_slot_value();
-                faucet_account
-                    .storage_mut()
-                    .set_item(slot.name(), slot.value())?;
+                faucet_account.storage_mut().set_item(slot.name(), slot.value())?;
                 tracing::debug!(
                     target: LOG_TARGET,
                     "Reducing faucet account {faucet} for {symbol} by {amount}",
@@ -457,7 +440,7 @@ impl NativeFaucetConfig {
                     symbol,
                     operator: Some((operator, operator_secret)),
                 })
-            }
+            },
             Some(path) => {
                 let full_path = config_dir.join(&path);
                 let account_file = AccountFile::read(&full_path)
@@ -465,17 +448,11 @@ impl NativeFaucetConfig {
                 let account = account_file.account;
 
                 let faucet = FungibleFaucet::try_from(&account).map_err(|_| {
-                    GenesisConfigError::NativeFaucetNotFungible {
-                        path: full_path.clone(),
-                    }
+                    GenesisConfigError::NativeFaucetNotFungible { path: full_path.clone() }
                 })?;
                 let symbol = TokenSymbolStr::from(faucet.symbol().clone());
-                Ok(NativeFaucet {
-                    account,
-                    symbol,
-                    operator: None,
-                })
-            }
+                Ok(NativeFaucet { account, symbol, operator: None })
+            },
         }
     }
 }
@@ -489,10 +466,7 @@ fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError
     let mut rng = ChaCha20Rng::from_seed(rand::random());
 
     let secret_key = RpoSecretKey::with_rng(&mut rng);
-    let auth = Approver::new(
-        secret_key.public_key().into(),
-        AuthScheme::Falcon512Poseidon2,
-    );
+    let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
     let init_seed: [u8; 32] = rng.random();
     let mut operator = create_basic_wallet(init_seed, auth, AccountType::Public)?;
     operator.set_nonce(ONE)?;
@@ -694,25 +668,17 @@ impl AccountSecrets {
         genesis_state: &GenesisState,
     ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + '_ {
         let account_lut = IndexMap::<AccountId, Account>::from_iter(
-            genesis_state
-                .accounts
-                .iter()
-                .map(|account| (account.id(), account.clone())),
+            genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );
-        self.secrets
-            .iter()
-            .cloned()
-            .map(move |(name, account_id, secret_key)| {
-                let account = account_lut
-                    .get(&account_id)
-                    .ok_or(GenesisConfigError::MissingGenesisAccount { account_id })?;
-                let auth_secret_keys = secret_key
-                    .map(AuthSecretKey::Falcon512Poseidon2)
-                    .into_iter()
-                    .collect();
-                let account_file = AccountFile::new(account.clone(), auth_secret_keys);
-                Ok(AccountFileWithName { name, account_file })
-            })
+        self.secrets.iter().cloned().map(move |(name, account_id, secret_key)| {
+            let account = account_lut
+                .get(&account_id)
+                .ok_or(GenesisConfigError::MissingGenesisAccount { account_id })?;
+            let auth_secret_keys =
+                secret_key.map(AuthSecretKey::Falcon512Poseidon2).into_iter().collect();
+            let account_file = AccountFile::new(account.clone(), auth_secret_keys);
+            Ok(AccountFileWithName { name, account_file })
+        })
     }
 }
 
@@ -746,9 +712,7 @@ fn prepare_fungible_asset_update(
         .into_iter()
         .map(|AssetEntry { amount, symbol }| {
             let faucet_account = faucets.get(&symbol).ok_or_else(|| {
-                GenesisConfigError::MissingFaucetDefinition {
-                    symbol: symbol.clone(),
-                }
+                GenesisConfigError::MissingFaucetDefinition { symbol: symbol.clone() }
             })?;
             let faucet_id = faucet_account.id();
 
@@ -813,10 +777,7 @@ impl From<TokenSymbolStr> for TokenSymbol {
 impl From<TokenSymbol> for TokenSymbolStr {
     fn from(symbol: TokenSymbol) -> Self {
         let raw = symbol.to_string();
-        Self {
-            raw,
-            encoded: symbol,
-        }
+        Self { raw, encoded: symbol }
     }
 }
 

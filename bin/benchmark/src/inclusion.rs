@@ -15,7 +15,6 @@ use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::BlockHeaderByNumberRequest;
 use miden_protocol::block::{BlockHeader, SignedBlock};
 use miden_protocol::transaction::TransactionId;
-use miden_protocol::utils::serde::Deserializable;
 
 /// One scanned block that contained at least one of our txs. Empty blocks in the scan range are not
 /// represented here.
@@ -126,15 +125,15 @@ pub(crate) async fn scan_with_drain(
                     continue;
                 },
             };
-            let Some(bytes) = response.block else {
+            let Some(block) = response.signed_block else {
                 next_block += 1;
                 continue;
             };
-            let signed_block = match SignedBlock::read_from_bytes(&bytes) {
+            let signed_block = match SignedBlock::try_from(block) {
                 Ok(sb) => sb,
                 Err(err) => {
                     eprintln!(
-                        "  warning: failed to deserialize SignedBlock for block {next_block}: {err}"
+                        "  warning: failed to convert SignedBlock for block {next_block}: {err}"
                     );
                     next_block += 1;
                     continue;

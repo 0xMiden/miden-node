@@ -150,12 +150,11 @@ impl TransactionSubmissionClient {
         proven_tx: &ProvenTransaction,
         transaction_inputs: &[u8],
     ) -> Result<BlockNumber> {
-        let transaction = proven_tx.to_bytes();
         let tx_id = proven_tx.id();
         let stale_key = AtomicBool::new(false);
 
         let result = (|| {
-            let transaction = transaction.clone();
+            let transaction_data = proven_tx.into();
             async {
                 if stale_key.swap(false, Ordering::Relaxed) {
                     *self.sealer.lock().await = None;
@@ -169,8 +168,8 @@ impl TransactionSubmissionClient {
                 self.rpc_client
                     .clone()
                     .submit_proven_tx(ProtoProvenTransaction {
-                        transaction,
                         sealed_transaction_inputs: Some(sealed),
+                        transaction_data: Some(transaction_data),
                     })
                     .await
                     .context("Failed to submit proven transaction to RPC")

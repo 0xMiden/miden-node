@@ -17,7 +17,6 @@ use miden_protocol::block::{
     ValidatorKeys,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::Signature;
-use miden_protocol::utils::serde::Deserializable;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::codec::Streaming;
@@ -218,8 +217,11 @@ async fn read_blocks(
                 result.with_context(|| format!("block stream of validator {url} returned an error"))
             })
             .and_then(|event| {
-                SignedBlock::read_from_bytes(&event.block)
-                    .with_context(|| format!("failed to deserialize block from validator {url}"))
+                let signed_block = event.signed_block.ok_or_else(|| {
+                    anyhow::anyhow!("validator {url} returned a block without signed_block")
+                })?;
+                SignedBlock::try_from(signed_block)
+                    .with_context(|| format!("failed to convert block from validator {url}"))
             });
 
         let is_err = block.is_err();

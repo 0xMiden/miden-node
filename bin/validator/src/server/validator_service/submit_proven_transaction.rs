@@ -86,9 +86,11 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
     }
 
     fn decode(request: grpc::transaction::ProvenTransaction) -> tonic::Result<Self::Input> {
-        let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("Invalid proven transaction"))
-        })?;
+        let tx = request
+            .transaction_data
+            .ok_or_else(|| Status::invalid_argument("Missing transaction_data"))?
+            .try_into()
+            .map_err(Status::from)?;
         let sealed = request.sealed_transaction_inputs.ok_or_else(|| {
             Status::invalid_argument(
                 "Missing sealed transaction inputs: fetch the encryption key with \

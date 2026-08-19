@@ -20,7 +20,7 @@ hex                         = { workspace = true }
 http                        = { workspace = true }
 miden-node-grpc-error-macro = { workspace = true }
 miden-node-utils            = { workspace = true }
-miden-protocol              = { workspace = true }
+miden-protocol              = { features = ["testing"], workspace = true }
 miden-standards             = { workspace = true }
 prost                       = { workspace = true }
 rand                        = { workspace = true }

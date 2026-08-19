@@ -19,7 +19,7 @@ mod test_macro;
 /// Always maps to [`tonic::Status::invalid_argument()`].
 #[derive(Debug)]
 pub struct ConversionError {
-    path: Vec<&'static str>,
+    path: Vec<String>,
     source: Box<dyn std::error::Error + Send + Sync>,
 }
 
@@ -42,8 +42,8 @@ impl ConversionError {
     /// [`missing_field`](Self::missing_field) which already embeds the field name in its
     /// message.
     #[must_use]
-    pub fn context(mut self, field: &'static str) -> Self {
-        self.path.push(field);
+    pub fn context(mut self, field: impl Into<String>) -> Self {
+        self.path.push(field.into());
         self
     }
 
@@ -164,11 +164,11 @@ impl std::error::Error for StringError {}
 /// `"header.account_root: value is not in range 0..MODULUS"`.
 pub trait ConversionResultExt<T> {
     /// Add field context to the error, wrapping it in a [`ConversionError`] if needed.
-    fn context(self, field: &'static str) -> Result<T, ConversionError>;
+    fn context(self, field: impl Into<String>) -> Result<T, ConversionError>;
 }
 
 impl<T, E: Into<ConversionError>> ConversionResultExt<T> for Result<T, E> {
-    fn context(self, field: &'static str) -> Result<T, ConversionError> {
+    fn context(self, field: impl Into<String>) -> Result<T, ConversionError> {
         self.map_err(|e| e.into().context(field))
     }
 }

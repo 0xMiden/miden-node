@@ -1,7 +1,7 @@
-use anyhow::{Context, ensure};
+use anyhow::ensure;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockNumber, BlockProof};
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::utils::serde::Serializable;
 
 use crate::COMPONENT;
 use crate::state::{ProofNotification, ProofWriter};
@@ -23,7 +23,7 @@ impl ProofWriter {
     pub async fn apply_proof(
         &mut self,
         block_num: BlockNumber,
-        proof_bytes: Vec<u8>,
+        proof: BlockProof,
     ) -> anyhow::Result<()> {
         let expected = self.state.proven_tip().child();
         ensure!(
@@ -37,7 +37,11 @@ impl ProofWriter {
             "proof for uncommitted block {block_num} exceeds committed tip {committed_tip}",
         );
 
-        verify_block_proof(block_num, &proof_bytes)?;
+        verify_block_proof(block_num, &proof)?;
+
+        // Persistence remains in the canonical Miden protocol encoding. The gRPC boundary uses a
+        // structured proof message and passes the domain value to this writer.
+        let proof_bytes = proof.to_bytes();
 
         self.state.block_store.commit_proof(block_num, &proof_bytes).await?;
         self.state
@@ -49,11 +53,12 @@ impl ProofWriter {
     }
 }
 
-/// Verifies that `proof_bytes` is a valid [`BlockProof`] for the block at `block_num`.
-fn verify_block_proof(_block_num: BlockNumber, proof_bytes: &[u8]) -> anyhow::Result<()> {
-    let _proof =
-        BlockProof::read_from_bytes(proof_bytes).context("failed to deserialize block proof")?;
-
+/// Verifies that `proof` is a valid [`BlockProof`] for the block at `block_num`.
+fn verify_block_proof(_block_num: BlockNumber, proof: &BlockProof) -> anyhow::Result<()> {
     // TODO: perform verification.
+    ensure!(
+        proof.to_bytes().is_empty(),
+        "unsupported non-empty placeholder block proof encoding"
+    );
     Ok(())
 }

@@ -10,8 +10,7 @@ use miden_node_utils::retry::{self, RetryableWithContext};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::miden_instrument;
-use miden_protocol::block::{BlockNumber, SignedBlock};
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::block::{BlockNumber, BlockProof, SignedBlock};
 use tokio_stream::StreamExt;
 use tonic_health::ServingStatus;
 use tonic_health::server::HealthReporter;
@@ -234,8 +233,11 @@ impl BlockSync {
             };
             let event = result?;
             let upstream_tip = BlockNumber::from(event.committed_chain_tip);
-            let block = SignedBlock::read_from_bytes(&event.block)
-                .context("failed to deserialize block from upstream")?;
+            let signed_block = event
+                .signed_block
+                .context("upstream block subscription response is missing signed_block")?;
+            let block = SignedBlock::try_from(signed_block)
+                .context("failed to convert structured block from upstream")?;
             self.writer.apply_block(block).await?;
 
             let local_tip = self.state.committed_tip();
@@ -329,7 +331,12 @@ impl ProofSync {
                 },
             }
 
-            self.writer.apply_proof(block_num, event.proof).await?;
+            let block_proof = event
+                .block_proof
+                .context("upstream proof subscription response is missing block_proof")?;
+            let proof = BlockProof::try_from(block_proof)
+                .context("failed to convert structured block proof from upstream")?;
+            self.writer.apply_proof(block_num, proof).await?;
 
             expected = expected.child();
         }

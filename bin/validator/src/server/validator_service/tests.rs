@@ -108,8 +108,8 @@ impl TestValidator {
         sealed: proto::transaction::SealedTransactionInputs,
     ) -> Result<(), tonic::Status> {
         let request = tonic::Request::new(proto::transaction::ProvenTransaction {
-            transaction: tx.to_bytes(),
             sealed_transaction_inputs: Some(sealed),
+            transaction_data: Some(tx.into()),
         });
         validator_api::SubmitProvenTransaction::full(&self.server, request).await
     }
@@ -144,9 +144,20 @@ impl TestValidator {
         &self,
         proposed_block: &ProposedBlock,
     ) -> Result<proto::blockchain::SignBlockResponse, tonic::Status> {
-        let request = tonic::Request::new(proto::blockchain::ProposedBlock {
-            proposed_block: proposed_block.to_bytes(),
-        });
+        // All proposals submitted through this helper are empty, so their original inputs contain
+        // only the parent header and partial blockchain. Tests exercising non-empty proposals call
+        // `validate_block` directly.
+        let block_inputs = BlockInputs::new(
+            proposed_block.prev_block_header().clone(),
+            proposed_block.partial_blockchain().clone(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        );
+        let request = tonic::Request::new(proto::validator::ProposedBlock::from((
+            proposed_block,
+            &block_inputs,
+        )));
         validator_api::SignBlock::full(&self.server, request).await
     }
 
@@ -378,6 +389,61 @@ async fn proven_transaction_fixture() -> &'static ProvenTransactionFixture {
 
 // TESTS
 // ================================================================================================
+
+#[test]
+fn validator_descriptor_exposes_structured_proposed_block_schema() {
+    let descriptor = miden_node_proto_build::validator_api_descriptor();
+    let validator_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name().ends_with("validator.proto"))
+        .expect("the validator descriptor should include validator.proto");
+
+    for name in ["ProposedBlock", "BlockInputs", "NullifierWitness"] {
+        assert!(
+            validator_file.message_type.iter().any(|message| message.name() == name),
+            "the validator descriptor should expose validator.{name}"
+        );
+    }
+
+    let proposed_block = validator_file
+        .message_type
+        .iter()
+        .find(|message| message.name() == "ProposedBlock")
+        .expect("validator.ProposedBlock should be present");
+    assert!(proposed_block.reserved_name.iter().any(|name| name == "proposed_block"));
+    assert!(
+        proposed_block
+            .reserved_range
+            .iter()
+            .any(|range| range.start() <= 1 && range.end() > 1)
+    );
+    assert!(!proposed_block.field.iter().any(|field| field.name() == "proposed_block"));
+
+    let api = validator_file
+        .service
+        .iter()
+        .find(|service| service.name() == "Api")
+        .expect("validator.Api should be present");
+    let sign_block = api
+        .method
+        .iter()
+        .find(|method| method.name() == "SignBlock")
+        .expect("validator.Api.SignBlock should be present");
+    assert_eq!(sign_block.input_type(), ".validator.ProposedBlock");
+
+    let blockchain_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name() == "types/blockchain.proto")
+        .expect("the validator descriptor should include types/blockchain.proto");
+    assert!(
+        !blockchain_file
+            .message_type
+            .iter()
+            .any(|message| message.name() == "ProposedBlock")
+    );
+}
 
 /// A validator whose signing key does not match the `validator_key` designated by the chain
 /// (carried forward from genesis) must fail to start, rather than coming up and silently producing
@@ -772,7 +838,6 @@ async fn block_subscription_replays_then_freezes_signing() {
     use std::time::Duration;
 
     use miden_protocol::block::SignedBlock;
-    use miden_tx::utils::serde::Deserializable;
     use tokio_stream::StreamExt;
 
     let mut tv = TestValidator::new().await;
@@ -789,7 +854,10 @@ async fn block_subscription_replays_then_freezes_signing() {
             .expect("replayed block should arrive promptly")
             .expect("stream should not end")
             .expect("stream item should not be an error");
-        let block = SignedBlock::read_from_bytes(&response.block).expect("valid signed block");
+        let block = SignedBlock::try_from(
+            response.signed_block.expect("response should contain a signed block"),
+        )
+        .expect("valid signed block");
         assert_eq!(block.header().block_num().as_u32(), expected);
         assert_eq!(response.committed_chain_tip, 2);
     }
@@ -1083,8 +1151,8 @@ async fn submit_rejects_missing_encrypted_inputs() {
     let tv = TestValidator::new().await;
     let tx = dummy_proven_tx(2);
     let request = tonic::Request::new(proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     });
 
     let status = validator_api::SubmitProvenTransaction::full(&tv.server, request)

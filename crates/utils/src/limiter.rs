@@ -78,14 +78,14 @@ impl QueryParamLimiter for QueryParamNoteTagLimit {
 }
 
 /// Used for the following RPC endpoints
-/// `select_notes_by_id`
+/// * `get_notes_by_id`
 ///
-/// The limit is set to 100 notes to keep responses within the 4 MiB payload cap because individual
-/// notes are bounded to roughly 32 KiB.
+/// The limit is set to 14 notes to keep responses within the 4 MiB payload cap. Protocol notes may
+/// approach 256 KiB, and structured attachment words add Protobuf framing overhead.
 pub struct QueryParamNoteIdLimit;
 impl QueryParamLimiter for QueryParamNoteIdLimit {
     const PARAM_NAME: &str = "note_id";
-    const LIMIT: usize = 100;
+    const LIMIT: usize = 14;
 }
 
 /// Used for internal queries retrieving note inclusion proofs by commitment.

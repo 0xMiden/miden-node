@@ -43,6 +43,7 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AssetCallbackFlag,
 };
+use miden_protocol::block::SignedBlock;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -51,6 +52,7 @@ use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::task;
+use tokio_stream::StreamExt;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Request;
 use tonic::metadata::MetadataMap;
@@ -122,10 +124,252 @@ impl TestStore {
     }
 }
 
-/// Byte offset of the account delta commitment in serialized `ProvenTransaction`. Layout:
-/// `AccountId` (15) + `initial_commitment` (32) + `final_commitment` (32) = 79
-const DELTA_COMMITMENT_BYTE_OFFSET: usize = 15 + 32 + 32;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[test]
+fn rpc_descriptor_exposes_structured_note_schema() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let note_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name() == "types/note.proto")
+        .expect("the public RPC descriptor should include types/note.proto");
+
+    for name in [
+        "NoteAttachment",
+        "NoteAttachments",
+        "NoteStorage",
+        "NoteRecipient",
+        "NoteDetails",
+    ] {
+        assert!(
+            note_file.message_type.iter().any(|message| message.name() == name),
+            "the public RPC descriptor should expose note.{name}"
+        );
+    }
+
+    for message_name in ["Note", "NetworkNote"] {
+        let message = note_file
+            .message_type
+            .iter()
+            .find(|message| message.name() == message_name)
+            .unwrap_or_else(|| {
+                panic!("the public RPC descriptor should expose note.{message_name}")
+            });
+
+        for field_number in [2, 3] {
+            assert!(
+                message
+                    .reserved_range
+                    .iter()
+                    .any(|range| range.start() <= field_number && range.end() > field_number),
+                "note.{message_name} should reserve field number {field_number}"
+            );
+        }
+        assert!(message.reserved_name.iter().any(|name| name == "details"));
+        assert!(message.reserved_name.iter().any(|name| name == "attachments"));
+        assert!(!message.field.iter().any(|field| field.name() == "details"));
+        assert!(!message.field.iter().any(|field| field.name() == "attachments"));
+
+        let details = message
+            .field
+            .iter()
+            .find(|field| field.name() == "note_details")
+            .expect("the structured note_details field should be present");
+        assert_eq!(details.number(), 4);
+        assert_eq!(details.type_name(), ".note.NoteDetails");
+
+        let attachments = message
+            .field
+            .iter()
+            .find(|field| field.name() == "note_attachments")
+            .expect("the structured note_attachments field should be present");
+        assert_eq!(attachments.number(), 5);
+        assert_eq!(attachments.type_name(), ".note.NoteAttachments");
+    }
+}
+
+#[test]
+fn rpc_descriptor_exposes_structured_blockchain_schema_and_reserves_legacy_fields() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let blockchain_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name() == "types/blockchain.proto")
+        .expect("the public RPC descriptor should include types/blockchain.proto");
+
+    for name in [
+        "BlockAccountUpdate",
+        "IndexedOutputNote",
+        "OutputNoteBatch",
+        "BlockBodyContents",
+        "BlockProof",
+    ] {
+        assert!(
+            blockchain_file.message_type.iter().any(|message| message.name() == name),
+            "the public RPC descriptor should expose blockchain.{name}"
+        );
+    }
+
+    let block_body = blockchain_file
+        .message_type
+        .iter()
+        .find(|message| message.name() == "BlockBody")
+        .expect("blockchain.BlockBody should be present");
+    assert!(block_body.reserved_name.iter().any(|name| name == "block_body"));
+    assert!(
+        block_body
+            .reserved_range
+            .iter()
+            .any(|range| range.start() <= 1 && range.end() > 1)
+    );
+    let contents = block_body
+        .field
+        .iter()
+        .find(|field| field.name() == "contents")
+        .expect("structured BlockBody.contents should be present");
+    assert_eq!(contents.number(), 2);
+    assert_eq!(contents.type_name(), ".blockchain.BlockBodyContents");
+
+    let maybe_block = blockchain_file
+        .message_type
+        .iter()
+        .find(|message| message.name() == "MaybeBlock")
+        .expect("blockchain.MaybeBlock should be present");
+    for field_number in [1, 2] {
+        assert!(
+            maybe_block
+                .reserved_range
+                .iter()
+                .any(|range| range.start() <= field_number && range.end() > field_number)
+        );
+    }
+    for field_name in ["block", "proof"] {
+        assert!(maybe_block.reserved_name.iter().any(|name| name == field_name));
+        assert!(!maybe_block.field.iter().any(|field| field.name() == field_name));
+    }
+    assert_eq!(
+        maybe_block
+            .field
+            .iter()
+            .find(|field| field.name() == "signed_block")
+            .expect("MaybeBlock.signed_block should be present")
+            .number(),
+        3
+    );
+    assert_eq!(
+        maybe_block
+            .field
+            .iter()
+            .find(|field| field.name() == "block_proof")
+            .expect("MaybeBlock.block_proof should be present")
+            .number(),
+        4
+    );
+}
+
+#[test]
+fn rpc_descriptor_exposes_structured_transaction_and_batch_schema() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let transaction_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name() == "types/transaction.proto")
+        .expect("the public RPC descriptor should include types/transaction.proto");
+
+    for name in [
+        "TxAccountUpdate",
+        "ProvenTransactionData",
+        "ProposedBatch",
+        "BatchAccountUpdate",
+        "ProvenBatch",
+    ] {
+        assert!(
+            transaction_file.message_type.iter().any(|message| message.name() == name),
+            "the public RPC descriptor should expose transaction.{name}"
+        );
+    }
+
+    for (message_name, reserved_names, structured_fields) in [
+        ("ProvenTransaction", &["transaction"][..], &[("transaction_data", 3)][..]),
+        (
+            "TransactionBatch",
+            &["batch_proof", "proposed_batch"][..],
+            &[("proven_batch", 4), ("proposed", 5)][..],
+        ),
+    ] {
+        let message = transaction_file
+            .message_type
+            .iter()
+            .find(|message| message.name() == message_name)
+            .unwrap_or_else(|| panic!("transaction.{message_name} should be present"));
+        for reserved_name in reserved_names {
+            assert!(message.reserved_name.iter().any(|name| name == reserved_name));
+        }
+        for (field_name, field_number) in structured_fields {
+            assert_eq!(
+                message
+                    .field
+                    .iter()
+                    .find(|field| field.name() == *field_name)
+                    .unwrap_or_else(|| panic!("{message_name}.{field_name} should be present"))
+                    .number(),
+                *field_number
+            );
+        }
+    }
+
+    for (file_name, messages) in [
+        ("types/partial_blockchain.proto", &["TrackedMmrLeaf", "PartialBlockchain"][..]),
+        ("types/block_header.proto", &["BlockHeader"][..]),
+    ] {
+        let file = descriptor
+            .file
+            .iter()
+            .find(|file| file.name() == file_name)
+            .unwrap_or_else(|| panic!("the public RPC descriptor should include {file_name}"));
+        for message_name in messages {
+            assert!(file.message_type.iter().any(|message| message.name() == *message_name));
+        }
+    }
+}
+
+#[test]
+fn rpc_descriptor_exposes_structured_block_subscription_schema() {
+    let descriptor = miden_node_proto_build::rpc_api_descriptor();
+    let rpc_file = descriptor
+        .file
+        .iter()
+        .find(|file| file.name().ends_with("/rpc.proto"))
+        .expect("the public RPC descriptor should include rpc.proto");
+    for (message_name, legacy_name, legacy_number, structured_name, structured_number) in [
+        ("BlockSubscriptionResponse", "block", 1, "signed_block", 3),
+        ("ProofSubscriptionResponse", "proof", 2, "block_proof", 4),
+    ] {
+        let message = rpc_file
+            .message_type
+            .iter()
+            .find(|message| message.name() == message_name)
+            .unwrap_or_else(|| panic!("rpc.{message_name} should be present"));
+        assert!(message.reserved_name.iter().any(|name| name == legacy_name));
+        assert!(
+            message
+                .reserved_range
+                .iter()
+                .any(|range| range.start() <= legacy_number && range.end() > legacy_number)
+        );
+        assert!(!message.field.iter().any(|field| field.name() == legacy_name));
+        assert_eq!(
+            message
+                .field
+                .iter()
+                .find(|field| field.name() == structured_name)
+                .unwrap_or_else(|| panic!("rpc.{message_name}.{structured_name} should be present"))
+                .number(),
+            structured_number
+        );
+    }
+}
 
 /// Creates a minimal account and its patch for testing proven transaction building.
 fn build_test_account(seed: [u8; 32]) -> (Account, AccountPatch) {
@@ -367,6 +611,35 @@ async fn rpc_uses_in_process_store_state() {
 }
 
 #[tokio::test]
+async fn unary_and_streaming_block_responses_use_the_same_structured_value() {
+    let (mut rpc_client, _, store) = start_rpc().await;
+    let unary = rpc_client
+        .get_block_by_number(proto::blockchain::BlockRequest {
+            block_num: 0,
+            include_proof: Some(false),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(unary.block_proof.is_none());
+    let unary_block = SignedBlock::try_from(unary.signed_block.unwrap()).unwrap();
+
+    let stored_bytes = store.state.load_block(0_u32.into()).await.unwrap().unwrap();
+    assert_eq!(unary_block.to_bytes(), stored_bytes);
+
+    let mut stream = rpc_client
+        .block_subscription(proto::rpc::BlockSubscriptionRequest { block_from: 0 })
+        .await
+        .unwrap()
+        .into_inner();
+    let event = stream.next().await.unwrap().unwrap();
+    assert_eq!(event.committed_chain_tip, 0);
+    let streamed_block = SignedBlock::try_from(event.signed_block.unwrap()).unwrap();
+
+    assert_eq!(streamed_block, unary_block);
+}
+
+#[tokio::test]
 async fn rpc_server_has_web_support() {
     // Start server
     let (_, rpc_addr, _store) = start_rpc().await;
@@ -430,16 +703,13 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Create an incorrect patch commitment from a different account
     let (other_account, _) = build_test_account([1; 32]);
     let incorrect_patch: AccountPatch = AccountPatch::try_from(other_account).unwrap();
-    let incorrect_commitment_bytes = incorrect_patch.to_commitment().as_bytes();
-
-    // Corrupt the transaction bytes with the incorrect patch commitment
-    let mut tx_bytes = tx.to_bytes();
-    tx_bytes[DELTA_COMMITMENT_BYTE_OFFSET..DELTA_COMMITMENT_BYTE_OFFSET + 32]
-        .copy_from_slice(&incorrect_commitment_bytes);
+    let mut transaction_data: proto::transaction::ProvenTransactionData = (&tx).into();
+    transaction_data.account_update.as_mut().unwrap().account_patch_commitment =
+        Some(incorrect_patch.to_commitment().into());
 
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx_bytes,
         sealed_transaction_inputs: None,
+        transaction_data: Some(transaction_data),
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -477,8 +747,8 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
     let tx = build_test_proven_tx(&account, &account_patch, invalid);
 
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     };
 
     let response = rpc_client.submit_proven_tx(request).await;
@@ -516,8 +786,8 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
     let (account, _) = build_test_account([0; 32]);
     let tx = build_test_proven_tx_with_id(network_account_id, &account, genesis);
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     };
 
     let service = RpcService::new(
@@ -761,7 +1031,7 @@ impl validator_api::SignBlock for FixedValidator {
     type Input = ();
     type Output = proto::blockchain::SignBlockResponse;
 
-    fn decode(_request: proto::blockchain::ProposedBlock) -> tonic::Result<Self::Input> {
+    fn decode(_request: proto::validator::ProposedBlock) -> tonic::Result<Self::Input> {
         Ok(())
     }
 
@@ -1055,8 +1325,8 @@ async fn rpc_server_rejects_tx_submissions_without_genesis() {
     let tx = build_test_proven_tx(&account, &account_patch, genesis);
 
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
         sealed_transaction_inputs: None,
+        transaction_data: Some((&tx).into()),
     };
 
     let response = rpc_client.submit_proven_tx(request).await;

@@ -4,6 +4,10 @@ package validator;
 
 import "types/transaction.proto";
 import "types/blockchain.proto";
+import "types/block_header.proto";
+import "types/partial_blockchain.proto";
+import "types/account.proto";
+import "types/note.proto";
 import "types/primitives.proto";
 import "google/protobuf/empty.proto";
 
@@ -19,7 +23,7 @@ service Api {
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
 
    // Validates and signs a proposed block, returning the signature and the signed block commitment.
-   rpc SignBlock(blockchain.ProposedBlock) returns (blockchain.SignBlockResponse) {}
+   rpc SignBlock(ProposedBlock) returns (blockchain.SignBlockResponse) {}
 
    // Streams signed blocks starting from the given block number (inclusive).
    //
@@ -37,6 +41,40 @@ service Api {
    rpc GetTransactionEncryptionKey(google.protobuf.Empty) returns (transaction.TransactionEncryptionKey) {}
 }
 
+// PROPOSED BLOCK
+// ================================================================================================
+
+// The inputs from which every validator independently reconstructs and validates a proposed block.
+message ProposedBlock {
+    reserved 1;
+    reserved "proposed_block";
+
+    BlockInputs block_inputs = 2;
+    repeated transaction.ProvenBatch batches = 3;
+    fixed32 timestamp = 4;
+    repeated blockchain.ValidatorPublicKey next_validator_keys = 5;
+}
+
+// State witnesses required to construct a proposed block.
+message BlockInputs {
+    blockchain.BlockHeader prev_block_header = 1;
+    blockchain.PartialBlockchain partial_blockchain = 2;
+
+    // Canonically ordered by requested account ID.
+    repeated account.AccountWitness account_witnesses = 3;
+
+    // Canonically ordered by nullifier.
+    repeated NullifierWitness nullifier_witnesses = 4;
+
+    // Canonically ordered by note ID.
+    repeated note.NoteInclusionInBlockProof unauthenticated_note_proofs = 5;
+}
+
+message NullifierWitness {
+    primitives.Word nullifier = 1;
+    primitives.SmtOpening proof = 2;
+}
+
 // BLOCK SUBSCRIPTION
 // ================================================================================================
 
@@ -48,12 +86,14 @@ message BlockSubscriptionRequest {
 
 // A signed block streamed to a subscriber.
 message BlockSubscriptionResponse {
-    // The block encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::SignedBlock].
-    bytes block = 1;
+    reserved 1;
+    reserved "block";
 
     // The signed chain tip when this item was emitted.
     fixed32 committed_chain_tip = 2;
+
+    // The signed block.
+    blockchain.SignedBlock signed_block = 3;
 }
 
 // VALIDATOR STATUS

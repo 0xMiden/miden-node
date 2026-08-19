@@ -2,7 +2,9 @@ syntax = "proto3";
 package transaction;
 
 import "types/account.proto";
+import "types/block_header.proto";
 import "types/note.proto";
+import "types/partial_blockchain.proto";
 import "types/primitives.proto";
 
 // TRANSACTION
@@ -19,15 +21,16 @@ import "types/primitives.proto";
 // nodes that relay a submission cannot read them: only a validator can. Submissions carrying
 // unsealed inputs are rejected. This requirement will be lifted as Miden matures.
 message ProvenTransaction {
-  // The transaction proof.
-  //
-  // Encoded using [miden_protocol::transaction::ProvenTransaction::to_bytes].
-  bytes transaction = 1;
+  reserved 1;
+  reserved "transaction";
 
   // The sealed private inputs used for the transaction proof.
   //
   // Transactions missing this field will be rejected as per the message description.
   SealedTransactionInputs sealed_transaction_inputs = 2;
+
+  // The structured proven transaction. Required.
+  ProvenTransactionData transaction_data = 3;
 }
 
 // Transaction inputs sealed against the validator set's shared transaction encryption key.
@@ -57,16 +60,8 @@ message SealedTransactionInputs {
 //
 // In addition, in order to verify the batch itself, we also require the proposed batch.
 message TransactionBatch {
-  // The batch proof.
-  //
-  // Encoded using [miden_protocol::batch::ProvenBatch::to_bytes].
-  bytes batch_proof = 1;
-  // The batch contents of the given proof.
-  //
-  // Encoded using [miden_protocol::batch::ProposedBatch::to_bytes].
-  //
-  // Batches missing this field will be rejected as per the message description.
-  optional bytes proposed_batch = 2;
+  reserved 1, 2;
+  reserved "batch_proof", "proposed_batch";
 
   // The sealed transaction inputs for each transaction in the batch.
   //
@@ -76,6 +71,54 @@ message TransactionBatch {
   //
   // Batch will be rejected if any transaction's input is missing as per the method description.
   repeated SealedTransactionInputs sealed_transaction_inputs = 3;
+
+  ProvenBatch proven_batch = 4;
+  ProposedBatch proposed = 5;
+}
+
+message TxAccountUpdate {
+  account.AccountId account_id = 1;
+  primitives.Word initial_state_commitment = 2;
+  primitives.Word final_state_commitment = 3;
+  primitives.Word account_patch_commitment = 4;
+  account.AccountUpdateDetails details = 5;
+}
+
+message ProvenTransactionData {
+  TxAccountUpdate account_update = 1;
+  repeated InputNoteCommitment input_notes = 2;
+  repeated OutputNote output_notes = 3;
+  fixed32 reference_block_num = 4;
+  primitives.Word reference_block_commitment = 5;
+  fixed32 expiration_block_num = 6;
+  // Canonically serialized miden_protocol::vm::ExecutionProof.
+  bytes proof = 7;
+}
+
+message ProposedBatch {
+  repeated ProvenTransactionData transactions = 1;
+  blockchain.BlockHeader reference_block_header = 2;
+  blockchain.PartialBlockchain partial_blockchain = 3;
+  repeated note.NoteInclusionInBlockProof unauthenticated_note_proofs = 4;
+}
+
+message BatchAccountUpdate {
+  account.AccountId account_id = 1;
+  primitives.Word initial_state_commitment = 2;
+  primitives.Word final_state_commitment = 3;
+  account.AccountUpdateDetails details = 4;
+}
+
+message ProvenBatch {
+  primitives.Word reference_block_commitment = 1;
+  fixed32 reference_block_num = 2;
+  repeated BatchAccountUpdate account_updates = 3;
+  repeated InputNoteCommitment input_notes = 4;
+  repeated OutputNote output_notes = 5;
+  fixed32 expiration_block_num = 6;
+  repeated TransactionHeader transactions = 7;
+  // Canonically serialized miden_protocol::vm::ExecutionProof.
+  bytes proof = 8;
 }
 
 // IES scheme used for transaction input encryption.
@@ -212,4 +255,25 @@ message TransactionHeader {
 
   // Output notes of the transaction.
   repeated note.NoteHeader output_notes = 6;
+}
+
+// OUTPUT NOTES
+// ================================================================================================
+
+message PublicOutputNote {
+  note.NoteMetadata metadata = 1;
+  note.NoteDetails details = 2;
+  note.NoteAttachments attachments = 3;
+}
+
+message PrivateOutputNote {
+  note.NoteHeader header = 1;
+  note.NoteAttachments attachments = 2;
+}
+
+message OutputNote {
+  oneof note {
+    PublicOutputNote public = 1;
+    PrivateOutputNote private = 2;
+  }
 }

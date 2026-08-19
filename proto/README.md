@@ -12,6 +12,15 @@ component APIs used by the Miden node workspace.
 Raw protobuf files are included in this repository for projects that generate bindings in other languages. For project
 navigation and documentation links, see the [primary README](https://github.com/0xMiden/node#readme).
 
+## Wire compatibility
+
+Generated clients must use the protobuf definitions from the same Miden node release. The note API now represents
+`NoteDetails` and `NoteAttachments` as structured protobuf messages. Block APIs likewise return a structured
+`SignedBlock`, whose `BlockBody` contains structured account updates, output-note batches, nullifiers, and transaction
+headers, plus a presence-bearing `BlockProof` message. Clients generated from the earlier opaque `bytes` fields are
+wire-incompatible and must regenerate their bindings before connecting to this release. Stored block and proof files
+retain their existing Miden serialization; only the gRPC representation changed.
+
 ## Crate Features
 
 - `internal`: exposes file descriptors for internal node component APIs. These APIs are not intended for general client

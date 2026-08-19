@@ -27,10 +27,8 @@ service Api {
 
 // An authenticated transaction.
 message AuthenticatedTransaction {
-    // The proven transaction.
-    //
-    // Encoded using [miden_protocol::transaction::ProvenTransaction::to_bytes].
-    bytes transaction = 1;
+    reserved 1;
+    reserved "transaction";
 
     // The account state provided by the store inputs, if any.
     optional primitives.Digest store_account_state = 2;
@@ -40,19 +38,21 @@ message AuthenticatedTransaction {
 
     // The chain height at which authentication took place.
     fixed32 authentication_height = 4;
+
+    transaction.ProvenTransactionData proven_transaction = 5;
 }
 
 // A proposed batch together with the inputs each of its transactions was authenticated against.
 message AuthenticatedTransactionBatch {
-    // The proposed batch.
-    //
-    // Encoded using [miden_protocol::batch::ProposedBatch::to_bytes].
-    bytes proposed_batch = 1;
+    reserved 1;
+    reserved "proposed_batch";
 
     // The store inputs for each transaction in the batch.
     //
     // Must match the transaction ordering in the batch.
     repeated AuthInputs auth_inputs = 2;
+
+    transaction.ProposedBatch proposed = 3;
 }
 
 // The store-derived inputs a transaction was authenticated against.

@@ -210,7 +210,7 @@ impl RpcClient {
             // `&self`, so callers like `block_subscription_reconnecting` can store it freely.
             Ok(stream
                 .map_err(RpcError::GrpcClientError)
-                .and_then(|response| async move { decode_block_subscription_response(&response) })
+                .and_then(|response| async move { decode_block_subscription_response(response) })
                 .boxed())
         })
         .retry(self.backoff)
@@ -328,14 +328,14 @@ impl RpcClient {
         proven_tx: &ProvenTransaction,
         tx_inputs: &TransactionInputs,
     ) -> Result<(), Status> {
-        let transaction = proven_tx.to_bytes();
+        let transaction_data: proto::transaction::ProvenTransactionData = proven_tx.into();
         let transaction_inputs = tx_inputs.to_bytes();
         let tx_id = proven_tx.id();
         let stale_key = AtomicBool::new(false);
 
         (|| {
             let mut client = self.inner.clone();
-            let transaction = transaction.clone();
+            let transaction_data = transaction_data.clone();
             let transaction_inputs = transaction_inputs.clone();
             let stale_key = &stale_key;
             async move {
@@ -351,8 +351,8 @@ impl RpcClient {
                 })?;
                 client
                     .submit_proven_tx(proto::transaction::ProvenTransaction {
-                        transaction,
                         sealed_transaction_inputs: Some(sealed),
+                        transaction_data: Some(transaction_data),
                     })
                     .await
             }
@@ -374,9 +374,12 @@ impl RpcClient {
 }
 
 fn decode_block_subscription_response(
-    response: &BlockSubscriptionResponse,
+    response: BlockSubscriptionResponse,
 ) -> Result<(SignedBlock, BlockNumber), RpcError> {
-    let block = SignedBlock::read_from_bytes(&response.block).map_err(RpcError::Deserialize)?;
+    let signed_block = response.signed_block.ok_or_else(|| {
+        RpcError::InvalidResponse("block subscription response is missing signed_block".into())
+    })?;
+    let block = SignedBlock::try_from(signed_block).map_err(RpcError::Conversion)?;
     let committed_tip = BlockNumber::from(response.committed_chain_tip);
     Ok((block, committed_tip))
 }

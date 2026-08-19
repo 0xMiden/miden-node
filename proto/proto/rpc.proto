@@ -5,6 +5,7 @@ package rpc;
 import "google/protobuf/empty.proto";
 import "types/account.proto";
 import "types/blockchain.proto";
+import "types/block_header.proto";
 import "types/note.proto";
 import "types/primitives.proto";
 import "types/transaction.proto";
@@ -131,12 +132,14 @@ message BlockSubscriptionRequest {
 
 // A committed block streamed to a replica.
 message BlockSubscriptionResponse {
-    // The block encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::SignedBlock].
-    bytes block = 1;
+    reserved 1;
+    reserved "block";
 
     // The committed chain tip when this item was emitted.
     fixed32 committed_chain_tip = 2;
+
+    // The committed signed block.
+    blockchain.SignedBlock signed_block = 3;
 }
 
 // PROOF SUBSCRIPTION
@@ -153,12 +156,14 @@ message ProofSubscriptionResponse {
     // The block number this proof corresponds to.
     fixed32 block_num = 1;
 
-    // The block proof encoded using [miden_serde_utils::Serializable] implementation for
-    // [miden_protocol::block::BlockProof].
-    bytes proof = 2;
+    reserved 2;
+    reserved "proof";
 
     // The proven chain tip when this item was emitted.
     fixed32 proven_chain_tip = 3;
+
+    // The proof for block_num. Presence distinguishes an available empty placeholder proof.
+    blockchain.BlockProof block_proof = 4;
 }
 
 // RPC STATUS

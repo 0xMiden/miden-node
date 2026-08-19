@@ -51,7 +51,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
@@ -111,7 +111,13 @@ impl TestStore {
 
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
-        let (genesis_state, _) = config.into_state().unwrap();
+        let validator_key =
+            miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey::read_from_bytes(&[7; 32])
+                .expect("test signing key should decode")
+                .public_key();
+        let validator_keys =
+            miden_protocol::block::ValidatorKeys::new(vec![validator_key]).unwrap();
+        let (genesis_state, _) = config.into_state(validator_keys).unwrap();
         let genesis_block =
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();

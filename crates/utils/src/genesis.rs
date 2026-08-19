@@ -5,14 +5,6 @@ use anyhow::Context;
 use miden_protocol::block::SignedBlock;
 use miden_protocol::utils::serde::Deserializable;
 
-/// A predefined, insecure validator signing key for development purposes.
-///
-/// `miden-validator start` signs blocks with this key by default, and the default genesis
-/// configuration commits the corresponding public key as the sole genesis validator, so a locally
-/// bootstrapped chain works without any key configuration.
-pub const INSECURE_VALIDATOR_SIGNING_KEY_HEX: &str =
-    "0101010101010101010101010101010101010101010101010101010101010101";
-
 /// Official Miden networks with a hosted genesis block.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OfficialNetwork {

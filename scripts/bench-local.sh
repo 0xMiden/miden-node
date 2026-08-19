@@ -37,8 +37,12 @@ USE_REMOTE_PROVER="${USE_REMOTE_PROVER:-0}"
 CONCURRENCY="${CONCURRENCY:-8}"
 WAIT_BLOCKS="${WAIT_BLOCKS:-30}"
 RUN_DIR="${RUN_DIR:-./bench-local-run}"
-# Public key for the validator's insecure default development signing key.
+# Insecure, hard-coded local dev validator signing key and its public key (committed at
+# genesis). Generate a fresh pair with `miden-validator keygen`.
+VALIDATOR_SIGNING_KEY_HEX="${VALIDATOR_SIGNING_KEY_HEX:-0101010101010101010101010101010101010101010101010101010101010101}"
 VALIDATOR_SIGNING_PUBLIC_KEY="${VALIDATOR_SIGNING_PUBLIC_KEY:-031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f}"
+# Insecure, hard-coded local dev shared transaction encryption key.
+ENCRYPTION_KEY_HEX="${ENCRYPTION_KEY_HEX:-0303030303030303030303030303030303030303030303030303030303030303}"
 
 # --- ports --------------------------------------------------------------------
 VALIDATOR_PORT=50101
@@ -127,6 +131,7 @@ say "building genesis block"
 miden-validator genesis \
     --genesis-block-directory "$DATA/genesis" \
     --accounts-directory      "$DATA/accounts" \
+    --validator.key           "$VALIDATOR_SIGNING_PUBLIC_KEY" \
     > "$LOGS/genesis.log" 2>&1
 
 say "bootstrapping validator storage from genesis"
@@ -153,8 +158,10 @@ miden-ntx-builder bootstrap \
 # back to the node's RPC. The sequencer references the ntx-builder URL up front
 # but tolerates it not being up yet (gRPC clients connect lazily).
 start_bg validator miden-validator start \
-    --listen         "127.0.0.1:$VALIDATOR_PORT" \
-    --data-directory "$DATA/validator"
+    --listen             "127.0.0.1:$VALIDATOR_PORT" \
+    --data-directory     "$DATA/validator" \
+    --signing-key.hex    "$VALIDATOR_SIGNING_KEY_HEX" \
+    --encryption-key.hex "$ENCRYPTION_KEY_HEX"
 wait_for_port "$VALIDATOR_PORT" validator
 
 # The ntx-builder always needs a transaction prover, so start one regardless of

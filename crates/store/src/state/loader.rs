@@ -270,6 +270,13 @@ impl TreeStorageLoader for MemoryStorage {
 #[cfg(feature = "rocksdb")]
 impl TreeStorageLoader for RocksDbStorage {
     type Config = RocksDbOptions;
+    // Opening RocksDB replays unflushed WAL segments and fills the table cache, which can take
+    // seconds; the span makes this cost visible in startup traces.
+    #[miden_instrument(
+        target = COMPONENT,
+        name = "open_tree_storage",
+        fields(path = domain),
+    )]
     fn create(
         data_dir: &Path,
         storage_options: &Self::Config,
@@ -424,6 +431,13 @@ impl AccountForestLoader for ForestInMemoryBackend {
 impl AccountForestLoader for ForestPersistentBackend {
     type Config = RocksDbOptions;
 
+    // Opening RocksDB replays unflushed WAL segments and fills the table cache, which can take
+    // seconds; the span makes this cost visible in startup traces.
+    #[miden_instrument(
+        target = COMPONENT,
+        name = "open_forest_storage",
+        fields(path = domain),
+    )]
     fn create(
         data_dir: &Path,
         storage_options: &Self::Config,

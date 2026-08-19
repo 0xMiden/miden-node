@@ -51,3 +51,8 @@ miden-standards  = { features = ["testing"], workspace = true }
 rand_chacha      = { workspace = true }
 rstest           = { workspace = true }
 tempfile         = { workspace = true }
+
+# Benchmark for building network transactions against very large accounts.
+[[bench]]
+harness = false
+name    = "large_account"

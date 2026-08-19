@@ -6,6 +6,7 @@ use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_tx::utils::serde::{Deserializable, Serializable};
+use tracing::{Instrument, info_span};
 
 use super::ValidatorService;
 
@@ -44,9 +45,14 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
 
         // Serialize sign_block requests to prevent race conditions between loading the chain tip
         // and persisting the validated block header.
-        let _permit = self.sign_block_semaphore.acquire().await.map_err(|err| {
-            tonic::Status::internal(format!("sign_block semaphore closed: {err}"))
-        })?;
+        let _permit = self
+            .sign_block_semaphore
+            .acquire()
+            .instrument(info_span!("acquire_permit"))
+            .await
+            .map_err(|err| {
+                tonic::Status::internal(format!("sign_block semaphore closed: {err}"))
+            })?;
 
         // Load the current chain tip from the database.
         let chain_tip = self

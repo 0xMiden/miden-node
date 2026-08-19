@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicU64;
 use miden_node_db::DatabaseError;
 use miden_node_proto::domain::encryption::TransactionEncryptionKeyInfo;
 use miden_node_store::BlockStore;
+use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use miden_protocol::block::{
@@ -107,6 +108,14 @@ pub(crate) struct ValidatorService {
     /// Serializes `sign_block` requests so that concurrent calls are processed sequentially,
     /// ensuring consistent chain tip reads and preventing race conditions.
     sign_block_semaphore: Semaphore,
+    /// Bounds concurrently executing transaction validations. Proof verification and re-execution
+    /// each pin a CPU on the blocking pool, and unbounded concurrency saturates every core,
+    /// starving the async runtime — and with it `sign_block` — of CPU time. A delayed block
+    /// signature stalls the whole chain. A delayed validation only slows transaction admission: the
+    /// RPC submits every transaction to every validator before it may enter the mempool, so blocks
+    /// are proposed exclusively from already-validated transactions and signing never waits on
+    /// validation. Validation is therefore capped below the core count to keep signing headroom.
+    tx_validation_semaphore: Semaphore,
     /// In-memory chain tip, updated after each signed block. Block subscriptions follow this to
     /// stream live blocks as they are signed.
     committed_tip: watch::Sender<BlockNumber>,
@@ -172,6 +181,7 @@ impl ValidatorService {
             db,
             block_store,
             sign_block_semaphore: Semaphore::new(1),
+            tx_validation_semaphore: Semaphore::new(tx_validation_permits()),
             committed_tip: watch::Sender::new(BlockNumber::from(initial_metrics.chain_tip)),
             validated_transactions_count: AtomicU64::new(initial_metrics.validated_transactions),
             signed_blocks_count: AtomicU64::new(initial_metrics.signed_blocks),
@@ -210,10 +220,14 @@ impl ValidatorService {
         if !unvalidated_txs.is_empty() {
             return Err(ValidatorError::UnvalidatedTransactions(unvalidated_txs));
         }
-        // Build the block header.
-        let (proposed_header, proposed_body) = proposed_block
-            .into_header_and_body()
-            .map_err(ValidatorError::BlockBuildingFailed)?;
+        // Build the block header. This computes the account, nullifier and note tree roots plus the
+        // chain and transaction commitments — hashing proportional to block contents — so it runs
+        // on a blocking thread rather than pinning an async worker.
+        let (proposed_header, proposed_body) =
+            spawn_blocking_in_current_span(move || proposed_block.into_header_and_body())
+                .await
+                .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
+                .map_err(ValidatorError::BlockBuildingFailed)?;
 
         miden_span_record!(
             block.number = proposed_header.block_num().as_u32(),
@@ -272,8 +286,15 @@ impl ValidatorService {
             .expect("a single signature is within the signature set bounds");
         let signed_block =
             SignedBlock::new_unchecked(proposed_header, proposed_body, own_signature);
+        // Serializing the full block also scales with its contents; run it on a blocking thread.
+        let (signed_block, signed_block_bytes) = spawn_blocking_in_current_span(move || {
+            let bytes = signed_block.to_bytes();
+            (signed_block, bytes)
+        })
+        .await
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
         self.block_store
-            .save_block(signed_block.header().block_num(), &signed_block.to_bytes())
+            .save_block(signed_block.header().block_num(), &signed_block_bytes)
             .await
             .map_err(ValidatorError::BlockBackupFailed)?;
 
@@ -296,4 +317,10 @@ impl ValidatorService {
             .await
             .map_err(|err| ValidatorError::BlockSigningFailed(err.to_string()))
     }
+}
+
+/// Number of transaction validations allowed to execute concurrently: the core count minus headroom
+/// reserved for the async runtime and the block-signing path, at least one.
+fn tx_validation_permits() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().saturating_sub(2).max(1))
 }

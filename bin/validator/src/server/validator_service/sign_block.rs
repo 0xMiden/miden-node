@@ -16,6 +16,7 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
     type Output = (Signature, Word, PublicKey);
 
     fn decode(request: grpc::blockchain::ProposedBlock) -> tonic::Result<Self::Input> {
+        let _span = info_span!("decode").entered();
         ProposedBlock::read_from_bytes(&request.proposed_block).map_err(|err| {
             tonic::Status::invalid_argument(
                 err.as_report_context("Failed to deserialize proposed block"),

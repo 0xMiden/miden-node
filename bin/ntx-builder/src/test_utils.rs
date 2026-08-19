@@ -3,7 +3,7 @@
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountComponent, AccountId, AccountType};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::NoteScriptRoot;
+use miden_protocol::note::{NoteId, NoteScriptRoot};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     AccountIdBuilder,
@@ -61,6 +61,34 @@ pub fn mock_single_target_note_with_code(
     let note = builder.build().unwrap();
 
     AccountTargetNetworkNote::try_from(note).expect("note should be single-target network note")
+}
+
+/// Creates a `FEE_SPONSORSHIP` [`Note`](miden_protocol::note::Note) sponsoring `feature_note_id`,
+/// tagged for `target_account_id`. Reclaim is left disabled.
+pub fn mock_sponsorship_note(
+    target_account_id: AccountId,
+    feature_note_id: NoteId,
+    seed: u8,
+) -> miden_protocol::note::Note {
+    use miden_protocol::asset::FungibleAsset;
+    use miden_standards::note::FeeSponsorshipNote;
+
+    let mut rng = ChaCha20Rng::from_seed([seed; 32]);
+    let sender = AccountIdBuilder::new()
+        .account_type(AccountType::Private)
+        .build_with_rng(&mut rng);
+    let asset = FungibleAsset::new(FungibleAsset::mock_issuer(), 100)
+        .expect("mock fungible asset should be valid");
+
+    FeeSponsorshipNote::builder()
+        .sender(sender)
+        .target_account(target_account_id)
+        .feature_note_id(feature_note_id)
+        .asset(asset)
+        .serial_number(Word::from([u32::from(seed), 0, 0, 1]))
+        .build()
+        .expect("sponsorship note should build for a public target")
+        .into()
 }
 
 /// Creates a mock `Account` for a network account.

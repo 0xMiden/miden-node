@@ -1,0 +1,105 @@
+//! Detection and decoding of `FEE_SPONSORSHIP` notes.
+
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{Note, NoteId, Nullifier};
+use miden_standards::note::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
+
+// SPONSORSHIP NOTE
+// ================================================================================================
+
+/// A committed `FEE_SPONSORSHIP` note together with its decoded note storage.
+///
+/// Sponsorship notes carry no attachments, so they are not [`AccountTargetNetworkNote`]s; they are
+/// recognized purely by their script root.
+#[derive(Debug, Clone)]
+pub struct SponsorshipNote {
+    note: Note,
+    storage: FeeSponsorshipNoteStorage,
+}
+
+impl SponsorshipNote {
+    /// Attempts to interpret `note` as a `FEE_SPONSORSHIP` note.
+    ///
+    /// Returns `None` if the note's script root is not the `FEE_SPONSORSHIP` script root, its note
+    /// storage does not decode as `FEE_SPONSORSHIP` storage, or it does not carry exactly one asset.
+    /// The note script asserts all of these itself, so a note rejected here could never be
+    /// consumed as a sponsorship anyway.
+    pub fn try_from_note(note: &Note) -> Option<Self> {
+        if note.script().root() != FeeSponsorshipNote::script_root() {
+            return None;
+        }
+        let storage = FeeSponsorshipNoteStorage::try_from(note.storage().items()).ok()?;
+        if note.assets().num_assets() != 1 {
+            return None;
+        }
+        Some(Self { note: note.clone(), storage })
+    }
+
+    /// Returns the ID of the feature note this sponsorship pays the fee for.
+    pub fn feature_note_id(&self) -> NoteId {
+        self.storage.feature_note_id()
+    }
+
+    /// Returns the block height at or after which the reclaimer may reclaim the note, if reclaim is
+    /// enabled.
+    pub fn reclaim_height(&self) -> Option<BlockNumber> {
+        self.storage.reclaim_height()
+    }
+
+    /// Returns the ID of the underlying note.
+    pub fn id(&self) -> NoteId {
+        self.note.id()
+    }
+
+    /// Returns the nullifier of the underlying note.
+    pub fn nullifier(&self) -> Nullifier {
+        self.note.nullifier()
+    }
+
+    /// Returns a reference to the underlying [`Note`].
+    pub fn as_note(&self) -> &Note {
+        &self.note
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::Word;
+    use miden_protocol::note::NoteId;
+
+    use super::*;
+    use crate::test_utils::{
+        mock_network_account_id,
+        mock_single_target_note,
+        mock_sponsorship_note,
+    };
+
+    fn feature_note_id() -> NoteId {
+        NoteId::from_raw(Word::from([7, 8, 9, 10u32]))
+    }
+
+    /// A `FEE_SPONSORSHIP` note round-trips through detection with its storage intact.
+    #[test]
+    fn try_from_note_accepts_sponsorship_note() {
+        let note = mock_sponsorship_note(mock_network_account_id(), feature_note_id(), 1);
+
+        let detected =
+            SponsorshipNote::try_from_note(&note).expect("a FEE_SPONSORSHIP note must be detected");
+
+        assert_eq!(detected.feature_note_id(), feature_note_id());
+        assert_eq!(detected.id(), note.id());
+        assert_eq!(detected.nullifier(), note.nullifier());
+        assert_eq!(detected.reclaim_height(), None);
+    }
+
+    /// A regular network note (different script root) is not a sponsorship.
+    #[test]
+    fn try_from_note_rejects_other_scripts() {
+        let network_note = mock_single_target_note(mock_network_account_id(), 1);
+
+        assert!(SponsorshipNote::try_from_note(network_note.as_note()).is_none());
+    }
+}

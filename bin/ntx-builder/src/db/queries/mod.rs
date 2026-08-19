@@ -55,6 +55,19 @@ pub use insert_network_notes::insert_network_notes;
 mod insert_note_scripts;
 pub use insert_note_scripts::insert_note_script;
 
+mod insert_sponsorship_notes;
+pub use insert_sponsorship_notes::insert_sponsorship_notes;
+
+mod mark_sponsorships_consumed;
+pub use mark_sponsorships_consumed::mark_sponsorships_consumed;
+
+// Transaction selection consumes this in the follow-up PR that attaches sponsorships to candidates;
+// until then only the DB lifecycle tests exercise it.
+#[cfg(test)]
+mod pending_sponsorships;
+#[cfg(test)]
+pub use pending_sponsorships::pending_sponsorships;
+
 mod lookup_note_script;
 pub use lookup_note_script::lookup_note_script;
 
@@ -89,10 +102,11 @@ mod tests;
 ///
 /// - Upserts each touched network account: new full-state path insert, partial patches apply to
 ///   the existing committed row.
-/// - Inserts each network note (`INSERT OR IGNORE` to tolerate redeliveries).
-/// - Marks any of our pending notes whose nullifiers appear in this block as `committed_at =
-///   block_num`, preserving the row so the `GetNetworkNoteStatus` endpoint can report the full
-///   lifecycle.
+/// - Inserts each network note and `FEE_SPONSORSHIP` note (`INSERT OR IGNORE` to tolerate
+///   redeliveries).
+/// - Marks any of our pending notes (feature and sponsorship alike) whose nullifiers appear in
+///   this block as `committed_at = block_num`, preserving the row so the `GetNetworkNoteStatus`
+///   endpoint can report the full lifecycle.
 /// - Updates the singleton `chain_state` row's tip with the new block header and the
 ///   post-application chain MMR.
 ///
@@ -149,8 +163,10 @@ pub fn apply_committed_block(
     }
 
     insert_network_notes(tx, &effects.network_notes)?;
+    insert_sponsorship_notes(tx, &effects.sponsorship_notes)?;
 
     mark_notes_consumed(tx, &effects.nullifiers, effects.header.block_num())?;
+    mark_sponsorships_consumed(tx, &effects.nullifiers, effects.header.block_num())?;
 
     update_chain_state_tip(tx, effects.header.block_num(), &effects.header, chain_mmr)?;
 

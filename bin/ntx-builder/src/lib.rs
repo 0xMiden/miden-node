@@ -29,6 +29,7 @@ mod committed_block;
 mod coordinator;
 pub(crate) mod db;
 pub mod server;
+mod sponsorship;
 
 #[cfg(test)]
 pub(crate) mod test_utils;

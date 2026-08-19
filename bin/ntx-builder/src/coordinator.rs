@@ -401,6 +401,7 @@ mod tests {
         let effects = CommittedBlockEffects {
             header: mock_block_header(1_u32.into()),
             network_notes: vec![note],
+            sponsorship_notes: vec![],
             nullifiers: vec![],
             network_account_updates: vec![],
             account_transactions: vec![],
@@ -426,6 +427,7 @@ mod tests {
         let effects = CommittedBlockEffects {
             header: mock_block_header(1_u32.into()),
             network_notes: vec![note],
+            sponsorship_notes: vec![],
             nullifiers: vec![],
             network_account_updates: vec![],
             account_transactions: vec![],
@@ -449,6 +451,7 @@ mod tests {
         let effects = CommittedBlockEffects {
             header: mock_block_header(2_u32.into()),
             network_notes: vec![],
+            sponsorship_notes: vec![],
             nullifiers: vec![],
             network_account_updates: vec![(account_id, details)],
             account_transactions: vec![],
@@ -473,6 +476,7 @@ mod tests {
         let effects = CommittedBlockEffects {
             header: mock_block_header(1_u32.into()),
             network_notes: vec![],
+            sponsorship_notes: vec![],
             nullifiers: vec![],
             network_account_updates: vec![(
                 updated_id,
@@ -536,6 +540,7 @@ mod tests {
         let effects = CommittedBlockEffects {
             header: mock_block_header(1_u32.into()),
             network_notes: vec![note],
+            sponsorship_notes: vec![],
             nullifiers: vec![],
             network_account_updates: vec![],
             account_transactions: vec![],
@@ -575,6 +580,7 @@ mod tests {
         let effects = CommittedBlockEffects {
             header: mock_block_header(3_u32.into()),
             network_notes: vec![note],
+            sponsorship_notes: vec![],
             nullifiers: vec![],
             network_account_updates: vec![],
             account_transactions: vec![(account_id, tx_id)],

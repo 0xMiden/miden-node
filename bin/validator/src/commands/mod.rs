@@ -12,7 +12,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use base64::Engine;
 use clap::Parser;
-use miden_node_utils::clap::GrpcOptionsInternal;
+use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
@@ -200,7 +200,7 @@ pub enum ValidatorCommand {
         admin_listen: Option<std::net::SocketAddr>,
 
         #[command(flatten)]
-        grpc_options: GrpcOptionsInternal,
+        grpc_options: GrpcOptions,
 
         /// Maximum number of SQLite connections in the validator database connection pool.
         #[arg(

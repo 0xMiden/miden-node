@@ -6,29 +6,16 @@
 //! help output for the sections that need extra context.
 
 pub(crate) const RPC_CONFIGURATION_HELP_HEADING: &str = "RPC configuration";
-pub(crate) const RPC_RATE_LIMITING_HELP_HEADING: &str = "RPC rate limiting";
 pub(crate) const BLOCK_PRODUCTION_HELP_HEADING: &str = "Block production";
 pub(crate) const STORE_CONFIGURATION_HELP_HEADING: &str = "Store configuration";
-
-const RPC_RATE_LIMITING_HELP_DESCRIPTION: &str = concat!(
-    "      Rate limits are applied per client IP using a bucket system.\n",
-    "      \n",
-    "      Each client's bucket has a maximum capacity which is configured by `rpc.rate-limit.burst-size`,\n",
-    "      and replenishes credits as per `rpc.rate-limit.replenish-per-second`.\n",
-    "      \n",
-    "      Each client IP can therefore burst requests up to this capacity before being rate limited\n",
-    "      to the replenishment rate.\n\n",
-);
 
 const STORE_CONFIGURATION_HELP_DESCRIPTION: &str = concat!(
     "      Defaults are reasonable for most use cases. Only change these settings if you understand\n",
     "      the storage and performance tradeoffs.\n\n",
 );
 
-const HELP_SECTION_DESCRIPTIONS: &[(&str, &str)] = &[
-    (RPC_RATE_LIMITING_HELP_HEADING, RPC_RATE_LIMITING_HELP_DESCRIPTION),
-    (STORE_CONFIGURATION_HELP_HEADING, STORE_CONFIGURATION_HELP_DESCRIPTION),
-];
+const HELP_SECTION_DESCRIPTIONS: &[(&str, &str)] =
+    &[(STORE_CONFIGURATION_HELP_HEADING, STORE_CONFIGURATION_HELP_DESCRIPTION)];
 
 /// Inserts explanatory text below clap-generated help section headings.
 pub(crate) fn inject_section_descriptions(mut help: String) -> String {
@@ -45,7 +32,7 @@ pub(crate) fn inject_section_descriptions(mut help: String) -> String {
 mod tests {
     use clap::CommandFactory;
 
-    use super::{RPC_RATE_LIMITING_HELP_HEADING, STORE_CONFIGURATION_HELP_HEADING};
+    use super::STORE_CONFIGURATION_HELP_HEADING;
     use crate::Cli;
 
     fn subcommand_help_headings(command: &str) -> Vec<String> {
@@ -64,12 +51,10 @@ mod tests {
     fn assert_injectable_section_headings(command: &str) {
         let headings = subcommand_help_headings(command);
 
-        for heading in [RPC_RATE_LIMITING_HELP_HEADING, STORE_CONFIGURATION_HELP_HEADING] {
-            assert!(
-                headings.iter().any(|candidate| candidate == heading),
-                "{command} is missing the {heading} heading targeted by help injection"
-            );
-        }
+        assert!(
+            headings.iter().any(|candidate| candidate == STORE_CONFIGURATION_HELP_HEADING),
+            "{command} is missing the {STORE_CONFIGURATION_HELP_HEADING} heading targeted by help injection"
+        );
     }
 
     #[test]

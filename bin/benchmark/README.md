@@ -219,10 +219,6 @@ nohup miden-node sequencer \
   --batch.workers                             16 \
   --mempool.tx-capacity                       1000000 \
   --rpc.grpc.timeout                          24h \
-  --rpc.grpc.max-connection-age               24h \
-  --rpc.rate-limit.burst-size                 100000 \
-  --rpc.rate-limit.replenish-per-second       100000 \
-  --rpc.rate-limit.max-concurrent-connections 1000000 \
   > logs/node.log 2>&1 &
 
 nohup miden-ntx-builder start \

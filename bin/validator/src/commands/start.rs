@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
-use miden_node_utils::clap::GrpcOptionsInternal;
+use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_validator::{
@@ -27,7 +27,7 @@ pub(crate) struct ValidatorKeys {
 pub async fn start(
     address: SocketAddr,
     admin_address: Option<SocketAddr>,
-    grpc_options: GrpcOptionsInternal,
+    grpc_options: GrpcOptions,
     keys: ValidatorKeys,
     data_directory: PathBuf,
     sqlite_connection_pool_size: NonZeroUsize,

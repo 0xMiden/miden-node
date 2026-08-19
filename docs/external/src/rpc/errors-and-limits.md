@@ -63,7 +63,8 @@ fall into the ordinary-gRPC-status bucket described above:
   network, and corrupt framing.
 - `FAILED_PRECONDITION` when the inputs were sealed against a key the validator does not hold. This is the one case a
   client can act on: re-fetch `GetTransactionEncryptionKey` and seal again. Treat it as non-retryable without
-  re-sealing, and back off rather than retrying in a tight loop, since the key fetch is itself rate limited.
+  re-sealing, and back off rather than retrying in a tight loop, since official endpoints may rate limit requests at the
+  infrastructure level.
 
 ## Request Limits
 

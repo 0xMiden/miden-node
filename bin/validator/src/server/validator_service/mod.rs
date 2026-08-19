@@ -181,7 +181,7 @@ impl ValidatorService {
             db,
             block_store,
             sign_block_semaphore: Semaphore::new(1),
-            tx_validation_semaphore: Semaphore::new(tx_validation_permits()),
+            tx_validation_semaphore: Semaphore::new(max_tx_concurrency()),
             committed_tip: watch::Sender::new(BlockNumber::from(initial_metrics.chain_tip)),
             validated_transactions_count: AtomicU64::new(initial_metrics.validated_transactions),
             signed_blocks_count: AtomicU64::new(initial_metrics.signed_blocks),
@@ -321,6 +321,6 @@ impl ValidatorService {
 
 /// Number of transaction validations allowed to execute concurrently: the core count minus headroom
 /// reserved for the async runtime and the block-signing path, at least one.
-fn tx_validation_permits() -> usize {
+fn max_tx_concurrency() -> usize {
     std::thread::available_parallelism().map_or(1, |n| n.get().saturating_sub(2).max(1))
 }

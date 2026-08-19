@@ -184,11 +184,7 @@ start_bg node miden-node sequencer \
     --batch.interval                            500ms \
     --batch.workers                             4 \
     --mempool.tx-capacity                       100000 \
-    --rpc.grpc.timeout                          24h \
-    --rpc.grpc.max-connection-age               24h \
-    --rpc.rate-limit.burst-size                 100000 \
-    --rpc.rate-limit.replenish-per-second       100000 \
-    --rpc.rate-limit.max-concurrent-connections 1000000
+    --rpc.grpc.timeout                          24h
 wait_for_port "$RPC_PORT" node
 
 start_bg ntx-builder miden-ntx-builder start \

@@ -1,7 +1,7 @@
 //! Inserts `FEE_SPONSORSHIP` notes from a committed block.
 
+use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::WriteTx;
-use miden_node_db::{DatabaseError, SqlTypeConvert};
 
 use crate::sponsorship::SponsorshipNote;
 
@@ -18,7 +18,6 @@ pub fn insert_sponsorship_notes(
     notes: &[SponsorshipNote],
 ) -> Result<(), DatabaseError> {
     for note in notes {
-        let reclaim_height = note.reclaim_height().map(SqlTypeConvert::to_raw_sql);
         tx.execute(
             SQL,
             &[
@@ -26,7 +25,7 @@ pub fn insert_sponsorship_notes(
                 &note.id(),
                 &note.feature_note_id(),
                 note.as_note(),
-                &reclaim_height,
+                &note.reclaim_height(),
             ],
         )?;
     }

@@ -1,7 +1,7 @@
 //! Marks `FEE_SPONSORSHIP` notes as consumed by the block that contained their nullifier.
 
+use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::WriteTx;
-use miden_node_db::{DatabaseError, SqlTypeConvert};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Nullifier;
 
@@ -16,9 +16,8 @@ pub fn mark_sponsorships_consumed(
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<(), DatabaseError> {
-    let block_num_val = block_num.to_raw_sql();
     for nullifier in nullifiers {
-        tx.execute(SQL, &[nullifier, &block_num_val])?;
+        tx.execute(SQL, &[nullifier, &block_num])?;
     }
     Ok(())
 }

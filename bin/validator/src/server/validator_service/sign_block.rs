@@ -58,7 +58,6 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
         let chain_tip = self
             .db
             .load_chain_tip()
-            .instrument(info_span!("load_chain_tip"))
             .await
             .map_err(|err| {
                 tonic::Status::internal(format!("Failed to load chain tip: {}", err.as_report()))
@@ -80,16 +79,9 @@ impl grpc::server::validator_api::SignBlock for ValidatorService {
 
         // Persist the signed header.
         let new_block_num = header.block_num().as_u32();
-        self.db
-            .upsert_block_header(header)
-            .instrument(info_span!("persist_block_header"))
-            .await
-            .map_err(|err| {
-                tonic::Status::internal(format!(
-                    "Failed to persist block header: {}",
-                    err.as_report()
-                ))
-            })?;
+        self.db.upsert_block_header(header).await.map_err(|err| {
+            tonic::Status::internal(format!("Failed to persist block header: {}", err.as_report()))
+        })?;
 
         // Update the in-memory counters after successful persistence. The block has already been
         // backed up to the block store by `validate_block`, so it is available to subscribers by

@@ -606,6 +606,27 @@ pub(crate) fn select_account_vault_updates_v2(
     let target_block = *block_range.end();
     let block_from = block_range.start().to_raw_sql();
     let block_to = target_block.to_raw_sql();
+
+    // Check the retention horizon before loading the page. This read establishes the SQLite
+    // transaction's snapshot, so the page query below observes the same chain tip and pruning
+    // state. Rejecting here avoids loading a page that would be discarded as incomplete.
+    let chain_tip =
+        SelectDsl::select(schema::block_headers::table, max(schema::block_headers::block_num))
+            .get_result::<Option<i64>>(conn)?
+            .ok_or_else(|| {
+                DatabaseError::DataCorrupted("block headers table is empty".to_owned())
+            })?;
+    let chain_tip = BlockNumber::from_raw_sql(chain_tip)?;
+    let oldest_available = chain_tip
+        .checked_sub(HISTORICAL_BLOCK_RETENTION)
+        .unwrap_or(BlockNumber::GENESIS);
+    if target_block < oldest_available {
+        return Err(DatabaseError::BlockPruned {
+            block_num: target_block,
+            oldest_available,
+        });
+    }
+
     let mut query = SelectDsl::select(t::table, (t::block_num, t::vault_key, t::asset))
         .filter(t::account_id.eq(account_id.to_bytes()))
         .filter(t::block_num.ge(block_from))
@@ -629,26 +650,6 @@ pub(crate) fn select_account_vault_updates_v2(
         .order((t::block_num.asc(), t::vault_key.asc()))
         .limit(query_limit)
         .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
-
-    // Check the retention horizon after reading the page, within the same transaction. This ensures
-    // the page and chain tip come from one SQLite snapshot: if pruning has already made the target
-    // incomplete, discard the page instead of returning an apparently complete delta.
-    let chain_tip =
-        SelectDsl::select(schema::block_headers::table, max(schema::block_headers::block_num))
-            .get_result::<Option<i64>>(conn)?
-            .ok_or_else(|| {
-                DatabaseError::DataCorrupted("block headers table is empty".to_owned())
-            })?;
-    let chain_tip = BlockNumber::from_raw_sql(chain_tip)?;
-    let oldest_available = chain_tip
-        .checked_sub(HISTORICAL_BLOCK_RETENTION)
-        .unwrap_or(BlockNumber::GENESIS);
-    if target_block < oldest_available {
-        return Err(DatabaseError::BlockPruned {
-            block_num: target_block,
-            oldest_available,
-        });
-    }
 
     let has_more = raw.len() > limit;
     raw.truncate(limit);

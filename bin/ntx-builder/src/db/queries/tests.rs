@@ -160,7 +160,7 @@ async fn insert_sponsorship_notes_is_idempotent() {
 /// The binding is resolved at selection time, so insertion order between a sponsorship and its
 /// feature note must not matter.
 #[tokio::test]
-async fn pending_sponsorships_resolves_sponsorship_inserted_before_feature_note() {
+async fn sponsorships_for_pending_notes_resolves_sponsorship_inserted_before_feature_note() {
     let (db, _dir) = test_setup().await;
     let account_id = mock_network_account_id();
     let feature = mock_single_target_note(account_id, 1);
@@ -168,18 +168,18 @@ async fn pending_sponsorships_resolves_sponsorship_inserted_before_feature_note(
 
     // The sponsorship commits first: it is stored, but unresolved (no feature note row to join).
     db.insert_sponsorship_notes(vec![sponsorship]).await.unwrap();
-    assert!(db.pending_sponsorships(account_id).await.unwrap().is_empty());
+    assert!(db.sponsorships_for_pending_notes(account_id).await.unwrap().is_empty());
 
     // Once the feature note commits, the join finds the pair.
     db.insert_network_notes(vec![feature.clone()]).await.unwrap();
-    let pending = db.pending_sponsorships(account_id).await.unwrap();
+    let pending = db.sponsorships_for_pending_notes(account_id).await.unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[&feature.as_note().id()].len(), 1);
 }
 
 /// A feature note may have any number of sponsorships; all unconsumed ones are returned together.
 #[tokio::test]
-async fn pending_sponsorships_groups_multiple_per_feature_note() {
+async fn sponsorships_for_pending_notes_groups_multiple_per_feature_note() {
     let (db, _dir) = test_setup().await;
     let account_id = mock_network_account_id();
     let feature = mock_single_target_note(account_id, 1);
@@ -193,14 +193,14 @@ async fn pending_sponsorships_groups_multiple_per_feature_note() {
     .await
     .unwrap();
 
-    let pending = db.pending_sponsorships(account_id).await.unwrap();
+    let pending = db.sponsorships_for_pending_notes(account_id).await.unwrap();
     assert_eq!(pending[&feature_id].len(), 2);
 }
 
 /// A consumed sponsorship (spent alongside its feature note or reclaimed externally) must never be
 /// attached again; a consumed feature note must not pull its sponsorships either.
 #[tokio::test]
-async fn pending_sponsorships_excludes_consumed_rows() {
+async fn sponsorships_for_pending_notes_excludes_consumed_rows() {
     let (db, _dir) = test_setup().await;
     let account_id = mock_network_account_id();
     let feature_a = mock_single_target_note(account_id, 1);
@@ -214,13 +214,13 @@ async fn pending_sponsorships_excludes_consumed_rows() {
     db.insert_sponsorship_notes(vec![sponsorship_a.clone(), sponsorship_b])
         .await
         .unwrap();
-    assert_eq!(db.pending_sponsorships(account_id).await.unwrap().len(), 2);
+    assert_eq!(db.sponsorships_for_pending_notes(account_id).await.unwrap().len(), 2);
 
     // Sponsorship A is reclaimed externally: only the pair around feature B remains.
     db.mark_sponsorships_consumed(vec![sponsorship_a.nullifier()], BlockNumber::from(7))
         .await
         .unwrap();
-    let pending = db.pending_sponsorships(account_id).await.unwrap();
+    let pending = db.sponsorships_for_pending_notes(account_id).await.unwrap();
     assert_eq!(pending.len(), 1);
     assert!(pending.contains_key(&feature_b.as_note().id()));
 
@@ -228,14 +228,14 @@ async fn pending_sponsorships_excludes_consumed_rows() {
     db.mark_notes_consumed(vec![feature_b.as_note().nullifier()], BlockNumber::from(8))
         .await
         .unwrap();
-    assert!(db.pending_sponsorships(account_id).await.unwrap().is_empty());
+    assert!(db.sponsorships_for_pending_notes(account_id).await.unwrap().is_empty());
     assert_eq!(db.count_sponsorship_notes().await, 2);
 }
 
 /// A sponsorship bound to a feature note targeting a different account must not leak into this
 /// account's pending set: the join goes through `notes.account_id`, not the sponsorship's tag.
 #[tokio::test]
-async fn pending_sponsorships_binds_by_feature_note_not_tag() {
+async fn sponsorships_for_pending_notes_binds_by_feature_note_not_tag() {
     let (db, _dir) = test_setup().await;
     let alice = mock_network_account_id();
     let bob = mock_network_account_id_seeded(42);
@@ -246,8 +246,8 @@ async fn pending_sponsorships_binds_by_feature_note_not_tag() {
     db.insert_network_notes(vec![feature.clone()]).await.unwrap();
     db.insert_sponsorship_notes(vec![sponsorship]).await.unwrap();
 
-    assert!(db.pending_sponsorships(alice).await.unwrap().is_empty());
-    let pending = db.pending_sponsorships(bob).await.unwrap();
+    assert!(db.sponsorships_for_pending_notes(alice).await.unwrap().is_empty());
+    let pending = db.sponsorships_for_pending_notes(bob).await.unwrap();
     assert_eq!(pending[&feature.as_note().id()].len(), 1);
 }
 

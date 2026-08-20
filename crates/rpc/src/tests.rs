@@ -558,12 +558,7 @@ async fn start_ntx_builder(
         .without_otel_context_injection()
         .connect_lazy::<NtxBuilderClient>();
 
-    (
-        client,
-        call_count,
-        last_accept,
-        TestServerGuard(shutdown),
-    )
+    (client, call_count, last_accept, TestServerGuard(shutdown))
 }
 
 fn dummy_client<T: GrpcClient>() -> T {
@@ -807,12 +802,7 @@ async fn start_validator(
         .without_otel_context_injection()
         .connect_lazy::<ValidatorClient>();
 
-    (
-        client,
-        call_count,
-        last_accept,
-        TestServerGuard(shutdown),
-    )
+    (client, call_count, last_accept, TestServerGuard(shutdown))
 }
 
 /// A fixed transaction encryption key response for forwarding tests. The values only need to
@@ -1128,12 +1118,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore, TestServerG
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
     let rpc_client = connect_rpc(url).await;
 
-    (
-        rpc_client,
-        rpc_addr,
-        store,
-        TestServerGuard(shutdown),
-    )
+    (rpc_client, rpc_addr, store, TestServerGuard(shutdown))
 }
 
 #[tokio::test]

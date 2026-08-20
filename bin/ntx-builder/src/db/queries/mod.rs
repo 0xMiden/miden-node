@@ -8,6 +8,7 @@
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::WriteTx;
 use miden_protocol::Word;
+use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::transaction::TransactionId;
@@ -58,21 +59,14 @@ pub use insert_note_scripts::insert_note_script;
 mod insert_sponsorship_notes;
 pub use insert_sponsorship_notes::insert_sponsorship_notes;
 
-mod mark_sponsorships_consumed;
-pub use mark_sponsorships_consumed::mark_sponsorships_consumed;
-
-// Transaction selection consumes this in the follow-up PR that attaches sponsorships to candidates;
-// until then only the DB lifecycle tests exercise it.
-#[cfg(test)]
-mod sponsorships_for_pending_notes;
-#[cfg(test)]
-pub use sponsorships_for_pending_notes::sponsorships_for_pending_notes;
-
 mod lookup_note_script;
 pub use lookup_note_script::lookup_note_script;
 
 mod mark_notes_consumed;
 pub use mark_notes_consumed::mark_notes_consumed;
+
+mod mark_sponsorships_consumed;
+pub use mark_sponsorships_consumed::mark_sponsorships_consumed;
 
 mod notes_failed;
 pub use notes_failed::notes_failed;
@@ -85,6 +79,12 @@ pub use select_genesis_commitment::select_genesis_commitment;
 
 mod select_genesis_validator_keys;
 pub use select_genesis_validator_keys::select_genesis_validator_keys;
+
+mod sponsored_accounts;
+pub use sponsored_accounts::sponsored_accounts;
+
+mod sponsorships_for_pending_notes;
+pub use sponsorships_for_pending_notes::sponsorships_for_pending_notes;
 
 mod update_chain_state_tip;
 pub use update_chain_state_tip::update_chain_state_tip;
@@ -110,6 +110,10 @@ mod tests;
 /// - Updates the singleton `chain_state` row's tip with the new block header and the
 ///   post-application chain MMR.
 ///
+/// Returns the accounts whose pending feature notes gained a sponsorship in this block (one entry
+/// per sponsorship), so the coordinator can wake their actors: a feature note skipped for lacking a
+/// sponsorship becomes viable when its sponsorship arrives later.
+///
 /// The account upserts apply each block's network-account effects to the local store so an actor's
 /// post-expiry reload sees the authoritative committed state. The recorded `accounts.last_tx_id` and
 /// the `last_committed_tx` the coordinator pushes to actors both derive from the block's
@@ -118,7 +122,7 @@ pub fn apply_committed_block(
     tx: &WriteTx<'_>,
     effects: &CommittedBlockEffects,
     chain_mmr: &PartialMmr,
-) -> Result<(), DatabaseError> {
+) -> Result<Vec<AccountId>, DatabaseError> {
     // The latest transaction in this block per account, from the same source the coordinator uses
     // for each `AccountView`'s `last_committed_tx`, so the persisted `accounts.last_tx_id` and the
     // pushed landing state agree. For block-producer output every committed account update
@@ -168,7 +172,11 @@ pub fn apply_committed_block(
     mark_notes_consumed(tx, &effects.nullifiers, effects.header.block_num())?;
     mark_sponsorships_consumed(tx, &effects.nullifiers, effects.header.block_num())?;
 
+    // Resolved after the consumption marks so a feature note consumed in this same block does not
+    // produce a wakeup.
+    let sponsored = sponsored_accounts(tx, &effects.sponsorship_notes)?;
+
     update_chain_state_tip(tx, effects.header.block_num(), &effects.header, chain_mmr)?;
 
-    Ok(())
+    Ok(sponsored)
 }

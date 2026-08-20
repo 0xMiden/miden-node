@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -11,9 +10,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock, ValidatorKeys};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
-#[cfg(test)]
-use miden_protocol::note::Note;
-use miden_protocol::note::{NoteId, NoteScript, Nullifier};
+use miden_protocol::note::{Note, NoteId, NoteScript, Nullifier};
 #[cfg(test)]
 use miden_protocol::transaction::TransactionId;
 #[cfg(test)]
@@ -161,6 +158,20 @@ impl NtxDbReader {
             .read("get_note_status", move |tx| crate::db::queries::get_note_status(tx, note_id))
             .await
     }
+
+    /// Returns the unconsumed `FEE_SPONSORSHIP` notes bound to the account's unconsumed feature
+    /// notes, grouped by feature note id. Used by transaction selection to attach each feature
+    /// note's sponsorships to its group.
+    pub(crate) async fn sponsorships_for_pending_notes(
+        &self,
+        account_id: AccountId,
+    ) -> Result<HashMap<NoteId, Vec<Note>>, DatabaseError> {
+        self.reader
+            .read("sponsorships_for_pending_notes", move |tx| {
+                queries::sponsorships_for_pending_notes(tx, account_id)
+            })
+            .await
+    }
 }
 
 /// Write handle to the ntx-builder database.
@@ -200,11 +211,14 @@ impl NtxDbWriter {
             .await
     }
 
+    /// Applies a committed block's effects and returns the accounts whose pending feature notes
+    /// gained a sponsorship in this block (one entry per sponsorship), so the coordinator can wake
+    /// their actors.
     pub(crate) async fn apply_committed_block(
         &self,
         effects: CommittedBlockEffects,
         chain_mmr: PartialMmr,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<Vec<AccountId>, DatabaseError> {
         self.writer
             .write("apply_committed_block", move |tx| {
                 queries::apply_committed_block(tx, &effects, &chain_mmr)
@@ -390,19 +404,6 @@ impl NtxDbReader {
 
     pub(crate) async fn count_sponsorship_notes(&self) -> i64 {
         self.count("SELECT COUNT(*) FROM sponsorship_notes").await
-    }
-
-    /// Reads the unconsumed sponsorships bound to the account's pending feature notes. Becomes a
-    /// production read once transaction selection attaches sponsorships to candidates.
-    pub(crate) async fn sponsorships_for_pending_notes(
-        &self,
-        account_id: AccountId,
-    ) -> Result<HashMap<NoteId, Vec<Note>>, DatabaseError> {
-        self.reader
-            .read("sponsorships_for_pending_notes", move |tx| {
-                queries::sponsorships_for_pending_notes(tx, account_id)
-            })
-            .await
     }
 }
 

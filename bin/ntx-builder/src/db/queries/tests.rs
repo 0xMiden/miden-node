@@ -251,6 +251,41 @@ async fn sponsorships_for_pending_notes_binds_by_feature_note_not_tag() {
     assert_eq!(pending[&feature.as_note().id()].len(), 1);
 }
 
+/// `apply_committed_block` reports one wakeup per sponsorship whose feature note is known and still
+/// pending; sponsorships for consumed or unknown feature notes wake nobody.
+#[tokio::test]
+async fn apply_committed_block_returns_sponsored_account_wakeups() {
+    let (db, _dir) = test_setup().await;
+    let account_id = mock_network_account_id();
+    let pending = mock_single_target_note(account_id, 1);
+    let consumed = mock_single_target_note(account_id, 2);
+    db.insert_network_notes(vec![pending.clone(), consumed.clone()]).await.unwrap();
+    db.mark_notes_consumed(vec![consumed.as_note().nullifier()], BlockNumber::from(1))
+        .await
+        .unwrap();
+
+    let effects = CommittedBlockEffects {
+        header: mock_block_header(BlockNumber::from(2)),
+        network_notes: vec![],
+        sponsorship_notes: vec![
+            sponsorship_for(account_id, pending.as_note().id(), 3),
+            sponsorship_for(account_id, consumed.as_note().id(), 4),
+            sponsorship_for(account_id, NoteId::from_raw(Word::from([9, 9, 9, 9u32])), 5),
+        ],
+        nullifiers: vec![],
+        network_account_updates: vec![],
+        account_transactions: vec![],
+    };
+
+    let wakeups = db.apply_committed_block(effects, PartialMmr::default()).await.unwrap();
+
+    assert_eq!(
+        wakeups,
+        vec![account_id],
+        "only the sponsorship bound to the pending feature note wakes its account",
+    );
+}
+
 // AVAILABLE NOTES + BACKOFF
 // ================================================================================================
 

@@ -91,6 +91,18 @@ pub fn mock_sponsorship_note(
         .into()
 }
 
+/// Creates a decoded [`SponsorshipNote`](crate::sponsorship::SponsorshipNote) sponsoring
+/// `feature_note_id`, tagged for `target_account_id`.
+pub fn mock_sponsorship(
+    target_account_id: AccountId,
+    feature_note_id: miden_protocol::note::NoteId,
+    seed: u8,
+) -> crate::sponsorship::SponsorshipNote {
+    let note = mock_sponsorship_note(target_account_id, feature_note_id, seed);
+    crate::sponsorship::SponsorshipNote::try_from_note(&note)
+        .expect("mock sponsorship note must decode")
+}
+
 /// Creates a mock `Account` for a network account.
 ///
 /// Uses `AccountBuilder` with minimal components needed for serialization.

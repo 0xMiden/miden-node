@@ -241,11 +241,18 @@ pub struct BlockProducerStatus {
 
 impl BlockProducerApi {
     /// Creates an API backed by a fresh mempool.
-    pub fn new(state: Arc<State>, chain_tip: BlockNumber, config: BlockProducerApiConfig) -> Self {
+    ///
+    /// The background mempool statistics updater runs until `shutdown` is cancelled.
+    pub fn new(
+        state: Arc<State>,
+        chain_tip: BlockNumber,
+        config: BlockProducerApiConfig,
+        shutdown: CancellationToken,
+    ) -> Self {
         Self::from_shared_mempool(
             Mempool::shared(chain_tip, config.mempool_config()),
             state,
-            CancellationToken::new(),
+            shutdown,
         )
     }
 

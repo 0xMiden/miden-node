@@ -394,12 +394,14 @@ impl NtxDbReader {
 
     /// Reads the unconsumed sponsorships bound to the account's pending feature notes. Becomes a
     /// production read once transaction selection attaches sponsorships to candidates.
-    pub(crate) async fn pending_sponsorships(
+    pub(crate) async fn sponsorships_for_pending_notes(
         &self,
         account_id: AccountId,
     ) -> Result<HashMap<NoteId, Vec<Note>>, DatabaseError> {
         self.reader
-            .read("pending_sponsorships", move |tx| queries::pending_sponsorships(tx, account_id))
+            .read("sponsorships_for_pending_notes", move |tx| {
+                queries::sponsorships_for_pending_notes(tx, account_id)
+            })
             .await
     }
 }

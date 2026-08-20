@@ -64,9 +64,9 @@ pub use mark_sponsorships_consumed::mark_sponsorships_consumed;
 // Transaction selection consumes this in the follow-up PR that attaches sponsorships to candidates;
 // until then only the DB lifecycle tests exercise it.
 #[cfg(test)]
-mod pending_sponsorships;
+mod sponsorships_for_pending_notes;
 #[cfg(test)]
-pub use pending_sponsorships::pending_sponsorships;
+pub use sponsorships_for_pending_notes::sponsorships_for_pending_notes;
 
 mod lookup_note_script;
 pub use lookup_note_script::lookup_note_script;

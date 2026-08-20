@@ -22,10 +22,19 @@ use crate::tracing::ErrorSpanExt;
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
 
 /// Default OpenTelemetry resource attributes for this process.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ResourceConfig {
     service_name: Option<&'static str>,
     attributes: Vec<(&'static str, &'static str)>,
+}
+
+impl Default for ResourceConfig {
+    fn default() -> Self {
+        Self {
+            service_name: None,
+            attributes: vec![("service.version", env!("CARGO_PKG_VERSION"))],
+        }
+    }
 }
 
 impl ResourceConfig {
@@ -381,6 +390,10 @@ mod tests {
         );
 
         assert_eq!(resource_value(&resource, "service.name"), Some(Value::from("node")),);
+        assert_eq!(
+            resource_value(&resource, "service.version"),
+            Some(Value::from(env!("CARGO_PKG_VERSION"))),
+        );
         assert_eq!(resource_value(&resource, "service.namespace"), Some(Value::from("miden")),);
         assert_eq!(resource_value(&resource, "miden.node.role"), Some(Value::from("sequencer")),);
         assert_eq!(resource_value(&resource, "telemetry.sdk.language"), Some(Value::from("rust")),);
@@ -391,6 +404,7 @@ mod tests {
         let detected_resource = Resource::builder_empty()
             .with_attributes([
                 KeyValue::new("service.name", "custom-node"),
+                KeyValue::new("service.version", "custom-version"),
                 KeyValue::new("service.namespace", "custom-namespace"),
                 KeyValue::new("miden.node.role", "custom-role"),
             ])
@@ -405,6 +419,10 @@ mod tests {
         );
 
         assert_eq!(resource_value(&resource, "service.name"), Some(Value::from("custom-node")),);
+        assert_eq!(
+            resource_value(&resource, "service.version"),
+            Some(Value::from("custom-version")),
+        );
         assert_eq!(
             resource_value(&resource, "service.namespace"),
             Some(Value::from("custom-namespace")),

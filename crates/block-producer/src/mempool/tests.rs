@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use assert_matches::assert_matches;
 use miden_protocol::Word;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use pretty_assertions::assert_eq;
@@ -47,6 +48,43 @@ impl Mempool {
 
         (uut.clone(), uut)
     }
+}
+
+#[test]
+fn capacity_counts_batched_uncommitted_transactions() {
+    let (mut uut, _) = Mempool::for_tests();
+    uut.config.tx_capacity = NonZeroUsize::new(1).unwrap();
+    let [first, second, _] = MockProvenTxBuilder::sequential();
+
+    uut.add_transaction(first).unwrap();
+    uut.select_any_batch().unwrap();
+
+    assert_eq!(uut.uncommitted_transactions_count(), 1);
+    assert_eq!(uut.unbatched_transactions_count(), 0);
+    assert_matches!(
+        uut.add_transaction(second),
+        Err(MempoolSubmissionError::CapacityExceeded)
+    );
+}
+
+#[test]
+fn retained_committed_transactions_do_not_consume_capacity() {
+    let (mut uut, _) = Mempool::for_tests();
+    uut.config.tx_capacity = NonZeroUsize::new(1).unwrap();
+    let [first, second, _] = MockProvenTxBuilder::sequential();
+
+    uut.add_transaction(first.clone()).unwrap();
+    uut.select_any_batch().unwrap();
+    uut.commit_batch(Arc::new(ProvenBatch::mocked_from_transactions([
+        first.raw_proven_transaction()
+    ])));
+    let block = uut.select_block();
+    let header = BlockHeader::mock(block.block_number, None, None, &[], Word::empty());
+    uut.commit_block(&header);
+
+    assert_eq!(uut.uncommitted_transactions_count(), 0);
+    assert_eq!(uut.transactions.count(), 1, "committed state should still be retained");
+    uut.add_transaction(second).unwrap();
 }
 
 #[test]

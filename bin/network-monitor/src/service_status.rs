@@ -263,6 +263,8 @@ pub struct BlockProducerStatusDetails {
 /// Details about the block producer's mempool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MempoolStatusDetails {
+    /// Number of transactions that have not yet been committed.
+    pub uncommitted_transactions: u64,
     /// Number of transactions currently in the mempool waiting to be batched.
     pub unbatched_transactions: u64,
     /// Number of batches currently being proven.
@@ -311,6 +313,7 @@ impl From<BlockProducerStatus> for BlockProducerStatusDetails {
         // Mempool statistics are a message field, hence optional on the wire; a node version that
         // omits them must not bring the checker down.
         let mempool = value.mempool_stats.map(|stats| MempoolStatusDetails {
+            uncommitted_transactions: stats.uncommitted_transactions,
             unbatched_transactions: stats.unbatched_transactions,
             proposed_batches: stats.proposed_batches,
             proven_batches: stats.proven_batches,

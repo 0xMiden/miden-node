@@ -131,6 +131,15 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
+# Unprivileged runtime user. `/data` is created here so a first-use named
+# volume mounted at `/data` inherits this ownership (Docker copies the image
+# directory into a new named volume). Without that, the volume is root:root
+# and the process cannot write.
+RUN groupadd --gid 10001 miden && \
+    useradd --uid 10001 --gid miden --no-create-home --home-dir /nonexistent \
+        --shell /usr/sbin/nologin miden && \
+    mkdir -p /data && \
+    chown miden:miden /data
 
 FROM runtime-base AS runtime-common
 ARG BIN
@@ -150,6 +159,7 @@ LABEL org.opencontainers.image.created=$CREATED \
 # Use exec to replace the shell so the binary runs as PID 1.
 ENV MIDEN_BIN=${BIN}
 CMD ["/bin/sh", "-c", "exec /usr/local/bin/$MIDEN_BIN"]
+USER miden
 
 # Command-line tools do not listen on a port.
 FROM runtime-common AS runtime-tool

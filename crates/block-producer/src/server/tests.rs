@@ -11,6 +11,11 @@ use miden_protocol::block::{BlockHeader, BlockNumber, ValidatorKeys};
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use url::Url;
 
+use crate::domain::transaction::AuthenticatedTransaction;
+use crate::mempool::{Mempool, MempoolConfig};
+use crate::server::MempoolStats;
+use crate::test_utils::MockProvenTxBuilder;
+use crate::test_utils::batch::TransactionBatchConstructor;
 use crate::{
     DEFAULT_BATCH_WORKERS,
     DEFAULT_MAX_BATCHES_PER_BLOCK,
@@ -19,11 +24,6 @@ use crate::{
     DEFAULT_VALIDATOR_TIMEOUT,
     Sequencer,
 };
-use crate::domain::transaction::AuthenticatedTransaction;
-use crate::mempool::{Mempool, MempoolConfig};
-use crate::server::MempoolStats;
-use crate::test_utils::batch::TransactionBatchConstructor;
-use crate::test_utils::MockProvenTxBuilder;
 
 #[test]
 fn mempool_stats_track_uncommitted_work_and_the_canonical_tip() {

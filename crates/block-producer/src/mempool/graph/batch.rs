@@ -160,10 +160,7 @@ impl BatchGraph {
     }
 
     pub fn proven_count(&self) -> usize {
-        self.proven
-            .keys()
-            .filter(|batch| !self.inner.is_selected(batch))
-            .count()
+        self.proven.keys().filter(|batch| !self.inner.is_selected(batch)).count()
     }
 
     pub fn proposed_count(&self) -> usize {

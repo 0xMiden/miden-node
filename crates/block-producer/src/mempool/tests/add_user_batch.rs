@@ -68,10 +68,7 @@ fn user_batch_capacity_counts_batched_uncommitted_transactions() {
     uut.add_transaction(conventional).unwrap();
     uut.select_any_batch().unwrap();
 
-    assert_matches!(
-        uut.add_user_batch(&user_batch),
-        Err(MempoolSubmissionError::CapacityExceeded)
-    );
+    assert_matches!(uut.add_user_batch(&user_batch), Err(MempoolSubmissionError::CapacityExceeded));
 }
 
 #[test]

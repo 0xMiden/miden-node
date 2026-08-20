@@ -61,10 +61,7 @@ fn capacity_counts_batched_uncommitted_transactions() {
 
     assert_eq!(uut.uncommitted_transactions_count(), 1);
     assert_eq!(uut.unbatched_transactions_count(), 0);
-    assert_matches!(
-        uut.add_transaction(second),
-        Err(MempoolSubmissionError::CapacityExceeded)
-    );
+    assert_matches!(uut.add_transaction(second), Err(MempoolSubmissionError::CapacityExceeded));
 }
 
 #[test]

@@ -1,0 +1,33 @@
+//! Filters a set of accounts down to the network accounts among them.
+
+use std::collections::HashSet;
+
+use miden_node_db::sqlite::{InList, ReadTx};
+use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
+use miden_protocol::account::AccountId;
+use miden_protocol::utils::serde::Serializable;
+
+use crate::db::queries::{NetworkAccountType, VALID_FOREVER};
+use crate::errors::DatabaseError;
+
+const SQL: &str = include_str!("select_network_accounts_subset.sql");
+
+/// Returns the subset of `account_ids` whose latest committed state is a network account.
+///
+/// Unknown ids and non-network accounts are silently omitted.
+pub(crate) fn select_network_accounts_subset(
+    tx: &ReadTx<'_>,
+    account_ids: &[AccountId],
+) -> Result<HashSet<AccountId>, DatabaseError> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
+    let id_bytes = Vec::from_iter(account_ids.iter().map(Serializable::to_bytes));
+    let ids = InList::from_blobs(id_bytes.iter().map(Vec::as_slice));
+
+    Ok(tx
+        .query(SQL, &[&ids, &NetworkAccountType::Network, &VALID_FOREVER], |row| {
+            row.get::<AccountId>(0)
+        })?
+        .into_iter()
+        .collect())
+}

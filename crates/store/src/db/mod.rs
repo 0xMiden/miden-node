@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
-use diesel::{Connection, SqliteConnection};
+use miden_node_db::sqlite::{DbReader, DbWriter};
 use miden_node_proto::domain::account::AccountInfo;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
@@ -40,17 +40,18 @@ use tracing::info;
 
 use crate::db::migrations::{migrate_database, verify_latest_schema};
 use crate::db::models::conv::SqlTypeConvert;
-use crate::db::models::queries;
+use crate::db::models::queries as diesel_queries;
+use crate::db::models::queries::StorageMapValuesPage;
 pub use crate::db::models::queries::{
     AccountCommitmentsPage,
     NullifiersPage,
     PublicAccountIdsPage,
     PublicAccountStateRootsPage,
 };
-use crate::db::models::queries::{
-    BlockHeaderCommitment,
+pub use crate::db::queries::{
+    HISTORICAL_BLOCK_RETENTION,
+    PrecomputedPublicAccountState,
     PrecomputedPublicAccountStates,
-    StorageMapValuesPage,
 };
 use crate::errors::{DatabaseError, NoteSyncError};
 use crate::genesis::GenesisBlock;
@@ -70,6 +71,18 @@ pub(crate) use migrations::bootstrap_database;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod test_db;
+#[cfg(test)]
+pub(crate) use test_db::TestDb;
+
+/// Query functions on the `miden-node-db` SQLite framework.
+///
+/// All writes run here; reads are migrated from [`models`] incrementally.
+pub(crate) mod queries;
+
+mod utils;
 
 pub(crate) mod models;
 
@@ -99,21 +112,45 @@ impl Default for DatabaseOptions {
 /// The Store's database.
 ///
 /// Extends the underlying [`miden_node_db::Db`] type with functionality specific to the Store.
+///
+/// The store is mid-migration to the `miden-node-db` SQLite framework: every write serializes on
+/// the single framework writer connection, while most reads still run on the diesel pool. Reads
+/// move to the framework reader pool one batch at a time until the diesel pool is removed.
 pub struct Db {
-    db: miden_node_db::Db,
+    diesel: miden_node_db::Db,
+    writer: DbWriter,
+    reader: DbReader,
 }
 
 impl Deref for Db {
     type Target = miden_node_db::Db;
 
     fn deref(&self) -> &Self::Target {
-        &self.db
+        &self.diesel
     }
 }
 
 impl DerefMut for Db {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.db
+        &mut self.diesel
+    }
+}
+
+/// The commitment of a [`BlockHeader`], stored alongside the header it belongs to.
+///
+/// Keeping it in its own column lets the chain MMR be rebuilt at startup without deserializing
+/// every header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct BlockHeaderCommitment(pub(crate) Word);
+
+impl BlockHeaderCommitment {
+    pub fn new(header: &BlockHeader) -> Self {
+        Self(header.commitment())
+    }
+
+    pub fn word(self) -> Word {
+        self.0
     }
 }
 
@@ -212,28 +249,29 @@ impl Db {
         fields(path=%database_filepath.display())
         err,
     )]
-    pub fn bootstrap(database_filepath: PathBuf, genesis: GenesisBlock) -> anyhow::Result<()> {
+    pub async fn bootstrap(
+        database_filepath: PathBuf,
+        genesis: GenesisBlock,
+    ) -> anyhow::Result<()> {
         migrations::bootstrap_database(&database_filepath)
             .context("failed to bootstrap database schema")?;
 
-        let mut conn: SqliteConnection = diesel::sqlite::SqliteConnection::establish(
-            database_filepath.to_str().context("database filepath is invalid")?,
-        )
-        .context("failed to open a database connection")?;
-
-        miden_node_db::configure_connection_on_creation(&mut conn)?;
+        let (writer, _reader) = miden_node_db::sqlite::open(&database_filepath)
+            .context("failed to open a database connection")?;
 
         // Insert genesis block data.
         let genesis_block = genesis.into_inner();
-        conn.transaction(move |conn| {
-            models::queries::apply_block(
-                conn,
-                &genesis_block,
-                &[],
-                &PrecomputedPublicAccountStates::new(),
-            )
-        })
-        .context("failed to insert genesis block")?;
+        writer
+            .write::<_, DatabaseError, _>("insert genesis block", move |tx| {
+                queries::apply_block(
+                    tx,
+                    &genesis_block,
+                    &[],
+                    &PrecomputedPublicAccountStates::new(),
+                )
+            })
+            .await
+            .context("failed to insert genesis block")?;
         Ok(())
     }
 
@@ -258,6 +296,8 @@ impl Db {
         verify_latest_schema(&database_filepath)?;
 
         let db = miden_node_db::Db::new_with_pool_size(&database_filepath, connection_pool_size)?;
+        let (writer, reader) =
+            miden_node_db::sqlite::open_with_pool_size(&database_filepath, connection_pool_size)?;
         info!(
             target: LOG_TARGET,
             sqlite= %database_filepath.display(),
@@ -265,7 +305,13 @@ impl Db {
             "Connected to the database"
         );
 
-        Ok(Self { db })
+        Ok(Self { diesel: db, writer, reader })
+    }
+
+    /// The write handle, for tests that need to seed or corrupt rows no production method writes.
+    #[cfg(test)]
+    pub(crate) fn writer(&self) -> &DbWriter {
+        &self.writer
     }
 
     /// Applies all pending migrations to an existing DB.
@@ -289,7 +335,7 @@ impl Db {
         after_nullifier: Option<Nullifier>,
     ) -> Result<NullifiersPage> {
         self.transact("read nullifiers paged", move |conn| {
-            queries::select_nullifiers_paged(conn, page_size, after_nullifier)
+            diesel_queries::select_nullifiers_paged(conn, page_size, after_nullifier)
         })
         .await
     }
@@ -316,7 +362,7 @@ impl Db {
         self.transact("nullifieres by prefix", move |conn| {
             let nullifier_prefixes =
                 Vec::from_iter(nullifier_prefixes.into_iter().map(|prefix| prefix as u16));
-            queries::select_nullifiers_by_prefix(
+            diesel_queries::select_nullifiers_by_prefix(
                 conn,
                 prefix_len as u8,
                 &nullifier_prefixes[..],
@@ -339,7 +385,7 @@ impl Db {
         maybe_block_number: Option<ScopedBlockNum>,
     ) -> Result<Option<BlockHeader>> {
         self.transact("block headers by block number", move |conn| {
-            let val = queries::select_block_header_by_block_num(
+            let val = diesel_queries::select_block_header_by_block_num(
                 conn,
                 maybe_block_number.map(|block_number| *block_number),
             )?;
@@ -360,8 +406,10 @@ impl Db {
         block_number: ScopedBlockNum,
     ) -> Result<Option<(BlockHeader, BlockSignatures)>> {
         self.transact("block headers and signatures by block number", move |conn| {
-            let val =
-                queries::select_block_header_and_signatures_by_block_num(conn, *block_number)?;
+            let val = diesel_queries::select_block_header_and_signatures_by_block_num(
+                conn,
+                *block_number,
+            )?;
             Ok(val)
         })
         .await
@@ -378,7 +426,7 @@ impl Db {
         blocks: impl Iterator<Item = ScopedBlockNum> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
         self.transact("block headers from given block numbers", move |conn| {
-            let raw = queries::select_block_headers(conn, blocks.map(|block| *block))?;
+            let raw = diesel_queries::select_block_headers(conn, blocks.map(|block| *block))?;
             Ok(raw)
         })
         .await
@@ -392,7 +440,7 @@ impl Db {
     )]
     pub async fn select_all_block_header_commitments(&self) -> Result<Vec<BlockHeaderCommitment>> {
         self.transact("all block headers", |conn| {
-            let raw = queries::select_all_block_header_commitments(conn)?;
+            let raw = diesel_queries::select_all_block_header_commitments(conn)?;
             Ok(raw)
         })
         .await
@@ -410,7 +458,7 @@ impl Db {
         after_account_id: Option<AccountId>,
     ) -> Result<AccountCommitmentsPage> {
         self.transact("read account commitments paged", move |conn| {
-            queries::select_account_commitments_paged(conn, page_size, after_account_id)
+            diesel_queries::select_account_commitments_paged(conn, page_size, after_account_id)
         })
         .await
     }
@@ -427,7 +475,7 @@ impl Db {
         after_account_id: Option<AccountId>,
     ) -> Result<PublicAccountIdsPage> {
         self.transact("read public account IDs paged", move |conn| {
-            queries::select_public_account_ids_paged(conn, page_size, after_account_id)
+            diesel_queries::select_public_account_ids_paged(conn, page_size, after_account_id)
         })
         .await
     }
@@ -444,7 +492,11 @@ impl Db {
         after_account_id: Option<AccountId>,
     ) -> Result<PublicAccountStateRootsPage> {
         self.transact("read public account state roots paged", move |conn| {
-            queries::select_public_account_state_roots_paged(conn, page_size, after_account_id)
+            diesel_queries::select_public_account_state_roots_paged(
+                conn,
+                page_size,
+                after_account_id,
+            )
         })
         .await
     }
@@ -456,7 +508,7 @@ impl Db {
         err,
     )]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.transact("Get account details", move |conn| queries::select_account(conn, id))
+        self.transact("Get account details", move |conn| diesel_queries::select_account(conn, id))
             .await
     }
 
@@ -470,10 +522,11 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<HashSet<AccountId>> {
-        self.transact("Filter network accounts subset", move |conn| {
-            queries::select_network_accounts_subset(conn, &account_ids)
-        })
-        .await
+        self.reader
+            .read("Filter network accounts subset", move |tx| {
+                queries::select_network_accounts_subset(tx, &account_ids)
+            })
+            .await
     }
 
     /// Queries the account code by its commitment hash.
@@ -487,7 +540,7 @@ impl Db {
         code_commitment: Word,
     ) -> Result<Option<Vec<u8>>> {
         self.transact("Get account code by commitment", move |conn| {
-            queries::select_account_code_by_commitment(conn, code_commitment)
+            diesel_queries::select_account_code_by_commitment(conn, code_commitment)
         })
         .await
     }
@@ -504,12 +557,13 @@ impl Db {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Option<(AccountHeader, AccountStorageHeader)>> {
-        self.transact("Get account header with storage header at block", move |conn| {
-            queries::select_account_header_with_storage_header_at_block(
-                conn, account_id, *block_num,
-            )
-        })
-        .await
+        self.reader
+            .read("Get account header with storage header at block", move |tx| {
+                queries::select_account_header_with_storage_header_at_block(
+                    tx, account_id, *block_num,
+                )
+            })
+            .await
     }
 
     #[miden_instrument(
@@ -524,7 +578,12 @@ impl Db {
     ) -> Result<Vec<NoteSyncUpdate>, NoteSyncError> {
         let block_range = block_range.into_inner();
         self.transact("notes sync task", move |conn| {
-            queries::get_note_sync_multi(conn, &note_tags, block_range, MAX_RESPONSE_PAYLOAD_BYTES)
+            diesel_queries::get_note_sync_multi(
+                conn,
+                &note_tags,
+                block_range,
+                MAX_RESPONSE_PAYLOAD_BYTES,
+            )
         })
         .await
     }
@@ -538,7 +597,7 @@ impl Db {
     )]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
         self.transact("note by id", move |conn| {
-            queries::select_notes_by_id(conn, note_ids.as_slice())
+            diesel_queries::select_notes_by_id(conn, note_ids.as_slice())
         })
         .await
     }
@@ -556,7 +615,7 @@ impl Db {
         up_to_block: ScopedBlockNum,
     ) -> Result<HashSet<Word>> {
         self.transact("note by commitment", move |conn| {
-            queries::select_existing_note_commitments(
+            diesel_queries::select_existing_note_commitments(
                 conn,
                 note_commitments.as_slice(),
                 *up_to_block,
@@ -578,7 +637,7 @@ impl Db {
         up_to_block: ScopedBlockNum,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
         self.transact("block note inclusion proofs by commitment", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_commitments, *up_to_block)
+            diesel_queries::select_note_inclusion_proofs(conn, &note_commitments, *up_to_block)
         })
         .await
     }
@@ -610,29 +669,50 @@ impl Db {
         unresolved_note_nullifiers: Vec<Nullifier>,
         prune_tip: BlockNumber,
     ) -> Result<BTreeMap<Nullifier, NoteId>> {
-        self.transact("apply block", move |conn| {
-            models::queries::apply_block(conn, &signed_block, &notes, &precomputed_public_states)?;
-            models::queries::prune_history(conn, prune_tip)?;
+        self.writer
+            .write::<_, DatabaseError, _>("apply block", move |tx| {
+                queries::apply_block(tx, &signed_block, &notes, &precomputed_public_states)?;
+                queries::prune_history(tx, prune_tip)?;
+                Ok(())
+            })
+            .await?;
 
-            let mut resolved_note_ids = BTreeMap::new();
-            for chunk in unresolved_note_nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT) {
-                match queries::select_note_ids_by_nullifier(conn, chunk) {
-                    Ok(note_ids) => resolved_note_ids.extend(note_ids),
-                    Err(err) => {
-                        tracing::warn!(
-                            target: COMPONENT,
-                            %err,
-                            nullifiers.count = chunk.len(),
-                            "Failed to resolve consumed note IDs for lifecycle events",
-                        );
-                        break;
-                    },
-                }
+        Ok(self.resolve_consumed_note_ids(unresolved_note_nullifiers).await)
+    }
+
+    /// Maps consumed nullifiers back to their note IDs for lifecycle events, on a best-effort
+    /// basis.
+    ///
+    /// A failed lookup is logged and abandoned: the caller uses this only for reporting.
+    async fn resolve_consumed_note_ids(
+        &self,
+        nullifiers: Vec<Nullifier>,
+    ) -> BTreeMap<Nullifier, NoteId> {
+        let mut resolved_note_ids = BTreeMap::new();
+        for chunk in nullifiers.chunks(QueryParamNoteCommitmentLimit::LIMIT) {
+            let chunk = chunk.to_vec();
+            let count = chunk.len();
+            let result = self
+                .transact("resolve consumed note ids", move |conn| {
+                    diesel_queries::select_note_ids_by_nullifier(conn, &chunk)
+                })
+                .await;
+
+            match result {
+                Ok(note_ids) => resolved_note_ids.extend(note_ids),
+                Err(err) => {
+                    tracing::warn!(
+                        target: COMPONENT,
+                        %err,
+                        nullifiers.count = count,
+                        "Failed to resolve consumed note IDs for lifecycle events",
+                    );
+                    break;
+                },
             }
+        }
 
-            Ok(resolved_note_ids)
-        })
-        .await
+        resolved_note_ids
     }
 
     /// Selects storage map values for syncing storage maps for a specific account ID.
@@ -649,7 +729,7 @@ impl Db {
         let entries_limit = entries_limit.unwrap_or_else(default_storage_map_entries_limit);
 
         self.transact("select storage map sync values", move |conn| {
-            models::queries::select_account_storage_map_values_paged(
+            diesel_queries::select_account_storage_map_values_paged(
                 conn,
                 account_id,
                 block_range,
@@ -766,10 +846,11 @@ impl Db {
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Vec<Asset>, DatabaseError> {
-        self.transact("select account vault at block", move |conn| {
-            queries::select_account_vault_at_block(conn, account_id, *block_num)
-        })
-        .await
+        self.reader
+            .read("select account vault at block", move |tx| {
+                queries::select_account_vault_at_block(tx, account_id, *block_num)
+            })
+            .await
     }
 
     pub async fn get_account_vault_sync(
@@ -779,7 +860,7 @@ impl Db {
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
         let block_range = block_range.into_inner();
         self.transact("account vault sync", move |conn| {
-            queries::select_account_vault_assets(conn, account_id, block_range)
+            diesel_queries::select_account_vault_assets(conn, account_id, block_range)
         })
         .await
     }
@@ -787,7 +868,7 @@ impl Db {
     /// Returns the script for a note by its root.
     pub async fn select_note_script_by_root(&self, root: Word) -> Result<Option<NoteScript>> {
         self.transact("note script by root", move |conn| {
-            queries::select_note_script_by_root(conn, root)
+            diesel_queries::select_note_script_by_root(conn, root)
         })
         .await
     }
@@ -805,7 +886,7 @@ impl Db {
     ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
         let block_range = block_range.into_inner();
         self.transact("full transactions records", move |conn| {
-            queries::select_transactions_records(conn, &account_ids, block_range)
+            diesel_queries::select_transactions_records(conn, &account_ids, block_range)
         })
         .await
     }

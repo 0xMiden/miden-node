@@ -23,6 +23,7 @@ use miden_protocol::account::{
     StorageMap,
     StorageMapKey,
     StorageMapPatch,
+    StorageMapPatchEntries,
     StorageSlot,
     StorageSlotName,
     StorageSlotPatch,
@@ -788,6 +789,151 @@ fn optimized_delta_updates_storage_map_header() {
         header_after.to_commitment(),
         expected_commitment,
         "Account commitment should match after map delta"
+    );
+}
+
+#[test]
+fn optimized_delta_removes_storage_map_values() {
+    const ACCOUNT_SEED: [u8; 32] = [31u8; 32];
+    const SLOT_INDEX_MAP: usize = 3;
+
+    let mut conn = setup_test_db();
+    let block_1 = BlockNumber::from(1u32);
+    let block_2 = BlockNumber::from(2u32);
+    insert_block_header(&mut conn, block_1);
+    insert_block_header(&mut conn, block_2);
+
+    let map_key = StorageMapKey::from_index(7);
+    let map_value =
+        Word::from([Felt::new_unchecked(10), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+    let second_map_key = StorageMapKey::from_index(8);
+    let second_map_value =
+        Word::from([Felt::new_unchecked(20), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+    let storage_map =
+        StorageMap::with_entries([(map_key, map_value), (second_map_key, second_map_value)])
+            .unwrap();
+    let component = AccountComponent::new(
+        CodeBuilder::default()
+            .compile_component_code(
+                "test::interface",
+                "@account_procedure pub proc map push.1 end",
+            )
+            .unwrap(),
+        vec![StorageSlot::with_map(
+            StorageSlotName::mock(SLOT_INDEX_MAP),
+            storage_map,
+        )],
+        AccountComponentMetadata::new("test"),
+    )
+    .unwrap();
+    let account = AccountBuilder::new(ACCOUNT_SEED)
+        .account_type(AccountType::Public)
+        .with_component(component)
+        .with_component(AuthSingleSig::new(Approver::new(
+            PublicKeyCommitment::from(EMPTY_WORD),
+            AuthScheme::Falcon512Poseidon2,
+        )))
+        .build_existing()
+        .unwrap();
+
+    let initial_patch = AccountPatch::try_from(account.clone()).unwrap();
+    upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            account.to_commitment(),
+            AccountUpdateDetails::Public(initial_patch),
+        )],
+        block_1,
+        &precomputed_states_from_account(&account),
+    )
+    .unwrap();
+
+    let previous = select_full_account(&mut conn, account.id()).unwrap();
+    let remove_patch = AccountPatch::new(
+        account.id(),
+        AccountStoragePatch::from_raw(BTreeMap::from_iter([(
+            StorageSlotName::mock(SLOT_INDEX_MAP),
+            StorageSlotPatch::Map(StorageMapPatch::Remove),
+        )]))
+        .unwrap(),
+        AccountVaultPatch::default(),
+        None,
+        Some(Felt::new_unchecked(previous.nonce().as_canonical_u64() + 1)),
+    )
+    .unwrap();
+    let mut expected = previous;
+    expected.apply_patch(&remove_patch).unwrap();
+
+    upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            expected.to_commitment(),
+            AccountUpdateDetails::Public(remove_patch),
+        )],
+        block_2,
+        &precomputed_states_from_account(&expected),
+    )
+    .unwrap();
+
+    use crate::db::schema::account_storage_map_values as map_values;
+    let latest_rows: i64 = map_values::table
+        .filter(map_values::account_id.eq(account.id().to_bytes()))
+        .filter(map_values::slot_name.eq(StorageSlotName::mock(SLOT_INDEX_MAP).to_raw_sql()))
+        .filter(map_values::valid_until.eq(VALID_FOREVER))
+        .count()
+        .get_result(&mut conn)
+        .unwrap();
+    assert_eq!(
+        latest_rows, 0,
+        "removed storage map values must not remain latest"
+    );
+
+    let block_3 = BlockNumber::from(3u32);
+    insert_block_header(&mut conn, block_3);
+    let recreated_key = StorageMapKey::from_index(9);
+    let recreated_value =
+        Word::from([Felt::new_unchecked(30), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+    let recreate_patch = AccountPatch::new(
+        account.id(),
+        AccountStoragePatch::from_raw(BTreeMap::from_iter([(
+            StorageSlotName::mock(SLOT_INDEX_MAP),
+            StorageSlotPatch::Map(StorageMapPatch::Create {
+                entries: StorageMapPatchEntries::from_iter([(recreated_key, recreated_value)]),
+            }),
+        )]))
+        .unwrap(),
+        AccountVaultPatch::default(),
+        None,
+        Some(Felt::new_unchecked(expected.nonce().as_canonical_u64() + 1)),
+    )
+    .unwrap();
+    let mut recreated = expected;
+    recreated.apply_patch(&recreate_patch).unwrap();
+
+    upsert_accounts(
+        &mut conn,
+        &[BlockAccountUpdate::new(
+            account.id(),
+            recreated.to_commitment(),
+            AccountUpdateDetails::Public(recreate_patch),
+        )],
+        block_3,
+        &precomputed_states_from_account(&recreated),
+    )
+    .unwrap();
+
+    let latest_rows: i64 = map_values::table
+        .filter(map_values::account_id.eq(account.id().to_bytes()))
+        .filter(map_values::slot_name.eq(StorageSlotName::mock(SLOT_INDEX_MAP).to_raw_sql()))
+        .filter(map_values::valid_until.eq(VALID_FOREVER))
+        .count()
+        .get_result(&mut conn)
+        .unwrap();
+    assert_eq!(
+        latest_rows, 1,
+        "recreated storage map must contain only its new entries"
     );
 }
 

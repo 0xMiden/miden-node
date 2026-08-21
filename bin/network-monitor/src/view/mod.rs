@@ -314,6 +314,7 @@ mod tests {
                 status: Status::Healthy,
                 chain_tip: 42,
                 mempool: Some(MempoolStatusDetails {
+                    uncommitted_transactions: 4,
                     unbatched_transactions: 1,
                     proposed_batches: 2,
                     proven_batches: 3,

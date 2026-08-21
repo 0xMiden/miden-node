@@ -448,6 +448,8 @@ impl BlockProducerApi {
 pub struct MempoolStats {
     /// The mempool's current view of the chain tip height.
     pub chain_tip: BlockNumber,
+    /// Number of transactions that have not yet been committed.
+    pub uncommitted_transactions: u64,
     /// Number of transactions currently in the mempool waiting to be batched.
     pub unbatched_transactions: u64,
     /// Number of batches currently being proven.
@@ -459,7 +461,8 @@ pub struct MempoolStats {
 impl MempoolStats {
     fn from_mempool(mempool: &Mempool) -> Self {
         Self {
-            chain_tip: mempool.chain_tip(),
+            chain_tip: mempool.committed_chain_tip(),
+            uncommitted_transactions: mempool.uncommitted_transactions_count() as u64,
             unbatched_transactions: mempool.unbatched_transactions_count() as u64,
             proposed_batches: mempool.proposed_batches_count() as u64,
             proven_batches: mempool.proven_batches_count() as u64,

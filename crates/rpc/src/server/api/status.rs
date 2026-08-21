@@ -76,5 +76,6 @@ fn block_producer_mempool_stats_to_proto(stats: MempoolStats) -> proto::rpc::Mem
         unbatched_transactions: stats.unbatched_transactions,
         proposed_batches: stats.proposed_batches,
         proven_batches: stats.proven_batches,
+        uncommitted_transactions: stats.uncommitted_transactions,
     }
 }

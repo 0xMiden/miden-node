@@ -160,13 +160,13 @@ impl BatchGraph {
     }
 
     pub fn proven_count(&self) -> usize {
-        self.proven.len()
+        self.proven.keys().filter(|batch| !self.inner.is_selected(batch)).count()
     }
 
     pub fn proposed_count(&self) -> usize {
         self.inner
             .node_count()
-            .checked_sub(self.proven_count())
+            .checked_sub(self.proven.len())
             .expect("proven batches cannot exceed total batches")
     }
 }

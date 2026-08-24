@@ -55,11 +55,11 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         })?;
 
         miden_span_record!(
-            transaction.id = %tx.id(),
-            account.id = %tx.account_id(),
-            transaction.expires_at = %tx.expiration_block_num(),
-            transaction.reference_block.number = %tx.ref_block_num(),
-            transaction.reference_block.commitment = %tx.ref_block_commitment(),
+            transaction.id = tx.id(),
+            account.id = tx.account_id(),
+            transaction.expires_at = tx.expiration_block_num(),
+            transaction.reference_block.number = tx.ref_block_num(),
+            transaction.reference_block.commitment = tx.ref_block_commitment()
         );
 
         debug!(target: LOG_TARGET, "Submitting transaction");

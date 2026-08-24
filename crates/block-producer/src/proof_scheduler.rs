@@ -171,7 +171,7 @@ pub(crate) async fn run(
     target = COMPONENT,
     name = "prove_block",
     fields(
-        block.number=block_num.as_u32(),
+        block.number = block_num
     ),
     err,
 )]
@@ -241,7 +241,7 @@ async fn prove_block(
     target = COMPONENT,
     name = "prove_block.generate",
     fields(
-        block.number=block_num.as_u32(),
+        block.number = block_num
     ),
     err,
 )]

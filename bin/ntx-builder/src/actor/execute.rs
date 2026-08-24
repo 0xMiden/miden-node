@@ -269,10 +269,10 @@ impl NtxContext {
             chain_mmr,
         } = tx;
         miden_span_record!(
-            account.id = %account.id(),
-            account.id.network_prefix = %account.id().prefix(),
-            notes.count = num_notes,
-            reference_block.number = %chain_tip_header.block_num(),
+            account.id = account.id(),
+            account.id.network_prefix = account.id().prefix(),
+            note.count = num_notes,
+            reference_block.number = chain_tip_header.block_num()
         );
 
         async move {

@@ -173,7 +173,7 @@ impl Display for TransactionInputs {
     name = "store.state.get_tx_inputs",
     err,
     fields(
-        transaction.id = %proven_tx.id().to_hex(),
+        transaction.id = proven_tx.id()
     ),
 )]
 pub async fn get_tx_inputs(

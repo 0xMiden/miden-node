@@ -193,7 +193,7 @@ impl RpcService {
         target = COMPONENT,
         name = "get_block_commitment",
         fields(
-            block.number = %block,
+            block.number = block,
         ),
     )]
     async fn get_block_commitment(&self, block: BlockNumber) -> Result<Word, Status> {

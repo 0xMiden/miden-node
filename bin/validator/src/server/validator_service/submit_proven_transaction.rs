@@ -33,9 +33,7 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
     ) -> tonic::Result<Self::Output> {
         let Input { tx, sealed } = input;
         let tx_id = tx.id();
-        miden_span_record!(
-            transaction.id = %tx_id,
-        );
+        miden_span_record!(transaction.id = tx_id);
 
         let inputs = self.unseal_transaction_inputs(&sealed, tx_id).await?;
 

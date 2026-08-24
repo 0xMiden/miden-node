@@ -38,7 +38,7 @@ impl BlockStore {
         name = "store.block_store.bootstrap",
         err,
         fields(
-            path = %store_dir.display(),
+            path = store_dir,
         ),
     )]
     pub fn bootstrap(store_dir: PathBuf, genesis_block: &GenesisBlock) -> std::io::Result<Self> {
@@ -90,7 +90,7 @@ impl BlockStore {
         name = "store.block_store.save_block",
         err,
         fields(
-            block.number = %block_num,
+            block.number = block_num,
             block.size = data.len(),
         ),
     )]
@@ -120,8 +120,8 @@ impl BlockStore {
         name = "store.block_store.save_proof",
         err,
         fields(
-            block.number = block_num.as_u32(),
-            proof_size = data.len(),
+            block.number = block_num,
+            proof_size = data.len()
         ),
     )]
     async fn save_proof(&self, block_num: BlockNumber, data: &[u8]) -> std::io::Result<()> {
@@ -149,8 +149,8 @@ impl BlockStore {
         name = "store.block_store.save_proving_inputs",
         err,
         fields(
-            block.number = block_num.as_u32(),
-            inputs_size = data.len(),
+            block.number = block_num,
+            inputs_size = data.len()
         ),
     )]
     pub async fn save_proving_inputs(

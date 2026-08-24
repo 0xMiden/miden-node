@@ -52,10 +52,10 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         })?;
 
         miden_span_record!(
-            batch.id = %proven_batch.id(),
-            batch.expires_at = %proven_batch.batch_expiration_block_num(),
-            batch.reference_block.number = %proven_batch.reference_block_num(),
-            batch.reference_block.commitment = %proven_batch.reference_block_commitment(),
+            batch.id = proven_batch.id(),
+            batch.expires_at = proven_batch.batch_expiration_block_num(),
+            batch.reference_block.number = proven_batch.reference_block_num(),
+            batch.reference_block.commitment = proven_batch.reference_block_commitment()
         );
 
         let proposed_batch = request

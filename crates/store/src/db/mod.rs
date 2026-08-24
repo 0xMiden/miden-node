@@ -209,7 +209,7 @@ impl Db {
     #[miden_instrument(
         target = COMPONENT,
         name = "store.database.bootstrap",
-        fields(path=%database_filepath.display())
+        fields(path = database_filepath),
         err,
     )]
     pub fn bootstrap(database_filepath: PathBuf, genesis: GenesisBlock) -> anyhow::Result<()> {
@@ -300,7 +300,7 @@ impl Db {
         target = COMPONENT,
         fields(
             prefix_len,
-            prefixes = nullifier_prefixes.len(),
+            prefix.count = nullifier_prefixes.len(),
         ),
         err,
     )]

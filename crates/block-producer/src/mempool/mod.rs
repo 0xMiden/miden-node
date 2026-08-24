@@ -259,14 +259,14 @@ impl Mempool {
             .map_err(MempoolSubmissionError::StateConflict)?;
         let telemetry = self.telemetry();
         miden_span_record!(
-            transaction.id = %tx.id(),
+            transaction.id = tx.id(),
             mempool.transactions.uncommitted = telemetry.uncommitted_transactions,
             mempool.transactions.unbatched = telemetry.unbatched_transactions,
             mempool.batches.proposed = telemetry.proposed_batches,
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_added(&tx);
 
@@ -315,7 +315,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         for tx in txs {
             emit_transaction_added(tx);
@@ -344,7 +344,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         Some(batch)
     }
@@ -369,7 +369,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         Some(batch)
     }
@@ -430,7 +430,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }
@@ -450,7 +450,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
     }
 
@@ -486,7 +486,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         block
     }
@@ -527,7 +527,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_expirations(&expired, self.committed_chain_tip);
     }
@@ -577,7 +577,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }

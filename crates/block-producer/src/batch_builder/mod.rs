@@ -6,7 +6,6 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::state::State;
-use miden_node_utils::formatting::format_array;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
@@ -147,17 +146,17 @@ impl BatchBuilder {
     fn build_batch(&mut self, mempool: SharedMempool, batch: SelectedBatch) {
         miden_span_record!(
             workers.active = self.active_jobs.len(),
-            workers.capacity = self.num_workers.get(),
+            workers.capacity = self.num_workers.get()
         );
 
         let telemetry = batch.telemetry();
         miden_span_record!(
-            batch.id = %telemetry.batch_id,
-            transactions.count = telemetry.transactions_count,
-            transactions.ids = %format_array(&telemetry.transaction_ids),
-            transactions.input_notes.count = telemetry.input_notes_count,
-            transactions.output_notes.count = telemetry.output_notes_count,
-            transactions.unauthenticated_notes.count = telemetry.unauthenticated_notes_count,
+            batch.id = telemetry.batch_id,
+            transaction.count = telemetry.transactions_count,
+            transaction.ids = telemetry.transaction_ids,
+            transaction.input_note.count = telemetry.input_notes_count,
+            transaction.output_note.count = telemetry.output_notes_count,
+            transaction.unauthenticated_note.count = telemetry.unauthenticated_notes_count
         );
         let job = BatchJob {
             state: self.state.clone(),
@@ -258,10 +257,10 @@ impl BatchJob {
             .inspect_ok(|proposed| {
                 let telemetry = proposed_batch_telemetry(proposed);
                 miden_span_record!(
-                    batch.expiration_height = %telemetry.expiration_height,
-                    batch.account_updates.count = telemetry.account_updates_count,
-                    batch.input_notes.count = telemetry.input_notes_count,
-                    batch.output_notes.count = telemetry.output_notes_count,
+                    batch.expiration_height = telemetry.expiration_height,
+                    batch.account_update.count = telemetry.account_updates_count,
+                    batch.input_note.count = telemetry.input_notes_count,
+                    batch.output_note.count = telemetry.output_notes_count
                 );
             })
             .and_then(|proposed| self.prove_batch(proposed))
@@ -347,7 +346,7 @@ impl BatchJob {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<Arc<ProvenBatch>, BuildBatchError> {
-        miden_span_record!(prover.kind = self.batch_prover.kind(),);
+        miden_span_record!(prover.kind = self.batch_prover.kind());
 
         let proven_batch = match &self.batch_prover {
             BatchProver::Remote(prover) => prover

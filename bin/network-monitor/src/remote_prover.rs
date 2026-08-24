@@ -277,7 +277,7 @@ impl Service for ProverStatusService {
         level = "info",
         ret(level = "debug"),
         fields(
-            prover = %self.name,
+            prover = self.name,
         ),
     )]
     async fn check(&mut self) -> ServiceStatus {
@@ -357,7 +357,7 @@ const PAYLOAD_RETRY_DELAY: Duration = Duration::from_secs(30);
     name = "network_monitor.prover.run_test",
     level = "info",
     fields(
-        prover = %name,
+        prover = name,
     ),
 )]
 async fn run_prover_test(

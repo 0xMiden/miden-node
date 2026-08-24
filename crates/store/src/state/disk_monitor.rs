@@ -37,14 +37,14 @@ async fn measure_disk_space_usage(data_dir: PathBuf) -> Result<(), tokio::task::
     miden_span_record!(
         db.sqlite.size = usage.sqlite_db,
         db.sqlite.wal.size = usage.sqlite_wal,
-        db.block_store.size = usage.block_store,
+        db.block_store.size = usage.block_store
     );
     #[cfg(feature = "rocksdb")]
     {
         miden_span_record!(
             db.account_tree.size = usage.account_tree,
             db.nullifier_tree.size = usage.nullifier_tree,
-            db.account_state_forest.size = usage.account_state_forest,
+            db.account_state_forest.size = usage.account_state_forest
         );
     }
 

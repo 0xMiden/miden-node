@@ -56,7 +56,7 @@ impl grpc::server::validator_api::BlockSubscription for ValidatorService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::ItemStream> {
-        miden_span_record!(block.from = request.block_from,);
+        miden_span_record!(block.from = request.block_from);
 
         let committed_tip = *self.committed_tip.borrow();
         if request.block_from > committed_tip.as_u32() {
@@ -74,7 +74,7 @@ impl grpc::server::validator_api::BlockSubscription for ValidatorService {
         let from = BlockNumber::from(request.block_from);
         // The tip should never move since we are in recovery mode and therefore there is no active
         // sequencer.
-        miden_span_record!(tip.number = %committed_tip);
+        miden_span_record!(tip.number = committed_tip);
 
         let (tx, rx) = tokio::sync::mpsc::channel(32);
 

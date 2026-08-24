@@ -42,9 +42,7 @@ impl proto::server::rpc_api::GetNetworkNoteStatus for RpcService {
         tracing::trace!(target: LOG_TARGET, ?request);
 
         let note_id = request;
-        miden_span_record!(
-            note.id = %note_id,
-        );
+        miden_span_record!(note.id = note_id);
 
         debug!(target: LOG_TARGET, "Getting network note status");
 

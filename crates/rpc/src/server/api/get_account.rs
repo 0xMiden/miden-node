@@ -40,14 +40,7 @@ impl proto::server::rpc_api::GetAccount for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        miden_span_record!(
-            account.id = %request.account_id,
-        );
-        if let Some(block) = request.block_num {
-            miden_span_record!(
-                block.number = %block,
-            );
-        }
+        miden_span_record!(account.id = request.account_id, block.number = request.block_num);
         tracing::trace!(target: LOG_TARGET, ?request);
         debug!(target: LOG_TARGET, "Getting account");
 

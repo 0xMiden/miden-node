@@ -205,7 +205,7 @@ impl ValidatorService {
         proposed_block: ProposedBlock,
         chain_tip: BlockHeader,
     ) -> Result<(Signature, BlockHeader), ValidatorError> {
-        miden_span_record!(tip.number = chain_tip.block_num().as_u32(),);
+        miden_span_record!(tip.number = chain_tip.block_num());
 
         // Search for any proposed transactions that have not previously been validated.
         let proposed_tx_ids =
@@ -230,8 +230,8 @@ impl ValidatorService {
                 .map_err(ValidatorError::BlockBuildingFailed)?;
 
         miden_span_record!(
-            block.number = proposed_header.block_num().as_u32(),
-            block.commitment = %proposed_header.commitment(),
+            block.number = proposed_header.block_num(),
+            block.commitment = proposed_header.commitment()
         );
 
         // If the proposed block has the same block number as the current chain tip, this is a
@@ -308,7 +308,7 @@ impl ValidatorService {
         name = "sign_block",
         err,
         fields(
-            block.number = header.block_num().as_u32(),
+            block.number = header.block_num(),
         ),
     )]
     async fn sign_header(&self, header: &BlockHeader) -> Result<Signature, ValidatorError> {

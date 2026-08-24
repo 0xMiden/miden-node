@@ -190,9 +190,9 @@ impl WriteWorker {
         let num_transactions = body.transactions().as_slice().len();
 
         miden_span_record!(
-            block.number = %block_num,
-            block.commitment = %block_commitment,
-            block.transactions.count = num_transactions,
+            block.number = block_num,
+            block.commitment = block_commitment,
+            block.transaction.count = num_transactions
         );
 
         self.validate_block_header(header).await?;

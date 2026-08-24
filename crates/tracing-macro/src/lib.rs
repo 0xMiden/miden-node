@@ -21,101 +21,12 @@ use syn::{
     parse_quote,
 };
 
-const ALLOWED_FIELD_NAMES: &[&str] = &[
-    "account.id",
-    "account.id.network_prefix",
-    "account.ids",
-    "account.ids.count",
-    "account.updated",
-    "batch.id",
-    "batch.account_updates.count",
-    "batch.expires_at",
-    "batch.expiration_height",
-    "batch.input_notes.count",
-    "batch.output_notes.count",
-    "batch.reference_block.commitment",
-    "batch.reference_block.number",
-    "block.batch.ids",
-    "block.batches.count",
-    "block.batches.output_notes.count",
-    "block.commitment",
-    "block.commitments.account",
-    "block.commitments.chain",
-    "block.commitments.kernel",
-    "block.commitments.note",
-    "block.commitments.nullifier",
-    "block.commitments.transaction",
-    "block.erased_note_proofs.count",
-    "block.erased_notes.count",
-    "block.from",
-    "block.nullifiers.count",
-    "block.number",
-    "block.output_notes.count",
-    "block.prev_block_commitment",
-    "block.protocol.version",
-    "block.size",
-    "block.sub_commitment",
-    "block.timestamp",
-    "block.transactions.ids",
-    "block.transactions.count",
-    "block.updated_accounts.count",
-    "block_range.from",
-    "block_range.to",
-    "current_client_block_height",
-    "cutoff_block",
-    "db.account_state_forest.size",
-    "db.account_tree.size",
-    "db.block_store.size",
-    "db.nullifier_tree.size",
-    "db.sqlite.size",
-    "db.sqlite.wal.size",
-    "dice_roll",
-    "failure_rate",
-    "finality_level",
-    "inputs_size",
-    "mempool.accounts",
-    "mempool.batches.proposed",
-    "mempool.batches.proven",
-    "mempool.nullifiers",
-    "mempool.output_notes",
-    "mempool.transactions.unbatched",
-    "mempool.transactions.uncommitted",
-    "note.id",
-    "notes.count",
-    "nullifiers",
-    "path",
-    "port",
-    "prefix_len",
-    "prefixes",
-    "proof_size",
-    "prover",
-    "prover.kind",
-    "reference_block.number",
-    "request.kind",
-    "script.root",
-    "snapshot.block_num",
-    "snapshot.lifetime_ms",
-    "snapshots.live",
-    "transaction.id",
-    "transaction.expires_at",
-    "transaction.input_notes.count",
-    "transaction.output_notes.count",
-    "transaction.reference_block.commitment",
-    "transaction.reference_block.number",
-    "tip.number",
-    "transactions.count",
-    "transactions.ids",
-    "transactions.input_notes.count",
-    "transactions.output_notes.count",
-    "transactions.unauthenticated_notes.count",
-    "workers.active",
-    "workers.capacity",
-    "workers.count",
-];
-
-/// Instruments a function using registered tracing fields.
+/// Instruments a function using canonical tracing attributes.
 ///
-/// Append `#[nonstandard]` to a field value to permit a name outside the field registry.
+/// Field values must implement `RecordAttribute`, and their names must be registered for the value
+/// type. A field whose name ends in `.count` accepts any `usize` without registration. Append
+/// `#[nonstandard]` to any other field value to permit an unregistered name while retaining its
+/// canonical encoding.
 #[proc_macro_attribute]
 pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = match rewrite_explicit_fields(TokenStream2::from(attr)) {
@@ -228,6 +139,38 @@ fn rewrite_explicit_fields(attr: TokenStream2) -> Result<TokenStream2> {
     Ok(quote! { #(#args),* })
 }
 
+fn reject_formatter(input: ParseStream<'_>) -> Result<()> {
+    let formatter = if input.peek(Token![%]) {
+        Some(input.parse::<Token![%]>()?.span)
+    } else if input.peek(Token![?]) {
+        Some(input.parse::<Token![?]>()?.span)
+    } else {
+        None
+    };
+
+    if let Some(span) = formatter {
+        Err(syn::Error::new(
+            span,
+            "tracing format specifiers are not supported; implement `RecordAttribute` to define \
+             the type's canonical encoding",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+impl RecordField {
+    fn instrument_tokens(&self) -> TokenStream2 {
+        let path = &self.path;
+        if let Some(value) = &self.value {
+            let value = value.value_tokens(&self.path.name(), self.path.is_count());
+            quote! { #path = #value }
+        } else {
+            quote! { #path }
+        }
+    }
+}
+
 fn split_top_level_args(tokens: TokenStream2) -> Vec<TokenStream2> {
     let mut args = Vec::new();
     let mut current = TokenStream2::new();
@@ -275,9 +218,12 @@ fn ends_with_comma(tokens: &TokenStream2) -> bool {
     )
 }
 
-/// Records fields on the current `miden_instrument` span.
+/// Records canonical attributes on the current `miden_instrument` span.
 ///
-/// Append `#[nonstandard]` to a field value to permit a name outside the field registry.
+/// Field values must implement `RecordAttribute`, and their names must be registered for the value
+/// type. A field whose name ends in `.count` accepts any `usize` without registration. Append
+/// `#[nonstandard]` to any other field value to permit an unregistered name while retaining its
+/// canonical encoding.
 #[proc_macro]
 pub fn miden_span_record(input: TokenStream) -> TokenStream {
     let records = parse_macro_input!(input as RecordFields);
@@ -286,7 +232,7 @@ pub fn miden_span_record(input: TokenStream) -> TokenStream {
         let value = field
             .value
             .expect("record fields are parsed with required values")
-            .value_tokens();
+            .value_tokens(&name, field.path.is_count());
 
         quote! {
             ::tracing::Span::current().record(#name, #value);
@@ -298,22 +244,6 @@ pub fn miden_span_record(input: TokenStream) -> TokenStream {
         #(#records)*
     }
     .into()
-}
-
-fn validate_field_name(path: &FieldPath) -> Result<()> {
-    let name = path.name();
-
-    if ALLOWED_FIELD_NAMES.contains(&name.as_str()) {
-        Ok(())
-    } else {
-        Err(syn::Error::new_spanned(
-            path,
-            format!(
-                "unsupported tracing field `{name}`; use one of: {}",
-                ALLOWED_FIELD_NAMES.join(", "),
-            ),
-        ))
-    }
 }
 
 fn collect_recorded_fields(function: &ItemFn) -> Vec<FieldPath> {
@@ -364,44 +294,23 @@ impl<const VALUE_REQUIRED: bool> Parse for Fields<VALUE_REQUIRED> {
 }
 
 struct RecordField {
-    shorthand_formatter: Option<Formatter>,
     path: FieldPath,
     value: Option<RecordValue>,
 }
 
 impl RecordField {
     fn parse(input: ParseStream<'_>, value_required: bool) -> Result<Self> {
-        let shorthand_formatter = if value_required {
-            None
-        } else {
-            Formatter::parse_optional(input)?
-        };
+        reject_formatter(input)?;
         let path = input.parse()?;
-        let value: Option<RecordValue> =
-            if value_required || shorthand_formatter.is_none() && input.peek(Token![=]) {
-                input.parse::<Token![=]>()?;
-                Some(input.parse()?)
-            } else {
-                None
-            };
-        if value.as_ref().is_none_or(|value| !value.nonstandard) {
-            validate_field_name(&path)?;
-        }
-
-        Ok(Self { shorthand_formatter, path, value })
-    }
-
-    fn instrument_tokens(&self) -> TokenStream2 {
-        let path = &self.path;
-        if let Some(value) = &self.value {
-            let value = value.instrument_tokens();
-            quote! { #path = #value }
-        } else if let Some(formatter) = self.shorthand_formatter {
-            let formatter = formatter.tokens();
-            quote! { #formatter #path }
+        let value = if value_required || input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            reject_formatter(input)?;
+            Some(input.parse()?)
         } else {
-            quote! { #path }
-        }
+            None
+        };
+
+        Ok(Self { path, value })
     }
 }
 
@@ -417,6 +326,10 @@ impl FieldPath {
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(".")
+    }
+
+    fn is_count(&self) -> bool {
+        self.rest.last().is_some_and(|(_, ident)| ident == "count")
     }
 }
 
@@ -444,32 +357,60 @@ impl ToTokens for FieldPath {
 }
 
 struct RecordValue {
-    formatter: Formatter,
     expr: Expr,
     nonstandard: bool,
 }
 
 impl RecordValue {
-    fn value_tokens(&self) -> TokenStream2 {
+    fn value_tokens(&self, field_name: &str, is_count: bool) -> TokenStream2 {
         let expr = &self.expr;
+        let assert_field_name = (!self.nonstandard && !is_count).then(|| {
+            quote! {
+                fn __miden_assert_field_name<T>(_: &T)
+                where
+                    T: ::miden_node_utils::tracing::RecordAttribute + ?Sized,
+                {
+                    const {
+                        assert!(
+                            ::miden_node_utils::tracing::field_name_allowed(
+                                T::FIELD_NAMES,
+                                #field_name,
+                                T::PLURALIZE_FIELD_NAMES,
+                            ),
+                            concat!(
+                                "tracing field `",
+                                #field_name,
+                                "` is not allowed for this attribute type",
+                            ),
+                        );
+                    }
+                }
 
-        match self.formatter {
-            Formatter::Display => quote! { &::tracing::field::display(#expr) },
-            Formatter::Debug => quote! { &::tracing::field::debug(#expr) },
-            Formatter::Plain => quote! { &#expr },
+                __miden_assert_field_name(value);
+            }
+        });
+        let assert_count = is_count.then(|| {
+            quote! {
+                fn __miden_assert_count(_: &usize) {}
+
+                __miden_assert_count(value);
+            }
+        });
+
+        quote! {
+            match &(#expr) {
+                value => {
+                    #assert_field_name
+                    #assert_count
+                    ::miden_node_utils::tracing::record_attribute(value)
+                }
+            }
         }
-    }
-
-    fn instrument_tokens(&self) -> TokenStream2 {
-        let formatter = self.formatter.tokens();
-        let expr = &self.expr;
-        quote! { #formatter #expr }
     }
 }
 
 impl Parse for RecordValue {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let formatter = Formatter::parse_optional(input)?.unwrap_or(Formatter::Plain);
         let expr = input.parse()?;
         let attributes = input.call(Attribute::parse_outer)?;
         let nonstandard = match attributes.as_slice() {
@@ -485,35 +426,6 @@ impl Parse for RecordValue {
             },
         };
 
-        Ok(Self { formatter, expr, nonstandard })
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Formatter {
-    Display,
-    Debug,
-    Plain,
-}
-
-impl Formatter {
-    fn tokens(self) -> TokenStream2 {
-        match self {
-            Self::Display => quote! { % },
-            Self::Debug => quote! { ? },
-            Self::Plain => TokenStream2::new(),
-        }
-    }
-
-    fn parse_optional(input: ParseStream<'_>) -> Result<Option<Self>> {
-        if input.peek(Token![%]) {
-            input.parse::<Token![%]>()?;
-            Ok(Some(Self::Display))
-        } else if input.peek(Token![?]) {
-            input.parse::<Token![?]>()?;
-            Ok(Some(Self::Debug))
-        } else {
-            Ok(None)
-        }
+        Ok(Self { expr, nonstandard })
     }
 }

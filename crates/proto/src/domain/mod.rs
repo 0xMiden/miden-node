@@ -9,6 +9,17 @@ pub mod nullifier;
 pub mod proof_request;
 pub mod transaction;
 
+use miden_node_utils::tracing::RecordAttribute;
+use tracing::Value;
+
+impl RecordAttribute for crate::generated::rpc::FinalityLevel {
+    const FIELD_NAMES: &'static [&'static str] = &["finality_level"];
+
+    fn record_attribute(&self) -> impl Value + '_ {
+        self.as_str_name()
+    }
+}
+
 // UTILITIES
 // ================================================================================================
 

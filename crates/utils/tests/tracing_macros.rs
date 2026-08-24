@@ -186,26 +186,47 @@ fn multiple_span_record_macros_can_record_fields_after_span_creation() {
     assert_eq!(recorded.get("transaction.id").as_deref(), Some("multi-call-tx"));
 }
 
-#[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_client_fault", grpc_err)]
-async fn grpc_err_client_fault() -> Result<(), tonic::Status> {
+#[miden_instrument(
+    target = "miden-node-utils-test",
+    name = "fault_only_client_fault",
+    err(fault_only)
+)]
+async fn fault_only_client_fault() -> Result<(), tonic::Status> {
     Err(tonic::Status::invalid_argument("bad request"))
 }
 
-#[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_server_fault", grpc_err)]
-async fn grpc_err_server_fault() -> Result<(), tonic::Status> {
+#[miden_instrument(
+    target = "miden-node-utils-test",
+    name = "fault_only_server_fault",
+    err(fault_only)
+)]
+async fn fault_only_server_fault() -> Result<(), tonic::Status> {
     Err(tonic::Status::internal("node fault"))
 }
 
+#[miden_instrument(
+    target = "miden-node-utils-test",
+    name = "fault_only_warn_level",
+    err(fault_only, level = "warn")
+)]
+async fn fault_only_warn_level(fail_with: tonic::Status) -> Result<(), tonic::Status> {
+    Err(fail_with)
+}
+
 #[tonic::async_trait]
-trait GrpcErrHandler {
+trait FaultOnlyErrHandler {
     async fn handle(&self, fail: bool) -> Result<(), tonic::Status>;
 }
 
 struct AsyncTraitHandler;
 
 #[tonic::async_trait]
-impl GrpcErrHandler for AsyncTraitHandler {
-    #[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_async_trait", grpc_err)]
+impl FaultOnlyErrHandler for AsyncTraitHandler {
+    #[miden_instrument(
+        target = "miden-node-utils-test",
+        name = "fault_only_async_trait",
+        err(fault_only)
+    )]
     async fn handle(&self, fail: bool) -> Result<(), tonic::Status> {
         if fail {
             return Err(tonic::Status::internal("node fault"));
@@ -215,30 +236,47 @@ impl GrpcErrHandler for AsyncTraitHandler {
 }
 
 #[tokio::test]
-async fn grpc_err_client_faults_are_not_error_events() {
+async fn fault_only_client_faults_are_not_error_events() {
     let events = RecordedEventLevels::default();
     let subscriber = tracing_subscriber::registry().with(events.clone());
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    grpc_err_client_fault().await.unwrap_err();
+    fault_only_client_fault().await.unwrap_err();
 
     assert!(events.contains(tracing::Level::DEBUG));
     assert!(!events.contains(tracing::Level::ERROR));
 }
 
 #[tokio::test]
-async fn grpc_err_server_faults_are_error_events() {
+async fn fault_only_server_faults_are_error_events() {
     let events = RecordedEventLevels::default();
     let subscriber = tracing_subscriber::registry().with(events.clone());
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    grpc_err_server_fault().await.unwrap_err();
+    fault_only_server_fault().await.unwrap_err();
 
     assert!(events.contains(tracing::Level::ERROR));
 }
 
-#[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_sync", grpc_err)]
-fn grpc_err_sync(fail: bool) -> Result<(), tonic::Status> {
+#[tokio::test]
+async fn fault_only_level_applies_to_server_faults_only() {
+    let events = RecordedEventLevels::default();
+    let subscriber = tracing_subscriber::registry().with(events.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    fault_only_warn_level(tonic::Status::internal("node fault")).await.unwrap_err();
+    assert!(events.contains(tracing::Level::WARN));
+    assert!(!events.contains(tracing::Level::ERROR));
+
+    fault_only_warn_level(tonic::Status::invalid_argument("bad request"))
+        .await
+        .unwrap_err();
+    assert!(events.contains(tracing::Level::DEBUG));
+    assert!(!events.contains(tracing::Level::ERROR));
+}
+
+#[miden_instrument(target = "miden-node-utils-test", name = "fault_only_sync", err(fault_only))]
+fn fault_only_sync(fail: bool) -> Result<(), tonic::Status> {
     if fail {
         return Err(tonic::Status::internal("node fault"));
     }
@@ -246,20 +284,20 @@ fn grpc_err_sync(fail: bool) -> Result<(), tonic::Status> {
 }
 
 #[test]
-fn grpc_err_classifies_sync_functions() {
+fn fault_only_classifies_sync_functions() {
     let events = RecordedEventLevels::default();
     let subscriber = tracing_subscriber::registry().with(events.clone());
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    grpc_err_sync(false).unwrap();
+    fault_only_sync(false).unwrap();
     assert!(!events.contains(tracing::Level::ERROR));
 
-    grpc_err_sync(true).unwrap_err();
+    fault_only_sync(true).unwrap_err();
     assert!(events.contains(tracing::Level::ERROR));
 }
 
 #[tokio::test]
-async fn grpc_err_classifies_async_trait_methods() {
+async fn fault_only_classifies_async_trait_methods() {
     let events = RecordedEventLevels::default();
     let subscriber = tracing_subscriber::registry().with(events.clone());
     let _guard = tracing::subscriber::set_default(subscriber);
@@ -280,5 +318,8 @@ fn ui_tests() {
     tests.compile_fail("tests/ui/tracing_macros/invalid_skip.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_skip_all.rs");
     tests.compile_fail("tests/ui/tracing_macros/outside_miden_instrument.rs");
-    tests.compile_fail("tests/ui/tracing_macros/grpc_err_with_err.rs");
+    tests.compile_fail("tests/ui/tracing_macros/err_duplicate.rs");
+    tests.compile_fail("tests/ui/tracing_macros/err_fault_only_unknown_option.rs");
+    tests.compile_fail("tests/ui/tracing_macros/err_fault_only_invalid_level.rs");
+    tests.compile_fail("tests/ui/tracing_macros/err_unknown_mode.rs");
 }

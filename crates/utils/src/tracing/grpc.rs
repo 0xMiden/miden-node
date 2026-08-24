@@ -163,18 +163,26 @@ impl GrpcFault for tonic::Status {
 
 /// Records a request-handling error on the current span.
 ///
-/// Called by `miden_instrument`'s `grpc_err` directive. Node faults are logged at error level and
-/// mark the span with `OTel` error status, matching the plain `err` directive; client-caused
-/// failures are logged at debug level and leave the span status untouched, since rejecting a bad
-/// request is the node behaving correctly.
-pub fn record_grpc_error<E>(err: &E)
+/// Called by `miden_instrument`'s `err(fault_only)` directive. Node faults are logged at
+/// `fault_level` (`ERROR` unless the directive says `level = "..."`) and mark the span with `OTel`
+/// error status regardless of that level — the level tunes event verbosity, while span status
+/// always follows the fault classification. Client-caused failures are logged at debug level and
+/// leave the span status untouched, since rejecting a bad request is the node behaving correctly.
+pub fn record_classified_error<E>(err: &E, fault_level: tracing::Level)
 where
     E: GrpcFault + std::error::Error,
 {
     use crate::ErrorReport;
 
     if err.is_server_fault() {
-        tracing::error!(error = err.as_report());
+        // `tracing::event!` requires a const level, so dispatch to the per-level macros.
+        match fault_level {
+            tracing::Level::ERROR => tracing::error!(error = err.as_report()),
+            tracing::Level::WARN => tracing::warn!(error = err.as_report()),
+            tracing::Level::INFO => tracing::info!(error = err.as_report()),
+            tracing::Level::DEBUG => tracing::debug!(error = err.as_report()),
+            tracing::Level::TRACE => tracing::trace!(error = err.as_report()),
+        }
         tracing::Span::current().set_error(err);
     } else {
         tracing::debug!(error = err.as_report());
@@ -370,7 +378,7 @@ mod tests {
 
     /// The trace layer's classifier decides which responses mark the request span as an error; it
     /// must agree with [`is_server_fault_code`], which drives the same decision for handler spans
-    /// via `grpc_err`.
+    /// via `err(fault_only)`.
     #[test]
     fn classifier_agrees_with_fault_classification() {
         // 0..=16 covers every gRPC status code.

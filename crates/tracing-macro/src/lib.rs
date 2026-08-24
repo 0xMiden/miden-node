@@ -106,12 +106,12 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = TokenStream2::from(attr);
     let mut function = parse_macro_input!(item as ItemFn);
     let fields = collect_recorded_fields(&function);
-    let (args, grpc_err) = match merge_inferred_fields(attr, &fields) {
+    let (args, fault_level) = match merge_inferred_fields(attr, &fields) {
         Ok(args) => args,
         Err(error) => return error.into_compile_error().into(),
     };
-    if grpc_err {
-        apply_grpc_err(&mut function);
+    if let Some(level) = fault_level {
+        apply_fault_only_err(&mut function, &level);
     }
     let statements = &function.block.stmts;
     let block: Block = parse_quote! {{
@@ -132,19 +132,22 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<(TokenStream2, bool)> {
+fn merge_inferred_fields(
+    attr: TokenStream2,
+    fields: &[FieldPath],
+) -> Result<(TokenStream2, Option<TokenStream2>)> {
     validate_explicit_fields(&attr)?;
 
     let mut args = split_top_level_args(attr);
     reject_skip_directives(&args)?;
-    let grpc_err = extract_grpc_err_directive(&mut args)?;
+    let fault_level = extract_err_directive(&mut args)?;
 
     // Function arguments often contain large or sensitive values. Always skip them so spans only
     // contain fields explicitly declared by the caller or inferred from `miden_span_record!`.
     args.push(quote! { skip_all });
 
     if fields.is_empty() {
-        return Ok((quote! { #(#args),* }, grpc_err));
+        return Ok((quote! { #(#args),* }, fault_level));
     }
 
     let inferred_fields = quote! { #(#fields = ::tracing::field::Empty),* };
@@ -172,38 +175,39 @@ fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<(To
         .collect::<Vec<_>>();
 
     if merged_existing_fields {
-        Ok((quote! { #(#args),* }, grpc_err))
+        Ok((quote! { #(#args),* }, fault_level))
     } else {
-        Ok((quote! { #(#args,)* fields(#inferred_fields) }, grpc_err))
+        Ok((quote! { #(#args,)* fields(#inferred_fields) }, fault_level))
     }
 }
 
 /// Rewrites the function body so a returned `Err` is classified via
-/// `miden_node_utils::tracing::record_grpc_error` from inside the instrumented span: node faults
-/// mark the span with `OTel` error status (like `err` would), while client-caused failures do not —
+/// `miden_node_utils::tracing::record_classified_error` from inside the instrumented span: node
+/// faults are logged at `level` (`ERROR` unless overridden) and mark the span with `OTel` error
+/// status (like `err` would), while client-caused failures are logged at debug level and do not —
 /// rejecting a bad request is the node behaving correctly, not an application error.
 ///
 /// `#[async_trait]` methods are expanded before this macro runs, leaving a non-async fn whose
 /// body is `Box::pin(async move { ... })`; the classification is applied inside that async block
 /// so it runs within the instrumented span.
-fn apply_grpc_err(function: &mut ItemFn) {
-    fn classified(body: &TokenStream2) -> Block {
+fn apply_fault_only_err(function: &mut ItemFn, level: &TokenStream2) {
+    fn classified(body: &TokenStream2, level: &TokenStream2) -> Block {
         parse_quote! {{
             #[allow(clippy::redundant_async_block, clippy::redundant_closure_call)]
             let __miden_instrument_result = #body;
             if let Err(err) = &__miden_instrument_result {
-                ::miden_node_utils::tracing::record_grpc_error(err);
+                ::miden_node_utils::tracing::record_classified_error(err, #level);
             }
             __miden_instrument_result
         }}
     }
 
-    fn wrap_async(statements: &[Stmt]) -> Block {
-        classified(&quote! { async move { #(#statements)* }.await })
+    fn wrap_async(statements: &[Stmt], level: &TokenStream2) -> Block {
+        classified(&quote! { async move { #(#statements)* }.await }, level)
     }
 
     if function.sig.asyncness.is_some() {
-        let wrapped = wrap_async(&function.block.stmts);
+        let wrapped = wrap_async(&function.block.stmts, level);
         *function.block = wrapped;
         return;
     }
@@ -212,49 +216,173 @@ fn apply_grpc_err(function: &mut ItemFn) {
         && call.args.len() == 1
         && let Some(Expr::Async(async_block)) = call.args.first_mut()
     {
-        let wrapped = wrap_async(&async_block.block.stmts);
+        let wrapped = wrap_async(&async_block.block.stmts, level);
         async_block.block = wrapped;
         return;
     }
 
     let statements = &function.block.stmts;
-    let wrapped = classified(&quote! { (move || { #(#statements)* })() });
+    let wrapped = classified(&quote! { (move || { #(#statements)* })() }, level);
     *function.block = wrapped;
 }
 
-/// Removes the `grpc_err` directive from the argument list, returning whether it was present.
+/// Handles the `err` directive, extracting `fault_only` mode when present.
 ///
-/// `grpc_err` is a `miden_instrument` extension, not a `tracing::instrument` argument, so it must
-/// not be forwarded. It replaces `err`: combining the two would double-report the error.
-fn extract_grpc_err_directive(args: &mut Vec<TokenStream2>) -> Result<bool> {
-    let is_bare_ident = |arg: &TokenStream2, name: &str| {
-        let mut tokens = arg.clone().into_iter();
-        matches!(tokens.next(), Some(TokenTree::Ident(ident)) if ident == name)
-            && tokens.next().is_none()
-    };
+/// `fault_only` is a `miden_instrument` extension to `tracing::instrument`'s `err` directive: the
+/// returned `Err` is classified instead of unconditionally reported, so only node faults mark the
+/// span as failed. An optional `level = "..."` tunes the level of the fault-side event (`ERROR` by
+/// default); client-caused failures are always logged at debug level regardless.
+///
+/// Since `tracing::instrument` would reject `fault_only`, the whole `err(...)` argument is removed
+/// from the forwarded list and this returns the level tokens (e.g. `::tracing::Level::WARN`) to
+/// emit fault events at. Plain `err` and tracing's own modes are forwarded untouched, but their
+/// option idents are validated here so a typo like `err(faultonly)` fails with a targeted message
+/// rather than a tracing error pointing at expanded code.
+fn extract_err_directive(args: &mut Vec<TokenStream2>) -> Result<Option<TokenStream2>> {
+    let mut fault_level = None;
+    let mut seen_err: Option<TokenStream2> = None;
+    let mut retained = Vec::with_capacity(args.len());
 
-    let mut grpc_err = false;
-    args.retain(|arg| {
-        let found = is_bare_ident(arg, "grpc_err");
-        grpc_err |= found;
-        !found
-    });
+    for arg in args.drain(..) {
+        let Some(directive) = err_directive_options(&arg) else {
+            retained.push(arg);
+            continue;
+        };
+        if let Some(previous) = &seen_err {
+            let mut error =
+                syn::Error::new_spanned(&arg, "duplicate `err` directive; only one is allowed");
+            error.combine(syn::Error::new_spanned(previous, "first `err` directive here"));
+            return Err(error);
+        }
+        seen_err = Some(arg.clone());
 
-    if grpc_err {
-        for arg in args.iter() {
-            let Some(TokenTree::Ident(ident)) = arg.clone().into_iter().next() else {
-                continue;
-            };
-            if ident == "err" {
-                return Err(syn::Error::new_spanned(
-                    arg,
-                    "`err` cannot be combined with `grpc_err`",
-                ));
-            }
+        match directive {
+            // Bare `err`: tracing's unconditional error reporting, forwarded as-is.
+            ErrDirective::Bare => retained.push(arg),
+            ErrDirective::Options(options) => {
+                if options.iter().any(|option| is_bare_ident(option, "fault_only")) {
+                    fault_level = Some(parse_fault_only_options(&options)?);
+                } else {
+                    validate_forwarded_err_options(&options)?;
+                    retained.push(arg);
+                }
+            },
         }
     }
 
-    Ok(grpc_err)
+    *args = retained;
+    Ok(fault_level)
+}
+
+/// An `err` directive argument: bare `err` or `err(...)` with its comma-separated options.
+enum ErrDirective {
+    Bare,
+    Options(Vec<TokenStream2>),
+}
+
+/// Parses the argument as an `err` directive, returning `None` if it is some other argument.
+fn err_directive_options(arg: &TokenStream2) -> Option<ErrDirective> {
+    let mut tokens = arg.clone().into_iter();
+    match tokens.next() {
+        Some(TokenTree::Ident(ident)) if ident == "err" => {},
+        _ => return None,
+    }
+
+    match tokens.next() {
+        None => Some(ErrDirective::Bare),
+        Some(TokenTree::Group(group))
+            if group.delimiter() == Delimiter::Parenthesis && tokens.next().is_none() =>
+        {
+            Some(ErrDirective::Options(split_top_level_args(group.stream())))
+        },
+        _ => None,
+    }
+}
+
+fn is_bare_ident(arg: &TokenStream2, name: &str) -> bool {
+    let mut tokens = arg.clone().into_iter();
+    matches!(tokens.next(), Some(TokenTree::Ident(ident)) if ident == name)
+        && tokens.next().is_none()
+}
+
+/// Parses the options of an `err(fault_only, ...)` directive into the fault event's level tokens.
+fn parse_fault_only_options(options: &[TokenStream2]) -> Result<TokenStream2> {
+    let mut level = quote! { ::tracing::Level::ERROR };
+
+    for option in options {
+        if is_bare_ident(option, "fault_only") {
+            continue;
+        }
+
+        let name_value: syn::MetaNameValue = syn::parse2(option.clone()).map_err(|_| {
+            syn::Error::new_spanned(
+                option,
+                "unsupported `err(fault_only)` option; only `level = \"...\"` can be combined \
+                 with `fault_only`",
+            )
+        })?;
+        if !name_value.path.is_ident("level") {
+            return Err(syn::Error::new_spanned(
+                option,
+                "unsupported `err(fault_only)` option; only `level = \"...\"` can be combined \
+                 with `fault_only`",
+            ));
+        }
+
+        let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(value), .. }) = &name_value.value
+        else {
+            return Err(syn::Error::new_spanned(
+                &name_value.value,
+                "`level` must be a string literal: one of \"trace\", \"debug\", \"info\", \
+                 \"warn\" or \"error\"",
+            ));
+        };
+        level = match value.value().to_ascii_lowercase().as_str() {
+            "trace" => quote! { ::tracing::Level::TRACE },
+            "debug" => quote! { ::tracing::Level::DEBUG },
+            "info" => quote! { ::tracing::Level::INFO },
+            "warn" => quote! { ::tracing::Level::WARN },
+            "error" => quote! { ::tracing::Level::ERROR },
+            unknown => {
+                return Err(syn::Error::new_spanned(
+                    value,
+                    format!(
+                        "unknown level \"{unknown}\"; expected one of \"trace\", \"debug\", \
+                         \"info\", \"warn\" or \"error\""
+                    ),
+                ));
+            },
+        };
+    }
+
+    Ok(level)
+}
+
+/// Validates the options of an `err(...)` directive that is forwarded to `tracing::instrument`.
+///
+/// Forwarded options are parsed by `tracing::instrument` itself; this only rejects idents outside
+/// its `err` grammar (`Debug`, `Display`, `level = ...`) so near-misses of `fault_only` fail here
+/// with a message that mentions it.
+fn validate_forwarded_err_options(options: &[TokenStream2]) -> Result<()> {
+    for option in options {
+        let mut tokens = option.clone().into_iter();
+        let first = tokens.next();
+        let is_mode = matches!(
+            &first,
+            Some(TokenTree::Ident(ident)) if ident == "Debug" || ident == "Display"
+        ) && tokens.next().is_none();
+        let is_level = matches!(&first, Some(TokenTree::Ident(ident)) if ident == "level");
+
+        if !is_mode && !is_level {
+            return Err(syn::Error::new_spanned(
+                option,
+                "unsupported `err` option; expected `fault_only`, `Debug`, `Display` or `level = \
+                 \"...\"`",
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn reject_skip_directives(args: &[TokenStream2]) -> Result<()> {

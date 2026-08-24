@@ -27,7 +27,7 @@ impl ProverService {
 
     #[miden_instrument(
         target=COMPONENT,
-        grpc_err,
+        err(fault_only),
     )]
     pub(super) fn acquire_permit(&self) -> Result<OwnedSemaphorePermit, tonic::Status> {
         Arc::clone(&self.permits)

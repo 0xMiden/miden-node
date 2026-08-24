@@ -29,7 +29,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "submit_proven_tx_batch",
-        grpc_err,
+        err(fault_only),
     )]
     async fn handle(
         &self,

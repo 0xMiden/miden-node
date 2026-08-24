@@ -110,6 +110,18 @@ fn records_fields_from_multiple_calls() {
     );
 }
 
+#[miden_instrument(
+    target = "miden-node-utils-test",
+    name = "records_nonstandard_explicit_field",
+    fields(custom.explicit = %value #[nonstandard]),
+)]
+fn records_nonstandard_explicit_field(value: &str) {}
+
+#[miden_instrument(target = "miden-node-utils-test", name = "records_nonstandard_delayed_field")]
+fn records_nonstandard_delayed_field() {
+    miden_span_record!(custom.delayed = %"delayed" #[nonstandard]);
+}
+
 #[test]
 fn inferred_fields_can_be_recorded_after_span_creation() {
     let recorded = RecordedFields::default();
@@ -168,10 +180,25 @@ fn multiple_span_record_macros_can_record_fields_after_span_creation() {
 }
 
 #[test]
+fn nonstandard_fields_bypass_the_name_registry() {
+    let recorded = RecordedFields::default();
+    let subscriber = tracing_subscriber::registry().with(recorded.clone());
+
+    tracing::subscriber::with_default(subscriber, || {
+        records_nonstandard_explicit_field("explicit");
+        records_nonstandard_delayed_field();
+    });
+
+    assert_eq!(recorded.get("custom.explicit").as_deref(), Some("explicit"));
+    assert_eq!(recorded.get("custom.delayed").as_deref(), Some("delayed"));
+}
+
+#[test]
 fn ui_tests() {
     let tests = trybuild::TestCases::new();
     tests.pass("tests/ui/tracing_macros/pass.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_field_name.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_field_annotation.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_instrument_field_name.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_skip.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_skip_all.rs");

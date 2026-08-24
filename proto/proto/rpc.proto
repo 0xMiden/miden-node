@@ -363,19 +363,6 @@ message AccountVaultDetails {
 // Account storage details for AccountResponse
 message AccountStorageDetails {
     message AccountStorageMapDetails {
-        // Wrapper for repeated storage map entries including their proofs.
-        // Used when specific keys are requested to enable client-side verification.
-        message MapEntriesWithProofs {
-            // Definition of individual storage entries including a proof.
-            message StorageMapEntryWithProof {
-                primitives.Digest key = 1;
-                primitives.Digest value = 2;
-                primitives.SmtOpening proof = 3;
-            }
-
-            repeated StorageMapEntryWithProof entries = 1;
-        }
-
         // Wrapper for repeated storage map entries (without proofs).
         // Used when all entries are requested for small maps.
         message AllMapEntries {
@@ -388,21 +375,32 @@ message AccountStorageDetails {
             repeated StorageMapEntry entries = 1;
         }
 
+        // A partial storage map containing one compact SMT proof shared by all requested keys.
+        message PartialStorageMap {
+            // Original, unhashed storage map keys covered by `partial_smt`.
+            repeated primitives.Digest map_keys = 1;
+
+            // Compact partial SMT tracking all requested keys.
+            primitives.PartialSmt partial_smt = 2;
+        }
+
         // Storage slot name.
         string slot_name = 1;
 
-        // True when the number of entries exceeds the response limit.
-        // When set, clients should use the `SyncAccountStorageMaps` endpoint.
-        bool too_many_entries = 2;
+        // Exactly one storage map result.
+        oneof result {
+            // The number of entries exceeds the response limit. This variant is always true.
+            bool too_many_entries = 2;
 
-        // The map entries (with or without proofs). Empty when too_many_entries is true.
-        oneof entries {
             // All storage entries without proofs (for small maps or full requests).
             AllMapEntries all_entries = 3;
 
-            // Specific entries with their SMT proofs (for partial requests).
-            MapEntriesWithProofs entries_with_proofs = 4;
+            // Specific keys covered by one compact partial SMT.
+            PartialStorageMap partial_map = 5;
         }
+
+        reserved 4;
+        reserved "entries_with_proofs";
     }
 
     // Account storage header (storage slot info for up to 256 slots)

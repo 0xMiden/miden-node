@@ -876,7 +876,7 @@ fn storage_map_empty_entries_query() {
 }
 
 #[test]
-fn storage_map_open_returns_proofs() {
+fn storage_map_open_returns_partial_map() {
     use std::collections::BTreeMap;
 
     use assert_matches::assert_matches;
@@ -900,12 +900,23 @@ fn storage_map_open_returns_proofs() {
     forest.update_account(block_num, &patch);
 
     let keys: Vec<StorageMapKey> = (0..20u32).map(StorageMapKey::from_index).collect();
-    let result =
-        forest.get_storage_map_details_for_keys(account_id, slot_name.clone(), block_num, &keys);
+    let result = forest.get_storage_map_details_for_keys(
+        account_id,
+        slot_name.clone(),
+        block_num,
+        keys.clone(),
+    );
 
     let details = result.expect("Should return Some").expect("Should not error");
-    assert_matches!(details.entries, StorageMapEntries::EntriesWithProofs(entries) => {
-        assert_eq!(entries.len(), keys.len());
+    assert_matches!(details.entries, StorageMapEntries::PartialMap { map_keys, partial_smt } => {
+        assert_eq!(map_keys, keys);
+        for key in &map_keys {
+            assert!(partial_smt.get_value(&key.hash().as_word()).is_ok());
+        }
+        assert_eq!(
+            partial_smt.root(),
+            forest.get_storage_map_root(account_id, &slot_name, block_num).unwrap()
+        );
     });
 }
 

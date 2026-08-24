@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use miden_protocol::account::Account;
@@ -88,74 +88,6 @@ impl TransactionCandidate {
     }
 }
 
-// GROUP INDEX
-// ================================================================================================
-
-/// Pairing metadata derived from a candidate's groups, used to re-pair the note checker's output.
-///
-/// The consumability checker eliminates notes individually, so it may split a group: keep a
-/// sponsorship whose feature note it dropped, or keep a feature note whose sponsorships it
-/// dropped. Both halves are guaranteed to fail on-chain (the sponsorship script aborts without its
-/// feature note; a fee-charging account's auth procedure rejects an unsponsored feature note), so
-/// [`GroupIndex::repair`] removes them before execution.
-pub struct GroupIndex {
-    /// Sponsorship note id to the id of the feature note it sponsors.
-    sponsor_to_feature: HashMap<NoteId, NoteId>,
-    /// Feature notes that must not execute without at least one of their sponsorships.
-    gated_features: HashSet<NoteId>,
-}
-
-impl GroupIndex {
-    /// Builds the index from a candidate's groups.
-    ///
-    /// `require_sponsorship` mirrors the selection-time gate: when set, a feature note that was
-    /// selected together with sponsorships must not execute after losing all of them.
-    pub fn new(groups: &[NoteGroup], require_sponsorship: bool) -> Self {
-        let sponsor_to_feature = groups
-            .iter()
-            .flat_map(|group| {
-                let feature_id = group.feature.as_note().id();
-                group.sponsorships.iter().map(move |sponsorship| (sponsorship.id(), feature_id))
-            })
-            .collect();
-        let gated_features = if require_sponsorship {
-            groups
-                .iter()
-                .filter(|group| !group.sponsorships.is_empty())
-                .map(|group| group.feature.as_note().id())
-                .collect()
-        } else {
-            HashSet::new()
-        };
-        Self { sponsor_to_feature, gated_features }
-    }
-
-    /// Splits the checker's surviving notes into `(retained, dropped)`, removing notes that must
-    /// not execute after the checker eliminated part of their group: sponsorships whose feature
-    /// note is gone, and gated feature notes that lost every sponsorship.
-    pub fn repair(&self, notes: Vec<Note>) -> (Vec<Note>, Vec<Note>) {
-        let ids: HashSet<NoteId> = notes.iter().map(Note::id).collect();
-        // A sponsorship survives when its feature note also survived the checker; the features
-        // named here satisfy the gate.
-        let sponsored_features: HashSet<NoteId> = self
-            .sponsor_to_feature
-            .iter()
-            .filter(|(sponsorship, feature)| ids.contains(sponsorship) && ids.contains(feature))
-            .map(|(_, feature)| *feature)
-            .collect();
-
-        notes.into_iter().partition(|note| {
-            if let Some(feature) = self.sponsor_to_feature.get(&note.id()) {
-                ids.contains(feature)
-            } else if self.gated_features.contains(&note.id()) {
-                sponsored_features.contains(&note.id())
-            } else {
-                true
-            }
-        })
-    }
-}
-
 // TESTS
 // ================================================================================================
 
@@ -178,80 +110,6 @@ mod tests {
             })
             .collect();
         NoteGroup { feature, sponsorships }
-    }
-
-    fn flatten(groups: &[NoteGroup]) -> Vec<Note> {
-        groups
-            .iter()
-            .flat_map(|g| {
-                std::iter::once(g.feature.as_note().clone()).chain(g.sponsorships.iter().cloned())
-            })
-            .collect()
-    }
-
-    /// An intact group passes repair untouched, with or without the gate.
-    #[test]
-    fn repair_keeps_intact_groups() {
-        let groups = [group(1, 2), group(2, 0)];
-        let notes = flatten(&groups);
-
-        for require in [false, true] {
-            let index = GroupIndex::new(&groups, require);
-            let (retained, dropped) = index.repair(notes.clone());
-            assert_eq!(retained.len(), 4);
-            assert!(dropped.is_empty());
-        }
-    }
-
-    /// A sponsorship whose feature note the checker eliminated is dropped: its script would abort
-    /// the VM.
-    #[test]
-    fn repair_drops_orphaned_sponsorship() {
-        let groups = [group(1, 1), group(2, 0)];
-        let index = GroupIndex::new(&groups, false);
-
-        // The checker eliminated the feature note of group 1; its sponsorship survived.
-        let notes = vec![groups[0].sponsorships[0].clone(), groups[1].feature.as_note().clone()];
-        let (retained, dropped) = index.repair(notes);
-
-        assert_eq!(retained.len(), 1);
-        assert_eq!(retained[0].id(), groups[1].feature.as_note().id());
-        assert_eq!(dropped.len(), 1);
-        assert_eq!(dropped[0].id(), groups[0].sponsorships[0].id());
-    }
-
-    /// With the sponsorship requirement active, a feature note that lost every sponsorship is
-    /// dropped as well: the account's auth procedure would reject it.
-    #[test]
-    fn repair_drops_gated_feature_without_surviving_sponsorship() {
-        let groups = [group(1, 1)];
-        let notes = vec![groups[0].feature.as_note().clone()];
-
-        let gated = GroupIndex::new(&groups, true);
-        let (retained, dropped) = gated.repair(notes.clone());
-        assert!(retained.is_empty());
-        assert_eq!(dropped.len(), 1);
-
-        // Without the requirement the feature note executes alone (the account may not charge
-        // fees).
-        let ungated = GroupIndex::new(&groups, false);
-        let (retained, dropped) = ungated.repair(notes);
-        assert_eq!(retained.len(), 1);
-        assert!(dropped.is_empty());
-    }
-
-    /// A gated feature keeps executing while at least one of its sponsorships survived.
-    #[test]
-    fn repair_keeps_gated_feature_with_one_surviving_sponsorship() {
-        let groups = [group(1, 2)];
-        let index = GroupIndex::new(&groups, true);
-
-        // One of the two sponsorships was eliminated by the checker.
-        let notes = vec![groups[0].feature.as_note().clone(), groups[0].sponsorships[1].clone()];
-        let (retained, dropped) = index.repair(notes);
-
-        assert_eq!(retained.len(), 2);
-        assert!(dropped.is_empty());
     }
 
     /// The failure-attribution map names every sponsorship and no feature note.

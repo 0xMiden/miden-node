@@ -674,7 +674,6 @@ impl AccountActor {
             self.state.tx_args.clone(),
             self.config.request_backoff_initial,
             self.config.request_backoff_max,
-            self.config.require_sponsorship,
         );
 
         let groups = tx_candidate.notes.clone();

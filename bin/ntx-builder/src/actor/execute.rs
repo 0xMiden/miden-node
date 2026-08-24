@@ -53,7 +53,7 @@ use miden_tx::{
 };
 use tracing::Instrument;
 
-use crate::actor::candidate::{GroupIndex, TransactionCandidate};
+use crate::actor::candidate::TransactionCandidate;
 use crate::clients::{RemoteTransactionProver, RpcClient, RpcError};
 use crate::db::NtxDbReader;
 use crate::{COMPONENT, LOG_TARGET};
@@ -177,10 +177,6 @@ pub struct NtxContext {
 
     /// [`ExponentialBuilder`] used to back off retries on transient request failures.
     request_backoff: ExponentialBuilder,
-
-    /// Mirrors the selection-time sponsorship gate: when set, a feature note selected together with
-    /// sponsorships must not execute after the consumability checker eliminated all of them.
-    require_sponsorship: bool,
 }
 
 impl NtxContext {
@@ -198,7 +194,6 @@ impl NtxContext {
         tx_args: TransactionArgs,
         request_backoff_initial: Duration,
         request_backoff_max: Duration,
-        require_sponsorship: bool,
     ) -> Self {
         let request_backoff = request_backoff(request_backoff_initial, request_backoff_max);
         Self {
@@ -209,7 +204,6 @@ impl NtxContext {
             max_cycles,
             tx_args,
             request_backoff,
-            require_sponsorship,
         }
     }
 
@@ -268,7 +262,6 @@ impl NtxContext {
         tx: TransactionCandidate,
     ) -> impl FutureMaybeSend<NtxResult<NtxExecutionResult>> {
         let num_notes = tx.num_notes();
-        let group_index = GroupIndex::new(&tx.notes, self.require_sponsorship);
         let TransactionCandidate {
             account,
             notes,
@@ -314,7 +307,7 @@ impl NtxContext {
                         handle.block_on(
                             async {
                                 let FilteredNotes { successful, failed, deferred, oversized } =
-                                    ctx.filter_notes(&data_store, notes, &group_index).await?;
+                                    ctx.filter_notes(&data_store, notes).await?;
                                 let executed_tx =
                                     Box::pin(ctx.execute(&data_store, successful)).await?;
                                 let scripts_to_cache = data_store.take_fetched_scripts();
@@ -365,10 +358,6 @@ impl NtxContext {
     /// - Successful notes: notes that can be executed and are returned wrapped in [`InputNotes`].
     /// - Failed notes: notes that cannot be executed.
     ///
-    /// The checker eliminates notes individually, so it can split a note group; the surviving set
-    /// is re-paired through [`GroupIndex::repair`] so no half of a split group (guaranteed to fail
-    /// on-chain) reaches execution.
-    ///
     /// # Guarantees
     ///
     /// - On success, the returned [`InputNotes`] set is guaranteed to be non-empty.
@@ -388,7 +377,6 @@ impl NtxContext {
         &self,
         data_store: &NtxDataStore,
         notes: Vec<Note>,
-        group_index: &GroupIndex,
     ) -> NtxResult<FilteredNotes> {
         let executor = self.create_executor(data_store);
         let checker = NoteConsumptionChecker::new(&executor);
@@ -415,24 +403,9 @@ impl NtxContext {
                     );
                 }
 
-                // Map successful notes to input notes, dropping the halves of any group the checker
-                // split. Dropped notes are not penalized here: the group member that caused the
-                // split is already in `failed`, and its failure is attributed to the group's
-                // feature note by the actor.
+                // Map successful notes to input notes.
                 let successful_notes =
                     successful.into_iter().map(|s| s.note().clone()).collect::<Vec<_>>();
-                let (successful_notes, dropped) = group_index.repair(successful_notes);
-                for note in &dropped {
-                    tracing::info!(
-                        target: LOG_TARGET,
-                        {
-                            note.id = %note.id(),
-                            nullifier = %note.nullifier(),
-                        },
-                        "note dropped by group re-pairing: the rest of its group failed the \
-                         consumability check",
-                    );
-                }
                 let successful = InputNotes::from_unauthenticated_notes(successful_notes)
                     .map_err(NtxError::InputNotes)?;
 

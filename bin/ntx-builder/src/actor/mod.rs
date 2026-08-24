@@ -23,7 +23,6 @@ use miden_protocol::note::{Note, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::{TransactionArgs, TransactionId};
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_tx::FailedNote;
-use rand::seq::SliceRandom;
 use tokio::sync::{Semaphore, mpsc, watch};
 
 use crate::chain_state::{ChainState, SharedChainState};
@@ -574,12 +573,8 @@ impl AccountActor {
         for feature in partitioned_notes.allowed {
             let mut group_sponsorships =
                 sponsorships.remove(&feature.as_note().id()).unwrap_or_default();
-            // More sponsorships than the cap: keep a random subset, giving every sponsor a chance
-            // to be consumed eventually instead of deterministically starving some.
-            if group_sponsorships.len() > max_sponsorships {
-                group_sponsorships.shuffle(&mut rand::rng());
-                group_sponsorships.truncate(max_sponsorships);
-            }
+            // More sponsorships than the cap: keep the first `max_sponsorships` of them.
+            group_sponsorships.truncate(max_sponsorships);
             let group = NoteGroup {
                 feature,
                 sponsorships: group_sponsorships,

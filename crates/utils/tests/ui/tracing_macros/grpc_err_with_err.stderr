@@ -1,0 +1,5 @@
+error: `err` cannot be combined with `grpc_err`
+ --> tests/ui/tracing_macros/grpc_err_with_err.rs:3:63
+  |
+3 | #[miden_instrument(target = "test", name = "both_directives", err, grpc_err)]
+  |                                                               ^^^

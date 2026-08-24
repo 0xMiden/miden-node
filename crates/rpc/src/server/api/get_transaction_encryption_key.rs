@@ -21,7 +21,7 @@ impl proto::server::rpc_api::GetTransactionEncryptionKey for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_transaction_encryption_key",
-        err,
+        grpc_err,
     )]
     async fn handle(
         &self,

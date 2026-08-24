@@ -32,7 +32,7 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
         fields(
             block.from = %input,
         ),
-        err,
+        grpc_err,
     )]
     async fn handle(
         &self,

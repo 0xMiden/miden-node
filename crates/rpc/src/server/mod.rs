@@ -20,15 +20,13 @@ use miden_node_utils::grpc;
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use miden_node_utils::tracing::grpc::grpc_trace_layer;
 use rand::RngExt;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::metadata::AsciiMetadataValue;
 use tonic_reflection::server;
 use tonic_web::GrpcWebLayer;
-use tower_http::classify::{GrpcCode, GrpcErrorsAsFailures, SharedClassifier};
-use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::LOG_TARGET;
@@ -328,17 +326,7 @@ impl Rpc {
             .accept_http1(true)
             .timeout(self.grpc_options.request_timeout)
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
-            .layer(
-                TraceLayer::new(SharedClassifier::new(
-                    GrpcErrorsAsFailures::new()
-                        .with_success(GrpcCode::InvalidArgument)
-                        .with_success(GrpcCode::NotFound)
-                        .with_success(GrpcCode::ResourceExhausted)
-                        .with_success(GrpcCode::Unimplemented)
-                        .with_success(GrpcCode::Unknown),
-                ))
-                .make_span_with(grpc_trace_fn),
-            )
+            .layer(grpc_trace_layer())
             .layer(HealthCheckLayer)
             .layer(cors_for_grpc_web_layer())
             // Note: must wrap the accept layer so grpc-web callers receive grpc-web-compatible
@@ -474,7 +462,7 @@ impl SequencerInternal {
         // and is expected to be network-isolated.
         tonic::transport::Server::builder()
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
-            .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
+            .layer(grpc_trace_layer())
             .timeout(self.grpc_options.request_timeout)
             .add_service(sequencer_api::service(service))
             .serve_with_incoming_shutdown(

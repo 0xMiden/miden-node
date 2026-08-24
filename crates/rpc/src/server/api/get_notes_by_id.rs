@@ -28,7 +28,7 @@ impl proto::server::rpc_api::GetNotesById for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_notes_by_id",
-        err,
+        grpc_err,
     )]
     async fn handle(
         &self,

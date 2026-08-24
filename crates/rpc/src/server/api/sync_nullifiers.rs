@@ -30,7 +30,7 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "sync_nullifiers",
-        err,
+        grpc_err,
     )]
     async fn handle(
         &self,

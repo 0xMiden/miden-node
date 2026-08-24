@@ -49,6 +49,25 @@ impl Visit for FieldVisitor {
     }
 }
 
+#[derive(Clone, Default)]
+struct RecordedEventLevels(Arc<Mutex<Vec<tracing::Level>>>);
+
+impl RecordedEventLevels {
+    fn contains(&self, level: tracing::Level) -> bool {
+        self.0.lock().unwrap().contains(&level)
+    }
+}
+
+impl<S> Layer<S> for RecordedEventLevels
+where
+    S: Subscriber,
+    for<'a> S: LookupSpan<'a>,
+{
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+        self.0.lock().unwrap().push(*event.metadata().level());
+    }
+}
+
 #[miden_instrument(target = "miden-node-utils-test", name = "records_delayed_fields")]
 fn records_inferred_fields() {
     let parsed_value = 42;
@@ -167,6 +186,91 @@ fn multiple_span_record_macros_can_record_fields_after_span_creation() {
     assert_eq!(recorded.get("transaction.id").as_deref(), Some("multi-call-tx"));
 }
 
+#[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_client_fault", grpc_err)]
+async fn grpc_err_client_fault() -> Result<(), tonic::Status> {
+    Err(tonic::Status::invalid_argument("bad request"))
+}
+
+#[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_server_fault", grpc_err)]
+async fn grpc_err_server_fault() -> Result<(), tonic::Status> {
+    Err(tonic::Status::internal("node fault"))
+}
+
+#[tonic::async_trait]
+trait GrpcErrHandler {
+    async fn handle(&self, fail: bool) -> Result<(), tonic::Status>;
+}
+
+struct AsyncTraitHandler;
+
+#[tonic::async_trait]
+impl GrpcErrHandler for AsyncTraitHandler {
+    #[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_async_trait", grpc_err)]
+    async fn handle(&self, fail: bool) -> Result<(), tonic::Status> {
+        if fail {
+            return Err(tonic::Status::internal("node fault"));
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn grpc_err_client_faults_are_not_error_events() {
+    let events = RecordedEventLevels::default();
+    let subscriber = tracing_subscriber::registry().with(events.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    grpc_err_client_fault().await.unwrap_err();
+
+    assert!(events.contains(tracing::Level::DEBUG));
+    assert!(!events.contains(tracing::Level::ERROR));
+}
+
+#[tokio::test]
+async fn grpc_err_server_faults_are_error_events() {
+    let events = RecordedEventLevels::default();
+    let subscriber = tracing_subscriber::registry().with(events.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    grpc_err_server_fault().await.unwrap_err();
+
+    assert!(events.contains(tracing::Level::ERROR));
+}
+
+#[miden_instrument(target = "miden-node-utils-test", name = "grpc_err_sync", grpc_err)]
+fn grpc_err_sync(fail: bool) -> Result<(), tonic::Status> {
+    if fail {
+        return Err(tonic::Status::internal("node fault"));
+    }
+    Ok(())
+}
+
+#[test]
+fn grpc_err_classifies_sync_functions() {
+    let events = RecordedEventLevels::default();
+    let subscriber = tracing_subscriber::registry().with(events.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    grpc_err_sync(false).unwrap();
+    assert!(!events.contains(tracing::Level::ERROR));
+
+    grpc_err_sync(true).unwrap_err();
+    assert!(events.contains(tracing::Level::ERROR));
+}
+
+#[tokio::test]
+async fn grpc_err_classifies_async_trait_methods() {
+    let events = RecordedEventLevels::default();
+    let subscriber = tracing_subscriber::registry().with(events.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    AsyncTraitHandler.handle(false).await.unwrap();
+    assert!(!events.contains(tracing::Level::ERROR));
+
+    AsyncTraitHandler.handle(true).await.unwrap_err();
+    assert!(events.contains(tracing::Level::ERROR));
+}
+
 #[test]
 fn ui_tests() {
     let tests = trybuild::TestCases::new();
@@ -176,4 +280,5 @@ fn ui_tests() {
     tests.compile_fail("tests/ui/tracing_macros/invalid_skip.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_skip_all.rs");
     tests.compile_fail("tests/ui/tracing_macros/outside_miden_instrument.rs");
+    tests.compile_fail("tests/ui/tracing_macros/grpc_err_with_err.rs");
 }

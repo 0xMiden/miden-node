@@ -4264,6 +4264,7 @@ dependencies = [
 name = "miden-node-grpc-error-macro"
 version = "0.16.0-rc.1"
 dependencies = [
+ "proc-macro2",
  "quote",
  "syn 2.0.119",
 ]
@@ -4340,7 +4341,6 @@ dependencies = [
  "tonic-reflection",
  "tonic-web",
  "tower",
- "tower-http",
  "tracing",
  "url",
 ]
@@ -4478,7 +4478,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-reflection",
- "tower-http",
  "tracing",
  "url",
 ]

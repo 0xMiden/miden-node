@@ -7,7 +7,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::token::Dot;
 use syn::visit::Visit;
-use syn::{Block, Expr, Ident, ItemFn, Macro, Result, Token, parse_macro_input, parse_quote};
+use syn::{Block, Expr, Ident, ItemFn, Macro, Result, Stmt, Token, parse_macro_input, parse_quote};
 
 const ALLOWED_FIELD_NAMES: &[&str] = &[
     "account.id",
@@ -106,10 +106,13 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = TokenStream2::from(attr);
     let mut function = parse_macro_input!(item as ItemFn);
     let fields = collect_recorded_fields(&function);
-    let args = match merge_inferred_fields(attr, &fields) {
+    let (args, grpc_err) = match merge_inferred_fields(attr, &fields) {
         Ok(args) => args,
         Err(error) => return error.into_compile_error().into(),
     };
+    if grpc_err {
+        apply_grpc_err(&mut function);
+    }
     let statements = &function.block.stmts;
     let block: Block = parse_quote! {{
         #[allow(unused_macros)]
@@ -129,18 +132,19 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<TokenStream2> {
+fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<(TokenStream2, bool)> {
     validate_explicit_fields(&attr)?;
 
     let mut args = split_top_level_args(attr);
     reject_skip_directives(&args)?;
+    let grpc_err = extract_grpc_err_directive(&mut args)?;
 
     // Function arguments often contain large or sensitive values. Always skip them so spans only
     // contain fields explicitly declared by the caller or inferred from `miden_span_record!`.
     args.push(quote! { skip_all });
 
     if fields.is_empty() {
-        return Ok(quote! { #(#args),* });
+        return Ok((quote! { #(#args),* }, grpc_err));
     }
 
     let inferred_fields = quote! { #(#fields = ::tracing::field::Empty),* };
@@ -168,10 +172,89 @@ fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<Tok
         .collect::<Vec<_>>();
 
     if merged_existing_fields {
-        Ok(quote! { #(#args),* })
+        Ok((quote! { #(#args),* }, grpc_err))
     } else {
-        Ok(quote! { #(#args,)* fields(#inferred_fields) })
+        Ok((quote! { #(#args,)* fields(#inferred_fields) }, grpc_err))
     }
+}
+
+/// Rewrites the function body so a returned `Err` is classified via
+/// `miden_node_utils::tracing::record_grpc_error` from inside the instrumented span: node faults
+/// mark the span with `OTel` error status (like `err` would), while client-caused failures do not —
+/// rejecting a bad request is the node behaving correctly, not an application error.
+///
+/// `#[async_trait]` methods are expanded before this macro runs, leaving a non-async fn whose
+/// body is `Box::pin(async move { ... })`; the classification is applied inside that async block
+/// so it runs within the instrumented span.
+fn apply_grpc_err(function: &mut ItemFn) {
+    fn classified(body: &TokenStream2) -> Block {
+        parse_quote! {{
+            #[allow(clippy::redundant_async_block, clippy::redundant_closure_call)]
+            let __miden_instrument_result = #body;
+            if let Err(err) = &__miden_instrument_result {
+                ::miden_node_utils::tracing::record_grpc_error(err);
+            }
+            __miden_instrument_result
+        }}
+    }
+
+    fn wrap_async(statements: &[Stmt]) -> Block {
+        classified(&quote! { async move { #(#statements)* }.await })
+    }
+
+    if function.sig.asyncness.is_some() {
+        let wrapped = wrap_async(&function.block.stmts);
+        *function.block = wrapped;
+        return;
+    }
+
+    if let Some(Stmt::Expr(Expr::Call(call), _)) = function.block.stmts.last_mut()
+        && call.args.len() == 1
+        && let Some(Expr::Async(async_block)) = call.args.first_mut()
+    {
+        let wrapped = wrap_async(&async_block.block.stmts);
+        async_block.block = wrapped;
+        return;
+    }
+
+    let statements = &function.block.stmts;
+    let wrapped = classified(&quote! { (move || { #(#statements)* })() });
+    *function.block = wrapped;
+}
+
+/// Removes the `grpc_err` directive from the argument list, returning whether it was present.
+///
+/// `grpc_err` is a `miden_instrument` extension, not a `tracing::instrument` argument, so it must
+/// not be forwarded. It replaces `err`: combining the two would double-report the error.
+fn extract_grpc_err_directive(args: &mut Vec<TokenStream2>) -> Result<bool> {
+    let is_bare_ident = |arg: &TokenStream2, name: &str| {
+        let mut tokens = arg.clone().into_iter();
+        matches!(tokens.next(), Some(TokenTree::Ident(ident)) if ident == name)
+            && tokens.next().is_none()
+    };
+
+    let mut grpc_err = false;
+    args.retain(|arg| {
+        let found = is_bare_ident(arg, "grpc_err");
+        grpc_err |= found;
+        !found
+    });
+
+    if grpc_err {
+        for arg in args.iter() {
+            let Some(TokenTree::Ident(ident)) = arg.clone().into_iter().next() else {
+                continue;
+            };
+            if ident == "err" {
+                return Err(syn::Error::new_spanned(
+                    arg,
+                    "`err` cannot be combined with `grpc_err`",
+                ));
+            }
+        }
+    }
+
+    Ok(grpc_err)
 }
 
 fn reject_skip_directives(args: &[TokenStream2]) -> Result<()> {

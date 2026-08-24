@@ -21,7 +21,7 @@ impl proto::server::rpc_api::GetLimits for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "get_limits",
-        err,
+        grpc_err,
     )]
     async fn handle(
         &self,

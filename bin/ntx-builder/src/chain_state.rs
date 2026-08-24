@@ -1,5 +1,6 @@
 use std::sync::{Arc, RwLock};
 
+use miden_node_utils::tracing::debug;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::transaction::PartialBlockchain;
@@ -59,11 +60,11 @@ impl ChainState {
         // Skip blocks already reflected in the chain state. The builder may load state during
         // startup before receiving the same block from the committed-block subscription.
         if tip.block_num() <= self.chain_tip_header.block_num() {
-            tracing::debug!(
+            debug!(
                 target: LOG_TARGET,
-                event_block = %tip.block_num(),
-                current_tip = %self.chain_tip_header.block_num(),
                 "Skipping committed block already reflected in chain state",
+                block.number = tip.block_num(),
+                tip.number = self.chain_tip_header.block_num()
             );
             return;
         }

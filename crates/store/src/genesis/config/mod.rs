@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use indexmap::IndexMap;
+use miden_node_utils::tracing::debug;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountFile, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
@@ -242,7 +243,12 @@ impl GenesisConfig {
         // Setup all wallet accounts, which reference the faucet's for their provided assets.
         for (index, WalletConfig { account_type, assets }) in wallet_configs.into_iter().enumerate()
         {
-            tracing::debug!(target: LOG_TARGET, index, assets = ?assets, "Adding wallet account");
+            debug!(
+                target: LOG_TARGET,
+                "Adding wallet account",
+                account.index = index,
+                account.assets.count = assets.len()
+            );
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = RpoSecretKey::with_rng(&mut rng);
@@ -301,19 +307,19 @@ impl GenesisConfig {
                 let updated_faucet = current_faucet.with_token_supply(new_token_supply)?;
                 let slot = updated_faucet.token_config_slot_value();
                 faucet_account.storage_mut().set_item(slot.name(), slot.value())?;
-                tracing::debug!(
+                debug!(
                     target: LOG_TARGET,
-                    "Reducing faucet account {faucet} for {symbol} by {amount}",
-                    faucet = faucet_id.to_hex(),
-                    symbol = symbol,
-                    amount = total_issuance
+                    "Reducing faucet account issuance",
+                    account.id = faucet_id,
+                    asset.symbol = symbol.to_string(),
+                    asset.amount = total_issuance
                 );
             } else {
-                tracing::debug!(
+                debug!(
                     target: LOG_TARGET,
-                    "No wallet is referencing {faucet} for {symbol}",
-                    faucet = faucet_id.to_hex(),
-                    symbol = symbol,
+                    "No wallet references faucet asset",
+                    account.id = faucet_id,
+                    asset.symbol = symbol.to_string()
                 );
             }
 
@@ -667,10 +673,12 @@ fn prepare_fungible_asset_update(
             let faucet_id = faucet_account.id();
 
             let issuance: &mut u64 = faucet_issuance.entry(faucet_id).or_default();
-            tracing::debug!(
+            debug!(
                 target: LOG_TARGET,
-                "Updating faucet issuance {faucet} with {issuance} += {amount}",
-                faucet = faucet_id.to_hex()
+                "Updating faucet issuance",
+                account.id = faucet_id,
+                asset.symbol = symbol.to_string(),
+                asset.amount = amount
             );
             issuance
                 .checked_add_assign(&amount)

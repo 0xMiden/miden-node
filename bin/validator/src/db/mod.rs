@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{DbReader, DbWriter};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{info, miden_instrument};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
 
@@ -280,11 +280,11 @@ fn open_with_pool_size(
 ) -> Result<ValidatorDbWriter, DatabaseError> {
     let (writer, reader) =
         miden_node_db::sqlite::open_with_pool_size(database_filepath, connection_pool_size)?;
-    tracing::info!(
+    info!(
         target: LOG_TARGET,
-        sqlite= %database_filepath.display(),
-        connection_pool_size = %connection_pool_size,
-        "Connected to the database"
+        "Connected to the database",
+        path = database_filepath,
+        db.sqlite.connection_pool_size = connection_pool_size.get()
     );
     Ok(ValidatorDbWriter {
         writer,

@@ -19,6 +19,7 @@ use miden_node_utils::clap::duration_to_human_readable_string;
 use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
+use miden_node_utils::tracing::info;
 use tokio::net::TcpListener;
 use url::Url;
 
@@ -140,31 +141,31 @@ impl SequencerCommand {
     }
 
     fn log_starting(&self) {
-        tracing::info!(
+        info!(
             target: crate::LOG_TARGET,
-            {
-                service.name = "miden-node",
-                service.version = env!("CARGO_PKG_VERSION"),
-                node.role = "sequencer",
-                rpc.listen = %self.runtime.rpc.listen,
-                internal.listen = %self.internal.map_or_else(
-                    || "disabled".to_owned(),
-                    |address| address.to_string(),
-                ),
-                data.directory = %self.runtime.data_directory.display(),
-                validator.endpoints = %self
-                    .external_services
-                    .validator_urls
-                    .iter()
-                    .map(format_endpoint)
-                    .collect::<Vec<_>>()
-                    .join(","),
-                ntx_builder.endpoint = %format_endpoint(&self.external_services.ntx_builder_url),
-                block.interval = %humantime::Duration::from(self.block_producer.block.interval),
-                batch.interval = %humantime::Duration::from(self.block_producer.batch.interval),
-                store.sqlite.connection_pool_size = self.store.sqlite.connection_pool_size.get(),
-            },
             "Starting node",
+            service.name = "miden-node",
+            service.version = env!("CARGO_PKG_VERSION"),
+            node.role = "sequencer",
+            rpc.listen = self.runtime.rpc.listen.to_string(),
+            internal.listen = self.internal.map_or_else(
+                || "disabled".to_owned(),
+                |address| address.to_string(),
+            ),
+            data.directory = self.runtime.data_directory.as_path(),
+            validator.endpoints = self
+                .external_services
+                .validator_urls
+                .iter()
+                .map(format_endpoint)
+                .collect::<Vec<_>>()
+                .join(","),
+            ntx_builder.endpoint = format_endpoint(&self.external_services.ntx_builder_url),
+            block.interval =
+                humantime::Duration::from(self.block_producer.block.interval).to_string(),
+            batch.interval =
+                humantime::Duration::from(self.block_producer.batch.interval).to_string(),
+            db.sqlite.connection_pool_size = self.store.sqlite.connection_pool_size.get()
         );
     }
 }
@@ -372,28 +373,26 @@ impl FullNodeCommand {
     }
 
     fn log_starting(&self) {
-        tracing::info!(
+        info!(
             target: crate::LOG_TARGET,
-            {
-                service.name = "miden-node",
-                service.version = env!("CARGO_PKG_VERSION"),
-                node.role = "full",
-                rpc.listen = %self.runtime.rpc.listen,
-                data.directory = %self.runtime.data_directory.display(),
-                sync.block_source.endpoint = %format_endpoint(&self.sync.block_source_url),
-                sync.ready_threshold = self.sync.readiness_threshold,
-                validator.endpoints = %if self.validator_urls.is_empty() {
-                    "disabled".to_owned()
-                } else {
-                    self.validator_urls.iter().map(format_endpoint).collect::<Vec<_>>().join(",")
-                },
-                sequencer.endpoint = %self.sequencer_url.as_ref().map_or_else(
-                    || "disabled".to_owned(),
-                    format_endpoint,
-                ),
-                store.sqlite.connection_pool_size = self.store.sqlite.connection_pool_size.get(),
-            },
             "Starting node",
+            service.name = "miden-node",
+            service.version = env!("CARGO_PKG_VERSION"),
+            node.role = "full",
+            rpc.listen = self.runtime.rpc.listen.to_string(),
+            data.directory = self.runtime.data_directory.as_path(),
+            sync.block_source.endpoint = format_endpoint(&self.sync.block_source_url),
+            sync.ready_threshold = self.sync.readiness_threshold,
+            validator.endpoints = if self.validator_urls.is_empty() {
+                "disabled".to_owned()
+            } else {
+                self.validator_urls.iter().map(format_endpoint).collect::<Vec<_>>().join(",")
+            },
+            sequencer.endpoint = self.sequencer_url.as_ref().map_or_else(
+                || "disabled".to_owned(),
+                format_endpoint,
+            ),
+            db.sqlite.connection_pool_size = self.store.sqlite.connection_pool_size.get()
         );
     }
 }

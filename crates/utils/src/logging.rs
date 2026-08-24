@@ -13,7 +13,7 @@ use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::{Filter, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer, Registry};
 
-use crate::tracing::ErrorSpanExt;
+use crate::tracing::{ErrorSpanExt, error};
 
 /// Global tracer provider for flushing traces on panic.
 ///
@@ -226,11 +226,11 @@ pub fn setup_tracing_with_config(config: TracingConfig) -> anyhow::Result<Option
     // to preserve backtrace printing.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        tracing::error!(panic = true, info = %info, "panic");
-
-        // Mark the current span as failed for OpenTelemetry.
         let info_str = info.to_string();
         let wrapped = anyhow::Error::msg(info_str);
+        error!(&wrapped, "panic", panic = true);
+
+        // Mark the current span as failed for OpenTelemetry.
         tracing::Span::current().set_error(wrapped.as_ref());
 
         // Flush traces before the program terminates. This ensures the panic trace is exported even

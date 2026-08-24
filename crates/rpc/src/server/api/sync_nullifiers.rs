@@ -1,9 +1,8 @@
 use miden_node_proto::decode::read_block_range;
 use miden_node_proto::generated as proto;
 use miden_node_utils::limiter::QueryParamNullifierPrefixLimit;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
-use tracing::debug;
 
 use super::{
     RpcInvalidBlockRange,
@@ -38,13 +37,23 @@ impl proto::server::rpc_api::SyncNullifiers for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        tracing::trace!(target: LOG_TARGET, ?request);
-
         let range = read_block_range::<Status>(request.block_range, "SyncNullifiersRequest")?;
 
-        miden_span_record!(block_range.from = range.block_from, block_range.to = range.block_to);
+        miden_span_record!(
+            block_range.from = range.block_from,
+            block_range.to = range.block_to,
+            prefix_len = request.prefix_len,
+            prefixes = request.nullifiers.as_slice() #[nonstandard]
+        );
 
-        debug!(target: LOG_TARGET, "Syncing nullifiers");
+        debug!(
+            target: LOG_TARGET,
+            "Syncing nullifiers",
+            block_range.from = range.block_from,
+            block_range.to = range.block_to,
+            prefix_len = request.prefix_len,
+            prefixes = request.nullifiers.as_slice() #[nonstandard]
+        );
 
         check::<QueryParamNullifierPrefixLimit>(request.nullifiers.len())?;
 

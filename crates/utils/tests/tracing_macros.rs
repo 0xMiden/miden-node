@@ -1,10 +1,18 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{
+    debug,
+    error,
+    info,
+    miden_instrument,
+    miden_span_record,
+    trace,
+    warn,
+};
 use miden_protocol::block::BlockNumber;
-use tracing::Subscriber;
 use tracing::field::{Field, Visit};
+use tracing::{Level, Subscriber};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use tracing_subscriber::registry::LookupSpan;
@@ -15,6 +23,41 @@ struct RecordedFields(Arc<Mutex<BTreeMap<String, String>>>);
 impl RecordedFields {
     fn get(&self, key: &str) -> Option<String> {
         self.0.lock().unwrap().get(key).cloned()
+    }
+}
+
+#[derive(Clone, Default)]
+struct RecordedEvents(Arc<Mutex<Vec<RecordedEvent>>>);
+
+#[derive(Clone)]
+struct RecordedEvent {
+    level: Level,
+    target: String,
+    fields: BTreeMap<String, String>,
+}
+
+impl RecordedEvents {
+    fn events(&self) -> Vec<RecordedEvent> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl<S> Layer<S> for RecordedEvents
+where
+    S: Subscriber,
+    for<'a> S: LookupSpan<'a>,
+{
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+        let fields = Arc::new(Mutex::new(BTreeMap::new()));
+        event.record(&mut FieldVisitor(Arc::clone(&fields)));
+        let fields = fields.lock().unwrap().clone();
+        let metadata = event.metadata();
+
+        self.0.lock().unwrap().push(RecordedEvent {
+            level: *metadata.level(),
+            target: metadata.target().to_owned(),
+            fields,
+        });
     }
 }
 
@@ -165,6 +208,48 @@ fn records_nonstandard_delayed_field() {
     miden_span_record!(custom.delayed = "delayed" #[nonstandard]);
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("source error")]
+struct SourceError;
+
+#[derive(Debug, thiserror::Error)]
+#[error("outer error")]
+struct OuterError(#[source] SourceError);
+
+fn records_events() {
+    const TARGET: &str = "miden-node-utils-event-test";
+
+    trace!(
+        target: TARGET,
+        "trace.event",
+        block.number = BlockNumber::from(1),
+        custom.attribute = "custom" #[nonstandard]
+    );
+    debug!(target: TARGET, "debug.event", block.number = BlockNumber::from(2));
+
+    let parent = tracing::info_span!("event-parent");
+    info!(
+        target: TARGET,
+        parent: &parent,
+        "info.event",
+        block.number = BlockNumber::from(3)
+    );
+
+    warn!(target: TARGET, "warn.event", block.number = BlockNumber::from(4));
+    warn!(
+        OuterError(SourceError),
+        target: TARGET,
+        "warn.error.event",
+        block.number = BlockNumber::from(5)
+    );
+    error!(
+        OuterError(SourceError),
+        target: TARGET,
+        "error.event",
+        block.number = BlockNumber::from(6)
+    );
+}
+
 #[test]
 fn inferred_fields_can_be_recorded_after_span_creation() {
     let recorded = RecordedFields::default();
@@ -259,6 +344,43 @@ fn nonstandard_fields_retain_canonical_attribute_encoding() {
 }
 
 #[test]
+fn event_macros_record_canonical_attributes() {
+    let recorded = RecordedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(recorded.clone());
+
+    tracing::subscriber::with_default(subscriber, records_events);
+
+    let events = recorded.events();
+    let expected = [
+        (Level::TRACE, "trace.event", "1"),
+        (Level::DEBUG, "debug.event", "2"),
+        (Level::INFO, "info.event", "3"),
+        (Level::WARN, "warn.event", "4"),
+        (Level::WARN, "warn.error.event", "5"),
+        (Level::ERROR, "error.event", "6"),
+    ];
+    assert_eq!(events.len(), expected.len());
+
+    for (event, (level, name, block_number)) in events.iter().zip(expected) {
+        assert_eq!(event.level, level);
+        assert_eq!(event.target, "miden-node-utils-event-test");
+        assert_eq!(event.fields.get("message").unwrap(), name);
+        assert_eq!(event.fields.get("block.number").unwrap(), block_number);
+    }
+
+    assert!(!events[3].fields.contains_key("exception.message"));
+    assert_eq!(events[0].fields.get("custom.attribute").unwrap(), "custom");
+    assert_eq!(
+        events[4].fields.get("exception.message").unwrap(),
+        "outer error\ncaused by: source error"
+    );
+    assert_eq!(
+        events.last().unwrap().fields.get("exception.message").unwrap(),
+        "outer error\ncaused by: source error"
+    );
+}
+
+#[test]
 fn ui_tests() {
     let tests = trybuild::TestCases::new();
     tests.pass("tests/ui/tracing_macros/pass.rs");
@@ -277,4 +399,14 @@ fn ui_tests() {
     tests.compile_fail("tests/ui/tracing_macros/invalid_record_formatter.rs");
     tests.compile_fail("tests/ui/tracing_macros/invalid_instrument_formatter.rs");
     tests.compile_fail("tests/ui/tracing_macros/outside_miden_instrument.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_event_field_name.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_event_field_type.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_event_attribute.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_event_formatter.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_event_trailing_comma.rs");
+    tests.compile_fail("tests/ui/tracing_macros/missing_event_name.rs");
+    tests.compile_fail("tests/ui/tracing_macros/missing_error.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_error_type.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_optional_error_type.rs");
+    tests.compile_fail("tests/ui/tracing_macros/invalid_event_exception_message.rs");
 }

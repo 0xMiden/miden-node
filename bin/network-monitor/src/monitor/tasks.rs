@@ -7,10 +7,10 @@ use anyhow::Result;
 use backon::{ExponentialBuilder, Retryable};
 use miden_node_proto::clients::RemoteProverClient;
 use miden_node_utils::tasks::Tasks as SupervisedTasks;
+use miden_node_utils::tracing::{debug, warn};
 use miden_tx::LocalTransactionProver;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{Mutex, watch};
-use tracing::{debug, warn};
 
 use crate::LOG_TARGET;
 use crate::config::MonitorConfig;
@@ -147,7 +147,7 @@ impl Tasks {
 
         let config = config.clone();
         self.handles.spawn_infallible("ntx", run_ntx(config, increment_tx, tracking_tx));
-        debug!(target: LOG_TARGET, service = "ntx", "Spawned service");
+        debug!(target: LOG_TARGET, "Spawned service", service.name = "ntx");
 
         (increment_rx, tracking_rx)
     }
@@ -161,7 +161,7 @@ impl Tasks {
         let service_name = svc.name().to_string();
         self.handles
             .spawn_infallible(service_name.clone(), async move { svc.run(tx).await });
-        debug!(target: LOG_TARGET, service = %service_name, "Spawned service");
+        debug!(target: LOG_TARGET, "Spawned service", service.name = service_name);
         rx
     }
 
@@ -214,10 +214,10 @@ async fn run_ntx(
         .retry(backoff)
         .notify(|err: &anyhow::Error, sleep: Duration| {
             warn!(
+                err,
                 target: LOG_TARGET,
-                err = ?err,
-                sleep_ms = sleep.as_millis() as u64,
                 "NTX bootstrap failed; retrying after backoff",
+                retry.delay_ms = sleep.as_millis() as u64
             );
             let msg = format!("deploying monitor accounts failed: {err:#}");
             increment_tx.send_replace(ServiceStatus::unhealthy(

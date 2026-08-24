@@ -22,7 +22,7 @@ use miden_node_utils::limiter::{
 };
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::retry::{self, Retryable};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockHeader, BlockNumber};
@@ -173,11 +173,11 @@ impl RpcService {
         .retry(retry::exponential(Duration::from_millis(500), Duration::from_secs(30)))
         .when(|err| err.code() == tonic::Code::Unavailable)
         .notify(|err, backoff| {
-            tracing::warn!(
+            warn!(
+                err,
                 target: LOG_TARGET,
-                ?backoff,
-                %err,
-                "connection failed while fetching genesis header, retrying"
+                "connection failed while fetching genesis header, retrying",
+                retry.delay_ms = backoff.as_millis() as u64
             );
         })
         .await?;

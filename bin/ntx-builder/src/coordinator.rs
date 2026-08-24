@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, error, info, miden_instrument, warn};
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::TransactionId;
@@ -149,22 +149,21 @@ impl Coordinator {
         if let Some(&count) = self.crash_counts.get(&account_id)
             && count >= self.max_account_crashes
         {
-            tracing::warn!(
+            warn!(
                 target: LOG_TARGET,
-                {
-                    account.id = %account_id,
-                    crash_count = count,
-                },
-                "Account deactivated due to repeated crashes, skipping actor spawn"
+                "Account deactivated due to repeated crashes, skipping actor spawn",
+                account.id = account_id,
+                account.crashes.count = count
             );
             return;
         }
 
         if self.actor_registry.contains_key(&account_id) {
-            tracing::error!(
+            error!(
+                anyhow::anyhow!("account actor already exists"),
                 target: LOG_TARGET,
-                { account.id = %account_id },
                 "Account actor already exists",
+                account.id = account_id
             );
             return;
         }
@@ -185,10 +184,10 @@ impl Coordinator {
         }));
 
         self.actor_registry.insert(account_id, handle);
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            { account.id = %account_id },
-            "Created actor for account"
+            "Created actor for account",
+            account.id = account_id
         );
     }
 
@@ -216,10 +215,10 @@ impl Coordinator {
         if committed {
             self.spawn_actor(account_id);
         } else {
-            tracing::info!(
+            info!(
                 target: LOG_TARGET,
-                { account.id = %account_id },
                 "deferring actor spawn until the account's creation is committed",
+                account.id = account_id
             );
             self.pending_spawns.insert(account_id);
         }
@@ -307,19 +306,17 @@ impl Coordinator {
             Some(Ok((account_id, Err(err)))) => {
                 let count = self.crash_counts.entry(account_id).or_insert(0);
                 *count += 1;
-                tracing::error!(
+                error!(
+                    &err,
                     target: LOG_TARGET,
-                    {
-                        account.id = %account_id,
-                        error = %format!("{err:#}"),
-                    },
-                    "Account actor crashed"
+                    "Account actor crashed",
+                    account.id = account_id
                 );
                 self.actor_registry.remove(&account_id);
                 Ok(None)
             },
             Some(Err(err)) => {
-                tracing::error!(target: LOG_TARGET, error = %err, "Actor task failed");
+                error!(&err, target: LOG_TARGET, "Actor task failed");
                 Ok(None)
             },
             None => {

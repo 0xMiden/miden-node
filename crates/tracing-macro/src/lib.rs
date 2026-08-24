@@ -13,6 +13,7 @@ use syn::{
     Expr,
     Ident,
     ItemFn,
+    LitStr,
     Macro,
     Meta,
     Result,
@@ -56,6 +57,324 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+/// Emits a trace-level event.
+///
+/// An optional first argument may provide an error implementing `ErrorReport`. Its display value
+/// and source chain are recorded as `exception.message`; callers do not provide that attribute
+/// themselves.
+///
+/// The event name is required and must be a string literal. When an error is provided, optional
+/// `target:` and `parent:` arguments go between the error and name, in that order. Without an
+/// error, they precede the name. Attributes follow the name and must use a registered field name
+/// and a value implementing `RecordAttribute`. Append `#[nonstandard]` to a field value to permit
+/// an unregistered name while retaining its canonical encoding. Tracing format specifiers and
+/// trailing commas are not supported.
+///
+/// The name is recorded as tracing's `message` field, which the OpenTelemetry tracing layer uses
+/// as the event name.
+///
+/// ```rust,ignore
+/// use miden_node_utils::tracing::trace;
+///
+/// trace!(target: "node", "block.received", block.number = 42_u32);
+///
+/// let source = std::io::Error::other("invalid block");
+/// trace!(&source, "block.rejected", block.number = 42_u32);
+/// ```
+#[proc_macro]
+pub fn trace(input: TokenStream) -> TokenStream {
+    expand_event(input, "trace", false)
+}
+
+/// Emits a debug-level event.
+///
+/// An optional first argument may provide an error implementing `ErrorReport`. Its display value
+/// and source chain are recorded as `exception.message`; callers do not provide that attribute
+/// themselves.
+///
+/// The event name is required and must be a string literal. When an error is provided, optional
+/// `target:` and `parent:` arguments go between the error and name, in that order. Without an
+/// error, they precede the name. Attributes follow the name and must use a registered field name
+/// and a value implementing `RecordAttribute`. Append `#[nonstandard]` to a field value to permit
+/// an unregistered name while retaining its canonical encoding. Tracing format specifiers and
+/// trailing commas are not supported.
+///
+/// The name is recorded as tracing's `message` field, which the OpenTelemetry tracing layer uses
+/// as the event name.
+///
+/// ```rust,ignore
+/// use miden_node_utils::tracing::debug;
+///
+/// debug!("block.queued", block.number = 42_u32);
+///
+/// let source = std::io::Error::other("upstream unavailable");
+/// debug!(&source, "block.retrying", block.number = 42_u32);
+/// ```
+#[proc_macro]
+pub fn debug(input: TokenStream) -> TokenStream {
+    expand_event(input, "debug", false)
+}
+
+/// Emits an info-level event.
+///
+/// An optional first argument may provide an error implementing `ErrorReport`. Its display value
+/// and source chain are recorded as `exception.message`; callers do not provide that attribute
+/// themselves.
+///
+/// The event name is required and must be a string literal. When an error is provided, optional
+/// `target:` and `parent:` arguments go between the error and name, in that order. Without an
+/// error, they precede the name. Attributes follow the name and must use a registered field name
+/// and a value implementing `RecordAttribute`. Append `#[nonstandard]` to a field value to permit
+/// an unregistered name while retaining its canonical encoding. Tracing format specifiers and
+/// trailing commas are not supported.
+///
+/// The name is recorded as tracing's `message` field, which the OpenTelemetry tracing layer uses
+/// as the event name.
+///
+/// ```rust,ignore
+/// use miden_node_utils::tracing::info;
+///
+/// let parent = tracing::info_span!("block");
+/// info!(parent: &parent, "block.accepted", block.number = 42_u32);
+///
+/// let source = std::io::Error::other("used fallback");
+/// info!(&source, "block.fallback_used", block.number = 42_u32);
+/// ```
+#[proc_macro]
+pub fn info(input: TokenStream) -> TokenStream {
+    expand_event(input, "info", false)
+}
+
+/// Emits a warning-level event.
+///
+/// An optional first argument may provide an error implementing `ErrorReport`. Its display value
+/// and source chain are recorded as `exception.message`; callers do not provide that attribute
+/// themselves.
+///
+/// The event name is required and must be a string literal. When an error is provided, optional
+/// `target:` and `parent:` arguments go between the error and name, in that order. Without an
+/// error, they precede the name. Attributes follow the name and must use a registered field name
+/// and a value implementing `RecordAttribute`. Append `#[nonstandard]` to a field value to permit
+/// an unregistered name while retaining its canonical encoding. Tracing format specifiers and
+/// trailing commas are not supported.
+///
+/// The name is recorded as tracing's `message` field, which the OpenTelemetry tracing layer uses
+/// as the event name.
+///
+/// ```rust,ignore
+/// use miden_node_utils::tracing::warn;
+///
+/// warn!("block.delayed", block.number = 42_u32);
+///
+/// let source = std::io::Error::other("upstream unavailable");
+/// warn!(&source, "block.retrying", block.number = 42_u32);
+/// ```
+#[proc_macro]
+pub fn warn(input: TokenStream) -> TokenStream {
+    expand_event(input, "warn", false)
+}
+
+/// Emits an error-level event with a complete error report.
+///
+/// The first argument is required and must implement `ErrorReport`. Its display value and source
+/// chain are recorded as `exception.message`; callers do not provide that attribute themselves.
+///
+/// The event name follows the error and must be a string literal. Optional `target:` and `parent:`
+/// arguments go between the error and name, in that order. Additional attributes follow the name
+/// and must use a registered field name and a value implementing `RecordAttribute`. Append
+/// `#[nonstandard]` to a field value to permit an unregistered name while retaining its canonical
+/// encoding. Tracing format specifiers and trailing commas are not supported.
+///
+/// The name is recorded as tracing's `message` field, which the OpenTelemetry tracing layer uses
+/// as the event name.
+///
+/// ```rust,ignore
+/// use miden_node_utils::tracing::error;
+///
+/// let source = std::io::Error::other("database unavailable");
+/// error!(source, target: "node", "block.store_failed", block.number = 42_u32);
+/// ```
+#[proc_macro]
+pub fn error(input: TokenStream) -> TokenStream {
+    expand_event(input, "error", true)
+}
+
+fn expand_event(input: TokenStream, level: &str, error_required: bool) -> TokenStream {
+    let event = if error_required {
+        syn::parse::<ErrorEvent>(input).map(|event| event.0)
+    } else {
+        syn::parse::<OptionalErrorEvent>(input).map(|event| event.0)
+    };
+    let event = match event {
+        Ok(event) => event,
+        Err(error) => return error.into_compile_error().into(),
+    };
+
+    event.tokens(&Ident::new(level, proc_macro2::Span::call_site())).into()
+}
+
+struct ErrorEvent(Event);
+
+impl Parse for ErrorEvent {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let event = parse_error_event(input)?;
+        event.reject_exception_message()?;
+
+        Ok(Self(event))
+    }
+}
+
+struct OptionalErrorEvent(Event);
+
+impl Parse for OptionalErrorEvent {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let event = if starts_without_error(input) {
+            Event::parse_after_error(input, None)?
+        } else {
+            parse_error_event(input)?
+        };
+        event.reject_exception_message()?;
+
+        Ok(Self(event))
+    }
+}
+
+fn parse_error_event(input: ParseStream<'_>) -> Result<Event> {
+    if input.is_empty() {
+        return Err(input.error("expected an error expression"));
+    }
+
+    let error = input.parse()?;
+    if input.is_empty() {
+        return Err(syn::Error::new_spanned(error, "expected a static event name string literal"));
+    }
+    input.parse::<Token![,]>()?;
+
+    Event::parse_after_error(input, Some(error))
+}
+
+struct Event {
+    error: Option<Expr>,
+    target: Option<Expr>,
+    parent: Option<Expr>,
+    name: LitStr,
+    fields: Vec<RecordField>,
+}
+
+impl Event {
+    fn parse_after_error(input: ParseStream<'_>, error: Option<Expr>) -> Result<Self> {
+        let target = if input.peek(event_kw::target) {
+            input.parse::<event_kw::target>()?;
+            input.parse::<Token![:]>()?;
+            let target = input.parse()?;
+            input.parse::<Token![,]>()?;
+            Some(target)
+        } else {
+            None
+        };
+
+        let parent = if input.peek(event_kw::parent) {
+            input.parse::<event_kw::parent>()?;
+            input.parse::<Token![:]>()?;
+            let parent = input.parse()?;
+            input.parse::<Token![,]>()?;
+            Some(parent)
+        } else {
+            None
+        };
+
+        let name = input
+            .parse::<LitStr>()
+            .map_err(|_| input.error("expected a static event name string literal"))?;
+        let mut fields = Vec::new();
+
+        if !input.is_empty() {
+            let comma = input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                return Err(syn::Error::new_spanned(comma, "trailing commas are not supported"));
+            }
+
+            loop {
+                fields.push(RecordField::parse(input, true)?);
+                if input.is_empty() {
+                    break;
+                }
+
+                let comma = input.parse::<Token![,]>()?;
+                if input.is_empty() {
+                    return Err(syn::Error::new_spanned(
+                        comma,
+                        "trailing commas are not supported",
+                    ));
+                }
+            }
+        }
+
+        Ok(Self { error, target, parent, name, fields })
+    }
+
+    fn reject_exception_message(&self) -> Result<()> {
+        if let Some(field) =
+            self.fields.iter().find(|field| field.path.name() == "exception.message")
+        {
+            Err(syn::Error::new_spanned(
+                &field.path,
+                "pass the error as the first argument instead of recording `exception.message`",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn tokens(&self, level: &Ident) -> TokenStream2 {
+        let target = self.target.as_ref().map(|target| quote! { target: #target, });
+        let parent = self.parent.as_ref().map(|parent| quote! { parent: #parent, });
+        let name = &self.name;
+        let error = self.error.as_ref().map(|error| {
+            quote! {
+                , exception.message = ::miden_node_utils::tracing::record_attribute(
+                    &({
+                        use ::miden_node_utils::ErrorReport as _;
+                        (#error).as_report()
+                    })
+                )
+            }
+        });
+        let fields = self.fields.iter().map(RecordField::instrument_tokens);
+
+        quote! {
+            ::tracing::#level!(
+                #target
+                #parent
+                message = #name
+                #error
+                #(, #fields)*
+            )
+        }
+    }
+}
+
+mod event_kw {
+    syn::custom_keyword!(parent);
+    syn::custom_keyword!(target);
+}
+
+fn starts_without_error(input: ParseStream<'_>) -> bool {
+    if input.peek(LitStr) {
+        return true;
+    }
+
+    let ahead = input.fork();
+    let starts_with_target =
+        ahead.parse::<event_kw::target>().is_ok() && ahead.parse::<Token![:]>().is_ok();
+    if starts_with_target {
+        return true;
+    }
+
+    let ahead = input.fork();
+    ahead.parse::<event_kw::parent>().is_ok() && ahead.parse::<Token![:]>().is_ok()
 }
 
 fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<TokenStream2> {

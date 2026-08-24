@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{DbReader, DbWriter};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{info, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock, ValidatorKeys};
@@ -15,7 +15,6 @@ use miden_protocol::note::{Note, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::TransactionId;
 #[cfg(test)]
 use miden_standards::note::AccountTargetNetworkNote;
-use tracing::info;
 
 use crate::committed_block::CommittedBlockEffects;
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
@@ -316,9 +315,9 @@ fn open_with_pool_size(
 
     info!(
         target: COMPONENT,
-        sqlite = %database_filepath.display(),
-        connection_pool_size = %connection_pool_size,
-        "Connected to the database"
+        "Connected to the database",
+        path = database_filepath,
+        db.sqlite.connection_pool_size = connection_pool_size.get()
     );
 
     Ok(NtxDbWriter { writer, reader: NtxDbReader { reader } })

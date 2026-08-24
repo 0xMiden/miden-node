@@ -2,9 +2,8 @@ use miden_node_proto::decode::{read_account_ids, read_block_range};
 use miden_node_proto::generated as proto;
 use miden_node_store::{NoteSyncRecord, TransactionRecord};
 use miden_node_utils::limiter::QueryParamAccountIdLimit;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
-use tracing::debug;
 
 use super::{
     RpcInvalidBlockRange,
@@ -39,8 +38,6 @@ impl proto::server::rpc_api::SyncTransactions for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        tracing::trace!(target: LOG_TARGET, ?request);
-
         let range = read_block_range::<Status>(request.block_range, "SyncTransactionsRequest")?;
         let n_accounts = request.account_ids.len();
         let account_ids =
@@ -53,7 +50,14 @@ impl proto::server::rpc_api::SyncTransactions for RpcService {
             account.count = n_accounts
         );
 
-        debug!(target: LOG_TARGET, "Syncing transactions");
+        debug!(
+            target: LOG_TARGET,
+            "Syncing transactions",
+            block_range.from = range.block_from,
+            block_range.to = range.block_to,
+            account.ids = account_ids,
+            account.ids.count = n_accounts
+        );
 
         check::<QueryParamAccountIdLimit>(request.account_ids.len())?;
 

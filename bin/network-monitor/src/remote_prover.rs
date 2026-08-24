@@ -13,14 +13,13 @@ use std::time::{Duration, Instant};
 
 use miden_node_proto::clients::{RemoteProverClient, RemoteProverProxyStatusClient};
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument, warn};
 use miden_protocol::utils::serde::Serializable;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tonic::Request;
-use tracing::{debug, warn};
 use url::Url;
 
 use crate::COMPONENT;
@@ -175,14 +174,14 @@ impl ProverStatusService {
         }
         match &self.probe_handle {
             None => {
-                debug!(target: COMPONENT, prover = %self.name, "spawning probe task");
+                debug!(target: COMPONENT, "spawning probe task", prover = self.name);
                 self.probe_handle = Some(self.probe_spawner.spawn());
             },
             Some(handle) if handle.is_finished() => {
                 warn!(
                     target: COMPONENT,
-                    prover = %self.name,
-                    "probe task terminated unexpectedly; respawning"
+                    "probe task terminated unexpectedly; respawning",
+                    prover = self.name
                 );
                 self.probe_spawner.probe_tx.send_modify(|snapshot| {
                     snapshot.failure_count += 1;
@@ -290,7 +289,12 @@ impl Service for ProverStatusService {
                 self.last_status_err = None;
             },
             Err(e) => {
-                debug!(target: COMPONENT, prover = %self.name, error = %e, "Remote prover status check failed");
+                debug!(
+                    &e,
+                    target: COMPONENT,
+                    "Remote prover status check failed",
+                    prover = self.name
+                );
                 self.last_status_err = Some(e.to_string());
             },
         }
@@ -369,17 +373,21 @@ async fn run_prover_test(
 ) {
     let payload = loop {
         if probe_tx.is_closed() {
-            debug!(target: COMPONENT, prover = %name, "probe channel closed, exiting probe task");
+            debug!(
+                target: COMPONENT,
+                "probe channel closed, exiting probe task",
+                prover = name
+            );
             return;
         }
         match generate_prover_test_payload(&rpc_url).await {
             Ok(payload) => break payload,
             Err(e) => {
                 warn!(
+                    &e,
                     target: COMPONENT,
-                    prover = %name,
-                    error = ?e,
-                    "failed to build remote-prover probe payload; retrying"
+                    "failed to build remote-prover probe payload; retrying",
+                    prover = name
                 );
                 probe_tx.send_modify(|snapshot| {
                     snapshot.latest = Some(ProverTestOutcome {
@@ -441,7 +449,11 @@ async fn run_prover_test(
         }
 
         if probe_tx.send(state.clone()).is_err() {
-            debug!(target: COMPONENT, prover = %name, "probe channel closed, exiting probe task");
+            debug!(
+                target: COMPONENT,
+                "probe channel closed, exiting probe task",
+                prover = name
+            );
             return;
         }
     }

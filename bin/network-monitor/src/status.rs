@@ -8,8 +8,7 @@
 use std::time::Duration;
 
 use miden_node_proto::clients::RpcClient;
-use miden_node_utils::tracing::miden_instrument;
-use tracing::debug;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use url::Url;
 
 use crate::COMPONENT;
@@ -136,9 +135,9 @@ impl Service for RpcService {
                 {
                     debug!(
                         target: COMPONENT,
-                        chain_tip = rpc_details.chain_tip,
-                        stale_duration_secs = stale_duration,
-                        "Chain tip is stale"
+                        "Chain tip is stale",
+                        tip.number = rpc_details.chain_tip,
+                        tip.stale_duration_secs = stale_duration
                     );
                     return ServiceStatus::unhealthy(
                         self.name(),
@@ -153,7 +152,7 @@ impl Service for RpcService {
                 ServiceStatus::healthy(self.name(), ServiceDetails::RpcStatus(rpc_details))
             },
             Err(e) => {
-                debug!(target: COMPONENT, error = %e, "RPC status check failed");
+                debug!(&e, target: COMPONENT, "RPC status check failed");
                 ServiceStatus::error(self.name(), e)
             },
         }

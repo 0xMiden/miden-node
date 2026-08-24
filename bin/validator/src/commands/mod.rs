@@ -15,6 +15,7 @@ use clap::Parser;
 use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
+use miden_node_utils::tracing::info;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -292,21 +293,20 @@ impl ValidatorCommand {
             } => {
                 let address = listen;
                 let operator_key = storage_key.load()?;
-                tracing::info!(
+                info!(
                     target: miden_validator::LOG_TARGET,
-                    {
-                        service.name = "miden-validator",
-                        service.version = env!("CARGO_PKG_VERSION"),
-                        validator.listen = %address,
-                        validator.admin_listen = admin_listen.map_or_else(
-                            || "disabled".to_owned(),
-                            |address| address.to_string(),
-                        ),
-                        data.directory = %data_directory.display(),
-                        validator.signer = if signing_key.signing_key_kms_id.is_some() { "kms" } else { "local" },
-                        sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
-                    },
                     "Starting validator",
+                    service.name = "miden-validator",
+                    service.version = env!("CARGO_PKG_VERSION"),
+                    validator.listen = address.to_string(),
+                    validator.admin_listen = admin_listen.map_or_else(
+                        || "disabled".to_owned(),
+                        |address| address.to_string(),
+                    ),
+                    data.directory = data_directory.as_path(),
+                    validator.signer =
+                        if signing_key.signing_key_kms_id.is_some() { "kms" } else { "local" },
+                    db.sqlite.connection_pool_size = sqlite_connection_pool_size.get()
                 );
 
                 let decrypter = encryption_key.into_decrypter().await?;

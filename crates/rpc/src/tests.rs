@@ -1110,7 +1110,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore, TestServerG
             }
             .serve(shutdown)
             .await
-            .expect("Failed to start serving store");
+            .expect("Failed to start serving RPC");
         }
     });
     let url = rpc_addr.to_string();

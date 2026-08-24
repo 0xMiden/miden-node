@@ -295,7 +295,7 @@ impl StateView {
                             account_id,
                             slot_name.clone(),
                             *scoped_block,
-                            &keys,
+                            keys,
                         )
                         .ok_or_else(|| DatabaseError::StorageRootNotFound {
                             account_id,

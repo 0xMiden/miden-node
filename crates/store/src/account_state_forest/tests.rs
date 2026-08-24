@@ -900,8 +900,12 @@ fn storage_map_open_returns_partial_map() {
     forest.update_account(block_num, &patch);
 
     let keys: Vec<StorageMapKey> = (0..20u32).map(StorageMapKey::from_index).collect();
-    let result =
-        forest.get_storage_map_details_for_keys(account_id, slot_name.clone(), block_num, &keys);
+    let result = forest.get_storage_map_details_for_keys(
+        account_id,
+        slot_name.clone(),
+        block_num,
+        keys.clone(),
+    );
 
     let details = result.expect("Should return Some").expect("Should not error");
     assert_matches!(details.entries, StorageMapEntries::PartialMap { map_keys, partial_smt } => {

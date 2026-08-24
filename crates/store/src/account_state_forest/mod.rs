@@ -630,7 +630,7 @@ impl<B: BackendReader> AccountStateForest<B> {
         account_id: AccountId,
         slot_name: StorageSlotName,
         block_num: BlockNumber,
-        raw_keys: &[StorageMapKey],
+        raw_keys: Vec<StorageMapKey>,
     ) -> Option<Result<AccountStorageMapDetails, MerkleError>> {
         let lineage = Self::storage_lineage_id(account_id, &slot_name);
         let tree = self.get_tree_id(lineage, block_num)?;
@@ -645,7 +645,7 @@ impl<B: BackendReader> AccountStateForest<B> {
         }));
 
         Some(proofs.and_then(|proofs| {
-            AccountStorageMapDetails::from_proofs(slot_name, map_root, raw_keys.to_vec(), proofs)
+            AccountStorageMapDetails::from_proofs(slot_name, map_root, raw_keys, proofs)
         }))
     }
 

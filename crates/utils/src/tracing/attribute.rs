@@ -20,33 +20,18 @@ const BOOLEAN_FIELD_NAMES: &[&str] = &[
 ];
 
 const NUMBER_FIELD_NAMES: &[&str] = &[
-    "account.assets.count",
-    "account.crashes.count",
     "account.id.length",
-    "account.ids.count",
     "account.index",
-    "account.storage.map.entries.count",
     "asset.amount",
-    "batch.account_updates.count",
     "batch.expiration_height",
     "batch.expires_at",
-    "batch.input_notes.count",
-    "batch.output_notes.count",
     "batch.reference_block.number",
     "batch.size",
-    "block.batches.count",
-    "block.batches.output_notes.count",
-    "block.erased_note_proofs.count",
-    "block.erased_notes.count",
     "block.from",
-    "block.nullifiers.count",
     "block.number",
-    "block.output_notes.count",
     "block.protocol.version",
     "block.size",
     "block.timestamp",
-    "block.transactions.count",
-    "block.updated_accounts.count",
     "block_range.from",
     "block_range.to",
     "counter.failures.consecutive",
@@ -73,14 +58,7 @@ const NUMBER_FIELD_NAMES: &[&str] = &[
     "mempool.output_notes",
     "mempool.transactions.unbatched",
     "mempool.transactions.uncommitted",
-    "migration.count",
-    "note.tags.count",
-    "notes.count",
-    "notes.deferred.count",
-    "notes.failed.count",
-    "notes.oversized.count",
-    "notes.rejected.count",
-    "nullifiers.count",
+    "note.tag",
     "ntx_builder.max_cycles",
     "ntx_builder.tx_expiration_delta",
     "port",
@@ -89,7 +67,6 @@ const NUMBER_FIELD_NAMES: &[&str] = &[
     "pow.target",
     "pow.target.leading_zero_bits",
     "prefix_len",
-    "prefixes.count",
     "proof_size",
     "prover.capacity",
     "prover.port",
@@ -112,19 +89,11 @@ const NUMBER_FIELD_NAMES: &[&str] = &[
     "tip.stale_duration_secs",
     "transaction.expiration_delta",
     "transaction.expires_at",
-    "transaction.input_notes.count",
-    "transaction.output_notes.count",
     "transaction.reference_block.number",
     "transaction.submitted_at",
-    "transactions.count",
-    "transactions.input_notes.count",
-    "transactions.output_notes.count",
-    "transactions.unauthenticated_notes.count",
-    "validators.count",
     "worker.status.raw",
     "workers.active",
     "workers.capacity",
-    "workers.count",
 ];
 
 const STRING_FIELD_NAMES: &[&str] = &[
@@ -175,15 +144,16 @@ const STRING_FIELD_NAMES: &[&str] = &[
 
 /// Converts a value into its canonical tracing attribute representation.
 ///
-/// Implementations decide the allowed field names, the attribute's primitive type, and its
+/// Implementations decide the allowed scalar field names, the attribute's primitive type, and its
 /// formatting, allowing tracing macros to use one name and representation consistently at every
-/// recording site.
+/// recording site. Collection implementations derive their field names by appending `s` to these
+/// scalar names.
 pub trait RecordAttribute {
-    /// Field names which may record this value as a scalar attribute.
+    /// Scalar field names associated with this value's type.
     const FIELD_NAMES: &'static [&'static str];
 
-    /// Field names which may record a collection of this value.
-    const LIST_FIELD_NAMES: &'static [&'static str] = &[];
+    /// Whether the final component of each field name must have an `s` suffix.
+    const PLURALIZE_FIELD_NAMES: bool = false;
 
     /// Returns the value that is passed to `tracing`.
     fn record_attribute(&self) -> impl Value + '_;
@@ -194,15 +164,37 @@ pub trait RecordAttribute {
 /// This is public because it is referenced by the tracing proc macros. Callers should use the
 /// macros rather than invoking it directly.
 #[doc(hidden)]
-pub const fn field_name_allowed(field_names: &[&str], field_name: &str) -> bool {
+pub const fn field_name_allowed(field_names: &[&str], field_name: &str, pluralize: bool) -> bool {
     let mut index = 0;
     while index < field_names.len() {
-        if str_eq(field_names[index], field_name) {
+        let allowed = if pluralize {
+            str_eq_with_s_suffix(field_names[index], field_name)
+        } else {
+            str_eq(field_names[index], field_name)
+        };
+        if allowed {
             return true;
         }
         index += 1;
     }
     false
+}
+
+const fn str_eq_with_s_suffix(singular: &str, plural: &str) -> bool {
+    let singular = singular.as_bytes();
+    let plural = plural.as_bytes();
+    if plural.len() != singular.len() + 1 || plural[singular.len()] != b's' {
+        return false;
+    }
+
+    let mut index = 0;
+    while index < singular.len() {
+        if singular[index] != plural[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
 }
 
 const fn str_eq(left: &str, right: &str) -> bool {
@@ -232,11 +224,10 @@ pub fn record_attribute<T: RecordAttribute + ?Sized>(value: &T) -> impl Value + 
 }
 
 macro_rules! impl_scalar_attribute {
-    ($field_names:expr, $list_field_names:expr; $($ty:ty),* $(,)?) => {
+    ($field_names:expr; $($ty:ty),* $(,)?) => {
         $(
             impl RecordAttribute for $ty {
                 const FIELD_NAMES: &'static [&'static str] = $field_names;
-                const LIST_FIELD_NAMES: &'static [&'static str] = $list_field_names;
 
                 fn record_attribute(&self) -> impl Value + '_ {
                     *self
@@ -246,10 +237,9 @@ macro_rules! impl_scalar_attribute {
     };
 }
 
-impl_scalar_attribute!(BOOLEAN_FIELD_NAMES, &[]; bool);
+impl_scalar_attribute!(BOOLEAN_FIELD_NAMES; bool);
 impl_scalar_attribute!(
-    NUMBER_FIELD_NAMES,
-    &[];
+    NUMBER_FIELD_NAMES;
     f32,
     f64,
     i8,
@@ -264,7 +254,7 @@ impl_scalar_attribute!(
     u128,
     usize,
 );
-impl_scalar_attribute!(NUMBER_FIELD_NAMES, &["note.tags", "prefixes"]; u32);
+impl_scalar_attribute!(NUMBER_FIELD_NAMES; u32);
 
 impl RecordAttribute for str {
     const FIELD_NAMES: &'static [&'static str] = STRING_FIELD_NAMES;
@@ -284,7 +274,7 @@ impl RecordAttribute for String {
 
 impl<T: RecordAttribute + ?Sized> RecordAttribute for &T {
     const FIELD_NAMES: &'static [&'static str] = T::FIELD_NAMES;
-    const LIST_FIELD_NAMES: &'static [&'static str] = T::LIST_FIELD_NAMES;
+    const PLURALIZE_FIELD_NAMES: bool = T::PLURALIZE_FIELD_NAMES;
 
     fn record_attribute(&self) -> impl Value + '_ {
         (*self).record_attribute()
@@ -293,7 +283,7 @@ impl<T: RecordAttribute + ?Sized> RecordAttribute for &T {
 
 impl<T: RecordAttribute> RecordAttribute for Option<T> {
     const FIELD_NAMES: &'static [&'static str] = T::FIELD_NAMES;
-    const LIST_FIELD_NAMES: &'static [&'static str] = T::LIST_FIELD_NAMES;
+    const PLURALIZE_FIELD_NAMES: bool = T::PLURALIZE_FIELD_NAMES;
 
     fn record_attribute(&self) -> impl Value + '_ {
         self.as_ref().map(RecordAttribute::record_attribute)
@@ -342,10 +332,9 @@ impl RecordAttribute for BlockNumber {
 }
 
 macro_rules! impl_display_attribute {
-    ($ty:ty, $field_names:expr, $list_field_names:expr $(,)?) => {
+    ($ty:ty, $field_names:expr $(,)?) => {
         impl RecordAttribute for $ty {
             const FIELD_NAMES: &'static [&'static str] = $field_names;
-            const LIST_FIELD_NAMES: &'static [&'static str] = $list_field_names;
 
             fn record_attribute(&self) -> impl Value + '_ {
                 tracing::field::display(self)
@@ -364,19 +353,14 @@ impl_display_attribute!(
         "wallet.account.id.new",
         "wallet.account.id.old",
     ],
-    &["account.ids"],
 );
-impl_display_attribute!(AccountIdPrefix, &["account.id.network_prefix"], &[]);
-impl_display_attribute!(StorageMapKey, &["account.storage.map.key"], &[]);
-impl_display_attribute!(StorageSlotName, &["account.storage.slot"], &[]);
-impl_display_attribute!(BatchId, &["batch.id"], &["block.batch.ids"]);
-impl_display_attribute!(NoteId, &["note.id"], &["notes.ids"]);
-impl_display_attribute!(Nullifier, &["note.nullifier"], &["nullifiers"]);
-impl_display_attribute!(
-    TransactionId,
-    &["transaction.id"],
-    &["block.transactions.ids", "transactions.ids"],
-);
+impl_display_attribute!(AccountIdPrefix, &["account.id.network_prefix"]);
+impl_display_attribute!(StorageMapKey, &["account.storage.map.key"]);
+impl_display_attribute!(StorageSlotName, &["account.storage.slot"]);
+impl_display_attribute!(BatchId, &["batch.id", "block.batch.id"]);
+impl_display_attribute!(NoteId, &["note.id"]);
+impl_display_attribute!(Nullifier, &["note.nullifier"]);
+impl_display_attribute!(TransactionId, &["block.transaction.id", "transaction.id"]);
 impl_display_attribute!(
     Word,
     &[
@@ -397,7 +381,6 @@ impl_display_attribute!(
         "script.root",
         "transaction.reference_block.commitment",
     ],
-    &[],
 );
 
 /// Formats a slice as one string-valued tracing attribute.
@@ -422,7 +405,8 @@ impl<T: Display> Display for AttributeList<'_, T> {
 }
 
 impl<T: Display + RecordAttribute> RecordAttribute for [T] {
-    const FIELD_NAMES: &'static [&'static str] = T::LIST_FIELD_NAMES;
+    const FIELD_NAMES: &'static [&'static str] = T::FIELD_NAMES;
+    const PLURALIZE_FIELD_NAMES: bool = true;
 
     fn record_attribute(&self) -> impl Value + '_ {
         tracing::field::display(AttributeList(self))
@@ -430,7 +414,8 @@ impl<T: Display + RecordAttribute> RecordAttribute for [T] {
 }
 
 impl<T: Display + RecordAttribute, const N: usize> RecordAttribute for [T; N] {
-    const FIELD_NAMES: &'static [&'static str] = T::LIST_FIELD_NAMES;
+    const FIELD_NAMES: &'static [&'static str] = T::FIELD_NAMES;
+    const PLURALIZE_FIELD_NAMES: bool = true;
 
     fn record_attribute(&self) -> impl Value + '_ {
         self.as_slice().record_attribute()
@@ -438,7 +423,8 @@ impl<T: Display + RecordAttribute, const N: usize> RecordAttribute for [T; N] {
 }
 
 impl<T: Display + RecordAttribute> RecordAttribute for Vec<T> {
-    const FIELD_NAMES: &'static [&'static str] = T::LIST_FIELD_NAMES;
+    const FIELD_NAMES: &'static [&'static str] = T::FIELD_NAMES;
+    const PLURALIZE_FIELD_NAMES: bool = true;
 
     fn record_attribute(&self) -> impl Value + '_ {
         self.as_slice().record_attribute()
@@ -470,9 +456,25 @@ mod tests {
 
     #[test]
     fn field_names_are_specific_to_the_attribute_type() {
-        assert!(field_name_allowed(AccountId::FIELD_NAMES, "account.id"));
-        assert!(!field_name_allowed(AccountId::FIELD_NAMES, "block.number"));
-        assert!(field_name_allowed(<[AccountId]>::FIELD_NAMES, "account.ids"));
-        assert!(!field_name_allowed(<[AccountId]>::FIELD_NAMES, "account.id"));
+        assert!(field_name_allowed(
+            AccountId::FIELD_NAMES,
+            "account.id",
+            AccountId::PLURALIZE_FIELD_NAMES,
+        ));
+        assert!(!field_name_allowed(
+            AccountId::FIELD_NAMES,
+            "account.ids",
+            AccountId::PLURALIZE_FIELD_NAMES,
+        ));
+        assert!(field_name_allowed(
+            <[AccountId]>::FIELD_NAMES,
+            "account.ids",
+            <[AccountId]>::PLURALIZE_FIELD_NAMES,
+        ));
+        assert!(!field_name_allowed(
+            <[AccountId]>::FIELD_NAMES,
+            "account.id",
+            <[AccountId]>::PLURALIZE_FIELD_NAMES,
+        ));
     }
 }

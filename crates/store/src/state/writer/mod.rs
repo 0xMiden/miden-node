@@ -91,6 +91,9 @@ impl Future for WriterTask {
 pub(super) struct WriteRequest {
     signed_block: SignedBlock,
     result_tx: oneshot::Sender<Result<(), ApplyBlockError>>,
+    /// Span of the `apply_block` caller. The worker runs the write under it, keeping the write path
+    /// in the caller's trace across the channel hop.
+    span: tracing::Span,
 }
 
 impl BlockWriter {
@@ -130,7 +133,11 @@ impl BlockWriter {
     pub async fn apply_block(&mut self, signed_block: SignedBlock) -> Result<(), ApplyBlockError> {
         let (result_tx, result_rx) = oneshot::channel();
         self.write_tx
-            .send(WriteRequest { signed_block, result_tx })
+            .send(WriteRequest {
+                signed_block,
+                result_tx,
+                span: tracing::Span::current(),
+            })
             .await
             .map_err(|e| ApplyBlockError::WriterTaskSendFailed(e.as_report()))?;
         result_rx.await?

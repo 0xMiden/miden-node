@@ -14,6 +14,9 @@ version.workspace      = true
 [lints]
 workspace = true
 
+[features]
+tracing-forest = ["miden-node-utils/tracing-forest"]
+
 [lib]
 doctest = false
 

@@ -1,5 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr};
-use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -22,7 +21,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_store::state::State;
-use miden_node_utils::clap::GrpcOptionsExternal;
+use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
@@ -45,7 +44,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
@@ -105,7 +104,13 @@ impl TestStore {
 
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
-        let (genesis_state, _) = config.into_state().unwrap();
+        let validator_key =
+            miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey::read_from_bytes(&[7; 32])
+                .expect("test signing key should decode")
+                .public_key();
+        let validator_keys =
+            miden_protocol::block::ValidatorKeys::new(vec![validator_key]).unwrap();
+        let (genesis_state, _) = config.into_state(validator_keys).unwrap();
         let genesis_block =
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
@@ -235,81 +240,6 @@ async fn rpc_server_accepts_requests_without_accept_header() {
 
     // Assert that the server did not reject our request.
     assert!(response.is_ok());
-}
-
-#[tokio::test]
-async fn rpc_rate_limits_per_ip() {
-    let grpc_options = GrpcOptionsExternal {
-        burst_size: NonZeroU32::new(8).unwrap(),
-        replenish_n_per_second_per_ip: NonZeroU64::new(1).unwrap(),
-        ..GrpcOptionsExternal::test()
-    };
-    let (_, rpc_addr, _store) = start_rpc_with_options(grpc_options).await;
-
-    let url = rpc_addr.to_string();
-    let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let mut rpc_client = connect_rpc(url.clone(), Some(IpAddr::V4(Ipv4Addr::LOCALHOST))).await;
-
-    let mut results = Vec::new();
-    let mut last_error = None;
-    for _ in 0..256 {
-        let result = send_request(&mut rpc_client).await;
-        if let Err(err) = &result {
-            last_error = Some(err.code());
-        }
-        results.push(result);
-    }
-
-    assert!(results.iter().any(std::result::Result::is_ok));
-    assert!(
-        last_error.is_some_and(|code| code == tonic::Code::ResourceExhausted),
-        "expected rate limit error but got: {last_error:?}"
-    );
-}
-
-#[tokio::test]
-async fn rpc_connection_timeout_grace_does_not_panic() {
-    let tonic_timeout_panics = Arc::new(AtomicUsize::new(0));
-    let tonic_timeout_panics_hook = Arc::clone(&tonic_timeout_panics);
-    let default_panic_hook = std::panic::take_hook();
-
-    std::panic::set_hook(Box::new(move |info| {
-        let panic_payload = info
-            .payload()
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str));
-
-        if panic_payload
-            .is_some_and(|payload| payload.contains("async fn resumed after completion"))
-        {
-            tonic_timeout_panics_hook.fetch_add(1, Ordering::SeqCst);
-        }
-    }));
-
-    let grpc_options = GrpcOptionsExternal {
-        max_connection_age: Duration::from_millis(20),
-        max_connection_age_grace: Duration::from_millis(20),
-        ..GrpcOptionsExternal::test()
-    };
-    let (mut rpc_client, rpc_addr, _store) = start_rpc_with_options(grpc_options).await;
-
-    let initial_response = send_request(&mut rpc_client).await;
-    tokio::time::sleep(Duration::from_millis(150)).await;
-
-    let url = Url::parse(&format!("http://{rpc_addr}")).unwrap();
-    let mut fresh_rpc_client = connect_rpc(url, None).await;
-    let fresh_response = send_request(&mut fresh_rpc_client).await;
-
-    std::panic::set_hook(default_panic_hook);
-    initial_response.expect("initial RPC request should succeed");
-    fresh_response
-        .expect("RPC server should keep serving fresh connections after timing out an old one");
-    assert_eq!(
-        tonic_timeout_panics.load(Ordering::SeqCst),
-        0,
-        "tonic connection timeout should not panic after max_connection_age"
-    );
 }
 
 #[tokio::test]
@@ -1079,13 +1009,10 @@ async fn send_request(
     rpc_client.get_block_header_by_number(request).await
 }
 
-async fn connect_rpc(url: Url, local_address: Option<IpAddr>) -> RpcClient {
-    let mut endpoint = tonic::transport::Endpoint::from_shared(url.to_string())
+async fn connect_rpc(url: Url) -> RpcClient {
+    let endpoint = tonic::transport::Endpoint::from_shared(url.to_string())
         .expect("Url type always results in valid endpoint")
         .timeout(REQUEST_TIMEOUT);
-    if let Some(local_address) = local_address {
-        endpoint = endpoint.local_address(Some(local_address));
-    }
     let channel = endpoint.connect().await.expect("Failed to build channel");
     let interceptor = Interceptor::default();
     RpcClient::with_interceptor(channel, interceptor)
@@ -1094,12 +1021,7 @@ async fn connect_rpc(url: Url, local_address: Option<IpAddr>) -> RpcClient {
 /// Binds a socket on an available port, runs the RPC server on it, and returns a client to talk to
 /// the server, along with the socket address.
 async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore) {
-    start_rpc_with_options(GrpcOptionsExternal::test()).await
-}
-
-async fn start_rpc_with_options(
-    grpc_options: GrpcOptionsExternal,
-) -> (RpcClient, std::net::SocketAddr, TestStore) {
+    let grpc_options = GrpcOptions::test();
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
@@ -1142,7 +1064,7 @@ async fn start_rpc_with_options(
     let url = rpc_addr.to_string();
     // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let rpc_client = connect_rpc(url, None).await;
+    let rpc_client = connect_rpc(url).await;
 
     (rpc_client, rpc_addr, store)
 }

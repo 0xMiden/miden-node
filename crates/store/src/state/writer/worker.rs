@@ -19,6 +19,7 @@ use miden_protocol::utils::serde::Serializable;
 use rayon::ThreadPool;
 use thread_priority::{ThreadPriority, set_current_thread_priority};
 use tokio::sync::{mpsc, watch};
+use tracing::Instrument;
 
 use super::WriteRequest;
 use crate::account_state_forest::{
@@ -154,7 +155,7 @@ impl WriteWorker {
                     None => break,
                 },
             };
-            let result = self.write_block(req.signed_block).await;
+            let result = self.write_block(req.signed_block).instrument(req.span).await;
             let _ = req.result_tx.send(result);
         }
     }

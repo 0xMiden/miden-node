@@ -30,8 +30,9 @@ thiserror       = { workspace = true }
 tracing         = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
-tokio    = { features = ["macros", "rt-multi-thread"], workspace = true }
+assert_matches = { workspace = true }
+tempfile       = { workspace = true }
+tokio          = { features = ["macros", "rt-multi-thread"], workspace = true }
 
 [lib]
 doctest = false

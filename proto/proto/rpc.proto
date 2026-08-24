@@ -210,6 +210,9 @@ message MempoolStats {
 
     // Number of proven batches waiting for block inclusion.
     uint64 proven_batches = 3;
+
+    // Number of transactions that have not yet been committed.
+    uint64 uncommitted_transactions = 4;
 }
 
 // GET BLOCK HEADER BY NUMBER

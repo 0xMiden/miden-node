@@ -4,7 +4,7 @@ use anyhow::Context;
 use miden_node_proto::server::validator_api;
 use miden_node_proto_build::validator_api_descriptor;
 use miden_node_store::BlockStore;
-use miden_node_utils::clap::GrpcOptionsInternal;
+use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
@@ -40,7 +40,7 @@ pub struct ValidatorServer {
     /// gRPC server options for internal services (timeouts, connection caps).
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
-    pub grpc_options: GrpcOptionsInternal,
+    pub grpc_options: GrpcOptions,
 
     /// The signer used to sign blocks.
     pub signer: ValidatorSigner,

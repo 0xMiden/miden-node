@@ -28,6 +28,16 @@ reach the sequencer.
 The network monitor observes the deployment from the outside. It can check RPC freshness, validator status, prover
 status, explorer and faucet availability, note transport, and end-to-end network transaction behavior.
 
+## Rate Limiting
+
+The node does not rate limit requests. RPC deployments scale horizontally behind a load balancer, so per-node limits
+would apply per instance rather than per deployment and would not provide meaningful protection. Impose rate limits at
+the infrastructure layer instead on the load balancer or reverse proxy fronting the public entry points.
+
+The node still protects itself against malformed or oversized requests through per-request limits: request timeouts,
+capped message sizes, and per-method parameter limits (see the RPC guide's Errors and Limits page). Slow subscription
+consumers are disconnected and temporarily banned by the node itself.
+
 ## Components and Roles
 
 ### Sequencer

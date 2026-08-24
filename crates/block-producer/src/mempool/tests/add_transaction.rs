@@ -165,11 +165,8 @@ mod authentication_height {
         uut.add_transaction(tx).unwrap_err();
     }
 
-    /// Ensures that we guard against authentication height from lying about imaginary blocks beyond
-    /// the chain tip. Since the authentication height is determined by the store, and this is
-    /// considered internal, we panic as this is completely abnormal.
+    /// Ensures that we guard against authentication heights beyond the chain tip.
     #[test]
-    #[should_panic]
     fn inputs_from_beyond_the_chain_tip_are_rejected() {
         let mut uut = setup();
 
@@ -177,13 +174,13 @@ mod authentication_height {
         let tx = AuthenticatedTransaction::from_inner(tx)
             .with_authentication_height(uut.chain_tip().child());
         let tx = Arc::new(tx);
-        let _ = uut.add_transaction(tx);
+        let result = uut.add_transaction(tx);
+        assert_matches!(result, Err(MempoolSubmissionError::FutureInputs { .. }));
     }
 
-    /// We expect transactions to be accepted in the `oldest-1..` range. We already test `>
-    /// chain_tip` above. The `-1` is because we only require that there is _no gap_ between the
-    /// authentication height and the local state, which would mean we are unable to authenticate
-    /// against those blocks.
+    /// We expect transactions to be accepted in the `oldest-1..=chain_tip` range. The `-1` is
+    /// because we only require that there is _no gap_ between the authentication height and the
+    /// local state, which would mean we are unable to authenticate against those blocks.
     #[test]
     fn inputs_from_within_overlap_are_accepted() {
         let mut uut = setup();

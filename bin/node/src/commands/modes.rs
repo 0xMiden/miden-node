@@ -15,7 +15,7 @@ use miden_node_proto::clients::{
 };
 use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
 use miden_node_store::{BlockWriter, ProofWriter, State, WriterTask};
-use miden_node_utils::clap::{GrpcOptionsInternal, duration_to_human_readable_string};
+use miden_node_utils::clap::duration_to_human_readable_string;
 use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
@@ -96,7 +96,7 @@ impl SequencerCommand {
             state,
             mode: RpcMode::sequencer(block_producer.clone(), validator_clients),
             ntx_builder: Some(ntx_builder_client),
-            grpc_options: runtime.external_grpc_options,
+            grpc_options: runtime.grpc_options,
             network_tx_auth,
         };
         let mut tasks = Tasks::new();
@@ -131,7 +131,7 @@ impl SequencerCommand {
             let sequencer_internal = SequencerInternal {
                 listener: bind_rpc(internal_listen).await?,
                 block_producer,
-                grpc_options: GrpcOptionsInternal::from(runtime.external_grpc_options),
+                grpc_options: runtime.grpc_options,
             };
             tasks.spawn("sequencer internal server", sequencer_internal.serve(shutdown.clone()));
         }
@@ -306,7 +306,7 @@ impl FullNodeCommand {
                 proof_writer,
             ),
             ntx_builder: None,
-            grpc_options: runtime.external_grpc_options,
+            grpc_options: runtime.grpc_options,
             network_tx_auth,
         };
         let mut tasks = Tasks::new();

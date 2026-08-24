@@ -46,6 +46,11 @@ pub(crate) fn build_tx_args(expiration_delta: NonZeroU16) -> TransactionArgs {
     TransactionArgs::default().with_tx_script_and_args(script.into(), script.tx_script_args())
 }
 
+/// Maximum number of `FEE_SPONSORSHIP` notes attached to a single feature note. A feature note with
+/// more pending sponsorships than this keeps a subset of this size; the rest stay pending for a
+/// later transaction.
+const MAX_SPONSORSHIPS_PER_NOTE: usize = 3;
+
 // ACTOR REQUESTS
 // ================================================================================================
 
@@ -107,9 +112,6 @@ pub struct State {
 pub struct ActorConfig {
     /// Maximum number of notes per transaction. Sponsorship notes count against this budget.
     pub max_notes_per_tx: NonZeroUsize,
-    /// Maximum number of `FEE_SPONSORSHIP` notes attached to a single feature note. When a feature
-    /// note has more pending sponsorships, a random subset of this size is selected.
-    pub max_sponsorships_per_note: NonZeroUsize,
     /// Maximum number of note execution attempts before dropping a note.
     pub max_note_attempts: usize,
     /// Duration after which an idle actor will deactivate.
@@ -185,7 +187,6 @@ impl AccountActorContext {
             },
             config: ActorConfig {
                 max_notes_per_tx: NonZeroUsize::new(1).unwrap(),
-                max_sponsorships_per_note: NonZeroUsize::new(3).unwrap(),
                 max_note_attempts: 1,
                 idle_timeout: Duration::from_mins(1),
                 max_cycles: 1 << 18,
@@ -566,7 +567,7 @@ impl AccountActor {
                 .context("failed to query DB for pending sponsorships")?
         };
         // A group must leave room for its feature note within the per-tx note budget.
-        let max_sponsorships = self.config.max_sponsorships_per_note.get().min(max_notes - 1);
+        let max_sponsorships = MAX_SPONSORSHIPS_PER_NOTE.min(max_notes - 1);
 
         let mut selected: Vec<NoteGroup> = Vec::new();
         let mut selected_notes = 0_usize;
@@ -1282,7 +1283,6 @@ mod tests {
 
         let mut ctx = AccountActorContext::test(&db);
         ctx.config.max_notes_per_tx = NonZeroUsize::new(20).unwrap();
-        ctx.config.max_sponsorships_per_note = NonZeroUsize::new(2).unwrap();
         let actor = AccountActor::new(account_id, &ctx);
         let chain_state = actor.state.chain.get_cloned();
 
@@ -1290,7 +1290,7 @@ mod tests {
         let candidate = candidate.expect("the group is viable");
 
         assert_eq!(candidate.notes.len(), 1);
-        assert_eq!(candidate.notes[0].sponsorships.len(), 2);
+        assert_eq!(candidate.notes[0].sponsorships.len(), MAX_SPONSORSHIPS_PER_NOTE);
     }
 
     /// Groups are packed atomically against the per-tx note budget: a group that does not fit is

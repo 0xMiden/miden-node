@@ -25,13 +25,11 @@ const ENV_SCRIPT_CACHE_SIZE: &str = "MIDEN_NODE_NTX_BUILDER_SCRIPT_CACHE_SIZE";
 const ENV_MAX_CYCLES: &str = "MIDEN_NODE_NTX_BUILDER_MAX_CYCLES";
 const ENV_TX_EXPIRATION_DELTA: &str = "MIDEN_NODE_NTX_BUILDER_TX_EXPIRATION_DELTA";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_NODE_NTX_BUILDER_SQLITE_CONNECTION_POOL_SIZE";
-const ENV_MAX_SPONSORSHIPS_PER_NOTE: &str = "MIDEN_NODE_NTX_BUILDER_MAX_SPONSORSHIPS_PER_NOTE";
 
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
 const DEFAULT_MAX_CYCLES: u32 = 1 << 18;
 const DEFAULT_TX_EXPIRATION_DELTA: NonZeroU16 = NonZeroU16::new(30).unwrap();
-const DEFAULT_MAX_SPONSORSHIPS_PER_NOTE: NonZeroUsize = NonZeroUsize::new(3).unwrap();
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -121,17 +119,6 @@ pub enum NtxBuilderCommand {
             value_name = "NUM"
         )]
         sqlite_connection_pool_size: NonZeroUsize,
-
-        /// Maximum number of `FEE_SPONSORSHIP` notes attached to a single network note.
-        ///
-        /// When a note has more pending sponsorships, a random subset of this size is selected.
-        #[arg(
-            long = "max-sponsorships-per-note",
-            env = ENV_MAX_SPONSORSHIPS_PER_NOTE,
-            default_value_t = DEFAULT_MAX_SPONSORSHIPS_PER_NOTE,
-            value_name = "NUM"
-        )]
-        max_sponsorships_per_note: NonZeroUsize,
 
         /// Directory for the ntx-builder's persistent database.
         #[arg(long = "data-directory", env = ENV_DATA_DIRECTORY, value_name = "DIR")]
@@ -236,7 +223,6 @@ impl NtxBuilderCommand {
             max_tx_cycles,
             tx_expiration_delta,
             sqlite_connection_pool_size,
-            max_sponsorships_per_note,
             data_directory,
         } = self
         else {
@@ -256,7 +242,6 @@ impl NtxBuilderCommand {
                 ntx_builder.idle_timeout = %humantime::Duration::from(idle_timeout),
                 ntx_builder.max_cycles = max_tx_cycles,
                 ntx_builder.tx_expiration_delta = tx_expiration_delta.get(),
-                ntx_builder.max_sponsorships_per_note = max_sponsorships_per_note.get(),
                 sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
             },
             "Starting NTX builder",
@@ -275,7 +260,6 @@ impl NtxBuilderCommand {
                 .with_max_account_crashes(max_account_crashes)
                 .with_max_cycles(max_tx_cycles)
                 .with_tx_expiration_delta(tx_expiration_delta)
-                .with_max_sponsorships_per_note(max_sponsorships_per_note)
                 .with_sqlite_connection_pool_size(sqlite_connection_pool_size);
         let config = match rpc_auth_header_value {
             Some(value) => config.with_rpc_auth_header(value),

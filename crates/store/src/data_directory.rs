@@ -1,7 +1,7 @@
 use std::ops::Not;
 use std::path::PathBuf;
 
-use miden_node_utils::tracing::RecordAttribute;
+use miden_node_tracing::RecordAttribute;
 
 /// Represents the store's data-directory and its content paths.
 ///
@@ -37,7 +37,7 @@ impl DataDirectory {
 impl RecordAttribute for DataDirectory {
     const FIELD_NAMES: &'static [&'static str] = &["data.directory", "path"];
 
-    fn record_attribute(&self) -> impl tracing::Value + '_ {
-        tracing::field::display(self.display())
+    fn record_attribute(&self) -> impl miden_node_tracing::Value + '_ {
+        miden_node_tracing::field::display(self.display())
     }
 }

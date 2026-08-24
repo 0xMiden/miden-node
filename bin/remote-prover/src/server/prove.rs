@@ -1,7 +1,6 @@
 use miden_node_proto::generated as grpc;
-use miden_node_utils::ErrorReport;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{ErrorReport, miden_instrument, miden_span_record};
 
 use crate::COMPONENT;
 use crate::server::proof_kind::ProofKind;

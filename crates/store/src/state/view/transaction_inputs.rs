@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::ops::ControlFlow;
 
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::note::Nullifier;

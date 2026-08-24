@@ -1,6 +1,6 @@
 use miden_node_proto::decode::read_root;
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
+use miden_node_tracing::{debug, miden_instrument, miden_span_record};
 use miden_protocol::note::NoteScript;
 use tonic::Status;
 

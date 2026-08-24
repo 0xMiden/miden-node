@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{miden_instrument, miden_span_record};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 
 use crate::COMPONENT;
 use crate::state::State;

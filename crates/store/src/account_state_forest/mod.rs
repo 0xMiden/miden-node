@@ -10,9 +10,8 @@ use miden_node_proto::domain::account::{
     AccountVaultDetails,
     StorageMapEntries,
 };
-use miden_node_utils::ErrorReport;
+use miden_node_tracing::{ErrorReport, miden_instrument, trace};
 use miden_node_utils::lru_cache::LruCache;
-use miden_node_utils::tracing::{miden_instrument, trace};
 use miden_protocol::account::{
     AccountId,
     AccountPatch,
@@ -867,7 +866,7 @@ impl<B: Backend> AccountStateForest<B> {
         self.apply_precomputed_update(block_num, update)?;
 
         let number_of_pruned_blocks = self.prune(block_num);
-        tracing::Span::current().record("num_pruned", number_of_pruned_blocks);
+        miden_node_tracing::Span::current().record("num_pruned", number_of_pruned_blocks);
 
         Ok(())
     }

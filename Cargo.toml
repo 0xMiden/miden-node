@@ -15,6 +15,7 @@ members = [
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
+  "crates/tracing",
   "crates/tracing-macro",
   "crates/utils",
   "proto",
@@ -51,6 +52,7 @@ miden-node-proto-build      = { path = "proto", version = "0.16.0-rc.2" }
 miden-node-rpc              = { path = "crates/rpc", version = "0.16.0-rc.2" }
 miden-node-store            = { path = "crates/store", version = "0.16.0-rc.2" }
 miden-node-test-macro       = { path = "crates/test-macro" }
+miden-node-tracing          = { path = "crates/tracing", version = "0.16.0-rc.2" }
 miden-node-tracing-macro    = { path = "crates/tracing-macro", version = "0.16.0-rc.2" }
 miden-node-utils            = { path = "crates/utils", version = "0.16.0-rc.2" }
 
@@ -131,6 +133,7 @@ tonic-reflection   = { version = "0.14" }
 tonic-web          = { version = "0.14" }
 tower              = { version = "0.5" }
 tower-http         = { features = ["cors", "trace"], version = "0.6" }
+tower_governor     = { version = "0.8" }
 tracing            = { version = "0.1" }
 tracing-subscriber = { features = ["env-filter", "fmt", "json"], version = "0.3" }
 trybuild           = { version = "1.0" }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use miden_node_db::DatabaseError;
-use miden_node_utils::tracing::{info, miden_instrument};
+use miden_node_tracing::{info, miden_instrument};
 
 use crate::COMPONENT;
 

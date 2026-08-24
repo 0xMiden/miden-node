@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use miden_node_utils::tracing::{debug, miden_instrument};
+use miden_node_tracing::{debug, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountId,
@@ -135,7 +135,7 @@ impl BlockLifecycle {
 
 /// Returns whether any subscriber is interested in user-facing lifecycle events.
 pub(super) fn lifecycle_events_enabled() -> bool {
-    tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG)
+    miden_node_tracing::enabled!(target: LOG_TARGET, miden_node_tracing::Level::DEBUG)
 }
 
 struct RegisteredAccount {

@@ -2,14 +2,12 @@ use std::sync::atomic::Ordering;
 
 use miden_node_proto::domain::encryption::transaction_inputs_associated_data;
 use miden_node_proto::generated as grpc;
-use miden_node_utils::ErrorReport;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{ErrorReport, Instrument, info_span, miden_instrument, miden_span_record};
 use miden_protocol::transaction::{ProvenTransaction, TransactionId, TransactionInputs};
 use miden_tx::utils::serde::{Deserializable, Serializable};
 use rand_core_06::OsRng;
 use tonic::Status;
-use tracing::{Instrument, info_span};
 
 use super::ValidatorService;
 use crate::tx_validation::validate_transaction;

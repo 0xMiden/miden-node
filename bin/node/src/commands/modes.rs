@@ -15,11 +15,11 @@ use miden_node_proto::clients::{
 };
 use miden_node_rpc::{PreAuthSubmission, Rpc, RpcMode, SequencerInternal, ValidatorClients};
 use miden_node_store::{BlockWriter, ProofWriter, State, WriterTask};
+use miden_node_tracing::info;
 use miden_node_utils::clap::duration_to_human_readable_string;
 use miden_node_utils::formatting::format_endpoint;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::info;
 use tokio::net::TcpListener;
 use url::Url;
 

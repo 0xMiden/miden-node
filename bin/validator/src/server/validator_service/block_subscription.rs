@@ -4,8 +4,7 @@ use std::task::{Context, Poll};
 
 use miden_node_proto::generated as grpc;
 use miden_node_proto::generated::validator::BlockSubscriptionResponse;
-use miden_node_utils::ErrorReport;
-use miden_node_utils::tracing::{error, info, miden_instrument, miden_span_record};
+use miden_node_tracing::{ErrorReport, error, info, miden_instrument, miden_span_record};
 use miden_protocol::block::BlockNumber;
 use tokio::sync::OwnedRwLockWriteGuard;
 use tokio_stream::wrappers::ReceiverStream;

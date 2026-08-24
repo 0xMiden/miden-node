@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic_health::pb::health_client::HealthClient;
 use tonic_health::pb::{HealthCheckRequest, health_check_response};

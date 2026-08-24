@@ -101,6 +101,35 @@ const ALLOWED_FIELD_NAMES: &[&str] = &[
     "workers.count",
 ];
 
+/// A drop-in replacement for `tracing::instrument` enforcing the node's telemetry conventions.
+///
+/// Differences from `tracing::instrument`:
+///
+/// - Function arguments are never recorded: `skip_all` is always applied, and explicit `skip` /
+///   `skip_all` directives are rejected. Span fields must instead be declared with `fields(...)`
+///   or recorded later in the body with `miden_span_record!`; either way the field names are
+///   validated against the node's allowed span field names, and recorded fields are inferred and
+///   pre-declared as empty on the span.
+/// - The `err` directive gains a `fault_only` mode for request handlers:
+///
+///   ```ignore
+///   #[miden_instrument(
+///       target = COMPONENT,
+///       name = "block_producer.api.submit_proven_tx",
+///       err(fault_only),
+///   )]
+///   ```
+///
+///   Where plain `err` unconditionally reports a returned `Err`, `err(fault_only)` classifies it
+///   via the `GrpcFault` trait (`miden_node_utils::tracing`): node faults are logged at `ERROR`
+///   with the full error report and mark the span with `OTel` error status, while client-caused
+///   failures are logged at debug level and leave the span status untouched — rejecting a bad
+///   request is the node behaving correctly, not an application error. An optional
+///   `level = "..."` (`"trace"` through `"error"`) tunes the level of the fault-side event only,
+///   e.g. `err(fault_only, level = "warn")`; span error status always follows the classification
+///   regardless of level.
+///
+/// All other arguments are forwarded to `tracing::instrument` unchanged.
 #[proc_macro_attribute]
 pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = TokenStream2::from(attr);

@@ -9,15 +9,25 @@ use miden_protocol::account::auth::{AuthScheme, AuthSecretKey};
 use miden_protocol::account::{Account, AccountBuilder, AccountFile, AccountId, AccountType};
 use miden_protocol::asset::{Asset, AssetAmount, FungibleAsset, TokenSymbol};
 use miden_protocol::block::{FeeParameters, ValidatorKeys};
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey as RpoSecretKey;
 use miden_protocol::errors::TokenSymbolError;
-use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::{Felt, ONE};
+use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::{Approver, AuthSingleSig};
-use miden_standards::account::faucets::{FungibleFaucet, TokenName};
-use miden_standards::account::policies::{BurnPolicy, MintPolicy, TokenPolicyManager};
+use miden_standards::account::faucets::{
+    FungibleFaucet,
+    TokenName,
+    create_network_fungible_faucet,
+};
+use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::policies::{
+    BurnPolicy,
+    MintPolicy,
+    TokenPolicyManager,
+    TransferPolicy,
+};
 use miden_standards::account::wallets::create_basic_wallet;
+use miden_standards::note::{BurnNote, MintNote};
 use rand::distr::weighted::Weight;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -34,6 +44,12 @@ mod tests;
 const DEFAULT_NATIVE_FAUCET_SYMBOL: &str = "MIDEN";
 const DEFAULT_NATIVE_FAUCET_DECIMALS: u8 = 6;
 const DEFAULT_NATIVE_FAUCET_MAX_SUPPLY: u64 = 100_000_000_000_000_000;
+
+/// Name of the account file written for the generated native faucet.
+pub const NATIVE_FAUCET_FILE_NAME: &str = "native_faucet.mac";
+
+/// Name of the account file written for the generated faucet operator.
+pub const FAUCET_OPERATOR_FILE_NAME: &str = "faucet_operator.mac";
 
 // GENESIS CONFIG
 // ================================================================================================
@@ -58,7 +74,8 @@ pub struct GenesisConfig {
     timestamp: u32,
     /// Override the native faucet with a custom faucet account.
     ///
-    /// If unspecified, a default native faucet will be used with:
+    /// If unspecified, the native faucet is generated as a network account owned by a generated
+    /// faucet operator account, using:
     ///
     /// ```toml
     /// symbol     = "MIDEN"
@@ -74,15 +91,6 @@ pub struct GenesisConfig {
     fungible_faucet: Vec<FungibleFaucetConfig>,
     #[serde(default)]
     account: Vec<GenericAccountConfig>,
-    /// Hex-encoded public keys of the genesis validator set, committed to by the genesis header.
-    ///
-    /// The genesis block itself is not signed; the committed set is required to sign every block
-    /// after genesis. Must be non-empty: a configuration file must always list its validators
-    /// explicitly, so a stale file can never silently commit to the insecure development key.
-    /// Only the built-in development configuration ([`GenesisConfig::default`]) carries that key,
-    /// which `miden-validator start` signs with by default.
-    #[serde(default)]
-    validators: Vec<String>,
     #[serde(skip)]
     config_dir: PathBuf,
 }
@@ -103,7 +111,6 @@ impl Default for GenesisConfig {
             fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
             account: vec![],
-            validators: vec![insecure_dev_validator_public_key_hex()],
             config_dir: PathBuf::from("."),
         }
     }
@@ -136,14 +143,16 @@ impl GenesisConfig {
 
     /// Convert the in memory representation into the new genesis state
     ///
-    /// The genesis validator set is taken from the configured `validators` public keys, which must
-    /// be non-empty; only the built-in development configuration ([`GenesisConfig::default`])
-    /// carries the insecure development key. The genesis block is not signed; the committed set is
-    /// required to sign every block after genesis.
+    /// The given `validator_keys` are the genesis validator set committed to by the genesis
+    /// header. The genesis block is not signed; the committed set is required to sign every block
+    /// after genesis.
     ///
     /// Also returns the set of secrets for the generated accounts.
     #[expect(clippy::too_many_lines)]
-    pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
+    pub fn into_state(
+        self,
+        validator_keys: ValidatorKeys,
+    ) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
         let GenesisConfig {
             version,
             timestamp,
@@ -152,32 +161,8 @@ impl GenesisConfig {
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
             account: account_entries,
-            validators,
             config_dir,
         } = self;
-
-        // Build the genesis validator set committed to by the genesis header. The set must be
-        // explicit: falling back to a default key here would let a configuration file predating the
-        // `validators` field silently commit to the insecure development key.
-        if validators.is_empty() {
-            return Err(GenesisConfigError::MissingValidators);
-        }
-        // Decode the configured hex-encoded public keys.
-        let keys = validators
-            .iter()
-            .map(|key| {
-                hex::decode(key)
-                    .map_err(|err| (key, err.to_string()))
-                    .and_then(|bytes| {
-                        PublicKey::read_from_bytes(&bytes).map_err(|err| (key, err.to_string()))
-                    })
-                    .map_err(|(key, message)| GenesisConfigError::InvalidValidatorKey {
-                        key: key.clone(),
-                        message,
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let validator_keys = ValidatorKeys::new(keys)?;
 
         // Load account files from disk
         let file_loaded_accounts = account_entries
@@ -198,16 +183,33 @@ impl GenesisConfig {
         // accounts/sign transactions
         let mut secrets = Vec::new();
 
-        // Handle native faucet: build from defaults or load from file
-        let (native_faucet_account, symbol, native_secret) =
-            NativeFaucetConfig(native_faucet).build_account(&config_dir)?;
-        if let Some(secret_key) = native_secret {
-            secrets.push((
-                format!("faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
-                native_faucet_account.id(),
-                secret_key,
-            ));
-        }
+        // Handle native faucet: generate a network faucet and its operator, or load from file
+        let NativeFaucet {
+            account: native_faucet_account,
+            symbol,
+            operator,
+        } = NativeFaucetConfig(native_faucet).build_account(&config_dir)?;
+
+        let operator_account = match operator {
+            Some((operator, operator_secret)) => {
+                // The generated faucet is a network account and holds no key of its own, but
+                // consumers still need its state and id, so it is written out like any other
+                // generated account.
+                secrets.push((
+                    NATIVE_FAUCET_FILE_NAME.to_string(),
+                    native_faucet_account.id(),
+                    None,
+                ));
+                secrets.push((
+                    FAUCET_OPERATOR_FILE_NAME.to_string(),
+                    operator.id(),
+                    Some(operator_secret),
+                ));
+                Some(operator)
+            },
+            None => None,
+        };
+
         let native_faucet_account_id = native_faucet_account.id();
         faucet_accounts.insert(symbol.clone(), native_faucet_account);
 
@@ -223,7 +225,7 @@ impl GenesisConfig {
             secrets.push((
                 format!("faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
                 faucet_account.id(),
-                secret_key,
+                Some(secret_key),
             ));
             // Do _not_ collect the account, only after we know all wallet assets we know the
             // remaining supply in the faucets.
@@ -272,7 +274,7 @@ impl GenesisConfig {
             secrets.push((
                 format!("wallet_{index:0zero_padding_width$}.mac"),
                 wallet_account.id(),
-                secret_key,
+                Some(secret_key),
             ));
 
             wallet_accounts.push(wallet_account);
@@ -333,6 +335,9 @@ impl GenesisConfig {
 
             all_accounts.push(faucet_account);
         }
+        // The operator holds no assets, so its position among the accounts does not matter.
+        all_accounts.extend(operator_account);
+
         // Ensure the faucets always precede the wallets referencing them
         all_accounts.extend(wallet_accounts);
 
@@ -368,31 +373,39 @@ pub struct FeeParameterConfig {
 // NATIVE FAUCET CONFIG
 // ================================================================================================
 
+/// The native faucet resolved from the configuration.
+struct NativeFaucet {
+    account: Account,
+    symbol: TokenSymbolStr,
+    /// The operator account owning the faucet, with its signing key. Only present when the faucet
+    /// is generated; an imported faucet comes with its own keys.
+    operator: Option<(Account, RpoSecretKey)>,
+}
+
 /// Wraps an optional path to a pre-built faucet account file.
 ///
-/// When no path is provided, a default native faucet is built using hardcoded MIDEN defaults.
+/// When no path is provided, a network faucet is generated together with the operator account
+/// owning it.
 struct NativeFaucetConfig(Option<PathBuf>);
 
 impl NativeFaucetConfig {
     /// Build or load the native faucet account.
     ///
-    /// For `None`, builds a new faucet from defaults and returns the generated secret key.
+    /// For `None`, generates a network faucet plus the operator account owning it, and returns the
+    /// operator alongside its signing key.
+    ///
     /// For `Some(path)`, loads the account from disk and validates it is a fungible faucet.
-    fn build_account(
-        self,
-        config_dir: &Path,
-    ) -> Result<(Account, TokenSymbolStr, Option<RpoSecretKey>), GenesisConfigError> {
+    fn build_account(self, config_dir: &Path) -> Result<NativeFaucet, GenesisConfigError> {
         match self.0 {
             None => {
-                let symbol = TokenSymbolStr::from_str(DEFAULT_NATIVE_FAUCET_SYMBOL).unwrap();
-                let faucet_config = FungibleFaucetConfig {
-                    symbol: symbol.clone(),
-                    decimals: DEFAULT_NATIVE_FAUCET_DECIMALS,
-                    max_supply: DEFAULT_NATIVE_FAUCET_MAX_SUPPLY,
-                    account_type: AccountTypeConfig::Public,
-                };
-                let (account, secret_key) = faucet_config.build_account()?;
-                Ok((account, symbol, Some(secret_key)))
+                // The operator is built first, since the faucet it owns commits to its id.
+                let (operator, operator_secret) = build_faucet_operator()?;
+                let (account, symbol) = build_native_faucet(operator.id())?;
+                Ok(NativeFaucet {
+                    account,
+                    symbol,
+                    operator: Some((operator, operator_secret)),
+                })
             },
             Some(path) => {
                 let full_path = config_dir.join(&path);
@@ -404,10 +417,87 @@ impl NativeFaucetConfig {
                     GenesisConfigError::NativeFaucetNotFungible { path: full_path.clone() }
                 })?;
                 let symbol = TokenSymbolStr::from(faucet.symbol().clone());
-                Ok((account, symbol, None))
+                Ok(NativeFaucet { account, symbol, operator: None })
             },
         }
     }
+}
+
+// FAUCET OPERATOR
+// ================================================================================================
+
+/// Builds the faucet operator account and returns it along with its signing key. Its nonce is set
+/// to `1`, marking it as deployed at genesis.
+fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError> {
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
+
+    let secret_key = RpoSecretKey::with_rng(&mut rng);
+    let auth = Approver::new(secret_key.public_key().into(), AuthScheme::Falcon512Poseidon2);
+    let init_seed: [u8; 32] = rng.random();
+    let mut operator = create_basic_wallet(init_seed, auth, AccountType::Public)?;
+    operator.set_nonce(ONE)?;
+
+    Ok((operator, secret_key))
+}
+
+// NATIVE FAUCET
+// ================================================================================================
+
+/// Builds the native faucet as a network account owned by `operator_id`.
+///
+/// The faucet is authenticated as a network account and therefore carries no signing key of its
+/// own; only the operator can mint from it.
+fn build_native_faucet(
+    operator_id: AccountId,
+) -> Result<(Account, TokenSymbolStr), GenesisConfigError> {
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
+
+    let symbol = TokenSymbolStr::from_str(DEFAULT_NATIVE_FAUCET_SYMBOL)?;
+    let faucet_component = FungibleFaucet::builder()
+        .name(
+            TokenName::new(DEFAULT_NATIVE_FAUCET_SYMBOL)
+                .expect("token symbol fits within token name byte limit"),
+        )
+        .symbol(symbol.as_ref().clone())
+        .decimals(DEFAULT_NATIVE_FAUCET_DECIMALS)
+        .max_supply(AssetAmount::new(DEFAULT_NATIVE_FAUCET_MAX_SUPPLY)?)
+        .build()?;
+
+    let policies = TokenPolicyManager::builder()
+        .active_mint_policy(MintPolicy::owner_only())
+        .active_burn_policy(BurnPolicy::allow_all())
+        .active_send_policy(TransferPolicy::allow_all())
+        .active_receive_policy(TransferPolicy::allow_all())
+        .build();
+
+    let fee_policy = BasicConstantFeePolicy::new()
+        .with_fees([
+            (MintNote::script_root(), AssetAmount::ZERO),
+            (BurnNote::script_root(), AssetAmount::ZERO),
+        ])
+        .into();
+    // The faucet should charge fees in its own asset, but setting its own id as the fee faucet id
+    // would require knowing that id before creating the account, which is not possible: the fee
+    // faucet id is part of the storage the account id is derived from. We use the operator id
+    // instead, which only works while the fees above are zero. Changing it later requires a new
+    // faucet, so this should be revisited once a proper solution is available.
+    let fee_policy_manager = FeePolicyManager::builder()
+        .fee_faucet_id(operator_id)
+        .active_fee_policy(fee_policy)
+        .build();
+
+    let faucet_seed: [u8; 32] = rng.random();
+    let faucet = create_network_fungible_faucet(
+        faucet_seed,
+        faucet_component,
+        AccessControl::Ownable2Step { owner: operator_id },
+        policies,
+        fee_policy_manager,
+    )?;
+
+    debug_assert_eq!(faucet.nonce(), Felt::ZERO);
+
+    Ok((faucet, symbol))
 }
 
 // FUNGIBLE FAUCET CONFIG
@@ -530,8 +620,8 @@ pub struct AccountFileWithName {
 /// Secrets generated during the state generation
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
-    // name, account, private key, account seed
-    pub secrets: Vec<(String, AccountId, RpoSecretKey)>,
+    // name, account, private key of the account, if it has one
+    pub secrets: Vec<(String, AccountId, Option<RpoSecretKey>)>,
 }
 
 impl AccountSecrets {
@@ -550,10 +640,9 @@ impl AccountSecrets {
             let account = account_lut
                 .get(&account_id)
                 .ok_or(GenesisConfigError::MissingGenesisAccount { account_id })?;
-            let account_file = AccountFile::new(
-                account.clone(),
-                vec![AuthSecretKey::Falcon512Poseidon2(secret_key)],
-            );
+            let auth_secret_keys =
+                secret_key.map(AuthSecretKey::Falcon512Poseidon2).into_iter().collect();
+            let account_file = AccountFile::new(account.clone(), auth_secret_keys);
             Ok(AccountFileWithName { name, account_file })
         })
     }
@@ -561,22 +650,6 @@ impl AccountSecrets {
 
 // HELPERS
 // ================================================================================================
-
-/// Returns the public key of the predefined, insecure development validator signing key.
-fn insecure_dev_validator_public_key() -> PublicKey {
-    let bytes = hex::decode(miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX)
-        .expect("insecure development signing key hex is valid");
-    SigningKey::read_from_bytes(&bytes)
-        .expect("insecure development signing key bytes are a valid signing key")
-        .public_key()
-}
-
-/// Returns the hex encoding of the insecure development validator public key, as listed in the
-/// `validators` field of the built-in development configuration.
-fn insecure_dev_validator_public_key_hex() -> String {
-    use miden_protocol::utils::serde::Serializable;
-    hex::encode(insecure_dev_validator_public_key().to_bytes())
-}
 
 /// Process wallet assets and return them as a fungible asset delta. Track the negative adjustments
 /// for the respective faucets.

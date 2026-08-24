@@ -15,7 +15,7 @@ use miden_protocol::utils::serde::Deserializable;
 use tokio_stream::StreamExt;
 use tonic_health::ServingStatus;
 use tonic_health::server::HealthReporter;
-use tracing::{info, warn};
+use tracing::{Instrument, info, info_span, warn};
 
 use crate::{COMPONENT, LOG_TARGET};
 
@@ -236,7 +236,16 @@ impl BlockSync {
             let upstream_tip = BlockNumber::from(event.committed_chain_tip);
             let block = SignedBlock::read_from_bytes(&event.block)
                 .context("failed to deserialize block from upstream")?;
-            self.writer.apply_block(block).await?;
+            // Each synced block gets its own root span: the surrounding `sync` span lives for the
+            // whole subscription, so parenting under it would chain every block into one
+            // never-exported trace.
+            let block_span = info_span!(
+                target: COMPONENT,
+                parent: None,
+                "sync_block",
+                block.number = block.header().block_num().as_u32(),
+            );
+            self.writer.apply_block(block).instrument(block_span).await?;
 
             let local_tip = self.state.committed_tip();
             self.readiness.update(upstream_tip, local_tip).await;

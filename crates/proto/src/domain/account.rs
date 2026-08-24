@@ -16,8 +16,8 @@ use miden_protocol::account::{
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::AccountWitness;
-use miden_protocol::crypto::merkle::SparseMerklePath;
-use miden_protocol::crypto::merkle::smt::SmtProof;
+use miden_protocol::crypto::merkle::smt::{PartialSmt, SmtProof};
+use miden_protocol::crypto::merkle::{MerkleError, SparseMerklePath};
 use miden_protocol::utils::serde::{Deserializable, DeserializationError, Serializable};
 
 use super::try_convert;
@@ -276,10 +276,19 @@ impl
             },
             ProtoSlotData::MapKeys(keys) => {
                 let keys = try_convert(keys.map_keys).collect::<Result<Vec<_>, _>>()?;
+                if has_duplicate_storage_map_keys(&keys) {
+                    return Err(ConversionError::message(
+                        "storage map key request contains duplicate keys",
+                    ));
+                }
                 SlotData::MapKeys(keys)
             },
         })
     }
+}
+
+fn has_duplicate_storage_map_keys(keys: &[StorageMapKey]) -> bool {
+    keys.iter().enumerate().any(|(index, key)| keys[..index].contains(key))
 }
 
 // ACCOUNT HEADER CONVERSIONS
@@ -440,9 +449,12 @@ pub enum StorageMapEntries {
     /// requested for small maps.
     AllEntries(Vec<(StorageMapKey, Word)>),
 
-    /// Specific entries with their SMT proofs for client-side verification. Used when specific keys
-    /// are requested from the storage map.
-    EntriesWithProofs(Vec<SmtProof>),
+    /// Specific raw map keys covered by a single partial SMT. Used when specific keys are requested
+    /// from the storage map.
+    PartialMap {
+        map_keys: Vec<StorageMapKey>,
+        partial_smt: PartialSmt,
+    },
 }
 
 impl AccountStorageMapDetails {
@@ -501,18 +513,53 @@ impl AccountStorageMapDetails {
     ///
     /// Use this when the caller has already obtained the proofs from an `SmtForest`.
     /// Returns `LimitExceeded` if too many proofs are provided.
-    pub fn from_proofs(slot_name: StorageSlotName, proofs: Vec<SmtProof>) -> Self {
-        if proofs.len() > Self::MAX_SMT_PROOF_ENTRIES {
-            Self {
+    pub fn from_proofs(
+        slot_name: StorageSlotName,
+        map_root: Word,
+        map_keys: Vec<StorageMapKey>,
+        proofs: Vec<SmtProof>,
+    ) -> Result<Self, MerkleError> {
+        if map_keys.len() != proofs.len() {
+            return Err(MerkleError::InternalError(format!(
+                "storage map key count {} does not match proof count {}",
+                map_keys.len(),
+                proofs.len()
+            )));
+        }
+        if has_duplicate_storage_map_keys(&map_keys) {
+            return Err(MerkleError::InternalError(
+                "storage map key list contains duplicate keys".into(),
+            ));
+        }
+
+        if map_keys.len() > Self::MAX_SMT_PROOF_ENTRIES {
+            return Ok(Self {
                 slot_name,
                 entries: StorageMapEntries::LimitExceeded,
-            }
-        } else {
-            Self {
-                slot_name,
-                entries: StorageMapEntries::EntriesWithProofs(proofs),
-            }
+            });
         }
+
+        let partial_smt = if proofs.is_empty() {
+            PartialSmt::new(map_root)
+        } else {
+            PartialSmt::from_proofs(proofs)?
+        };
+
+        if partial_smt.root() != map_root {
+            return Err(MerkleError::ConflictingRoots {
+                expected_root: map_root,
+                actual_root: partial_smt.root(),
+            });
+        }
+
+        for map_key in &map_keys {
+            partial_smt.get_value(&map_key.hash().as_word())?;
+        }
+
+        Ok(Self {
+            slot_name,
+            entries: StorageMapEntries::PartialMap { map_keys, partial_smt },
+        })
     }
 
     /// Creates storage map details indicating the limit was exceeded.
@@ -534,48 +581,59 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
     ) -> Result<Self, Self::Error> {
         use proto::rpc::account_storage_details::account_storage_map_details::{
             AllMapEntries,
-            Entries as ProtoEntries,
-            MapEntriesWithProofs,
+            PartialStorageMap,
+            Result as ProtoResult,
         };
 
         let decoder = value.decoder();
-        let proto::rpc::account_storage_details::AccountStorageMapDetails {
-            slot_name,
-            too_many_entries,
-            entries,
-        } = value;
+        let proto::rpc::account_storage_details::AccountStorageMapDetails { slot_name, result } =
+            value;
 
         let slot_name = StorageSlotName::new(slot_name).context("slot_name")?;
 
-        let entries = if too_many_entries {
-            StorageMapEntries::LimitExceeded
-        } else {
-            match decode!(decoder, entries)? {
-                ProtoEntries::AllEntries(AllMapEntries { entries }) => {
-                    let entries = entries
-                        .into_iter()
-                        .map(|entry| {
-                            let decoder = entry.decoder();
-                            let key = StorageMapKey::new(decode!(decoder, entry.key)?);
-                            let value = decode!(decoder, entry.value)?;
-                            Ok((key, value))
-                        })
-                        .collect::<Result<Vec<_>, ConversionError>>()
-                        .context("entries")?;
-                    StorageMapEntries::AllEntries(entries)
-                },
-                ProtoEntries::EntriesWithProofs(MapEntriesWithProofs { entries }) => {
-                    let proofs = entries
-                        .into_iter()
-                        .map(|entry| {
-                            let decoder = entry.decoder();
-                            decode!(decoder, entry.proof)
-                        })
-                        .collect::<Result<Vec<_>, ConversionError>>()
-                        .context("entries")?;
-                    StorageMapEntries::EntriesWithProofs(proofs)
-                },
-            }
+        let entries = match decode!(decoder, result)? {
+            ProtoResult::TooManyEntries(true) => StorageMapEntries::LimitExceeded,
+            ProtoResult::TooManyEntries(false) => {
+                return Err(ConversionError::message("too_many_entries must be true when set"));
+            },
+            ProtoResult::AllEntries(AllMapEntries { entries }) => {
+                let entries = entries
+                    .into_iter()
+                    .map(|entry| {
+                        let decoder = entry.decoder();
+                        let key = StorageMapKey::new(decode!(decoder, entry.key)?);
+                        let value = decode!(decoder, entry.value)?;
+                        Ok((key, value))
+                    })
+                    .collect::<Result<Vec<_>, ConversionError>>()
+                    .context("entries")?;
+                StorageMapEntries::AllEntries(entries)
+            },
+            ProtoResult::PartialMap(PartialStorageMap { map_keys, partial_smt }) => {
+                if map_keys.len() > Self::MAX_SMT_PROOF_ENTRIES {
+                    return Err(ConversionError::message(format!(
+                        "partial storage map contains {} keys, exceeding the limit of {}",
+                        map_keys.len(),
+                        Self::MAX_SMT_PROOF_ENTRIES
+                    )));
+                }
+                let map_keys = map_keys
+                    .into_iter()
+                    .map(|key| Word::try_from(key).map(StorageMapKey::new))
+                    .collect::<Result<Vec<_>, _>>()
+                    .context("map_keys")?;
+                if has_duplicate_storage_map_keys(&map_keys) {
+                    return Err(ConversionError::message(
+                        "partial storage map contains duplicate keys",
+                    ));
+                }
+                let partial_smt: PartialSmt =
+                    decode!(decoder, partial_smt).context("partial_smt")?;
+                for map_key in &map_keys {
+                    partial_smt.get_value(&map_key.hash().as_word()).context("map_keys")?;
+                }
+                StorageMapEntries::PartialMap { map_keys, partial_smt }
+            },
         };
 
         Ok(Self { slot_name, entries })
@@ -588,14 +646,14 @@ impl From<AccountStorageMapDetails>
     fn from(value: AccountStorageMapDetails) -> Self {
         use proto::rpc::account_storage_details::account_storage_map_details::{
             AllMapEntries,
-            Entries as ProtoEntries,
-            MapEntriesWithProofs,
+            PartialStorageMap,
+            Result as ProtoResult,
         };
 
         let AccountStorageMapDetails { slot_name, entries } = value;
 
-        let (too_many_entries, proto_entries) = match entries {
-            StorageMapEntries::LimitExceeded => (true, None),
+        let result = match entries {
+            StorageMapEntries::LimitExceeded => ProtoResult::TooManyEntries(true),
             StorageMapEntries::AllEntries(entries) => {
                 let all = AllMapEntries {
                     entries: Vec::from_iter(entries.into_iter().map(|(key, value)| {
@@ -605,40 +663,19 @@ impl From<AccountStorageMapDetails>
                         }
                     })),
                 };
-                (false, Some(ProtoEntries::AllEntries(all)))
+                ProtoResult::AllEntries(all)
             },
-            StorageMapEntries::EntriesWithProofs(proofs) => {
-                use miden_protocol::crypto::merkle::smt::SmtLeaf;
-
-                let with_proofs = MapEntriesWithProofs {
-                    entries: Vec::from_iter(proofs.into_iter().map(|proof| {
-                        // Get key/value from the leaf before consuming the proof
-                        let (key, value) = match proof.leaf() {
-                            SmtLeaf::Empty(_) => {
-                                (miden_protocol::EMPTY_WORD, miden_protocol::EMPTY_WORD)
-                            },
-                            SmtLeaf::Single((k, v)) => (*k, *v),
-                            SmtLeaf::Multiple(entries) => entries.iter().next().map_or(
-                                (miden_protocol::EMPTY_WORD, miden_protocol::EMPTY_WORD),
-                                |(k, v)| (*k, *v),
-                            ),
-                        };
-                        let smt_opening = proto::primitives::SmtOpening::from(proof);
-                        proto::rpc::account_storage_details::account_storage_map_details::map_entries_with_proofs::StorageMapEntryWithProof {
-                            key: Some(key.into()),
-                            value: Some(value.into()),
-                            proof: Some(smt_opening),
-                        }
-                    })),
-                };
-                (false, Some(ProtoEntries::EntriesWithProofs(with_proofs)))
+            StorageMapEntries::PartialMap { map_keys, partial_smt } => {
+                ProtoResult::PartialMap(PartialStorageMap {
+                    map_keys: map_keys.into_iter().map(Into::into).collect(),
+                    partial_smt: Some(partial_smt.into()),
+                })
             },
         };
 
         Self {
             slot_name: slot_name.to_string(),
-            too_many_entries,
-            entries: proto_entries,
+            result: Some(result),
         }
     }
 }
@@ -671,10 +708,35 @@ impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
         let decoder = value.decoder();
         let proto::rpc::AccountStorageDetails { header, map_details } = value;
 
-        let header = decode!(decoder, header)?;
+        let header: AccountStorageHeader = decode!(decoder, header)?;
 
-        let map_details =
+        let map_details: Vec<AccountStorageMapDetails> =
             try_convert(map_details).collect::<Result<Vec<_>, _>>().context("map_details")?;
+
+        for map_detail in &map_details {
+            let StorageMapEntries::PartialMap { partial_smt, .. } = &map_detail.entries else {
+                continue;
+            };
+
+            let slot = header.find_slot_header_by_name(&map_detail.slot_name).ok_or_else(|| {
+                ConversionError::message(format!(
+                    "partial storage map references unknown slot {}",
+                    map_detail.slot_name
+                ))
+            })?;
+            if slot.slot_type() != StorageSlotType::Map {
+                return Err(ConversionError::message(format!(
+                    "partial storage map references non-map slot {}",
+                    map_detail.slot_name
+                )));
+            }
+            if partial_smt.root() != slot.value() {
+                return Err(ConversionError::message(format!(
+                    "partial storage map root for slot {} does not match storage header",
+                    map_detail.slot_name
+                )));
+            }
+        }
 
         Ok(Self { header, map_details })
     }

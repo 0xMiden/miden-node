@@ -40,10 +40,12 @@ pub(in crate::view) fn render_rpc_status(details: &RpcStatusDetails) -> Markup {
                     div class="nested-status mempool-stats" {
                         strong { "Mempool stats:" }
                         @if let Some(mempool) = &block_producer.mempool {
+                            (metric_row("Uncommitted TXs:", &mempool.uncommitted_transactions.to_string()))
                             (metric_row("Unbatched TXs:", &mempool.unbatched_transactions.to_string()))
                             (metric_row("Proposed Batches:", &mempool.proposed_batches.to_string()))
                             (metric_row("Proven Batches:", &mempool.proven_batches.to_string()))
                         } @else {
+                            (metric_row("Uncommitted TXs:", "-"))
                             (metric_row("Unbatched TXs:", "-"))
                             (metric_row("Proposed Batches:", "-"))
                             (metric_row("Proven Batches:", "-"))

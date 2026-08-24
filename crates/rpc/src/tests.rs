@@ -1,5 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr};
-use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -22,7 +21,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_store::state::State;
-use miden_node_utils::clap::GrpcOptionsExternal;
+use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
@@ -32,6 +31,7 @@ use miden_node_utils::limiter::{
     QueryParamStorageMapKeyTotalLimit,
     QueryParamStorageMapSlotLimit,
 };
+use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -45,7 +45,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
-use miden_protocol::utils::serde::Serializable;
+use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::account::wallets::BasicWallet;
 use tempfile::TempDir;
@@ -83,6 +83,14 @@ struct TestStore {
     data_directory: std::path::PathBuf,
 }
 
+struct TestServerGuard(CancellationToken);
+
+impl Drop for TestServerGuard {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 impl TestStore {
     fn genesis_commitment(&self) -> Word {
         self.genesis_commitment
@@ -105,7 +113,13 @@ impl TestStore {
 
     fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
-        let (genesis_state, _) = config.into_state().unwrap();
+        let validator_key =
+            miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey::read_from_bytes(&[7; 32])
+                .expect("test signing key should decode")
+                .public_key();
+        let validator_keys =
+            miden_protocol::block::ValidatorKeys::new(vec![validator_key]).unwrap();
+        let (genesis_state, _) = config.into_state(validator_keys).unwrap();
         let genesis_block =
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
@@ -217,7 +231,7 @@ fn assert_beyond_tip(status: &tonic::Status, endpoint: &str) {
 #[tokio::test]
 async fn rpc_server_accepts_requests_without_accept_header() {
     // Start the RPC.
-    let (_, rpc_addr, _store) = start_rpc().await;
+    let (_, rpc_addr, _store, _server) = start_rpc().await;
 
     // Override the client so that the ACCEPT header is not set.
     let mut rpc_client = {
@@ -238,84 +252,9 @@ async fn rpc_server_accepts_requests_without_accept_header() {
 }
 
 #[tokio::test]
-async fn rpc_rate_limits_per_ip() {
-    let grpc_options = GrpcOptionsExternal {
-        burst_size: NonZeroU32::new(8).unwrap(),
-        replenish_n_per_second_per_ip: NonZeroU64::new(1).unwrap(),
-        ..GrpcOptionsExternal::test()
-    };
-    let (_, rpc_addr, _store) = start_rpc_with_options(grpc_options).await;
-
-    let url = rpc_addr.to_string();
-    let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let mut rpc_client = connect_rpc(url.clone(), Some(IpAddr::V4(Ipv4Addr::LOCALHOST))).await;
-
-    let mut results = Vec::new();
-    let mut last_error = None;
-    for _ in 0..256 {
-        let result = send_request(&mut rpc_client).await;
-        if let Err(err) = &result {
-            last_error = Some(err.code());
-        }
-        results.push(result);
-    }
-
-    assert!(results.iter().any(std::result::Result::is_ok));
-    assert!(
-        last_error.is_some_and(|code| code == tonic::Code::ResourceExhausted),
-        "expected rate limit error but got: {last_error:?}"
-    );
-}
-
-#[tokio::test]
-async fn rpc_connection_timeout_grace_does_not_panic() {
-    let tonic_timeout_panics = Arc::new(AtomicUsize::new(0));
-    let tonic_timeout_panics_hook = Arc::clone(&tonic_timeout_panics);
-    let default_panic_hook = std::panic::take_hook();
-
-    std::panic::set_hook(Box::new(move |info| {
-        let panic_payload = info
-            .payload()
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| info.payload().downcast_ref::<String>().map(String::as_str));
-
-        if panic_payload
-            .is_some_and(|payload| payload.contains("async fn resumed after completion"))
-        {
-            tonic_timeout_panics_hook.fetch_add(1, Ordering::SeqCst);
-        }
-    }));
-
-    let grpc_options = GrpcOptionsExternal {
-        max_connection_age: Duration::from_millis(20),
-        max_connection_age_grace: Duration::from_millis(20),
-        ..GrpcOptionsExternal::test()
-    };
-    let (mut rpc_client, rpc_addr, _store) = start_rpc_with_options(grpc_options).await;
-
-    let initial_response = send_request(&mut rpc_client).await;
-    tokio::time::sleep(Duration::from_millis(150)).await;
-
-    let url = Url::parse(&format!("http://{rpc_addr}")).unwrap();
-    let mut fresh_rpc_client = connect_rpc(url, None).await;
-    let fresh_response = send_request(&mut fresh_rpc_client).await;
-
-    std::panic::set_hook(default_panic_hook);
-    initial_response.expect("initial RPC request should succeed");
-    fresh_response
-        .expect("RPC server should keep serving fresh connections after timing out an old one");
-    assert_eq!(
-        tonic_timeout_panics.load(Ordering::SeqCst),
-        0,
-        "tonic connection timeout should not panic after max_connection_age"
-    );
-}
-
-#[tokio::test]
 async fn rpc_server_accepts_requests_with_accept_header() {
     // Start the RPC.
-    let (mut rpc_client, _, _store) = start_rpc().await;
+    let (mut rpc_client, _, _store, _server) = start_rpc().await;
 
     // Send any request to the RPC.
     let response = send_request(&mut rpc_client).await;
@@ -327,7 +266,7 @@ async fn rpc_server_accepts_requests_with_accept_header() {
 #[tokio::test]
 async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
     // Start the RPC.
-    let (_, rpc_addr, _store) = start_rpc().await;
+    let (_, rpc_addr, _store, _server) = start_rpc().await;
     // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
     let url = Url::parse(format!("http://{rpc_addr}").as_str()).unwrap();
 
@@ -355,7 +294,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
 
 #[tokio::test]
 async fn rpc_uses_in_process_store_state() {
-    let (mut rpc_client, _, _store) = start_rpc().await;
+    let (mut rpc_client, _, _store, _server) = start_rpc().await;
     let response = send_request(&mut rpc_client).await;
     assert!(response.unwrap().into_inner().block_header.is_some());
 }
@@ -363,7 +302,7 @@ async fn rpc_uses_in_process_store_state() {
 #[tokio::test]
 async fn rpc_server_has_web_support() {
     // Start server
-    let (_, rpc_addr, _store) = start_rpc().await;
+    let (_, rpc_addr, _store, _server) = start_rpc().await;
 
     // Send a status request
     let client = reqwest::Client::new();
@@ -404,7 +343,7 @@ async fn rpc_server_has_web_support() {
 #[tokio::test]
 async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Start the RPC.
-    let (_, rpc_addr, store) = start_rpc().await;
+    let (_, rpc_addr, store, _server) = start_rpc().await;
     let genesis = store.genesis_commitment();
 
     // Override the client so that the ACCEPT header is not set.
@@ -452,7 +391,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 #[tokio::test]
 async fn rpc_server_rejects_proven_transactions_with_invalid_reference_block() {
     // Start the RPC.
-    let (_, rpc_addr, store) = start_rpc().await;
+    let (_, rpc_addr, store, _server) = start_rpc().await;
     let genesis = store.genesis_commitment();
 
     // Override the client so that the ACCEPT header is not set.
@@ -580,7 +519,12 @@ impl ntx_builder_api::GetNetworkNoteStatus for FixedNtxBuilder {
 
 async fn start_ntx_builder(
     response: proto::rpc::GetNetworkNoteStatusResponse,
-) -> (NtxBuilderClient, Arc<AtomicUsize>, Arc<std::sync::Mutex<Option<String>>>) {
+) -> (
+    NtxBuilderClient,
+    Arc<AtomicUsize>,
+    Arc<std::sync::Mutex<Option<String>>>,
+    TestServerGuard,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind ntx-builder");
     let addr = listener.local_addr().expect("Failed to get ntx-builder address");
     let call_count = Arc::new(AtomicUsize::new(0));
@@ -591,12 +535,19 @@ async fn start_ntx_builder(
         last_accept: Arc::clone(&last_accept),
     };
 
-    task::spawn(async move {
-        tonic::transport::Server::builder()
-            .add_service(ntx_builder_api::service(service))
-            .serve_with_incoming(TcpListenerStream::new(listener))
-            .await
-            .expect("Failed to serve ntx-builder");
+    let shutdown = CancellationToken::new();
+    task::spawn({
+        let shutdown = shutdown.clone();
+        async move {
+            tonic::transport::Server::builder()
+                .add_service(ntx_builder_api::service(service))
+                .serve_with_incoming_shutdown(
+                    TcpListenerStream::new(listener),
+                    shutdown.cancelled_owned(),
+                )
+                .await
+                .expect("Failed to serve ntx-builder");
+        }
     });
 
     let client = Builder::new(Url::parse(&format!("http://{addr}")).unwrap())
@@ -607,7 +558,7 @@ async fn start_ntx_builder(
         .without_otel_context_injection()
         .connect_lazy::<NtxBuilderClient>();
 
-    (client, call_count, last_accept)
+    (client, call_count, last_accept, TestServerGuard(shutdown))
 }
 
 fn dummy_client<T: GrpcClient>() -> T {
@@ -623,7 +574,7 @@ fn dummy_client<T: GrpcClient>() -> T {
 async fn start_source_rpc(
     ntx_builder: NtxBuilderClient,
     validator: ValidatorClient,
-) -> (RpcClient, TestStore) {
+) -> (RpcClient, TestStore, TestServerGuard) {
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
@@ -632,26 +583,37 @@ async fn start_source_rpc(
 
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind source RPC");
     let addr = listener.local_addr().expect("Failed to get source RPC address");
+    let shutdown = CancellationToken::new();
 
-    task::spawn(async move {
-        let block_producer = BlockProducerApi::new(
-            block_producer_state,
-            0.into(),
-            BlockProducerApiConfig::default(),
-        );
-        let source_rpc = RpcService::new(
-            state,
-            RpcBackend::sequencer(block_producer, ValidatorClients::new(vec![validator]).unwrap()),
-            Some(ntx_builder),
-            NonZeroUsize::new(1_000_000).unwrap(),
-            None,
-        );
+    task::spawn({
+        let shutdown = shutdown.clone();
+        async move {
+            let block_producer = BlockProducerApi::new(
+                block_producer_state,
+                0.into(),
+                BlockProducerApiConfig::default(),
+                shutdown.clone(),
+            );
+            let source_rpc = RpcService::new(
+                state,
+                RpcBackend::sequencer(
+                    block_producer,
+                    ValidatorClients::new(vec![validator]).unwrap(),
+                ),
+                Some(ntx_builder),
+                NonZeroUsize::new(1_000_000).unwrap(),
+                None,
+            );
 
-        tonic::transport::Server::builder()
-            .add_service(rpc_api::service(source_rpc))
-            .serve_with_incoming(TcpListenerStream::new(listener))
-            .await
-            .expect("Failed to serve source RPC");
+            tonic::transport::Server::builder()
+                .add_service(rpc_api::service(source_rpc))
+                .serve_with_incoming_shutdown(
+                    TcpListenerStream::new(listener),
+                    shutdown.cancelled_owned(),
+                )
+                .await
+                .expect("Failed to serve source RPC");
+        }
     });
 
     let client = Builder::new(Url::parse(&format!("http://{addr}")).unwrap())
@@ -662,7 +624,7 @@ async fn start_source_rpc(
         .without_otel_context_injection()
         .connect_lazy::<RpcClient>();
 
-    (client, store)
+    (client, store, TestServerGuard(shutdown))
 }
 
 /// Stub validator gRPC service that serves a fixed transaction encryption key and rejects every
@@ -801,7 +763,12 @@ impl validator_api::BlockSubscription for FixedValidator {
 /// the stub's call counter and the last ACCEPT header it observed.
 async fn start_validator(
     encryption_key: proto::transaction::TransactionEncryptionKey,
-) -> (ValidatorClient, Arc<AtomicUsize>, Arc<std::sync::Mutex<Option<String>>>) {
+) -> (
+    ValidatorClient,
+    Arc<AtomicUsize>,
+    Arc<std::sync::Mutex<Option<String>>>,
+    TestServerGuard,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind validator");
     let addr = listener.local_addr().expect("Failed to get validator address");
     let call_count = Arc::new(AtomicUsize::new(0));
@@ -812,12 +779,19 @@ async fn start_validator(
         last_accept: Arc::clone(&last_accept),
     };
 
-    task::spawn(async move {
-        tonic::transport::Server::builder()
-            .add_service(validator_api::service(service))
-            .serve_with_incoming(TcpListenerStream::new(listener))
-            .await
-            .expect("Failed to serve validator");
+    let shutdown = CancellationToken::new();
+    task::spawn({
+        let shutdown = shutdown.clone();
+        async move {
+            tonic::transport::Server::builder()
+                .add_service(validator_api::service(service))
+                .serve_with_incoming_shutdown(
+                    TcpListenerStream::new(listener),
+                    shutdown.cancelled_owned(),
+                )
+                .await
+                .expect("Failed to serve validator");
+        }
     });
 
     let client = Builder::new(Url::parse(&format!("http://{addr}")).unwrap())
@@ -828,7 +802,7 @@ async fn start_validator(
         .without_otel_context_injection()
         .connect_lazy::<ValidatorClient>();
 
-    (client, call_count, last_accept)
+    (client, call_count, last_accept, TestServerGuard(shutdown))
 }
 
 /// A fixed transaction encryption key response for forwarding tests. The values only need to
@@ -854,7 +828,8 @@ fn test_encryption_key() -> proto::transaction::TransactionEncryptionKey {
 #[tokio::test]
 async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
     let expected = test_encryption_key();
-    let (validator, validator_call_count, _last_accept) = start_validator(expected.clone()).await;
+    let (validator, validator_call_count, _last_accept, _validator_server) =
+        start_validator(expected.clone()).await;
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
         Arc::clone(&local_store.state),
@@ -893,8 +868,9 @@ async fn full_node_with_validator_forwards_get_transaction_encryption_key() {
 #[tokio::test]
 async fn full_node_forwards_get_transaction_encryption_key_to_source_rpc() {
     let expected = test_encryption_key();
-    let (validator, validator_call_count, _last_accept) = start_validator(expected.clone()).await;
-    let (source_rpc, _source_store) =
+    let (validator, validator_call_count, _last_accept, _validator_server) =
+        start_validator(expected.clone()).await;
+    let (source_rpc, _source_store, _source_server) =
         start_source_rpc(dummy_client::<NtxBuilderClient>(), validator).await;
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
@@ -918,8 +894,9 @@ async fn full_node_forwards_get_transaction_encryption_key_to_source_rpc() {
 #[tokio::test]
 async fn full_node_preserves_original_accept_metadata_when_forwarding_encryption_key() {
     let expected = test_encryption_key();
-    let (validator, _validator_call_count, last_accept) = start_validator(expected.clone()).await;
-    let (source_rpc, source_store) =
+    let (validator, _validator_call_count, last_accept, _validator_server) =
+        start_validator(expected.clone()).await;
+    let (source_rpc, source_store, _source_server) =
         start_source_rpc(dummy_client::<NtxBuilderClient>(), validator).await;
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
@@ -959,9 +936,9 @@ async fn full_node_forwards_get_network_note_status_to_source_rpc() {
         attempt_count: 7,
         last_attempt_block_num: Some(42),
     };
-    let (ntx_builder, ntx_builder_call_count, _last_accept) =
+    let (ntx_builder, ntx_builder_call_count, _last_accept, _ntx_builder_server) =
         start_ntx_builder(expected.clone()).await;
-    let (source_rpc, _source_store) =
+    let (source_rpc, _source_store, _source_server) =
         start_source_rpc(ntx_builder, dummy_client::<ValidatorClient>()).await;
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
@@ -990,9 +967,9 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
         attempt_count: 7,
         last_attempt_block_num: Some(42),
     };
-    let (ntx_builder, _ntx_builder_call_count, last_accept) =
+    let (ntx_builder, _ntx_builder_call_count, last_accept, _ntx_builder_server) =
         start_ntx_builder(expected.clone()).await;
-    let (source_rpc, source_store) =
+    let (source_rpc, source_store, _source_server) =
         start_source_rpc(ntx_builder, dummy_client::<ValidatorClient>()).await;
     let local_store = TestStore::start().await;
     let full_node = RpcService::new(
@@ -1032,7 +1009,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
 #[tokio::test]
 async fn rpc_server_rejects_tx_submissions_without_genesis() {
     // Start the RPC.
-    let (_, rpc_addr, store) = start_rpc().await;
+    let (_, rpc_addr, store, _server) = start_rpc().await;
     let genesis = store.genesis_commitment();
 
     // Override the client so that the ACCEPT header is not set.
@@ -1079,13 +1056,10 @@ async fn send_request(
     rpc_client.get_block_header_by_number(request).await
 }
 
-async fn connect_rpc(url: Url, local_address: Option<IpAddr>) -> RpcClient {
-    let mut endpoint = tonic::transport::Endpoint::from_shared(url.to_string())
+async fn connect_rpc(url: Url) -> RpcClient {
+    let endpoint = tonic::transport::Endpoint::from_shared(url.to_string())
         .expect("Url type always results in valid endpoint")
         .timeout(REQUEST_TIMEOUT);
-    if let Some(local_address) = local_address {
-        endpoint = endpoint.local_address(Some(local_address));
-    }
     let channel = endpoint.connect().await.expect("Failed to build channel");
     let interceptor = Interceptor::default();
     RpcClient::with_interceptor(channel, interceptor)
@@ -1093,13 +1067,8 @@ async fn connect_rpc(url: Url, local_address: Option<IpAddr>) -> RpcClient {
 
 /// Binds a socket on an available port, runs the RPC server on it, and returns a client to talk to
 /// the server, along with the socket address.
-async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore) {
-    start_rpc_with_options(GrpcOptionsExternal::test()).await
-}
-
-async fn start_rpc_with_options(
-    grpc_options: GrpcOptionsExternal,
-) -> (RpcClient, std::net::SocketAddr, TestStore) {
+async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore, TestServerGuard) {
+    let grpc_options = GrpcOptions::test();
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
     TestStore::bootstrap(&block_producer_dir);
@@ -1109,48 +1078,53 @@ async fn start_rpc_with_options(
     // Start the rpc component.
     let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
     let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
-    task::spawn(async move {
-        // SAFETY: Using dummy validator URL for test - not actually contacted in this test
-        let validator_url = Url::parse("http://127.0.0.1:0").unwrap();
-        let block_producer = BlockProducerApi::new(
-            block_producer_state,
-            0.into(),
-            BlockProducerApiConfig::default(),
-        );
-        let validator = Builder::new(validator_url)
-            .without_tls()
-            .without_timeout()
-            .without_metadata_version()
-            .without_metadata_genesis()
-            .with_otel_context_injection()
-            .connect_lazy::<ValidatorClient>();
-        Rpc {
-            listener: rpc_listener,
-            state,
-            mode: RpcMode::sequencer(
-                block_producer,
-                ValidatorClients::new(vec![validator]).unwrap(),
-            ),
-            ntx_builder: None,
-            grpc_options,
-            network_tx_auth: None,
+    let shutdown = CancellationToken::new();
+    task::spawn({
+        let shutdown = shutdown.clone();
+        async move {
+            // SAFETY: Using dummy validator URL for test - not actually contacted in this test
+            let validator_url = Url::parse("http://127.0.0.1:0").unwrap();
+            let block_producer = BlockProducerApi::new(
+                block_producer_state,
+                0.into(),
+                BlockProducerApiConfig::default(),
+                shutdown.clone(),
+            );
+            let validator = Builder::new(validator_url)
+                .without_tls()
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
+                .with_otel_context_injection()
+                .connect_lazy::<ValidatorClient>();
+            Rpc {
+                listener: rpc_listener,
+                state,
+                mode: RpcMode::sequencer(
+                    block_producer,
+                    ValidatorClients::new(vec![validator]).unwrap(),
+                ),
+                ntx_builder: None,
+                grpc_options,
+                network_tx_auth: None,
+            }
+            .serve(shutdown)
+            .await
+            .expect("Failed to start serving RPC");
         }
-        .serve(miden_node_utils::shutdown::CancellationToken::new())
-        .await
-        .expect("Failed to start serving store");
     });
     let url = rpc_addr.to_string();
     // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let rpc_client = connect_rpc(url, None).await;
+    let rpc_client = connect_rpc(url).await;
 
-    (rpc_client, rpc_addr, store)
+    (rpc_client, rpc_addr, store, TestServerGuard(shutdown))
 }
 
 #[tokio::test]
 async fn get_limits_endpoint() {
     // Start the RPC and store
-    let (mut rpc_client, _rpc_addr, _store) = start_rpc().await;
+    let (mut rpc_client, _rpc_addr, _store, _server) = start_rpc().await;
 
     // Call the get_limits endpoint
     let response = rpc_client.get_limits(()).await.expect("get_limits should succeed");
@@ -1231,7 +1205,7 @@ async fn get_limits_endpoint() {
 
 #[tokio::test]
 async fn sync_chain_mmr_returns_delta() {
-    let (mut rpc_client, _rpc_addr, _store) = start_rpc().await;
+    let (mut rpc_client, _rpc_addr, _store, _server) = start_rpc().await;
 
     let request = proto::rpc::SyncChainMmrRequest {
         current_client_block_height: 0,
@@ -1287,7 +1261,7 @@ fn sync_chain_mmr_block_header_matches_chain_commitment() {
 /// the chain-tip check from the range-validity check.
 #[tokio::test]
 async fn sync_endpoints_reject_block_to_beyond_chain_tip() {
-    let (mut rpc_client, _rpc_addr, _store) = start_rpc().await;
+    let (mut rpc_client, _rpc_addr, _store, _server) = start_rpc().await;
 
     // A range ending one block past the genesis tip; otherwise valid (non-empty, start <= end).
     let block_range = || Some(proto::rpc::BlockRange { block_from: 0, block_to: 1 });

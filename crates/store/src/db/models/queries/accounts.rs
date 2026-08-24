@@ -1643,7 +1643,7 @@ pub(crate) struct AccountStorageMapRowInsert {
 // ================================================================================================
 
 /// Number of historical blocks to retain for vault assets, storage map values, and account codes.
-/// Rows whose validity interval ends at or below `chain_tip - HISTORICAL_BLOCK_RETENTION` will be
+/// Rows whose validity interval ends at or below `prune_tip - HISTORICAL_BLOCK_RETENTION` will be
 /// deleted; rows still valid anywhere inside the retention window (including all open-ended rows)
 /// are retained.
 pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
@@ -1652,9 +1652,11 @@ pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 /// reconstruction at any block within the retention window.
 ///
 /// A row is applicable for blocks in `[block_num, valid_until)`, so it is deletable exactly when
-/// its interval ends at or below the cutoff (`chain_tip - HISTORICAL_BLOCK_RETENTION`): it then
-/// cannot cover any block inside the window. Account codes follow the same rule — a code is
-/// deleted only when no account row whose interval reaches past the cutoff references it.
+/// its interval ends at or below the cutoff (`prune_tip - HISTORICAL_BLOCK_RETENTION`): it then
+/// cannot cover any block inside the window. `prune_tip` is the effective tip for retention — it
+/// lags the chain tip while old snapshot generations are still pinned by readers (see
+/// [`crate::db::Db::apply_block`]). Account codes follow the same rule — a code is deleted only
+/// when no account row whose interval reaches past the cutoff references it.
 ///
 /// # Returns
 /// A tuple of `(vault_assets_deleted, storage_map_values_deleted, account_codes_deleted)`
@@ -1667,9 +1669,9 @@ pub const HISTORICAL_BLOCK_RETENTION: u32 = 50;
 )]
 pub(crate) fn prune_history(
     conn: &mut SqliteConnection,
-    chain_tip: BlockNumber,
+    prune_tip: BlockNumber,
 ) -> Result<(usize, usize, usize), DatabaseError> {
-    let cutoff_block = i64::from(chain_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
+    let cutoff_block = i64::from(prune_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
     tracing::Span::current().record("cutoff_block", cutoff_block);
     let vault_deleted = prune_account_vault_assets(conn, cutoff_block)?;
     let storage_deleted = prune_account_storage_map_values(conn, cutoff_block)?;
@@ -1736,8 +1738,25 @@ fn prune_account_storage_map_values(
 /// inside the window, all open-ended (current) rows, and each account's baseline row — the row
 /// still valid at the cutoff even though it was written before it.
 ///
-/// The forced `idx_accounts_code_validity` covering index keeps the subquery an index-only range
-/// scan, sized by rows valid at or after the cutoff rather than total history.
+/// Rather than re-checking every code on every prune, only codes whose deletability could have
+/// changed since the previous prune are examined. A code survived the previous prune because at
+/// least one `accounts` row with `valid_until > prev_cutoff` referenced it. For it to be
+/// deletable now, all such rows must have expired by the new cutoff — including the longest-lived
+/// one, whose `valid_until` therefore lands inside `(prev_cutoff, cutoff_block]`. Scanning the
+/// rows that expired in that window thus finds every code that could have become deletable. The
+/// scan is an `idx_accounts_code_validity` index range, so its cost scales with the number of
+/// account updates since the previous prune, not with total history. Each candidate is deleted
+/// only if the `idx_accounts_code_probe` existence probe finds no row still referencing it with
+/// `valid_until > cutoff_block`. The previous cutoff is persisted in `prune_progress` within the
+/// same transaction; when absent (first prune after migration, or a fresh database) a full pass
+/// over all rows valid past the cutoff runs instead.
+///
+/// Correctness of the windowed candidate set rests on two invariants:
+/// - Rows are only ever closed to the `block_num` of the block currently being applied, which is
+///   always above the cutoff, so every expiry crosses the window of some later prune. A write path
+///   that back-dated `valid_until` below the current cutoff would leak the code forever.
+/// - Every `account_codes` row is inserted alongside an `accounts` row referencing it (see
+///   [`upsert_accounts`]); an orphan code with no referencing row would never become a candidate.
 #[miden_instrument(
     target = COMPONENT,
     err,
@@ -1751,16 +1770,67 @@ fn prune_account_codes(
 ) -> Result<usize, DatabaseError> {
     use diesel::sql_types::BigInt;
 
-    diesel::sql_query(
-        "DELETE FROM account_codes \
-         WHERE code_commitment NOT IN ( \
-             SELECT DISTINCT code_commitment \
-             FROM accounts INDEXED BY idx_accounts_code_validity \
-             WHERE code_commitment IS NOT NULL \
-               AND valid_until > ?1 \
-         )",
-    )
-    .bind::<BigInt, _>(cutoff_block)
-    .execute(conn)
-    .map_err(DatabaseError::Diesel)
+    let prev_cutoff: Option<i64> =
+        SelectDsl::select(schema::prune_progress::table, schema::prune_progress::codes_cutoff)
+            .first(conn)
+            .optional()
+            .map_err(DatabaseError::Diesel)?;
+
+    let deleted = match prev_cutoff {
+        // Codes are already pruned through this cutoff and nothing can become collectable while the
+        // cutoff stands still. Equality is the common case: the cutoff is clamped to zero for the
+        // first `HISTORICAL_BLOCK_RETENTION` blocks, and a pinned snapshot freezes the prune tip
+        // across consecutive blocks. A strictly greater `prev_cutoff` is unreachable through
+        // `apply_block` (the prune tip never regresses) but is guarded against so an out-of-order
+        // caller cannot move the marker backwards or run the delete with an inverted window.
+        Some(prev_cutoff) if prev_cutoff >= cutoff_block => return Ok(0),
+        Some(prev_cutoff) => diesel::sql_query(
+            "DELETE FROM account_codes \
+             WHERE code_commitment IN ( \
+                 SELECT DISTINCT code_commitment \
+                 FROM accounts INDEXED BY idx_accounts_code_validity \
+                 WHERE code_commitment IS NOT NULL \
+                   AND valid_until > ?1 \
+                   AND valid_until <= ?2 \
+             ) \
+             AND NOT EXISTS ( \
+                 SELECT 1 \
+                 FROM accounts INDEXED BY idx_accounts_code_probe \
+                 WHERE accounts.code_commitment = account_codes.code_commitment \
+                   AND accounts.valid_until > ?2 \
+             )",
+        )
+        .bind::<BigInt, _>(prev_cutoff)
+        .bind::<BigInt, _>(cutoff_block)
+        .execute(conn)
+        .map_err(DatabaseError::Diesel)?,
+        // No recorded cutoff: full pass. The forced `idx_accounts_code_validity` covering index
+        // keeps the subquery an index-only range scan, sized by rows valid at or after the cutoff
+        // rather than total history.
+        None => diesel::sql_query(
+            "DELETE FROM account_codes \
+             WHERE code_commitment NOT IN ( \
+                 SELECT DISTINCT code_commitment \
+                 FROM accounts INDEXED BY idx_accounts_code_validity \
+                 WHERE code_commitment IS NOT NULL \
+                   AND valid_until > ?1 \
+             )",
+        )
+        .bind::<BigInt, _>(cutoff_block)
+        .execute(conn)
+        .map_err(DatabaseError::Diesel)?,
+    };
+
+    diesel::insert_into(schema::prune_progress::table)
+        .values((
+            schema::prune_progress::id.eq(0),
+            schema::prune_progress::codes_cutoff.eq(cutoff_block),
+        ))
+        .on_conflict(schema::prune_progress::id)
+        .do_update()
+        .set(schema::prune_progress::codes_cutoff.eq(cutoff_block))
+        .execute(conn)
+        .map_err(DatabaseError::Diesel)?;
+
+    Ok(deleted)
 }

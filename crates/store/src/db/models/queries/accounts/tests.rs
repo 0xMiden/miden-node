@@ -269,7 +269,7 @@ fn assert_storage_map_slot_entries(
 // ================================================================================================
 
 #[test]
-fn test_select_account_header_at_block_returns_none_for_nonexistent() {
+fn select_account_header_at_block_returns_none_for_nonexistent() {
     let mut conn = setup_test_db();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
@@ -290,7 +290,7 @@ fn test_select_account_header_at_block_returns_none_for_nonexistent() {
 }
 
 #[test]
-fn test_select_account_header_at_block_returns_correct_header() {
+fn select_account_header_at_block_returns_correct_header() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -330,7 +330,7 @@ fn test_select_account_header_at_block_returns_correct_header() {
 }
 
 #[test]
-fn test_select_account_header_at_block_historical_query() {
+fn select_account_header_at_block_historical_query() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -378,7 +378,7 @@ fn test_select_account_header_at_block_historical_query() {
 // ================================================================================================
 
 #[test]
-fn test_select_account_vault_at_block_empty() {
+fn select_account_vault_at_block_empty() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -413,7 +413,7 @@ fn test_select_account_vault_at_block_empty() {
 // ================================================================================================
 
 #[test]
-fn test_upsert_accounts_inserts_storage_header() {
+fn upsert_accounts_inserts_storage_header() {
     let mut conn = setup_test_db();
     let (account, account_id) = create_test_account_with_storage();
 
@@ -472,7 +472,7 @@ fn test_upsert_accounts_inserts_storage_header() {
 }
 
 #[test]
-fn test_upsert_accounts_closes_previous_validity_interval() {
+fn upsert_accounts_closes_previous_validity_interval() {
     let mut conn = setup_test_db();
     let (account, account_id) = create_test_account_with_storage();
 
@@ -589,7 +589,7 @@ fn test_upsert_accounts_closes_previous_validity_interval() {
 }
 
 #[test]
-fn test_upsert_accounts_with_multiple_storage_slots() {
+fn upsert_accounts_with_multiple_storage_slots() {
     let mut conn = setup_test_db();
 
     // Create account with 3 storage slots
@@ -675,7 +675,7 @@ fn test_upsert_accounts_with_multiple_storage_slots() {
 }
 
 #[test]
-fn test_upsert_accounts_with_empty_storage() {
+fn upsert_accounts_with_empty_storage() {
     let mut conn = setup_test_db();
 
     // Create account with no component storage slots (only auth slot)
@@ -763,7 +763,7 @@ fn test_upsert_accounts_with_empty_storage() {
 // ================================================================================================
 
 #[test]
-fn test_select_latest_account_storage_ordering_semantics() {
+fn select_latest_account_storage_ordering_semantics() {
     let mut conn = setup_test_db();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
@@ -816,7 +816,7 @@ fn test_select_latest_account_storage_ordering_semantics() {
 }
 
 #[test]
-fn test_select_latest_account_storage_multiple_slots() {
+fn select_latest_account_storage_multiple_slots() {
     let mut conn = setup_test_db();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&mut conn, block_num);
@@ -887,7 +887,7 @@ fn test_select_latest_account_storage_multiple_slots() {
 }
 
 #[test]
-fn test_select_latest_account_storage_slot_updates() {
+fn select_latest_account_storage_slot_updates() {
     let mut conn = setup_test_db();
     let block_1 = BlockNumber::from_epoch(0);
     let block_2 = BlockNumber::from_epoch(1);
@@ -963,7 +963,7 @@ fn test_select_latest_account_storage_slot_updates() {
 /// Focuses on deduplication logic that relies on ordering by (`vault_key` ASC and `block_num`
 /// DESC).
 #[test]
-fn test_select_account_vault_at_block_historical_with_updates() {
+fn select_account_vault_at_block_historical_with_updates() {
     use assert_matches::assert_matches;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::{
@@ -1068,7 +1068,7 @@ fn test_select_account_vault_at_block_historical_with_updates() {
 /// Tests that the query bounds the number of rows it reads, so an over-the-limit vault is detected
 /// without materializing the whole set.
 #[test]
-fn test_select_account_vault_at_block_bounds_read_to_limit() {
+fn select_account_vault_at_block_bounds_read_to_limit() {
     let mut conn = setup_test_db();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -1111,7 +1111,7 @@ fn test_select_account_vault_at_block_bounds_read_to_limit() {
 
 /// Tests that a 5-block history returns the correct asset per block.
 #[test]
-fn test_select_account_vault_at_block_exponential_updates() {
+fn select_account_vault_at_block_exponential_updates() {
     const BLOCK_COUNT: u32 = 5;
 
     use assert_matches::assert_matches;
@@ -1172,7 +1172,7 @@ fn test_select_account_vault_at_block_exponential_updates() {
 /// Tests that deleted vault assets (asset = None) are correctly excluded from results, and that the
 /// deduplication handles deletion entries properly.
 #[test]
-fn test_select_account_vault_at_block_with_deletion() {
+fn select_account_vault_at_block_with_deletion() {
     use assert_matches::assert_matches;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -1287,6 +1287,17 @@ fn make_full_state_update(account: &Account) -> BlockAccountUpdate {
 /// The `push_value` must be different for each variant to produce a distinct MAST root and thus a
 /// distinct [`AccountCode::commitment`].
 fn build_account_with_code(push_value: u32) -> Account {
+    // The seed alone determines the account ID, so every `push_value` variant maps to the same
+    // account — the property the prune tests rely on to model one account changing its code.
+    // Keeping the seed distinct from the other helpers' ([1u8; 32], [9u8; 32], ...) is only a
+    // precaution: each test runs on a fresh database, so a collision would matter only if a single
+    // test mixed this helper with another one.
+    build_account_with_code_seeded(push_value, [2u8; 32])
+}
+
+/// Same as [`build_account_with_code`] but with a caller-chosen ID seed, for tests that need
+/// multiple distinct accounts sharing the same code.
+fn build_account_with_code_seeded(push_value: u32, seed: [u8; 32]) -> Account {
     let code_src = format!("@account_procedure pub proc variant push.{push_value} end");
     let component_code = CodeBuilder::default()
         .compile_component_code("test::code_prune", &code_src)
@@ -1301,8 +1312,7 @@ fn build_account_with_code(push_value: u32) -> Account {
     )
     .unwrap();
 
-    // Seed [2u8; 32] keeps the account ID distinct from the other test helpers.
-    AccountBuilder::new([2u8; 32])
+    AccountBuilder::new(seed)
         .account_type(AccountType::Public)
         .with_component(component)
         .with_component(AuthSingleSig::new(Approver::new(
@@ -1316,7 +1326,7 @@ fn build_account_with_code(push_value: u32) -> Account {
 /// Prune test 2: when an account's code changes, the old code must be pruned after the retention
 /// window, while the new (latest) code is retained.
 #[test]
-fn test_prune_account_code_retains_latest_after_code_change() {
+fn prune_account_code_retains_latest_after_code_change() {
     let mut conn = setup_test_db();
 
     // Block 0: account created with code A.
@@ -1395,7 +1405,7 @@ fn test_prune_account_code_retains_latest_after_code_change() {
 /// Prune test 3: code A → code B → code A; after the retention window, code B must be pruned but
 /// code A must be retained because it is still the latest.
 #[test]
-fn test_prune_account_code_retains_revisited_code() {
+fn prune_account_code_retains_revisited_code() {
     let mut conn = setup_test_db();
 
     // Block 0:           code A.
@@ -1485,7 +1495,7 @@ fn test_prune_account_code_retains_revisited_code() {
 /// preceding the account's first in-window update. Once a newer row falls below the cutoff, the
 /// code becomes prunable.
 #[test]
-fn test_prune_account_code_retains_baseline_code() {
+fn prune_account_code_retains_baseline_code() {
     let mut conn = setup_test_db();
 
     // Block 0:             code A.
@@ -1556,6 +1566,156 @@ fn test_prune_account_code_retains_baseline_code() {
         account_code_exists(&mut conn, code_commitment_b),
         "current code B must be retained"
     );
+}
+
+/// Returns the cutoff recorded in `prune_progress`, if any.
+fn codes_prune_cutoff(conn: &mut SqliteConnection) -> Option<i64> {
+    SelectDsl::select(schema::prune_progress::table, schema::prune_progress::codes_cutoff)
+        .first(conn)
+        .optional()
+        .expect("Failed to query prune_progress")
+}
+
+/// Prune test 5: the incremental (windowed) codes prune must not delete a code whose expiring
+/// reference crosses the cutoff window while another account still references it, and must delete
+/// it once the last reference expires in a later window.
+#[test]
+fn prune_account_code_incremental_cross_account_reference() {
+    let mut conn = setup_test_db();
+
+    // The "switcher" account changes code first; the "holdout" account keeps code A pinned.
+    // Both accounts are created with code A at block 0.
+    // Prune 1 (tip 2R+1 → cutoff R+1): no marker yet, full pass; nothing is collectable.
+    // Block 2R+2: the switcher moves to code B — its code-A row expires at 2R+2.
+    // Prune 2 (tip 3R+2 → cutoff 2R+2): the expired row crosses the window `(R+1, 2R+2]`, making
+    //   code A a candidate, but the holdout's open row still references it → retained.
+    // Block 3R+3: the holdout moves to code B — its code-A row expires at 3R+3.
+    // Prune 3 (tip 4R+3 → cutoff 3R+3): code A is a candidate again and no row references it past
+    //   the cutoff → pruned. Code B is retained.
+    let block_0 = BlockNumber::from(0u32);
+    let block_first_prune = BlockNumber::from(2 * HISTORICAL_BLOCK_RETENTION + 1);
+    let block_switcher_to_b = BlockNumber::from(2 * HISTORICAL_BLOCK_RETENTION + 2);
+    let block_second_prune = BlockNumber::from(3 * HISTORICAL_BLOCK_RETENTION + 2);
+    let block_holdout_to_b = BlockNumber::from(3 * HISTORICAL_BLOCK_RETENTION + 3);
+    let block_third_prune = BlockNumber::from(4 * HISTORICAL_BLOCK_RETENTION + 3);
+
+    for block in [block_0, block_switcher_to_b, block_holdout_to_b] {
+        insert_block_header(&mut conn, block);
+    }
+
+    let switcher_on_a = build_account_with_code(1);
+    let switcher_on_b = build_account_with_code(2);
+    let holdout_on_a = build_account_with_code_seeded(1, [4u8; 32]);
+    let holdout_on_b = build_account_with_code_seeded(2, [4u8; 32]);
+
+    assert_ne!(switcher_on_a.id(), holdout_on_a.id(), "accounts must be distinct");
+    let code_commitment_a = switcher_on_a.code().commitment();
+    let code_commitment_b = switcher_on_b.code().commitment();
+    assert_eq!(
+        code_commitment_a,
+        holdout_on_a.code().commitment(),
+        "both accounts must share code A"
+    );
+
+    for account in [&switcher_on_a, &holdout_on_a] {
+        upsert_accounts(
+            &mut conn,
+            &[make_full_state_update(account)],
+            block_0,
+            &precomputed_states_from_account(account),
+        )
+        .expect("block 0 upsert failed");
+    }
+
+    let (_, _, codes_deleted) =
+        prune_history(&mut conn, block_first_prune).expect("prune_history failed");
+    assert_eq!(codes_deleted, 0, "no code is collectable while both accounts run code A");
+
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&switcher_on_b)],
+        block_switcher_to_b,
+        &precomputed_states_from_account(&switcher_on_b),
+    )
+    .expect("switcher code-change upsert failed");
+
+    let (_, _, codes_deleted) =
+        prune_history(&mut conn, block_second_prune).expect("prune_history failed");
+    assert_eq!(codes_deleted, 0, "code A must survive while the holdout still references it");
+    assert!(
+        account_code_exists(&mut conn, code_commitment_a),
+        "code A must be retained while the holdout references it"
+    );
+
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&holdout_on_b)],
+        block_holdout_to_b,
+        &precomputed_states_from_account(&holdout_on_b),
+    )
+    .expect("holdout code-change upsert failed");
+
+    let (_, _, codes_deleted) =
+        prune_history(&mut conn, block_third_prune).expect("prune_history failed");
+    assert_eq!(codes_deleted, 1, "exactly one code (A) must be pruned");
+    assert!(!account_code_exists(&mut conn, code_commitment_a), "code A must be pruned");
+    assert!(
+        account_code_exists(&mut conn, code_commitment_b),
+        "current code B must be retained"
+    );
+}
+
+/// Prune test 6: `prune_progress` records the cutoff of the last codes prune; re-pruning at the
+/// same or a lower cutoff deletes nothing and never moves the marker backwards.
+#[test]
+fn prune_account_codes_marker_never_regresses() {
+    let mut conn = setup_test_db();
+
+    // Same shape as prune test 2: code A at block 0 is superseded by code B at block R+1, so a
+    // prune at tip 2R+1 (cutoff R+1) collects code A.
+    let block_0 = BlockNumber::from(0u32);
+    let block_code_b = BlockNumber::from(HISTORICAL_BLOCK_RETENTION + 1);
+    let block_prune = BlockNumber::from(2 * HISTORICAL_BLOCK_RETENTION + 1);
+
+    insert_block_header(&mut conn, block_0);
+    insert_block_header(&mut conn, block_code_b);
+
+    let account_a = build_account_with_code(1);
+    let account_b = build_account_with_code(2);
+
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_a)],
+        block_0,
+        &precomputed_states_from_account(&account_a),
+    )
+    .expect("block 0 upsert failed");
+    upsert_accounts(
+        &mut conn,
+        &[make_full_state_update(&account_b)],
+        block_code_b,
+        &precomputed_states_from_account(&account_b),
+    )
+    .expect("code-change upsert failed");
+
+    assert_eq!(codes_prune_cutoff(&mut conn), None, "no marker before the first prune");
+
+    let cutoff = i64::from(HISTORICAL_BLOCK_RETENTION + 1);
+    let (_, _, codes_deleted) = prune_history(&mut conn, block_prune).expect("first prune failed");
+    assert_eq!(codes_deleted, 1, "exactly one code (A) must be pruned");
+    assert_eq!(codes_prune_cutoff(&mut conn), Some(cutoff), "marker must record the cutoff");
+
+    // Re-pruning at the same tip is a no-op.
+    let (_, _, codes_deleted) = prune_history(&mut conn, block_prune).expect("second prune failed");
+    assert_eq!(codes_deleted, 0, "re-pruning at the same cutoff must delete nothing");
+    assert_eq!(codes_prune_cutoff(&mut conn), Some(cutoff), "marker must be unchanged");
+
+    // Pruning at a lower tip (cutoff 0) must not move the marker backwards.
+    let (_, _, codes_deleted) =
+        prune_history(&mut conn, BlockNumber::from(HISTORICAL_BLOCK_RETENTION))
+            .expect("stale prune failed");
+    assert_eq!(codes_deleted, 0, "pruning below the marker must delete nothing");
+    assert_eq!(codes_prune_cutoff(&mut conn), Some(cutoff), "marker must never regress");
 }
 
 #[test]

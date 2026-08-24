@@ -54,6 +54,9 @@ impl ValidatorDbReader {
 
     /// Loads the chain tip, or `None` if no block header has been persisted yet (i.e. bootstrap has
     /// not been run).
+    #[miden_instrument(
+        target = COMPONENT,
+    )]
     pub(crate) async fn load_chain_tip(&self) -> Result<Option<BlockHeader>, DatabaseError> {
         self.reader.read("load_chain_tip", queries::load_chain_tip).await
     }
@@ -169,6 +172,9 @@ impl ValidatorDbWriter {
 
     /// Inserts a validated transaction and its encrypted private inputs, returning the number of
     /// inserted rows. The count is zero if the transaction was already recorded.
+    #[miden_instrument(
+        target = COMPONENT,
+    )]
     pub async fn insert_validated_private_transaction(
         &self,
         record: StoredPrivateRecord,
@@ -181,6 +187,9 @@ impl ValidatorDbWriter {
     }
 
     /// Persists a block header, replacing any header already stored at the same height.
+    #[miden_instrument(
+        target = COMPONENT,
+    )]
     pub(crate) async fn upsert_block_header(
         &self,
         header: BlockHeader,

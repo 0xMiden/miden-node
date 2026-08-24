@@ -142,19 +142,21 @@ changed participant set; start a new ceremony instead.
 miden-validator start \
   --listen 0.0.0.0:50101 \
   --data-directory validator-data \
+  --signing-key.kms-id <validator-kms-key-id> \
+  --encryption-key.kms-ciphertext <encryption-key-ciphertext-base64> \
   --storage-key.epoch <32-byte-hex-epoch> \
   --storage-key.setup-context <setup-context-file> \
   --storage-key.public-key-set <public-key-set-file> \
   --storage-key.secret-share <secret-share-file>
 ```
 
-For local development, the validator can use its default insecure development key. Production deployments should
-configure validator signing explicitly, either with a local key or with KMS-backed signing.
+A signing key is required — the validator has no default key. Pass either a hex-encoded secret (`--signing-key.hex`) or
+a KMS key ID (`--signing-key.kms-id`). For local development, `miden-validator keygen` generates a fresh key-pair;
+production deployments should use KMS-backed signing.
 
 In addition to its signing key, every validator holds the shared transaction encryption key, configured with
-`--encryption-key.hex` or `MIDEN_VALIDATOR_ENCRYPTION_KEY`. Unlike the signing key, this value must be identical across
-every validator in the set. The validator logs a warning at startup if the insecure development default is in use, and
-always logs the resolved key id so you can confirm which key is live.
+`--encryption-key.hex` or `MIDEN_VALIDATOR_ENCRYPTION_KEY` (`keygen` generates one alongside the signing key-pair).
+Unlike the signing key, this value must be identical across every validator in the set.
 
 Production deployments should not pass the secret in plaintext. Instead, wrap it with a symmetric AWS KMS key
 (`aws kms encrypt`) and pass the resulting base64 ciphertext blob unchanged via `--encryption-key.kms-ciphertext` or

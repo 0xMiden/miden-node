@@ -111,9 +111,6 @@ pub struct ActorConfig {
     /// Maximum number of `FEE_SPONSORSHIP` notes attached to a single feature note. When a feature
     /// note has more pending sponsorships, a random subset of this size is selected.
     pub max_sponsorships_per_note: NonZeroUsize,
-    /// When set, a feature note with no pending sponsorship is skipped (without penalty) during
-    /// selection instead of being executed unsponsored. Leave unset while fees are zero.
-    pub require_sponsorship: bool,
     /// Maximum number of note execution attempts before dropping a note.
     pub max_note_attempts: usize,
     /// Duration after which an idle actor will deactivate.
@@ -190,7 +187,6 @@ impl AccountActorContext {
             config: ActorConfig {
                 max_notes_per_tx: NonZeroUsize::new(1).unwrap(),
                 max_sponsorships_per_note: NonZeroUsize::new(3).unwrap(),
-                require_sponsorship: false,
                 max_note_attempts: 1,
                 idle_timeout: Duration::from_mins(1),
                 max_cycles: 1 << 18,
@@ -575,7 +571,6 @@ impl AccountActor {
 
         let mut selected: Vec<NoteGroup> = Vec::new();
         let mut selected_notes = 0_usize;
-        let mut skipped_unsponsored = 0_usize;
         for feature in partitioned_notes.allowed {
             let mut group_sponsorships =
                 sponsorships.remove(&feature.as_note().id()).unwrap_or_default();
@@ -584,12 +579,6 @@ impl AccountActor {
             if group_sponsorships.len() > max_sponsorships {
                 group_sponsorships.shuffle(&mut rand::rng());
                 group_sponsorships.truncate(max_sponsorships);
-            }
-            // An unsponsored feature note is skipped without penalty (no attempt bump): its
-            // sponsorship may still arrive, and its arrival wakes the actor for a re-selection.
-            if self.config.require_sponsorship && group_sponsorships.is_empty() {
-                skipped_unsponsored += 1;
-                continue;
             }
             let group = NoteGroup {
                 feature,
@@ -603,15 +592,6 @@ impl AccountActor {
             selected_notes += group.num_notes();
             selected.push(group);
         }
-        if skipped_unsponsored > 0 {
-            tracing::info!(
-                target: LOG_TARGET,
-                %account_id,
-                skipped = skipped_unsponsored,
-                "skipping feature notes with no pending sponsorship",
-            );
-        }
-
         if selected.is_empty() {
             // Notes just marked failed re-enter eligibility via backoff; re-check on the next block
             // so the actor does not deactivate while it still has notes aging through their budget.
@@ -1287,42 +1267,6 @@ mod tests {
                 assert!(group.sponsorships.is_empty(), "feature B has no sponsorships");
             }
         }
-    }
-
-    /// With `require_sponsorship` set, an unsponsored feature note is skipped without burning an
-    /// attempt: its sponsorship may still arrive, and its arrival wakes the actor.
-    #[tokio::test]
-    async fn select_candidate_skips_unsponsored_without_penalty_when_required() {
-        let (db, _dir) = crate::db::test_setup().await;
-        let (account_id, account) = seed_selection_account(&db).await;
-
-        let sponsored = mock_single_target_note(account_id, 1);
-        let unsponsored = mock_single_target_note(account_id, 2);
-        db.insert_network_notes(vec![sponsored.clone(), unsponsored.clone()])
-            .await
-            .unwrap();
-        db.insert_sponsorship_notes(vec![mock_sponsorship(
-            account_id,
-            sponsored.as_note().id(),
-            3,
-        )])
-        .await
-        .unwrap();
-
-        let mut ctx = AccountActorContext::test(&db);
-        ctx.config.max_notes_per_tx = NonZeroUsize::new(20).unwrap();
-        ctx.config.require_sponsorship = true;
-        let actor = AccountActor::new(account_id, &ctx);
-        let chain_state = actor.state.chain.get_cloned();
-
-        let (candidate, _) = actor.select_candidate(&Arc::new(account), chain_state).await.unwrap();
-        let candidate = candidate.expect("the sponsored group is viable");
-
-        assert_eq!(candidate.notes.len(), 1);
-        assert_eq!(candidate.notes[0].feature.as_note().id(), sponsored.as_note().id());
-
-        let status = db.get_note_status(unsponsored.as_note().id()).await.unwrap().unwrap();
-        assert_eq!(status.attempt_count, 0, "a skipped unsponsored note must not be penalized");
     }
 
     /// A feature note with more pending sponsorships than the cap gets a subset of exactly the cap.

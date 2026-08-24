@@ -177,11 +177,6 @@ pub struct NtxBuilderConfig {
     /// note has more pending sponsorships, a random subset of this size is selected.
     pub max_sponsorships_per_note: NonZeroUsize,
 
-    /// When set, a feature note with no pending sponsorship is skipped (without penalty) during
-    /// selection instead of being executed unsponsored. Leave unset while fees are zero: available
-    /// sponsorships are attached either way.
-    pub require_sponsorship: bool,
-
     /// Maximum number of attempts to execute a failing note before dropping it. Notes use
     /// exponential backoff between attempts.
     pub max_note_attempts: usize,
@@ -240,7 +235,6 @@ impl NtxBuilderConfig {
             max_concurrent_txs: DEFAULT_MAX_CONCURRENT_TXS,
             max_notes_per_tx: DEFAULT_MAX_NOTES_PER_TX,
             max_sponsorships_per_note: DEFAULT_MAX_SPONSORSHIPS_PER_NOTE,
-            require_sponsorship: false,
             max_note_attempts: DEFAULT_MAX_NOTE_ATTEMPTS,
             max_block_count: DEFAULT_MAX_BLOCK_COUNT,
             account_channel_capacity: DEFAULT_ACCOUNT_CHANNEL_CAPACITY,
@@ -297,14 +291,6 @@ impl NtxBuilderConfig {
     #[must_use]
     pub fn with_max_sponsorships_per_note(mut self, max: NonZeroUsize) -> Self {
         self.max_sponsorships_per_note = max;
-        self
-    }
-
-    /// Sets whether a feature note without a pending sponsorship is skipped during selection
-    /// instead of being executed unsponsored.
-    #[must_use]
-    pub fn with_require_sponsorship(mut self, require: bool) -> Self {
-        self.require_sponsorship = require;
         self
     }
 
@@ -526,7 +512,6 @@ impl NtxBuilderConfig {
             config: ActorConfig {
                 max_notes_per_tx: self.max_notes_per_tx,
                 max_sponsorships_per_note: self.max_sponsorships_per_note,
-                require_sponsorship: self.require_sponsorship,
                 max_note_attempts: self.max_note_attempts,
                 idle_timeout: self.idle_timeout,
                 max_cycles: self.max_cycles,

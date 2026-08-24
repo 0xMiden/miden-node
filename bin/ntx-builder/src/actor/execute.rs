@@ -23,7 +23,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{AssetId, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::errors::TransactionInputError;
-use miden_protocol::note::{Note, NoteScript, NoteScriptRoot};
+use miden_protocol::note::{Note, NoteId, NoteScript, NoteScriptRoot};
 use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -53,7 +53,7 @@ use miden_tx::{
 };
 use tracing::Instrument;
 
-use crate::actor::candidate::TransactionCandidate;
+use crate::actor::candidate::{NoteGroup, TransactionCandidate};
 use crate::clients::{RemoteTransactionProver, RpcClient, RpcError};
 use crate::db::NtxDbReader;
 use crate::{COMPONENT, LOG_TARGET};
@@ -277,15 +277,6 @@ impl NtxContext {
 
         async move {
             Box::pin(async move {
-                // Flatten the groups for execution; the pairing between a sponsorship and its
-                // feature note is by note id, so the order within the list does not matter.
-                let notes = notes
-                    .into_iter()
-                    .flat_map(|group| {
-                        std::iter::once(group.feature.into_note()).chain(group.sponsorships)
-                    })
-                    .collect::<Vec<_>>();
-
                 // VM execution (note filtering + transaction execution) is CPU-intensive and may
                 // not yield between await points. Run it on a dedicated blocking thread while using
                 // the parent runtime handle to drive async RPC callbacks.
@@ -376,52 +367,113 @@ impl NtxContext {
     async fn filter_notes(
         &self,
         data_store: &NtxDataStore,
-        notes: Vec<Note>,
+        groups: Vec<NoteGroup>,
     ) -> NtxResult<FilteredNotes> {
+        let all_notes = groups.iter().flat_map(group_notes).collect::<Vec<_>>();
+        let (surviving, batch_failed) = self.check_consumability(data_store, all_notes).await?;
+
+        let mut kept: Vec<usize> = (0..groups.len())
+            .filter(|idx| group_notes(&groups[*idx]).iter().all(|n| surviving.contains(&n.id())))
+            .collect();
+
+        // The checker grows its candidate set one note at a time, so it can never admit a feature
+        // note and its sponsorship in the same step and drops groups that are only consumable as a
+        // whole. Re-offer each dropped group on top of the ones that survived, where adding the
+        // whole group is a single step.
+        let mut failed = Vec::new();
+        for idx in 0..groups.len() {
+            if kept.contains(&idx) {
+                continue;
+            }
+            let trial = kept
+                .iter()
+                .copied()
+                .chain(std::iter::once(idx))
+                .flat_map(|i| group_notes(&groups[i]))
+                .collect::<Vec<_>>();
+            let (_, trial_failed) = self.check_consumability(data_store, trial).await?;
+
+            if trial_failed.is_empty() {
+                kept.push(idx);
+            } else {
+                // Keep only this group's own failures: a note of an already-kept group cannot be
+                // at fault, since that set executed on its own.
+                let ids = group_notes(&groups[idx]).iter().map(Note::id).collect::<BTreeSet<_>>();
+                failed.extend(
+                    trial_failed.into_iter().filter(|f| ids.contains(&f.note().id())),
+                );
+            }
+        }
+
+        // The batch pass may have reported failures the retries did not repeat; carry over the ones
+        // belonging to groups that stayed out, without duplicating a note already recorded above.
+        let dropped = groups
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| !kept.contains(idx))
+            .flat_map(|(_, group)| group_notes(group))
+            .map(|note| note.id())
+            .collect::<BTreeSet<_>>();
+        let mut recorded = failed.iter().map(|f| f.note().id()).collect::<BTreeSet<_>>();
+        for failed_note in batch_failed {
+            if dropped.contains(&failed_note.note().id())
+                && recorded.insert(failed_note.note().id())
+            {
+                failed.push(failed_note);
+            }
+        }
+
+        for failed_note in &failed {
+            tracing::info!(
+                target: LOG_TARGET,
+                {
+                    note.id = %failed_note.note().id(),
+                    nullifier = %failed_note.note().nullifier(),
+                    err = %failed_note.error().as_report(),
+                },
+                "note failed consumability check",
+            );
+        }
+
+        let successful_notes = kept
+            .iter()
+            .flat_map(|idx| group_notes(&groups[*idx]))
+            .collect::<Vec<_>>();
+        let successful = InputNotes::from_unauthenticated_notes(successful_notes)
+            .map_err(NtxError::InputNotes)?;
+
+        // If none are successful, abort.
+        if successful.is_empty() {
+            return Err(NtxError::AllNotesFailed(failed));
+        }
+
+        let (cycle_limited, failed) = partition_cycle_limited(failed);
+        let (deferred, oversized) = self.classify_cycle_limited(data_store, cycle_limited).await;
+
+        Ok(FilteredNotes { successful, failed, deferred, oversized })
+    }
+
+    /// Runs the consumability checker over `notes` and returns the ids it accepted alongside the
+    /// notes it rejected.
+    async fn check_consumability(
+        &self,
+        data_store: &NtxDataStore,
+        notes: Vec<Note>,
+    ) -> NtxResult<(BTreeSet<NoteId>, Vec<FailedNote>)> {
         let executor = self.create_executor(data_store);
         let checker = NoteConsumptionChecker::new(&executor);
 
-        match Box::pin(checker.check_notes_consumability(
+        let consumption_info = Box::pin(checker.check_notes_consumability(
             data_store.account.id(),
             data_store.reference_block.block_num(),
             notes,
             TransactionArgs::default(),
         ))
         .await
-        {
-            Ok(consumption_info) => {
-                let (successful, failed) = consumption_info.into_parts();
-                for failed_note in &failed {
-                    tracing::info!(
-                        target: LOG_TARGET,
-                        {
-                            note.id = %failed_note.note().id(),
-                            nullifier = %failed_note.note().nullifier(),
-                            err = %failed_note.error().as_report(),
-                        },
-                        "note failed consumability check",
-                    );
-                }
+        .map_err(NtxError::NoteFilter)?;
 
-                // Map successful notes to input notes.
-                let successful_notes =
-                    successful.into_iter().map(|s| s.note().clone()).collect::<Vec<_>>();
-                let successful = InputNotes::from_unauthenticated_notes(successful_notes)
-                    .map_err(NtxError::InputNotes)?;
-
-                // If none are successful, abort.
-                if successful.is_empty() {
-                    return Err(NtxError::AllNotesFailed(failed));
-                }
-
-                let (cycle_limited, failed) = partition_cycle_limited(failed);
-                let (deferred, oversized) =
-                    self.classify_cycle_limited(data_store, cycle_limited).await;
-
-                Ok(FilteredNotes { successful, failed, deferred, oversized })
-            },
-            Err(err) => return Err(NtxError::NoteFilter(err)),
-        }
+        let (successful, failed) = consumption_info.into_parts();
+        Ok((successful.iter().map(|s| s.note().id()).collect(), failed))
     }
 
     /// Splits cycle-limited failed notes into `(deferred, oversized)` by re-checking each one on
@@ -550,6 +602,12 @@ impl NtxContext {
 }
 
 /// Splits failed notes into `(cycle_limited, genuine)`.
+fn group_notes(group: &NoteGroup) -> Vec<Note> {
+    std::iter::once(group.feature.as_note().clone())
+        .chain(group.sponsorships.iter().cloned())
+        .collect()
+}
+
 fn partition_cycle_limited(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<FailedNote>) {
     failed.into_iter().partition(|note| note.num_cycles().is_some())
 }

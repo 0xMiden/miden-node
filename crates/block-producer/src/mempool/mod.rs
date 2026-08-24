@@ -246,7 +246,7 @@ impl Mempool {
         &mut self,
         tx: Arc<AuthenticatedTransaction>,
     ) -> Result<BlockNumber, MempoolSubmissionError> {
-        if self.unbatched_transactions_count() >= self.config.tx_capacity.get() {
+        if self.uncommitted_transactions_count() >= self.config.tx_capacity.get() {
             return Err(MempoolSubmissionError::CapacityExceeded);
         }
 
@@ -283,7 +283,9 @@ impl Mempool {
     ) -> Result<BlockNumber, MempoolSubmissionError> {
         assert!(!txs.is_empty(), "Cannot have a batch with no transactions");
 
-        if self.unbatched_transactions_count() + txs.len() > self.config.tx_capacity.get() {
+        if self.uncommitted_transactions_count().saturating_add(txs.len())
+            > self.config.tx_capacity.get()
+        {
             return Err(MempoolSubmissionError::CapacityExceeded);
         }
 
@@ -583,6 +585,26 @@ impl Mempool {
     // STATS & INSPECTION
     // --------------------------------------------------------------------------------------------
 
+    /// Returns the latest block committed to the canonical chain.
+    pub fn committed_chain_tip(&self) -> BlockNumber {
+        self.committed_chain_tip
+    }
+
+    /// Returns the number of transactions that have not yet been committed.
+    pub fn uncommitted_transactions_count(&self) -> usize {
+        let committed_transactions = self
+            .committed_blocks
+            .iter()
+            .flat_map(|block| block.batches.iter())
+            .map(|batch| batch.transactions().as_slice().len())
+            .sum::<usize>();
+
+        self.transactions
+            .count()
+            .checked_sub(committed_transactions)
+            .expect("committed transactions must exist in the transaction graph")
+    }
+
     /// Returns the number of transactions currently waiting to be batched.
     pub fn unbatched_transactions_count(&self) -> usize {
         self.transactions.unselected_count()
@@ -602,14 +624,8 @@ impl Mempool {
     // --------------------------------------------------------------------------------------------
 
     fn telemetry(&self) -> MempoolTelemetry {
-        let committed_txs = self
-            .committed_blocks
-            .iter()
-            .flat_map(|block| block.batches.iter())
-            .map(|batch| batch.transactions().as_slice().len())
-            .sum::<usize>();
         MempoolTelemetry {
-            uncommitted_transactions: self.transactions.count() - committed_txs,
+            uncommitted_transactions: self.uncommitted_transactions_count(),
             unbatched_transactions: self.unbatched_transactions_count(),
             proposed_batches: self.proposed_batches_count(),
             proven_batches: self.proven_batches_count(),

@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use assert_matches::assert_matches;
@@ -55,6 +56,19 @@ fn user_batch_respects_batch_budget() {
     let result = uut.add_user_batch(&user_batch_txs[..2]);
 
     assert_matches!(result, Err(MempoolSubmissionError::CapacityExceeded));
+}
+
+#[test]
+fn user_batch_capacity_counts_batched_uncommitted_transactions() {
+    let (mut uut, _) = Mempool::for_tests();
+    uut.config.tx_capacity = NonZeroUsize::new(1).unwrap();
+    let conventional = build_tx(MockProvenTxBuilder::with_account_index(300));
+    let user_batch = [build_tx(MockProvenTxBuilder::with_account_index(301))];
+
+    uut.add_transaction(conventional).unwrap();
+    uut.select_any_batch().unwrap();
+
+    assert_matches!(uut.add_user_batch(&user_batch), Err(MempoolSubmissionError::CapacityExceeded));
 }
 
 #[test]

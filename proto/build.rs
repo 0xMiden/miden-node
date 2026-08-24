@@ -92,7 +92,7 @@ fn generate_file_descriptor(
         .and_then(OsStr::to_str)
         .ok_or_else(|| miette!("invalid file name for {grpc_service:?}"))?;
 
-    let file_descriptor = protox::compile([grpc_service], includes)?;
+    let file_descriptor = protox::compile([grpc_service], [includes])?;
     let file_descriptor = file_descriptor.encode_to_vec();
 
     let mut f = codegen::Function::new(format!("{file_name}_api_descriptor"));

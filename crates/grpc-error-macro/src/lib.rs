@@ -34,8 +34,10 @@ use syn::{Data, DeriveInput, Fields, Ident, parse_macro_input};
 ///
 /// # Attributes
 ///
-/// - `#[grpc(internal)]` - Marks a variant as an internal error (will map to
-///   `tonic::Code::Internal`)
+/// - `#[grpc(<code>)]` - Sets the variant's gRPC status code: `internal`, `invalid_argument`,
+///   `not_found`, `failed_precondition` or `resource_exhausted`. Variants without the attribute
+///   map to `invalid_argument`. Internal variants collapse into a shared `Internal` companion
+///   variant and their message is masked as `"Internal error"`.
 ///
 /// # Generated Code
 ///
@@ -64,6 +66,7 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
     // Build the GrpcError enum variants
     let mut grpc_variants = Vec::new();
     let mut api_error_arms = Vec::new();
+    let mut tonic_code_arms = Vec::new();
 
     // Always add Internal variant (standard practice for gRPC errors)
     grpc_variants.push(quote! {
@@ -75,45 +78,43 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
     for variant in variants {
         let variant_name = &variant.ident;
 
-        // Check if this variant is marked as internal
-        let is_internal = variant.attrs.iter().any(|attr| {
-            attr.path().is_ident("grpc")
-                && attr.parse_args::<Ident>().is_ok_and(|i| i == "internal")
-        });
+        // Parse the variant's `#[grpc(<code>)]` attribute; absent means `invalid_argument`.
+        let code = match variant_grpc_code(variant) {
+            Ok(code) => code,
+            Err(error) => return error.to_compile_error().into(),
+        };
 
         // Extract doc comments
         let docs: Vec<_> =
             variant.attrs.iter().filter(|attr| attr.path().is_ident("doc")).collect();
 
-        if is_internal {
-            // Map to Internal variant
-            let pattern = match &variant.fields {
-                Fields::Unit => quote! { #name::#variant_name },
-                Fields::Unnamed(_) => quote! { #name::#variant_name(..) },
-                Fields::Named(_) => quote! { #name::#variant_name { .. } },
-            };
+        let pattern = match &variant.fields {
+            Fields::Unit => quote! { #name::#variant_name },
+            Fields::Unnamed(_) => quote! { #name::#variant_name(..) },
+            Fields::Named(_) => quote! { #name::#variant_name { .. } },
+        };
 
-            api_error_arms.push(quote! {
-                #pattern => #grpc_name::Internal
-            });
-        } else {
+        if let Some(tonic_code) = code.tonic_code_ident() {
             // Create a corresponding variant in GrpcError enum
             grpc_variants.push(quote! {
                 #(#docs)*
                 #variant_name = #discriminant
             });
 
-            let pattern = match &variant.fields {
-                Fields::Unit => quote! { #name::#variant_name },
-                Fields::Unnamed(_) => quote! { #name::#variant_name(..) },
-                Fields::Named(_) => quote! { #name::#variant_name { .. } },
-            };
-
             api_error_arms.push(quote! {
                 #pattern => #grpc_name::#variant_name
             });
 
+            tonic_code_arms.push(quote! {
+                Self::#variant_name => tonic::Code::#tonic_code
+            });
+
             discriminant += 1;
+        } else {
+            // Map to Internal variant
+            api_error_arms.push(quote! {
+                #pattern => #grpc_name::Internal
+            });
         }
     }
 
@@ -137,10 +138,9 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
 
             /// Returns the appropriate tonic code for this error.
             pub fn tonic_code(&self) -> tonic::Code {
-                if self.is_internal() {
-                    tonic::Code::Internal
-                } else {
-                    tonic::Code::InvalidArgument
+                match self {
+                    Self::Internal => tonic::Code::Internal,
+                    #(#tonic_code_arms,)*
                 }
             }
         }
@@ -174,7 +174,68 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
                 )
             }
         }
+
+        impl ::miden_node_utils::tracing::GrpcFault for #name {
+            fn is_server_fault(&self) -> bool {
+                ::miden_node_utils::tracing::is_server_fault_code(self.api_error().tonic_code())
+            }
+        }
     };
 
     TokenStream::from(expanded)
+}
+
+/// The gRPC code assigned to an error variant via `#[grpc(<code>)]`.
+#[derive(Clone, Copy)]
+enum GrpcVariantCode {
+    Internal,
+    InvalidArgument,
+    NotFound,
+    FailedPrecondition,
+    ResourceExhausted,
+}
+
+impl GrpcVariantCode {
+    /// The identifier of the corresponding `tonic::Code` variant.
+    ///
+    /// `None` for internal errors, which collapse into the companion enum's `Internal` variant.
+    fn tonic_code_ident(self) -> Option<Ident> {
+        let name = match self {
+            Self::Internal => return None,
+            Self::InvalidArgument => "InvalidArgument",
+            Self::NotFound => "NotFound",
+            Self::FailedPrecondition => "FailedPrecondition",
+            Self::ResourceExhausted => "ResourceExhausted",
+        };
+        Some(Ident::new(name, proc_macro2::Span::call_site()))
+    }
+}
+
+/// Parses a variant's `#[grpc(<code>)]` attribute; a variant without one maps to
+/// `invalid_argument`.
+fn variant_grpc_code(variant: &syn::Variant) -> syn::Result<GrpcVariantCode> {
+    let mut code = GrpcVariantCode::InvalidArgument;
+    for attr in &variant.attrs {
+        if !attr.path().is_ident("grpc") {
+            continue;
+        }
+        let ident: Ident = attr.parse_args()?;
+        code = match ident.to_string().as_str() {
+            "internal" => GrpcVariantCode::Internal,
+            "invalid_argument" => GrpcVariantCode::InvalidArgument,
+            "not_found" => GrpcVariantCode::NotFound,
+            "failed_precondition" => GrpcVariantCode::FailedPrecondition,
+            "resource_exhausted" => GrpcVariantCode::ResourceExhausted,
+            other => {
+                return Err(syn::Error::new_spanned(
+                    &ident,
+                    format!(
+                        "unsupported gRPC code `{other}`; use one of: internal, \
+                         invalid_argument, not_found, failed_precondition, resource_exhausted"
+                    ),
+                ));
+            },
+        };
+    }
+    Ok(code)
 }

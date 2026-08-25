@@ -22,7 +22,7 @@ impl proto::server::rpc_api::Status for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "status",
-        err,
+        err(fault_only),
     )]
     async fn handle(
         &self,

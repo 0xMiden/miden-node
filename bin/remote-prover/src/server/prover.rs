@@ -71,7 +71,7 @@ trait ProveRequest: Send + Sync {
     #[miden_instrument(
         target=COMPONENT,
         name="prove",
-        err,
+        err(fault_only),
     )]
     fn prove_request(&self, request: proto::ProofRequest) -> Result<proto::Proof, tonic::Status> {
         let input = Self::decode_request(request)?;
@@ -80,7 +80,7 @@ trait ProveRequest: Send + Sync {
 
     #[miden_instrument(
         target=COMPONENT,
-        err,
+        err(fault_only),
     )]
     fn decode_request(request: proto::ProofRequest) -> Result<Self::Input, tonic::Status> {
         use miden_protocol::utils::serde::Deserializable;

@@ -36,7 +36,7 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
     #[miden_instrument(
         target = COMPONENT,
         name = "submit_proven_tx",
-        err,
+        err(fault_only),
     )]
     async fn handle(
         &self,

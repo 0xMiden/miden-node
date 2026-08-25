@@ -1,5 +1,4 @@
 use std::collections::{BTreeSet, HashMap};
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -342,13 +341,22 @@ impl NtxContext {
         }
     }
 
-    /// Filters a collection of notes, returning only those that can be successfully executed
-    /// against the given network account.
+    /// Filters the candidate's note groups down to those that can execute together, and
+    /// classifies the rest.
     ///
-    /// This function performs a consumability check on each provided note and partitions them into
-    /// two sets:
-    /// - Successful notes: notes that can be executed and are returned wrapped in [`InputNotes`].
-    /// - Failed notes: notes that cannot be executed.
+    /// [`NoteConsumptionChecker`] eliminates one note at a time. Fee collection runs in the
+    /// account's auth procedure, so an uncovered fee fails in the epilogue and drops the checker
+    /// into that search, where a feature note and its sponsorship are each invalid alone. Valid
+    /// pairs are discarded along with the note that actually failed.
+    ///
+    /// So the batch is checked once, then every group the checker did not prove is re-offered on
+    /// top of what it did, largest sponsorship set first. A trial is kept only if the checker
+    /// proves that exact set, so the result never regresses. For `[F0, S0, F1]` - a feature note,
+    /// its sponsorship, and an unsponsored feature note - the checker fails all three; the retry
+    /// proves `[F0, S0]` and records only `F1`.
+    ///
+    /// TODO: drop this once the checker can test a bundle atomically, see
+    /// <https://github.com/0xMiden/protocol/issues/3710>.
     ///
     /// # Guarantees
     ///
@@ -378,18 +386,19 @@ impl NtxContext {
         // a time. It cannot rediscover a feature and sponsorship that only execute together. Keep
         // the checker's proven-successful set as a monotonic baseline and re-offer each missing
         // dependency-closed variant on top of it. A failed retry never replaces that baseline.
-        successful_notes = retry_note_groups(&groups, successful_notes, |trial| async move {
-            let trial_len = trial.len();
-            let (trial_successful, trial_failed) =
-                self.check_consumability(data_store, trial).await?;
+        successful_notes =
+            retry_note_groups(&groups, successful_notes, |trial: Vec<Note>| async move {
+                let trial_len = trial.len();
+                let (trial_successful, trial_failed) =
+                    self.check_consumability(data_store, trial).await?;
 
-            // The checker first executes the exact trial. No failures and a matching cardinality
-            // therefore prove that complete set; otherwise its fallback result is not allowed to
-            // replace the previously proven baseline.
-            Ok((trial_failed.is_empty() && trial_successful.len() == trial_len)
-                .then_some(trial_successful))
-        })
-        .await?;
+                // The checker first executes the exact trial. No failures and a matching
+                // cardinality therefore prove that complete set; otherwise its fallback result is
+                // not allowed to replace the previously proven baseline.
+                Ok((trial_failed.is_empty() && trial_successful.len() == trial_len)
+                    .then_some(trial_successful))
+            })
+            .await?;
         let successful_ids = successful_notes.iter().map(Note::id).collect::<BTreeSet<_>>();
 
         let sponsor_to_feature = groups
@@ -585,7 +594,7 @@ impl NtxContext {
     }
 }
 
-/// Splits failed notes into `(cycle_limited, genuine)`.
+/// Returns a group's notes: the feature note followed by the sponsorships that pay its fee.
 fn group_notes(group: &NoteGroup) -> Vec<Note> {
     std::iter::once(group.feature.as_note().clone())
         .chain(group.sponsorships.iter().cloned())
@@ -627,17 +636,16 @@ fn group_retry_variants(group: &NoteGroup, successful: &BTreeSet<NoteId>) -> Vec
         .collect()
 }
 
-/// Retries missing group variants on top of `successful_notes` without ever replacing that proven
-/// baseline after a failed trial.
-async fn retry_note_groups<C, Fut>(
+/// Re-offers each unproven group on top of `successful_notes`, returning the largest set the
+/// checker proved. A failed trial never replaces the baseline.
+///
+/// `check_exact` runs one trial and returns the proven set, or `None` when the checker did not
+/// prove that exact set. It is a parameter so the retry order can be tested without a VM.
+async fn retry_note_groups(
     groups: &[NoteGroup],
     mut successful_notes: Vec<Note>,
-    mut check_exact: C,
-) -> NtxResult<Vec<Note>>
-where
-    C: FnMut(Vec<Note>) -> Fut,
-    Fut: Future<Output = NtxResult<Option<Vec<Note>>>>,
-{
+    mut check_exact: impl AsyncFnMut(Vec<Note>) -> NtxResult<Option<Vec<Note>>>,
+) -> NtxResult<Vec<Note>> {
     let mut successful_ids = successful_notes.iter().map(Note::id).collect::<BTreeSet<_>>();
 
     for group in groups {
@@ -668,6 +676,7 @@ fn should_record_failure(
             .is_none_or(|feature| !successful.contains(feature))
 }
 
+/// Splits failed notes into `(cycle_limited, genuine)`.
 fn partition_cycle_limited(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<FailedNote>) {
     failed.into_iter().partition(|note| note.num_cycles().is_some())
 }
@@ -1058,7 +1067,7 @@ mod tests {
 
         // Model the exact-set result established by the protocol test: the pair succeeds by itself,
         // while adding the uncovered second feature poisons the complete batch.
-        let recovered = retry_note_groups(&groups, vec![], |trial| {
+        let recovered = retry_note_groups(&groups, vec![], |trial: Vec<Note>| {
             let trial_ids = trial.iter().map(Note::id).collect::<BTreeSet<_>>();
             ready(Ok::<_, NtxError>((trial_ids == intact_ids).then_some(trial)))
         })

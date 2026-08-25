@@ -27,12 +27,11 @@ pub(crate) type StorageHeaderWithEntries =
 
 /// Reconstructs the account's current storage: value slots come from the header, map slots from the
 /// stored map entries.
-pub(crate) fn select_latest_account_storage(
+pub(crate) fn select_latest_storage(
     tx: &ReadTx<'_>,
     account_id: AccountId,
 ) -> Result<AccountStorage, DatabaseError> {
-    let (storage_header, map_entries_by_slot) =
-        select_latest_account_storage_components(tx, account_id)?;
+    let (storage_header, map_entries_by_slot) = select_latest_storage_components(tx, account_id)?;
 
     // Reconstruct StorageSlots from header slots + map entries
     let slots = storage_header
@@ -61,7 +60,7 @@ pub(crate) fn select_latest_account_storage(
 }
 
 /// Fetch account storage header and all storage maps
-pub(crate) fn select_latest_account_storage_components(
+pub(crate) fn select_latest_storage_components(
     tx: &ReadTx<'_>,
     account_id: AccountId,
 ) -> Result<StorageHeaderWithEntries, DatabaseError> {

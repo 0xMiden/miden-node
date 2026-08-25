@@ -78,12 +78,12 @@ fn select_full_account(db: &TestDb, account_id: AccountId) -> Result<Account> {
     db.read(move |tx| queries::select_full_account(tx, account_id))
 }
 
-fn select_account_vault_at_block(
+fn select_vault_at_block(
     db: &TestDb,
     account_id: AccountId,
     block_num: BlockNumber,
 ) -> Result<Vec<Asset>> {
-    db.read(move |tx| queries::select_account_vault_at_block(tx, account_id, block_num))
+    db.read(move |tx| queries::select_vault_at_block(tx, account_id, block_num))
 }
 
 fn select_account_header_with_storage_header_at_block(
@@ -456,8 +456,8 @@ fn optimized_delta_matches_full_account_method() {
     );
 
     // Verify vault assets
-    let vault_assets_after = select_account_vault_at_block(&db, account.id(), block_2)
-        .expect("Query vault should succeed");
+    let vault_assets_after =
+        select_vault_at_block(&db, account.id(), block_2).expect("Query vault should succeed");
 
     assert_eq!(vault_assets_after.len(), 1, "Should have 1 vault asset");
     assert_matches!(&vault_assets_after[0], Asset::Fungible(f) => {
@@ -594,8 +594,8 @@ fn optimized_delta_updates_non_empty_vault() {
     upsert_accounts(&db, &[account_update], block_2, &precomputed_public_states)
         .expect("Partial delta upsert failed");
 
-    let vault_assets_after = select_account_vault_at_block(&db, account.id(), block_2)
-        .expect("Query vault should succeed");
+    let vault_assets_after =
+        select_vault_at_block(&db, account.id(), block_2).expect("Query vault should succeed");
 
     assert_eq!(vault_assets_after.len(), 1, "Should have 1 vault asset");
     assert_matches!(&vault_assets_after[0], Asset::Fungible(f) => {

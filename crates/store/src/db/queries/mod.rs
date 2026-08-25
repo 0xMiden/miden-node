@@ -88,11 +88,11 @@ pub(crate) use insert_transactions::insert_transactions;
 // ACCOUNT QUERIES
 // =================================================================================================
 
-mod insert_account_storage_map_value;
-pub(crate) use insert_account_storage_map_value::insert_account_storage_map_value;
+mod insert_storage_map_value;
+pub(crate) use insert_storage_map_value::insert_storage_map_value;
 
-mod insert_account_vault_asset;
-pub(crate) use insert_account_vault_asset::insert_account_vault_asset;
+mod insert_vault_asset;
+pub(crate) use insert_vault_asset::insert_vault_asset;
 
 mod prune_history;
 pub use prune_history::HISTORICAL_BLOCK_RETENTION;
@@ -102,14 +102,14 @@ mod upsert_accounts;
 pub(crate) use upsert_accounts::{AccountRow, upsert_accounts};
 pub use upsert_accounts::{PrecomputedPublicAccountState, PrecomputedPublicAccountStates};
 
-mod select_network_accounts_subset;
-pub(crate) use select_network_accounts_subset::select_network_accounts_subset;
+mod filter_network_accounts;
+pub(crate) use filter_network_accounts::filter_network_accounts;
 
 mod select_account_header_with_storage_header_at_block;
 pub(crate) use select_account_header_with_storage_header_at_block::select_account_header_with_storage_header_at_block;
 
-mod select_account_vault_at_block;
-pub(crate) use select_account_vault_at_block::select_account_vault_at_block;
+mod select_vault_at_block;
+pub(crate) use select_vault_at_block::select_vault_at_block;
 
 #[cfg(test)]
 mod select_full_account;
@@ -117,9 +117,9 @@ mod select_full_account;
 pub(crate) use select_full_account::select_full_account;
 
 #[cfg(test)]
-mod select_latest_account_storage;
+mod select_latest_storage;
 #[cfg(test)]
-pub(crate) use select_latest_account_storage::select_latest_account_storage;
+pub(crate) use select_latest_storage::select_latest_storage;
 
 // BLOCK APPLICATION
 // =================================================================================================

@@ -44,10 +44,7 @@ pub(crate) fn select_account_header_with_storage_header_at_block(
     };
 
     // A private account stores none of these, in which case the header reads as empty/default.
-    let storage_header = match storage_header {
-        Some(header) => header,
-        None => AccountStorageHeader::new(Vec::new())?,
-    };
+    let storage_header = storage_header.unwrap_or(AccountStorageHeader::new(Vec::new())?);
     let storage_commitment = storage_header.to_commitment();
 
     let account_header = AccountHeader::new(

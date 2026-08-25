@@ -518,13 +518,13 @@ impl Db {
         target = COMPONENT,
         err,
     )]
-    pub async fn select_network_accounts_subset(
+    pub async fn filter_network_accounts(
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<HashSet<AccountId>> {
         self.reader
-            .read("Filter network accounts subset", move |tx| {
-                queries::select_network_accounts_subset(tx, &account_ids)
+            .read("Filter network accounts", move |tx| {
+                queries::filter_network_accounts(tx, &account_ids)
             })
             .await
     }
@@ -841,14 +841,14 @@ impl Db {
     #[miden_instrument(
         target = COMPONENT,
     )]
-    pub async fn select_account_vault_at_block(
+    pub async fn select_vault_at_block(
         &self,
         account_id: AccountId,
         block_num: ScopedBlockNum,
     ) -> Result<Vec<Asset>, DatabaseError> {
         self.reader
-            .read("select account vault at block", move |tx| {
-                queries::select_account_vault_at_block(tx, account_id, *block_num)
+            .read("select vault at block", move |tx| {
+                queries::select_vault_at_block(tx, account_id, *block_num)
             })
             .await
     }

@@ -3,8 +3,8 @@
 //! Every account table is versioned: a row is applicable for blocks in `[block_num, valid_until)`,
 //! and writing a new version closes the previous one. This module owns that bookkeeping for the
 //! `accounts` row itself and drives the per-key writes in
-//! [`insert_account_vault_asset`](super::insert_account_vault_asset) and
-//! [`insert_account_storage_map_value`](super::insert_account_storage_map_value).
+//! [`insert_vault_asset`](super::insert_vault_asset) and
+//! [`insert_storage_map_value`](super::insert_storage_map_value).
 
 use std::collections::BTreeMap;
 
@@ -29,12 +29,12 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::NetworkAccount;
 
 use crate::COMPONENT;
-use crate::db::queries::insert_account_storage_map_value::insert_account_storage_map_value_inner;
+use crate::db::queries::insert_storage_map_value::insert_storage_map_value_inner;
 use crate::db::queries::{
     NetworkAccountType,
     VALID_FOREVER,
-    insert_account_storage_map_value,
-    insert_account_vault_asset,
+    insert_storage_map_value,
+    insert_vault_asset,
 };
 use crate::errors::DatabaseError;
 
@@ -159,16 +159,14 @@ fn upsert_account(
     for (acc_id, slot_name, key, value) in pending_storage_inserts {
         if account_is_new {
             // A brand-new account cannot have a previous open row to invalidate.
-            insert_account_storage_map_value_inner(
-                tx, acc_id, block_num, &slot_name, key, value, false,
-            )?;
+            insert_storage_map_value_inner(tx, acc_id, block_num, &slot_name, key, value, false)?;
         } else {
-            insert_account_storage_map_value(tx, acc_id, block_num, &slot_name, key, value)?;
+            insert_storage_map_value(tx, acc_id, block_num, &slot_name, key, value)?;
         }
     }
 
     for (acc_id, vault_key, asset) in pending_asset_inserts {
-        insert_account_vault_asset(tx, acc_id, block_num, vault_key, asset)?;
+        insert_vault_asset(tx, acc_id, block_num, vault_key, asset)?;
     }
 
     Ok(())

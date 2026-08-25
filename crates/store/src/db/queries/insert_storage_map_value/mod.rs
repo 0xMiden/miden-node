@@ -23,7 +23,7 @@ const SQL_INSERT: &str = include_str!("insert_storage_map_value.sql");
 /// # Errors
 ///
 /// Returns an error if the previous row cannot be invalidated or the new row cannot be inserted.
-pub(crate) fn insert_account_storage_map_value(
+pub(crate) fn insert_storage_map_value(
     tx: &WriteTx<'_>,
     account_id: AccountId,
     block_num: BlockNumber,
@@ -31,7 +31,7 @@ pub(crate) fn insert_account_storage_map_value(
     key: StorageMapKey,
     value: Word,
 ) -> Result<usize, DatabaseError> {
-    insert_account_storage_map_value_inner(tx, account_id, block_num, slot_name, key, value, true)
+    insert_storage_map_value_inner(tx, account_id, block_num, slot_name, key, value, true)
 }
 
 /// Inserts a versioned account storage-map value with optional previous-row invalidation.
@@ -46,7 +46,7 @@ pub(crate) fn insert_account_storage_map_value(
 /// # Errors
 ///
 /// Returns an error if the requested invalidation or insertion fails.
-pub(super) fn insert_account_storage_map_value_inner(
+pub(super) fn insert_storage_map_value_inner(
     tx: &WriteTx<'_>,
     account_id: AccountId,
     block_num: BlockNumber,

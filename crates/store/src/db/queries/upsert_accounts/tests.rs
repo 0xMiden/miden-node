@@ -67,32 +67,30 @@ fn upsert_accounts(
     })
 }
 
-fn insert_account_vault_asset(
+fn insert_vault_asset(
     db: &TestDb,
     account_id: AccountId,
     block_num: BlockNumber,
     vault_key: AssetId,
     asset: Option<Asset>,
 ) -> Result<usize> {
-    db.write(move |tx| {
-        queries::insert_account_vault_asset(tx, account_id, block_num, vault_key, asset)
-    })
+    db.write(move |tx| queries::insert_vault_asset(tx, account_id, block_num, vault_key, asset))
 }
 
 fn prune_history(db: &TestDb, chain_tip: BlockNumber) -> Result<(usize, usize, usize)> {
     db.write(move |tx| queries::prune_history(tx, chain_tip))
 }
 
-fn select_latest_account_storage(db: &TestDb, account_id: AccountId) -> Result<AccountStorage> {
-    db.read(move |tx| queries::select_latest_account_storage(tx, account_id))
+fn select_latest_storage(db: &TestDb, account_id: AccountId) -> Result<AccountStorage> {
+    db.read(move |tx| queries::select_latest_storage(tx, account_id))
 }
 
-fn select_account_vault_at_block(
+fn select_vault_at_block(
     db: &TestDb,
     account_id: AccountId,
     block_num: BlockNumber,
 ) -> Result<Vec<Asset>> {
-    db.read(move |tx| queries::select_account_vault_at_block(tx, account_id, block_num))
+    db.read(move |tx| queries::select_vault_at_block(tx, account_id, block_num))
 }
 
 fn select_account_header_with_storage_header_at_block(
@@ -105,12 +103,12 @@ fn select_account_header_with_storage_header_at_block(
     })
 }
 
-fn select_network_accounts_subset(
+fn filter_network_accounts(
     db: &TestDb,
     account_ids: &[AccountId],
 ) -> Result<std::collections::HashSet<AccountId>> {
     let account_ids = account_ids.to_vec();
-    db.read(move |tx| queries::select_network_accounts_subset(tx, &account_ids))
+    db.read(move |tx| queries::filter_network_accounts(tx, &account_ids))
 }
 
 // TEST HELPERS
@@ -457,7 +455,7 @@ fn select_account_header_at_block_historical_query() {
 // ================================================================================================
 
 #[test]
-fn select_account_vault_at_block_empty() {
+fn select_vault_at_block_empty() {
     let db = TestDb::new();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -477,8 +475,7 @@ fn select_account_vault_at_block_empty() {
         .expect("upsert_accounts failed");
 
     // Query vault - should return empty (the test account has no assets)
-    let assets =
-        select_account_vault_at_block(&db, account_id, block_num).expect("Query should succeed");
+    let assets = select_vault_at_block(&db, account_id, block_num).expect("Query should succeed");
 
     assert!(assets.is_empty(), "Account should have no assets");
 }
@@ -517,7 +514,7 @@ fn upsert_accounts_inserts_storage_header() {
 
     // Query storage header back
     let queried_storage =
-        select_latest_account_storage(&db, account_id).expect("Failed to query storage header");
+        select_latest_storage(&db, account_id).expect("Failed to query storage header");
 
     // Verify storage commitment matches
     assert_eq!(
@@ -622,7 +619,7 @@ fn upsert_accounts_closes_previous_validity_interval() {
 
     // Verify latest storage matches second update
     let latest_storage =
-        select_latest_account_storage(&db, account_id).expect("Failed to query latest storage");
+        select_latest_storage(&db, account_id).expect("Failed to query latest storage");
 
     assert_eq!(
         latest_storage.to_commitment(),
@@ -701,8 +698,7 @@ fn upsert_accounts_with_multiple_storage_slots() {
         .expect("Upsert with multiple storage slots failed");
 
     // Query back and verify
-    let queried_storage =
-        select_latest_account_storage(&db, account_id).expect("Failed to query storage");
+    let queried_storage = select_latest_storage(&db, account_id).expect("Failed to query storage");
 
     assert_eq!(
         queried_storage.to_commitment(),
@@ -772,8 +768,7 @@ fn upsert_accounts_with_empty_storage() {
         .expect("Upsert with empty storage failed");
 
     // Query back and verify
-    let queried_storage =
-        select_latest_account_storage(&db, account_id).expect("Failed to query storage");
+    let queried_storage = select_latest_storage(&db, account_id).expect("Failed to query storage");
 
     assert_eq!(
         queried_storage.to_commitment(),
@@ -798,7 +793,7 @@ fn upsert_accounts_with_empty_storage() {
 // ================================================================================================
 
 #[test]
-fn select_latest_account_storage_ordering_semantics() {
+fn select_latest_storage_ordering_semantics() {
     let db = TestDb::new();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&db, block_num);
@@ -838,14 +833,14 @@ fn select_latest_account_storage_ordering_semantics() {
     upsert_accounts(&db, &[account_update], block_num, &PrecomputedPublicAccountStates::new())
         .expect("upsert_accounts failed");
 
-    let storage = select_latest_account_storage(&db, account_id).expect("Failed to query storage");
+    let storage = select_latest_storage(&db, account_id).expect("Failed to query storage");
 
     let expected = BTreeMap::from_iter(entries);
     assert_storage_map_slot_entries(&storage, &slot_name, &expected);
 }
 
 #[test]
-fn select_latest_account_storage_multiple_slots() {
+fn select_latest_storage_multiple_slots() {
     let db = TestDb::new();
     let block_num = BlockNumber::from_epoch(0);
     insert_block_header(&db, block_num);
@@ -900,7 +895,7 @@ fn select_latest_account_storage_multiple_slots() {
     upsert_accounts(&db, &[account_update], block_num, &PrecomputedPublicAccountStates::new())
         .expect("upsert_accounts failed");
 
-    let storage = select_latest_account_storage(&db, account_id).expect("Failed to query storage");
+    let storage = select_latest_storage(&db, account_id).expect("Failed to query storage");
 
     let expected_slot_1 = BTreeMap::from_iter([(key_a, value_a)]);
     let expected_slot_2 = BTreeMap::from_iter([(key_b, value_b)]);
@@ -910,7 +905,7 @@ fn select_latest_account_storage_multiple_slots() {
 }
 
 #[test]
-fn select_latest_account_storage_slot_updates() {
+fn select_latest_storage_slot_updates() {
     let db = TestDb::new();
     let block_1 = BlockNumber::from_epoch(0);
     let block_2 = BlockNumber::from_epoch(1);
@@ -970,7 +965,7 @@ fn select_latest_account_storage_slot_updates() {
     upsert_accounts(&db, &[account_update], block_2, &precomputed_public_states)
         .expect("upsert_accounts failed");
 
-    let storage = select_latest_account_storage(&db, account_id).expect("Failed to query storage");
+    let storage = select_latest_storage(&db, account_id).expect("Failed to query storage");
 
     let expected = BTreeMap::from_iter([(key_1, value_2), (key_2, value_3)]);
     assert_storage_map_slot_entries(&storage, &slot_name, &expected);
@@ -985,7 +980,7 @@ fn select_latest_account_storage_slot_updates() {
 /// Focuses on deduplication logic that relies on ordering by (`vault_key` ASC and `block_num`
 /// DESC).
 #[test]
-fn select_account_vault_at_block_historical_with_updates() {
+fn select_vault_at_block_historical_with_updates() {
     use assert_matches::assert_matches;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::{
@@ -1030,36 +1025,36 @@ fn select_account_vault_at_block_historical_with_updates() {
     let asset_v1 = Asset::Fungible(FungibleAsset::new(faucet_id, 1000).unwrap());
     let vault_key_1 = asset_v1.id();
 
-    insert_account_vault_asset(&db, account_id, block_1, vault_key_1, Some(asset_v1))
+    insert_vault_asset(&db, account_id, block_1, vault_key_1, Some(asset_v1))
         .expect("insert vault asset failed");
 
     // Update vault asset at block 2: vault_key_1 = 2000 tokens (updated value)
     let asset_v2 = Asset::Fungible(FungibleAsset::new(faucet_id, 2000).unwrap());
-    insert_account_vault_asset(&db, account_id, block_2, vault_key_1, Some(asset_v2))
+    insert_vault_asset(&db, account_id, block_2, vault_key_1, Some(asset_v2))
         .expect("insert vault asset update failed");
 
     // Add a second vault_key at block 2 (different faucet for different vault key)
     let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
     let asset_key2 = Asset::Fungible(FungibleAsset::new(faucet_id_2, 500).unwrap());
     let vault_key_2 = asset_key2.id();
-    insert_account_vault_asset(&db, account_id, block_2, vault_key_2, Some(asset_key2))
+    insert_vault_asset(&db, account_id, block_2, vault_key_2, Some(asset_key2))
         .expect("insert second vault asset failed");
 
     // Update vault_key_1 again at block 3: vault_key_1 = 3000 tokens
     let asset_v3 = Asset::Fungible(FungibleAsset::new(faucet_id, 3000).unwrap());
-    insert_account_vault_asset(&db, account_id, block_3, vault_key_1, Some(asset_v3))
+    insert_vault_asset(&db, account_id, block_3, vault_key_1, Some(asset_v3))
         .expect("insert vault asset update 2 failed");
 
     // Query at block 1: should only see vault_key_1 with 1000 tokens
-    let assets_at_block_1 = select_account_vault_at_block(&db, account_id, block_1)
-        .expect("Query at block 1 should succeed");
+    let assets_at_block_1 =
+        select_vault_at_block(&db, account_id, block_1).expect("Query at block 1 should succeed");
 
     assert_eq!(assets_at_block_1.len(), 1, "Should have 1 asset at block 1");
     assert_matches!(&assets_at_block_1[0], Asset::Fungible(f) if f.amount().as_u64() == 1000);
 
     // Query at block 2: should see vault_key_1 with 2000 tokens AND vault_key_2 with 500 tokens
-    let assets_at_block_2 = select_account_vault_at_block(&db, account_id, block_2)
-        .expect("Query at block 2 should succeed");
+    let assets_at_block_2 =
+        select_vault_at_block(&db, account_id, block_2).expect("Query at block 2 should succeed");
 
     assert_eq!(assets_at_block_2.len(), 2, "Should have 2 assets at block 2");
 
@@ -1073,8 +1068,8 @@ fn select_account_vault_at_block_historical_with_updates() {
     assert!(amounts.contains(&500), "Block 2 should have vault_key_2 with 500 tokens");
 
     // Query at block 3: should see vault_key_1 with 3000 tokens AND vault_key_2 with 500 tokens
-    let assets_at_block_3 = select_account_vault_at_block(&db, account_id, block_3)
-        .expect("Query at block 3 should succeed");
+    let assets_at_block_3 =
+        select_vault_at_block(&db, account_id, block_3).expect("Query at block 3 should succeed");
 
     assert_eq!(assets_at_block_3.len(), 2, "Should have 2 assets at block 3");
 
@@ -1090,7 +1085,7 @@ fn select_account_vault_at_block_historical_with_updates() {
 /// Tests that the query bounds the number of rows it reads, so an over-the-limit vault is detected
 /// without materializing the whole set.
 #[test]
-fn select_account_vault_at_block_bounds_read_to_limit() {
+fn select_vault_at_block_bounds_read_to_limit() {
     let db = TestDb::new();
     let (account, _) = create_test_account_with_storage();
     let account_id = account.id();
@@ -1120,20 +1115,19 @@ fn select_account_vault_at_block_bounds_read_to_limit() {
     for i in 0..asset_count {
         let details = NonFungibleAssetDetails::new(faucet_id, vec![i as u8, (i >> 8) as u8]);
         let asset = Asset::NonFungible(NonFungibleAsset::new(&details));
-        insert_account_vault_asset(&db, account_id, block_1, asset.id(), Some(asset))
+        insert_vault_asset(&db, account_id, block_1, asset.id(), Some(asset))
             .expect("insert vault asset failed");
     }
 
     // The query is capped at `MAX_RETURN_ENTRIES + 1` rows even though more assets exist, which is
     // enough for the caller to detect that the limit was exceeded.
-    let assets =
-        select_account_vault_at_block(&db, account_id, block_1).expect("query should succeed");
+    let assets = select_vault_at_block(&db, account_id, block_1).expect("query should succeed");
     assert_eq!(assets.len(), AccountVaultDetails::MAX_RETURN_ENTRIES + 1);
 }
 
 /// Tests that a 5-block history returns the correct asset per block.
 #[test]
-fn select_account_vault_at_block_exponential_updates() {
+fn select_vault_at_block_exponential_updates() {
     const BLOCK_COUNT: u32 = 5;
 
     use assert_matches::assert_matches;
@@ -1174,13 +1168,13 @@ fn select_account_vault_at_block_exponential_updates() {
     for (index, block) in blocks.iter().enumerate() {
         let amount = 1u64 << index;
         let asset = Asset::Fungible(FungibleAsset::new(faucet_id, amount).unwrap());
-        insert_account_vault_asset(&db, account_id, *block, vault_key, Some(asset))
+        insert_vault_asset(&db, account_id, *block, vault_key, Some(asset))
             .expect("insert vault asset failed");
     }
 
     for (index, block) in blocks.iter().enumerate() {
-        let assets_at_block = select_account_vault_at_block(&db, account_id, *block)
-            .expect("Query at block should succeed");
+        let assets_at_block =
+            select_vault_at_block(&db, account_id, *block).expect("Query at block should succeed");
 
         assert_eq!(assets_at_block.len(), 1, "Should have 1 asset at block");
         let expected_amount = 1u64 << index;
@@ -1194,7 +1188,7 @@ fn select_account_vault_at_block_exponential_updates() {
 /// Tests that deleted vault assets (asset = None) are correctly excluded from results, and that the
 /// deduplication handles deletion entries properly.
 #[test]
-fn select_account_vault_at_block_with_deletion() {
+fn select_vault_at_block_with_deletion() {
     use assert_matches::assert_matches;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -1236,31 +1230,31 @@ fn select_account_vault_at_block_with_deletion() {
     let asset = Asset::Fungible(FungibleAsset::new(faucet_id, 1000).unwrap());
     let vault_key = asset.id();
 
-    insert_account_vault_asset(&db, account_id, block_1, vault_key, Some(asset))
+    insert_vault_asset(&db, account_id, block_1, vault_key, Some(asset))
         .expect("insert vault asset failed");
 
     // Delete the vault asset at block 2 (insert with asset = None)
-    insert_account_vault_asset(&db, account_id, block_2, vault_key, None)
+    insert_vault_asset(&db, account_id, block_2, vault_key, None)
         .expect("delete vault asset failed");
 
     // Re-add the vault asset at block 3 with different amount
     let asset_v3 = Asset::Fungible(FungibleAsset::new(faucet_id, 2000).unwrap());
-    insert_account_vault_asset(&db, account_id, block_3, vault_key, Some(asset_v3))
+    insert_vault_asset(&db, account_id, block_3, vault_key, Some(asset_v3))
         .expect("re-add vault asset failed");
 
     // Query at block 1: should see the asset
-    let assets_at_block_1 = select_account_vault_at_block(&db, account_id, block_1)
-        .expect("Query at block 1 should succeed");
+    let assets_at_block_1 =
+        select_vault_at_block(&db, account_id, block_1).expect("Query at block 1 should succeed");
     assert_eq!(assets_at_block_1.len(), 1, "Should have 1 asset at block 1");
 
     // Query at block 2: should NOT see the asset (it was deleted)
-    let assets_at_block_2 = select_account_vault_at_block(&db, account_id, block_2)
-        .expect("Query at block 2 should succeed");
+    let assets_at_block_2 =
+        select_vault_at_block(&db, account_id, block_2).expect("Query at block 2 should succeed");
     assert!(assets_at_block_2.is_empty(), "Should have no assets at block 2 (deleted)");
 
     // Query at block 3: should see the re-added asset with new amount
-    let assets_at_block_3 = select_account_vault_at_block(&db, account_id, block_3)
-        .expect("Query at block 3 should succeed");
+    let assets_at_block_3 =
+        select_vault_at_block(&db, account_id, block_3).expect("Query at block 3 should succeed");
     assert_eq!(assets_at_block_3.len(), 1, "Should have 1 asset at block 3");
     assert_matches!(&assets_at_block_3[0], Asset::Fungible(f) if f.amount().as_u64() == 2000);
 }
@@ -1777,12 +1771,11 @@ fn network_accounts_subset_classifies_correctly() {
     // Batched lookup returns only the network-classified id; public, private, and unknown ids are
     // all omitted.
     let subset =
-        select_network_accounts_subset(&db, &[network_id, public_id, private_id, unknown_id])
-            .unwrap();
+        filter_network_accounts(&db, &[network_id, public_id, private_id, unknown_id]).unwrap();
     assert_eq!(subset.len(), 1);
     assert!(subset.contains(&network_id));
 
     // Empty input slice short-circuits to an empty result.
-    let empty = select_network_accounts_subset(&db, &[]).unwrap();
+    let empty = filter_network_accounts(&db, &[]).unwrap();
     assert!(empty.is_empty());
 }

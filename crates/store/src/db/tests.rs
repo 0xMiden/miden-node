@@ -159,7 +159,7 @@ fn upsert_accounts(
     })
 }
 
-fn insert_account_storage_map_value(
+fn insert_storage_map_value(
     db: &TestDb,
     account_id: AccountId,
     block_num: BlockNumber,
@@ -168,20 +168,18 @@ fn insert_account_storage_map_value(
     value: Word,
 ) -> Result<usize> {
     db.write(move |tx| {
-        queries::insert_account_storage_map_value(tx, account_id, block_num, &slot_name, key, value)
+        queries::insert_storage_map_value(tx, account_id, block_num, &slot_name, key, value)
     })
 }
 
-fn insert_account_vault_asset(
+fn insert_vault_asset(
     db: &TestDb,
     account_id: AccountId,
     block_num: BlockNumber,
     vault_key: AssetId,
     asset: Option<Asset>,
 ) -> Result<usize> {
-    db.write(move |tx| {
-        queries::insert_account_vault_asset(tx, account_id, block_num, vault_key, asset)
-    })
+    db.write(move |tx| queries::insert_vault_asset(tx, account_id, block_num, vault_key, asset))
 }
 
 fn prune_history(db: &TestDb, chain_tip: BlockNumber) -> Result<(usize, usize, usize)> {
@@ -279,8 +277,8 @@ fn select_account_code_by_commitment(
     diesel_queries::select_account_code_by_commitment(&mut db.diesel_conn(), code_commitment)
 }
 
-fn select_latest_account_storage(db: &TestDb, account_id: AccountId) -> Result<AccountStorage> {
-    db.read(move |tx| queries::select_latest_account_storage(tx, account_id))
+fn select_latest_storage(db: &TestDb, account_id: AccountId) -> Result<AccountStorage> {
+    db.read(move |tx| queries::select_latest_storage(tx, account_id))
 }
 
 fn select_account_storage_map_values_paged(
@@ -305,12 +303,12 @@ fn select_account_vault_assets(
     diesel_queries::select_account_vault_assets(&mut db.diesel_conn(), account_id, block_range)
 }
 
-fn select_account_vault_at_block(
+fn select_vault_at_block(
     db: &TestDb,
     account_id: AccountId,
     block_num: BlockNumber,
 ) -> Result<Vec<Asset>> {
-    db.read(move |tx| queries::select_account_vault_at_block(tx, account_id, block_num))
+    db.read(move |tx| queries::select_vault_at_block(tx, account_id, block_num))
 }
 
 fn select_transactions_records(
@@ -618,27 +616,15 @@ fn sync_account_vault_basic_validation() {
     let vault_key_2 = fungible_asset_2.id();
 
     // Insert vault assets for the public account at different blocks
-    insert_account_vault_asset(
-        db,
-        public_account_id,
-        block_from,
-        vault_key_1,
-        Some(fungible_asset_1),
-    )
-    .unwrap();
-    insert_account_vault_asset(
-        db,
-        public_account_id,
-        block_mid,
-        vault_key_2,
-        Some(fungible_asset_2),
-    )
-    .unwrap();
+    insert_vault_asset(db, public_account_id, block_from, vault_key_1, Some(fungible_asset_1))
+        .unwrap();
+    insert_vault_asset(db, public_account_id, block_mid, vault_key_2, Some(fungible_asset_2))
+        .unwrap();
 
     // Update an existing vault asset (sets previous as not latest)
     let updated_fungible_asset_1 =
         Asset::Fungible(FungibleAsset::new(public_account_id, 1500).unwrap());
-    insert_account_vault_asset(
+    insert_vault_asset(
         db,
         public_account_id,
         block_to,
@@ -1268,15 +1254,8 @@ fn insert_account_patch(
 ) {
     for (slot_name, slot_patch) in patch.storage().maps() {
         for (k, v) in slot_patch.entries().into_iter().flat_map(StorageMapPatchEntries::as_map) {
-            insert_account_storage_map_value(
-                db,
-                account_id,
-                block_number,
-                slot_name.clone(),
-                *k,
-                *v,
-            )
-            .unwrap();
+            insert_storage_map_value(db, account_id, block_number, slot_name.clone(), *k, *v)
+                .unwrap();
         }
     }
 }
@@ -1412,20 +1391,15 @@ fn select_storage_map_sync_values() {
 
     // Insert data across multiple blocks using individual inserts Block 1: key1 -> value1, key2 ->
     // value2
-    insert_account_storage_map_value(db, account_id, block1, slot_name.clone(), key1, value1)
-        .unwrap();
-    insert_account_storage_map_value(db, account_id, block1, slot_name.clone(), key2, value2)
-        .unwrap();
+    insert_storage_map_value(db, account_id, block1, slot_name.clone(), key1, value1).unwrap();
+    insert_storage_map_value(db, account_id, block1, slot_name.clone(), key2, value2).unwrap();
 
     // Block 2: key2 -> value3 (update), key3 -> value3 (new)
-    insert_account_storage_map_value(db, account_id, block2, slot_name.clone(), key2, value3)
-        .unwrap();
-    insert_account_storage_map_value(db, account_id, block2, slot_name.clone(), key3, value3)
-        .unwrap();
+    insert_storage_map_value(db, account_id, block2, slot_name.clone(), key2, value3).unwrap();
+    insert_storage_map_value(db, account_id, block2, slot_name.clone(), key3, value3).unwrap();
 
     // Block 3: key1 -> value2 (update)
-    insert_account_storage_map_value(db, account_id, block3, slot_name.clone(), key1, value2)
-        .unwrap();
+    insert_storage_map_value(db, account_id, block3, slot_name.clone(), key1, value2).unwrap();
 
     let page = select_account_storage_map_values_paged(
         db,
@@ -1473,8 +1447,7 @@ fn select_storage_map_sync_values_for_network_account() {
     let key = StorageMapKey::from_index(1);
     let value = num_to_word(10);
 
-    insert_account_storage_map_value(db, account_id, block_num, slot_name.clone(), key, value)
-        .unwrap();
+    insert_storage_map_value(db, account_id, block_num, slot_name.clone(), key, value).unwrap();
 
     let page = select_account_storage_map_values_paged(
         db,
@@ -1527,7 +1500,7 @@ fn select_storage_map_sync_values_paginates_until_last_block() {
     )
     .unwrap();
 
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         account_id,
         block1,
@@ -1536,7 +1509,7 @@ fn select_storage_map_sync_values_paginates_until_last_block() {
         num_to_word(11),
     )
     .unwrap();
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         account_id,
         block2,
@@ -1545,7 +1518,7 @@ fn select_storage_map_sync_values_paginates_until_last_block() {
         num_to_word(22),
     )
     .unwrap();
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         account_id,
         block3,
@@ -1585,7 +1558,7 @@ fn select_storage_map_sync_values_all_entries_in_genesis_block() {
 
     // Insert 3 entries, all in genesis block
     for i in 0..3 {
-        insert_account_storage_map_value(
+        insert_storage_map_value(
             db,
             account_id,
             genesis,
@@ -1632,7 +1605,7 @@ fn select_storage_map_sync_values_all_entries_in_single_non_genesis_block() {
     .unwrap();
 
     for i in 0..3 {
-        insert_account_storage_map_value(
+        insert_storage_map_value(
             db,
             account_id,
             block5,
@@ -1689,7 +1662,7 @@ fn select_storage_map_sync_values_multi_block_pagination() {
     .unwrap();
 
     // 1 entry in block 1, 1 in block 2, 1 in block 3
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         account_id,
         block1,
@@ -1698,7 +1671,7 @@ fn select_storage_map_sync_values_multi_block_pagination() {
         num_to_word(11),
     )
     .unwrap();
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         account_id,
         block2,
@@ -1707,7 +1680,7 @@ fn select_storage_map_sync_values_multi_block_pagination() {
         num_to_word(22),
     )
     .unwrap();
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         account_id,
         block3,
@@ -1756,7 +1729,7 @@ async fn reconstruct_storage_map_from_db_pages_until_latest() {
                     &PrecomputedPublicAccountStates::new(),
                 )?;
                 let entry = (index + 1) as u64;
-                queries::insert_account_storage_map_value(
+                queries::insert_storage_map_value(
                     tx,
                     account_id,
                     block,
@@ -1816,7 +1789,7 @@ async fn reconstruct_storage_map_from_db_returns_limit_exceeded_for_single_block
 
             // Insert 3 entries, all in the same block
             for i in 1..=3 {
-                queries::insert_account_storage_map_value(
+                queries::insert_storage_map_value(
                     tx,
                     account_id,
                     block5,
@@ -2784,7 +2757,7 @@ fn db_roundtrip_vault_assets() {
     let vault_key = asset.id();
 
     // Insert vault asset
-    insert_account_vault_asset(db, account_id, block_num, vault_key, Some(asset)).unwrap();
+    insert_vault_asset(db, account_id, block_num, vault_key, Some(asset)).unwrap();
 
     // Retrieve
     let (_, vault_assets) =
@@ -2826,8 +2799,7 @@ fn db_roundtrip_storage_map_values() {
     .unwrap();
 
     // Insert
-    insert_account_storage_map_value(db, account_id, block_num, slot_name.clone(), key, value)
-        .unwrap();
+    insert_storage_map_value(db, account_id, block_num, slot_name.clone(), key, value).unwrap();
 
     // Retrieve
     let page = select_account_storage_map_values_paged(
@@ -2920,9 +2892,8 @@ fn db_roundtrip_account_storage_with_maps() {
     upsert_accounts(db, &[block_update], block_num, &precomputed_states_from_account(&account))
         .unwrap();
 
-    // Retrieve the storage using select_latest_account_storage (reconstructs from header + map
-    // values)
-    let retrieved_storage = select_latest_account_storage(db, account_id).unwrap();
+    // Retrieve the storage using select_latest_storage (reconstructs from header + map values)
+    let retrieved_storage = select_latest_storage(db, account_id).unwrap();
     let retrieved_commitment = retrieved_storage.to_commitment();
 
     // Verify the commitment matches (this proves the reconstruction is correct)
@@ -3082,38 +3053,23 @@ fn test_prune_history() {
     // Stale entry at block_0, superseded at block_old which is also below the cutoff — should be
     // deleted.
     let stale_asset = Asset::Fungible(FungibleAsset::new(public_account_id, 500).unwrap());
-    insert_account_vault_asset(db, public_account_id, block_0, vault_key_old, Some(stale_asset))
-        .unwrap();
+    insert_vault_asset(db, public_account_id, block_0, vault_key_old, Some(stale_asset)).unwrap();
 
     // Entry at block_old, superseded only at block_update which is above the cutoff — must be
     // retained as the key's baseline for reads at block_cutoff.
-    insert_account_vault_asset(db, public_account_id, block_old, vault_key_old, Some(asset_1))
-        .unwrap();
+    insert_vault_asset(db, public_account_id, block_old, vault_key_old, Some(asset_1)).unwrap();
 
     // Entry exactly at cutoff (block_cutoff, should be retained)
-    insert_account_vault_asset(
-        db,
-        public_account_id,
-        block_cutoff,
-        vault_key_cutoff,
-        Some(asset_2),
-    )
-    .unwrap();
+    insert_vault_asset(db, public_account_id, block_cutoff, vault_key_cutoff, Some(asset_2))
+        .unwrap();
 
     // Recent entry (should always be retained)
-    insert_account_vault_asset(db, public_account_id, block_tip, vault_key_recent, Some(asset_3))
-        .unwrap();
+    insert_vault_asset(db, public_account_id, block_tip, vault_key_recent, Some(asset_3)).unwrap();
 
     // Update an entry to create a non-latest version
     let updated_asset = Asset::Fungible(FungibleAsset::new(public_account_id, 1500).unwrap());
-    insert_account_vault_asset(
-        db,
-        public_account_id,
-        block_update,
-        vault_key_old,
-        Some(updated_asset),
-    )
-    .unwrap();
+    insert_vault_asset(db, public_account_id, block_update, vault_key_old, Some(updated_asset))
+        .unwrap();
 
     // Insert storage map values at different blocks
     let slot_name = StorageSlotName::mock(5);
@@ -3128,7 +3084,7 @@ fn test_prune_history() {
 
     // Stale entry at block_0, superseded at block_old which is also below the cutoff — should be
     // deleted.
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         public_account_id,
         block_0,
@@ -3140,7 +3096,7 @@ fn test_prune_history() {
 
     // Entry at block_old, superseded only at block_update which is above the cutoff — must be
     // retained as the key's baseline for reads at block_cutoff.
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         public_account_id,
         block_old,
@@ -3151,7 +3107,7 @@ fn test_prune_history() {
     .unwrap();
 
     // Storage map entry at cutoff boundary (block_cutoff)
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         public_account_id,
         block_cutoff,
@@ -3162,7 +3118,7 @@ fn test_prune_history() {
     .unwrap();
 
     // Recent storage map entry
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         public_account_id,
         block_tip,
@@ -3173,7 +3129,7 @@ fn test_prune_history() {
     .unwrap();
 
     // Update map_key_old to create a non-latest entry at block_update
-    insert_account_storage_map_value(
+    insert_storage_map_value(
         db,
         public_account_id,
         block_update,
@@ -3273,8 +3229,7 @@ fn test_prune_history() {
 
     // Regression check for baseline loss: reconstructing the vault at the cutoff block must still
     // see block_old's value, even though that row is older than the cutoff.
-    let assets_at_cutoff =
-        select_account_vault_at_block(db, public_account_id, block_cutoff).unwrap();
+    let assets_at_cutoff = select_vault_at_block(db, public_account_id, block_cutoff).unwrap();
     assert!(
         assets_at_cutoff.contains(&asset_1),
         "vault reconstruction at the cutoff must include the baseline written at block_old"
@@ -3285,14 +3240,8 @@ fn test_prune_history() {
     let faucet_4 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3).unwrap();
     let asset_old = Asset::Fungible(FungibleAsset::new(faucet_4, 9999).unwrap());
     let vault_key_old_latest = asset_old.id();
-    insert_account_vault_asset(
-        db,
-        public_account_id,
-        block_0,
-        vault_key_old_latest,
-        Some(asset_old),
-    )
-    .unwrap();
+    insert_vault_asset(db, public_account_id, block_0, vault_key_old_latest, Some(asset_old))
+        .unwrap();
 
     // This entry at block 0 keeps an open validity interval. Run cleanup again
     let (vault_deleted_2, ..) = prune_history(db, block_tip).unwrap();

@@ -5,7 +5,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountCode, AccountId};
 use miden_protocol::asset::{Asset, AssetVault};
 
-use crate::db::queries::{VALID_FOREVER, select_latest_account_storage};
+use crate::db::queries::{VALID_FOREVER, select_latest_storage};
 use crate::errors::DatabaseError;
 
 const SQL_NONCE_AND_CODE: &str = include_str!("select_account_nonce_and_code.sql");
@@ -44,7 +44,7 @@ pub(crate) fn select_full_account(
     })?;
 
     // Reconstruct storage using existing helper function
-    let storage = select_latest_account_storage(tx, account_id)?;
+    let storage = select_latest_storage(tx, account_id)?;
 
     // Reconstruct vault from account_vault_assets table; a NULL asset marks a removal.
     let assets = tx

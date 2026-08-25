@@ -21,7 +21,7 @@ const SQL_INSERT: &str = include_str!("insert_vault_asset.sql");
 /// # Returns
 ///
 /// The number of affected rows.
-pub(crate) fn insert_account_vault_asset(
+pub(crate) fn insert_vault_asset(
     tx: &WriteTx<'_>,
     account_id: AccountId,
     block_num: BlockNumber,

@@ -47,7 +47,7 @@ impl CommittedBlockEffects {
                 let OutputNote::Public(public) = output_note else {
                     continue;
                 };
-                if let Some(sponsorship) = SponsorshipNote::try_from_note(public.as_note()) {
+                if let Ok(sponsorship) = SponsorshipNote::try_from(public.as_note().clone()) {
                     sponsorship_notes.push(sponsorship);
                 } else if let Ok(network_note) =
                     AccountTargetNetworkNote::new(public.as_note().clone())

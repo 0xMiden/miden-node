@@ -1,6 +1,7 @@
 //! Detection and decoding of `FEE_SPONSORSHIP` notes.
 
 use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteId, Nullifier};
 use miden_standards::note::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 
@@ -18,23 +19,6 @@ pub struct SponsorshipNote {
 }
 
 impl SponsorshipNote {
-    /// Attempts to interpret `note` as a `FEE_SPONSORSHIP` note.
-    ///
-    /// Returns `None` if the note's script root is not the `FEE_SPONSORSHIP` script root, its note
-    /// storage does not decode as `FEE_SPONSORSHIP` storage, or it does not carry exactly one asset.
-    /// The note script asserts all of these itself, so a note rejected here could never be
-    /// consumed as a sponsorship anyway.
-    pub fn try_from_note(note: &Note) -> Option<Self> {
-        if note.script().root() != FeeSponsorshipNote::script_root() {
-            return None;
-        }
-        let storage = FeeSponsorshipNoteStorage::try_from(note.storage().items()).ok()?;
-        if note.assets().num_assets() != 1 {
-            return None;
-        }
-        Some(Self { note: note.clone(), storage })
-    }
-
     /// Returns the ID of the feature note this sponsorship pays the fee for.
     pub fn feature_note_id(&self) -> NoteId {
         self.storage.feature_note_id()
@@ -61,6 +45,30 @@ impl SponsorshipNote {
         &self.note
     }
 }
+impl TryFrom<Note> for SponsorshipNote {
+    type Error = NoteError;
+
+    /// Attempts to interpret `note` as a `FEE_SPONSORSHIP` note.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the note's script root is not the `FEE_SPONSORSHIP` script root, its
+    /// note storage does not decode as `FEE_SPONSORSHIP` storage, or it does not carry exactly one
+    /// asset. The note script asserts all of these itself, so a note rejected here could never be
+    /// consumed as a sponsorship anyway.
+    fn try_from(note: Note) -> Result<Self, Self::Error> {
+        if note.script().root() != FeeSponsorshipNote::script_root() {
+            return Err(NoteError::other(
+                "note script root does not match the FEE_SPONSORSHIP script root",
+            ));
+        }
+        let storage = FeeSponsorshipNoteStorage::try_from(note.storage().items())?;
+        if note.assets().num_assets() != 1 {
+            return Err(NoteError::other("fee sponsorship note must carry exactly one asset"));
+        }
+        Ok(Self { note, storage })
+    }
+}
 
 // TESTS
 // ================================================================================================
@@ -83,11 +91,11 @@ mod tests {
 
     /// A `FEE_SPONSORSHIP` note round-trips through detection with its storage intact.
     #[test]
-    fn try_from_note_accepts_sponsorship_note() {
+    fn try_from_accepts_sponsorship_note() {
         let note = mock_sponsorship_note(mock_network_account_id(), feature_note_id(), 1);
 
-        let detected =
-            SponsorshipNote::try_from_note(&note).expect("a FEE_SPONSORSHIP note must be detected");
+        let detected = SponsorshipNote::try_from(note.clone())
+            .expect("a FEE_SPONSORSHIP note must be detected");
 
         assert_eq!(detected.feature_note_id(), feature_note_id());
         assert_eq!(detected.id(), note.id());
@@ -97,9 +105,9 @@ mod tests {
 
     /// A regular network note (different script root) is not a sponsorship.
     #[test]
-    fn try_from_note_rejects_other_scripts() {
+    fn try_from_rejects_other_scripts() {
         let network_note = mock_single_target_note(mock_network_account_id(), 1);
 
-        assert!(SponsorshipNote::try_from_note(network_note.as_note()).is_none());
+        assert!(SponsorshipNote::try_from(network_note.as_note().clone()).is_err());
     }
 }

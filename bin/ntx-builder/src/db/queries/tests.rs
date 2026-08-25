@@ -140,7 +140,7 @@ async fn available_notes_excludes_consumed_notes() {
 /// note id.
 fn sponsorship_for(target: AccountId, feature_note_id: NoteId, seed: u8) -> SponsorshipNote {
     let note = mock_sponsorship_note(target, feature_note_id, seed);
-    SponsorshipNote::try_from_note(&note).expect("mock sponsorship note must decode")
+    SponsorshipNote::try_from(note).expect("mock sponsorship note must decode")
 }
 
 #[tokio::test]

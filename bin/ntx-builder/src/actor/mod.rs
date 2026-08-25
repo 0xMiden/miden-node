@@ -572,14 +572,16 @@ impl AccountActor {
         let mut selected: Vec<NoteGroup> = Vec::new();
         let mut selected_notes = 0_usize;
         for feature in partitioned_notes.allowed {
-            let mut group_sponsorships =
+            let group_sponsorships =
                 sponsorships.remove(&feature.as_note().id()).unwrap_or_default();
-            // More sponsorships than the cap: keep the first `max_sponsorships` of them.
-            group_sponsorships.truncate(max_sponsorships);
-            let group = NoteGroup {
+            let mut group = NoteGroup {
                 feature,
                 sponsorships: group_sponsorships,
             };
+            // Prefer the largest fee contributions both when applying the cap and when filtering
+            // later walks down successively smaller sponsorship prefixes.
+            group.sort_sponsorships_by_amount();
+            group.sponsorships.truncate(max_sponsorships);
             // Group-atomic packing: a group that does not fit the remaining budget is skipped as a
             // whole (never split) and re-selected in a later round.
             if selected_notes + group.num_notes() > max_notes {
@@ -1217,6 +1219,7 @@ mod tests {
         mock_network_account_update,
         mock_single_target_note,
         mock_sponsorship,
+        mock_sponsorship_with_amount,
     };
 
     /// Seeds a committed network account (with a populated allowlist) and returns its id together
@@ -1275,7 +1278,14 @@ mod tests {
         db.insert_network_notes(vec![feature.clone()]).await.unwrap();
         db.insert_sponsorship_notes(
             (0..5)
-                .map(|i| mock_sponsorship(account_id, feature.as_note().id(), 10 + i))
+                .map(|i| {
+                    mock_sponsorship_with_amount(
+                        account_id,
+                        feature.as_note().id(),
+                        10 + i,
+                        u64::from(i + 1) * 100,
+                    )
+                })
                 .collect(),
         )
         .await
@@ -1291,6 +1301,14 @@ mod tests {
 
         assert_eq!(candidate.notes.len(), 1);
         assert_eq!(candidate.notes[0].sponsorships.len(), MAX_SPONSORSHIPS_PER_NOTE);
+        assert_eq!(
+            candidate.notes[0]
+                .sponsorships
+                .iter()
+                .map(crate::actor::candidate::sponsorship_amount)
+                .collect::<Vec<_>>(),
+            [500, 400, 300],
+        );
     }
 
     /// Groups are packed atomically against the per-tx note budget: a group that does not fit is

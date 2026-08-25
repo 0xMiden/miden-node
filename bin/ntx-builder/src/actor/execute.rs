@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -370,58 +371,52 @@ impl NtxContext {
         groups: Vec<NoteGroup>,
     ) -> NtxResult<FilteredNotes> {
         let all_notes = groups.iter().flat_map(group_notes).collect::<Vec<_>>();
-        let (surviving, batch_failed) = self.check_consumability(data_store, all_notes).await?;
+        let (mut successful_notes, batch_failed) =
+            self.check_consumability(data_store, all_notes).await?;
 
-        let mut kept: Vec<usize> = (0..groups.len())
-            .filter(|idx| group_notes(&groups[*idx]).iter().all(|n| surviving.contains(&n.id())))
-            .collect();
+        // An epilogue failure sends the note checker through a greedy search that adds one note at
+        // a time. It cannot rediscover a feature and sponsorship that only execute together. Keep
+        // the checker's proven-successful set as a monotonic baseline and re-offer each missing
+        // dependency-closed variant on top of it. A failed retry never replaces that baseline.
+        successful_notes = retry_note_groups(&groups, successful_notes, |trial| async move {
+            let trial_len = trial.len();
+            let (trial_successful, trial_failed) =
+                self.check_consumability(data_store, trial).await?;
 
-        // The checker grows its candidate set one note at a time, so it can never admit a feature
-        // note and its sponsorship in the same step and drops groups that are only consumable as a
-        // whole. Re-offer each dropped group on top of the ones that survived, where adding the
-        // whole group is a single step.
-        let mut failed = Vec::new();
-        for idx in 0..groups.len() {
-            if kept.contains(&idx) {
-                continue;
-            }
-            let trial = kept
-                .iter()
-                .copied()
-                .chain(std::iter::once(idx))
-                .flat_map(|i| group_notes(&groups[i]))
-                .collect::<Vec<_>>();
-            let (_, trial_failed) = self.check_consumability(data_store, trial).await?;
+            // The checker first executes the exact trial. No failures and a matching cardinality
+            // therefore prove that complete set; otherwise its fallback result is not allowed to
+            // replace the previously proven baseline.
+            Ok((trial_failed.is_empty() && trial_successful.len() == trial_len)
+                .then_some(trial_successful))
+        })
+        .await?;
+        let successful_ids = successful_notes.iter().map(Note::id).collect::<BTreeSet<_>>();
 
-            if trial_failed.is_empty() {
-                kept.push(idx);
-            } else {
-                // Keep only this group's own failures: a note of an already-kept group cannot be
-                // at fault, since that set executed on its own.
-                let ids = group_notes(&groups[idx]).iter().map(Note::id).collect::<BTreeSet<_>>();
-                failed.extend(
-                    trial_failed.into_iter().filter(|f| ids.contains(&f.note().id())),
-                );
-            }
-        }
-
-        // The batch pass may have reported failures the retries did not repeat; carry over the ones
-        // belonging to groups that stayed out, without duplicating a note already recorded above.
-        let dropped = groups
+        let sponsor_to_feature = groups
             .iter()
-            .enumerate()
-            .filter(|(idx, _)| !kept.contains(idx))
-            .flat_map(|(_, group)| group_notes(group))
-            .map(|note| note.id())
-            .collect::<BTreeSet<_>>();
-        let mut recorded = failed.iter().map(|f| f.note().id()).collect::<BTreeSet<_>>();
-        for failed_note in batch_failed {
-            if dropped.contains(&failed_note.note().id())
-                && recorded.insert(failed_note.note().id())
-            {
-                failed.push(failed_note);
-            }
-        }
+            .flat_map(|group| {
+                let feature_id = group.feature.as_note().id();
+                group
+                    .sponsorships
+                    .iter()
+                    .map(move |sponsorship| (sponsorship.id(), feature_id))
+            })
+            .collect::<HashMap<_, _>>();
+
+        // The batch failure list partitions the original input, so removing every note rescued by
+        // a retry yields the final failures. If a feature executes without one of its optional
+        // sponsorships, suppress that sponsorship's failure too: charging it to the feature would
+        // penalize a note which is being submitted successfully.
+        let failed = batch_failed
+            .into_iter()
+            .filter(|failed| {
+                should_record_failure(
+                    failed.note().id(),
+                    &successful_ids,
+                    &sponsor_to_feature,
+                )
+            })
+            .collect::<Vec<_>>();
 
         for failed_note in &failed {
             tracing::info!(
@@ -435,10 +430,6 @@ impl NtxContext {
             );
         }
 
-        let successful_notes = kept
-            .iter()
-            .flat_map(|idx| group_notes(&groups[*idx]))
-            .collect::<Vec<_>>();
         let successful = InputNotes::from_unauthenticated_notes(successful_notes)
             .map_err(NtxError::InputNotes)?;
 
@@ -453,13 +444,13 @@ impl NtxContext {
         Ok(FilteredNotes { successful, failed, deferred, oversized })
     }
 
-    /// Runs the consumability checker over `notes` and returns the ids it accepted alongside the
+    /// Runs the consumability checker over `notes` and returns the notes it accepted alongside the
     /// notes it rejected.
     async fn check_consumability(
         &self,
         data_store: &NtxDataStore,
         notes: Vec<Note>,
-    ) -> NtxResult<(BTreeSet<NoteId>, Vec<FailedNote>)> {
+    ) -> NtxResult<(Vec<Note>, Vec<FailedNote>)> {
         let executor = self.create_executor(data_store);
         let checker = NoteConsumptionChecker::new(&executor);
 
@@ -467,13 +458,13 @@ impl NtxContext {
             data_store.account.id(),
             data_store.reference_block.block_num(),
             notes,
-            TransactionArgs::default(),
+            self.tx_args.clone(),
         ))
         .await
         .map_err(NtxError::NoteFilter)?;
 
         let (successful, failed) = consumption_info.into_parts();
-        Ok((successful.iter().map(|s| s.note().id()).collect(), failed))
+        Ok((successful.into_iter().map(|s| s.note().clone()).collect(), failed))
     }
 
     /// Splits cycle-limited failed notes into `(deferred, oversized)` by re-checking each one on
@@ -505,7 +496,7 @@ impl NtxContext {
             data_store.account.id(),
             data_store.reference_block.block_num(),
             vec![note.clone()],
-            TransactionArgs::default(),
+            self.tx_args.clone(),
         ))
         .await
         {
@@ -606,6 +597,86 @@ fn group_notes(group: &NoteGroup) -> Vec<Note> {
     std::iter::once(group.feature.as_note().clone())
         .chain(group.sponsorships.iter().cloned())
         .collect()
+}
+
+/// Returns the missing, dependency-closed additions to try for `group` as successively smaller
+/// sponsorship prefixes, ordered by descending amount.
+///
+/// This is intentionally linear in the number of sponsorships rather than an exhaustive subset
+/// search. It relies on sponsorship ingestion rejecting structurally invalid notes: under that
+/// invariant, dropping the smallest contribution at each step preserves the best remaining fee
+/// coverage. Notes already in `successful` are never re-offered or removed.
+fn group_retry_variants(
+    group: &NoteGroup,
+    successful: &BTreeSet<NoteId>,
+) -> Vec<Vec<Note>> {
+    let feature = group.feature.as_note();
+    if successful.contains(&feature.id()) {
+        return Vec::new();
+    }
+
+    let mut missing_sponsorships = group
+        .sponsorships
+        .iter()
+        .filter(|sponsorship| !successful.contains(&sponsorship.id()))
+        .cloned()
+        .collect::<Vec<_>>();
+    missing_sponsorships.sort_by(|left, right| {
+        super::candidate::sponsorship_amount(right)
+            .cmp(&super::candidate::sponsorship_amount(left))
+            .then_with(|| left.id().cmp(&right.id()))
+    });
+
+    (0..=missing_sponsorships.len())
+        .rev()
+        .map(|prefix_len| {
+            std::iter::once(feature.clone())
+                .chain(missing_sponsorships[..prefix_len].iter().cloned())
+                .collect()
+        })
+        .collect()
+}
+
+/// Retries missing group variants on top of `successful_notes` without ever replacing that proven
+/// baseline after a failed trial.
+async fn retry_note_groups<C, Fut>(
+    groups: &[NoteGroup],
+    mut successful_notes: Vec<Note>,
+    mut check_exact: C,
+) -> NtxResult<Vec<Note>>
+where
+    C: FnMut(Vec<Note>) -> Fut,
+    Fut: Future<Output = NtxResult<Option<Vec<Note>>>>,
+{
+    let mut successful_ids = successful_notes.iter().map(Note::id).collect::<BTreeSet<_>>();
+
+    for group in groups {
+        for additions in group_retry_variants(group, &successful_ids) {
+            let mut trial = successful_notes.clone();
+            trial.extend(additions);
+
+            if let Some(trial_successful) = check_exact(trial).await? {
+                successful_notes = trial_successful;
+                successful_ids =
+                    successful_notes.iter().map(Note::id).collect::<BTreeSet<_>>();
+                break;
+            }
+        }
+    }
+
+    Ok(successful_notes)
+}
+
+/// Returns whether a batch-check failure still applies after group retries have completed.
+fn should_record_failure(
+    failed_note: NoteId,
+    successful: &BTreeSet<NoteId>,
+    sponsor_to_feature: &HashMap<NoteId, NoteId>,
+) -> bool {
+    !successful.contains(&failed_note)
+        && sponsor_to_feature
+            .get(&failed_note)
+            .is_none_or(|feature| !successful.contains(feature))
 }
 
 fn partition_cycle_limited(failed: Vec<FailedNote>) -> (Vec<FailedNote>, Vec<FailedNote>) {
@@ -923,10 +994,152 @@ impl MastForestStore for NtxDataStore {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeSet, HashMap};
+    use std::future::ready;
+
+    use miden_protocol::note::Note;
     use miden_tx::{FailedNote, TransactionExecutorError, TransactionProverError};
 
-    use super::{RpcError, is_transient_rpc_error, is_transient_status, partition_cycle_limited};
-    use crate::test_utils::{mock_network_account_id, mock_single_target_note};
+    use super::{
+        NtxError,
+        NoteGroup,
+        RpcError,
+        group_retry_variants,
+        is_transient_rpc_error,
+        is_transient_status,
+        partition_cycle_limited,
+        retry_note_groups,
+        should_record_failure,
+    };
+    use crate::test_utils::{
+        mock_network_account_id,
+        mock_single_target_note,
+        mock_sponsorship_note,
+        mock_sponsorship_note_with_amount,
+    };
+
+    fn group_with_two_sponsorships() -> NoteGroup {
+        let account_id = mock_network_account_id();
+        let feature = mock_single_target_note(account_id, 1);
+        let feature_id = feature.as_note().id();
+        let sponsorships = vec![
+            mock_sponsorship_note_with_amount(account_id, feature_id, 2, 1),
+            mock_sponsorship_note_with_amount(account_id, feature_id, 3, 100),
+        ];
+        NoteGroup { feature, sponsorships }
+    }
+
+    #[test]
+    fn group_retry_variants_are_descending_amount_prefixes() {
+        let group = group_with_two_sponsorships();
+        let variants = group_retry_variants(&group, &BTreeSet::new());
+
+        assert_eq!(variants.iter().map(Vec::len).collect::<Vec<_>>(), [3, 2, 1]);
+        assert!(variants.iter().all(|variant| {
+            variant.iter().any(|note| note.id() == group.feature.as_note().id())
+        }));
+        assert_eq!(variants[0][1].id(), group.sponsorships[1].id());
+        assert_eq!(variants[0][2].id(), group.sponsorships[0].id());
+        assert_eq!(variants[1][1].id(), group.sponsorships[1].id());
+    }
+
+    #[test]
+    fn group_retry_variants_do_nothing_when_feature_is_proven() {
+        let group = group_with_two_sponsorships();
+        let successful = BTreeSet::from([
+            group.feature.as_note().id(),
+            group.sponsorships[0].id(),
+        ]);
+        let variants = group_retry_variants(&group, &successful);
+
+        assert!(variants.is_empty());
+    }
+
+    #[test]
+    fn group_retry_variants_are_linear_in_sponsorship_count() {
+        let account_id = mock_network_account_id();
+        let feature = mock_single_target_note(account_id, 1);
+        let feature_id = feature.as_note().id();
+        let group = NoteGroup {
+            feature,
+            sponsorships: (0..3)
+                .map(|idx| {
+                    mock_sponsorship_note_with_amount(
+                        account_id,
+                        feature_id,
+                        idx + 2,
+                        u64::from(idx + 1),
+                    )
+                })
+                .collect(),
+        };
+
+        assert_eq!(group_retry_variants(&group, &BTreeSet::new()).len(), 4);
+    }
+
+    #[tokio::test]
+    async fn retry_note_groups_recovers_pair_from_poisoned_batch() {
+        let account_id = mock_network_account_id();
+        let feature_0 = mock_single_target_note(account_id, 10);
+        let sponsorship_0 =
+            mock_sponsorship_note(account_id, feature_0.as_note().id(), 11);
+        let feature_1 = mock_single_target_note(account_id, 12);
+        let groups = vec![
+            NoteGroup {
+                feature: feature_0.clone(),
+                sponsorships: vec![sponsorship_0.clone()],
+            },
+            NoteGroup { feature: feature_1, sponsorships: vec![] },
+        ];
+        let intact_ids = BTreeSet::from([feature_0.as_note().id(), sponsorship_0.id()]);
+
+        // Model the exact-set result established by the protocol test: the pair succeeds by itself,
+        // while adding the uncovered second feature poisons the complete batch.
+        let recovered = retry_note_groups(&groups, vec![], |trial| {
+            let trial_ids = trial.iter().map(Note::id).collect::<BTreeSet<_>>();
+            ready(Ok::<_, NtxError>((trial_ids == intact_ids).then_some(trial)))
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(recovered.iter().map(Note::id).collect::<BTreeSet<_>>(), intact_ids);
+    }
+
+    #[tokio::test]
+    async fn failed_retry_preserves_proven_feature() {
+        let group = group_with_two_sponsorships();
+        let feature = group.feature.as_note().clone();
+
+        let recovered = retry_note_groups(&[group], vec![feature.clone()], |_| {
+            ready(Ok::<_, NtxError>(None))
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(recovered, vec![feature]);
+    }
+
+    #[test]
+    fn successful_feature_suppresses_its_sponsorship_failures() {
+        let group = group_with_two_sponsorships();
+        let feature_id = group.feature.as_note().id();
+        let sponsorship_id = group.sponsorships[0].id();
+        let sponsor_to_feature = HashMap::from([(sponsorship_id, feature_id)]);
+
+        assert!(should_record_failure(
+            sponsorship_id,
+            &BTreeSet::new(),
+            &sponsor_to_feature,
+        ));
+
+        let successful = BTreeSet::from([feature_id]);
+        assert!(!should_record_failure(
+            sponsorship_id,
+            &successful,
+            &sponsor_to_feature,
+        ));
+        assert!(!should_record_failure(feature_id, &successful, &sponsor_to_feature));
+    }
 
     /// `partition_cycle_limited` must route notes carrying a cycle count (`num_cycles = Some`) into
     /// the cycle-limited bucket (which is then isolation-re-checked) and notes without one

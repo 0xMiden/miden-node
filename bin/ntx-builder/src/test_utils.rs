@@ -70,6 +70,16 @@ pub fn mock_sponsorship_note(
     feature_note_id: NoteId,
     seed: u8,
 ) -> miden_protocol::note::Note {
+    mock_sponsorship_note_with_amount(target_account_id, feature_note_id, seed, 100)
+}
+
+/// Creates a `FEE_SPONSORSHIP` note carrying `amount` units of its fungible fee asset.
+pub fn mock_sponsorship_note_with_amount(
+    target_account_id: AccountId,
+    feature_note_id: NoteId,
+    seed: u8,
+    amount: u64,
+) -> miden_protocol::note::Note {
     use miden_protocol::asset::FungibleAsset;
     use miden_standards::note::FeeSponsorshipNote;
 
@@ -77,7 +87,7 @@ pub fn mock_sponsorship_note(
     let sender = AccountIdBuilder::new()
         .account_type(AccountType::Private)
         .build_with_rng(&mut rng);
-    let asset = FungibleAsset::new(FungibleAsset::mock_issuer(), 100)
+    let asset = FungibleAsset::new(FungibleAsset::mock_issuer(), amount)
         .expect("mock fungible asset should be valid");
 
     FeeSponsorshipNote::builder()
@@ -99,6 +109,19 @@ pub fn mock_sponsorship(
     seed: u8,
 ) -> crate::sponsorship::SponsorshipNote {
     let note = mock_sponsorship_note(target_account_id, feature_note_id, seed);
+    crate::sponsorship::SponsorshipNote::try_from_note(&note)
+        .expect("mock sponsorship note must decode")
+}
+
+/// Creates a decoded sponsorship carrying `amount` units of its fungible fee asset.
+pub fn mock_sponsorship_with_amount(
+    target_account_id: AccountId,
+    feature_note_id: miden_protocol::note::NoteId,
+    seed: u8,
+    amount: u64,
+) -> crate::sponsorship::SponsorshipNote {
+    let note =
+        mock_sponsorship_note_with_amount(target_account_id, feature_note_id, seed, amount);
     crate::sponsorship::SponsorshipNote::try_from_note(&note)
         .expect("mock sponsorship note must decode")
 }

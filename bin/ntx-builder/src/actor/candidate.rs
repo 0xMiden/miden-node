@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use miden_protocol::account::Account;
+use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockHeader;
 use miden_protocol::note::{Note, NoteId, Nullifier};
 use miden_protocol::transaction::PartialBlockchain;
@@ -12,9 +13,10 @@ use miden_standards::note::AccountTargetNetworkNote;
 
 /// A feature note grouped with the `FEE_SPONSORSHIP` notes that pay its fee.
 ///
-/// The group is the atomic unit of transaction selection: a sponsorship note may only be consumed
-/// in the same transaction as its feature note, so a group is included in (or excluded from) a
-/// candidate as a whole. A group with no sponsorships is a plain network note.
+/// Transaction selection packs a group as a unit because a sponsorship note may only be consumed
+/// with its feature note. Consumability filtering may retain a valid subset: a feature can execute
+/// without every selected sponsorship when its required fee is otherwise covered. A group with no
+/// sponsorships is a plain network note.
 #[derive(Clone, Debug)]
 pub struct NoteGroup {
     /// The network note targeted at the account.
@@ -28,6 +30,25 @@ impl NoteGroup {
     /// sponsorships.
     pub fn num_notes(&self) -> usize {
         1 + self.sponsorships.len()
+    }
+
+    /// Sorts sponsorships by descending fungible amount, leaving malformed non-fungible
+    /// sponsorships last.
+    pub fn sort_sponsorships_by_amount(&mut self) {
+        self.sponsorships.sort_by(|left, right| {
+            sponsorship_amount(right)
+                .cmp(&sponsorship_amount(left))
+                .then_with(|| left.id().cmp(&right.id()))
+        });
+    }
+}
+
+/// Returns the fungible amount carried by a sponsorship, or zero for a malformed non-fungible
+/// sponsorship. Sponsorship ingestion is responsible for rejecting the latter.
+pub(super) fn sponsorship_amount(note: &Note) -> u64 {
+    match note.assets().as_slice().first() {
+        Some(Asset::Fungible(asset)) => asset.amount().as_u64(),
+        Some(Asset::NonFungible(_)) | None => 0,
     }
 }
 

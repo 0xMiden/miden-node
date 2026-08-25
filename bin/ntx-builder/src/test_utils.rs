@@ -106,8 +106,8 @@ pub fn mock_sponsorship_note_with_faucet_and_amount(
     let sender = AccountIdBuilder::new()
         .account_type(AccountType::Private)
         .build_with_rng(&mut rng);
-    let asset = FungibleAsset::new(fee_faucet_id, amount)
-        .expect("mock fungible asset should be valid");
+    let asset =
+        FungibleAsset::new(fee_faucet_id, amount).expect("mock fungible asset should be valid");
 
     FeeSponsorshipNote::builder()
         .sender(sender)

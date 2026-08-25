@@ -350,7 +350,7 @@ impl NtxContext {
     /// pairs are discarded along with the note that actually failed.
     ///
     /// So the batch is checked once, then every group the checker did not prove is re-offered on
-    /// top of what it did, largest sponsorship set first. A trial is kept only if the checker
+    /// top of what it did, trying the most sponsorships first. A trial is kept only if the checker
     /// proves that exact set, so the result never regresses. For `[F0, S0, F1]` - a feature note,
     /// its sponsorship, and an unsponsored feature note - the checker fails all three; the retry
     /// proves `[F0, S0]` and records only `F1`.
@@ -602,29 +602,23 @@ fn group_notes(group: &NoteGroup) -> Vec<Note> {
 }
 
 /// Returns the missing, dependency-closed additions to try for `group` as successively smaller
-/// sponsorship prefixes, ordered by descending amount.
+/// sponsorship prefixes in candidate order.
 ///
 /// This is intentionally linear in the number of sponsorships rather than an exhaustive subset
-/// search. It relies on sponsorship ingestion rejecting structurally invalid notes: under that
-/// invariant, dropping the smallest contribution at each step preserves the best remaining fee
-/// coverage. Notes already in `successful` are never re-offered or removed.
+/// search. It relies on sponsorship ingestion rejecting structurally invalid notes. Notes already
+/// in `successful` are never re-offered or removed.
 fn group_retry_variants(group: &NoteGroup, successful: &BTreeSet<NoteId>) -> Vec<Vec<Note>> {
     let feature = group.feature.as_note();
     if successful.contains(&feature.id()) {
         return Vec::new();
     }
 
-    let mut missing_sponsorships = group
+    let missing_sponsorships = group
         .sponsorships
         .iter()
         .filter(|sponsorship| !successful.contains(&sponsorship.id()))
         .cloned()
         .collect::<Vec<_>>();
-    missing_sponsorships.sort_by(|left, right| {
-        super::candidate::sponsorship_amount(right)
-            .cmp(&super::candidate::sponsorship_amount(left))
-            .then_with(|| left.id().cmp(&right.id()))
-    });
 
     (0..=missing_sponsorships.len())
         .rev()
@@ -1028,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn group_retry_variants_are_descending_amount_prefixes() {
+    fn group_retry_variants_preserve_sponsorship_order() {
         let group = group_with_two_sponsorships();
         let variants = group_retry_variants(&group, &BTreeSet::new());
 
@@ -1036,9 +1030,9 @@ mod tests {
         assert!(variants.iter().all(|variant| {
             variant.iter().any(|note| note.id() == group.feature.as_note().id())
         }));
-        assert_eq!(variants[0][1].id(), group.sponsorships[1].id());
-        assert_eq!(variants[0][2].id(), group.sponsorships[0].id());
-        assert_eq!(variants[1][1].id(), group.sponsorships[1].id());
+        assert_eq!(variants[0][1].id(), group.sponsorships[0].id());
+        assert_eq!(variants[0][2].id(), group.sponsorships[1].id());
+        assert_eq!(variants[1][1].id(), group.sponsorships[0].id());
     }
 
     #[test]

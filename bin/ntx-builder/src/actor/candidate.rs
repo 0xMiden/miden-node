@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use miden_protocol::Word;
 use miden_protocol::account::Account;
-use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockHeader;
 use miden_protocol::note::{Note, NoteId, Nullifier};
 use miden_protocol::transaction::PartialBlockchain;
@@ -44,25 +43,6 @@ impl NoteGroup {
                 .first()
                 .is_some_and(|asset| asset.id().to_word() == fee_asset_id)
         });
-    }
-
-    /// Sorts sponsorships by descending fungible amount, leaving malformed non-fungible
-    /// sponsorships last.
-    pub fn sort_sponsorships_by_amount(&mut self) {
-        self.sponsorships.sort_by(|left, right| {
-            sponsorship_amount(right)
-                .cmp(&sponsorship_amount(left))
-                .then_with(|| left.id().cmp(&right.id()))
-        });
-    }
-}
-
-/// Returns the fungible amount carried by a sponsorship, or zero for a malformed non-fungible
-/// sponsorship. Sponsorship ingestion is responsible for rejecting the latter.
-pub(super) fn sponsorship_amount(note: &Note) -> u64 {
-    match note.assets().as_slice().first() {
-        Some(Asset::Fungible(asset)) => asset.amount().as_u64(),
-        Some(Asset::NonFungible(_)) | None => 0,
     }
 }
 

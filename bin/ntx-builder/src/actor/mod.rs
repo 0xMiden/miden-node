@@ -582,12 +582,9 @@ impl AccountActor {
                 feature,
                 sponsorships: group_sponsorships,
             };
-            // Filter before applying the cap: otherwise an attacker can fill the largest slots
-            // with assets the account does not accept and crowd out valid sponsorships.
+            // Filter before applying the cap so assets the account does not accept cannot occupy
+            // the limited sponsorship slots.
             group.retain_sponsorships_for_fee_asset(fee_asset_id);
-            // Prefer the largest fee contributions both when applying the cap and when filtering
-            // later walks down successively smaller sponsorship prefixes.
-            group.sort_sponsorships_by_amount();
             group.sponsorships.truncate(max_sponsorships);
             // Group-atomic packing: a group that does not fit the remaining budget is skipped as a
             // whole (never split) and re-selected in a later round.
@@ -1310,18 +1307,10 @@ mod tests {
 
         assert_eq!(candidate.notes.len(), 1);
         assert_eq!(candidate.notes[0].sponsorships.len(), MAX_SPONSORSHIPS_PER_NOTE);
-        assert_eq!(
-            candidate.notes[0]
-                .sponsorships
-                .iter()
-                .map(crate::actor::candidate::sponsorship_amount)
-                .collect::<Vec<_>>(),
-            [500, 400, 300],
-        );
     }
 
-    /// Sponsorships carrying the wrong asset are removed before the cap is applied, so large bogus
-    /// amounts cannot crowd a valid sponsorship out of the candidate.
+    /// Sponsorships carrying the wrong asset are removed before the cap is applied, so they cannot
+    /// occupy slots that could hold valid sponsorships.
     #[tokio::test]
     async fn select_candidate_filters_wrong_fee_asset_before_cap() {
         use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
@@ -1347,11 +1336,9 @@ mod tests {
             .collect::<Vec<_>>();
 
         db.insert_network_notes(vec![feature]).await.unwrap();
-        db.insert_sponsorship_notes(
-            std::iter::once(valid.clone()).chain(invalid).collect(),
-        )
-        .await
-        .unwrap();
+        db.insert_sponsorship_notes(std::iter::once(valid.clone()).chain(invalid).collect())
+            .await
+            .unwrap();
 
         let mut ctx = AccountActorContext::test(&db);
         ctx.config.max_notes_per_tx = NonZeroUsize::new(20).unwrap();

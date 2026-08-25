@@ -8,26 +8,32 @@ use miden_standards::note::{FeeSponsorshipNote, FeeSponsorshipNoteStorage};
 // SPONSORSHIP NOTE
 // ================================================================================================
 
-/// A committed `FEE_SPONSORSHIP` note together with its decoded note storage.
+/// A committed [`Note`] validated to be a `FEE_SPONSORSHIP` note.
 ///
 /// Sponsorship notes carry no attachments, so they are not [`AccountTargetNetworkNote`]s; they are
-/// recognized purely by their script root.
+/// recognized purely by their script root. The note is retained exactly as observed on chain;
+/// storage-derived values are re-decoded on access, which construction proves cannot fail.
 #[derive(Debug, Clone)]
 pub struct SponsorshipNote {
     note: Note,
-    storage: FeeSponsorshipNoteStorage,
 }
 
 impl SponsorshipNote {
+    /// Returns the decoded `FEE_SPONSORSHIP` storage of the underlying note.
+    fn storage(&self) -> FeeSponsorshipNoteStorage {
+        FeeSponsorshipNoteStorage::try_from(self.note.storage().items())
+            .expect("SponsorshipNote guarantees valid FEE_SPONSORSHIP storage")
+    }
+
     /// Returns the ID of the feature note this sponsorship pays the fee for.
     pub fn feature_note_id(&self) -> NoteId {
-        self.storage.feature_note_id()
+        self.storage().feature_note_id()
     }
 
     /// Returns the block height at or after which the reclaimer may reclaim the note, if reclaim is
     /// enabled.
     pub fn reclaim_height(&self) -> Option<BlockNumber> {
-        self.storage.reclaim_height()
+        self.storage().reclaim_height()
     }
 
     /// Returns the ID of the underlying note.
@@ -45,6 +51,7 @@ impl SponsorshipNote {
         &self.note
     }
 }
+
 impl TryFrom<Note> for SponsorshipNote {
     type Error = NoteError;
 
@@ -62,11 +69,11 @@ impl TryFrom<Note> for SponsorshipNote {
                 "note script root does not match the FEE_SPONSORSHIP script root",
             ));
         }
-        let storage = FeeSponsorshipNoteStorage::try_from(note.storage().items())?;
+        FeeSponsorshipNoteStorage::try_from(note.storage().items())?;
         if note.assets().num_assets() != 1 {
             return Err(NoteError::other("fee sponsorship note must carry exactly one asset"));
         }
-        Ok(Self { note, storage })
+        Ok(Self { note })
     }
 }
 

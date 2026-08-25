@@ -109,8 +109,7 @@ pub fn mock_sponsorship(
     seed: u8,
 ) -> crate::sponsorship::SponsorshipNote {
     let note = mock_sponsorship_note(target_account_id, feature_note_id, seed);
-    crate::sponsorship::SponsorshipNote::try_from_note(&note)
-        .expect("mock sponsorship note must decode")
+    crate::sponsorship::SponsorshipNote::try_from(note).expect("mock sponsorship note must decode")
 }
 
 /// Creates a decoded sponsorship carrying `amount` units of its fungible fee asset.
@@ -121,8 +120,7 @@ pub fn mock_sponsorship_with_amount(
     amount: u64,
 ) -> crate::sponsorship::SponsorshipNote {
     let note = mock_sponsorship_note_with_amount(target_account_id, feature_note_id, seed, amount);
-    crate::sponsorship::SponsorshipNote::try_from_note(&note)
-        .expect("mock sponsorship note must decode")
+    crate::sponsorship::SponsorshipNote::try_from(note).expect("mock sponsorship note must decode")
 }
 
 /// Creates a mock `Account` for a network account.

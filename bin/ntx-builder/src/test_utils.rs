@@ -120,8 +120,7 @@ pub fn mock_sponsorship_with_amount(
     seed: u8,
     amount: u64,
 ) -> crate::sponsorship::SponsorshipNote {
-    let note =
-        mock_sponsorship_note_with_amount(target_account_id, feature_note_id, seed, amount);
+    let note = mock_sponsorship_note_with_amount(target_account_id, feature_note_id, seed, amount);
     crate::sponsorship::SponsorshipNote::try_from_note(&note)
         .expect("mock sponsorship note must decode")
 }

@@ -396,25 +396,18 @@ impl NtxContext {
             .iter()
             .flat_map(|group| {
                 let feature_id = group.feature.as_note().id();
-                group
-                    .sponsorships
-                    .iter()
-                    .map(move |sponsorship| (sponsorship.id(), feature_id))
+                group.sponsorships.iter().map(move |sponsorship| (sponsorship.id(), feature_id))
             })
             .collect::<HashMap<_, _>>();
 
-        // The batch failure list partitions the original input, so removing every note rescued by
-        // a retry yields the final failures. If a feature executes without one of its optional
+        // The batch failure list partitions the original input, so removing every note rescued by a
+        // retry yields the final failures. If a feature executes without one of its optional
         // sponsorships, suppress that sponsorship's failure too: charging it to the feature would
         // penalize a note which is being submitted successfully.
         let failed = batch_failed
             .into_iter()
             .filter(|failed| {
-                should_record_failure(
-                    failed.note().id(),
-                    &successful_ids,
-                    &sponsor_to_feature,
-                )
+                should_record_failure(failed.note().id(), &successful_ids, &sponsor_to_feature)
             })
             .collect::<Vec<_>>();
 
@@ -606,10 +599,7 @@ fn group_notes(group: &NoteGroup) -> Vec<Note> {
 /// search. It relies on sponsorship ingestion rejecting structurally invalid notes: under that
 /// invariant, dropping the smallest contribution at each step preserves the best remaining fee
 /// coverage. Notes already in `successful` are never re-offered or removed.
-fn group_retry_variants(
-    group: &NoteGroup,
-    successful: &BTreeSet<NoteId>,
-) -> Vec<Vec<Note>> {
+fn group_retry_variants(group: &NoteGroup, successful: &BTreeSet<NoteId>) -> Vec<Vec<Note>> {
     let feature = group.feature.as_note();
     if successful.contains(&feature.id()) {
         return Vec::new();
@@ -657,8 +647,7 @@ where
 
             if let Some(trial_successful) = check_exact(trial).await? {
                 successful_notes = trial_successful;
-                successful_ids =
-                    successful_notes.iter().map(Note::id).collect::<BTreeSet<_>>();
+                successful_ids = successful_notes.iter().map(Note::id).collect::<BTreeSet<_>>();
                 break;
             }
         }
@@ -1001,8 +990,8 @@ mod tests {
     use miden_tx::{FailedNote, TransactionExecutorError, TransactionProverError};
 
     use super::{
-        NtxError,
         NoteGroup,
+        NtxError,
         RpcError,
         group_retry_variants,
         is_transient_rpc_error,
@@ -1046,10 +1035,7 @@ mod tests {
     #[test]
     fn group_retry_variants_do_nothing_when_feature_is_proven() {
         let group = group_with_two_sponsorships();
-        let successful = BTreeSet::from([
-            group.feature.as_note().id(),
-            group.sponsorships[0].id(),
-        ]);
+        let successful = BTreeSet::from([group.feature.as_note().id(), group.sponsorships[0].id()]);
         let variants = group_retry_variants(&group, &successful);
 
         assert!(variants.is_empty());
@@ -1059,8 +1045,7 @@ mod tests {
     async fn retry_note_groups_recovers_pair_from_poisoned_batch() {
         let account_id = mock_network_account_id();
         let feature_0 = mock_single_target_note(account_id, 10);
-        let sponsorship_0 =
-            mock_sponsorship_note(account_id, feature_0.as_note().id(), 11);
+        let sponsorship_0 = mock_sponsorship_note(account_id, feature_0.as_note().id(), 11);
         let feature_1 = mock_single_target_note(account_id, 12);
         let groups = vec![
             NoteGroup {
@@ -1090,18 +1075,10 @@ mod tests {
         let sponsorship_id = group.sponsorships[0].id();
         let sponsor_to_feature = HashMap::from([(sponsorship_id, feature_id)]);
 
-        assert!(should_record_failure(
-            sponsorship_id,
-            &BTreeSet::new(),
-            &sponsor_to_feature,
-        ));
+        assert!(should_record_failure(sponsorship_id, &BTreeSet::new(), &sponsor_to_feature,));
 
         let successful = BTreeSet::from([feature_id]);
-        assert!(!should_record_failure(
-            sponsorship_id,
-            &successful,
-            &sponsor_to_feature,
-        ));
+        assert!(!should_record_failure(sponsorship_id, &successful, &sponsor_to_feature,));
         assert!(!should_record_failure(feature_id, &successful, &sponsor_to_feature));
     }
 

@@ -6,6 +6,7 @@ use futures::Stream;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::miden_instrument;
+use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -249,7 +250,7 @@ impl NetworkTransactionBuilder {
         &mut self,
         block: SignedBlock,
         committed_tip: BlockNumber,
-    ) -> anyhow::Result<(CommittedBlockEffects, Vec<miden_protocol::account::AccountId>)> {
+    ) -> anyhow::Result<(CommittedBlockEffects, Vec<AccountId>)> {
         let header = block.header().clone();
         let block_num = header.block_num();
 

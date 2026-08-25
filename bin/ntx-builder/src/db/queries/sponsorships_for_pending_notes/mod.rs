@@ -11,7 +11,7 @@ const SQL: &str = include_str!("sponsorships_for_pending_notes.sql");
 
 /// Returns the unconsumed `FEE_SPONSORSHIP` notes bound to the given account's unconsumed feature
 /// notes, grouped by feature note id.
-pub fn sponsorships_for_pending_notes(
+pub fn select_sponsorships_for_pending_notes(
     tx: &ReadTx<'_>,
     account_id: AccountId,
 ) -> Result<HashMap<NoteId, Vec<Note>>, DatabaseError> {

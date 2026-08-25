@@ -400,7 +400,7 @@ impl NtxDbReader {
     ) -> Result<HashMap<NoteId, Vec<Note>>, DatabaseError> {
         self.reader
             .read("sponsorships_for_pending_notes", move |tx| {
-                queries::sponsorships_for_pending_notes(tx, account_id)
+                queries::select_sponsorships_for_pending_notes(tx, account_id)
             })
             .await
     }

@@ -66,7 +66,7 @@ pub use mark_sponsorships_consumed::mark_sponsorships_consumed;
 #[cfg(test)]
 mod sponsorships_for_pending_notes;
 #[cfg(test)]
-pub use sponsorships_for_pending_notes::sponsorships_for_pending_notes;
+pub use sponsorships_for_pending_notes::select_sponsorships_for_pending_notes;
 
 mod lookup_note_script;
 pub use lookup_note_script::lookup_note_script;

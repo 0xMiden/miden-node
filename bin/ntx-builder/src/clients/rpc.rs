@@ -498,16 +498,22 @@ impl RpcClient {
                 ))
             })?;
 
-        let StorageMapEntries::EntriesWithProofs(proofs) = &map_details.entries else {
+        let StorageMapEntries::PartialMap { map_keys, partial_smt } = &map_details.entries else {
             return Err(RpcError::InvalidResponse(
-                "response did not include storage map entry proofs".into(),
+                "response did not include a partial storage map".into(),
             ));
         };
 
-        let proof = proofs.first().cloned().ok_or_else(|| {
-            RpcError::InvalidResponse(
-                "response did not include a proof for the requested key".into(),
-            )
+        if !map_keys.contains(&map_key) {
+            return Err(RpcError::InvalidResponse(
+                "response partial storage map did not include the requested key".into(),
+            ));
+        }
+
+        let proof = partial_smt.open(&map_key.hash().as_word()).map_err(|err| {
+            RpcError::InvalidResponse(format!(
+                "response did not track the requested storage map key: {err}"
+            ))
         })?;
 
         StorageMapWitness::new(proof, [map_key])

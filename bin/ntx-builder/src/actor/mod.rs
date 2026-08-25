@@ -21,6 +21,7 @@ use miden_protocol::account::{Account, AccountId, AccountPatch};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::{TransactionArgs, TransactionId};
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_tx::FailedNote;
 use tokio::sync::{Semaphore, mpsc, watch};
@@ -47,8 +48,7 @@ pub(crate) fn build_tx_args(expiration_delta: NonZeroU16) -> TransactionArgs {
 }
 
 /// Maximum number of `FEE_SPONSORSHIP` notes attached to a single feature note. A feature note with
-/// more pending sponsorships than this keeps a subset of this size; the rest stay pending for a
-/// later transaction.
+/// more pending sponsorships than this keeps a subset of this size.
 const MAX_SPONSORSHIPS_PER_NOTE: usize = 3;
 
 // ACTOR REQUESTS
@@ -568,6 +568,10 @@ impl AccountActor {
         };
         // A group must leave room for its feature note within the per-tx note budget.
         let max_sponsorships = MAX_SPONSORSHIPS_PER_NOTE.min(max_notes - 1);
+        let fee_asset_id = account
+            .storage()
+            .get_item(FeePolicyManager::fee_asset_id_slot())
+            .context("failed to read network account fee asset ID")?;
 
         let mut selected: Vec<NoteGroup> = Vec::new();
         let mut selected_notes = 0_usize;
@@ -578,6 +582,9 @@ impl AccountActor {
                 feature,
                 sponsorships: group_sponsorships,
             };
+            // Filter before applying the cap: otherwise an attacker can fill the largest slots
+            // with assets the account does not accept and crowd out valid sponsorships.
+            group.retain_sponsorships_for_fee_asset(fee_asset_id);
             // Prefer the largest fee contributions both when applying the cap and when filtering
             // later walks down successively smaller sponsorship prefixes.
             group.sort_sponsorships_by_amount();
@@ -1215,10 +1222,12 @@ mod tests {
     // SPONSORSHIP-AWARE SELECTION
     // ---------------------------------------------------------------------------------------------
 
+    use crate::sponsorship::SponsorshipNote;
     use crate::test_utils::{
         mock_network_account_update,
         mock_single_target_note,
         mock_sponsorship,
+        mock_sponsorship_note_with_faucet_and_amount,
         mock_sponsorship_with_amount,
     };
 
@@ -1309,6 +1318,52 @@ mod tests {
                 .collect::<Vec<_>>(),
             [500, 400, 300],
         );
+    }
+
+    /// Sponsorships carrying the wrong asset are removed before the cap is applied, so large bogus
+    /// amounts cannot crowd a valid sponsorship out of the candidate.
+    #[tokio::test]
+    async fn select_candidate_filters_wrong_fee_asset_before_cap() {
+        use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
+
+        let (db, _dir) = crate::db::test_setup().await;
+        let (account_id, account) = seed_selection_account(&db).await;
+
+        let feature = mock_single_target_note(account_id, 1);
+        let feature_id = feature.as_note().id();
+        let valid = mock_sponsorship_with_amount(account_id, feature_id, 2, 100);
+        let wrong_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
+        let invalid = (3..=5)
+            .map(|seed| {
+                SponsorshipNote::try_from(mock_sponsorship_note_with_faucet_and_amount(
+                    account_id,
+                    feature_id,
+                    seed,
+                    wrong_faucet,
+                    u64::from(seed) * 10_000,
+                ))
+                .expect("wrong-asset sponsorship is structurally valid")
+            })
+            .collect::<Vec<_>>();
+
+        db.insert_network_notes(vec![feature]).await.unwrap();
+        db.insert_sponsorship_notes(
+            std::iter::once(valid.clone()).chain(invalid).collect(),
+        )
+        .await
+        .unwrap();
+
+        let mut ctx = AccountActorContext::test(&db);
+        ctx.config.max_notes_per_tx = NonZeroUsize::new(20).unwrap();
+        let actor = AccountActor::new(account_id, &ctx);
+        let chain_state = actor.state.chain.get_cloned();
+
+        let (candidate, _) = actor.select_candidate(&Arc::new(account), chain_state).await.unwrap();
+        let candidate = candidate.expect("the feature and its valid sponsorship are viable");
+
+        assert_eq!(candidate.notes.len(), 1);
+        assert_eq!(candidate.notes[0].sponsorships.len(), 1);
+        assert_eq!(candidate.notes[0].sponsorships[0].id(), valid.id());
     }
 
     /// Groups are packed atomically against the per-tx note budget: a group that does not fit is

@@ -81,13 +81,32 @@ pub fn mock_sponsorship_note_with_amount(
     amount: u64,
 ) -> miden_protocol::note::Note {
     use miden_protocol::asset::FungibleAsset;
+
+    mock_sponsorship_note_with_faucet_and_amount(
+        target_account_id,
+        feature_note_id,
+        seed,
+        FungibleAsset::mock_issuer(),
+        amount,
+    )
+}
+
+/// Creates a `FEE_SPONSORSHIP` note carrying `amount` units issued by `fee_faucet_id`.
+pub fn mock_sponsorship_note_with_faucet_and_amount(
+    target_account_id: AccountId,
+    feature_note_id: NoteId,
+    seed: u8,
+    fee_faucet_id: AccountId,
+    amount: u64,
+) -> miden_protocol::note::Note {
+    use miden_protocol::asset::FungibleAsset;
     use miden_standards::note::FeeSponsorshipNote;
 
     let mut rng = ChaCha20Rng::from_seed([seed; 32]);
     let sender = AccountIdBuilder::new()
         .account_type(AccountType::Private)
         .build_with_rng(&mut rng);
-    let asset = FungibleAsset::new(FungibleAsset::mock_issuer(), amount)
+    let asset = FungibleAsset::new(fee_faucet_id, amount)
         .expect("mock fungible asset should be valid");
 
     FeeSponsorshipNote::builder()

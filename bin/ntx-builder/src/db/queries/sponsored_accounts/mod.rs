@@ -1,8 +1,9 @@
 //! Resolves the accounts whose pending feature notes just gained a sponsorship.
 
 use miden_node_db::DatabaseError;
-use miden_node_db::sqlite::WriteTx;
+use miden_node_db::sqlite::{InList, WriteTx};
 use miden_protocol::account::AccountId;
+use miden_protocol::utils::serde::Serializable;
 
 use crate::sponsorship::SponsorshipNote;
 
@@ -16,11 +17,11 @@ pub fn sponsored_accounts(
     tx: &WriteTx<'_>,
     sponsorships: &[SponsorshipNote],
 ) -> Result<Vec<AccountId>, DatabaseError> {
-    let mut accounts = Vec::new();
-    for sponsorship in sponsorships {
-        let rows =
-            tx.query(SQL, &[&sponsorship.feature_note_id()], |row| row.get::<AccountId>(0))?;
-        accounts.extend(rows);
-    }
-    Ok(accounts)
+    let serialized: Vec<Vec<u8>> = sponsorships
+        .iter()
+        .map(|sponsorship| sponsorship.feature_note_id().to_bytes())
+        .collect();
+    let feature_note_ids = InList::from_blobs(serialized.iter().map(Vec::as_slice));
+
+    tx.query(SQL, &[&feature_note_ids], |row| row.get::<AccountId>(0))
 }

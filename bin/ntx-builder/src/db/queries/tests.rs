@@ -269,6 +269,7 @@ async fn apply_committed_block_returns_sponsored_account_wakeups() {
         network_notes: vec![],
         sponsorship_notes: vec![
             sponsorship_for(account_id, pending.as_note().id(), 3),
+            sponsorship_for(account_id, pending.as_note().id(), 6),
             sponsorship_for(account_id, consumed.as_note().id(), 4),
             sponsorship_for(account_id, NoteId::from_raw(Word::from([9, 9, 9, 9u32])), 5),
         ],
@@ -281,8 +282,8 @@ async fn apply_committed_block_returns_sponsored_account_wakeups() {
 
     assert_eq!(
         wakeups,
-        vec![account_id],
-        "only the sponsorship bound to the pending feature note wakes its account",
+        vec![account_id, account_id],
+        "each sponsorship bound to the pending feature note wakes its account once",
     );
 }
 

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use miden_protocol::Word;
 use miden_protocol::account::Account;
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockHeader;
@@ -30,6 +31,19 @@ impl NoteGroup {
     /// sponsorships.
     pub fn num_notes(&self) -> usize {
         1 + self.sponsorships.len()
+    }
+
+    /// Retains only sponsorships carrying the fee asset accepted by the network account.
+    ///
+    /// This must run before applying the per-feature sponsorship cap so notes carrying an
+    /// unrelated asset cannot crowd valid sponsorships out of the candidate.
+    pub fn retain_sponsorships_for_fee_asset(&mut self, fee_asset_id: Word) {
+        self.sponsorships.retain(|note| {
+            note.assets()
+                .as_slice()
+                .first()
+                .is_some_and(|asset| asset.id().to_word() == fee_asset_id)
+        });
     }
 
     /// Sorts sponsorships by descending fungible amount, leaving malformed non-fungible

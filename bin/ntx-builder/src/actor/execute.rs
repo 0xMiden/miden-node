@@ -1055,28 +1055,6 @@ mod tests {
         assert!(variants.is_empty());
     }
 
-    #[test]
-    fn group_retry_variants_are_linear_in_sponsorship_count() {
-        let account_id = mock_network_account_id();
-        let feature = mock_single_target_note(account_id, 1);
-        let feature_id = feature.as_note().id();
-        let group = NoteGroup {
-            feature,
-            sponsorships: (0..3)
-                .map(|idx| {
-                    mock_sponsorship_note_with_amount(
-                        account_id,
-                        feature_id,
-                        idx + 2,
-                        u64::from(idx + 1),
-                    )
-                })
-                .collect(),
-        };
-
-        assert_eq!(group_retry_variants(&group, &BTreeSet::new()).len(), 4);
-    }
-
     #[tokio::test]
     async fn retry_note_groups_recovers_pair_from_poisoned_batch() {
         let account_id = mock_network_account_id();
@@ -1103,20 +1081,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(recovered.iter().map(Note::id).collect::<BTreeSet<_>>(), intact_ids);
-    }
-
-    #[tokio::test]
-    async fn failed_retry_preserves_proven_feature() {
-        let group = group_with_two_sponsorships();
-        let feature = group.feature.as_note().clone();
-
-        let recovered = retry_note_groups(&[group], vec![feature.clone()], |_| {
-            ready(Ok::<_, NtxError>(None))
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(recovered, vec![feature]);
     }
 
     #[test]

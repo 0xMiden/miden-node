@@ -52,6 +52,8 @@ impl SponsorshipNote {
     }
 }
 
+// TODO: Migrate to protocol's `FeeSponsorshipNote` after the merge of
+// [#3746](https://github.com/0xMiden/protocol/pull/3746).
 impl TryFrom<Note> for SponsorshipNote {
     type Error = NoteError;
 

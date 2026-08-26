@@ -4,7 +4,6 @@ use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{InList, WriteTx};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Nullifier;
-use miden_protocol::utils::serde::Serializable;
 
 const SQL: &str = include_str!("mark_sponsorship_consumed.sql");
 
@@ -17,9 +16,7 @@ pub fn mark_sponsorships_consumed(
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<(), DatabaseError> {
-    // The bound blobs must outlive the query, so they are materialized before building the list.
-    let serialized: Vec<Vec<u8>> = nullifiers.iter().map(Serializable::to_bytes).collect();
-    let nullifiers = InList::from_blobs(serialized.iter().map(Vec::as_slice));
+    let nullifiers = InList::from_values(nullifiers);
 
     tx.execute(SQL, &[&nullifiers, &block_num])?;
     Ok(())

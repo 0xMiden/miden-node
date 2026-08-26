@@ -81,7 +81,7 @@ mod select_genesis_validator_keys;
 pub use select_genesis_validator_keys::select_genesis_validator_keys;
 
 mod sponsored_accounts;
-pub use sponsored_accounts::sponsored_accounts;
+pub use sponsored_accounts::get_target_account_ids_for_sponsor_notes;
 
 mod sponsorships_for_pending_notes;
 pub use sponsorships_for_pending_notes::select_sponsorships_for_pending_notes;
@@ -174,7 +174,7 @@ pub fn apply_committed_block(
 
     // Resolved after the consumption marks so a feature note consumed in this same block does not
     // produce a wakeup.
-    let sponsored = sponsored_accounts(tx, &effects.sponsorship_notes)?;
+    let sponsored = get_target_account_ids_for_sponsor_notes(tx, &effects.sponsorship_notes)?;
 
     update_chain_state_tip(tx, effects.header.block_num(), &effects.header, chain_mmr)?;
 

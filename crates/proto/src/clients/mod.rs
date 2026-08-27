@@ -32,6 +32,7 @@ use std::time::Duration;
 
 use http::header::ACCEPT;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_node_utils::tracing::{debug, info, warn};
 use miden_protocol::Word;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::utils::serde::Serializable;
@@ -568,44 +569,44 @@ impl Builder<WantsConnection> {
 
             match result {
                 Ok(Ok(_client)) => {
-                    tracing::info!(
-                        dependency.name = dependency_name,
-                        dependency.endpoint = %endpoint,
+                    info!(
                         "Configured service reachable",
+                        dependency.name = dependency_name,
+                        dependency.endpoint = endpoint.as_str()
                     );
                     shutdown.cancelled().await;
                     return;
                 },
                 Ok(Err(err)) if first_failure => {
-                    tracing::warn!(
-                        dependency.name = dependency_name,
-                        dependency.endpoint = %endpoint,
-                        %err,
+                    warn!(
+                        &err,
                         "Configured service unreachable",
+                        dependency.name = dependency_name,
+                        dependency.endpoint = endpoint.as_str()
                     );
                 },
                 Err(_elapsed) if first_failure => {
-                    tracing::warn!(
-                        dependency.name = dependency_name,
-                        dependency.endpoint = %endpoint,
-                        timeout = ?CONNECT_TIMEOUT,
+                    warn!(
                         "Configured service connection timed out",
+                        dependency.name = dependency_name,
+                        dependency.endpoint = endpoint.as_str(),
+                        timeout.ms = CONNECT_TIMEOUT.as_millis() as u64
                     );
                 },
                 Ok(Err(err)) => {
-                    tracing::debug!(
-                        dependency.name = dependency_name,
-                        dependency.endpoint = %endpoint,
-                        %err,
+                    debug!(
+                        &err,
                         "Configured service still unreachable",
+                        dependency.name = dependency_name,
+                        dependency.endpoint = endpoint.as_str()
                     );
                 },
                 Err(_elapsed) => {
-                    tracing::debug!(
-                        dependency.name = dependency_name,
-                        dependency.endpoint = %endpoint,
-                        timeout = ?CONNECT_TIMEOUT,
+                    debug!(
                         "Configured service connection still timing out",
+                        dependency.name = dependency_name,
+                        dependency.endpoint = endpoint.as_str(),
+                        timeout.ms = CONNECT_TIMEOUT.as_millis() as u64
                     );
                 },
             }

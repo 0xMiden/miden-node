@@ -1,9 +1,8 @@
 use miden_node_proto::generated as proto;
 use miden_node_store::StateSyncError;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::block::BlockNumber;
 use tonic::Status;
-use tracing::debug;
 
 use super::RpcService;
 use crate::{COMPONENT, LOG_TARGET};

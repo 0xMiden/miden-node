@@ -21,13 +21,13 @@ use miden_node_proto::BlockProofRequest;
 use miden_node_store::state::{ProofWriter, State};
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, info, miden_instrument};
 use miden_protocol::block::{BlockNumber, BlockProof};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
-use tracing::{Instrument, debug, info};
+use tracing::Instrument;
 
 use crate::block_prover::{BlockProver, ProverError};
 use crate::errors::ProofSchedulerError;

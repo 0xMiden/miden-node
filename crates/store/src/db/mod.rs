@@ -13,7 +13,7 @@ use miden_node_utils::limiter::{
     QueryParamLimiter,
     QueryParamNoteCommitmentLimit,
 };
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetId};
@@ -36,7 +36,6 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::TransactionHeader;
 use miden_protocol::utils::serde::Deserializable;
-use tracing::info;
 
 use crate::db::migrations::{migrate_database, verify_latest_schema};
 use crate::db::models::conv::SqlTypeConvert;
@@ -260,9 +259,9 @@ impl Db {
         let db = miden_node_db::Db::new_with_pool_size(&database_filepath, connection_pool_size)?;
         info!(
             target: LOG_TARGET,
-            sqlite= %database_filepath.display(),
-            connection_pool_size = %connection_pool_size,
-            "Connected to the database"
+            "Connected to the database",
+            path = database_filepath,
+            db.sqlite.connection_pool_size = connection_pool_size.get()
         );
 
         Ok(Self { db })
@@ -619,11 +618,11 @@ impl Db {
                 match queries::select_note_ids_by_nullifier(conn, chunk) {
                     Ok(note_ids) => resolved_note_ids.extend(note_ids),
                     Err(err) => {
-                        tracing::warn!(
+                        warn!(
+                            &err,
                             target: COMPONENT,
-                            %err,
-                            nullifiers.count = chunk.len(),
                             "Failed to resolve consumed note IDs for lifecycle events",
+                            note.nullifier.count = chunk.len()
                         );
                         break;
                     },

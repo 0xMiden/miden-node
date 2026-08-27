@@ -3,10 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use miden_node_store::state::{BlockWriter, State};
-use miden_node_utils::formatting::format_array;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{ErrorSpanExt, debug, miden_instrument, miden_span_record};
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
 use miden_protocol::block::{
     BlockInputs,
@@ -380,9 +379,11 @@ impl BlockBuilder {
         );
 
         if num_transactions > 0 {
-            let transaction_ids =
-                signed_block.body().transactions().as_slice().iter().map(TransactionHeader::id);
-            tracing::debug!(target: LOG_TARGET, transactions = %format_array(transaction_ids), "Included transactions");
+            debug!(
+                target: LOG_TARGET,
+                "Included transactions",
+                block.transaction.count = num_transactions
+            );
         }
 
         self.block_writer

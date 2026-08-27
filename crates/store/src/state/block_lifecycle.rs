@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountId,
@@ -93,56 +93,38 @@ impl BlockLifecycle {
     )]
     pub(super) fn emit(self, resolved_note_ids: &BTreeMap<Nullifier, NoteId>) {
         for account in self.registered_accounts {
-            tracing::debug!(
+            debug!(
                 target: LOG_TARGET,
-                {
-                    account.id = %account.account_id,
-                    block.number = %self.block_num,
-                    transaction.id = %account.transaction_id,
-                },
                 "Account registered",
+                account.id = account.account_id,
+                block.number = self.block_num,
+                transaction.id = account.transaction_id
             );
         }
 
         for note in self.created_notes {
-            tracing::debug!(
+            debug!(
                 target: LOG_TARGET,
-                {
-                    note.id = %note.note_id,
-                    note.sender = %note.sender,
-                    note.erased = note.erased,
-                    block.number = %self.block_num,
-                    transaction.id = %note.transaction_id,
-                },
                 "Note created",
+                note.id = note.note_id,
+                note.sender = note.sender,
+                note.erased = note.erased,
+                block.number = self.block_num,
+                transaction.id = note.transaction_id
             );
         }
 
         for note in self.consumed_notes {
             let note_id = note.note_id.or_else(|| resolved_note_ids.get(&note.nullifier).copied());
-            if let Some(note_id) = note_id {
-                tracing::debug!(
-                    target: LOG_TARGET,
-                    {
-                        note.id = %note_id,
-                        note.nullifier = %note.nullifier,
-                        block.number = %self.block_num,
-                        transaction.id = %note.transaction_id,
-                    },
-                    "Note consumed",
-                );
-            } else {
-                tracing::debug!(
-                    target: LOG_TARGET,
-                    {
-                        note.nullifier = %note.nullifier,
-                        note.id_resolved = false,
-                        block.number = %self.block_num,
-                        transaction.id = %note.transaction_id,
-                    },
-                    "Note consumed",
-                );
-            }
+            debug!(
+                target: LOG_TARGET,
+                "Note consumed",
+                note.id = note_id,
+                note.id_resolved = note_id.is_some(),
+                note.nullifier = note.nullifier,
+                block.number = self.block_num,
+                transaction.id = note.transaction_id
+            );
         }
 
         for change in self.storage_changes {
@@ -205,17 +187,15 @@ impl StorageChange {
                 operation,
                 value: Some(value),
             } => {
-                tracing::debug!(
+                debug!(
                     target: LOG_TARGET,
-                    {
-                        account.id = %account_id,
-                        account.storage.slot = %slot_name,
-                        account.storage.kind = "value",
-                        account.storage.operation = storage_operation(operation),
-                        account.storage.value = %value,
-                        block.number = %block_num,
-                    },
                     "Account storage updated",
+                    account.id = account_id,
+                    account.storage.slot = slot_name,
+                    account.storage.kind = "value",
+                    account.storage.operation = storage_operation(operation),
+                    account.storage.value = value,
+                    block.number = block_num
                 );
             },
             StorageChange::Value {
@@ -224,16 +204,14 @@ impl StorageChange {
                 operation,
                 value: None,
             } => {
-                tracing::debug!(
+                debug!(
                     target: LOG_TARGET,
-                    {
-                        account.id = %account_id,
-                        account.storage.slot = %slot_name,
-                        account.storage.kind = "value",
-                        account.storage.operation = storage_operation(operation),
-                        block.number = %block_num,
-                    },
                     "Account storage updated",
+                    account.id = account_id,
+                    account.storage.slot = slot_name,
+                    account.storage.kind = "value",
+                    account.storage.operation = storage_operation(operation),
+                    block.number = block_num
                 );
             },
             StorageChange::MapEntry {
@@ -243,20 +221,18 @@ impl StorageChange {
                 key,
                 value,
             } => {
-                tracing::debug!(
+                debug!(
                     target: LOG_TARGET,
-                    {
-                        account.id = %account_id,
-                        account.storage.slot = %slot_name,
-                        account.storage.kind = "map",
-                        account.storage.operation = storage_operation(operation),
-                        account.storage.map.key = %key,
-                        account.storage.map.entry.operation =
-                            if value.is_empty() { "remove" } else { "set" },
-                        account.storage.value = %value,
-                        block.number = %block_num,
-                    },
                     "Account storage updated",
+                    account.id = account_id,
+                    account.storage.slot = slot_name,
+                    account.storage.kind = "map",
+                    account.storage.operation = storage_operation(operation),
+                    account.storage.map.key = key,
+                    account.storage.map.entry.operation =
+                        if value.is_empty() { "remove" } else { "set" },
+                    account.storage.value = value,
+                    block.number = block_num
                 );
             },
             StorageChange::MapSlot {
@@ -265,17 +241,15 @@ impl StorageChange {
                 operation,
                 entries_count,
             } => {
-                tracing::debug!(
+                debug!(
                     target: LOG_TARGET,
-                    {
-                        account.id = %account_id,
-                        account.storage.slot = %slot_name,
-                        account.storage.kind = "map",
-                        account.storage.operation = storage_operation(operation),
-                        account.storage.map.entries.count = entries_count,
-                        block.number = %block_num,
-                    },
                     "Account storage updated",
+                    account.id = account_id,
+                    account.storage.slot = slot_name,
+                    account.storage.kind = "map",
+                    account.storage.operation = storage_operation(operation),
+                    account.storage.map.entries.count = entries_count,
+                    block.number = block_num
                 );
             },
         }

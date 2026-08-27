@@ -4,13 +4,12 @@ use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::decode::GrpcDecodeExt;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::{decode, generated as proto};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{info, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::block::ProposedBlock;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_protocol::utils::serde::Serializable;
 use thiserror::Error;
-use tracing::info;
 use url::Url;
 
 use crate::{COMPONENT, LOG_TARGET};
@@ -58,7 +57,12 @@ impl BlockProducerValidatorClient {
         let clients = validator_urls
             .into_iter()
             .map(|validator_url| {
-                info!(target: LOG_TARGET, validator_endpoint = %validator_url, "Initializing validator client");
+                info!(
+                    target: LOG_TARGET,
+                    "Initializing validator client",
+                    dependency.name = "validator",
+                    dependency.endpoint = validator_url.to_string()
+                );
 
                 Ok(Builder::new(validator_url)
                     .with_tls()?

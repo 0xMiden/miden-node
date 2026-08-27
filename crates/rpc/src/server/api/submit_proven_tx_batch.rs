@@ -3,7 +3,7 @@ use miden_node_proto::clients::{SequencerClient, ValidatorClient};
 use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record, trace};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
@@ -41,10 +41,10 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
         let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
         let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
-        tracing::trace!(
+        trace!(
             target: LOG_TARGET,
-            { batch.size = request.sealed_transaction_inputs.len() },
             "Received transaction batch",
+            batch.size = request.sealed_transaction_inputs.len()
         );
 
         let proven_batch = ProvenBatch::read_from_bytes(&request.batch_proof).map_err(|err| {
@@ -68,7 +68,7 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
             })?
             .ok_or(Status::invalid_argument("missing `proposed_batch` field"))?;
 
-        tracing::debug!(target: LOG_TARGET, "Submitting transaction batch");
+        debug!(target: LOG_TARGET, "Submitting transaction batch");
 
         // Verify the reference block is actually part of the chain.
         self.verify_reference_commitment(

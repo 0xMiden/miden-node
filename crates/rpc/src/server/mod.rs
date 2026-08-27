@@ -21,6 +21,8 @@ use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use miden_node_utils::tracing::info;
+use miden_protocol::block::BlockNumber;
 use rand::RngExt;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -29,7 +31,6 @@ use tonic_reflection::server;
 use tonic_web::GrpcWebLayer;
 use tower_http::classify::{GrpcCode, GrpcErrorsAsFailures, SharedClassifier};
 use tower_http::trace::TraceLayer;
-use tracing::info;
 
 use crate::LOG_TARGET;
 use crate::server::api::SequencerInternalService;
@@ -404,31 +405,27 @@ impl Rpc {
     }
 }
 
-fn log_node_ready(mode: &str, endpoint: impl Display, chain_tip: impl Display) {
+fn log_node_ready(mode: &str, endpoint: impl Display, chain_tip: BlockNumber) {
     info!(
         target: LOG_TARGET,
-        {
-            service.name = "miden-node",
-            service.version = env!("CARGO_PKG_VERSION"),
-            node.role = mode,
-            rpc.listen = %endpoint,
-            block.number = %chain_tip,
-        },
         "Node ready",
+        service.name = "miden-node",
+        service.version = env!("CARGO_PKG_VERSION"),
+        node.role = mode,
+        rpc.listen = endpoint.to_string(),
+        block.number = chain_tip
     );
 }
 
 fn log_node_synchronizing(mode: &str, endpoint: impl Display, readiness_threshold: u32) {
     info!(
         target: LOG_TARGET,
-        {
-            service.name = "miden-node",
-            service.version = env!("CARGO_PKG_VERSION"),
-            node.role = mode,
-            rpc.listen = %endpoint,
-            sync.ready_threshold = readiness_threshold,
-        },
         "Node started; synchronizing",
+        service.name = "miden-node",
+        service.version = env!("CARGO_PKG_VERSION"),
+        node.role = mode,
+        rpc.listen = endpoint.to_string(),
+        sync.ready_threshold = readiness_threshold
     );
 }
 
@@ -464,8 +461,8 @@ impl SequencerInternal {
             .context("failed to read internal sequencer listen address")?;
         info!(
             target: LOG_TARGET,
-            { internal.listen = %endpoint },
             "Internal sequencer server ready",
+            internal.listen = endpoint.to_string()
         );
 
         let service = SequencerInternalService { block_producer: self.block_producer };

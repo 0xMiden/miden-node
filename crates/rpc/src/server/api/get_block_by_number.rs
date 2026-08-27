@@ -1,7 +1,6 @@
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::block::BlockNumber;
-use tracing::debug;
 
 use super::{RpcService, database_error_to_status};
 use crate::{COMPONENT, LOG_TARGET};
@@ -24,6 +23,7 @@ impl proto::server::rpc_api::GetBlockByNumber for RpcService {
         name = "get_block_by_number",
         fields(
             block.number = request.block_num,
+            request.include_proof = request.include_proof.unwrap_or_default(),
         ),
         err,
     )]
@@ -33,7 +33,12 @@ impl proto::server::rpc_api::GetBlockByNumber for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        debug!(target: LOG_TARGET, ?request, "Getting block by number");
+        debug!(
+            target: LOG_TARGET,
+            "Getting block by number",
+            block.number = request.block_num,
+            request.include_proof = request.include_proof.unwrap_or_default()
+        );
 
         let block_num = BlockNumber::from(request.block_num);
         let block = self

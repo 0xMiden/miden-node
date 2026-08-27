@@ -12,7 +12,7 @@ use miden_node_proto::domain::account::{
 };
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{miden_instrument, trace};
 use miden_protocol::account::{
     AccountId,
     AccountPatch,
@@ -834,12 +834,12 @@ impl<B: Backend> AccountStateForest<B> {
         for patch in &account_patches {
             self.cache_hashed_keys_from_patch(patch);
 
-            tracing::trace!(
+            trace!(
                 target: crate::LOG_TARGET,
-                account_id = %patch.id(),
-                %block_num,
-                is_full_state = patch.is_full_state(),
-                "Updated forest with account patch"
+                "Updated forest with account patch",
+                account.id = patch.id(),
+                block.number = block_num,
+                account.updated = patch.is_full_state()
             );
         }
 

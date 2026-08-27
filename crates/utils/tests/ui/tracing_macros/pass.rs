@@ -1,4 +1,15 @@
-use miden_node_utils::tracing::{RecordAttribute, miden_instrument, miden_span_record};
+use std::fmt::{self, Display, Formatter};
+
+use miden_node_utils::tracing::{
+    debug,
+    error,
+    info,
+    RecordAttribute,
+    miden_instrument,
+    miden_span_record,
+    trace,
+    warn,
+};
 
 struct NotDebug;
 
@@ -18,6 +29,32 @@ impl std::fmt::Display for ApprovedAttribute {
     }
 }
 
+#[derive(Debug)]
+struct ApprovedError;
+
+impl Display for ApprovedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("approved error")
+    }
+}
+
+impl std::error::Error for ApprovedError {}
+
+fn records_events() {
+    let parent = tracing::info_span!("parent");
+
+    trace!("trace.event");
+    trace!(ApprovedError, "trace.error.event");
+    debug!("debug.event", block.number = 1);
+    debug!(ApprovedError, "debug.error.event");
+    info!(target: "test", "info.event", transaction.id = ApprovedAttribute("0x1234"));
+    info!(ApprovedError, "info.error.event");
+    info!("nonstandard.event", custom.attribute = ApprovedAttribute("custom") #[nonstandard]);
+    warn!(parent: &parent, "warn.event", account.updated = true);
+    warn!(ApprovedError, "warn.error.event");
+    error!(ApprovedError, target: "test", "error.event", block.number = 2);
+    error!(anyhow::anyhow!("anyhow error"), "anyhow.error.event");
+}
 #[miden_instrument(
     target = "miden-node-utils-test",
     name = "records_fields",

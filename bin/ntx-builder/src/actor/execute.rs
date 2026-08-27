@@ -3,11 +3,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use backon::ExponentialBuilder;
-use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{ErrorSpanExt, info, miden_instrument, miden_span_record, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -109,12 +108,12 @@ fn request_backoff(initial: Duration, max: Duration) -> ExponentialBuilder {
 
 /// Emits a structured warning for a transient NTX request failure that is about to be retried.
 fn log_transient_retry<E: std::error::Error>(operation: &'static str, err: &E, sleep: Duration) {
-    tracing::warn!(
+    warn!(
+        err,
         target: COMPONENT,
-        operation,
-        err = %err.as_report(),
-        sleep_ms = sleep.as_millis() as u64,
         "ntx transient request failure; retrying after backoff",
+        operation.name = operation,
+        retry.delay_ms = sleep.as_millis() as u64
     );
 }
 
@@ -427,14 +426,12 @@ impl NtxContext {
             .collect::<Vec<_>>();
 
         for failed_note in &failed {
-            tracing::info!(
+            info!(
+                failed_note.error(),
                 target: LOG_TARGET,
-                {
-                    note.id = %failed_note.note().id(),
-                    nullifier = %failed_note.note().nullifier(),
-                    err = %failed_note.error().as_report(),
-                },
                 "note failed consumability check",
+                note.id = failed_note.note().id(),
+                note.nullifier = failed_note.note().nullifier()
             );
         }
 
@@ -514,13 +511,11 @@ impl NtxContext {
                 successful.is_empty() && failed.iter().any(|f| f.num_cycles().is_some())
             },
             Err(err) => {
-                tracing::warn!(
+                warn!(
+                    &err,
                     target: LOG_TARGET,
-                    {
-                        note.id = %note.id(),
-                        err = %err.as_report(),
-                    },
                     "isolation re-check for a cycle-limited note failed; treating it as deferrable",
+                    note.id = note.id()
                 );
                 false
             },

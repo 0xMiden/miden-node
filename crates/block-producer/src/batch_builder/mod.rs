@@ -8,7 +8,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::state::State;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{ErrorSpanExt, error, miden_instrument, miden_span_record};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{BatchId, ProposedBatch, ProvenBatch};
 use miden_protocol::transaction::TransactionId;
@@ -220,7 +220,11 @@ impl BatchBuilder {
             Ok(Ok(())) => Ok(()),
             Ok(Err(err)) => Err(err),
             Err(crash) => {
-                tracing::error!(target: LOG_TARGET, message=%crash, "Batch worker pool panic'd");
+                error!(
+                    &crash,
+                    target: LOG_TARGET,
+                    "Batch worker pool panic'd"
+                );
                 panic!("Batch worker pool panic: {crash}");
             },
         }

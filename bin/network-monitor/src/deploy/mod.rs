@@ -25,7 +25,7 @@ use miden_node_proto::generated::rpc::{
 use miden_node_proto::generated::transaction::ProvenTransaction as ProtoProvenTransaction;
 use miden_node_utils::retry;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -183,11 +183,11 @@ impl TransactionSubmissionClient {
         })
         .notify(|status: &anyhow::Error, _| {
             stale_key.store(true, Ordering::Relaxed);
-            tracing::warn!(
+            warn!(
+                status,
                 target: COMPONENT,
-                %tx_id,
-                err = %status,
                 "Transaction inputs rejected as stale, refreshing the encryption key and retrying",
+                transaction.id = tx_id
             );
         })
         .await;
@@ -277,11 +277,11 @@ pub async fn create_genesis_aware_rpc_client(
     })
     .retry(genesis_discovery_backoff())
     .notify(|err: &anyhow::Error, sleep: Duration| {
-        tracing::warn!(
+        warn!(
+            err,
             target: COMPONENT,
-            err = ?err,
-            sleep_ms = sleep.as_millis() as u64,
             "RPC genesis discovery failed; retrying after backoff",
+            retry.delay_ms = sleep.as_millis() as u64
         );
     })
     .await
@@ -296,7 +296,7 @@ pub async fn create_and_deploy_accounts(
     submission_client: &TransactionSubmissionClient,
     prover: &LocalTransactionProver,
 ) -> Result<DeployedMonitorAccounts> {
-    tracing::info!(target: LOG_TARGET, "Creating fresh monitor accounts");
+    info!(target: LOG_TARGET, "Creating fresh monitor accounts");
 
     let mut rpc_client = submission_client.rpc_client();
 
@@ -314,7 +314,10 @@ pub async fn create_and_deploy_accounts(
     let counter_anchor =
         resolve_counter_anchor(&mut rpc_client, &genesis_header, &committed_counter).await?;
 
-    tracing::info!(target: LOG_TARGET, "Successfully created and deployed accounts");
+    info!(
+        target: LOG_TARGET,
+        "Successfully created and deployed accounts"
+    );
 
     Ok(DeployedMonitorAccounts {
         wallet: wallet_account,
@@ -397,26 +400,27 @@ async fn resolve_counter_anchor(
         .await
         {
             Ok(Some(anchor)) => {
-                tracing::info!(
+                info!(
                     target: LOG_TARGET,
-                    {
-                        account.id = %committed_counter.id(),
-                        block.number = %anchor.block_header.block_num(),
-                    },
-                    "Resolved counter FPI anchor"
+                    "Resolved counter FPI anchor",
+                    account.id = committed_counter.id(),
+                    block.number = anchor.block_header.block_num()
                 );
                 return Ok(anchor);
             },
-            Ok(None) => tracing::debug!(
+            Ok(None) => debug!(
                 target: LOG_TARGET,
-                { account.id = %committed_counter.id(), attempt },
-                "Counter account not yet committed in the expected state; retrying"
+                "Counter account not yet committed in the expected state; retrying",
+                account.id = committed_counter.id(),
+                retry.attempt = attempt
             ),
             Err(err) => {
-                tracing::debug!(
+                debug!(
+                    &err,
                     target: LOG_TARGET,
-                    { account.id = %committed_counter.id(), attempt, error = ?err },
-                    "Counter anchor resolution attempt failed; retrying"
+                    "Counter anchor resolution attempt failed; retrying",
+                    account.id = committed_counter.id(),
+                    retry.attempt = attempt
                 );
                 last_error = Some(err);
             },

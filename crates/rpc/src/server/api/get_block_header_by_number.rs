@@ -1,7 +1,6 @@
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::block::BlockNumber;
-use tracing::debug;
 
 use super::{COMPONENT, RpcService};
 use crate::LOG_TARGET;
@@ -24,6 +23,7 @@ impl proto::server::rpc_api::GetBlockHeaderByNumber for RpcService {
         name = "get_block_header_by_number",
         fields(
             block.number = request.block_num(),
+            request.include_mmr_proof = request.include_mmr_proof.unwrap_or_default(),
         ),
         err,
     )]
@@ -33,7 +33,12 @@ impl proto::server::rpc_api::GetBlockHeaderByNumber for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        debug!(target: LOG_TARGET, ?request, "Getting block header by number");
+        debug!(
+            target: LOG_TARGET,
+            "Getting block header by number",
+            block.number = request.block_num(),
+            request.include_mmr_proof = request.include_mmr_proof.unwrap_or_default()
+        );
 
         let block_num = request.block_num.map(BlockNumber::from);
         let (block_header, mmr_proof) = self

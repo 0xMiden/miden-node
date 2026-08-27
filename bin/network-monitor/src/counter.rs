@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use miden_node_proto::clients::RpcClient;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, error, info, miden_instrument, warn};
 use miden_protocol::account::auth::AuthSecretKey;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountPatch};
 use miden_protocol::asset::AssetVault;
@@ -38,7 +38,6 @@ use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{LocalTransactionProver, TransactionExecutor};
 use tokio::sync::{Mutex, watch};
-use tracing::{debug, error, info, warn};
 
 use crate::config::MonitorConfig;
 use crate::deploy::counter::COUNTER_SLOT_NAME;
@@ -271,30 +270,26 @@ impl IncrementService {
             .await
             .inspect_err(|e| {
                 error!(
+                    e,
                     target: LOG_TARGET,
-                    {
-                        account.id = %self.tx.wallet_account.id(),
-                        error = ?e,
-                    },
-                    "Failed to re-sync wallet account from RPC"
+                    "Failed to re-sync wallet account from RPC",
+                    account.id = self.tx.wallet_account.id()
                 );
             })?
             .context("wallet account not found on-chain during re-sync")
             .inspect_err(|e| {
                 error!(
+                    e,
                     target: LOG_TARGET,
-                    {
-                        account.id = %self.tx.wallet_account.id(),
-                        error = ?e,
-                    },
-                    "Wallet account not found on-chain during re-sync"
+                    "Wallet account not found on-chain during re-sync",
+                    account.id = self.tx.wallet_account.id()
                 );
             })?;
 
         debug!(
             target: LOG_TARGET,
-            { account.id = %self.tx.wallet_account.id() },
-            "Wallet account re-synced from RPC"
+            "Wallet account re-synced from RPC",
+            account.id = self.tx.wallet_account.id()
         );
         self.tx.wallet_account = fresh_account;
         Ok(())
@@ -406,9 +401,12 @@ impl IncrementService {
 
         let block_height = self.submission_client.submit(&proven_tx, &tx_inputs).await?;
 
-        info!(target: LOG_TARGET, "Submitted proven transaction to RPC");
-
         let tx_id = proven_tx.id().to_hex();
+        info!(
+            target: LOG_TARGET,
+            "Submitted proven transaction to RPC",
+            transaction.id = tx_id.as_str()
+        );
 
         Ok((tx_id, account_patch, block_height))
     }
@@ -445,7 +443,7 @@ impl Service for IncrementService {
                 guard.pending_started = Some(Instant::now());
             },
             Err(e) => {
-                error!(target: LOG_TARGET, error = ?e, "Failed to create and submit network note");
+                error!(&e, target: LOG_TARGET, "Failed to create and submit network note");
                 self.details.failure_count += 1;
                 self.failures.record_failure();
                 last_error = Some(format!("create/submit note failed: {e}"));
@@ -459,15 +457,15 @@ impl Service for IncrementService {
                 if !resynced_now && self.failures.should_regenerate() {
                     warn!(
                         target: LOG_TARGET,
-                        consecutive_failures = self.failures.consecutive_failures,
-                        "re-sync ineffective, regenerating accounts from scratch"
+                        "re-sync ineffective, regenerating accounts from scratch",
+                        counter.failures.consecutive = self.failures.consecutive_failures
                     );
                     self.failures.mark_regeneration_attempt();
                     match self.try_regenerate_accounts().await {
                         Ok(()) => self.failures.reset(),
                         Err(regen_err) => {
                             self.failures.mark_regeneration_failed();
-                            error!(target: LOG_TARGET, error = ?regen_err, "Account regeneration failed");
+                            error!(&regen_err, target: LOG_TARGET, "Account regeneration failed");
                         },
                     }
                 }
@@ -552,13 +550,11 @@ impl CounterTrackingService {
 
         info!(
             target: LOG_TARGET,
-            {
-                old.counter.id = %self.counter_account.id(),
-                new.counter.id = %reloaded.counter.id(),
-                old.wallet.id = %self.wallet_account.id(),
-                new.wallet.id = %reloaded.wallet.id(),
-            },
             "monitor accounts changed, resetting tracking state",
+            counter.account.id.old = self.counter_account.id(),
+            counter.account.id.new = reloaded.counter.id(),
+            wallet.account.id.old = self.wallet_account.id(),
+            wallet.account.id.new = reloaded.wallet.id()
         );
         self.wallet_account = reloaded.wallet;
         self.counter_account = reloaded.counter;
@@ -592,7 +588,7 @@ impl CounterTrackingService {
             // Counter value not available yet, but not an error.
             Ok(None) => return None,
             Err(e) => {
-                error!(target: LOG_TARGET, error = ?e, "Failed to fetch counter value");
+                error!(&e, target: LOG_TARGET, "Failed to fetch counter value");
                 return Some(format!("fetch counter value failed: {e}"));
             },
         };
@@ -614,8 +610,8 @@ impl CounterTrackingService {
             Ok(None) => {},
             Err(e) => {
                 error!(
+                    &e,
                     target: LOG_TARGET,
-                    error = ?e,
                     "Failed to fetch expected wallet counter value"
                 );
                 last_error = Some(format!("fetch expected value failed: {e}"));
@@ -664,9 +660,10 @@ impl CounterTrackingService {
             {
                 warn!(
                     target: LOG_TARGET,
-                    timeout = ?self.config.counter_latency_timeout,
-                    target_value = pending.target_value,
-                    "Latency measurement timed out"
+                    "Latency measurement timed out",
+                    counter.latency.timeout_ms =
+                        self.config.counter_latency_timeout.as_millis() as u64,
+                    counter.value.target = pending.target_value
                 );
                 let mut guard = self.latency_state.lock().await;
                 if guard.pending.as_ref().map(|p| p.target_value) == Some(pending.target_value) {
@@ -767,10 +764,14 @@ async fn initialize_tracking_state(
         Ok(Some(observed)) => {
             details.current_value = Some(observed);
             details.last_updated = Some(current_unix_timestamp_secs());
-            info!(target: LOG_TARGET, observed_value = observed, "Initialized counter tracking");
+            info!(
+                target: LOG_TARGET,
+                "Initialized counter tracking",
+                counter.value.observed = observed
+            );
         },
         Ok(None) => warn!(target: LOG_TARGET, "Counter account not found at init"),
-        Err(e) => error!(target: LOG_TARGET, error = ?e, "Failed to fetch initial counter value"),
+        Err(e) => error!(&e, target: LOG_TARGET, "Failed to fetch initial counter value"),
     }
 
     match fetch_slot_value(rpc_client, wallet_account.id(), WALLET_COUNTER_SLOT_NAME.as_str()).await
@@ -778,7 +779,7 @@ async fn initialize_tracking_state(
         Ok(Some(expected)) => details.expected_value = Some(expected),
         Ok(None) => {},
         Err(e) => {
-            error!(target: LOG_TARGET, error = ?e, "Failed to fetch initial expected wallet value");
+            error!(&e, target: LOG_TARGET, "Failed to fetch initial expected wallet value");
         },
     }
 
@@ -858,9 +859,9 @@ fn update_expected_and_pending(
     } else {
         warn!(
             target: LOG_TARGET,
-            expected_value = expected,
-            observed_value = observed_value,
-            "Expected counter value is less than current value, setting pending to 0"
+            "Expected counter value is less than current value, setting pending to 0",
+            counter.value.expected = expected,
+            counter.value.observed = observed_value
         );
         details.pending_increments = Some(0);
     }
@@ -968,12 +969,10 @@ async fn fetch_wallet_account(
         Ok(response) => response.into_inner(),
         Err(e) => {
             warn!(
+                &e,
                 target: LOG_TARGET,
-                {
-                    account.id = %account_id,
-                    error = %e,
-                },
-                "Failed to fetch wallet account via RPC"
+                "Failed to fetch wallet account via RPC",
+                account.id = account_id
             );
             return Ok(None);
         },
@@ -983,8 +982,8 @@ async fn fetch_wallet_account(
         if response.witness.is_some() {
             info!(
                 target: LOG_TARGET,
-                { account.id = %account_id },
-                "account found on-chain but cannot reconstruct full account from RPC response"
+                "account found on-chain but cannot reconstruct full account from RPC response",
+                account.id = account_id
             );
         }
         return Ok(None);
@@ -1058,7 +1057,7 @@ async fn fetch_wallet_account(
         expected_storage_commitment
     );
 
-    info!(target: LOG_TARGET, { account.id = %account_id }, "Fetched wallet account from RPC");
+    info!(target: LOG_TARGET, "Fetched wallet account from RPC", account.id = account_id);
     Ok(Some(account))
 }
 

@@ -9,7 +9,7 @@ use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::sequencer;
 use miden_node_store::state::{State, TransactionInputs as StoreTransactionInputs};
 use miden_node_utils::formatting::format_opt;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
@@ -211,7 +211,7 @@ pub async fn get_tx_inputs(
         *current_block_height,
     );
 
-    tracing::debug!(target: LOG_TARGET, tx_inputs = %tx_inputs, "Transaction inputs");
+    debug!(target: LOG_TARGET, "Transaction inputs loaded");
 
     Ok(tx_inputs)
 }

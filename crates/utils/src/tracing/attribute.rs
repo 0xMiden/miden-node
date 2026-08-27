@@ -144,6 +144,7 @@ const STRING_FIELD_NAMES: &[&str] = &[
 
 /// Converts a value into its canonical tracing attribute representation.
 ///
+/// Values passed to the Miden tracing span and event macros must implement this trait.
 /// Implementations decide the allowed scalar field names, the attribute's primitive type, and its
 /// formatting, allowing tracing macros to use one name and representation consistently at every
 /// recording site. Collection implementations derive their field names by appending `s` to these

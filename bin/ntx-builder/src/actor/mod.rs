@@ -2,13 +2,14 @@ mod allowlist;
 pub mod candidate;
 mod execute;
 
+use std::collections::{HashMap, HashSet};
 use std::num::{NonZeroU16, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Duration;
 
 use allowlist::{NoteScriptNotAllowlisted, partition_by_allowlist};
 use anyhow::Context;
-use candidate::TransactionCandidate;
+use candidate::{SponsoredFeatureNote, TransactionCandidate};
 use futures::FutureExt;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::{format_array, format_opt};
@@ -18,8 +19,9 @@ use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountPatch};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::note::{NoteScript, Nullifier};
+use miden_protocol::note::{Note, NoteId, NoteScript, Nullifier};
 use miden_protocol::transaction::{TransactionArgs, TransactionId};
+use miden_standards::account::fees::FeePolicyManager;
 use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_tx::FailedNote;
 use tokio::sync::{Semaphore, mpsc, watch};
@@ -44,6 +46,10 @@ pub(crate) fn build_tx_args(expiration_delta: NonZeroU16) -> TransactionArgs {
     let script = ExpirationTransactionScript::new(expiration_delta);
     TransactionArgs::default().with_tx_script_and_args(script.into(), script.tx_script_args())
 }
+
+/// Maximum number of `FEE_SPONSORSHIP` notes attached to a single feature note. A feature note with
+/// more pending sponsorships than this keeps a subset of this size.
+const MAX_SPONSORSHIPS_PER_NOTE: usize = 3;
 
 // ACTOR REQUESTS
 // ================================================================================================
@@ -104,7 +110,7 @@ pub struct State {
 /// Per-actor configuration knobs.
 #[derive(Debug, Clone, Copy)]
 pub struct ActorConfig {
-    /// Maximum number of notes per transaction.
+    /// Maximum number of notes per transaction. Sponsorship notes count against this budget.
     pub max_notes_per_tx: NonZeroUsize,
     /// Maximum number of note execution attempts before dropping a note.
     pub max_note_attempts: usize,
@@ -549,8 +555,48 @@ impl AccountActor {
             self.mark_notes_failed(&failed_notes, block_num).await;
         }
 
-        let notes: Vec<_> = partitioned_notes.allowed.into_iter().take(max_notes).collect();
-        if notes.is_empty() {
+        // Attach each feature note's pending sponsorships: the bundle is the atomic selection unit,
+        // since a sponsorship may only be consumed alongside its feature note.
+        let mut sponsorships = if partitioned_notes.allowed.is_empty() {
+            HashMap::new()
+        } else {
+            self.state
+                .db
+                .sponsorships_for_pending_notes(account_id)
+                .await
+                .context("failed to query DB for pending sponsorships")?
+        };
+        // A bundle must leave room for its feature note within the per-tx note budget.
+        let max_sponsorships = MAX_SPONSORSHIPS_PER_NOTE.min(max_notes - 1);
+        let fee_asset_id = account
+            .storage()
+            .get_item(FeePolicyManager::fee_asset_id_slot())
+            .context("failed to read network account fee asset ID")?;
+
+        let mut selected: Vec<SponsoredFeatureNote> = Vec::new();
+        let mut selected_notes = 0_usize;
+        for feature in partitioned_notes.allowed {
+            let bundled_sponsorships =
+                sponsorships.remove(&feature.as_note().id()).unwrap_or_default();
+            let mut sponsored = SponsoredFeatureNote {
+                feature,
+                sponsorships: bundled_sponsorships,
+            };
+            // Filter before applying the cap so assets the account does not accept cannot occupy
+            // the limited sponsorship slots, then order by amount so the cap keeps the sponsorships
+            // most likely to cover the fee.
+            sponsored.retain_sponsorships_for_fee_asset(fee_asset_id);
+            sponsored.sort_sponsorships_by_amount();
+            sponsored.sponsorships.truncate(max_sponsorships);
+            // Bundle-atomic packing: a bundle that does not fit the remaining budget is skipped as
+            // a whole (never split) and re-selected in a later round.
+            if selected_notes + sponsored.num_notes() > max_notes {
+                continue;
+            }
+            selected_notes += sponsored.num_notes();
+            selected.push(sponsored);
+        }
+        if selected.is_empty() {
             // Notes just marked failed re-enter eligibility via backoff; re-check on the next block
             // so the actor does not deactivate while it still has notes aging through their budget.
             let next_retry_block = if rejected_any {
@@ -569,7 +615,7 @@ impl AccountActor {
             Some(TransactionCandidate {
                 // Cheap: bumps the `Arc` refcount instead of deep-copying the account/storage.
                 account: Arc::clone(account),
-                notes,
+                notes: selected,
                 chain_tip_header,
                 chain_mmr,
             }),
@@ -614,14 +660,24 @@ impl AccountActor {
             self.config.request_backoff_max,
         );
 
-        let notes = tx_candidate.notes.clone();
+        let sponsored_notes = tx_candidate.notes.clone();
+        // Failures of a sponsorship note are attributed to the feature note of its bundle:
+        // sponsorship notes have no row in the `notes` table, so the feature note carries the
+        // attempt tracking for its whole bundle.
+        let sponsor_to_feature = tx_candidate.sponsor_to_feature_nullifier();
         let account_id = tx_candidate.account.id();
-        let note_ids: Vec<_> = notes.iter().map(|n| n.as_note().id()).collect();
+        let note_ids: Vec<_> = sponsored_notes
+            .iter()
+            .flat_map(|sponsored| {
+                std::iter::once(sponsored.feature.as_note().id())
+                    .chain(sponsored.sponsorships.iter().map(Note::id))
+            })
+            .collect();
         tracing::info!(
             target: LOG_TARGET,
             %account_id,
             note_ids = %format_array(&note_ids),
-            num_notes = notes.len(),
+            num_notes = note_ids.len(),
             "executing network transaction",
         );
 
@@ -656,10 +712,21 @@ impl AccountActor {
 
                 log_deferred_notes(deferred_notes);
 
-                let failed_notes = log_failed_notes(failed_notes);
+                // Only feature notes are discarded permanently. An oversized sponsorship (its
+                // isolated re-check runs the reclaim path, so this is unexpected) is charged to its
+                // feature note as a regular failure instead: the feature itself may still be
+                // consumable with a different sponsorship.
+                let (oversized_sponsorships, oversized_features): (Vec<_>, Vec<_>) =
+                    oversized_notes
+                        .into_iter()
+                        .partition(|f| sponsor_to_feature.contains_key(&f.note().id()));
+
+                let mut to_penalize = failed_notes;
+                to_penalize.extend(oversized_sponsorships);
+                let failed_notes = attribute_failed_notes(to_penalize, &sponsor_to_feature);
                 self.mark_notes_failed(&failed_notes, block_num).await;
 
-                let nullifiers = log_oversized_notes(oversized_notes);
+                let nullifiers = log_oversized_notes(oversized_features);
                 self.discard_notes(&nullifiers, block_num).await;
 
                 // A non-empty successful set is guaranteed by `filter_notes` (it returns
@@ -690,24 +757,29 @@ impl AccountActor {
                 let submission_rejected = matches!(err, execute::NtxError::Submission(_));
 
                 // For `AllNotesFailed`, use the per-note errors which contain the specific reason
-                // each note failed (e.g. consumability check details).
+                // each note failed (e.g. consumability check details). Whole-transaction errors are
+                // recorded against the feature notes only: sponsorships have no row in the `notes`
+                // table.
                 let failed_notes: Vec<_> = match err {
-                    execute::NtxError::AllNotesFailed(per_note) => log_failed_notes(per_note),
+                    execute::NtxError::AllNotesFailed(per_note) => {
+                        attribute_failed_notes(per_note, &sponsor_to_feature)
+                    },
                     other => {
                         let error: NoteError = Arc::new(other);
-                        notes
+                        sponsored_notes
                             .iter()
-                            .map(|note| {
+                            .map(|sponsored| {
+                                let feature = sponsored.feature.as_note();
                                 tracing::info!(
                                     target: LOG_TARGET,
                                     {
-                                        note.id = %note.as_note().id(),
-                                        nullifier = %note.as_note().nullifier(),
+                                        note.id = %feature.id(),
+                                        nullifier = %feature.nullifier(),
                                         err = %error_msg,
                                     },
                                     "note failed: transaction execution error",
                                 );
-                                (note.as_note().nullifier(), error.clone())
+                                (feature.nullifier(), error.clone())
                             })
                             .collect()
                     },
@@ -850,25 +922,38 @@ fn log_deferred_notes(deferred: Vec<FailedNote>) {
     }
 }
 
-/// Logs each failed note and returns a vec of `(nullifier, error)` pairs.
-fn log_failed_notes(failed: Vec<FailedNote>) -> Vec<(Nullifier, NoteError)> {
-    failed
-        .into_iter()
-        .map(|f| {
-            let error_msg = f.error().as_report();
-            tracing::info!(
-                target: LOG_TARGET,
-                {
-                    note.id = %f.note().id(),
-                    nullifier = %f.note().nullifier(),
-                    err = %error_msg,
-                },
-                "note failed: consumability check",
-            );
+/// Logs each failed note and returns `(nullifier, error)` pairs keyed by the nullifier the failure
+/// is recorded under: a feature note fails under its own nullifier, while a sponsorship's failure
+/// is charged to the feature note of its bundle (sponsorship notes have no row in the `notes`
+/// table). Multiple failures attributed to the same feature note collapse to a single entry, so a
+/// bundle never burns more than one attempt per round.
+fn attribute_failed_notes(
+    failed: Vec<FailedNote>,
+    sponsor_to_feature: &HashMap<NoteId, Nullifier>,
+) -> Vec<(Nullifier, NoteError)> {
+    let mut seen = HashSet::new();
+    let mut attributed = Vec::new();
+    for f in failed {
+        let error_msg = f.error().as_report();
+        tracing::info!(
+            target: LOG_TARGET,
+            {
+                note.id = %f.note().id(),
+                nullifier = %f.note().nullifier(),
+                err = %error_msg,
+            },
+            "note failed: consumability check",
+        );
+        let nullifier = sponsor_to_feature
+            .get(&f.note().id())
+            .copied()
+            .unwrap_or_else(|| f.note().nullifier());
+        if seen.insert(nullifier) {
             let error: NoteError = Arc::new(std::io::Error::other(error_msg));
-            (f.note().nullifier(), error)
-        })
-        .collect()
+            attributed.push((nullifier, error));
+        }
+    }
+    attributed
 }
 
 #[cfg(test)]
@@ -1131,6 +1216,187 @@ mod tests {
         assert!(result.is_ok(), "idle deactivation is a clean shutdown");
 
         notifier.abort();
+    }
+
+    // SPONSORSHIP-AWARE SELECTION
+    // ---------------------------------------------------------------------------------------------
+
+    use crate::sponsorship::SponsorshipNote;
+    use crate::test_utils::{
+        mock_network_account_update,
+        mock_single_target_note,
+        mock_sponsorship,
+        mock_sponsorship_note_with_faucet_and_amount,
+        mock_sponsorship_with_amount,
+    };
+
+    /// Seeds a committed network account (with a populated allowlist) and returns its id together
+    /// with the account itself.
+    async fn seed_selection_account(db: &crate::db::NtxDbWriter) -> (AccountId, Account) {
+        let (account, _) = mock_network_account_update();
+        db.upsert_account_for_test(account.id(), account.clone(), mock_transaction_id(1))
+            .await
+            .unwrap();
+        (account.id(), account)
+    }
+
+    /// Each selected bundle carries exactly the pending sponsorships of its feature note.
+    #[tokio::test]
+    async fn select_candidate_attaches_sponsorships_for_pending_notes() {
+        let (db, _dir) = crate::db::test_setup().await;
+        let (account_id, account) = seed_selection_account(&db).await;
+
+        let feature_a = mock_single_target_note(account_id, 1);
+        let feature_b = mock_single_target_note(account_id, 2);
+        db.insert_network_notes(vec![feature_a.clone(), feature_b.clone()])
+            .await
+            .unwrap();
+        db.insert_sponsorship_notes(vec![
+            mock_sponsorship(account_id, feature_a.as_note().id(), 3),
+            mock_sponsorship(account_id, feature_a.as_note().id(), 4),
+        ])
+        .await
+        .unwrap();
+
+        let mut ctx = AccountActorContext::test(&db);
+        ctx.config.max_notes_per_tx = NonZeroUsize::new(20).unwrap();
+        let actor = AccountActor::new(account_id, &ctx);
+        let chain_state = actor.state.chain.get_cloned();
+
+        let (candidate, _) = actor.select_candidate(&Arc::new(account), chain_state).await.unwrap();
+        let candidate = candidate.expect("both bundles are viable");
+
+        assert_eq!(candidate.notes.len(), 2);
+        for sponsored in &candidate.notes {
+            if sponsored.feature.as_note().id() == feature_a.as_note().id() {
+                assert_eq!(sponsored.sponsorships.len(), 2, "feature A carries its sponsorships");
+            } else {
+                assert!(sponsored.sponsorships.is_empty(), "feature B has no sponsorships");
+            }
+        }
+    }
+
+    /// A feature note with more pending sponsorships than the cap gets exactly the cap, and the
+    /// slots go to the largest sponsorships.
+    #[tokio::test]
+    async fn select_candidate_caps_sponsorships_per_note() {
+        let (db, _dir) = crate::db::test_setup().await;
+        let (account_id, account) = seed_selection_account(&db).await;
+
+        let feature = mock_single_target_note(account_id, 1);
+        db.insert_network_notes(vec![feature.clone()]).await.unwrap();
+        db.insert_sponsorship_notes(
+            (0..5)
+                .map(|i| {
+                    mock_sponsorship_with_amount(
+                        account_id,
+                        feature.as_note().id(),
+                        10 + i,
+                        u64::from(i + 1) * 100,
+                    )
+                })
+                .collect(),
+        )
+        .await
+        .unwrap();
+
+        let mut ctx = AccountActorContext::test(&db);
+        ctx.config.max_notes_per_tx = NonZeroUsize::new(20).unwrap();
+        let actor = AccountActor::new(account_id, &ctx);
+        let chain_state = actor.state.chain.get_cloned();
+
+        let (candidate, _) = actor.select_candidate(&Arc::new(account), chain_state).await.unwrap();
+        let candidate = candidate.expect("the bundle is viable");
+
+        assert_eq!(candidate.notes.len(), 1);
+        assert_eq!(candidate.notes[0].sponsorships.len(), MAX_SPONSORSHIPS_PER_NOTE);
+        // The five pending sponsorships carry 100 through 500; the cap keeps the largest three.
+        let amounts = candidate.notes[0]
+            .sponsorships
+            .iter()
+            .map(|note| note.assets().as_slice()[0].unwrap_fungible().amount().as_u64())
+            .collect::<Vec<_>>();
+        assert_eq!(amounts, [500, 400, 300]);
+    }
+
+    /// Sponsorships carrying the wrong asset are removed before the cap is applied, so they cannot
+    /// occupy slots that could hold valid sponsorships.
+    #[tokio::test]
+    async fn select_candidate_filters_wrong_fee_asset_before_cap() {
+        use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1;
+
+        let (db, _dir) = crate::db::test_setup().await;
+        let (account_id, account) = seed_selection_account(&db).await;
+
+        let feature = mock_single_target_note(account_id, 1);
+        let feature_id = feature.as_note().id();
+        let valid = mock_sponsorship_with_amount(account_id, feature_id, 2, 100);
+        let wrong_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
+        let invalid = (3..=5)
+            .map(|seed| {
+                SponsorshipNote::try_from(mock_sponsorship_note_with_faucet_and_amount(
+                    account_id,
+                    feature_id,
+                    seed,
+                    wrong_faucet,
+                    u64::from(seed) * 10_000,
+                ))
+                .expect("wrong-asset sponsorship is structurally valid")
+            })
+            .collect::<Vec<_>>();
+
+        db.insert_network_notes(vec![feature]).await.unwrap();
+        db.insert_sponsorship_notes(std::iter::once(valid.clone()).chain(invalid).collect())
+            .await
+            .unwrap();
+
+        let mut ctx = AccountActorContext::test(&db);
+        ctx.config.max_notes_per_tx = NonZeroUsize::new(20).unwrap();
+        let actor = AccountActor::new(account_id, &ctx);
+        let chain_state = actor.state.chain.get_cloned();
+
+        let (candidate, _) = actor.select_candidate(&Arc::new(account), chain_state).await.unwrap();
+        let candidate = candidate.expect("the feature and its valid sponsorship are viable");
+
+        assert_eq!(candidate.notes.len(), 1);
+        assert_eq!(candidate.notes[0].sponsorships.len(), 1);
+        assert_eq!(candidate.notes[0].sponsorships[0].id(), valid.id());
+    }
+
+    /// Bundles are packed atomically against the per-tx note budget: a bundle that does not fit is
+    /// skipped as a whole, never split.
+    #[tokio::test]
+    async fn select_candidate_packs_bundles_atomically() {
+        let (db, _dir) = crate::db::test_setup().await;
+        let (account_id, account) = seed_selection_account(&db).await;
+
+        // Bundle A is three notes (feature + 2 sponsorships), bundle B is two: only one of them
+        // fits a three-note budget.
+        let feature_a = mock_single_target_note(account_id, 1);
+        let feature_b = mock_single_target_note(account_id, 2);
+        db.insert_network_notes(vec![feature_a.clone(), feature_b.clone()])
+            .await
+            .unwrap();
+        db.insert_sponsorship_notes(vec![
+            mock_sponsorship(account_id, feature_a.as_note().id(), 3),
+            mock_sponsorship(account_id, feature_a.as_note().id(), 4),
+            mock_sponsorship(account_id, feature_b.as_note().id(), 5),
+        ])
+        .await
+        .unwrap();
+
+        let mut ctx = AccountActorContext::test(&db);
+        ctx.config.max_notes_per_tx = NonZeroUsize::new(3).unwrap();
+        let actor = AccountActor::new(account_id, &ctx);
+        let chain_state = actor.state.chain.get_cloned();
+
+        let (candidate, _) = actor.select_candidate(&Arc::new(account), chain_state).await.unwrap();
+        let candidate = candidate.expect("at least one bundle fits the budget");
+
+        assert_eq!(candidate.notes.len(), 1, "only one whole bundle fits three note slots");
+        assert!(candidate.num_notes() <= 3, "a bundle must never be split to fit");
+        let sponsored = &candidate.notes[0];
+        assert!(!sponsored.sponsorships.is_empty(), "the selected bundle keeps its sponsorships");
     }
 
     /// The canonical expiration script carries its delta in `TX_SCRIPT_ARGS`, so every delta shares

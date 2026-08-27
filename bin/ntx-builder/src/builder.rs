@@ -6,6 +6,7 @@ use futures::Stream;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::miden_instrument;
+use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -187,9 +188,9 @@ impl NetworkTransactionBuilder {
                 SteadyStateAction::Block(block) => {
                     let (block, committed_tip) =
                         (*block).context("block stream ended")?.context("block stream failed")?;
-                    let effects =
+                    let (effects, sponsored_accounts) =
                         self.apply_committed_block_with_effects(block, committed_tip).await?;
-                    self.coordinator.handle_committed_block(&effects).await?;
+                    self.coordinator.handle_committed_block(&effects, &sponsored_accounts).await?;
                 },
                 SteadyStateAction::Request(request) => {
                     let Some(request) = request else {
@@ -234,9 +235,10 @@ impl NetworkTransactionBuilder {
         self.apply_committed_block_with_effects(block, committed_tip).await.map(drop)
     }
 
-    /// Applies a committed block and returns the computed `CommittedBlockEffects` so the
-    /// steady-state loop can hand them to the coordinator without re-deriving from the signed
-    /// block.
+    /// Applies a committed block and returns the computed `CommittedBlockEffects`, plus the
+    /// accounts whose pending feature notes gained a sponsorship in this block (one entry per
+    /// sponsorship), so the steady-state loop can hand both to the coordinator without re-deriving
+    /// them from the signed block.
     #[miden_instrument(
         name = "ntx.builder.apply_committed_block",
         fields(
@@ -248,7 +250,7 @@ impl NetworkTransactionBuilder {
         &mut self,
         block: SignedBlock,
         committed_tip: BlockNumber,
-    ) -> anyhow::Result<CommittedBlockEffects> {
+    ) -> anyhow::Result<(CommittedBlockEffects, Vec<AccountId>)> {
         let header = block.header().clone();
         let block_num = header.block_num();
 
@@ -260,14 +262,15 @@ impl NetworkTransactionBuilder {
         let next_mmr = self.chain.current_mmr();
 
         let effects_for_db = effects.clone();
-        self.db
+        let sponsored_accounts = self
+            .db
             .apply_committed_block(effects_for_db, next_mmr)
             .await
             .context("failed to apply committed block to DB")?;
 
         self.last_applied_block = block_num;
 
-        Ok(effects)
+        Ok((effects, sponsored_accounts))
     }
 }
 

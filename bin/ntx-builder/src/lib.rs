@@ -165,7 +165,8 @@ pub struct NtxBuilderConfig {
     /// account actors.
     pub max_concurrent_txs: usize,
 
-    /// Maximum number of network notes a single transaction is allowed to consume.
+    /// Maximum number of network notes a single transaction is allowed to consume. Sponsorship
+    /// notes count against this budget.
     pub max_notes_per_tx: NonZeroUsize,
 
     /// Maximum number of attempts to execute a failing note before dropping it. Notes use

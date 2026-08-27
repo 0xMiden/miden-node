@@ -7,13 +7,16 @@
 use std::sync::Arc;
 
 use miden_protocol::Word;
+use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
+use miden_protocol::note::NoteId;
 use miden_protocol::transaction::TransactionId;
 
 use crate::NoteError;
 use crate::committed_block::CommittedBlockEffects;
 use crate::db::test_setup;
+use crate::sponsorship::SponsorshipNote;
 use crate::test_utils::*;
 
 // TEST HARNESS
@@ -128,6 +131,124 @@ async fn available_notes_excludes_consumed_notes() {
             .eligible
             .is_empty()
     );
+}
+
+// SPONSORSHIP NOTES
+// ================================================================================================
+
+/// Builds a [`SponsorshipNote`](crate::sponsorship::SponsorshipNote) bound to the given feature
+/// note id.
+fn sponsorship_for(target: AccountId, feature_note_id: NoteId, seed: u8) -> SponsorshipNote {
+    let note = mock_sponsorship_note(target, feature_note_id, seed);
+    SponsorshipNote::try_from(note).expect("mock sponsorship note must decode")
+}
+
+#[tokio::test]
+async fn insert_sponsorship_notes_is_idempotent() {
+    let (db, _dir) = test_setup().await;
+    let account_id = mock_network_account_id();
+    let feature = mock_single_target_note(account_id, 1);
+    let sponsorship = sponsorship_for(account_id, feature.as_note().id(), 2);
+
+    db.insert_sponsorship_notes(vec![sponsorship.clone()]).await.unwrap();
+    // Re-applying the same block (e.g. on a subscription redelivery) must not error or duplicate.
+    db.insert_sponsorship_notes(vec![sponsorship]).await.unwrap();
+
+    assert_eq!(db.count_sponsorship_notes().await, 1);
+}
+
+/// The binding is resolved at selection time, so insertion order between a sponsorship and its
+/// feature note must not matter.
+#[tokio::test]
+async fn sponsorships_for_pending_notes_resolves_sponsorship_inserted_before_feature_note() {
+    let (db, _dir) = test_setup().await;
+    let account_id = mock_network_account_id();
+    let feature = mock_single_target_note(account_id, 1);
+    let sponsorship = sponsorship_for(account_id, feature.as_note().id(), 2);
+
+    // The sponsorship commits first: it is stored, but unresolved (no feature note row to join).
+    db.insert_sponsorship_notes(vec![sponsorship]).await.unwrap();
+    assert!(db.sponsorships_for_pending_notes(account_id).await.unwrap().is_empty());
+
+    // Once the feature note commits, the join finds the pair.
+    db.insert_network_notes(vec![feature.clone()]).await.unwrap();
+    let pending = db.sponsorships_for_pending_notes(account_id).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[&feature.as_note().id()].len(), 1);
+}
+
+/// A feature note may have any number of sponsorships; all unconsumed ones are returned together.
+#[tokio::test]
+async fn sponsorships_for_pending_notes_groups_multiple_per_feature_note() {
+    let (db, _dir) = test_setup().await;
+    let account_id = mock_network_account_id();
+    let feature = mock_single_target_note(account_id, 1);
+    let feature_id = feature.as_note().id();
+
+    db.insert_network_notes(vec![feature]).await.unwrap();
+    db.insert_sponsorship_notes(vec![
+        sponsorship_for(account_id, feature_id, 2),
+        sponsorship_for(account_id, feature_id, 3),
+    ])
+    .await
+    .unwrap();
+
+    let pending = db.sponsorships_for_pending_notes(account_id).await.unwrap();
+    assert_eq!(pending[&feature_id].len(), 2);
+}
+
+/// A consumed sponsorship (spent alongside its feature note or reclaimed externally) must never be
+/// attached again; a consumed feature note must not pull its sponsorships either.
+#[tokio::test]
+async fn sponsorships_for_pending_notes_excludes_consumed_rows() {
+    let (db, _dir) = test_setup().await;
+    let account_id = mock_network_account_id();
+    let feature_a = mock_single_target_note(account_id, 1);
+    let feature_b = mock_single_target_note(account_id, 2);
+    let sponsorship_a = sponsorship_for(account_id, feature_a.as_note().id(), 3);
+    let sponsorship_b = sponsorship_for(account_id, feature_b.as_note().id(), 4);
+
+    db.insert_network_notes(vec![feature_a.clone(), feature_b.clone()])
+        .await
+        .unwrap();
+    db.insert_sponsorship_notes(vec![sponsorship_a.clone(), sponsorship_b])
+        .await
+        .unwrap();
+    assert_eq!(db.sponsorships_for_pending_notes(account_id).await.unwrap().len(), 2);
+
+    // Sponsorship A is reclaimed externally: only the pair around feature B remains.
+    db.mark_sponsorships_consumed(vec![sponsorship_a.nullifier()], BlockNumber::from(7))
+        .await
+        .unwrap();
+    let pending = db.sponsorships_for_pending_notes(account_id).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert!(pending.contains_key(&feature_b.as_note().id()));
+
+    // Feature B is consumed: nothing is pending, but the rows are retained for status reporting.
+    db.mark_notes_consumed(vec![feature_b.as_note().nullifier()], BlockNumber::from(8))
+        .await
+        .unwrap();
+    assert!(db.sponsorships_for_pending_notes(account_id).await.unwrap().is_empty());
+    assert_eq!(db.count_sponsorship_notes().await, 2);
+}
+
+/// A sponsorship bound to a feature note targeting a different account must not leak into this
+/// account's pending set: the join goes through `notes.account_id`, not the sponsorship's tag.
+#[tokio::test]
+async fn sponsorships_for_pending_notes_binds_by_feature_note_not_tag() {
+    let (db, _dir) = test_setup().await;
+    let alice = mock_network_account_id();
+    let bob = mock_network_account_id_seeded(42);
+    let feature = mock_single_target_note(bob, 1);
+    // Tagged for alice, but bound to a feature note targeting bob.
+    let sponsorship = sponsorship_for(alice, feature.as_note().id(), 2);
+
+    db.insert_network_notes(vec![feature.clone()]).await.unwrap();
+    db.insert_sponsorship_notes(vec![sponsorship]).await.unwrap();
+
+    assert!(db.sponsorships_for_pending_notes(alice).await.unwrap().is_empty());
+    let pending = db.sponsorships_for_pending_notes(bob).await.unwrap();
+    assert_eq!(pending[&feature.as_note().id()].len(), 1);
 }
 
 // AVAILABLE NOTES + BACKOFF
@@ -307,6 +428,7 @@ fn genesis_effects() -> CommittedBlockEffects {
     CommittedBlockEffects {
         header: mock_block_header(BlockNumber::GENESIS),
         network_notes: vec![],
+        sponsorship_notes: vec![],
         nullifiers: vec![],
         network_account_updates: vec![(account.id(), details)],
         account_transactions: vec![],

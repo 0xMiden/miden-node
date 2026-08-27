@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
@@ -9,6 +11,8 @@ use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock, ValidatorKeys};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
+#[cfg(test)]
+use miden_protocol::note::Note;
 use miden_protocol::note::{NoteId, NoteScript, Nullifier};
 #[cfg(test)]
 use miden_protocol::transaction::TransactionId;
@@ -19,6 +23,8 @@ use tracing::info;
 use crate::committed_block::CommittedBlockEffects;
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
 use crate::db::queries::NoteStatusRow;
+#[cfg(test)]
+use crate::sponsorship::SponsorshipNote;
 use crate::{COMPONENT, NoteError, db};
 
 pub(crate) mod queries;
@@ -381,6 +387,23 @@ impl NtxDbReader {
     pub(crate) async fn count_chain_state(&self) -> i64 {
         self.count("SELECT COUNT(*) FROM chain_state").await
     }
+
+    pub(crate) async fn count_sponsorship_notes(&self) -> i64 {
+        self.count("SELECT COUNT(*) FROM sponsorship_notes").await
+    }
+
+    /// Reads the unconsumed sponsorships bound to the account's pending feature notes. Becomes a
+    /// production read once transaction selection attaches sponsorships to candidates.
+    pub(crate) async fn sponsorships_for_pending_notes(
+        &self,
+        account_id: AccountId,
+    ) -> Result<HashMap<NoteId, Vec<Note>>, DatabaseError> {
+        self.reader
+            .read("sponsorships_for_pending_notes", move |tx| {
+                queries::select_sponsorships_for_pending_notes(tx, account_id)
+            })
+            .await
+    }
 }
 
 /// Test-only write helpers.
@@ -422,6 +445,29 @@ impl NtxDbWriter {
         self.writer
             .write("mark_notes_consumed", move |tx| {
                 queries::mark_notes_consumed(tx, &nullifiers, block_num)
+            })
+            .await
+    }
+
+    pub(crate) async fn insert_sponsorship_notes(
+        &self,
+        notes: Vec<SponsorshipNote>,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("insert_sponsorship_notes", move |tx| {
+                queries::insert_sponsorship_notes(tx, &notes)
+            })
+            .await
+    }
+
+    pub(crate) async fn mark_sponsorships_consumed(
+        &self,
+        nullifiers: Vec<Nullifier>,
+        block_num: BlockNumber,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("mark_sponsorships_consumed", move |tx| {
+                queries::mark_sponsorships_consumed(tx, &nullifiers, block_num)
             })
             .await
     }

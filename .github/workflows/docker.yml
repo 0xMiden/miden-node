@@ -47,6 +47,7 @@ env:
   REGISTRY: ghcr.io
   REGISTRY_PREFIX: ghcr.io/0xmiden
   DOCKER_PLATFORMS: linux/amd64,linux/arm64
+  MIDEN_FAUCET_IMAGE: ghcr.io/0xmiden/miden-faucet:v0.16.0-rc.1
 
 jobs:
   preflight:
@@ -245,7 +246,6 @@ jobs:
           MIDEN_NETWORK_MONITOR_IMAGE:
             ${{ env.REGISTRY_PREFIX }}/miden-network-monitor:${{ needs.preflight.outputs.tag }}
           MIDEN_BENCHMARK_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-node-tps-benchmark:${{ needs.preflight.outputs.tag }}
-          MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-faucet:${{ needs.preflight.outputs.tag }}
         with:
           compose-file: docker-compose.yml
           mode: dry-run
@@ -354,7 +354,6 @@ jobs:
             ${{ env.REGISTRY_PREFIX }}/miden-network-monitor:${{ needs.preflight.outputs.immutable_tag }}
           MIDEN_BENCHMARK_IMAGE:
             ${{ env.REGISTRY_PREFIX }}/miden-node-tps-benchmark:${{ needs.preflight.outputs.immutable_tag }}
-          MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-faucet:${{ needs.preflight.outputs.immutable_tag }}
         with:
           compose-file: docker-compose.yml
           mode: publish

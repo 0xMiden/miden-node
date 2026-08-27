@@ -499,6 +499,9 @@ fn build_native_faucet(
             (BurnNote::script_root(), AssetAmount::ZERO),
         ])
         .into();
+    // TODO: Replace this workaround with `create_native_fungible_faucet_for_genesis` once a
+    // `miden-standards` release containing 0xMiden/protocol#3588 is available.
+    //
     // The faucet should charge fees in its own asset, but setting its own id as the fee faucet id
     // would require knowing that id before creating the account, which is not possible: the fee
     // faucet id is part of the storage the account id is derived from. We use the operator id

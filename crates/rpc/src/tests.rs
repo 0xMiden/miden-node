@@ -102,7 +102,7 @@ impl TestStore {
 
     async fn start() -> Self {
         let data_directory = new_tempdir();
-        let genesis_commitment = Self::bootstrap(&data_directory);
+        let genesis_commitment = Self::bootstrap(&data_directory).await;
         let (state, ..) = State::for_tests(&data_directory).await;
         Self {
             state,
@@ -111,7 +111,7 @@ impl TestStore {
         }
     }
 
-    fn bootstrap(path: &std::path::Path) -> Word {
+    async fn bootstrap(path: &std::path::Path) -> Word {
         let config = GenesisConfig::default();
         let validator_key =
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey::read_from_bytes(&[7; 32])
@@ -124,7 +124,7 @@ impl TestStore {
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
 
-        State::bootstrap(genesis_block, path).expect("store should bootstrap");
+        State::bootstrap(genesis_block, path).await.expect("store should bootstrap");
 
         genesis_commitment
     }
@@ -443,7 +443,8 @@ async fn rpc_rejects_post_deployment_network_account_tx() {
     miden_node_store::test_support::seed_network_account(
         &store.data_directory_path().join("miden-store.sqlite3"),
         network_account_id,
-    );
+    )
+    .await;
 
     // Build a non-deployment tx for that account.
     let (account, _) = build_test_account([0; 32]);
@@ -577,7 +578,7 @@ async fn start_source_rpc(
 ) -> (RpcClient, TestStore, TestServerGuard) {
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
-    TestStore::bootstrap(&block_producer_dir);
+    TestStore::bootstrap(&block_producer_dir).await;
     let (block_producer_state, ..) = State::for_tests(&block_producer_dir).await;
     let state = Arc::clone(&store.state);
 
@@ -1071,7 +1072,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore, TestServerG
     let grpc_options = GrpcOptions::test();
     let store = TestStore::start().await;
     let block_producer_dir = new_tempdir();
-    TestStore::bootstrap(&block_producer_dir);
+    TestStore::bootstrap(&block_producer_dir).await;
     let (block_producer_state, ..) = State::for_tests(&block_producer_dir).await;
     let state = Arc::clone(&store.state);
 

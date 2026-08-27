@@ -37,7 +37,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
     let gcfg = GenesisConfig::read_toml_file(&config_path)?;
     let (state, _secrets) = gcfg.into_state(dev_validator_keys())?;
     let _ = state;
-    // faucets, then the generated faucet operator, then the wallet accounts
+    // Faucets, then the generated faucet operator, then the wallet accounts.
     let native_faucet = state.accounts[0].clone();
     let _excess = state.accounts[1].clone();
     let _faucet_operator = state.accounts[2].clone();
@@ -71,7 +71,11 @@ fn parsing_yields_expected_default_values() -> TestResult {
 
     // check total issuance of the faucet
     let faucet = FungibleFaucet::try_from(native_faucet.storage()).unwrap();
-    assert_eq!(faucet.token_supply().as_u64(), 999_777, "Issuance mismatch");
+    assert_eq!(
+        faucet.token_supply().as_u64(),
+        DEFAULT_FAUCET_OPERATOR_BALANCE + 999_777,
+        "Issuance mismatch"
+    );
 
     Ok(())
 }
@@ -204,6 +208,15 @@ fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestRe
         .expect("the operator account is part of the genesis state");
     assert_eq!(operator.nonce(), ONE);
     assert!(FungibleFaucet::try_from(operator).is_err());
+    let native_asset_id = miden_protocol::asset::AssetId::new_fungible(native_faucet.id());
+    assert_eq!(
+        operator.vault().get_balance(native_asset_id)?.as_u64(),
+        DEFAULT_FAUCET_OPERATOR_BALANCE,
+    );
+
+    // The pre-funded balance is part of the faucet's genesis issuance.
+    let faucet = FungibleFaucet::try_from(native_faucet.storage())?;
+    assert_eq!(faucet.token_supply().as_u64(), DEFAULT_FAUCET_OPERATOR_BALANCE);
 
     // The faucet is network authenticated: `AuthNetworkAccount` checks an allowlist of note scripts
     // instead of a signature. Only mint and burn notes are accepted.

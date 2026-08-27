@@ -45,6 +45,8 @@ mod tests;
 const DEFAULT_NATIVE_FAUCET_SYMBOL: &str = "MIDEN";
 const DEFAULT_NATIVE_FAUCET_DECIMALS: u8 = 6;
 const DEFAULT_NATIVE_FAUCET_MAX_SUPPLY: u64 = 100_000_000_000_000_000;
+/// One thousand native tokens, used to bootstrap the operator's fee payments.
+const DEFAULT_FAUCET_OPERATOR_BALANCE: u64 = 1_000_000_000;
 
 /// Name of the account file written for the generated native faucet.
 pub const NATIVE_FAUCET_FILE_NAME: &str = "native_faucet.mac";
@@ -83,6 +85,9 @@ pub struct GenesisConfig {
     /// decimals   = 6
     /// max_supply = 100_000_000_000_000_000
     /// ```
+    ///
+    /// The generated operator is pre-funded with 1,000 MIDEN tokens so it can pay the fees required
+    /// to submit the first mint requests.
     #[serde(default)]
     native_faucet: Option<PathBuf>,
     fee_parameters: FeeParameterConfig,
@@ -190,6 +195,15 @@ impl GenesisConfig {
             symbol,
             operator,
         } = NativeFaucetConfig(native_faucet).build_account(&config_dir)?;
+        let native_faucet_account_id = native_faucet_account.id();
+
+        // Track all genesis issuance, one entry per faucet account id. A generated faucet operator
+        // is pre-funded in `NativeFaucetConfig::build_account`, so account for that allocation
+        // before adding configured wallet balances below.
+        let mut faucet_issuance = IndexMap::<AccountId, u64>::new();
+        if operator.is_some() {
+            faucet_issuance.insert(native_faucet_account_id, DEFAULT_FAUCET_OPERATOR_BALANCE);
+        }
 
         let operator_account = match operator {
             Some((operator, operator_secret)) => {
@@ -211,7 +225,6 @@ impl GenesisConfig {
             None => None,
         };
 
-        let native_faucet_account_id = native_faucet_account.id();
         faucet_accounts.insert(symbol.clone(), native_faucet_account);
 
         // Setup additional fungible faucets from parameters
@@ -234,9 +247,6 @@ impl GenesisConfig {
 
         let fee_parameters =
             FeeParameters::new(native_faucet_account_id, fee_parameters.verification_base_fee);
-
-        // Track all adjustments, one per faucet account id
-        let mut faucet_issuance = IndexMap::<AccountId, u64>::new();
 
         let zero_padding_width = usize::ilog10(std::cmp::max(10, wallet_configs.len())) as usize;
 
@@ -341,7 +351,7 @@ impl GenesisConfig {
 
             all_accounts.push(faucet_account);
         }
-        // The operator holds no assets, so its position among the accounts does not matter.
+        // Keep the operator after the faucets because its vault references the native faucet.
         all_accounts.extend(operator_account);
 
         // Ensure the faucets always precede the wallets referencing them
@@ -405,8 +415,13 @@ impl NativeFaucetConfig {
         match self.0 {
             None => {
                 // The operator is built first, since the faucet it owns commits to its id.
-                let (operator, operator_secret) = build_faucet_operator()?;
+                let (mut operator, operator_secret) = build_faucet_operator()?;
                 let (account, symbol) = build_native_faucet(operator.id())?;
+                // Now that the faucet id is known, pre-fund the operator so it can pay fees for the
+                // first mint requests. Genesis issuance is updated in `into_state`.
+                let operator_asset =
+                    FungibleAsset::new(account.id(), DEFAULT_FAUCET_OPERATOR_BALANCE)?;
+                operator.vault_mut().add_asset(operator_asset.into())?;
                 Ok(NativeFaucet {
                     account,
                     symbol,
@@ -432,8 +447,10 @@ impl NativeFaucetConfig {
 // FAUCET OPERATOR
 // ================================================================================================
 
-/// Builds the faucet operator account and returns it along with its signing key. Its nonce is set
-/// to `1`, marking it as deployed at genesis.
+/// Builds the initially assetless faucet operator account and returns it with its signing key.
+///
+/// Its nonce is set to `1`, marking it as deployed at genesis. The operator is funded after the
+/// native faucet is built, because its asset id is not known before then.
 fn build_faucet_operator() -> Result<(Account, RpoSecretKey), GenesisConfigError> {
     let mut rng = ChaCha20Rng::from_seed(rand::random());
 

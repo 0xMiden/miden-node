@@ -35,9 +35,7 @@ impl proto::server::rpc_api::GetNoteScriptByRoot for RpcService {
         tracing::trace!(target: LOG_TARGET, ?request);
 
         let root = read_root::<Status>(request.root, "NoteScriptRoot")?;
-        miden_span_record!(
-            script.root = %root,
-        );
+        miden_span_record!(script.root = root);
 
         debug!(target: LOG_TARGET, "Getting note script by root");
 

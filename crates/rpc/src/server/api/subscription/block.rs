@@ -29,7 +29,7 @@ impl proto::server::rpc_api::BlockSubscription for RpcService {
         target = COMPONENT,
         name = "block_subscription",
         fields(
-            block.from = %input,
+            block.from = input,
         ),
         err,
     )]

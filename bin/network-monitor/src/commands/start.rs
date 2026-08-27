@@ -22,7 +22,7 @@ use crate::{COMPONENT, LOG_TARGET};
     name = "network_monitor.start_monitor",
     level = "info",
     fields(
-        port = %config.port,
+        port = config.port,
     ),
     ret(level = "debug"),
     err,

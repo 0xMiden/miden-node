@@ -412,7 +412,7 @@ impl AccountForestLoader for ForestInMemoryBackend {
     #[miden_instrument(
         target = COMPONENT,
         fields(
-            block.number = %block_num,
+            block.number = block_num,
         ),
     )]
     async fn load_account_state_forest(
@@ -465,7 +465,7 @@ impl AccountForestLoader for ForestPersistentBackend {
     #[miden_instrument(
         target = COMPONENT,
         fields(
-            block.number = %block_num,
+            block.number = block_num,
         ),
     )]
     async fn load_account_state_forest(
@@ -549,7 +549,7 @@ fn verify_chain_mmr_consistency(
 #[miden_instrument(
     target = COMPONENT,
     fields(
-        block.number = %block_num,
+        block.number = block_num,
     ),
 )]
 pub async fn rebuild_account_state_forest(

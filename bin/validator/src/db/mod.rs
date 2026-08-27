@@ -252,7 +252,7 @@ async fn setup_with_pool_size(
 /// Returns an error if the database has already been bootstrapped.
 #[miden_instrument(
     target = COMPONENT,
-    fields(path = %database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn bootstrap(

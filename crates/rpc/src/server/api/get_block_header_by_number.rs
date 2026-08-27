@@ -23,7 +23,7 @@ impl proto::server::rpc_api::GetBlockHeaderByNumber for RpcService {
         target = COMPONENT,
         name = "get_block_header_by_number",
         fields(
-            block.number = %request.block_num(),
+            block.number = request.block_num(),
         ),
         err,
     )]

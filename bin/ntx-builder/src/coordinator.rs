@@ -143,7 +143,7 @@ impl Coordinator {
     /// processing transactions and managing state for the network account.
     #[miden_instrument(
         name = "ntx.builder.spawn_actor",
-        fields(account.id = %account_id),
+        fields(account.id = account_id),
     )]
     pub fn spawn_actor(&mut self, account_id: AccountId) {
         if let Some(&count) = self.crash_counts.get(&account_id)

@@ -261,7 +261,7 @@ impl IncrementService {
         target = COMPONENT,
         name = "network_monitor.counter.try_resync_wallet_account",
         fields(
-            account.id = %self.tx.wallet_account.id(),
+            account.id = self.tx.wallet_account.id(),
         ),
         level = "warn",
         err,

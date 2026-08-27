@@ -44,9 +44,9 @@ impl proto::server::rpc_api::SyncAccountVault for RpcService {
         let range = read_block_range::<Status>(request.block_range, "SyncAccountVaultRequest")?;
 
         miden_span_record!(
-            account.id = %account_id,
+            account.id = account_id,
             block_range.from = range.block_from,
-            block_range.to = range.block_to,
+            block_range.to = range.block_to
         );
 
         tracing::debug!(target: LOG_TARGET, "Syncing account vault");

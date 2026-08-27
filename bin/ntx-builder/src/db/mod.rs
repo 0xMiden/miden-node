@@ -275,7 +275,7 @@ impl NtxDbWriter {
 #[miden_instrument(
     target = COMPONENT,
     name = "ntx_builder.database.load",
-    fields(path=%database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDbWriter> {
@@ -287,7 +287,7 @@ pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDbWriter> {
 #[miden_instrument(
     target = COMPONENT,
     name = "ntx_builder.database.load",
-    fields(path=%database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn load_with_pool_size(
@@ -335,7 +335,7 @@ fn open_with_pool_size(
 #[miden_instrument(
     target = COMPONENT,
     name = "ntx_builder.database.bootstrap",
-    fields(path=%database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> anyhow::Result<()> {

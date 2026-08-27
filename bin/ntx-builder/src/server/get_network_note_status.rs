@@ -24,7 +24,7 @@ impl grpc::server::ntx_builder_api::GetNetworkNoteStatus for NtxBuilderRpcServer
         target = COMPONENT,
         name = "get_network_note_status",
         fields (
-            note.id = %note_id,
+            note.id = note_id,
         ),
         err,
     )]

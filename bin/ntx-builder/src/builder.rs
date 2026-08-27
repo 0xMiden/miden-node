@@ -242,8 +242,8 @@ impl NetworkTransactionBuilder {
     #[miden_instrument(
         name = "ntx.builder.apply_committed_block",
         fields(
-            block.number = %block.header().block_num(),
-            tip.number = %committed_tip,
+            block.number = block.header().block_num(),
+            tip.number = committed_tip,
         ),
     )]
     async fn apply_committed_block_with_effects(

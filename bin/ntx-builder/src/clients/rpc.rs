@@ -186,7 +186,7 @@ impl RpcClient {
         target = COMPONENT,
         name = "rpc.client.block_subscription_with_retry",
         fields(
-            block.from = %block_from,
+            block.from = block_from,
         ),
         err,
     )]

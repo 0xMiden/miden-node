@@ -30,7 +30,7 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
         target = COMPONENT,
         name = "proof_subscription",
         fields(
-            block.from = %input,
+            block.from = input,
         ),
         err,
     )]

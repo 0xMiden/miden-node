@@ -38,6 +38,13 @@ fn records_allowed_instrument_fields() {}
 
 #[miden_instrument(
     fields(
+        custom.attribute = %"explicit" #[nonstandard],
+    ),
+)]
+fn records_nonstandard_instrument_field() {}
+
+#[miden_instrument(
+    fields(
         %dice_roll,
     ),
 )]
@@ -54,6 +61,11 @@ fn records_same_field_more_than_once() {
     miden_span_record!(
         block.number = updated,
     );
+}
+
+#[miden_instrument]
+fn records_nonstandard_delayed_field() {
+    miden_span_record!(custom.attribute = %"delayed" #[nonstandard]);
 }
 
 #[miden_instrument]
@@ -144,7 +156,9 @@ fn main() {
     records_fields();
     records_with_default_instrument_args(NotDebug);
     records_allowed_instrument_fields();
+    records_nonstandard_instrument_field();
     records_allowed_shorthand_instrument_field(0.5);
     records_same_field_more_than_once();
+    records_nonstandard_delayed_field();
     records_allowed_canonical_fields();
 }

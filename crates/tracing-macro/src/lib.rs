@@ -7,7 +7,19 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::token::Dot;
 use syn::visit::Visit;
-use syn::{Block, Expr, Ident, ItemFn, Macro, Result, Token, parse_macro_input, parse_quote};
+use syn::{
+    Attribute,
+    Block,
+    Expr,
+    Ident,
+    ItemFn,
+    Macro,
+    Meta,
+    Result,
+    Token,
+    parse_macro_input,
+    parse_quote,
+};
 
 const ALLOWED_FIELD_NAMES: &[&str] = &[
     "account.id",
@@ -101,9 +113,15 @@ const ALLOWED_FIELD_NAMES: &[&str] = &[
     "workers.count",
 ];
 
+/// Instruments a function using registered tracing fields.
+///
+/// Append `#[nonstandard]` to a field value to permit a name outside the field registry.
 #[proc_macro_attribute]
 pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let attr = TokenStream2::from(attr);
+    let attr = match rewrite_explicit_fields(TokenStream2::from(attr)) {
+        Ok(attr) => attr,
+        Err(error) => return error.into_compile_error().into(),
+    };
     let mut function = parse_macro_input!(item as ItemFn);
     let fields = collect_recorded_fields(&function);
     let args = match merge_inferred_fields(attr, &fields) {
@@ -130,8 +148,6 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<TokenStream2> {
-    validate_explicit_fields(&attr)?;
-
     let mut args = split_top_level_args(attr);
     reject_skip_directives(&args)?;
 
@@ -193,14 +209,23 @@ fn reject_skip_directives(args: &[TokenStream2]) -> Result<()> {
     Ok(())
 }
 
-fn validate_explicit_fields(attr: &TokenStream2) -> Result<()> {
-    for arg in split_top_level_args(attr.clone()) {
-        if let Some(group) = fields_group(&arg) {
-            syn::parse2::<InstrumentFields>(group.stream())?;
-        }
-    }
+fn rewrite_explicit_fields(attr: TokenStream2) -> Result<TokenStream2> {
+    let args = split_top_level_args(attr)
+        .into_iter()
+        .map(|arg| {
+            if let Some(group) = fields_group(&arg) {
+                let fields = syn::parse2::<InstrumentFields>(group.stream())?;
+                let fields = fields.fields.iter().map(RecordField::instrument_tokens);
+                let mut rewritten = Group::new(Delimiter::Parenthesis, quote! { #(#fields),* });
+                rewritten.set_span(group.span());
+                Ok(quote! { fields #rewritten })
+            } else {
+                Ok(arg)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    Ok(())
+    Ok(quote! { #(#args),* })
 }
 
 fn split_top_level_args(tokens: TokenStream2) -> Vec<TokenStream2> {
@@ -250,6 +275,9 @@ fn ends_with_comma(tokens: &TokenStream2) -> bool {
     )
 }
 
+/// Records fields on the current `miden_instrument` span.
+///
+/// Append `#[nonstandard]` to a field value to permit a name outside the field registry.
 #[proc_macro]
 pub fn miden_span_record(input: TokenStream) -> TokenStream {
     let records = parse_macro_input!(input as RecordFields);
@@ -336,6 +364,7 @@ impl<const VALUE_REQUIRED: bool> Parse for Fields<VALUE_REQUIRED> {
 }
 
 struct RecordField {
+    shorthand_formatter: Option<Formatter>,
     path: FieldPath,
     value: Option<RecordValue>,
 }
@@ -348,15 +377,31 @@ impl RecordField {
             Formatter::parse_optional(input)?
         };
         let path = input.parse()?;
-        validate_field_name(&path)?;
-        let value = if value_required || shorthand_formatter.is_none() && input.peek(Token![=]) {
-            input.parse::<Token![=]>()?;
-            Some(input.parse()?)
-        } else {
-            None
-        };
+        let value: Option<RecordValue> =
+            if value_required || shorthand_formatter.is_none() && input.peek(Token![=]) {
+                input.parse::<Token![=]>()?;
+                Some(input.parse()?)
+            } else {
+                None
+            };
+        if value.as_ref().is_none_or(|value| !value.nonstandard) {
+            validate_field_name(&path)?;
+        }
 
-        Ok(Self { path, value })
+        Ok(Self { shorthand_formatter, path, value })
+    }
+
+    fn instrument_tokens(&self) -> TokenStream2 {
+        let path = &self.path;
+        if let Some(value) = &self.value {
+            let value = value.instrument_tokens();
+            quote! { #path = #value }
+        } else if let Some(formatter) = self.shorthand_formatter {
+            let formatter = formatter.tokens();
+            quote! { #formatter #path }
+        } else {
+            quote! { #path }
+        }
     }
 }
 
@@ -401,6 +446,7 @@ impl ToTokens for FieldPath {
 struct RecordValue {
     formatter: Formatter,
     expr: Expr,
+    nonstandard: bool,
 }
 
 impl RecordValue {
@@ -413,17 +459,37 @@ impl RecordValue {
             Formatter::Plain => quote! { &#expr },
         }
     }
+
+    fn instrument_tokens(&self) -> TokenStream2 {
+        let formatter = self.formatter.tokens();
+        let expr = &self.expr;
+        quote! { #formatter #expr }
+    }
 }
 
 impl Parse for RecordValue {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let formatter = Formatter::parse_optional(input)?.unwrap_or(Formatter::Plain);
         let expr = input.parse()?;
+        let attributes = input.call(Attribute::parse_outer)?;
+        let nonstandard = match attributes.as_slice() {
+            [] => false,
+            [attribute] if matches!(&attribute.meta, Meta::Path(path) if path.is_ident("nonstandard")) => {
+                true
+            },
+            [attribute, ..] => {
+                return Err(syn::Error::new_spanned(
+                    attribute,
+                    "only `#[nonstandard]` is supported after a tracing field value",
+                ));
+            },
+        };
 
-        Ok(Self { formatter, expr })
+        Ok(Self { formatter, expr, nonstandard })
     }
 }
 
+#[derive(Clone, Copy)]
 enum Formatter {
     Display,
     Debug,
@@ -431,6 +497,14 @@ enum Formatter {
 }
 
 impl Formatter {
+    fn tokens(self) -> TokenStream2 {
+        match self {
+            Self::Display => quote! { % },
+            Self::Debug => quote! { ? },
+            Self::Plain => TokenStream2::new(),
+        }
+    }
+
     fn parse_optional(input: ParseStream<'_>) -> Result<Option<Self>> {
         if input.peek(Token![%]) {
             input.parse::<Token![%]>()?;

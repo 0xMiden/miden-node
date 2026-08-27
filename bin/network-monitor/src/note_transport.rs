@@ -4,9 +4,12 @@
 use std::time::Duration;
 
 use miden_node_utils::tracing::miden_instrument;
+use miden_note_transport_proto::miden_note_transport::StatsResponse;
+use miden_note_transport_proto::miden_note_transport::miden_note_transport_client::MidenNoteTransportClient;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic_health::pb::health_client::HealthClient;
 use tonic_health::pb::{HealthCheckRequest, health_check_response};
+use tracing::warn;
 use url::Url;
 
 use crate::COMPONENT;
@@ -16,14 +19,16 @@ use crate::status::{NoteTransportStatusDetails, ServiceDetails, ServiceStatus};
 pub struct NoteTransportService {
     url: Url,
     client: HealthClient<Channel>,
+    stats_client: MidenNoteTransportClient<Channel>,
     interval: Duration,
 }
 
 impl NoteTransportService {
     pub fn new(url: Url, interval: Duration, timeout: Duration) -> Self {
         let channel = create_channel(&url, timeout).expect("failed to create channel");
-        let client = HealthClient::new(channel);
-        Self { url, client, interval }
+        let client = HealthClient::new(channel.clone());
+        let stats_client = MidenNoteTransportClient::new(channel);
+        Self { url, client, stats_client, interval }
     }
 }
 
@@ -57,10 +62,24 @@ impl Service for NoteTransportService {
                 let serving_status = response.into_inner().status();
                 let is_serving = serving_status == health_check_response::ServingStatus::Serving;
                 let serving_status_str = format!("{serving_status:?}");
-                let details = ServiceDetails::NoteTransportStatus(NoteTransportStatusDetails {
+
+                let mut details = NoteTransportStatusDetails {
                     url,
                     serving_status: serving_status_str.clone(),
-                });
+                    ..NoteTransportStatusDetails::default()
+                };
+
+                // Stats enrich the card but do not decide health: a deployment that predates the
+                // Stats RPC (or a transient stats failure) must not flip a serving service to
+                // unhealthy.
+                match self.stats_client.stats(()).await {
+                    Ok(stats) => apply_stats(&mut details, &stats.into_inner()),
+                    Err(e) => {
+                        warn!(target: COMPONENT, error = %e, "Note transport stats call failed");
+                    },
+                }
+
+                let details = ServiceDetails::NoteTransportStatus(details);
 
                 if is_serving {
                     ServiceStatus::healthy(self.name(), details)
@@ -75,6 +94,24 @@ impl Service for NoteTransportService {
             Err(e) => ServiceStatus::error(self.name(), e),
         }
     }
+}
+
+/// Copies the stats response into the card details.
+///
+/// The version is a plain string on the wire, so a server that predates the field reports an
+/// empty string; that degrades to `None` rather than rendering an empty value.
+fn apply_stats(details: &mut NoteTransportStatusDetails, stats: &StatsResponse) {
+    details.version = (!stats.version.is_empty()).then(|| stats.version.clone());
+    details.total_notes = Some(stats.total_notes);
+    details.total_tags = Some(stats.total_tags);
+    // Empty until the server implements per-tag stats; kept so the card lights up the moment it
+    // does.
+    details.last_activity = stats
+        .notes_per_tag
+        .iter()
+        .filter_map(|tag| tag.last_activity.as_ref())
+        .filter_map(|ts| u64::try_from(ts.seconds).ok())
+        .max();
 }
 
 /// Creates a `tonic` channel for the given URL, enabling TLS for `https` schemes.

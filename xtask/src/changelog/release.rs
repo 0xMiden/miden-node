@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail, ensure};
 use semver::Version;
 
 use super::pr::{self, ChangelogDocument};
-use super::{InvalidChangelogEntry, ReleaseNoteEntry};
+use super::{InvalidChangelogEntry, InvalidChangelogSource, ReleaseNoteEntry};
 
 pub(super) struct ChangelogEntries {
     pub(super) entries: Vec<ReleaseNoteEntry>,
@@ -39,9 +39,11 @@ pub(super) fn release_changelog_entries(release_tag: &str) -> Result<ChangelogEn
         "release range refs/tags/{previous_release_tag}..refs/tags/{release_tag} contains no commits"
     );
     let repo = github_repo()?;
-    let pull_requests = pull_requests_for_commits(&repo, &commits, MissingPullRequest::Error)?;
+    let pull_requests = pull_requests_for_commits(&repo, &commits)?;
+    let mut changelog = changelog_entries_for_pull_requests(&repo, &pull_requests.pull_requests);
+    changelog.invalid_entries.extend(pull_requests.invalid_entries);
 
-    changelog_entries_for_pull_requests(&repo, &pull_requests)
+    Ok(changelog)
 }
 
 pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
@@ -63,9 +65,9 @@ pub(super) fn current_changelog_entries() -> Result<CurrentChangelog> {
     }
 
     let repo = github_repo()?;
-    let pull_requests =
-        pull_requests_for_commits(&repo, &commits, MissingPullRequest::WarnAndSkip)?;
-    let changelog = changelog_entries_for_pull_requests(&repo, &pull_requests)?;
+    let pull_requests = pull_requests_for_commits(&repo, &commits)?;
+    let mut changelog = changelog_entries_for_pull_requests(&repo, &pull_requests.pull_requests);
+    changelog.invalid_entries.extend(pull_requests.invalid_entries);
 
     Ok(CurrentChangelog {
         title: format!("Changes since {previous_stable_tag}"),
@@ -79,10 +81,14 @@ struct ReleaseTag {
     version: Version,
 }
 
-#[derive(Clone, Copy)]
-enum MissingPullRequest {
-    Error,
-    WarnAndSkip,
+struct PullRequests {
+    pull_requests: Vec<AssociatedPullRequest>,
+    invalid_entries: Vec<InvalidChangelogEntry>,
+}
+
+struct AssociatedPullRequest {
+    number: u64,
+    order: usize,
 }
 
 enum CommitPullRequests {
@@ -189,50 +195,54 @@ fn github_repo() -> Result<String> {
     Ok(repo.to_owned())
 }
 
-fn pull_requests_for_commits(
+fn pull_requests_for_commits(repo: &str, commits: &[String]) -> Result<PullRequests> {
+    pull_requests_for_commits_with(repo, commits, pull_requests_for_commit)
+}
+
+fn pull_requests_for_commits_with<F>(
     repo: &str,
     commits: &[String],
-    missing_pull_request: MissingPullRequest,
-) -> Result<Vec<u64>> {
+    mut pull_requests_for_commit: F,
+) -> Result<PullRequests>
+where
+    F: FnMut(&str, &str) -> Result<CommitPullRequests>,
+{
     let mut pull_requests = Vec::new();
+    let mut invalid_entries = Vec::new();
 
-    for commit in commits {
+    for (order, commit) in commits.iter().enumerate() {
         let commit_pull_requests = pull_requests_for_commit(repo, commit)
             .with_context(|| format!("fetching pull requests associated with commit {commit}"))?;
+
         let CommitPullRequests::Found(commit_pull_requests) = commit_pull_requests else {
-            match missing_pull_request {
-                MissingPullRequest::Error => {
-                    bail!("commit {commit} was not found in GitHub repository {repo}");
-                },
-                MissingPullRequest::WarnAndSkip => {
-                    eprintln!(
-                        "warning: skipping commit {commit}; not found in GitHub repository {repo}"
-                    );
-                    continue;
-                },
-            }
+            invalid_entries.push(InvalidChangelogEntry {
+                source: InvalidChangelogSource::Commit(commit.clone()),
+                reason: format!("commit was not found in GitHub repository {repo}"),
+                order,
+            });
+            continue;
         };
 
         if commit_pull_requests.is_empty() {
-            match missing_pull_request {
-                MissingPullRequest::Error => {
-                    bail!("commit {commit} has no associated pull request");
-                },
-                MissingPullRequest::WarnAndSkip => {
-                    eprintln!("warning: skipping commit {commit}; no associated pull request");
-                    continue;
-                },
-            }
+            invalid_entries.push(InvalidChangelogEntry {
+                source: InvalidChangelogSource::Commit(commit.clone()),
+                reason: "no associated pull request".to_owned(),
+                order,
+            });
+            continue;
         }
 
         for pull_request in commit_pull_requests {
-            if !pull_requests.contains(&pull_request) {
-                pull_requests.push(pull_request);
+            if !pull_requests
+                .iter()
+                .any(|entry: &AssociatedPullRequest| entry.number == pull_request)
+            {
+                pull_requests.push(AssociatedPullRequest { number: pull_request, order });
             }
         }
     }
 
-    Ok(pull_requests)
+    Ok(PullRequests { pull_requests, invalid_entries })
 }
 
 fn pull_requests_for_commit(repo: &str, commit: &str) -> Result<CommitPullRequests> {
@@ -267,22 +277,46 @@ fn pull_requests_for_commit(repo: &str, commit: &str) -> Result<CommitPullReques
 
 fn changelog_entries_for_pull_requests(
     repo: &str,
-    pull_requests: &[u64],
-) -> Result<ChangelogEntries> {
+    pull_requests: &[AssociatedPullRequest],
+) -> ChangelogEntries {
+    changelog_entries_for_pull_requests_with(repo, pull_requests, pull_request_body)
+}
+
+fn changelog_entries_for_pull_requests_with<F>(
+    repo: &str,
+    pull_requests: &[AssociatedPullRequest],
+    mut pull_request_body: F,
+) -> ChangelogEntries
+where
+    F: FnMut(&str, u64) -> Result<String>,
+{
     let mut entries = Vec::new();
     let mut invalid_entries = Vec::new();
 
-    for (order, pull_request) in pull_requests.iter().enumerate() {
-        let body = pull_request_body(repo, *pull_request)
-            .with_context(|| format!("fetching pull request #{pull_request} body"))?;
+    for pull_request in pull_requests {
+        let body = match pull_request_body(repo, pull_request.number) {
+            Ok(body) => body,
+            Err(err) => {
+                eprintln!(
+                    "warning: could not fetch pull request #{} body: {err:#}",
+                    pull_request.number
+                );
+                invalid_entries.push(InvalidChangelogEntry {
+                    source: InvalidChangelogSource::PullRequest(pull_request.number),
+                    reason: "pull request body could not be fetched".to_owned(),
+                    order: pull_request.order,
+                });
+                continue;
+            },
+        };
 
         let document = match pr::changelog_document_from_pr_body(&body) {
             Ok(document) => document,
             Err(err) => {
                 invalid_entries.push(InvalidChangelogEntry {
-                    pr_number: *pull_request,
+                    source: InvalidChangelogSource::PullRequest(pull_request.number),
                     reason: normalize_description(&format!("{err:#}")),
-                    order,
+                    order: pull_request.order,
                 });
                 continue;
             },
@@ -294,16 +328,16 @@ fn changelog_entries_for_pull_requests(
 
         for entry in pr_entries {
             entries.push(ReleaseNoteEntry {
-                pr_number: *pull_request,
+                pr_number: pull_request.number,
                 scope: entry.scope,
                 impact: entry.impact,
                 description: normalize_description(&entry.description),
-                order,
+                order: pull_request.order,
             });
         }
     }
 
-    Ok(ChangelogEntries { entries, invalid_entries })
+    ChangelogEntries { entries, invalid_entries }
 }
 
 fn pull_request_body(repo: &str, pull_request: u64) -> Result<String> {
@@ -366,7 +400,142 @@ fn normalize_description(description: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ReleaseTag, previous_release_tag_from};
+    use anyhow::anyhow;
+
+    use super::{
+        AssociatedPullRequest,
+        CommitPullRequests,
+        ReleaseTag,
+        changelog_entries_for_pull_requests_with,
+        previous_release_tag_from,
+        pull_requests_for_commits_with,
+    };
+    use crate::changelog::render;
+
+    #[test]
+    fn missing_pull_requests_are_rendered_as_changelog_issues() {
+        let commits = vec![
+            "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            "abcdef0123456789abcdef0123456789abcdef01".to_owned(),
+        ];
+        let changelog =
+            pull_requests_for_commits_with("0xMiden/node", &commits, |_repo, commit| {
+                Ok(if commit.starts_with('0') {
+                    CommitPullRequests::Found(Vec::new())
+                } else {
+                    CommitPullRequests::CommitNotFound
+                })
+            })
+            .unwrap();
+
+        let notes = render::release_notes("Release v1.2.3", &[], &changelog.invalid_entries);
+
+        assert_eq!(
+            notes,
+            r"Release v1.2.3
+
+## Changelog Entries Requiring Attention
+
+- Missing PR for commit 0123456789ab: no associated pull request
+- Missing PR for commit abcdef012345: commit was not found in GitHub repository 0xMiden/node
+
+No release-note-worthy changes.
+"
+        );
+    }
+
+    #[test]
+    fn associated_pull_requests_keep_first_commit_order_and_are_deduplicated() {
+        let commits = vec!["first".to_owned(), "missing".to_owned(), "last".to_owned()];
+        let pull_requests =
+            pull_requests_for_commits_with("0xMiden/node", &commits, |_repo, commit| {
+                Ok(CommitPullRequests::Found(match commit {
+                    "first" => vec![42],
+                    "missing" => Vec::new(),
+                    "last" => vec![42, 43],
+                    _ => unreachable!(),
+                }))
+            })
+            .unwrap();
+
+        let associations = pull_requests
+            .pull_requests
+            .iter()
+            .map(|pull_request| (pull_request.number, pull_request.order))
+            .collect::<Vec<_>>();
+
+        assert_eq!(associations, vec![(42, 0), (43, 2)]);
+        assert_eq!(pull_requests.invalid_entries.len(), 1);
+        assert_eq!(pull_requests.invalid_entries[0].order, 1);
+    }
+
+    #[test]
+    fn pull_request_lookup_failure_aborts_collection() {
+        let commit = "0123456789abcdef0123456789abcdef01234567".to_owned();
+        let result = pull_requests_for_commits_with(
+            "0xMiden/node",
+            std::slice::from_ref(&commit),
+            |_repo, _commit| Err(anyhow!("authentication failed")),
+        );
+
+        let Err(err) = result else {
+            panic!("expected pull request lookup to fail");
+        };
+        assert!(
+            err.to_string()
+                .contains("fetching pull requests associated with commit 0123456789abcdef")
+        );
+    }
+
+    #[test]
+    fn unavailable_pull_request_is_rendered_as_a_changelog_issue() {
+        let pull_requests = [AssociatedPullRequest { number: 42, order: 0 }];
+        let changelog = changelog_entries_for_pull_requests_with(
+            "0xMiden/node",
+            &pull_requests,
+            |_repo, _pull_request| Err(anyhow!("pull request not found")),
+        );
+
+        let notes =
+            render::release_notes("Release v1.2.3", &changelog.entries, &changelog.invalid_entries);
+
+        assert_eq!(
+            notes,
+            r"Release v1.2.3
+
+## Changelog Entries Requiring Attention
+
+- Broken PR #42: pull request body could not be fetched
+
+No release-note-worthy changes.
+"
+        );
+    }
+
+    #[test]
+    fn malformed_pull_request_is_rendered_as_a_changelog_issue() {
+        let pull_requests = [
+            AssociatedPullRequest { number: 42, order: 0 },
+            AssociatedPullRequest { number: 43, order: 1 },
+        ];
+        let changelog = changelog_entries_for_pull_requests_with(
+            "0xMiden/node",
+            &pull_requests,
+            |_repo, pull_request| {
+                Ok(match pull_request {
+                    42 => "## Summary\n\nNo changelog here.\n".to_owned(),
+                    43 => "## Changelog\n\n```toml\n[[entry]\n```\n".to_owned(),
+                    _ => unreachable!(),
+                })
+            },
+        );
+
+        let notes =
+            render::release_notes("Release v1.2.3", &changelog.entries, &changelog.invalid_entries);
+
+        assert!(notes.contains("- Broken PR #42: missing `## Changelog` section"));
+        assert!(notes.contains("- Broken PR #43: parsing changelog TOML block:"));
+    }
 
     #[test]
     fn prerelease_uses_previous_prerelease() {

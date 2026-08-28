@@ -67,7 +67,13 @@ struct ReleaseNoteEntry {
 
 #[derive(Debug)]
 struct InvalidChangelogEntry {
-    pr_number: u64,
+    source: InvalidChangelogSource,
     reason: String,
     order: usize,
+}
+
+#[derive(Debug)]
+enum InvalidChangelogSource {
+    PullRequest(u64),
+    Commit(String),
 }

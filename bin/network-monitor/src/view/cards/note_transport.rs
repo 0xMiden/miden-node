@@ -1,4 +1,4 @@
-//! Renders the note-transport card (URL, gRPC serving status and server stats).
+//! Renders the note-transport card (URL and server stats).
 
 use maud::{Markup, html};
 
@@ -25,7 +25,6 @@ pub(in crate::view) fn render_note_transport(
                             (details.url) (copy_button(&details.url, "URL"))
                         }
                     }
-                    (metric_row("Serving Status:", &details.serving_status))
                     (metric_row("Version:", &stat_or_dash(details.version.clone(), healthy)))
                     (metric_row(
                         "Total Notes:",

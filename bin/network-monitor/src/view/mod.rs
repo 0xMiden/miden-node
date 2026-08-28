@@ -473,7 +473,6 @@ mod tests {
     fn renders_note_transport_card() {
         let details = NoteTransportStatusDetails {
             url: "https://nt.example".to_string(),
-            serving_status: "SERVING".to_string(),
             version: Some("0.5.0".to_string()),
             total_notes: Some(42),
             total_tags: Some(7),
@@ -482,7 +481,6 @@ mod tests {
         let html =
             render(vec![healthy("note-transport", ServiceDetails::NoteTransportStatus(details))]);
         assert!(html.contains("Note Transport"));
-        assert!(html.contains("SERVING"));
         assert!(html.contains("0.5.0"));
         assert!(html.contains("42"));
         assert!(html.contains("Total Notes"));

@@ -212,12 +212,11 @@ pub struct ExplorerStatusDetails {
 
 /// Details of the note transport service.
 ///
-/// The stats fields are sourced from the note transport's `Stats` RPC and are `None` when the
-/// stats call failed (e.g. an older deployment); the health check alone decides the status.
+/// The stats fields are sourced from the note transport's `Stats` RPC. A successful response marks
+/// the service as healthy; a failed call marks it as unhealthy and leaves the fields as `None`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NoteTransportStatusDetails {
     pub url: String,
-    pub serving_status: String,
     /// Version reported by the note transport service; `None` when unavailable.
     pub version: Option<String>,
     /// Total number of notes stored by the service.

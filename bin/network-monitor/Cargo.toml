@@ -39,7 +39,6 @@ sha2                       = { workspace = true }
 time                       = { features = ["formatting", "macros"], version = "0.3" }
 tokio                      = { features = ["full"], workspace = true }
 tonic                      = { features = ["codegen", "tls-native-roots", "transport"], workspace = true }
-tonic-health               = { workspace = true }
 tracing                    = { workspace = true }
 url                        = { features = ["serde"], workspace = true }
 

@@ -4185,7 +4185,6 @@ dependencies = [
  "time",
  "tokio",
  "tonic",
- "tonic-health",
  "tracing",
  "url",
 ]

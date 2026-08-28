@@ -55,7 +55,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, LockResult, Mutex, MutexGuard};
 
 use miden_node_utils::ErrorReport;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use miden_protocol::batch::{BatchId, ProvenBatch};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionHeader;
@@ -259,14 +259,14 @@ impl Mempool {
             .map_err(MempoolSubmissionError::StateConflict)?;
         let telemetry = self.telemetry();
         miden_span_record!(
-            transaction.id = %tx.id(),
+            transaction.id = tx.id(),
             mempool.transactions.uncommitted = telemetry.uncommitted_transactions,
             mempool.transactions.unbatched = telemetry.unbatched_transactions,
             mempool.batches.proposed = telemetry.proposed_batches,
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_added(&tx);
 
@@ -315,7 +315,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         for tx in txs {
             emit_transaction_added(tx);
@@ -344,7 +344,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         Some(batch)
     }
@@ -369,7 +369,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         Some(batch)
     }
@@ -430,7 +430,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }
@@ -450,7 +450,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
     }
 
@@ -486,7 +486,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         block
     }
@@ -527,7 +527,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_expirations(&expired, self.committed_chain_tip);
     }
@@ -577,7 +577,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }
@@ -724,14 +724,12 @@ fn emit_transaction_added(tx: &AuthenticatedTransaction) {
         return;
     }
 
-    tracing::debug!(
+    debug!(
         target: LOG_TARGET,
-        {
-            transaction.id = %tx.id(),
-            account.id = %tx.account_id(),
-            transaction.expires_at = %tx.expires_at(),
-        },
         "Transaction added to mempool",
+        transaction.id = tx.id(),
+        account.id = tx.account_id(),
+        transaction.expires_at = tx.expires_at()
     );
 }
 
@@ -741,13 +739,11 @@ fn emit_transaction_expirations(removal: &graph::TransactionRemoval, chain_tip: 
     }
 
     for transaction_id in removal.direct() {
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            {
-                transaction.id = %transaction_id,
-                block.number = %chain_tip,
-            },
             "Transaction expired from mempool",
+            transaction.id = transaction_id,
+            block.number = chain_tip
         );
     }
 
@@ -764,13 +760,11 @@ fn emit_transaction_evictions(
     }
 
     for transaction_id in removal.direct() {
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            {
-                transaction.id = %transaction_id,
-                mempool.removal.reason = direct_reason,
-            },
             "Transaction evicted from mempool",
+            transaction.id = transaction_id,
+            mempool.removal.reason = direct_reason
         );
     }
 
@@ -779,13 +773,11 @@ fn emit_transaction_evictions(
 
 fn emit_dependent_transaction_evictions(removal: &graph::TransactionRemoval, reason: &'static str) {
     for transaction_id in removal.dependents() {
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            {
-                transaction.id = %transaction_id,
-                mempool.removal.reason = reason,
-            },
             "Transaction evicted from mempool",
+            transaction.id = transaction_id,
+            mempool.removal.reason = reason
         );
     }
 }

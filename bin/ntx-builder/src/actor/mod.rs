@@ -12,10 +12,10 @@ use anyhow::Context;
 use candidate::{SponsoredFeatureNote, TransactionCandidate};
 use futures::FutureExt;
 use miden_node_utils::ErrorReport;
-use miden_node_utils::formatting::{format_array, format_opt};
+use miden_node_utils::formatting::format_opt;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, error, info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountPatch};
 use miden_protocol::block::BlockNumber;
@@ -400,10 +400,10 @@ impl AccountActor {
                 }
                 // Idle timeout: actor has been idle too long, deactivate.
                 () = idle_timeout_sleep => {
-                    tracing::debug!(
+                    debug!(
                         target: LOG_TARGET,
-                        %account_id,
-                        "Account actor deactivated due to idle timeout"
+                        "Account actor deactivated due to idle timeout",
+                        account.id = account_id
                     );
                     return Ok(());
                 }
@@ -464,21 +464,21 @@ impl AccountActor {
                     Arc::make_mut(account)
                         .apply_patch(&pending_patch)
                         .context("failed to apply landed transaction patch to in-memory account")?;
-                    tracing::info!(
+                    info!(
                         target: LOG_TARGET,
-                        account_id = %self.account_id,
-                        tx_id = %submitted_tx_id,
                         "submitted transaction landed; advanced in-memory account by its patch",
+                        account.id = self.account_id,
+                        transaction.id = submitted_tx_id
                     );
                     ActorMode::NotesAvailable
                 } else if elapsed.as_u32() >= u32::from(self.config.tx_expiration_delta.get()) {
-                    tracing::info!(
+                    info!(
                         target: LOG_TARGET,
-                        account_id = %self.account_id,
-                        %submitted_at,
-                        current_tip = %view.chain_tip,
-                        delta = self.config.tx_expiration_delta,
                         "submitted transaction expired",
+                        account.id = self.account_id,
+                        transaction.submitted_at = submitted_at,
+                        tip.number = view.chain_tip,
+                        transaction.expiration_delta = self.config.tx_expiration_delta.get()
                     );
                     // The submission did not land. Reload the authoritative account in case a
                     // different transaction changed it while we waited, then resume selection.
@@ -546,11 +546,11 @@ impl AccountActor {
                     (nullifier, error)
                 })
                 .collect::<Vec<_>>();
-            tracing::info!(
+            info!(
                 target: LOG_TARGET,
-                %account_id,
-                rejected_count = failed_notes.len(),
                 "dropping network notes whose script roots are not allowlisted",
+                account.id = account_id,
+                note.rejected.count = failed_notes.len()
             );
             self.mark_notes_failed(&failed_notes, block_num).await;
         }
@@ -638,7 +638,7 @@ impl AccountActor {
     /// re-declaring the stale commitment.
     #[miden_instrument(
         name = "ntx.actor.execute_transactions",
-        fields(account.id = %account_id),
+        fields(account.id = account_id),
     )]
     async fn execute_transactions(
         &self,
@@ -673,12 +673,12 @@ impl AccountActor {
                     .chain(sponsored.sponsorships.iter().map(Note::id))
             })
             .collect();
-        tracing::info!(
+        info!(
             target: LOG_TARGET,
-            %account_id,
-            note_ids = %format_array(&note_ids),
-            num_notes = note_ids.len(),
             "executing network transaction",
+            account.id = account_id,
+            note.ids = note_ids.as_slice(),
+            note.count = note_ids.len()
         );
 
         let execution_result = context.execute_transaction(tx_candidate).await;
@@ -699,14 +699,14 @@ impl AccountActor {
                 // - `oversized_notes` exceed the per-tx cycle budget on their own and can never be
                 //   consumed. They are discarded immediately so they stop being re-selected.
                 // - `failed_notes` are genuine consumability failures and are penalized as usual.
-                tracing::info!(
+                info!(
                     target: LOG_TARGET,
-                    %account_id,
-                    %tx_id,
-                    num_genuine_failed = failed_notes.len(),
-                    num_deferred = deferred_notes.len(),
-                    num_oversized = oversized_notes.len(),
                     "network transaction executed",
+                    account.id = account_id,
+                    transaction.id = tx_id,
+                    note.failed.count = failed_notes.len(),
+                    note.deferred.count = deferred_notes.len(),
+                    note.oversized.count = oversized_notes.len()
                 );
                 self.cache_note_scripts(fetched_scripts).await;
 
@@ -740,13 +740,12 @@ impl AccountActor {
             },
             // Transaction execution failed.
             Err(err) => {
-                let error_msg = err.as_report();
-                tracing::error!(
+                error!(
+                    &err,
                     target: LOG_TARGET,
-                    %account_id,
-                    note_ids = %format_array(&note_ids),
-                    err = %error_msg,
                     "network transaction failed",
+                    account.id = account_id,
+                    note.ids = note_ids.as_slice()
                 );
 
                 // A rejected submission (e.g. an account-commitment mismatch) means our in-memory
@@ -770,14 +769,12 @@ impl AccountActor {
                             .iter()
                             .map(|sponsored| {
                                 let feature = sponsored.feature.as_note();
-                                tracing::info!(
+                                info!(
+                                    error.as_ref(),
                                     target: LOG_TARGET,
-                                    {
-                                        note.id = %feature.id(),
-                                        nullifier = %feature.nullifier(),
-                                        err = %error_msg,
-                                    },
                                     "note failed: transaction execution error",
+                                    note.id = feature.id(),
+                                    note.nullifier = feature.nullifier()
                                 );
                                 (feature.nullifier(), error.clone())
                             })
@@ -794,10 +791,10 @@ impl AccountActor {
                         .await
                         .context("failed to reload account after a rejected submission")?
                     {
-                        tracing::info!(
+                        info!(
                             target: LOG_TARGET,
-                            %account_id,
                             "reloaded account from the database after a rejected submission",
+                            account.id = account_id
                         );
                         *account = Arc::new(latest);
                     }
@@ -889,14 +886,12 @@ fn log_oversized_notes(oversized: Vec<FailedNote>) -> Vec<Nullifier> {
     oversized
         .into_iter()
         .map(|note| {
-            tracing::warn!(
+            warn!(
                 target: LOG_TARGET,
-                {
-                    note.id = %note.note().id(),
-                    nullifier = %note.note().nullifier(),
-                    num_cycles = %format_opt(note.num_cycles().as_ref()),
-                },
                 "note discarded: exceeds the per-tx cycle budget on its own and can never be consumed",
+                note.id = note.note().id(),
+                note.nullifier = note.note().nullifier(),
+                note.execution_cycles = format_opt(note.num_cycles().as_ref())
             );
             note.note().nullifier()
         })
@@ -910,14 +905,12 @@ fn log_oversized_notes(oversized: Vec<FailedNote>) -> Vec<Nullifier> {
 /// round with their `attempt_count` untouched.
 fn log_deferred_notes(deferred: Vec<FailedNote>) {
     for note in deferred {
-        tracing::info!(
+        info!(
             target: LOG_TARGET,
-            {
-                note.id = %note.note().id(),
-                nullifier = %note.note().nullifier(),
-                num_cycles = %format_opt(note.num_cycles().as_ref()),
-            },
             "note deferred: exceeded per-tx cycle budget, will retry next round",
+            note.id = note.note().id(),
+            note.nullifier = note.note().nullifier(),
+            note.execution_cycles = format_opt(note.num_cycles().as_ref())
         );
     }
 }
@@ -935,14 +928,12 @@ fn attribute_failed_notes(
     let mut attributed = Vec::new();
     for f in failed {
         let error_msg = f.error().as_report();
-        tracing::info!(
+        info!(
+            f.error(),
             target: LOG_TARGET,
-            {
-                note.id = %f.note().id(),
-                nullifier = %f.note().nullifier(),
-                err = %error_msg,
-            },
             "note failed: consumability check",
+            note.id = f.note().id(),
+            note.nullifier = f.note().nullifier()
         );
         let nullifier = sponsor_to_feature
             .get(&f.note().id())

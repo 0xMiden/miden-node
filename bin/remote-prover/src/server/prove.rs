@@ -23,9 +23,7 @@ impl grpc::server::remote_prover_api::Prove for ProverService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        miden_span_record!(
-            request.kind = %proof_kind,
-        );
+        miden_span_record!(request.kind = proof_kind);
 
         // Reject unsupported proof types early so they don't clog the queue.
         if !self.is_supported(proof_kind) {

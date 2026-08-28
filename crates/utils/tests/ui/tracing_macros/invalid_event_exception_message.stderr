@@ -1,0 +1,5 @@
+error: pass the error as the first argument instead of recording `exception.message`
+ --> tests/ui/tracing_macros/invalid_event_exception_message.rs:4:24
+  |
+4 |     info!("test.info", exception.message = "manual report");
+  |                        ^^^^^^^^^^^^^^^^^

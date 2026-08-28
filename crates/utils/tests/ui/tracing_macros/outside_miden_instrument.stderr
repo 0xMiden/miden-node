@@ -2,7 +2,7 @@ error: cannot find macro `__miden_span_record_must_be_used_within_miden_instrume
  --> tests/ui/tracing_macros/outside_miden_instrument.rs:6:5
   |
 6 | /     miden_span_record!(
-7 | |         transaction.id = %tx_id,
+7 | |         transaction.id = tx_id
 8 | |     );
   | |_____^
   |

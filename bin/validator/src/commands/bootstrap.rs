@@ -6,6 +6,7 @@ use miden_node_store::BlockStore;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::read_genesis_block;
+use miden_node_utils::tracing::info;
 use miden_validator::DataDirectory;
 
 /// Runs the `bootstrap` command: seeds this validator's database from the genesis block file
@@ -19,15 +20,13 @@ pub async fn bootstrap(
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_block_file: &Path,
 ) -> anyhow::Result<()> {
-    tracing::info!(
+    info!(
         target: miden_validator::LOG_TARGET,
-        {
-            service.name = "miden-validator",
-            service.version = env!("CARGO_PKG_VERSION"),
-            genesis.file = %genesis_block_file.display(),
-            data.directory = %data_directory.display(),
-        },
         "Bootstrapping validator",
+        service.name = "miden-validator",
+        service.version = env!("CARGO_PKG_VERSION"),
+        genesis.file = genesis_block_file,
+        data.directory = data_directory
     );
 
     ensure_empty_directory(data_directory)?;
@@ -51,13 +50,11 @@ pub async fn bootstrap(
     .await
     .context("failed to bootstrap the validator database")?;
 
-    tracing::info!(
+    info!(
         target: miden_validator::LOG_TARGET,
-        {
-            genesis.commitment = %genesis_commitment,
-            data.directory = %data_directory.display(),
-        },
         "Validator bootstrap complete",
+        genesis.commitment = genesis_commitment,
+        data.directory = data_directory
     );
 
     Ok(())

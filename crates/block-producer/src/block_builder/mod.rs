@@ -3,10 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use miden_node_store::state::{BlockWriter, State};
-use miden_node_utils::formatting::format_array;
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{ErrorSpanExt, debug, miden_instrument, miden_span_record};
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
 use miden_protocol::block::{
     BlockInputs,
@@ -125,11 +124,11 @@ impl BlockBuilder {
         let selected = Self::select_block(mempool)?;
         let telemetry = selected.telemetry();
         miden_span_record!(
-            block.number = %telemetry.block_number,
-            block.batches.count = telemetry.batches_count,
-            block.batch.ids = %format_array(telemetry.batch_ids),
-            block.transactions.ids = %format_array(&telemetry.transaction_ids),
-            block.transactions.count = telemetry.transactions_count,
+            block.number = telemetry.block_number,
+            block.batch.count = telemetry.batches_count,
+            block.batch.ids = telemetry.batch_ids,
+            block.transaction.ids = telemetry.transaction_ids,
+            block.transaction.count = telemetry.transactions_count
         );
         let block_num = selected.block_number;
 
@@ -143,18 +142,18 @@ impl BlockBuilder {
                 .inspect_ok(|inputs| {
                     let telemetry = inputs.telemetry();
                     miden_span_record!(
-                        block.updated_accounts.count = telemetry.updated_accounts_count,
-                        block.erased_note_proofs.count = telemetry.erased_note_proofs_count,
+                        block.updated_account.count = telemetry.updated_accounts_count,
+                        block.erased_note_proof.count = telemetry.erased_note_proofs_count
                     );
                 })
                 .and_then(|inputs| self.propose_block(inputs))
                 .inspect_ok(|proposed_block| {
                     let telemetry = proposed_block_telemetry(&proposed_block.proposed_block);
                     miden_span_record!(
-                        block.nullifiers.count = telemetry.nullifiers_count,
-                        block.output_notes.count = telemetry.output_notes_count,
-                        block.batches.output_notes.count = telemetry.batch_output_notes_count,
-                        block.erased_notes.count = telemetry.erased_notes_count,
+                        block.nullifier.count = telemetry.nullifiers_count,
+                        block.output_note.count = telemetry.output_notes_count,
+                        block.batch.output_note.count = telemetry.batch_output_notes_count,
+                        block.erased_note.count = telemetry.erased_notes_count
                     );
                 })
                 .and_then(|proposed_block| self.build_and_validate_block(proposed_block))
@@ -374,15 +373,17 @@ impl BlockBuilder {
         let num_transactions = signed_block.body().transactions().as_slice().len();
 
         miden_span_record!(
-            block.number = %header.block_num(),
-            block.commitment = %header.commitment(),
-            block.transactions.count = num_transactions,
+            block.number = header.block_num(),
+            block.commitment = header.commitment(),
+            block.transaction.count = num_transactions
         );
 
         if num_transactions > 0 {
-            let transaction_ids =
-                signed_block.body().transactions().as_slice().iter().map(TransactionHeader::id);
-            tracing::debug!(target: LOG_TARGET, transactions = %format_array(transaction_ids), "Included transactions");
+            debug!(
+                target: LOG_TARGET,
+                "Included transactions",
+                block.transaction.count = num_transactions
+            );
         }
 
         self.block_writer

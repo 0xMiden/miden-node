@@ -7,6 +7,7 @@ use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated::validator::{BlockSubscriptionRequest, BlockSubscriptionResponse};
 use miden_node_store::{BlockWriter, State, WriterTask};
 use miden_node_utils::shutdown::CancellationToken;
+use miden_node_utils::tracing::info;
 use miden_protocol::Word;
 use miden_protocol::block::{
     BlockBody,
@@ -21,7 +22,6 @@ use miden_protocol::utils::serde::Deserializable;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::codec::Streaming;
-use tracing::info;
 use url::Url;
 
 use super::ENV_DATA_DIRECTORY;
@@ -133,9 +133,9 @@ async fn recover_from_validators(
     if local_tip >= recovery_tip {
         info!(
             target: LOG_TARGET,
-            local_tip = local_tip.as_u32(),
-            recovery_tip = recovery_tip.as_u32(),
             "Local chain is already at the validators' chain tip; nothing to recover",
+            block.number = local_tip,
+            sync.upstream_block = recovery_tip
         );
         return Ok(());
     }
@@ -153,10 +153,10 @@ async fn recover_from_validators(
     let block_count = u64::from(recovery_tip.as_u32() - block_from) + 1;
     info!(
         target: LOG_TARGET,
-        block_from,
-        recovery_tip = recovery_tip.as_u32(),
-        validators = validators.len(),
         "Recovering blocks from validators",
+        block.from = block_from,
+        sync.upstream_block = recovery_tip,
+        validators.count = validators.len()
     );
 
     // Run recovery as a three-stage pipeline so that receiving blocks from the validators,
@@ -185,14 +185,14 @@ async fn recover_from_validators(
             .apply_block(block)
             .await
             .context("failed to apply recovered block")?;
-        info!(target: LOG_TARGET, block_number = block_num.as_u32(), "Applied recovered block");
+        info!(target: LOG_TARGET, "Applied recovered block", block.number = block_num);
     }
 
     // The channel closes either because every block up to the recovery target was coalesced or
     // because the coalescer failed.
     coalescer.await.context("coalescer task panicked")??;
 
-    info!(target: LOG_TARGET, chain_tip = recovery_tip.as_u32(), "Block recovery complete");
+    info!(target: LOG_TARGET, "Block recovery complete", tip.number = recovery_tip);
     Ok(())
 }
 

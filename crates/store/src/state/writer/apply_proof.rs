@@ -17,7 +17,7 @@ impl ProofWriter {
         target = COMPONENT,
         err,
         fields(
-            block.number = block_num.as_u32(),
+            block.number = block_num
         ),
     )]
     pub async fn apply_proof(

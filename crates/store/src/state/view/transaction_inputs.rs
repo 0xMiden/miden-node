@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 use std::ops::ControlFlow;
 
-use miden_node_utils::formatting::format_array;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
@@ -28,8 +27,8 @@ impl StateView {
     #[miden_instrument(
         target = COMPONENT,
         fields(
-            account.id=%account_id,
-            nullifiers = %format_array(nullifiers),
+            account.id = account_id,
+            note.nullifiers = nullifiers,
         ),
     )]
     pub async fn get_transaction_inputs(

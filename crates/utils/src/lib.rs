@@ -1,3 +1,5 @@
+extern crate self as miden_node_utils;
+
 pub mod block_cache;
 pub mod clap;
 pub mod cors;
@@ -37,7 +39,7 @@ pub trait ErrorReport: std::error::Error {
     }
 }
 
-impl<T: std::error::Error> ErrorReport for T {}
+impl<T: std::error::Error + ?Sized> ErrorReport for T {}
 
 /// Extends nested results types, allowing them to be flattened.
 ///

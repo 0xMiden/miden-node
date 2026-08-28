@@ -1,8 +1,7 @@
 use miden_node_proto::generated as proto;
 use miden_node_utils::grpc::ClientIp;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::block::BlockNumber;
-use tracing::debug;
 
 use super::super::{COMPONENT, RpcService};
 use super::stream::{StreamItem, SubscriptionStream};
@@ -30,7 +29,7 @@ impl proto::server::rpc_api::ProofSubscription for RpcService {
         target = COMPONENT,
         name = "proof_subscription",
         fields(
-            block.from = %input,
+            block.from = input,
         ),
         err,
     )]

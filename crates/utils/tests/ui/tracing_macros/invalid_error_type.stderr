@@ -1,0 +1,12 @@
+error[E0599]: the method `as_report` exists for reference `&'static str`, but its trait bounds were not satisfied
+ --> tests/ui/tracing_macros/invalid_error_type.rs:4:5
+  |
+4 |     error!("not an error", "test.exception");
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: the following trait bounds were not satisfied:
+          `str: std::error::Error`
+          which is required by `str: ErrorReport`
+          `&str: std::error::Error`
+          which is required by `&str: ErrorReport`
+  = note: this error originates in the macro `error` (in Nightly builds, run with -Z macro-backtrace for more info)

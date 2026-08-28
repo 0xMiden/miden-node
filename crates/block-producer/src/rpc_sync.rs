@@ -9,13 +9,13 @@ use miden_node_store::state::{BlockWriter, ProofWriter, State};
 use miden_node_utils::retry::{self, RetryableWithContext};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, info, miden_instrument, warn};
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use miden_protocol::utils::serde::Deserializable;
 use tokio_stream::StreamExt;
 use tonic_health::ServingStatus;
 use tonic_health::server::HealthReporter;
-use tracing::{Instrument, info, info_span, warn};
+use tracing::{Instrument, info_span};
 
 use crate::{COMPONENT, LOG_TARGET};
 
@@ -72,40 +72,34 @@ impl RpcReadiness {
             ReadinessTransition::BecameReady => {
                 info!(
                     target: LOG_TARGET,
-                    {
-                        service.name = "miden-node",
-                        service.version = env!("CARGO_PKG_VERSION"),
-                        node.role = "full",
-                        block.number = %local_tip,
-                        sync.upstream_block = %upstream_tip,
-                        sync.block_gap = gap,
-                        sync.ready_threshold = self.threshold,
-                    },
                     "Node ready",
+                    service.name = "miden-node",
+                    service.version = env!("CARGO_PKG_VERSION"),
+                    node.role = "full",
+                    block.number = local_tip,
+                    sync.upstream_block = upstream_tip,
+                    sync.block_gap = gap,
+                    sync.ready_threshold = self.threshold
                 );
             },
             ReadinessTransition::BecameNotReady => {
                 warn!(
                     target: LOG_TARGET,
-                    {
-                        block.number = %local_tip,
-                        sync.upstream_block = %upstream_tip,
-                        sync.block_gap = gap,
-                        sync.ready_threshold = self.threshold,
-                    },
                     "Node no longer ready",
+                    block.number = local_tip,
+                    sync.upstream_block = upstream_tip,
+                    sync.block_gap = gap,
+                    sync.ready_threshold = self.threshold
                 );
             },
             ReadinessTransition::InitialNotReady => {
-                tracing::debug!(
+                debug!(
                     target: LOG_TARGET,
-                    {
-                        block.number = %local_tip,
-                        sync.upstream_block = %upstream_tip,
-                        sync.block_gap = gap,
-                        sync.ready_threshold = self.threshold,
-                    },
                     "Node synchronizing",
+                    block.number = local_tip,
+                    sync.upstream_block = upstream_tip,
+                    sync.block_gap = gap,
+                    sync.ready_threshold = self.threshold
                 );
             },
             ReadinessTransition::Unchanged => {},
@@ -192,10 +186,10 @@ impl BlockSync {
         .context(self)
         .notify(|err, _| {
             warn!(
+                err,
                 target: LOG_TARGET,
-                err = %format!("{err:#}"),
-                retry.delay = %RECONNECT_DELAY.as_secs(),
                 "Block sync failed, retrying",
+                retry.delay_ms = RECONNECT_DELAY.as_millis() as u64
             );
         });
 
@@ -217,7 +211,11 @@ impl BlockSync {
         self.readiness.update(upstream_tip, local_tip).await;
 
         let block_from = local_tip.child().as_u32();
-        info!(target: LOG_TARGET, block_from, "Connecting to upstream RPC for blocks");
+        info!(
+            target: LOG_TARGET,
+            "Connecting to upstream RPC for blocks",
+            block.from = block_from
+        );
 
         let mut stream = client
             .block_subscription(BlockSubscriptionRequest { block_from })
@@ -284,10 +282,10 @@ impl ProofSync {
         .context(self)
         .notify(|err, _| {
             warn!(
+                err,
                 target: LOG_TARGET,
-                err = %format!("{err:#}"),
-                retry.delay = %RECONNECT_DELAY.as_secs(),
                 "Proof sync failed, retrying",
+                retry.delay_ms = RECONNECT_DELAY.as_millis() as u64
             );
         });
 
@@ -302,8 +300,8 @@ impl ProofSync {
         let starting_block = self.state.proven_tip().child();
         info!(
             target: LOG_TARGET,
-            block_from = %starting_block,
-            "Subscribing to block proof stream"
+            "Subscribing to block proof stream",
+            block.from = starting_block
         );
         let mut client = self.source_rpc.clone();
         let mut stream = client

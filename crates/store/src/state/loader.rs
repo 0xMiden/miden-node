@@ -23,6 +23,8 @@ use miden_crypto::merkle::smt::{
 };
 #[cfg(feature = "rocksdb")]
 use miden_node_utils::clap::RocksDbOptions;
+#[cfg(feature = "rocksdb")]
+use miden_node_utils::tracing::info;
 use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::{AccountId, AccountStorageHeader, StorageSlotType};
 use miden_protocol::block::account_tree::{AccountIdKey, AccountTree};
@@ -32,8 +34,6 @@ use miden_protocol::block::{BlockHeader, BlockNumber, Blockchain};
 use miden_protocol::crypto::merkle::smt::MemoryStorage;
 use miden_protocol::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 use miden_protocol::{Felt, Word};
-#[cfg(feature = "rocksdb")]
-use tracing::info;
 
 use crate::COMPONENT;
 #[cfg(feature = "rocksdb")]
@@ -412,7 +412,7 @@ impl AccountForestLoader for ForestInMemoryBackend {
     #[miden_instrument(
         target = COMPONENT,
         fields(
-            block.number = %block_num,
+            block.number = block_num,
         ),
     )]
     async fn load_account_state_forest(
@@ -465,7 +465,7 @@ impl AccountForestLoader for ForestPersistentBackend {
     #[miden_instrument(
         target = COMPONENT,
         fields(
-            block.number = %block_num,
+            block.number = block_num,
         ),
     )]
     async fn load_account_state_forest(
@@ -549,7 +549,7 @@ fn verify_chain_mmr_consistency(
 #[miden_instrument(
     target = COMPONENT,
     fields(
-        block.number = %block_num,
+        block.number = block_num,
     ),
 )]
 pub async fn rebuild_account_state_forest(

@@ -55,8 +55,9 @@ miden-validator genesis \
 
 Unless the configuration sets `native_faucet` to a pre-built account file, the native faucet is generated as a network
 account and holds no key of its own; minting from it is restricted to the faucet operator account generated alongside
-it. Both are written to the accounts directory as `native_faucet.mac` and `faucet_operator.mac`, and the faucet account
-id is printed. The operator file carries the only signing key permitted to mint, so treat it as a secret.
+it. The operator starts with 1,000 MIDEN tokens so it can pay fees for the first mint requests. Both accounts are
+written to the accounts directory as `native_faucet.mac` and `faucet_operator.mac`, and the faucet account id is
+printed. The operator file carries the only signing key permitted to mint, so treat it as a secret.
 
 To run a faucet against the network, pass `faucet_operator.mac` to the faucet's `init --import`, and the faucet account
 id to `--faucet-account-id`.

@@ -1,6 +1,6 @@
 use miden_node_proto::decode::{read_account_id, read_block_range};
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
 
 use super::{
@@ -35,8 +35,6 @@ impl proto::server::rpc_api::SyncAccountStorageMaps for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        tracing::trace!(target: LOG_TARGET, ?request);
-
         let account_id = read_account_id::<proto::rpc::SyncAccountStorageMapsRequest, Status>(
             request.account_id.clone(),
         )?;
@@ -44,12 +42,18 @@ impl proto::server::rpc_api::SyncAccountStorageMaps for RpcService {
             read_block_range::<Status>(request.block_range, "SyncAccountStorageMapsRequest")?;
 
         miden_span_record!(
-            account.id = %account_id,
+            account.id = account_id,
             block_range.from = range.block_from,
-            block_range.to = range.block_to,
+            block_range.to = range.block_to
         );
 
-        tracing::debug!(target: LOG_TARGET, "Syncing account storage maps");
+        debug!(
+            target: LOG_TARGET,
+            "Syncing account storage maps",
+            account.id = account_id,
+            block_range.from = range.block_from,
+            block_range.to = range.block_to
+        );
 
         if !account_id.is_public() {
             return Err(Status::invalid_argument(format!("account {account_id} is not public")));

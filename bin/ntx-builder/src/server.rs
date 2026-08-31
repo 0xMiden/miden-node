@@ -36,11 +36,7 @@ impl NtxBuilderRpcServer {
         max_note_attempts: usize,
         request_timeout: Duration,
     ) -> Self {
-        Self {
-            db,
-            max_note_attempts,
-            request_timeout,
-        }
+        Self { db, max_note_attempts, request_timeout }
     }
 
     /// Starts the gRPC server on the given listener.

@@ -4,6 +4,7 @@ package rpc;
 
 import "google/protobuf/empty.proto";
 import "account.proto";
+import "asset.proto";
 import "batch.proto";
 import "block.proto";
 import "block_number.proto";
@@ -386,7 +387,7 @@ message AccountVaultDetails {
 
     // When too_many_assets == false, this will contain the list of assets in the
     // account's vault
-    repeated primitives.Asset assets = 2;
+    repeated asset.Asset assets = 2;
 }
 
 // Account storage details for AccountResponse
@@ -507,7 +508,7 @@ message AccountVaultUpdate {
 
     // Asset value related to the vault key.
     // If not present, the asset was removed from the vault.
-    optional primitives.Asset asset = 2;
+    optional asset.Asset asset = 2;
 
     // Block number at which the above asset was updated in the account vault.
     fixed32 block_num = 3;

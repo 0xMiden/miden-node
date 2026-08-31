@@ -30,7 +30,7 @@ service Api {
 message AuthenticatedTransaction {
     // The proven transaction.
     //
-    transaction.ProvenTransactionData transaction = 1;
+    transaction.ProvenTransaction transaction = 1;
 
     // The account state provided by the store inputs, if any.
     optional primitives.Word store_account_state = 2;

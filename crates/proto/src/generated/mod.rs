@@ -9,6 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/generated/mod.rs"));
 
 pub use miden_objects::proto::{
     account,
+    asset,
     blockchain,
     note,
     primitives,

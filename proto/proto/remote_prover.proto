@@ -41,7 +41,7 @@ message ProofRequest {
 // Response message containing the generated proof.
 message Proof {
     oneof proof {
-        transaction.ProvenTransactionData transaction = 1;
+        transaction.ProvenTransaction transaction = 1;
         transaction.ProvenBatch batch = 2;
         primitives.ExecutionProof block = 3;
     }

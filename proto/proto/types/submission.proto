@@ -7,7 +7,7 @@ import "batch.proto";
 
 // A proven transaction together with the sealed inputs validators require for re-execution.
 message ProvenTransactionSubmission {
-  transaction.ProvenTransactionData transaction = 1;
+  transaction.ProvenTransaction transaction = 1;
   SealedTransactionInputs sealed_transaction_inputs = 2;
 }
 

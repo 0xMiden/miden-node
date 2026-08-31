@@ -38,6 +38,7 @@ use miden_protocol::account::{
     StorageMap,
     StorageMapKey,
     StorageMapPatchEntries,
+    StoragePatchOperation,
     StorageSlot,
     StorageSlotContent,
     StorageSlotName,
@@ -1059,13 +1060,35 @@ fn insert_account_storage_map_value_inner(
     Ok(update_count + insert_count)
 }
 
+/// Closes all current rows for a storage-map slot.
+fn invalidate_storage_map_slot(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    slot_name: StorageSlotName,
+) -> Result<usize, DatabaseError> {
+    Ok(diesel::update(schema::account_storage_map_values::table)
+        .filter(
+            schema::account_storage_map_values::account_id
+                .eq(account_id.to_bytes())
+                .and(schema::account_storage_map_values::slot_name.eq(slot_name.to_raw_sql()))
+                .and(schema::account_storage_map_values::valid_until.eq(VALID_FOREVER)),
+        )
+        .set(schema::account_storage_map_values::valid_until.eq(block_num.to_raw_sql()))
+        .execute(conn)?)
+}
+
 type PendingStorageInserts = Vec<(AccountId, StorageSlotName, StorageMapKey, Word)>;
+type PendingStorageSlotClears = Vec<(AccountId, StorageSlotName)>;
 type PendingAssetInserts = Vec<(AccountId, AssetId, Option<Asset>)>;
 
 fn prepare_full_account_update(
     update: &BlockAccountUpdate,
     account: Account,
-) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
+) -> Result<
+    (AccountStateForInsert, PendingStorageInserts, PendingStorageSlotClears, PendingAssetInserts),
+    DatabaseError,
+> {
     let account_id = account.id();
 
     // sanity check the commitment of account matches the final state commitment
@@ -1099,7 +1122,7 @@ fn prepare_full_account_update(
         }
     }
 
-    Ok((AccountStateForInsert::FullAccount(account), storage, assets))
+    Ok((AccountStateForInsert::FullAccount(account), storage, vec![], assets))
 }
 
 /// Prepares a full public-account insertion using roots computed by the account-state forest.
@@ -1118,7 +1141,10 @@ fn prepare_precomputed_full_account_update(
     update: &BlockAccountUpdate,
     patch: &AccountPatch,
     precomputed: &PrecomputedPublicAccountState,
-) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
+) -> Result<
+    (AccountStateForInsert, PendingStorageInserts, PendingStorageSlotClears, PendingAssetInserts),
+    DatabaseError,
+> {
     let account_id = patch.id();
     let code = patch.code().cloned().ok_or_else(|| {
         DatabaseError::DataCorrupted(format!(
@@ -1184,7 +1210,7 @@ fn prepare_precomputed_full_account_update(
         is_network_account,
     };
 
-    Ok((AccountStateForInsert::PrecomputedFullState(state), storage, assets))
+    Ok((AccountStateForInsert::PrecomputedFullState(state), storage, vec![], assets))
 }
 
 /// Prepares a partial public-account update using the latest row and precomputed forest roots.
@@ -1204,7 +1230,10 @@ fn prepare_partial_account_update(
     patch: &AccountPatch,
     precomputed: &PrecomputedPublicAccountState,
     existing: &LatestAccountStateRow,
-) -> Result<(AccountStateForInsert, PendingStorageInserts, PendingAssetInserts), DatabaseError> {
+) -> Result<
+    (AccountStateForInsert, PendingStorageInserts, PendingStorageSlotClears, PendingAssetInserts),
+    DatabaseError,
+> {
     // Build the minimal account state needed for partial patch application from the latest row that
     // was loaded with the account's creation metadata.
     let state_headers = existing.state_headers(account_id)?;
@@ -1224,7 +1253,14 @@ fn prepare_partial_account_update(
     // --- Collect storage map updates. ---------------------------
 
     let mut storage = Vec::new();
+    let mut storage_slot_clears = Vec::new();
     for (slot_name, map_patch) in patch.storage().maps() {
+        if matches!(
+            map_patch.patch_op(),
+            StoragePatchOperation::Create | StoragePatchOperation::Remove
+        ) {
+            storage_slot_clears.push((account_id, slot_name.clone()));
+        }
         for (key, value) in map_patch.entries().into_iter().flat_map(StorageMapPatchEntries::as_map)
         {
             storage.push((account_id, slot_name.clone(), *key, *value));
@@ -1266,7 +1302,12 @@ fn prepare_partial_account_update(
         });
     }
 
-    Ok((AccountStateForInsert::PartialState(account_state), storage, assets))
+    Ok((
+        AccountStateForInsert::PartialState(account_state),
+        storage,
+        storage_slot_clears,
+        assets,
+    ))
 }
 
 /// Returns the subset of `account_ids` whose latest committed state is a network account.
@@ -1331,9 +1372,15 @@ pub(crate) fn upsert_accounts(
         // written. The storage and vault tables have FKs pointing to accounts `(account_id,
         // block_num)`, so inserting them earlier would violate those constraints when inserting a
         // brand-new account.
-        let (account_state, pending_storage_inserts, pending_asset_inserts) = match update.details()
-        {
-            AccountUpdateDetails::Private => (AccountStateForInsert::Private, vec![], vec![]),
+        let (
+            account_state,
+            pending_storage_inserts,
+            pending_storage_slot_clears,
+            pending_asset_inserts,
+        ) = match update.details() {
+            AccountUpdateDetails::Private => {
+                (AccountStateForInsert::Private, vec![], vec![], vec![])
+            },
 
             // New account is always a full account, but also comes as an update
             AccountUpdateDetails::Public(patch) if patch.is_full_state() => {
@@ -1460,6 +1507,10 @@ pub(crate) fn upsert_accounts(
             .do_update()
             .set(&account_value)
             .execute(conn)?;
+
+        for (acc_id, slot_name) in pending_storage_slot_clears {
+            invalidate_storage_map_slot(conn, acc_id, block_num, slot_name)?;
+        }
 
         // insert pending storage map entries TODO consider batching
         for (acc_id, slot_name, key, value) in pending_storage_inserts {

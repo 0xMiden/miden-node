@@ -52,7 +52,7 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
     *function.block = block;
 
     let expanded = quote! {
-        #[::tracing::instrument(#args)]
+        #[::miden_node_tracing::__private::instrument(#args)]
         #function
     };
 
@@ -76,7 +76,7 @@ pub fn miden_instrument(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// as the event name.
 ///
 /// ```rust,ignore
-/// use miden_node_utils::tracing::trace;
+/// use miden_node_tracing::trace;
 ///
 /// trace!(target: "node", "block.received", block.number = 42_u32);
 ///
@@ -105,7 +105,7 @@ pub fn trace(input: TokenStream) -> TokenStream {
 /// as the event name.
 ///
 /// ```rust,ignore
-/// use miden_node_utils::tracing::debug;
+/// use miden_node_tracing::debug;
 ///
 /// debug!("block.queued", block.number = 42_u32);
 ///
@@ -134,7 +134,7 @@ pub fn debug(input: TokenStream) -> TokenStream {
 /// as the event name.
 ///
 /// ```rust,ignore
-/// use miden_node_utils::tracing::info;
+/// use miden_node_tracing::info;
 ///
 /// let parent = tracing::info_span!("block");
 /// info!(parent: &parent, "block.accepted", block.number = 42_u32);
@@ -164,7 +164,7 @@ pub fn info(input: TokenStream) -> TokenStream {
 /// as the event name.
 ///
 /// ```rust,ignore
-/// use miden_node_utils::tracing::warn;
+/// use miden_node_tracing::warn;
 ///
 /// warn!("block.delayed", block.number = 42_u32);
 ///
@@ -191,7 +191,7 @@ pub fn warn(input: TokenStream) -> TokenStream {
 /// as the event name.
 ///
 /// ```rust,ignore
-/// use miden_node_utils::tracing::error;
+/// use miden_node_tracing::error;
 ///
 /// let source = std::io::Error::other("database unavailable");
 /// error!(source, target: "node", "block.store_failed", block.number = 42_u32);
@@ -334,9 +334,9 @@ impl Event {
         let name = &self.name;
         let error = self.error.as_ref().map(|error| {
             quote! {
-                , exception.message = ::miden_node_utils::tracing::record_attribute(
+                , exception.message = ::miden_node_tracing::record_attribute(
                     &({
-                        use ::miden_node_utils::ErrorReport as _;
+                        use ::miden_node_tracing::ErrorReport as _;
                         (#error).as_report()
                     })
                 )
@@ -345,7 +345,7 @@ impl Event {
         let fields = self.fields.iter().map(RecordField::instrument_tokens);
 
         quote! {
-            ::tracing::#level!(
+            ::miden_node_tracing::__private::#level!(
                 #target
                 #parent
                 message = #name
@@ -389,7 +389,7 @@ fn merge_inferred_fields(attr: TokenStream2, fields: &[FieldPath]) -> Result<Tok
         return Ok(quote! { #(#args),* });
     }
 
-    let inferred_fields = quote! { #(#fields = ::tracing::field::Empty),* };
+    let inferred_fields = quote! { #(#fields = ::miden_node_tracing::field::Empty),* };
     let mut merged_existing_fields = false;
     let args = args
         .into_iter()
@@ -554,7 +554,7 @@ pub fn miden_span_record(input: TokenStream) -> TokenStream {
             .value_tokens(&name, field.path.is_count());
 
         quote! {
-            ::tracing::Span::current().record(#name, #value);
+            ::miden_node_tracing::Span::current().record(#name, #value);
         }
     });
 
@@ -687,11 +687,11 @@ impl RecordValue {
             quote! {
                 fn __miden_assert_field_name<T>(_: &T)
                 where
-                    T: ::miden_node_utils::tracing::RecordAttribute + ?Sized,
+                    T: ::miden_node_tracing::RecordAttribute + ?Sized,
                 {
                     const {
                         assert!(
-                            ::miden_node_utils::tracing::field_name_allowed(
+                            ::miden_node_tracing::field_name_allowed(
                                 T::FIELD_NAMES,
                                 #field_name,
                                 T::PLURALIZE_FIELD_NAMES,
@@ -721,7 +721,7 @@ impl RecordValue {
                 value => {
                     #assert_field_name
                     #assert_count
-                    ::miden_node_utils::tracing::record_attribute(value)
+                    ::miden_node_tracing::record_attribute(value)
                 }
             }
         }

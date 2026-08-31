@@ -1,5 +1,5 @@
 use miden_node_proto::domain::proof_request::BlockProofRequest;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::{BlockInputs, BlockNumber, SignedBlock};
 use miden_protocol::utils::serde::Serializable;

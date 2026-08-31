@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use miden_node_proto::clients::{RemoteProverClient, RemoteProverProxyStatusClient};
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::{debug, miden_instrument, warn};
+use miden_node_tracing::{debug, miden_instrument, warn};
 use miden_protocol::utils::serde::Serializable;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;

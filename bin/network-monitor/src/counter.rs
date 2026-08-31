@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use miden_node_proto::clients::RpcClient;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{debug, error, info, miden_instrument, warn};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{debug, error, info, miden_instrument, warn};
 use miden_protocol::account::auth::AuthSecretKey;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountPatch};
 use miden_protocol::asset::AssetVault;

@@ -3,10 +3,17 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use backon::ExponentialBuilder;
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{
+    ErrorSpanExt,
+    Instrument,
+    info,
+    miden_instrument,
+    miden_span_record,
+    warn,
+};
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::retry::{self, Retryable};
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, info, miden_instrument, miden_span_record, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -50,7 +57,6 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
-use tracing::Instrument;
 
 use crate::actor::candidate::{SponsoredFeatureNote, TransactionCandidate};
 use crate::clients::{RemoteTransactionProver, RpcClient, RpcError};
@@ -281,7 +287,7 @@ impl NtxContext {
                 // the parent runtime handle to drive async RPC callbacks.
                 let ctx = self.clone();
                 let handle = tokio::runtime::Handle::current();
-                let span = tracing::Span::current();
+                let span = miden_node_tracing::Span::current();
 
                 let (executed_tx, failed_notes, deferred_notes, oversized_notes, scripts_to_cache) =
                     spawn_blocking_in_current_span(move || {
@@ -336,7 +342,7 @@ impl NtxContext {
             })
             .in_current_span()
             .await
-            .inspect_err(|err| tracing::Span::current().set_error(err))
+            .inspect_err(|err| miden_node_tracing::Span::current().set_error(err))
         }
     }
 

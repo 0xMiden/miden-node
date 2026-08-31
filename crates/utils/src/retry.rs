@@ -6,7 +6,7 @@
 //!
 //! ```ignore
 //! use miden_node_utils::retry::{self, Retryable};
-//! use miden_node_utils::tracing::warn;
+//! use miden_node_tracing::warn;
 //!
 //! let value = (|| async { do_thing().await })
 //!     .retry(retry::exponential(min, max))

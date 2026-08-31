@@ -3,9 +3,8 @@ use std::future::Future;
 use std::time::Duration;
 
 use anyhow::Context;
+use miden_node_tracing::{error, info};
 pub use tokio_util::sync::CancellationToken;
-
-use crate::tracing::{error, info};
 
 /// Time allowed for services to finish after a shutdown signal before the process exits.
 pub const GRACE_PERIOD: Duration = Duration::from_secs(10);

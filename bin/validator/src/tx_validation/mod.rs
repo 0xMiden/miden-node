@@ -1,8 +1,8 @@
 mod data_store;
 
 pub use data_store::TransactionInputsDataStore;
-use miden_node_utils::spawn::{spawn_blocking_in_current_span, spawn_blocking_in_span};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::spawn::{spawn_blocking_in_current_span, spawn_blocking_in_span};
+use miden_node_tracing::{Instrument, info_span, miden_instrument};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::errors::TransactionVerifierError;
 use miden_protocol::transaction::{
@@ -13,7 +13,6 @@ use miden_protocol::transaction::{
 };
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{TransactionExecutor, TransactionExecutorError};
-use tracing::{Instrument, info_span};
 
 use crate::COMPONENT;
 

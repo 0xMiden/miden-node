@@ -12,7 +12,7 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use maud::Markup;
-use miden_node_utils::tracing::{info, miden_instrument};
+use miden_node_tracing::{info, miden_instrument};
 use tokio::sync::watch;
 
 use crate::config::MonitorConfig;

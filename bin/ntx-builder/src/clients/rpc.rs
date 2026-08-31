@@ -22,9 +22,9 @@ use miden_node_proto::generated::rpc::account_request::account_detail_request::{
 use miden_node_proto::generated::rpc::account_request::account_detail_request::storage_map_detail_request::MapKeys;
 use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, BlockSubscriptionResponse};
 use miden_node_proto::generated::{self as proto};
-use miden_node_utils::ErrorReport;
+use miden_node_tracing::ErrorReport;
 use miden_node_utils::retry::{self, Retryable};
-use miden_node_utils::tracing::{debug, info, miden_instrument, warn};
+use miden_node_tracing::{debug, info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,

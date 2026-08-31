@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use miden_node_utils::tracing::debug;
+use miden_node_tracing::debug;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
 use miden_protocol::transaction::PartialBlockchain;

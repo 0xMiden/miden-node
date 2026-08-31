@@ -4,9 +4,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once};
 
 use arc_swap::ArcSwap;
-use miden_node_utils::ErrorReport;
+use miden_node_tracing::{
+    ErrorReport,
+    Instrument,
+    debug,
+    miden_instrument,
+    miden_span_record,
+    warn,
+};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record, warn};
 use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
 use miden_protocol::block::account_tree::AccountMutationSet;
@@ -19,7 +25,6 @@ use miden_protocol::utils::serde::Serializable;
 use rayon::ThreadPool;
 use thread_priority::{ThreadPriority, set_current_thread_priority};
 use tokio::sync::{mpsc, watch};
-use tracing::Instrument;
 
 use super::WriteRequest;
 use crate::account_state_forest::{
@@ -561,7 +566,7 @@ impl WriteWorker {
 /// pool rather than the global one. The caller's tracing span is propagated so spans opened
 /// inside `op` stay parented under it.
 fn run_on_pool<T: Send>(pool: &ThreadPool, op: impl FnOnce() -> T + Send) -> T {
-    let span = tracing::Span::current();
+    let span = miden_node_tracing::Span::current();
     tokio::task::block_in_place(|| pool.install(|| span.in_scope(op)))
 }
 

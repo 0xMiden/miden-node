@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Context;
+use miden_node_tracing::{debug, error, info, miden_instrument, warn};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::{debug, error, info, miden_instrument, warn};
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::TransactionId;

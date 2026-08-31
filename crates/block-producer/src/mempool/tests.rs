@@ -175,7 +175,7 @@ fn output_budget_ordered_child_transactions()
 #[tokio::test]
 #[serial(open_telemetry_tracing)]
 async fn add_transaction_traces_are_correct() {
-    let (mut rx_export, _rx_shutdown) = miden_node_utils::logging::setup_test_tracing().unwrap();
+    let (mut rx_export, _rx_shutdown) = miden_node_tracing::setup_test_tracing().unwrap();
 
     let (mut uut, _) = Mempool::for_tests();
     let txs = MockProvenTxBuilder::sequential();

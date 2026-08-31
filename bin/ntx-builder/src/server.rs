@@ -1,10 +1,10 @@
 use anyhow::Context;
 use miden_node_proto::server::ntx_builder_api;
 use miden_node_proto_build::ntx_builder_api_descriptor;
-use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
+use miden_node_tracing::grpc::grpc_trace_fn;
+use miden_node_tracing::info;
+use miden_node_tracing::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_node_utils::tracing::info;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;

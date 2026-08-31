@@ -1,7 +1,7 @@
 use miden_node_proto::decode::read_block_range;
 use miden_node_proto::generated as proto;
+use miden_node_tracing::{debug, miden_instrument, miden_span_record};
 use miden_node_utils::limiter::QueryParamNullifierPrefixLimit;
-use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
 
 use super::{

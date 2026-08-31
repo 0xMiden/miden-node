@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus};
-use miden_node_utils::tracing::warn;
+use miden_node_tracing::warn;
 use serde::{Deserialize, Serialize};
 
 use crate::LOG_TARGET;

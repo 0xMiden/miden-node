@@ -6,16 +6,22 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_store::state::State;
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{
+    ErrorSpanExt,
+    Instrument,
+    Span,
+    error,
+    miden_instrument,
+    miden_span_record,
+};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, error, miden_instrument, miden_span_record};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{BatchId, ProposedBatch, ProvenBatch};
 use miden_protocol::transaction::TransactionId;
 use miden_tx_batch::BatchExecutor;
 use tokio::task::{JoinError, JoinSet};
 use tokio::time::{Instant, MissedTickBehavior};
-use tracing::{Instrument, Span};
 use url::Url;
 
 use crate::domain::batch::SelectedBatch;
@@ -165,7 +171,8 @@ impl BatchBuilder {
         };
 
         self.active_jobs.spawn(
-            async move { job.build_batch(batch).await }.instrument(tracing::Span::current()),
+            async move { job.build_batch(batch).await }
+                .instrument(miden_node_tracing::Span::current()),
         );
     }
 

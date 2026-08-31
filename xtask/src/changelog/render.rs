@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use super::{Impact, InvalidChangelogEntry, ReleaseNoteEntry, Scope};
+use super::{Impact, InvalidChangelogEntry, InvalidChangelogSource, ReleaseNoteEntry, Scope};
 
 pub(super) fn release_notes(
     title: &str,
@@ -52,10 +52,19 @@ fn append_invalid_entries(notes: &mut String, invalid_entries: &[InvalidChangelo
         .expect("writing to String cannot fail");
 
     for entry in invalid_entries {
-        let pr_number = entry.pr_number;
         let reason = &entry.reason;
 
-        writeln!(notes, "- #{pr_number}: {reason}").expect("writing to String cannot fail");
+        match &entry.source {
+            InvalidChangelogSource::PullRequest(pr_number) => {
+                writeln!(notes, "- Broken PR #{pr_number}: {reason}")
+                    .expect("writing to String cannot fail");
+            },
+            InvalidChangelogSource::Commit(commit) => {
+                let abbreviated_commit = commit.chars().take(12).collect::<String>();
+                writeln!(notes, "- Missing PR for commit {abbreviated_commit}: {reason}")
+                    .expect("writing to String cannot fail");
+            },
+        }
     }
 }
 
@@ -173,7 +182,7 @@ mod tests {
     #[test]
     fn renders_callouts_and_changes_by_scope() {
         let invalid_entries = vec![InvalidChangelogEntry {
-            pr_number: 9,
+            source: InvalidChangelogSource::PullRequest(9),
             reason: "missing `## Changelog` section".to_owned(),
             order: 0,
         }];
@@ -216,7 +225,7 @@ mod tests {
 
 ## Changelog Entries Requiring Attention
 
-- #9: missing `## Changelog` section
+- Broken PR #9: missing `## Changelog` section
 
 ## Breaking Changes
 

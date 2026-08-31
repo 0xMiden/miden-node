@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
-use miden_node_utils::tracing::{debug, warn};
+use miden_node_utils::tracing::{info, warn};
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockNumber, Blockchain};
 use miden_protocol::crypto::merkle::smt::LargeSmt;
@@ -123,9 +123,10 @@ impl<T> PublishedGenerations<T> {
 /// generation also holds back SQLite history pruning (see [`PublishedGenerations::prune_tip`]).
 ///
 /// Readers are expected to be request-scoped, so a superseded generation should be released well
-/// within a block interval. Outliving supersession by more than
-/// [`SNAPSHOT_SUPERSEDED_WARN_THRESHOLD`] is logged at warn level; a generation that is never
-/// superseded (the latest at shutdown) is released silently regardless of age.
+/// within a block interval. Every release is logged at info level with the time held past
+/// supersession, so the field is always present for alerting; outliving supersession by more than
+/// [`SNAPSHOT_SUPERSEDED_WARN_THRESHOLD`] escalates the event to warn level. A generation that is
+/// never superseded (the latest at shutdown) reports zero regardless of age.
 pub(in crate::state) struct SnapshotGuard {
     live: Arc<AtomicUsize>,
     created_at: Instant,
@@ -157,11 +158,11 @@ impl Drop for SnapshotGuard {
         let remaining = self.live.fetch_sub(1, Ordering::Relaxed) - 1;
         let lifetime_ms = u64::try_from(self.created_at.elapsed().as_millis()).unwrap_or(u64::MAX);
         let block_num = self.block_num.as_u32();
-        let superseded_for = self.superseded_at.get().map(Instant::elapsed);
-        if let Some(superseded_for) =
-            superseded_for.filter(|held| *held > SNAPSHOT_SUPERSEDED_WARN_THRESHOLD)
-        {
-            let superseded_for_ms = u64::try_from(superseded_for.as_millis()).unwrap_or(u64::MAX);
+        // A never-superseded snapshot (the latest at shutdown) reports zero time held past
+        // supersession.
+        let superseded_for = self.superseded_at.get().map_or(Duration::ZERO, Instant::elapsed);
+        let superseded_for_ms = u64::try_from(superseded_for.as_millis()).unwrap_or(u64::MAX);
+        if superseded_for > SNAPSHOT_SUPERSEDED_WARN_THRESHOLD {
             warn!(
                 target: COMPONENT,
                 "State snapshot held for excessive time after supersession",
@@ -171,11 +172,12 @@ impl Drop for SnapshotGuard {
                 snapshots.live = remaining
             );
         } else {
-            debug!(
+            info!(
                 target: COMPONENT,
                 "State snapshot released",
                 block.number = block_num,
                 snapshot.lifetime_ms = lifetime_ms,
+                snapshot.superseded_for_ms = superseded_for_ms,
                 snapshots.live = remaining
             );
         }

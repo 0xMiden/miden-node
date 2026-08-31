@@ -101,6 +101,7 @@ jobs:
               [
                 {"component":"node","bin":"miden-node","port":57291},
                 {"component":"validator","bin":"miden-validator","port":50101},
+                {"component":"note-transport","bin":"miden-note-transport","port":57292},
                 {"component":"ntx-builder","bin":"miden-ntx-builder","port":50301},
                 {"component":"remote-prover","bin":"miden-remote-prover","port":50051},
                 {"component":"network-monitor","bin":"miden-network-monitor","port":3000},

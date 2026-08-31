@@ -154,6 +154,10 @@ install-node: ## Installs node
 install-validator: ## Installs validator
 	cargo install --path bin/validator --locked
 
+.PHONY: install-note-transport
+install-note-transport: ## Installs note transport
+	cargo install --path bin/note-transport --locked
+
 .PHONY: install-ntx-builder
 install-ntx-builder: ## Installs ntx-builder
 	cargo install --path bin/ntx-builder --locked
@@ -214,7 +218,14 @@ local-network-logs: ## Follows logs for the local development network
 	$(DOCKER_COMMAND) compose $(COMPOSE_OVERRIDE_ARGS) $(COMPOSE_PROFILE_ARGS) logs -f
 
 .PHONY: docker-build
-docker-build: docker-build-node docker-build-validator docker-build-ntx-builder docker-build-monitor docker-build-remote-prover docker-build-benchmark ## Builds all Docker images
+docker-build: ## Builds all Docker images
+docker-build: docker-build-node \
+              docker-build-validator \
+              docker-build-note-transport \
+              docker-build-ntx-builder \
+              docker-build-monitor \
+              docker-build-remote-prover \
+              docker-build-benchmark
 
 .PHONY: docker-build-node
 docker-build-node: ## Builds the Miden node using Docker
@@ -243,6 +254,20 @@ docker-build-validator: ## Builds the Miden validator using Docker
                  --build-arg BIN=miden-validator \
                  --build-arg PORT=50101 \
                  -t miden-validator .
+
+.PHONY: docker-build-note-transport
+docker-build-note-transport: ## Builds the Miden note transport service using Docker
+	@CREATED=$$(date -u +'%Y-%m-%dT%H:%M:%SZ') && \
+	VERSION="$(DOCKER_VERSION)" && \
+	COMMIT=$$(git rev-parse HEAD) && \
+	$(DOCKER_COMMAND) build $(DOCKER_PULL_ARG) $(DOCKER_PLATFORM_ARG) \
+                 --build-arg CREATED="$$CREATED" \
+                 --build-arg VERSION="$$VERSION" \
+                 --build-arg COMMIT="$$COMMIT" \
+                 --build-arg BUILDER="$(DOCKER_BUILDER)" \
+                 --build-arg BIN=miden-note-transport \
+                 --build-arg PORT=57292 \
+                 -t miden-note-transport .
 
 .PHONY: docker-build-ntx-builder
 docker-build-ntx-builder: ## Builds the Miden network transaction builder using Docker

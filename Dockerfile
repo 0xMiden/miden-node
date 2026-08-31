@@ -108,6 +108,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo-registry-local-${TARGETARCH},targ
     cargo build --release --locked --jobs "$JOBS" \
         --bin miden-node \
         --bin miden-validator \
+        --bin miden-note-transport \
         --bin miden-ntx-builder \
         --bin miden-network-monitor \
         --bin miden-remote-prover \
@@ -115,6 +116,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo-registry-local-${TARGETARCH},targ
     mkdir -p /app/bin && \
     cp /app/target/release/miden-node \
         /app/target/release/miden-validator \
+        /app/target/release/miden-note-transport \
         /app/target/release/miden-ntx-builder \
         /app/target/release/miden-network-monitor \
         /app/target/release/miden-remote-prover \

@@ -36,6 +36,7 @@ enum Scope {
     Protocol,
     Docs,
     Node,
+    NoteTransport,
     NetworkMonitor,
     NtxBuilder,
     Prover,

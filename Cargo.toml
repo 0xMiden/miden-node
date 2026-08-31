@@ -4,6 +4,7 @@ members = [
   "bin/large-account-benchmark",
   "bin/network-monitor",
   "bin/node",
+  "bin/note-transport",
   "bin/ntx-builder",
   "bin/remote-prover",
   "bin/stress-test",

@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{

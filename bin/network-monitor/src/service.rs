@@ -10,7 +10,7 @@
 use std::time::Duration;
 
 use miden_node_proto::clients::{Builder as ClientBuilder, GrpcClient};
-use miden_node_utils::tracing::debug;
+use miden_node_tracing::debug;
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 use url::Url;

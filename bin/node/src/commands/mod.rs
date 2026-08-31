@@ -9,7 +9,7 @@ mod store;
 
 use clap::Subcommand;
 pub use lifecycle::{BootstrapCommand, MigrateCommand};
-use miden_node_utils::logging::OpenTelemetry;
+use miden_node_tracing::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
 pub use modes::{FullNodeCommand, SequencerCommand};
 pub use recover::RecoverCommand;

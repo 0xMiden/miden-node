@@ -11,11 +11,10 @@ use allowlist::{NoteScriptNotAllowlisted, partition_by_allowlist};
 use anyhow::Context;
 use candidate::{SponsoredFeatureNote, TransactionCandidate};
 use futures::FutureExt;
-use miden_node_utils::ErrorReport;
+use miden_node_tracing::{ErrorReport, debug, error, info, miden_instrument, warn};
 use miden_node_utils::formatting::format_opt;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::{debug, error, info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId, AccountPatch};
 use miden_protocol::block::BlockNumber;
@@ -172,6 +171,7 @@ impl AccountActorContext {
                     url.clone(),
                     miden_protocol::Word::default(),
                     trusted_validator_signing_keys,
+                    Duration::from_secs(10),
                     Duration::from_millis(100),
                     Duration::from_secs(30),
                 )

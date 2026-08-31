@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::Result;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,

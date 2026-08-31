@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Context;
-use miden_node_utils::tracing::{debug, miden_instrument};
+use miden_node_tracing::{debug, miden_instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::Db;

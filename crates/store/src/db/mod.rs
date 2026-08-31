@@ -8,12 +8,12 @@ use std::sync::Arc;
 use anyhow::Context;
 use diesel::{Connection, SqliteConnection};
 use miden_node_proto::domain::account::AccountInfo;
+use miden_node_tracing::{info, miden_instrument, warn};
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamLimiter,
     QueryParamNoteCommitmentLimit,
 };
-use miden_node_utils::tracing::{info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountHeader, AccountId, AccountStorageHeader, StorageMapKey};
 use miden_protocol::asset::{Asset, AssetId};

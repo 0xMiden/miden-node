@@ -20,12 +20,12 @@ use diesel::{
     SqliteConnection,
 };
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, AccountVaultDetails};
+use miden_node_tracing::miden_instrument;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamAccountIdLimit,
     QueryParamLimiter,
 };
-use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,
@@ -1672,7 +1672,7 @@ pub(crate) fn prune_history(
     prune_tip: BlockNumber,
 ) -> Result<(usize, usize, usize), DatabaseError> {
     let cutoff_block = i64::from(prune_tip.as_u32().saturating_sub(HISTORICAL_BLOCK_RETENTION));
-    tracing::Span::current().record("cutoff_block", cutoff_block);
+    miden_node_tracing::Span::current().record("cutoff_block", cutoff_block);
     let vault_deleted = prune_account_vault_assets(conn, cutoff_block)?;
     let storage_deleted = prune_account_storage_map_values(conn, cutoff_block)?;
     let codes_deleted = prune_account_codes(conn, cutoff_block)?;

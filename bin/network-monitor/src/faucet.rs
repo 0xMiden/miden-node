@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use hex;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{debug, info, miden_instrument, trace, warn};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{debug, info, miden_instrument, trace, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

@@ -14,14 +14,14 @@ use miden_node_proto::clients::{
 use miden_node_proto::server::{rpc_api, sequencer_api};
 use miden_node_proto_build::rpc_api_descriptor;
 use miden_node_store::state::{BlockWriter, ProofWriter, State};
+use miden_node_tracing::grpc::grpc_trace_fn;
+use miden_node_tracing::info;
+use miden_node_tracing::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_node_utils::grpc;
-use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_node_utils::tracing::info;
 use miden_protocol::block::BlockNumber;
 use rand::RngExt;
 use tokio::net::TcpListener;

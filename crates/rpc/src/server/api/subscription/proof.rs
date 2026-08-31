@@ -1,6 +1,6 @@
 use miden_node_proto::generated as proto;
+use miden_node_tracing::{debug, miden_instrument};
 use miden_node_utils::grpc::ClientIp;
-use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::block::BlockNumber;
 
 use super::super::{COMPONENT, RpcService};

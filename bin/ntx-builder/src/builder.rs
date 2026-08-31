@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use futures::Stream;
+use miden_node_tracing::{info, miden_instrument};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::{info, miden_instrument};
 use miden_protocol::account::AccountId;
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use tokio::net::TcpListener;
@@ -112,7 +112,11 @@ impl NetworkTransactionBuilder {
         let mut tasks = Tasks::new();
 
         // Start the gRPC server.
-        let server = NtxBuilderRpcServer::new(self.db.reader(), self.config.max_note_attempts);
+        let server = NtxBuilderRpcServer::new(
+            self.db.reader(),
+            self.config.max_note_attempts,
+            self.config.grpc_timeout,
+        );
         let server_shutdown = shutdown.clone();
         tasks.spawn("grpc-server", async move {
             server

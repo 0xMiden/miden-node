@@ -1,5 +1,5 @@
 use anyhow::{Context, ensure};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_protocol::block::{BlockNumber, BlockProof};
 use miden_protocol::utils::serde::Deserializable;
 

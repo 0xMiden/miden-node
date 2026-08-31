@@ -1,8 +1,8 @@
 use miden_block_prover::{BlockProverError as LocalBlockProverError, LocalBlockProver};
 use miden_node_proto::clients::{Builder, RemoteProverClient};
 use miden_node_proto::generated::remote_prover::{ProofRequest, ProofType};
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
 use miden_protocol::batch::OrderedBatches;
 use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof, ProposedBlock};
 use miden_protocol::errors::ProposedBlockError;

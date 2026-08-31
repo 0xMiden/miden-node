@@ -12,13 +12,13 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
+use miden_node_tracing::miden_instrument;
 use miden_node_utils::limiter::{
     MAX_RESPONSE_PAYLOAD_BYTES,
     QueryParamAccountIdLimit,
     QueryParamLimiter,
     QueryParamNoteCommitmentLimit,
 };
-use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{NoteHeader, NoteId, Nullifier};

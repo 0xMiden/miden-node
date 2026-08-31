@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use anyhow::Result;
 use miden_node_store::state::{BlockWriter, ProofWriter, State};
+use miden_node_tracing::{debug, error, info, miden_instrument};
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::{debug, error, info, miden_instrument};
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::ProvenTransaction;

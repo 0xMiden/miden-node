@@ -4,9 +4,9 @@ use anyhow::Context;
 use clap::ArgGroup;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_store::{DataDirectory, Db, State};
+use miden_node_tracing::info;
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::{OfficialNetwork, fetch_genesis_block, read_genesis_block};
-use miden_node_utils::tracing::info;
 
 use super::ENV_DATA_DIRECTORY;
 

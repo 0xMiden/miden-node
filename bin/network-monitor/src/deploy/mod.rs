@@ -23,9 +23,9 @@ use miden_node_proto::generated::rpc::{
     SyncChainMmrRequest,
 };
 use miden_node_proto::generated::transaction::ProvenTransaction as ProtoProvenTransaction;
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{debug, info, miden_instrument, warn};
 use miden_node_utils::retry;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{debug, info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
     Account,

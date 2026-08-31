@@ -4,9 +4,9 @@ use std::path::Path;
 use anyhow::Context;
 use miden_node_store::BlockStore;
 use miden_node_store::genesis::GenesisBlock;
+use miden_node_tracing::info;
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::read_genesis_block;
-use miden_node_utils::tracing::info;
 use miden_validator::DataDirectory;
 
 /// Runs the `bootstrap` command: seeds this validator's database from the genesis block file

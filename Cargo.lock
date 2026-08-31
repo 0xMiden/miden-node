@@ -3863,7 +3863,7 @@ dependencies = [
  "fs-err",
  "hex",
  "miden-node-proto",
- "miden-node-utils",
+ "miden-node-tracing",
  "miden-protocol",
  "miden-standards",
  "miden-tx",
@@ -4169,6 +4169,7 @@ dependencies = [
  "humantime",
  "maud",
  "miden-node-proto",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-note-transport-proto",
  "miden-protocol",
@@ -4185,7 +4186,6 @@ dependencies = [
  "time",
  "tokio",
  "tonic",
- "tracing",
  "url",
 ]
 
@@ -4200,12 +4200,12 @@ dependencies = [
  "miden-node-proto",
  "miden-node-rpc",
  "miden-node-store",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "tokio",
  "tokio-stream",
  "tonic",
- "tracing",
  "url",
 ]
 
@@ -4220,6 +4220,7 @@ dependencies = [
  "miden-block-prover",
  "miden-node-proto",
  "miden-node-store",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-standards",
@@ -4234,7 +4235,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-health",
- "tracing",
  "url",
 ]
 
@@ -4251,13 +4251,13 @@ dependencies = [
  "deadpool-sync",
  "diesel",
  "fs-err",
+ "miden-node-tracing",
  "miden-protocol",
  "rusqlite",
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4281,6 +4281,7 @@ dependencies = [
  "http 1.5.0",
  "miden-node-grpc-error-macro",
  "miden-node-proto-build",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-standards",
@@ -4295,7 +4296,6 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tower",
- "tracing",
  "url",
 ]
 
@@ -4323,6 +4323,7 @@ dependencies = [
  "miden-node-proto",
  "miden-node-proto-build",
  "miden-node-store",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-standards",
@@ -4341,7 +4342,6 @@ dependencies = [
  "tonic-web",
  "tower",
  "tower-http",
- "tracing",
  "url",
 ]
 
@@ -4365,6 +4365,7 @@ dependencies = [
  "miden-node-db",
  "miden-node-proto",
  "miden-node-test-macro",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-standards",
@@ -4378,7 +4379,6 @@ dependencies = [
  "thread-priority",
  "tokio",
  "toml",
- "tracing",
 ]
 
 [[package]]
@@ -4390,6 +4390,7 @@ dependencies = [
  "futures",
  "miden-node-proto",
  "miden-node-store",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-standards",
@@ -4408,6 +4409,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-node-tracing"
+version = "0.16.0-rc.3"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "http 1.5.0",
+ "http-body-util",
+ "miden-node-tracing-macro",
+ "miden-protocol",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "thiserror 2.0.20",
+ "tokio",
+ "tonic",
+ "tower-http",
+ "tower_governor",
+ "tracing",
+ "tracing-forest",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "trybuild",
+]
+
+[[package]]
 name = "miden-node-tracing-macro"
 version = "0.16.0-rc.3"
 dependencies = [
@@ -4422,20 +4448,15 @@ version = "0.16.0-rc.3"
 dependencies = [
  "anyhow",
  "backon",
- "bytes",
  "clap",
  "fs-err",
  "http 1.5.0",
- "http-body-util",
  "humantime",
  "itertools 0.14.0",
  "lru",
  "miden-crypto",
- "miden-node-tracing-macro",
+ "miden-node-tracing",
  "miden-protocol",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "reqwest",
  "thiserror 2.0.20",
  "tokio",
@@ -4444,11 +4465,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tower_governor",
- "tracing",
- "tracing-forest",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "trybuild",
  "url",
 ]
 
@@ -4494,6 +4510,7 @@ dependencies = [
  "miden-node-proto",
  "miden-node-proto-build",
  "miden-node-store",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-standards",
@@ -4507,7 +4524,6 @@ dependencies = [
  "tonic",
  "tonic-reflection",
  "tower-http",
- "tracing",
  "url",
 ]
 
@@ -4671,6 +4687,7 @@ dependencies = [
  "miden-block-prover",
  "miden-node-proto",
  "miden-node-proto-build",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-testing",
@@ -4684,7 +4701,6 @@ dependencies = [
  "tonic-reflection",
  "tonic-web",
  "tower-http",
- "tracing",
 ]
 
 [[package]]
@@ -4864,6 +4880,7 @@ dependencies = [
  "miden-node-proto",
  "miden-node-proto-build",
  "miden-node-store",
+ "miden-node-tracing",
  "miden-node-utils",
  "miden-protocol",
  "miden-testing",
@@ -4882,7 +4899,6 @@ dependencies = [
  "tonic-reflection",
  "tower",
  "tower-http",
- "tracing",
  "zeroize",
 ]
 

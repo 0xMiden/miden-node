@@ -14,8 +14,8 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+use miden_node_tracing::Span;
 use miden_protocol::block::{BlockNumber, Blockchain};
-use tracing::Span;
 
 use crate::account_state_forest::{AccountStateForest, AccountStateForestBackendReader};
 use crate::db::Db;

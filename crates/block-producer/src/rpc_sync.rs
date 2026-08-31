@@ -6,16 +6,15 @@ use anyhow::Context;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, ProofSubscriptionRequest};
 use miden_node_store::state::{BlockWriter, ProofWriter, State};
+use miden_node_tracing::{Instrument, debug, info, info_span, miden_instrument, warn};
 use miden_node_utils::retry::{self, RetryableWithContext};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::{debug, info, miden_instrument, warn};
 use miden_protocol::block::{BlockNumber, SignedBlock};
 use miden_protocol::utils::serde::Deserializable;
 use tokio_stream::StreamExt;
 use tonic_health::ServingStatus;
 use tonic_health::server::HealthReporter;
-use tracing::{Instrument, info_span};
 
 use crate::{COMPONENT, LOG_TARGET};
 

@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::note::NoteIdList;
-use miden_node_utils::tracing::{info, warn};
+use miden_node_tracing::{info, warn};
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::note::{Note, NoteId};

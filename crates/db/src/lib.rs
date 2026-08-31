@@ -11,7 +11,7 @@ pub use conv::{DatabaseTypeConversionError, SqlTypeConvert};
 use diesel::{RunQueryDsl, SqliteConnection};
 pub use errors::{DatabaseError, SchemaVerificationError};
 pub use manager::{ConnectionManager, ConnectionManagerError, configure_connection_on_creation};
-use tracing::Instrument;
+use miden_node_tracing::Instrument;
 
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
@@ -117,7 +117,7 @@ impl PinnedConnection {
         E: From<DatabaseError>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let span = tracing::Span::current();
+        let span = miden_node_tracing::Span::current();
         self.conn
             .interact(move |conn| {
                 let _guard = span.enter();
@@ -136,7 +136,7 @@ impl PinnedConnection {
         E: From<DatabaseError>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let span = tracing::Span::current();
+        let span = miden_node_tracing::Span::current();
         self.conn
             .interact(move |conn| {
                 let _guard = span.enter();

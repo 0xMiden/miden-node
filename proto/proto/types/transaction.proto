@@ -10,14 +10,11 @@ import "types/primitives.proto";
 
 // A proven transaction.
 //
-// Note that we currently require full transaction transparency for the validator set. This is a
-// temporary measure while Miden stabilizes its protocol and proof systems. To this end, a
-// transaction submission includes its **private** inputs, which a validator uses to verify that
-// the transaction execution and proofs are correct.
+// Validators require full transaction transparency. A transaction submission includes its
+// **private** inputs. A validator uses these inputs to verify the transaction execution and proof.
 //
-// Those inputs are sealed against the validator set's shared transaction encryption key, so the
-// nodes that relay a submission cannot read them: only a validator can. Submissions carrying
-// unsealed inputs are rejected. This requirement will be lifted as Miden matures.
+// The submitter seals these inputs with the shared transaction encryption key of the validator
+// set. Relay nodes cannot read the inputs. Validators reject submissions with unsealed inputs.
 message ProvenTransaction {
   // The transaction proof.
   //
@@ -46,16 +43,13 @@ message SealedTransactionInputs {
 
 // A proven batch of transactions.
 //
-// Note that we currently require full transaction transparency for the validator set. This is a
-// temporary measure while Miden stabilizes its protocol and proof systems. To this end, each
-// transaction includes its **private** inputs, which a validator uses to verify that the
-// transaction execution and proofs are correct.
+// Validators require full transaction transparency. Each transaction includes its **private**
+// inputs. A validator uses these inputs to verify the transaction execution and proof.
 //
-// Those inputs are sealed against the validator set's shared transaction encryption key, so the
-// nodes that relay a submission cannot read them: only a validator can. Batches carrying unsealed
-// inputs are rejected. This requirement will be lifted as Miden matures.
+// The submitter seals these inputs with the shared transaction encryption key of the validator
+// set. Relay nodes cannot read the inputs. Validators reject batches with unsealed inputs.
 //
-// In addition, in order to verify the batch itself, we also require the proposed batch.
+// The validator also requires the proposed batch to verify the batch proof.
 message TransactionBatch {
   // The batch proof.
   //
@@ -146,20 +140,19 @@ message TransactionEncryptionKey {
 
   // Validator attestations of this key (and of `next_key` when set).
   //
-  // Currently contains a single attestation from the validator that served the request.
-  // Collecting attestations from the whole validator set requires validator intercommunication
-  // and is planned as a follow-up; the wire format already accommodates it.
+  // Contains the attestation from the validator that served the request.
+  // The wire format permits attestations from multiple validators.
   repeated ValidatorKeyAttestation attestations = 4;
 
   // Set when a key rotation is scheduled: the key that replaces the current one, and the block
   // number at which it takes effect. Covered by the attestation commitment, so it cannot be
   // stripped or altered without invalidating the signatures.
   //
-  // Never set currently; key rotation is not implemented yet.
+  // The server does not set this field because it does not support key rotation.
   optional NextTransactionEncryptionKey next_key = 5;
 
-  // Reserved for future attestation evidence beyond the validator signatures, e.g. a TEE quote,
-  // signature chain, compose hash, app measurement, epoch, or accepted measurement set.
+  // Reserved for attestation evidence beyond validator signatures, such as a TEE quote, signature
+  // chain, compose hash, application measurement, epoch, or accepted measurement set.
   reserved 6 to 9;
 }
 

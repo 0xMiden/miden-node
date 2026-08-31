@@ -23,6 +23,7 @@ const NUMBER_FIELD_NAMES: &[&str] = &[
     "account.id.length",
     "account.index",
     "asset.amount",
+    "asset.balance",
     "batch.expiration_height",
     "batch.expires_at",
     "batch.reference_block.number",

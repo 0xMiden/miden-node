@@ -15,6 +15,7 @@ mod deploy;
 pub mod explorer;
 pub mod faucet;
 pub mod frontend;
+pub mod funding;
 mod monitor;
 pub mod note_transport;
 pub mod remote_prover;

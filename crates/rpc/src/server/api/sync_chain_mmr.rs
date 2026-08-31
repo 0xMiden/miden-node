@@ -1,9 +1,8 @@
 use miden_node_proto::generated as proto;
 use miden_node_store::StateSyncError;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument};
 use miden_protocol::block::BlockNumber;
 use tonic::Status;
-use tracing::debug;
 
 use super::RpcService;
 use crate::{COMPONENT, LOG_TARGET};
@@ -25,8 +24,8 @@ impl proto::server::rpc_api::SyncChainMmr for RpcService {
         target = COMPONENT,
         name = "sync_chain_mmr",
         fields(
-            current_client_block_height = %request.current_client_block_height,
-            finality_level = %request.finality_level().as_str_name(),
+            current_client_block_height = request.current_client_block_height,
+            finality_level = request.finality_level()
         ),
         err,
     )]

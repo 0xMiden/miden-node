@@ -1,59 +1,9 @@
 use std::net::{IpAddr, SocketAddr};
 use std::task::{Context as TaskContext, Poll};
-use std::time::Duration;
 
-use anyhow::{Context, ensure};
-use governor::middleware::StateInformationMiddleware;
-use tower::limit::GlobalConcurrencyLimitLayer;
 use tower::{Layer, Service};
 use tower_governor::GovernorError;
-use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::{KeyExtractor, SmartIpKeyExtractor};
-
-use crate::clap::GrpcOptionsExternal;
-
-/// Builds a global concurrency limit layer using the configured semaphore.
-pub fn rate_limit_concurrent_connections(
-    grpc_options: GrpcOptionsExternal,
-) -> GlobalConcurrencyLimitLayer {
-    tower::limit::GlobalConcurrencyLimitLayer::new(grpc_options.max_concurrent_connections as usize)
-}
-
-/// Creates a per-IP rate limit layer using the configured governor settings.
-pub fn rate_limit_per_ip(
-    grpc_options: GrpcOptionsExternal,
-) -> anyhow::Result<
-    tower_governor::GovernorLayer<GrpcIpExtractor, StateInformationMiddleware, tonic::body::Body>,
-> {
-    let nanos_per_replenish = Duration::from_secs(1)
-        .as_nanos()
-        .checked_div(u128::from(grpc_options.replenish_n_per_second_per_ip.get()))
-        .unwrap_or_default();
-    ensure!(
-        nanos_per_replenish > 0,
-        "grpc.replenish_n_per_second must be less than or equal to 1e9"
-    );
-    let replenish_period = Duration::from_nanos(
-        u64::try_from(nanos_per_replenish).context("invalid gRPC rate limit configuration")?,
-    );
-    let config = GovernorConfigBuilder::default()
-        .key_extractor(GrpcIpExtractor::default())
-        .period(replenish_period)
-        .burst_size(grpc_options.burst_size.into())
-        .use_headers()
-        .finish()
-        .context("invalid gRPC rate limit configuration")?;
-    let limiter = std::sync::Arc::clone(config.limiter());
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_mins(1));
-        loop {
-            interval.tick().await;
-            // avoid a DoS vector
-            limiter.retain_recent();
-        }
-    });
-    Ok(tower_governor::GovernorLayer::new(config))
-}
 
 /// The originating client IP, resolved by [`ResolveClientIpLayer`] and stored in a request's
 /// extensions.
@@ -76,8 +26,8 @@ impl ClientIp {
 ///
 /// IP resolution reuses [`GrpcIpExtractor`], so clients behind a load balancer or reverse proxy are
 /// identified by their forwarded IP (via `X-Forwarded-For` / `X-Real-Ip` / `Forwarded` headers),
-/// falling back to the peer address. Resolving once at the transport layer keeps this consistent
-/// with the per-IP rate limiter and lets handlers read the result instead of re-deriving it.
+/// falling back to the peer address. Resolving once at the transport layer lets handlers read the
+/// result instead of re-deriving it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ResolveClientIpLayer;
 

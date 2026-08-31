@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::block::ValidatorKeysError;
 use miden_protocol::errors::{
     AccountDeltaError,
     AccountError,
@@ -72,13 +71,4 @@ pub enum GenesisConfigError {
     InvalidSecretKey(#[from] DeserializationError),
     #[error("provided signer config is not supported")]
     UnsupportedSignerConfig,
-    #[error(
-        "genesis configuration must list at least one validator public key in `validators`; \
-         only the built-in development configuration may rely on the insecure development key"
-    )]
-    MissingValidators,
-    #[error("invalid validator public key '{key}': {message}")]
-    InvalidValidatorKey { key: String, message: String },
-    #[error("invalid genesis validator set")]
-    ValidatorKeys(#[from] ValidatorKeysError),
 }

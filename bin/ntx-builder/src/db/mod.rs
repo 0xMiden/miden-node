@@ -1,24 +1,26 @@
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{DbReader, DbWriter};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{info, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::block::{BlockHeader, BlockNumber, SignedBlock, ValidatorKeys};
 use miden_protocol::crypto::merkle::mmr::PartialMmr;
-use miden_protocol::note::{NoteId, NoteScript, Nullifier};
+use miden_protocol::note::{Note, NoteId, NoteScript, Nullifier};
 #[cfg(test)]
 use miden_protocol::transaction::TransactionId;
 #[cfg(test)]
 use miden_standards::note::AccountTargetNetworkNote;
-use tracing::info;
 
 use crate::committed_block::CommittedBlockEffects;
 use crate::db::migrations::{bootstrap_database, migrate_database, verify_latest_schema};
 use crate::db::queries::NoteStatusRow;
+#[cfg(test)]
+use crate::sponsorship::SponsorshipNote;
 use crate::{COMPONENT, NoteError, db};
 
 pub(crate) mod queries;
@@ -155,6 +157,20 @@ impl NtxDbReader {
             .read("get_note_status", move |tx| crate::db::queries::get_note_status(tx, note_id))
             .await
     }
+
+    /// Returns the unconsumed `FEE_SPONSORSHIP` notes bound to the account's unconsumed feature
+    /// notes, grouped by feature note id. Used by transaction selection to attach each feature
+    /// note's sponsorships to its group.
+    pub(crate) async fn sponsorships_for_pending_notes(
+        &self,
+        account_id: AccountId,
+    ) -> Result<HashMap<NoteId, Vec<Note>>, DatabaseError> {
+        self.reader
+            .read("sponsorships_for_pending_notes", move |tx| {
+                queries::select_sponsorships_for_pending_notes(tx, account_id)
+            })
+            .await
+    }
 }
 
 /// Write handle to the ntx-builder database.
@@ -194,11 +210,14 @@ impl NtxDbWriter {
             .await
     }
 
+    /// Applies a committed block's effects and returns the accounts whose pending feature notes
+    /// gained a sponsorship in this block (one entry per sponsorship), so the coordinator can wake
+    /// their actors.
     pub(crate) async fn apply_committed_block(
         &self,
         effects: CommittedBlockEffects,
         chain_mmr: PartialMmr,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<Vec<AccountId>, DatabaseError> {
         self.writer
             .write("apply_committed_block", move |tx| {
                 queries::apply_committed_block(tx, &effects, &chain_mmr)
@@ -255,7 +274,7 @@ impl NtxDbWriter {
 #[miden_instrument(
     target = COMPONENT,
     name = "ntx_builder.database.load",
-    fields(path=%database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDbWriter> {
@@ -267,7 +286,7 @@ pub async fn load(database_filepath: PathBuf) -> anyhow::Result<NtxDbWriter> {
 #[miden_instrument(
     target = COMPONENT,
     name = "ntx_builder.database.load",
-    fields(path=%database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn load_with_pool_size(
@@ -296,9 +315,9 @@ fn open_with_pool_size(
 
     info!(
         target: COMPONENT,
-        sqlite = %database_filepath.display(),
-        connection_pool_size = %connection_pool_size,
-        "Connected to the database"
+        "Connected to the database",
+        path = database_filepath,
+        db.sqlite.connection_pool_size = connection_pool_size.get()
     );
 
     Ok(NtxDbWriter { writer, reader: NtxDbReader { reader } })
@@ -315,7 +334,7 @@ fn open_with_pool_size(
 #[miden_instrument(
     target = COMPONENT,
     name = "ntx_builder.database.bootstrap",
-    fields(path=%database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn bootstrap(database_filepath: PathBuf, genesis: &SignedBlock) -> anyhow::Result<()> {
@@ -381,6 +400,10 @@ impl NtxDbReader {
     pub(crate) async fn count_chain_state(&self) -> i64 {
         self.count("SELECT COUNT(*) FROM chain_state").await
     }
+
+    pub(crate) async fn count_sponsorship_notes(&self) -> i64 {
+        self.count("SELECT COUNT(*) FROM sponsorship_notes").await
+    }
 }
 
 /// Test-only write helpers.
@@ -422,6 +445,29 @@ impl NtxDbWriter {
         self.writer
             .write("mark_notes_consumed", move |tx| {
                 queries::mark_notes_consumed(tx, &nullifiers, block_num)
+            })
+            .await
+    }
+
+    pub(crate) async fn insert_sponsorship_notes(
+        &self,
+        notes: Vec<SponsorshipNote>,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("insert_sponsorship_notes", move |tx| {
+                queries::insert_sponsorship_notes(tx, &notes)
+            })
+            .await
+    }
+
+    pub(crate) async fn mark_sponsorships_consumed(
+        &self,
+        nullifiers: Vec<Nullifier>,
+        block_num: BlockNumber,
+    ) -> Result<(), DatabaseError> {
+        self.writer
+            .write("mark_sponsorships_consumed", move |tx| {
+                queries::mark_sponsorships_consumed(tx, &nullifiers, block_num)
             })
             .await
     }

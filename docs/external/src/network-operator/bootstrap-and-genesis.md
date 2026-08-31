@@ -37,26 +37,30 @@ after genesis. Each validator operator first prints their public key and sends i
 miden-validator pubkey --signing-key.kms-id <validator-N-kms-key-id>
 ```
 
-The full validator set is part of the genesis configuration, as a required top-level `validators` list in
-`genesis.toml`. A configuration file without `validators` is rejected; only the built-in development configuration (used
-when no config file is supplied) falls back to the predefined, insecure development signing key.
+The full validator set is passed on the command line, as one `--validator.key` flag per validator. There is no default
+set: the flag is required.
 
-```toml
-validators = [
-  "<validator-1-public-key-hex>",
-  "<validator-2-public-key-hex>",
-  "<validator-3-public-key-hex>",
-]
-```
-
-**One** operator then runs `genesis` with the genesis configuration. Building the genesis block requires no signing key:
+**One** operator then runs `genesis` with the genesis configuration and the collected keys. Building the genesis block
+requires no signing key:
 
 ```bash
 miden-validator genesis \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --config genesis.toml
+  --config genesis.toml \
+  --validator.key <validator-1-public-key-hex> \
+  --validator.key <validator-2-public-key-hex> \
+  --validator.key <validator-3-public-key-hex>
 ```
+
+Unless the configuration sets `native_faucet` to a pre-built account file, the native faucet is generated as a network
+account and holds no key of its own; minting from it is restricted to the faucet operator account generated alongside
+it. The operator starts with 1,000 MIDEN tokens so it can pay fees for the first mint requests. Both accounts are
+written to the accounts directory as `native_faucet.mac` and `faucet_operator.mac`, and the faucet account id is
+printed. The operator file carries the only signing key permitted to mint, so treat it as a secret.
+
+To run a faucet against the network, pass `faucet_operator.mac` to the faucet's `init --import`, and the faucet account
+id to `--faucet-account-id`.
 
 Upload `genesis-data/genesis.dat` so it is served at:
 
@@ -98,25 +102,19 @@ Each validator operator's own KMS key ID must be used when that operator starts 
   <TabItem value="unofficial" label="Unofficial network">
 
 **One** operator builds the genesis block; no signing key is needed. The genesis header commits to the full validator
-set, taken from the top-level `validators` list in `genesis.toml`. Each validator operator prints their public key with
-`miden-validator pubkey --signing-key.hex <validator-N-key-hex>` and sends it to the bootstrapping operator, who lists
-it in the genesis configuration. The `validators` list is required: a configuration file without it is rejected, and
-only the built-in development configuration (used when no config file is supplied) falls back to the predefined,
-insecure development signing key.
-
-```toml
-validators = [
-  "<validator-1-public-key-hex>",
-  "<validator-2-public-key-hex>",
-  "<validator-3-public-key-hex>",
-]
-```
+set, passed as one `--validator.key` flag per validator; there is no default set. Each validator operator generates a
+key-pair with `miden-validator keygen` (or prints the public key of an existing secret with
+`miden-validator pubkey --signing-key.hex <validator-N-key-hex>`) and sends the public key to the bootstrapping
+operator.
 
 ```bash
 miden-validator genesis \
   --genesis-block-directory genesis-data \
   --accounts-directory accounts \
-  --config genesis.toml
+  --config genesis.toml \
+  --validator.key <validator-1-public-key-hex> \
+  --validator.key <validator-2-public-key-hex> \
+  --validator.key <validator-3-public-key-hex>
 ```
 
 Distribute `genesis-data/genesis.dat` to the validator operators, who each seed their own database from it — including
@@ -146,12 +144,25 @@ miden-ntx-builder bootstrap \
   </TabItem>
 </Tabs>
 
-The key each validator operator starts their validator with must match the public key committed for them in the genesis
-configuration's `validators` list.
+The key each validator operator starts their validator with must match the public key committed for them via the
+`genesis` command's `--validator.key` flags.
+
+## Storage Key Ceremony
+
+After genesis is built, every listed validator must join one offline DKG ceremony. The ceremony creates the shared
+public storage key and one distinct secret share per validator. No coordinator can derive those shares.
+
+Each operator first registers a fresh DKG identity with the validator signing key committed in genesis. One coordinator
+uses every signed registration to prepare the common ceremony. Every operator then creates two public dealings, checks
+and signs the same full transcript, and completes both rounds locally. The DKG and database bootstrap may run in either
+order, but both must finish before the validator starts.
+
+All listed validators must contribute to the ceremony even when the recovery threshold is lower. If any participant
+drops out or any transcript differs, discard the incomplete ceremony and start a new one with fresh identities and
+sessions. See [storage key setup](./validator.md#storage-key-setup) for the commands and file rules.
 
 Bootstrap takes no transaction encryption key: that key is configured separately when the validator is started, and
-nothing cross-checks it against the genesis block. A validator started without one falls back to a publicly known
-insecure default, which after bootstrap means every submission on the network is encrypted to a key anyone can read. See
-[Validator](./validator.md) for how to provision it.
+nothing cross-checks it against the genesis block. Every validator must be started with the same encryption key; the
+validator refuses to start without one. See [Validator](./validator.md) for how to provision it.
 
 <!-- markdownlint-enable MD033 MD041 -->

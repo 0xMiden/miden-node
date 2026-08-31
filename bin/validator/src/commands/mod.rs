@@ -1,4 +1,5 @@
 mod bootstrap;
+mod dkg;
 mod export_private_record;
 mod genesis;
 mod issue_private_record_share;
@@ -11,18 +12,17 @@ use std::sync::Arc;
 use anyhow::Context;
 use base64::Engine;
 use clap::Parser;
-use miden_node_utils::clap::GrpcOptionsInternal;
-use miden_node_utils::genesis::INSECURE_VALIDATOR_SIGNING_KEY_HEX;
+use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+use miden_node_utils::tracing::info;
+use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, SigningKey};
 use miden_protocol::crypto::dsa::eddsa_25519_sha512::KeyExchangeKey;
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_validator::{
     DataDirectory,
     EncodedGoldenOperatorKey,
     GoldenOperatorKey,
-    LOG_TARGET,
     LocalX25519TransactionInputDecrypter,
     StorageKeyEpoch,
     TransactionInputDecrypter,
@@ -37,20 +37,17 @@ const ENV_SIGNING_KEY_KMS_ID: &str = "MIDEN_VALIDATOR_SIGNING_KEY_KMS_ID";
 const ENV_ENCRYPTION_KEY: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY";
 const ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT: &str = "MIDEN_VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT";
 const ENV_GENESIS_CONFIG: &str = "MIDEN_VALIDATOR_GENESIS_CONFIG";
+const ENV_GENESIS_VALIDATOR_KEYS: &str = "MIDEN_VALIDATOR_GENESIS_VALIDATOR_KEYS";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_VALIDATOR_SQLITE_CONNECTION_POOL_SIZE";
 const ENV_STORAGE_KEY_EPOCH: &str = "MIDEN_VALIDATOR_STORAGE_KEY_EPOCH";
 const ENV_STORAGE_KEY_PUBLIC_SET: &str = "MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET";
 const ENV_STORAGE_KEY_SECRET_SHARE: &str = "MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE";
 const ENV_STORAGE_KEY_SETUP_CONTEXT: &str = "MIDEN_VALIDATOR_STORAGE_KEY_SETUP_CONTEXT";
 
-/// A predefined, insecure shared transaction encryption key for development purposes.
-pub(crate) const INSECURE_ENCRYPTION_KEY_HEX: &str =
-    "0202020202020202020202020202020202020202020202020202020202020202";
-
 // VALIDATOR COMMAND
 // ================================================================================================
 
-/// Local inputs for issuing one Golden private-record share.
+/// Local inputs for issuing one private-record share.
 #[derive(clap::Args)]
 pub struct PrivateRecordShareOptions {
     /// Canonical private-record bundle for which to issue a share.
@@ -61,7 +58,7 @@ pub struct PrivateRecordShareOptions {
     #[arg(long, value_name = "FILE")]
     output: PathBuf,
 
-    /// Canonical Golden storage key material for this validator.
+    /// Canonical storage key material for this validator.
     #[command(flatten)]
     storage_key: ValidatorStorageKey,
 }
@@ -95,12 +92,10 @@ pub enum ValidatorCommand {
     /// block and account secret files to disk.
     ///
     /// The genesis block is the chain's trust root and is not signed: its header commits to the
-    /// full validator set — the `validators` public keys, which a genesis configuration file must
-    /// list explicitly; only the built-in development configuration (used when `--config` is
-    /// omitted) falls back to the predefined, insecure development key — and that set is required
-    /// to sign every block after genesis. Building the genesis block needs no signing access to
-    /// any validator's key, so one operator — who need not be a validator — runs this once and
-    /// distributes the genesis block file.
+    /// full validator set — the public keys passed via `--validator.key` — and that set is
+    /// required to sign every block after genesis. Building the genesis block needs no signing
+    /// access to any validator's key, so one operator — who need not be a validator — runs this
+    /// once and distributes the genesis block file.
     ///
     /// Every validator then seeds its database from the genesis block file with `bootstrap`.
     Genesis {
@@ -112,9 +107,27 @@ pub enum ValidatorCommand {
         accounts_directory: PathBuf,
         /// Use the given configuration file to construct the genesis state from.
         ///
-        /// If not provided, the built-in single-validator development configuration is used.
+        /// If not provided, the built-in development configuration is used.
         #[arg(long = "config", env = ENV_GENESIS_CONFIG, value_name = "GENESIS_CONFIG")]
         genesis_config_file: Option<PathBuf>,
+        /// Hex-encoded public keys of the genesis validator set, committed to by the genesis
+        /// header.
+        ///
+        /// Repeat the flag once per validator (`--validator.key <KEY> --validator.key <KEY>`);
+        /// the environment variable takes a comma-separated list. The genesis block itself is not
+        /// signed; the committed set must sign every block after genesis.
+        ///
+        /// Each validator operator prints their public key with `pubkey`; `keygen` generates a
+        /// fresh key-pair for local networks.
+        #[arg(
+            long = "validator.key",
+            env = ENV_GENESIS_VALIDATOR_KEYS,
+            value_name = "VALIDATOR_PUBLIC_KEY",
+            value_delimiter = ',',
+            required = true,
+            value_parser = parse_validator_public_key
+        )]
+        validator_keys: Vec<PublicKey>,
     },
 
     /// Seeds this validator's database from a genesis block file.
@@ -141,13 +154,23 @@ pub enum ValidatorCommand {
 
     /// Prints the hex-encoded public key for the configured validator signing key.
     ///
-    /// Every validator operator runs this and sends the printed key to whoever composes the
-    /// genesis configuration, which commits the full set to the genesis header via its
-    /// `validators` list.
+    /// Every validator operator runs this and sends the printed key to whoever runs the `genesis`
+    /// command, which commits the full set to the genesis header via its `--validator.key` flags.
     Pubkey {
         #[command(flatten)]
         signing_key: ValidatorSigningKey,
     },
+
+    /// Generates a validator signing key-pair and a shared transaction encryption key.
+    ///
+    /// Prints hex-encoded key material to stdout: the signing secret key (`start
+    /// --signing-key.hex`), its public key (`genesis --validator.key`), and a transaction
+    /// encryption key (`start --encryption-key.hex`), which must be shared by every validator
+    /// in the set.
+    ///
+    /// Intended for local networks; production deployments should prefer KMS-backed keys
+    /// (`--signing-key.kms-id`, `--encryption-key.kms-ciphertext`).
+    Keygen,
 
     /// Applies pending validator database migrations.
     ///
@@ -158,7 +181,10 @@ pub enum ValidatorCommand {
         data_directory: PathBuf,
     },
 
-    /// Issues this validator's Golden decryption share for one stored private record.
+    /// Runs the storage-key setup ceremony.
+    Dkg(dkg::DkgOptions),
+
+    /// Issues this validator's decryption share for one stored private record.
     IssuePrivateRecordShare(PrivateRecordShareOptions),
 
     /// Exports one validator-qualified private-record bundle.
@@ -175,7 +201,7 @@ pub enum ValidatorCommand {
         admin_listen: Option<std::net::SocketAddr>,
 
         #[command(flatten)]
-        grpc_options: GrpcOptionsInternal,
+        grpc_options: GrpcOptions,
 
         /// Maximum number of SQLite connections in the validator database connection pool.
         #[arg(
@@ -190,65 +216,15 @@ pub enum ValidatorCommand {
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
 
-        /// Insecure, hex-encoded validator secret key for development and testing purposes.
-        ///
-        /// If not provided, a predefined key is used.
-        ///
-        /// Cannot be used with `signing-key.kms-id`.
-        #[arg(
-            long = "signing-key.hex",
-            env = ENV_SIGNING_KEY,
-            value_name = "VALIDATOR_SIGNING_KEY",
-            default_value = INSECURE_VALIDATOR_SIGNING_KEY_HEX,
-            group = "signing_key_source"
-        )]
-        signing_key: String,
+        /// Signing key used by the validator to sign blocks.
+        #[command(flatten)]
+        signing_key: ValidatorSigningKey,
 
-        /// Key ID for the KMS key used by validator to sign blocks.
-        ///
-        /// Cannot be used with `signing-key.hex`.
-        #[arg(
-            long = "signing-key.kms-id",
-            env = ENV_SIGNING_KEY_KMS_ID,
-            value_name = "VALIDATOR_SIGNING_KEY_KMS_ID",
-            group = "signing_key_source"
-        )]
-        signing_key_kms_id: Option<String>,
+        /// Shared transaction encryption key.
+        #[command(flatten)]
+        encryption_key: ValidatorEncryptionKey,
 
-        /// Hex-encoded shared secret of the transaction encryption key.
-        ///
-        /// Unlike the per-validator signing key, this value must be identical across every
-        /// validator in the set.
-        ///
-        /// If not provided, a predefined insecure key is used.
-        ///
-        /// Cannot be used with `encryption-key.kms-ciphertext`.
-        #[arg(
-            long = "encryption-key.hex",
-            env = ENV_ENCRYPTION_KEY,
-            value_name = "VALIDATOR_ENCRYPTION_KEY",
-            default_value = INSECURE_ENCRYPTION_KEY_HEX,
-            group = "encryption_key_source"
-        )]
-        encryption_key: String,
-
-        /// Base64-encoded KMS ciphertext of the shared transaction encryption key, as returned
-        /// by `kms:Encrypt`.
-        ///
-        /// The wrapped key material is recovered at startup with `kms:Decrypt`. The ciphertext
-        /// must have been produced by `kms:Encrypt` under a symmetric KMS key, whose ID is
-        /// embedded in the ciphertext blob.
-        ///
-        /// Cannot be used with `encryption-key.hex`.
-        #[arg(
-            long = "encryption-key.kms-ciphertext",
-            env = ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT,
-            value_name = "VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT",
-            group = "encryption_key_source"
-        )]
-        encryption_key_kms_ciphertext: Option<String>,
-
-        /// Canonical Golden storage key material provisioned after setup.
+        /// Canonical Storage key material provisioned after setup.
         #[command(flatten)]
         storage_key: ValidatorStorageKey,
     },
@@ -261,10 +237,12 @@ impl ValidatorCommand {
                 genesis_block_directory,
                 accounts_directory,
                 genesis_config_file,
+                validator_keys,
             } => genesis::generate(
                 &genesis_block_directory,
                 &accounts_directory,
                 genesis_config_file.as_ref(),
+                validator_keys,
             ),
             Self::Bootstrap {
                 data_directory,
@@ -283,6 +261,14 @@ impl ValidatorCommand {
                 println!("{}", hex::encode(signer.public_key().to_bytes()));
                 Ok(())
             },
+            Self::Keygen => {
+                let signing_key = SigningKey::new();
+                let encryption_key = KeyExchangeKey::new();
+                println!("signing-key: {}", hex::encode(signing_key.to_bytes()));
+                println!("validator-key: {}", hex::encode(signing_key.public_key().to_bytes()));
+                println!("encryption-key: {}", hex::encode(encryption_key.to_bytes()));
+                Ok(())
+            },
             Self::Migrate { data_directory } => {
                 let data_dir = DataDirectory::load(data_directory)
                     .context("failed to load validator data directory")?;
@@ -290,6 +276,7 @@ impl ValidatorCommand {
                     .context("failed to apply validator database migrations")?;
                 Ok(())
             },
+            Self::Dkg(options) => dkg::run(options).await,
             Self::IssuePrivateRecordShare(options) => {
                 issue_private_record_share::issue_from_options(options)
             },
@@ -300,37 +287,31 @@ impl ValidatorCommand {
                 grpc_options,
                 signing_key,
                 data_directory,
-                signing_key_kms_id,
                 sqlite_connection_pool_size,
                 encryption_key,
-                encryption_key_kms_ciphertext,
                 storage_key,
-                ..
             } => {
                 let address = listen;
                 let operator_key = storage_key.load()?;
-                tracing::info!(
+                info!(
                     target: miden_validator::LOG_TARGET,
-                    {
-                        service.name = "miden-validator",
-                        service.version = env!("CARGO_PKG_VERSION"),
-                        validator.listen = %address,
-                        validator.admin_listen = admin_listen.map_or_else(
-                            || "disabled".to_owned(),
-                            |address| address.to_string(),
-                        ),
-                        data.directory = %data_directory.display(),
-                        validator.signer = if signing_key_kms_id.is_some() { "kms" } else { "local" },
-                        sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
-                    },
                     "Starting validator",
+                    service.name = "miden-validator",
+                    service.version = env!("CARGO_PKG_VERSION"),
+                    validator.listen = address.to_string(),
+                    validator.admin_listen = admin_listen.map_or_else(
+                        || "disabled".to_owned(),
+                        |address| address.to_string(),
+                    ),
+                    data.directory = data_directory.as_path(),
+                    validator.signer =
+                        if signing_key.signing_key_kms_id.is_some() { "kms" } else { "local" },
+                    db.sqlite.connection_pool_size = sqlite_connection_pool_size.get()
                 );
 
-                let decrypter =
-                    resolve_decrypter(encryption_key, encryption_key_kms_ciphertext).await?;
+                let decrypter = encryption_key.into_decrypter().await?;
 
-                let signer =
-                    ValidatorSigningKey { signing_key, signing_key_kms_id }.into_signer().await?;
+                let signer = signing_key.into_signer().await?;
 
                 start::start(
                     address,
@@ -352,6 +333,8 @@ impl ValidatorCommand {
             Self::Genesis { .. }
             | Self::Bootstrap { .. }
             | Self::Pubkey { .. }
+            | Self::Keygen
+            | Self::Dkg(_)
             | Self::ExportPrivateRecord(_)
             | Self::IssuePrivateRecordShare(_)
             | Self::Migrate { .. } => OpenTelemetry::Disabled,
@@ -359,40 +342,68 @@ impl ValidatorCommand {
     }
 }
 
-/// Builds the transaction input decrypter from the configured shared encryption key: either the
-/// KMS-wrapped ciphertext, or the hex-encoded key material.
-async fn resolve_decrypter(
-    encryption_key: String,
-    encryption_key_kms_ciphertext: Option<String>,
-) -> anyhow::Result<Arc<dyn TransactionInputDecrypter>> {
-    let encryption_key_bytes = if let Some(ciphertext) = encryption_key_kms_ciphertext {
-        let ciphertext = base64::engine::general_purpose::STANDARD
-            .decode(ciphertext)
-            .context("failed to decode the encryption key KMS ciphertext base64")?;
-        miden_validator::decrypt_key_material(ciphertext)
-            .await
-            .context("failed to decrypt the encryption key with KMS")?
-    } else {
-        // Unlike the signing key, whose insecure default is caught at startup against the chain's
-        // committed validator key, nothing cross-checks the encryption key. Warn loudly so the
-        // default never runs in production unnoticed.
-        if encryption_key == INSECURE_ENCRYPTION_KEY_HEX {
-            tracing::warn!(
-                target: LOG_TARGET,
-                "Using the predefined, insecure transaction encryption key, configure \
-                 --encryption-key.hex or --encryption-key.kms-ciphertext for production \
-                 deployments"
-            );
-        }
-
-        hex::decode(encryption_key).context("failed to decode the encryption key hex")?
-    };
-    let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
-        .context("failed to construct the encryption key")?;
-    Ok(Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key)))
+/// Parses a hex-encoded validator public key CLI argument.
+fn parse_validator_public_key(hex_key: &str) -> Result<PublicKey, String> {
+    let bytes = hex::decode(hex_key).map_err(|err| err.to_string())?;
+    PublicKey::read_from_bytes(&bytes).map_err(|err| err.to_string())
 }
 
-/// Canonical Golden files needed to restore one validator storage key share.
+/// Configuration for the shared transaction encryption key.
+#[derive(clap::Args)]
+#[group(required = true, multiple = false)]
+pub struct ValidatorEncryptionKey {
+    /// Hex-encoded shared secret of the transaction encryption key.
+    ///
+    /// Unlike the per-validator signing key, this value must be identical across every
+    /// validator in the set. `keygen` generates a fresh key for local networks.
+    ///
+    /// Cannot be used with `encryption-key.kms-ciphertext`.
+    #[arg(
+        long = "encryption-key.hex",
+        env = ENV_ENCRYPTION_KEY,
+        value_name = "VALIDATOR_ENCRYPTION_KEY"
+    )]
+    encryption_key: Option<String>,
+    /// Base64-encoded KMS ciphertext of the shared transaction encryption key, as returned
+    /// by `kms:Encrypt`.
+    ///
+    /// The wrapped key material is recovered at startup with `kms:Decrypt`. The ciphertext
+    /// must have been produced by `kms:Encrypt` under a symmetric KMS key, whose ID is
+    /// embedded in the ciphertext blob.
+    ///
+    /// Cannot be used with `encryption-key.hex`.
+    #[arg(
+        long = "encryption-key.kms-ciphertext",
+        env = ENV_ENCRYPTION_KEY_KMS_CIPHERTEXT,
+        value_name = "VALIDATOR_ENCRYPTION_KEY_KMS_CIPHERTEXT"
+    )]
+    encryption_key_kms_ciphertext: Option<String>,
+}
+
+impl ValidatorEncryptionKey {
+    /// Builds the transaction input decrypter from the configured shared encryption key: either the
+    /// KMS-wrapped ciphertext, or the hex-encoded key material.
+    async fn into_decrypter(self) -> anyhow::Result<Arc<dyn TransactionInputDecrypter>> {
+        let encryption_key_bytes = if let Some(ciphertext) = self.encryption_key_kms_ciphertext {
+            let ciphertext = base64::engine::general_purpose::STANDARD
+                .decode(ciphertext)
+                .context("failed to decode the encryption key KMS ciphertext base64")?;
+            miden_validator::decrypt_key_material(ciphertext)
+                .await
+                .context("failed to decrypt the encryption key with KMS")?
+        } else {
+            let encryption_key = self
+                .encryption_key
+                .expect("clap guarantees exactly one encryption key source is set");
+            hex::decode(encryption_key).context("failed to decode the encryption key hex")?
+        };
+        let encryption_key = KeyExchangeKey::read_from_bytes(&encryption_key_bytes)
+            .context("failed to construct the encryption key")?;
+        Ok(Arc::new(LocalX25519TransactionInputDecrypter::new(encryption_key)))
+    }
+}
+
+/// Canonical files needed to restore one validator storage key share.
 #[derive(clap::Args)]
 pub struct ValidatorStorageKey {
     /// Hex-encoded 32-byte storage key epoch.
@@ -402,21 +413,21 @@ pub struct ValidatorStorageKey {
         value_name = "STORAGE_KEY_EPOCH"
     )]
     key_epoch: String,
-    /// File containing canonical Golden `SetupContext` bytes.
+    /// File containing canonical `SetupContext` bytes.
     #[arg(
         long = "storage-key.setup-context",
         env = ENV_STORAGE_KEY_SETUP_CONTEXT,
         value_name = "FILE"
     )]
     setup_context: PathBuf,
-    /// File containing canonical Golden `PublicKeySet` bytes.
+    /// File containing canonical `PublicKeySet` bytes.
     #[arg(
         long = "storage-key.public-key-set",
         env = ENV_STORAGE_KEY_PUBLIC_SET,
         value_name = "FILE"
     )]
     public_key_set: PathBuf,
-    /// File containing this operator's canonical Golden `SecretShare` bytes.
+    /// File containing this operator's canonical `SecretShare` bytes.
     #[arg(
         long = "storage-key.secret-share",
         env = ENV_STORAGE_KEY_SECRET_SHARE,
@@ -454,7 +465,7 @@ impl ValidatorStorageKey {
             })?,
         )
         .decode()
-        .context("failed to validate Golden storage key material")?;
+        .context("failed to validate storage key material")?;
         Ok(operator_key)
     }
 }
@@ -464,20 +475,20 @@ impl ValidatorStorageKey {
 
 /// Configuration for the validator signing key used to sign blocks.
 #[derive(clap::Args)]
-#[group(required = false, multiple = false)]
+#[group(required = true, multiple = false)]
 pub struct ValidatorSigningKey {
-    /// Insecure, hex-encoded validator secret key for development and testing purposes.
+    /// Hex-encoded validator secret key.
     ///
-    /// If not provided, a predefined key is used.
+    /// `keygen` generates a fresh key-pair for local networks; production deployments should
+    /// prefer `signing-key.kms-id`.
     ///
     /// Cannot be used with `signing-key.kms-id`.
     #[arg(
         long = "signing-key.hex",
         env = ENV_SIGNING_KEY,
         value_name = "VALIDATOR_SIGNING_KEY",
-        default_value = INSECURE_VALIDATOR_SIGNING_KEY_HEX,
     )]
-    pub signing_key: String,
+    pub signing_key: Option<String>,
     /// Key ID for the KMS key used by validator to sign blocks.
     ///
     /// Cannot be used with `signing-key.hex`.
@@ -494,7 +505,9 @@ impl ValidatorSigningKey {
         if let Some(kms_key_id) = self.signing_key_kms_id {
             Ok(ValidatorSigner::new_kms(kms_key_id).await?)
         } else {
-            let signer = SigningKey::read_from_bytes(hex::decode(self.signing_key)?.as_ref())?;
+            let signing_key =
+                self.signing_key.expect("clap guarantees exactly one signing key source is set");
+            let signer = SigningKey::read_from_bytes(hex::decode(signing_key)?.as_ref())?;
             Ok(ValidatorSigner::new_local(signer))
         }
     }
@@ -531,14 +544,22 @@ mod tests {
 
     type TestStorageGroup = Secp256k1GoldenGroup;
 
-    const BASE_START_ARGS: [&str; 6] = [
+    const TEST_SIGNING_KEY_HEX: &str =
+        "0101010101010101010101010101010101010101010101010101010101010101";
+    const TEST_ENCRYPTION_KEY_HEX: &str =
+        "0202020202020202020202020202020202020202020202020202020202020202";
+
+    const BASE_START_ARGS: [&str; 8] = [
         "miden-validator",
         "start",
         "--listen",
         "127.0.0.1:50101",
         "--data-directory",
         "/tmp/validator-data",
+        "--signing-key.hex",
+        TEST_SIGNING_KEY_HEX,
     ];
+    const ENCRYPTION_KEY_ARGS: [&str; 2] = ["--encryption-key.hex", TEST_ENCRYPTION_KEY_HEX];
     const STORAGE_KEY_ARGS: [&str; 8] = [
         "--storage-key.epoch",
         "0909090909090909090909090909090909090909090909090909090909090909",
@@ -664,31 +685,92 @@ mod tests {
         .unwrap();
     }
 
+    const BASE_GENESIS_ARGS: [&str; 6] = [
+        "miden-validator",
+        "genesis",
+        "--genesis-block-directory",
+        "/tmp/genesis",
+        "--accounts-directory",
+        "/tmp/accounts",
+    ];
+
+    fn parse_genesis(extra: &[&str]) -> Result<ValidatorCommand, clap::Error> {
+        ValidatorCommand::try_parse_from(
+            BASE_GENESIS_ARGS.iter().copied().chain(extra.iter().copied()),
+        )
+    }
+
     #[test]
-    fn encryption_key_defaults_to_insecure_hex() {
-        let command = parse_start(&[]).expect("start without encryption options must parse");
-        let ValidatorCommand::Start {
-            encryption_key,
-            encryption_key_kms_ciphertext,
-            ..
-        } = command
-        else {
-            panic!("expected the start command");
+    fn genesis_validator_keys_parse_from_repeated_flags() {
+        let keys = [7u8, 8].map(|seed| {
+            SigningKey::read_from_bytes(&[seed; 32]).expect("test signing key should decode")
+        });
+        let hex_keys = keys.clone().map(|key| hex::encode(key.public_key().to_bytes()));
+        let command =
+            parse_genesis(&["--validator.key", &hex_keys[0], "--validator.key", &hex_keys[1]])
+                .expect("genesis with explicit validator keys must parse");
+        let ValidatorCommand::Genesis { validator_keys, .. } = command else {
+            panic!("expected the genesis command");
         };
-        assert_eq!(encryption_key, INSECURE_ENCRYPTION_KEY_HEX);
-        assert_eq!(encryption_key_kms_ciphertext, None);
+        assert_eq!(validator_keys, keys.map(|key| key.public_key()).to_vec());
+    }
+
+    #[test]
+    fn genesis_requires_an_explicit_validator_set() {
+        let Err(error) = parse_genesis(&[]) else {
+            panic!("genesis without an explicit validator set must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+
+        let key = SigningKey::read_from_bytes(&[7; 32]).expect("test signing key should decode");
+        let key_hex = hex::encode(key.public_key().to_bytes());
+        parse_genesis(&["--config", "/tmp/genesis.toml", "--validator.key", &key_hex])
+            .expect("--config with an explicit validator set must parse");
+    }
+
+    #[test]
+    fn genesis_rejects_an_invalid_validator_key() {
+        let Err(error) = parse_genesis(&["--validator.key", "not-hex"]) else {
+            panic!("an invalid validator key must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn encryption_key_is_required() {
+        let Err(error) = parse_start(&[]) else {
+            panic!("start without an encryption key must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn signing_key_is_required() {
+        let Err(error) = ValidatorCommand::try_parse_from(
+            ["miden-validator", "start", "--listen", "127.0.0.1:50101"]
+                .into_iter()
+                .chain(["--data-directory", "/tmp/validator-data"])
+                .chain(ENCRYPTION_KEY_ARGS)
+                .chain(STORAGE_KEY_ARGS),
+        ) else {
+            panic!("start without a signing key must be rejected");
+        };
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
     fn admin_listener_is_opt_in() {
-        let command = parse_start(&[]).expect("start without an admin listener must parse");
+        let command =
+            parse_start(&ENCRYPTION_KEY_ARGS).expect("start without an admin listener must parse");
         let ValidatorCommand::Start { admin_listen, .. } = command else {
             panic!("expected the start command");
         };
         assert_eq!(admin_listen, None);
 
-        let command = parse_start(&["--admin.listen", "127.0.0.1:50102"])
-            .expect("start with an admin listener must parse");
+        let command = parse_start(
+            &[ENCRYPTION_KEY_ARGS.as_slice(), &["--admin.listen", "127.0.0.1:50102"]].concat(),
+        )
+        .expect("start with an admin listener must parse");
         let ValidatorCommand::Start { admin_listen, .. } = command else {
             panic!("expected the start command");
         };
@@ -699,17 +781,18 @@ mod tests {
     fn encryption_key_kms_ciphertext_parses_alone() {
         let command = parse_start(&["--encryption-key.kms-ciphertext", "deadbeef"])
             .expect("KMS ciphertext without a hex key must parse");
-        let ValidatorCommand::Start { encryption_key_kms_ciphertext, .. } = command else {
+        let ValidatorCommand::Start { encryption_key, .. } = command else {
             panic!("expected the start command");
         };
-        assert_eq!(encryption_key_kms_ciphertext.as_deref(), Some("deadbeef"));
+        assert_eq!(encryption_key.encryption_key_kms_ciphertext.as_deref(), Some("deadbeef"));
+        assert_eq!(encryption_key.encryption_key, None);
     }
 
     #[test]
     fn encryption_key_hex_and_kms_ciphertext_conflict() {
         let result = parse_start(&[
             "--encryption-key.hex",
-            INSECURE_ENCRYPTION_KEY_HEX,
+            TEST_ENCRYPTION_KEY_HEX,
             "--encryption-key.kms-ciphertext",
             "deadbeef",
         ]);
@@ -721,7 +804,9 @@ mod tests {
 
     #[test]
     fn storage_key_is_required() {
-        let Err(error) = ValidatorCommand::try_parse_from(BASE_START_ARGS) else {
+        let Err(error) = ValidatorCommand::try_parse_from(
+            BASE_START_ARGS.into_iter().chain(ENCRYPTION_KEY_ARGS),
+        ) else {
             panic!("start without a storage key must fail");
         };
         assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
@@ -729,13 +814,22 @@ mod tests {
 
     #[test]
     fn partial_storage_key_configuration_fails() {
-        let Err(error) = ValidatorCommand::try_parse_from(BASE_START_ARGS.into_iter().chain([
-            "--storage-key.epoch",
-            "0909090909090909090909090909090909090909090909090909090909090909",
-        ])) else {
+        let Err(error) = ValidatorCommand::try_parse_from(
+            BASE_START_ARGS.into_iter().chain(ENCRYPTION_KEY_ARGS).chain([
+                "--storage-key.epoch",
+                "0909090909090909090909090909090909090909090909090909090909090909",
+            ]),
+        ) else {
             panic!("a partial storage key must fail");
         };
         assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn keygen_command_parses() {
+        let command = ValidatorCommand::try_parse_from(["miden-validator", "keygen"])
+            .expect("the keygen command must parse");
+        assert!(matches!(command, ValidatorCommand::Keygen));
     }
 
     #[test]

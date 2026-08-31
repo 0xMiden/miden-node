@@ -14,6 +14,9 @@ version.workspace      = true
 [lints]
 workspace = true
 
+[features]
+tracing-forest = ["miden-node-utils/tracing-forest"]
+
 [lib]
 doctest = false
 
@@ -28,6 +31,7 @@ clap                   = { features = ["env", "string"], workspace = true }
 fs-err                 = { workspace = true }
 golden-core            = { workspace = true }
 golden-ehtdh1          = { workspace = true }
+golden-evrf            = { workspace = true }
 golden-halo2curves     = { workspace = true }
 hex                    = { workspace = true }
 miden-node-db          = { workspace = true }
@@ -39,9 +43,12 @@ miden-protocol         = { workspace = true }
 miden-tx               = { features = ["concurrent"], workspace = true }
 rand_core_06           = { workspace = true }
 serde                  = { workspace = true }
+sha2                   = { workspace = true }
+tempfile               = { workspace = true }
 thiserror              = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
+toml                   = { workspace = true }
 tonic                  = { default-features = true, features = ["transport"], workspace = true }
 tonic-reflection       = { workspace = true }
 tower-http             = { features = ["util"], workspace = true }
@@ -60,6 +67,5 @@ miden-testing    = { workspace = true }
 miden-tx         = { features = ["concurrent", "testing"], workspace = true }
 rand             = { workspace = true }
 rand_chacha_03   = { workspace = true }
-tempfile         = { workspace = true }
 tokio            = { features = ["macros", "rt-multi-thread", "sync"], workspace = true }
 tower            = { features = ["util"], workspace = true }

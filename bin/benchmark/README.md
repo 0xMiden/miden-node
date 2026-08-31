@@ -152,15 +152,19 @@ Install the binaries:
 make install-node install-validator install-ntx-builder install-remote-prover
 ```
 
-Bootstrap a fresh data directory (one-time). The validator creates the genesis block, then every component bootstraps
-its storage from it:
+Bootstrap a fresh data directory (one-time). Generate the validator key material first (`keygen` prints the signing
+secret, its public key, and the shared transaction encryption key), then the validator creates the genesis block —
+committing the signing public key — and every component bootstraps its storage from it:
 
 ```sh
 DATA=./node-data
 
+miden-validator keygen   # note the printed signing-key, validator-key, and encryption-key values
+
 miden-validator genesis \
   --genesis-block-directory "$DATA/genesis" \
-  --accounts-directory      "$DATA/accounts"
+  --accounts-directory      "$DATA/accounts" \
+  --validator.key           "<validator-key-hex>"
 
 miden-validator bootstrap \
   --data-directory "$DATA/validator" \
@@ -188,8 +192,10 @@ export MIDEN_VALIDATOR_STORAGE_KEY_PUBLIC_SET="<public-key-set-file>"
 export MIDEN_VALIDATOR_STORAGE_KEY_SECRET_SHARE="<secret-share-file>"
 
 nohup miden-validator start \
-  --listen         127.0.0.1:50101 \
-  --data-directory "$DATA/validator" \
+  --listen             127.0.0.1:50101 \
+  --data-directory     "$DATA/validator" \
+  --signing-key.hex    "<signing-key-hex>" \
+  --encryption-key.hex "<encryption-key-hex>" \
   > logs/validator.log 2>&1 &
 
 # The ntx-builder needs a transaction prover, so start one regardless.
@@ -213,10 +219,6 @@ nohup miden-node sequencer \
   --batch.workers                             16 \
   --mempool.tx-capacity                       1000000 \
   --rpc.grpc.timeout                          24h \
-  --rpc.grpc.max-connection-age               24h \
-  --rpc.rate-limit.burst-size                 100000 \
-  --rpc.rate-limit.replenish-per-second       100000 \
-  --rpc.rate-limit.max-concurrent-connections 1000000 \
   > logs/node.log 2>&1 &
 
 nohup miden-ntx-builder start \

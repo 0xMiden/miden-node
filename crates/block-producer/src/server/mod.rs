@@ -7,7 +7,7 @@ use miden_node_store::state::{BlockWriter, ProofWriter, State};
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, error, info, miden_instrument};
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::ProvenTransaction;
@@ -107,13 +107,13 @@ pub struct Sequencer {
 impl Sequencer {
     /// Spawns the sequencer tasks and returns its in-process API.
     pub fn spawn(self, shutdown: CancellationToken) -> Result<SequencerHandle> {
-        tracing::info!(target: LOG_TARGET, "Initializing sequencer");
+        info!(target: LOG_TARGET, "Initializing sequencer");
         let state = self.state;
         let validator =
             BlockProducerValidatorClient::new(self.validator_urls.clone(), self.validator_timeout)?;
         let chain_tip = state.committed_tip();
 
-        tracing::info!(target: LOG_TARGET, "Sequencer initialized");
+        info!(target: LOG_TARGET, "Sequencer initialized");
 
         let block_builder = BlockBuilder::new(
             Arc::clone(&state),
@@ -241,11 +241,18 @@ pub struct BlockProducerStatus {
 
 impl BlockProducerApi {
     /// Creates an API backed by a fresh mempool.
-    pub fn new(state: Arc<State>, chain_tip: BlockNumber, config: BlockProducerApiConfig) -> Self {
+    ///
+    /// The background mempool statistics updater runs until `shutdown` is cancelled.
+    pub fn new(
+        state: Arc<State>,
+        chain_tip: BlockNumber,
+        config: BlockProducerApiConfig,
+        shutdown: CancellationToken,
+    ) -> Self {
         Self::from_shared_mempool(
             Mempool::shared(chain_tip, config.mempool_config()),
             state,
-            CancellationToken::new(),
+            shutdown,
         )
     }
 
@@ -290,7 +297,8 @@ impl BlockProducerApi {
 
                 let stats = {
                     let Ok(mempool) = mempool.lock() else {
-                        tracing::error!(
+                        error!(
+                            anyhow::anyhow!("mempool lock poisoned"),
                             target: LOG_TARGET,
                             "Mempool lock poisoned, stopping mempool stats updater"
                         );
@@ -317,18 +325,18 @@ impl BlockProducerApi {
         &self,
         tx: ProvenTransaction,
     ) -> Result<BlockNumber, MempoolSubmissionError> {
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            tx_id = %tx.id().to_hex(),
-            account_id = %tx.account_id().to_hex(),
-            initial_state_commitment = %tx.account_update().initial_state_commitment(),
-            final_state_commitment = %tx.account_update().final_state_commitment(),
-            input_notes = %format_input_notes(tx.input_notes()),
-            output_notes = %format_output_notes(tx.output_notes()),
-            ref_block_commitment = %tx.ref_block_commitment(),
-            "Submitting transaction"
+            "Submitting transaction",
+            transaction.id = tx.id(),
+            account.id = tx.account_id(),
+            account.initial_state.commitment = tx.account_update().initial_state_commitment(),
+            account.final_state.commitment = tx.account_update().final_state_commitment(),
+            transaction.input_notes = format_input_notes(tx.input_notes()),
+            transaction.output_notes = format_output_notes(tx.output_notes()),
+            transaction.reference_block.commitment = tx.ref_block_commitment()
         );
-        tracing::debug!(target: COMPONENT, proof = ?tx.proof());
+        debug!(target: COMPONENT, "Transaction proof received");
 
         // Authenticate against the local store, then add to the mempool.
         let inputs = get_tx_inputs(&self.state, &tx)
@@ -448,6 +456,8 @@ impl BlockProducerApi {
 pub struct MempoolStats {
     /// The mempool's current view of the chain tip height.
     pub chain_tip: BlockNumber,
+    /// Number of transactions that have not yet been committed.
+    pub uncommitted_transactions: u64,
     /// Number of transactions currently in the mempool waiting to be batched.
     pub unbatched_transactions: u64,
     /// Number of batches currently being proven.
@@ -459,7 +469,8 @@ pub struct MempoolStats {
 impl MempoolStats {
     fn from_mempool(mempool: &Mempool) -> Self {
         Self {
-            chain_tip: mempool.chain_tip(),
+            chain_tip: mempool.committed_chain_tip(),
+            uncommitted_transactions: mempool.uncommitted_transactions_count() as u64,
             unbatched_transactions: mempool.unbatched_transactions_count() as u64,
             proposed_batches: mempool.proposed_batches_count() as u64,
             proven_batches: mempool.proven_batches_count() as u64,

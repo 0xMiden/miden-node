@@ -3,11 +3,13 @@ use std::sync::atomic::Ordering;
 use miden_node_proto::domain::encryption::transaction_inputs_associated_data;
 use miden_node_proto::generated as grpc;
 use miden_node_utils::ErrorReport;
+use miden_node_utils::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::tracing::{miden_instrument, miden_span_record};
 use miden_protocol::transaction::{ProvenTransaction, TransactionId, TransactionInputs};
 use miden_tx::utils::serde::{Deserializable, Serializable};
 use rand_core_06::OsRng;
 use tonic::Status;
+use tracing::{Instrument, info_span};
 
 use super::ValidatorService;
 use crate::tx_validation::validate_transaction;
@@ -31,9 +33,7 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
     ) -> tonic::Result<Self::Output> {
         let Input { tx, sealed } = input;
         let tx_id = tx.id();
-        miden_span_record!(
-            transaction.id = %tx_id,
-        );
+        miden_span_record!(transaction.id = tx_id);
 
         let inputs = self.unseal_transaction_inputs(&sealed, tx_id).await?;
 
@@ -53,24 +53,37 @@ impl grpc::server::validator_api::SubmitProvenTransaction for ValidatorService {
 
         let private_inputs = inputs.to_bytes();
 
+        // Bound concurrent validations; see `tx_validation_semaphore`. Acquired after the
+        // already-validated short-circuit so duplicate submissions never wait.
+        let _permit = self
+            .tx_validation_semaphore
+            .acquire()
+            .instrument(info_span!("acquire_validation_permit"))
+            .await
+            .map_err(|err| Status::internal(format!("validation semaphore closed: {err}")))?;
+
         // Validate the transaction.
         validate_transaction(tx, inputs).await.map_err(|err| {
             Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
-        // Re-encrypt the private inputs under a fresh content key.
+        // Re-encrypt the private inputs under a fresh content key. Sealing runs secp256k1 group
+        // operations, so it goes to a blocking thread rather than stalling an async worker.
         let record_id = PrivateRecordId::new(tx_id, &self.signer.public_key());
         let context = PrivateRecordContext::new(
             self.private_record_chain_id,
             self.private_record_sealer.key_epoch(),
             tx_id,
         );
-        let private_record = self
-            .private_record_sealer
-            .seal(&mut OsRng, record_id, context, &private_inputs)
-            .map_err(|err| {
-                Status::internal(err.as_report_context("Failed to protect transaction inputs"))
-            })?;
+        let sealer = self.private_record_sealer.clone();
+        let private_record = spawn_blocking_in_current_span(move || {
+            sealer.seal(&mut OsRng, record_id, context, &private_inputs)
+        })
+        .await
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
+        .map_err(|err| {
+            Status::internal(err.as_report_context("Failed to protect transaction inputs"))
+        })?;
 
         // Store the validated transaction and private record atomically.
         let count =

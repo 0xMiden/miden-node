@@ -2,9 +2,8 @@ use miden_node_proto::decode::read_block_range;
 use miden_node_proto::generated as proto;
 use miden_node_store::{NoteSyncError, NoteSyncRecord};
 use miden_node_utils::limiter::QueryParamNoteTagLimit;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
-use tracing::debug;
 
 use super::{RpcInvalidBlockRange, RpcService, check, invalid_block_range_to_status};
 use crate::{COMPONENT, LOG_TARGET};
@@ -33,13 +32,23 @@ impl proto::server::rpc_api::SyncNotes for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        tracing::trace!(target: LOG_TARGET, ?request);
-
         let range = read_block_range::<Status>(request.block_range, "SyncNotesRequest")?;
 
-        miden_span_record!(block_range.from = range.block_from, block_range.to = range.block_to,);
+        miden_span_record!(
+            block_range.from = range.block_from,
+            block_range.to = range.block_to,
+            note.tags = request.note_tags.as_slice(),
+            note.tag.count = request.note_tags.len()
+        );
 
-        debug!(target: LOG_TARGET, "Syncing notes");
+        debug!(
+            target: LOG_TARGET,
+            "Syncing notes",
+            block_range.from = range.block_from,
+            block_range.to = range.block_to,
+            note.tags = request.note_tags.as_slice(),
+            note.tag.count = request.note_tags.len()
+        );
 
         check::<QueryParamNoteTagLimit>(request.note_tags.len())?;
 

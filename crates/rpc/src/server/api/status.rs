@@ -1,7 +1,6 @@
 use miden_node_block_producer::{BlockProducerStatus, MempoolStats};
 use miden_node_proto::generated as proto;
-use miden_node_utils::tracing::miden_instrument;
-use tracing::debug;
+use miden_node_utils::tracing::{debug, miden_instrument};
 
 use super::{ProtoMempoolStats, Request, RpcBackend, RpcService};
 use crate::{COMPONENT, LOG_TARGET};
@@ -76,5 +75,6 @@ fn block_producer_mempool_stats_to_proto(stats: MempoolStats) -> proto::rpc::Mem
         unbatched_transactions: stats.unbatched_transactions,
         proposed_batches: stats.proposed_batches,
         proven_batches: stats.proven_batches,
+        uncommitted_transactions: stats.uncommitted_transactions,
     }
 }

@@ -4,6 +4,7 @@ use miden_node_proto_build::ntx_builder_api_descriptor;
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use miden_node_utils::tracing::info;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;
@@ -45,14 +46,12 @@ impl NtxBuilderRpcServer {
 
         let endpoint =
             listener.local_addr().context("failed to read NTX builder listen address")?;
-        tracing::info!(
+        info!(
             target: LOG_TARGET,
-            {
-                service.name = "miden-ntx-builder",
-                service.version = env!("CARGO_PKG_VERSION"),
-                ntx_builder.listen = %endpoint,
-            },
             "NTX builder ready",
+            service.name = "miden-ntx-builder",
+            service.version = env!("CARGO_PKG_VERSION"),
+            ntx_builder.listen = endpoint.to_string()
         );
 
         tonic::transport::Server::builder()

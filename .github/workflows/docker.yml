@@ -1,8 +1,8 @@
 name: Docker
 
 # Builds and validates all Docker images and the Compose application. CI calls it
-# in dry-run mode for pull requests and pushes to next or release/v*. Release and
-# manual publish runs continue through approval and publish the artifacts to GHCR.
+# in dry-run mode. Release and manually dispatched publish runs validate before
+# publishing to GHCR.
 
 on:
   workflow_call:
@@ -12,12 +12,8 @@ on:
         required: false
         type: string
         default: dry-run
-      commit:
-        description: "Full Git commit SHA to build"
-        required: true
-        type: string
-      tag:
-        description: "Tag to apply to the images and Compose application"
+      ref:
+        description: "Full Git commit SHA, tag name, or branch name to build"
         required: true
         type: string
       created:
@@ -35,18 +31,13 @@ on:
         options:
           - dry-run
           - publish
-      commit:
-        description: "Full Git commit SHA to build"
+      ref:
+        description: "Full Git commit SHA, tag name, or branch name to publish"
         required: true
-        type: string
-      tag:
-        description: "Custom image and Compose tag, for example demo"
-        required: true
-        default: demo
         type: string
 
 concurrency:
-  group: "${{ github.workflow }} @ docker @ ${{ inputs.mode == 'publish' && inputs.tag || github.sha }}"
+  group: "${{ github.workflow }} @ docker @ ${{ inputs.mode == 'publish' && inputs.ref || github.sha }}"
   cancel-in-progress: false
 
 permissions:
@@ -56,6 +47,7 @@ env:
   REGISTRY: ghcr.io
   REGISTRY_PREFIX: ghcr.io/0xmiden
   DOCKER_PLATFORMS: linux/amd64,linux/arm64
+  MIDEN_FAUCET_IMAGE: ghcr.io/0xmiden/miden-faucet:v0.16.0-rc.1
 
 jobs:
   preflight:
@@ -64,38 +56,25 @@ jobs:
     permissions:
       contents: read
     outputs:
-      commit: ${{ steps.inputs.outputs.commit }}
+      commit: ${{ steps.metadata.outputs.commit }}
       created: ${{ steps.metadata.outputs.created }}
       images: ${{ steps.images.outputs.images }}
       immutable_tag: ${{ steps.metadata.outputs.immutable_tag }}
       mode: ${{ steps.inputs.outputs.mode }}
-      release_tag: ${{ steps.inputs.outputs.release_tag }}
-      tag: ${{ steps.inputs.outputs.tag }}
+      tag: ${{ steps.metadata.outputs.tag }}
     steps:
-      - name: Resolve and validate inputs
+      - name: Validate inputs
         id: inputs
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF_NAME: ${{ github.ref_name }}
-          EVENT_REF_TYPE: ${{ github.ref_type }}
-          INPUT_COMMIT: ${{ inputs.commit }}
           INPUT_MODE: ${{ inputs.mode }}
-          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_REF: ${{ inputs.ref }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
-          commit="${INPUT_COMMIT}"
           mode="${INPUT_MODE}"
-          tag="${INPUT_TAG}"
-
-          release_tag=false
-          if [[ "${tag}" == v* && "${EVENT_NAME}" == "push" && "${EVENT_REF_TYPE}" == "tag" && "${EVENT_REF_NAME}" == "${tag}" ]]; then
-            release_tag=true
-          fi
-
-          if [[ ! "${commit}" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::A full, lowercase Git commit SHA is required"
+          if [[ -z "${INPUT_REF}" ]]; then
+            echo "::error::A Git commit, tag, or branch is required"
             exit 1
           fi
 
@@ -107,32 +86,12 @@ jobs:
               ;;
           esac
 
-          if [[ ! "${tag}" =~ ^[0-9A-Za-z_][0-9A-Za-z_.-]{0,127}$ ]]; then
-            echo "::error::Invalid container tag: ${tag}"
-            exit 1
-          fi
-
-          if [[ "${tag}" == "latest" || "${tag}" == sha-* ]]; then
-            echo "::error::The latest and sha-* tag namespaces are reserved"
-            exit 1
-          fi
-
-          if [[ "${tag}" == v* && "${release_tag}" != "true" ]]; then
-            echo "::error::The v* tag namespace is reserved for the release workflow"
-            exit 1
-          fi
-
           if [[ "${mode}" == "publish" && "${REPOSITORY_OWNER}" != "0xMiden" ]]; then
             echo "::error::Docker publication is restricted to the 0xMiden repository"
             exit 1
           fi
 
-          {
-            echo "commit=${commit}"
-            echo "mode=${mode}"
-            echo "release_tag=${release_tag}"
-            echo "tag=${tag}"
-          } >> "${GITHUB_OUTPUT}"
+          echo "mode=${mode}" >> "${GITHUB_OUTPUT}"
 
       - name: Define image matrix
         id: images
@@ -145,31 +104,55 @@ jobs:
                 {"component":"ntx-builder","bin":"miden-ntx-builder","port":50301},
                 {"component":"remote-prover","bin":"miden-remote-prover","port":50051},
                 {"component":"network-monitor","bin":"miden-network-monitor","port":3000},
-                {"component":"node-tps-benchmark","bin":"miden-benchmark","target":"runtime-tool"},
-                {"component":"faucet","bin":"miden-faucet","port":8000}
+                {"component":"node-tps-benchmark","bin":"miden-benchmark","target":"runtime-tool"}
               ]
             '
           )"
           echo "images=${images}" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout repository
+        id: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ steps.inputs.outputs.commit }}
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify commit and prepare metadata
+      - name: Resolve ref and prepare metadata
         id: metadata
         env:
-          COMMIT: ${{ steps.inputs.outputs.commit }}
+          CHECKED_OUT_COMMIT: ${{ steps.checkout.outputs.commit }}
           CREATED: ${{ inputs.created }}
+          INPUT_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
 
-          actual_commit="$(git rev-parse HEAD)"
-          if [[ "${actual_commit}" != "${COMMIT}" ]]; then
-            echo "::error::Checked out ${actual_commit}, expected ${COMMIT}"
+          actual_commit="${CHECKED_OUT_COMMIT}"
+          current_branch="$(git branch --show-current)"
+          ref="${INPUT_REF}"
+
+          if [[ "${ref}" == "${actual_commit}" ]]; then
+            ref_type=commit
+            ref_name="sha-${actual_commit:0:12}"
+          elif [[ -n "${current_branch}" && "${ref}" == "${current_branch}" ]]; then
+            ref_type=branch
+            ref_name="${ref}"
+          elif git show-ref --verify --quiet "refs/tags/${ref}" &&
+            [[ "$(git rev-parse "refs/tags/${ref}^{commit}")" == "${actual_commit}" ]]; then
+            ref_type=tag
+            ref_name="${ref}"
+          else
+            echo "::error::Input ${ref} does not match the checked-out commit, branch, or tag"
+            exit 1
+          fi
+
+          if [[ "${ref_type}" != "commit" && ! "${ref_name}" =~ ^[0-9A-Za-z_][0-9A-Za-z_.-]{0,127}$ ]]; then
+            echo "::error::Git ${ref_type} ${ref_name} is not a valid container tag"
+            exit 1
+          fi
+
+          if [[ "${ref_type}" != "commit" && ( "${ref_name}" == "latest" || "${ref_name}" == sha-* ) ]]; then
+            echo "::error::The latest and sha-* tag namespaces are reserved"
             exit 1
           fi
 
@@ -179,27 +162,15 @@ jobs:
           fi
 
           {
+            echo "commit=${actual_commit}"
             echo "created=${created}"
             echo "immutable_tag=sha-${actual_commit:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            echo "tag=${ref_name}"
           } >> "${GITHUB_OUTPUT}"
-
-      - name: Ensure GitHub release does not exist
-        if: ${{ steps.inputs.outputs.mode == 'publish' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.inputs.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            echo "::error::GitHub release ${TAG} already exists. Refusing to publish Docker artifacts."
-            exit 1
-          fi
 
   dry-run-docker:
     name: Build ${{ matrix.component }}
     needs: preflight
-    if: ${{ needs.preflight.outputs.mode == 'dry-run' || needs.preflight.outputs.release_tag != 'true' }}
     runs-on: warp-ubuntu-latest-x64-8x
     permissions:
       contents: read
@@ -253,7 +224,6 @@ jobs:
   dry-run-compose:
     name: Dry-run docker compose publishing
     needs: preflight
-    if: ${{ needs.preflight.outputs.mode == 'dry-run' || needs.preflight.outputs.release_tag != 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -266,7 +236,8 @@ jobs:
           persist-credentials: false
 
       - name: Dry-run Compose publishing
-        uses: ./.github/actions/publish-compose
+        # Pin independently so the checked-out caller-provided ref cannot replace this action's code.
+        uses: 0xMiden/node/.github/actions/publish-compose@3df9adbec870c8039d38cc946b2dc79ec9cf7e59
         env:
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-node:${{ needs.preflight.outputs.tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-validator:${{ needs.preflight.outputs.tag }}
@@ -275,7 +246,6 @@ jobs:
           MIDEN_NETWORK_MONITOR_IMAGE:
             ${{ env.REGISTRY_PREFIX }}/miden-network-monitor:${{ needs.preflight.outputs.tag }}
           MIDEN_BENCHMARK_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-node-tps-benchmark:${{ needs.preflight.outputs.tag }}
-          MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-faucet:${{ needs.preflight.outputs.tag }}
         with:
           compose-file: docker-compose.yml
           mode: dry-run
@@ -283,45 +253,10 @@ jobs:
           registry-prefix: ${{ env.REGISTRY_PREFIX }}
           tag: ${{ needs.preflight.outputs.tag }}
 
-  authorize-publish:
-    name: Approve Docker publish
-    needs: [preflight, dry-run-docker, dry-run-compose]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.preflight.result == 'success' &&
-        needs.preflight.outputs.mode == 'publish' &&
-        (
-          needs.preflight.outputs.release_tag == 'true' ||
-          (
-            needs.dry-run-docker.result == 'success' &&
-            needs.dry-run-compose.result == 'success'
-          )
-        )
-      }}
-    runs-on: ubuntu-24.04
-    environment: publish-docker
-    permissions:
-      contents: read
-    steps:
-      - name: Ensure GitHub release still does not exist
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.preflight.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            echo "::error::GitHub release ${TAG} already exists. Refusing to publish Docker artifacts."
-            exit 1
-          fi
-
-      - name: Authorize publication
-        run: echo "Docker dry-run succeeded; publication is authorized."
-
   publish-docker:
     name: Publish ${{ matrix.component }}
-    needs: [preflight, authorize-publish]
+    needs: [preflight, dry-run-docker, dry-run-compose]
+    if: ${{ needs.preflight.outputs.mode == 'publish' }}
     runs-on: warp-ubuntu-latest-x64-8x
     permissions:
       contents: read
@@ -406,7 +341,8 @@ jobs:
           password: ${{ github.token }}
 
       - name: Publish Compose application
-        uses: ./.github/actions/publish-compose
+        # Pin independently so the checked-out caller-provided ref cannot replace this action's code.
+        uses: 0xMiden/node/.github/actions/publish-compose@3df9adbec870c8039d38cc946b2dc79ec9cf7e59
         env:
           MIDEN_NODE_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-node:${{ needs.preflight.outputs.immutable_tag }}
           MIDEN_VALIDATOR_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-validator:${{ needs.preflight.outputs.immutable_tag }}
@@ -418,7 +354,6 @@ jobs:
             ${{ env.REGISTRY_PREFIX }}/miden-network-monitor:${{ needs.preflight.outputs.immutable_tag }}
           MIDEN_BENCHMARK_IMAGE:
             ${{ env.REGISTRY_PREFIX }}/miden-node-tps-benchmark:${{ needs.preflight.outputs.immutable_tag }}
-          MIDEN_FAUCET_IMAGE: ${{ env.REGISTRY_PREFIX }}/miden-faucet:${{ needs.preflight.outputs.immutable_tag }}
         with:
           compose-file: docker-compose.yml
           mode: publish

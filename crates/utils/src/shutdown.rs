@@ -5,6 +5,8 @@ use std::time::Duration;
 use anyhow::Context;
 pub use tokio_util::sync::CancellationToken;
 
+use crate::tracing::{error, info};
+
 /// Time allowed for services to finish after a shutdown signal before the process exits.
 pub const GRACE_PERIOD: Duration = Duration::from_secs(10);
 
@@ -56,24 +58,25 @@ where
         result = &mut service => result,
         result = &mut signal => {
             let signal = result?;
-            tracing::info!(
-                service.name = service_name,
-                shutdown.signal = %signal,
+            info!(
                 "Shutdown requested",
+                service.name = service_name,
+                shutdown.signal = signal.to_string()
             );
             token.cancel();
 
             let Ok(result) = tokio::time::timeout(GRACE_PERIOD, &mut service).await else {
-                tracing::error!(
-                    service.name = service_name,
-                    grace_period = ?GRACE_PERIOD,
+                error!(
+                    anyhow::anyhow!("graceful shutdown timed out"),
                     "Graceful shutdown timed out; exiting process",
+                    service.name = service_name,
+                    shutdown.grace_period_ms = GRACE_PERIOD.as_millis() as u64
                 );
                 std::process::exit(1);
             };
 
             result?;
-            tracing::info!(service.name = service_name, "Shutdown complete");
+            info!("Shutdown complete", service.name = service_name);
             Ok(())
         },
     }

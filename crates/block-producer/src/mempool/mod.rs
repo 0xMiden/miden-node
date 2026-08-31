@@ -55,7 +55,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, LockResult, Mutex, MutexGuard};
 
 use miden_node_utils::ErrorReport;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use miden_protocol::batch::{BatchId, ProvenBatch};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionHeader;
@@ -246,7 +246,7 @@ impl Mempool {
         &mut self,
         tx: Arc<AuthenticatedTransaction>,
     ) -> Result<BlockNumber, MempoolSubmissionError> {
-        if self.unbatched_transactions_count() >= self.config.tx_capacity.get() {
+        if self.uncommitted_transactions_count() >= self.config.tx_capacity.get() {
             return Err(MempoolSubmissionError::CapacityExceeded);
         }
 
@@ -259,14 +259,14 @@ impl Mempool {
             .map_err(MempoolSubmissionError::StateConflict)?;
         let telemetry = self.telemetry();
         miden_span_record!(
-            transaction.id = %tx.id(),
+            transaction.id = tx.id(),
             mempool.transactions.uncommitted = telemetry.uncommitted_transactions,
             mempool.transactions.unbatched = telemetry.unbatched_transactions,
             mempool.batches.proposed = telemetry.proposed_batches,
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_added(&tx);
 
@@ -283,7 +283,9 @@ impl Mempool {
     ) -> Result<BlockNumber, MempoolSubmissionError> {
         assert!(!txs.is_empty(), "Cannot have a batch with no transactions");
 
-        if self.unbatched_transactions_count() + txs.len() > self.config.tx_capacity.get() {
+        if self.uncommitted_transactions_count().saturating_add(txs.len())
+            > self.config.tx_capacity.get()
+        {
             return Err(MempoolSubmissionError::CapacityExceeded);
         }
 
@@ -313,7 +315,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         for tx in txs {
             emit_transaction_added(tx);
@@ -342,7 +344,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         Some(batch)
     }
@@ -367,7 +369,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         Some(batch)
     }
@@ -428,7 +430,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }
@@ -448,7 +450,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
     }
 
@@ -484,7 +486,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         block
     }
@@ -525,7 +527,7 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_expirations(&expired, self.committed_chain_tip);
     }
@@ -575,13 +577,33 @@ impl Mempool {
             mempool.batches.proven = telemetry.proven_batches,
             mempool.accounts = telemetry.accounts,
             mempool.nullifiers = telemetry.nullifiers,
-            mempool.output_notes = telemetry.output_notes,
+            mempool.output_notes = telemetry.output_notes
         );
         emit_transaction_evictions(&evicted, "failure_limit", "dependency_evicted");
     }
 
     // STATS & INSPECTION
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the latest block committed to the canonical chain.
+    pub fn committed_chain_tip(&self) -> BlockNumber {
+        self.committed_chain_tip
+    }
+
+    /// Returns the number of transactions that have not yet been committed.
+    pub fn uncommitted_transactions_count(&self) -> usize {
+        let committed_transactions = self
+            .committed_blocks
+            .iter()
+            .flat_map(|block| block.batches.iter())
+            .map(|batch| batch.transactions().as_slice().len())
+            .sum::<usize>();
+
+        self.transactions
+            .count()
+            .checked_sub(committed_transactions)
+            .expect("committed transactions must exist in the transaction graph")
+    }
 
     /// Returns the number of transactions currently waiting to be batched.
     pub fn unbatched_transactions_count(&self) -> usize {
@@ -602,14 +624,8 @@ impl Mempool {
     // --------------------------------------------------------------------------------------------
 
     fn telemetry(&self) -> MempoolTelemetry {
-        let committed_txs = self
-            .committed_blocks
-            .iter()
-            .flat_map(|block| block.batches.iter())
-            .map(|batch| batch.transactions().as_slice().len())
-            .sum::<usize>();
         MempoolTelemetry {
-            uncommitted_transactions: self.transactions.count() - committed_txs,
+            uncommitted_transactions: self.uncommitted_transactions_count(),
             unbatched_transactions: self.unbatched_transactions_count(),
             proposed_batches: self.proposed_batches_count(),
             proven_batches: self.proven_batches_count(),
@@ -660,11 +676,11 @@ impl Mempool {
     /// If our oldest local block is at `N`, then we allow `N-1` and newer since this means we're
     /// covering the full blockchain.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// This panics if the authentication height exceeds the latest locally known block. This
-    /// includes any proposed block since the block is committed to the mempool and store
-    /// concurrently (or at least can be).
+    /// Returns [`MempoolSubmissionError::StaleInputs`] if the authentication height is older than
+    /// the locally retained state, and [`MempoolSubmissionError::FutureInputs`] if it exceeds the
+    /// latest locally known block (including any proposed block).
     fn authentication_staleness_check(
         &self,
         authentication_height: BlockNumber,
@@ -683,11 +699,12 @@ impl Mempool {
             });
         }
 
-        assert!(
-            authentication_height <= self.chain_tip(),
-            "Authentication height {authentication_height} exceeded the chain tip {}",
-            self.chain_tip()
-        );
+        if authentication_height > self.chain_tip() {
+            return Err(MempoolSubmissionError::FutureInputs {
+                input_block: authentication_height,
+                chain_tip: self.chain_tip(),
+            });
+        }
 
         Ok(())
     }
@@ -707,14 +724,12 @@ fn emit_transaction_added(tx: &AuthenticatedTransaction) {
         return;
     }
 
-    tracing::debug!(
+    debug!(
         target: LOG_TARGET,
-        {
-            transaction.id = %tx.id(),
-            account.id = %tx.account_id(),
-            transaction.expires_at = %tx.expires_at(),
-        },
         "Transaction added to mempool",
+        transaction.id = tx.id(),
+        account.id = tx.account_id(),
+        transaction.expires_at = tx.expires_at()
     );
 }
 
@@ -724,13 +739,11 @@ fn emit_transaction_expirations(removal: &graph::TransactionRemoval, chain_tip: 
     }
 
     for transaction_id in removal.direct() {
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            {
-                transaction.id = %transaction_id,
-                block.number = %chain_tip,
-            },
             "Transaction expired from mempool",
+            transaction.id = transaction_id,
+            block.number = chain_tip
         );
     }
 
@@ -747,13 +760,11 @@ fn emit_transaction_evictions(
     }
 
     for transaction_id in removal.direct() {
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            {
-                transaction.id = %transaction_id,
-                mempool.removal.reason = direct_reason,
-            },
             "Transaction evicted from mempool",
+            transaction.id = transaction_id,
+            mempool.removal.reason = direct_reason
         );
     }
 
@@ -762,13 +773,11 @@ fn emit_transaction_evictions(
 
 fn emit_dependent_transaction_evictions(removal: &graph::TransactionRemoval, reason: &'static str) {
     for transaction_id in removal.dependents() {
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            {
-                transaction.id = %transaction_id,
-                mempool.removal.reason = reason,
-            },
             "Transaction evicted from mempool",
+            transaction.id = transaction_id,
+            mempool.removal.reason = reason
         );
     }
 }

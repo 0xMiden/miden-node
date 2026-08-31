@@ -24,7 +24,7 @@ use miden_node_proto::generated::rpc::{BlockSubscriptionRequest, BlockSubscripti
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
 use miden_node_utils::retry::{self, Retryable};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, info, miden_instrument, warn};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -44,7 +44,6 @@ use miden_protocol::utils::serde::{Deserializable, Serializable};
 use thiserror::Error;
 use tonic::Status;
 use tonic::metadata::AsciiMetadataValue;
-use tracing::{info};
 use url::Url;
 
 use crate::COMPONENT;
@@ -122,7 +121,12 @@ impl RpcClient {
         backoff_initial: Duration,
         backoff_max: Duration,
     ) -> anyhow::Result<Self> {
-        info!(target: COMPONENT, rpc_endpoint = %rpc_url, "Initializing RPC client");
+        info!(
+            target: COMPONENT,
+            "Initializing RPC client",
+            dependency.name = "rpc",
+            dependency.endpoint = rpc_url.to_string()
+        );
 
         let builder = Builder::new(rpc_url)
             .with_tls()?
@@ -186,7 +190,7 @@ impl RpcClient {
         target = COMPONENT,
         name = "rpc.client.block_subscription_with_retry",
         fields(
-            block.from = %block_from,
+            block.from = block_from,
         ),
         err,
     )]
@@ -215,11 +219,11 @@ impl RpcClient {
         })
         .retry(self.backoff)
         .notify(|err: &RpcError, dur| {
-            tracing::warn!(
+            warn!(
+                err,
                 target: COMPONENT,
-                sleep_ms = dur.as_millis() as u64,
-                err = %err.as_report(),
                 "RPC connection failed while opening block subscription, retrying",
+                retry.delay_ms = dur.as_millis() as u64
             );
         })
         .await
@@ -247,9 +251,10 @@ impl RpcClient {
                         Some(stream) => stream,
                         None => match client.block_subscription_with_retry(next_from).await {
                             Ok(stream) => {
-                                tracing::info!(
-                                    target: COMPONENT, %next_from,
+                                info!(
+                                    target: COMPONENT,
                                     "block subscription connected",
+                                    block.from = next_from
                                 );
                                 // Reset the stall clock so time spent (re)connecting is not counted
                                 // against the next block's arrival.
@@ -257,9 +262,11 @@ impl RpcClient {
                                 inner.insert(stream)
                             },
                             Err(err) => {
-                                tracing::warn!(
-                                    target: COMPONENT, err = %err.as_report(), %next_from,
+                                warn!(
+                                    &err,
+                                    target: COMPONENT,
                                     "failed to open block subscription, retrying",
+                                    block.from = next_from
                                 );
                                 tokio::time::sleep(RECONNECT_DELAY).await;
                                 continue;
@@ -279,31 +286,36 @@ impl RpcClient {
                                 (client, next_from, inner, last_block),
                             ));
                         },
-                        Ok(Some(Err(err))) => tracing::warn!(
-                            target: COMPONENT, err = %err.as_report(), %next_from,
+                        Ok(Some(Err(err))) => warn!(
+                            &err,
+                            target: COMPONENT,
                             "block subscription failed, reconnecting",
+                            block.from = next_from
                         ),
-                        Ok(None) => tracing::warn!(
-                            target: COMPONENT, %next_from,
+                        Ok(None) => warn!(
+                            target: COMPONENT,
                             "block subscription closed by node, reconnecting",
+                            block.from = next_from
                         ),
                         Err(_elapsed) => {
                             let idle = last_block.elapsed();
                             if idle < STALL_TIMEOUT {
                                 // Quiet but not yet stalled: emit a liveness signal and keep
                                 // polling the same stream instead of reconnecting.
-                                tracing::debug!(
-                                    target: COMPONENT, %next_from,
-                                    idle = %humantime::format_duration(Duration::from_secs(idle.as_secs())),
+                                debug!(
+                                    target: COMPONENT,
                                     "no block received recently; subscription still open",
+                                    block.from = next_from,
+                                    subscription.idle_ms = idle.as_millis() as u64
                                 );
                                 continue;
                             }
-                            tracing::warn!(
-                                target: COMPONENT, %next_from,
-                                idle = %humantime::format_duration(Duration::from_secs(idle.as_secs())),
-                                stall_timeout = %humantime::format_duration(STALL_TIMEOUT),
+                            warn!(
+                                target: COMPONENT,
                                 "no block received within stall timeout; treating subscription as stalled, reconnecting",
+                                block.from = next_from,
+                                subscription.idle_ms = idle.as_millis() as u64,
+                                subscription.stall_timeout_ms = STALL_TIMEOUT.as_millis() as u64
                             );
                         },
                     }
@@ -361,11 +373,11 @@ impl RpcClient {
         .when(|status: &Status| status.code() == tonic::Code::FailedPrecondition)
         .notify(|status: &Status, _| {
             stale_key.store(true, Ordering::Relaxed);
-            tracing::warn!(
+            warn!(
+                status,
                 target: COMPONENT,
-                %tx_id,
-                err = %status.message(),
                 "Transaction inputs rejected as stale, refreshing the encryption key and retrying",
+                transaction.id = tx_id
             );
         })
         .await
@@ -498,16 +510,22 @@ impl RpcClient {
                 ))
             })?;
 
-        let StorageMapEntries::EntriesWithProofs(proofs) = &map_details.entries else {
+        let StorageMapEntries::PartialMap { map_keys, partial_smt } = &map_details.entries else {
             return Err(RpcError::InvalidResponse(
-                "response did not include storage map entry proofs".into(),
+                "response did not include a partial storage map".into(),
             ));
         };
 
-        let proof = proofs.first().cloned().ok_or_else(|| {
-            RpcError::InvalidResponse(
-                "response did not include a proof for the requested key".into(),
-            )
+        if !map_keys.contains(&map_key) {
+            return Err(RpcError::InvalidResponse(
+                "response partial storage map did not include the requested key".into(),
+            ));
+        }
+
+        let proof = partial_smt.open(&map_key.hash().as_word()).map_err(|err| {
+            RpcError::InvalidResponse(format!(
+                "response did not track the requested storage map key: {err}"
+            ))
         })?;
 
         StorageMapWitness::new(proof, [map_key])

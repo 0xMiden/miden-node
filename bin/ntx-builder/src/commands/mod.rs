@@ -12,6 +12,7 @@ use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::{OfficialNetwork, fetch_genesis_block, read_genesis_block};
 use miden_node_utils::logging::OpenTelemetry;
 use miden_node_utils::shutdown::CancellationToken;
+use miden_node_utils::tracing::info;
 use tokio::net::TcpListener;
 use tonic::metadata::AsciiMetadataValue;
 use url::Url;
@@ -168,23 +169,21 @@ impl NtxBuilderCommand {
                 genesis_block_file,
                 network,
             } => {
-                tracing::info!(
+                info!(
                     target: miden_ntx_builder::LOG_TARGET,
-                    {
-                        service.name = "miden-ntx-builder",
-                        service.version = env!("CARGO_PKG_VERSION"),
-                        genesis.source.kind =
-                            if genesis_block_file.is_some() { "file" } else { "network" },
-                        genesis.source = %genesis_block_file.as_ref().map_or_else(
-                            || network.map_or_else(
-                                || "custom".to_owned(),
-                                |network| network.to_string(),
-                            ),
-                            |path| path.display().to_string(),
-                        ),
-                        data.directory = %data_directory.display(),
-                    },
                     "Bootstrapping NTX builder",
+                    service.name = "miden-ntx-builder",
+                    service.version = env!("CARGO_PKG_VERSION"),
+                    genesis.source.kind =
+                        if genesis_block_file.is_some() { "file" } else { "network" },
+                    genesis.source = genesis_block_file.as_ref().map_or_else(
+                        || network.map_or_else(
+                            || "custom".to_owned(),
+                            |network| network.to_string(),
+                        ),
+                        |path| path.display().to_string(),
+                    ),
+                    data.directory = data_directory.as_path()
                 );
                 ensure_empty_directory(&data_directory)?;
                 let database_filepath = data_directory.join("ntx-builder.sqlite3");
@@ -194,13 +193,11 @@ impl NtxBuilderCommand {
                 miden_ntx_builder::bootstrap(database_filepath, &genesis)
                     .await
                     .context("failed to bootstrap ntx-builder database")?;
-                tracing::info!(
+                info!(
                     target: miden_ntx_builder::LOG_TARGET,
-                    {
-                        genesis.commitment = %genesis_commitment,
-                        data.directory = %data_directory.display(),
-                    },
                     "NTX builder bootstrap complete",
+                    genesis.commitment = genesis_commitment,
+                    data.directory = data_directory.as_path()
                 );
                 Ok(())
             },
@@ -229,22 +226,20 @@ impl NtxBuilderCommand {
             unreachable!("start is only called for the Start variant")
         };
 
-        tracing::info!(
+        info!(
             target: miden_ntx_builder::LOG_TARGET,
-            {
-                service.name = "miden-ntx-builder",
-                service.version = env!("CARGO_PKG_VERSION"),
-                ntx_builder.listen = %listen,
-                data.directory = %data_directory.display(),
-                rpc.endpoint = %format_endpoint(&rpc_url),
-                tx_prover.endpoint = %format_endpoint(&tx_prover_url),
-                rpc.authentication.configured = rpc_auth_header_value.is_some(),
-                ntx_builder.idle_timeout = %humantime::Duration::from(idle_timeout),
-                ntx_builder.max_cycles = max_tx_cycles,
-                ntx_builder.tx_expiration_delta = tx_expiration_delta.get(),
-                sqlite.connection_pool_size = sqlite_connection_pool_size.get(),
-            },
             "Starting NTX builder",
+            service.name = "miden-ntx-builder",
+            service.version = env!("CARGO_PKG_VERSION"),
+            ntx_builder.listen = listen.to_string(),
+            data.directory = data_directory.as_path(),
+            rpc.endpoint = format_endpoint(&rpc_url),
+            tx_prover.endpoint = format_endpoint(&tx_prover_url),
+            rpc.authentication.configured = rpc_auth_header_value.is_some(),
+            ntx_builder.idle_timeout = humantime::Duration::from(idle_timeout).to_string(),
+            ntx_builder.max_cycles = max_tx_cycles,
+            ntx_builder.tx_expiration_delta = tx_expiration_delta.get(),
+            db.sqlite.connection_pool_size = sqlite_connection_pool_size.get()
         );
 
         let listener = TcpListener::bind(listen)

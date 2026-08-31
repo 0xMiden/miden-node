@@ -6,6 +6,7 @@ use miden_node_store::BlockStore;
 use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::fs::ensure_empty_directory;
 use miden_node_utils::genesis::read_genesis_block;
+use miden_node_utils::tracing::info;
 use miden_validator::DataDirectory;
 
 /// Runs the `bootstrap` command: seeds this validator's database from the genesis block file
@@ -19,15 +20,13 @@ pub async fn bootstrap(
     sqlite_connection_pool_size: NonZeroUsize,
     genesis_block_file: &Path,
 ) -> anyhow::Result<()> {
-    tracing::info!(
+    info!(
         target: miden_validator::LOG_TARGET,
-        {
-            service.name = "miden-validator",
-            service.version = env!("CARGO_PKG_VERSION"),
-            genesis.file = %genesis_block_file.display(),
-            data.directory = %data_directory.display(),
-        },
         "Bootstrapping validator",
+        service.name = "miden-validator",
+        service.version = env!("CARGO_PKG_VERSION"),
+        genesis.file = genesis_block_file,
+        data.directory = data_directory
     );
 
     ensure_empty_directory(data_directory)?;
@@ -51,13 +50,11 @@ pub async fn bootstrap(
     .await
     .context("failed to bootstrap the validator database")?;
 
-    tracing::info!(
+    info!(
         target: miden_validator::LOG_TARGET,
-        {
-            genesis.commitment = %genesis_commitment,
-            data.directory = %data_directory.display(),
-        },
         "Validator bootstrap complete",
+        genesis.commitment = genesis_commitment,
+        data.directory = data_directory
     );
 
     Ok(())
@@ -65,6 +62,9 @@ pub async fn bootstrap(
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey;
+    use miden_protocol::utils::serde::Deserializable;
+
     use super::*;
 
     #[tokio::test]
@@ -74,8 +74,16 @@ mod tests {
         let accounts_directory = root.path().join("accounts");
         let data_directory = root.path().join("data");
 
-        super::super::genesis::generate(&genesis_directory, &accounts_directory, None)
-            .expect("genesis should complete");
+        let validator_key = SigningKey::read_from_bytes(&[7; 32])
+            .expect("test signing key should decode")
+            .public_key();
+        super::super::genesis::generate(
+            &genesis_directory,
+            &accounts_directory,
+            None,
+            vec![validator_key],
+        )
+        .expect("genesis should complete");
 
         bootstrap(
             &data_directory,
@@ -88,11 +96,15 @@ mod tests {
         assert!(genesis_directory.join("genesis.dat").is_file());
         assert!(data_directory.join("validator.sqlite3").is_file());
         assert!(
-            fs_err::read_dir(accounts_directory)
+            fs_err::read_dir(&accounts_directory)
                 .expect("accounts directory should be readable")
                 .next()
                 .is_some(),
             "genesis should write generated account files",
+        );
+        assert!(
+            accounts_directory.join("native_faucet.mac").is_file(),
+            "genesis should write the generated native faucet account file",
         );
     }
 }

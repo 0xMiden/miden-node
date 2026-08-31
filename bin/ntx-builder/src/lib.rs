@@ -11,6 +11,7 @@ use miden_node_store::genesis::GenesisBlock;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::lru_cache::LruCache;
 use miden_node_utils::shutdown::CancellationToken;
+use miden_node_utils::tracing::debug;
 use tokio::sync::mpsc;
 use tonic::metadata::AsciiMetadataValue;
 use url::Url;
@@ -29,6 +30,7 @@ mod committed_block;
 mod coordinator;
 pub(crate) mod db;
 pub mod server;
+mod sponsorship;
 
 #[cfg(test)]
 pub(crate) mod test_utils;
@@ -164,7 +166,8 @@ pub struct NtxBuilderConfig {
     /// account actors.
     pub max_concurrent_txs: usize,
 
-    /// Maximum number of network notes a single transaction is allowed to consume.
+    /// Maximum number of network notes a single transaction is allowed to consume. Sponsorship
+    /// notes count against this budget.
     pub max_notes_per_tx: NonZeroUsize,
 
     /// Maximum number of attempts to execute a failing note before dropping it. Notes use
@@ -437,10 +440,10 @@ impl NtxBuilderConfig {
 
         let block_from = last_applied_block.child();
 
-        tracing::debug!(
+        debug!(
             target: LOG_TARGET,
-            %block_from,
-            "ntx-builder opening committed-block subscription"
+            "ntx-builder opening committed-block subscription",
+            block.from = block_from
         );
 
         // The stream reconnects on its own whenever the node closes the subscription, resuming from

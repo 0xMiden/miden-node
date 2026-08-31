@@ -4,7 +4,7 @@ use miden_node_proto::clients::{SequencerClient, ValidatorClient};
 use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record, trace};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::transaction::{
     OutputNote,
@@ -15,7 +15,6 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use tonic::{Request, Status};
-use tracing::debug;
 
 use super::{COMPONENT, RpcBackend, RpcService, submit_tx_to_validators};
 use crate::LOG_TARGET;
@@ -48,18 +47,18 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         let is_authorized_network_tx = self.is_authorized_network_tx(metadata);
         let original_accept_header = metadata.get(http::header::ACCEPT.as_str()).cloned();
 
-        tracing::trace!(target: LOG_TARGET, "Received transaction submission");
+        trace!(target: LOG_TARGET, "Received transaction submission");
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
             Status::invalid_argument(err.as_report_context("invalid transaction"))
         })?;
 
         miden_span_record!(
-            transaction.id = %tx.id(),
-            account.id = %tx.account_id(),
-            transaction.expires_at = %tx.expiration_block_num(),
-            transaction.reference_block.number = %tx.ref_block_num(),
-            transaction.reference_block.commitment = %tx.ref_block_commitment(),
+            transaction.id = tx.id(),
+            account.id = tx.account_id(),
+            transaction.expires_at = tx.expiration_block_num(),
+            transaction.reference_block.number = tx.ref_block_num(),
+            transaction.reference_block.commitment = tx.ref_block_commitment()
         );
 
         debug!(target: LOG_TARGET, "Submitting transaction");

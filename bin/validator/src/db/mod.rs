@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use miden_node_db::DatabaseError;
 use miden_node_db::sqlite::{DbReader, DbWriter};
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{info, miden_instrument};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionId;
 
@@ -54,6 +54,9 @@ impl ValidatorDbReader {
 
     /// Loads the chain tip, or `None` if no block header has been persisted yet (i.e. bootstrap has
     /// not been run).
+    #[miden_instrument(
+        target = COMPONENT,
+    )]
     pub(crate) async fn load_chain_tip(&self) -> Result<Option<BlockHeader>, DatabaseError> {
         self.reader.read("load_chain_tip", queries::load_chain_tip).await
     }
@@ -169,6 +172,9 @@ impl ValidatorDbWriter {
 
     /// Inserts a validated transaction and its encrypted private inputs, returning the number of
     /// inserted rows. The count is zero if the transaction was already recorded.
+    #[miden_instrument(
+        target = COMPONENT,
+    )]
     pub async fn insert_validated_private_transaction(
         &self,
         record: StoredPrivateRecord,
@@ -181,6 +187,9 @@ impl ValidatorDbWriter {
     }
 
     /// Persists a block header, replacing any header already stored at the same height.
+    #[miden_instrument(
+        target = COMPONENT,
+    )]
     pub(crate) async fn upsert_block_header(
         &self,
         header: BlockHeader,
@@ -243,7 +252,7 @@ async fn setup_with_pool_size(
 /// Returns an error if the database has already been bootstrapped.
 #[miden_instrument(
     target = COMPONENT,
-    fields(path = %database_filepath.display()),
+    fields(path = database_filepath),
     err,
 )]
 pub async fn bootstrap(
@@ -271,11 +280,11 @@ fn open_with_pool_size(
 ) -> Result<ValidatorDbWriter, DatabaseError> {
     let (writer, reader) =
         miden_node_db::sqlite::open_with_pool_size(database_filepath, connection_pool_size)?;
-    tracing::info!(
+    info!(
         target: LOG_TARGET,
-        sqlite= %database_filepath.display(),
-        connection_pool_size = %connection_pool_size,
-        "Connected to the database"
+        "Connected to the database",
+        path = database_filepath,
+        db.sqlite.connection_pool_size = connection_pool_size.get()
     );
     Ok(ValidatorDbWriter {
         writer,

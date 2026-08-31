@@ -14,13 +14,15 @@ use miden_node_proto::clients::{
 use miden_node_proto::server::{rpc_api, sequencer_api};
 use miden_node_proto_build::rpc_api_descriptor;
 use miden_node_store::state::{BlockWriter, ProofWriter, State};
-use miden_node_utils::clap::{GrpcOptionsExternal, GrpcOptionsInternal};
+use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_node_utils::grpc;
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use miden_node_utils::tracing::info;
+use miden_protocol::block::BlockNumber;
 use rand::RngExt;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -29,7 +31,6 @@ use tonic_reflection::server;
 use tonic_web::GrpcWebLayer;
 use tower_http::classify::{GrpcCode, GrpcErrorsAsFailures, SharedClassifier};
 use tower_http::trace::TraceLayer;
-use tracing::info;
 
 use crate::LOG_TARGET;
 use crate::server::api::SequencerInternalService;
@@ -48,7 +49,7 @@ pub struct Rpc {
     pub state: Arc<State>,
     pub mode: RpcMode,
     pub ntx_builder: Option<NtxBuilderClient>,
-    pub grpc_options: GrpcOptionsExternal,
+    pub grpc_options: GrpcOptions,
     pub network_tx_auth: Option<AsciiMetadataValue>,
 }
 
@@ -326,8 +327,6 @@ impl Rpc {
 
         let rpc = tonic::transport::Server::builder()
             .accept_http1(true)
-            .max_connection_age(self.grpc_options.max_connection_age)
-            .max_connection_age_grace(self.grpc_options.max_connection_age_grace)
             .timeout(self.grpc_options.request_timeout)
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(
@@ -343,11 +342,9 @@ impl Rpc {
             )
             .layer(HealthCheckLayer)
             .layer(cors_for_grpc_web_layer())
-            // Note: must wrap the accept/rate-limit layers so grpc-web callers receive
-            // grpc-web-compatible error responses instead of opaque transport failures.
+            // Note: must wrap the accept layer so grpc-web callers receive grpc-web-compatible
+            // error responses instead of opaque transport failures.
             .layer(GrpcWebLayer::new())
-            .layer(grpc::rate_limit_concurrent_connections(self.grpc_options))
-            .layer(grpc::rate_limit_per_ip(self.grpc_options)?)
             // Resolve the (load-balancer-aware) client IP once here so handlers can read it from
             // request extensions instead of re-deriving it from headers.
             .layer(grpc::ResolveClientIpLayer)
@@ -408,31 +405,27 @@ impl Rpc {
     }
 }
 
-fn log_node_ready(mode: &str, endpoint: impl Display, chain_tip: impl Display) {
+fn log_node_ready(mode: &str, endpoint: impl Display, chain_tip: BlockNumber) {
     info!(
         target: LOG_TARGET,
-        {
-            service.name = "miden-node",
-            service.version = env!("CARGO_PKG_VERSION"),
-            node.role = mode,
-            rpc.listen = %endpoint,
-            block.number = %chain_tip,
-        },
         "Node ready",
+        service.name = "miden-node",
+        service.version = env!("CARGO_PKG_VERSION"),
+        node.role = mode,
+        rpc.listen = endpoint.to_string(),
+        block.number = chain_tip
     );
 }
 
 fn log_node_synchronizing(mode: &str, endpoint: impl Display, readiness_threshold: u32) {
     info!(
         target: LOG_TARGET,
-        {
-            service.name = "miden-node",
-            service.version = env!("CARGO_PKG_VERSION"),
-            node.role = mode,
-            rpc.listen = %endpoint,
-            sync.ready_threshold = readiness_threshold,
-        },
         "Node started; synchronizing",
+        service.name = "miden-node",
+        service.version = env!("CARGO_PKG_VERSION"),
+        node.role = mode,
+        rpc.listen = endpoint.to_string(),
+        sync.ready_threshold = readiness_threshold
     );
 }
 
@@ -453,7 +446,7 @@ pub struct SequencerInternal {
     /// The in-process block producer API submissions are forwarded to.
     pub block_producer: BlockProducerApi,
     /// gRPC server options for internal services (timeouts).
-    pub grpc_options: GrpcOptionsInternal,
+    pub grpc_options: GrpcOptions,
 }
 
 impl SequencerInternal {
@@ -468,14 +461,14 @@ impl SequencerInternal {
             .context("failed to read internal sequencer listen address")?;
         info!(
             target: LOG_TARGET,
-            { internal.listen = %endpoint },
             "Internal sequencer server ready",
+            internal.listen = endpoint.to_string()
         );
 
         let service = SequencerInternalService { block_producer: self.block_producer };
 
-        // Note: deliberately no accept-header / rate-limit / auth layers; this is a private,
-        // trusted interface and is expected to be network-isolated.
+        // Note: deliberately no accept-header / auth layers; this is a private, trusted interface
+        // and is expected to be network-isolated.
         tonic::transport::Server::builder()
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))

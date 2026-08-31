@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::rpc::{BlockProducerStatus, RpcStatus};
+use miden_node_utils::tracing::warn;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use crate::LOG_TARGET;
 use crate::faucet::FaucetTestDetails;
@@ -211,10 +211,23 @@ pub struct ExplorerStatusDetails {
 }
 
 /// Details of the note transport service.
+///
+/// The stats fields are sourced from the note transport's `Stats` RPC. A successful response marks
+/// the service as healthy; a failed call marks it as unhealthy and leaves the fields as `None`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NoteTransportStatusDetails {
     pub url: String,
-    pub serving_status: String,
+    /// Version reported by the note transport service; `None` when unavailable.
+    pub version: Option<String>,
+    /// Total number of notes stored by the service.
+    pub total_notes: Option<u64>,
+    /// Total number of distinct note tags seen by the service.
+    pub total_tags: Option<u64>,
+    /// Unix timestamp of the most recent note activity across all tags.
+    ///
+    /// Sourced from the per-tag stats, which the current server does not populate yet
+    /// (`notes_per_tag` is a TODO server-side); stays `None` and renders as `-` until it does.
+    pub last_activity: Option<u64>,
 }
 
 /// Details of the validator service.
@@ -263,6 +276,8 @@ pub struct BlockProducerStatusDetails {
 /// Details about the block producer's mempool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MempoolStatusDetails {
+    /// Number of transactions that have not yet been committed.
+    pub uncommitted_transactions: u64,
     /// Number of transactions currently in the mempool waiting to be batched.
     pub unbatched_transactions: u64,
     /// Number of batches currently being proven.
@@ -311,6 +326,7 @@ impl From<BlockProducerStatus> for BlockProducerStatusDetails {
         // Mempool statistics are a message field, hence optional on the wire; a node version that
         // omits them must not bring the checker down.
         let mempool = value.mempool_stats.map(|stats| MempoolStatusDetails {
+            uncommitted_transactions: stats.uncommitted_transactions,
             unbatched_transactions: stats.unbatched_transactions,
             proposed_batches: stats.proposed_batches,
             proven_batches: stats.proven_batches,
@@ -333,9 +349,9 @@ impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
             |_| {
                 warn!(
                     target: LOG_TARGET,
-                    raw = value.status,
-                    worker = %value.name,
-                    "Unknown worker health status discriminant"
+                    "Unknown worker health status discriminant",
+                    worker.status.raw = value.status,
+                    worker.name = value.name.as_str()
                 );
                 Status::Unknown
             },
@@ -359,8 +375,8 @@ impl RemoteProverStatusDetails {
                 |_| {
                     warn!(
                         target: LOG_TARGET,
-                        raw = status.supported_proof_type,
-                        "Unknown supported proof type discriminant"
+                        "Unknown supported proof type discriminant",
+                        prover.proof_type.raw = status.supported_proof_type
                     );
                     ProofType::Unknown
                 },

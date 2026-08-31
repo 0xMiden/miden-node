@@ -3,7 +3,7 @@ use miden_node_proto::generated as proto;
 use miden_node_proto::generated::note::CommittedNote;
 use miden_node_store::NoteRecord;
 use miden_node_utils::limiter::QueryParamNoteIdLimit;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use miden_protocol::note::NoteId;
 use miden_protocol::utils::serde::Serializable;
@@ -36,12 +36,20 @@ impl proto::server::rpc_api::GetNotesById for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        tracing::trace!(target: LOG_TARGET, ?request);
-
         check::<QueryParamNoteIdLimit>(request.ids.len())?;
 
         let note_ids: Vec<Word> = convert_digests_to_words::<Status, _>(request.ids)?;
         let note_ids: Vec<NoteId> = note_ids.into_iter().map(NoteId::from_raw).collect();
+        miden_span_record!(
+            note.ids = &note_ids[..note_ids.len().min(10)],
+            note.count = note_ids.len()
+        );
+        debug!(
+            target: LOG_TARGET,
+            "Getting notes by ID",
+            note.ids = &note_ids[..note_ids.len().min(10)],
+            note.count = note_ids.len()
+        );
 
         let notes = self
             .state

@@ -6,7 +6,7 @@ use std::sync::{Arc, Once};
 use arc_swap::ArcSwap;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record, warn};
 use miden_protocol::Word;
 use miden_protocol::account::AccountUpdateDetails;
 use miden_protocol::block::account_tree::AccountMutationSet;
@@ -19,6 +19,7 @@ use miden_protocol::utils::serde::Serializable;
 use rayon::ThreadPool;
 use thread_priority::{ThreadPriority, set_current_thread_priority};
 use tokio::sync::{mpsc, watch};
+use tracing::Instrument;
 
 use super::WriteRequest;
 use crate::account_state_forest::{
@@ -155,7 +156,7 @@ impl WriteWorker {
                     None => break,
                 },
             };
-            let result = self.write_block(req.signed_block).await;
+            let result = self.write_block(req.signed_block).instrument(req.span).await;
             let _ = req.result_tx.send(result);
         }
     }
@@ -190,9 +191,9 @@ impl WriteWorker {
         let num_transactions = body.transactions().as_slice().len();
 
         miden_span_record!(
-            block.number = %block_num,
-            block.commitment = %block_commitment,
-            block.transactions.count = num_transactions,
+            block.number = block_num,
+            block.commitment = block_commitment,
+            block.transaction.count = num_transactions
         );
 
         self.validate_block_header(header).await?;
@@ -286,7 +287,7 @@ impl WriteWorker {
         if let Some(block_lifecycle) = block_lifecycle {
             block_lifecycle.emit(&resolved_note_ids);
         }
-        tracing::debug!(target: LOG_TARGET, "Block applied");
+        debug!(target: LOG_TARGET, "Block applied");
 
         Ok(())
     }
@@ -299,11 +300,11 @@ impl WriteWorker {
     fn check_live_snapshots(&self, block_num: BlockNumber) -> u64 {
         let snapshots_live = self.snapshots_live.load(Ordering::Relaxed) as u64;
         if snapshots_live > SNAPSHOTS_LIVE_WARN_THRESHOLD {
-            tracing::warn!(
+            warn!(
                 target: COMPONENT,
-                block_num = block_num.as_u32(),
-                snapshots.live = snapshots_live,
                 "too many live state snapshots; slow readers are pinning old generations",
+                block.number = block_num,
+                snapshots.live = snapshots_live
             );
         }
         snapshots_live
@@ -590,10 +591,10 @@ fn raise_thread_priority() {
     static WARN_ONCE: Once = Once::new();
     if let Err(error) = set_current_thread_priority(ThreadPriority::Max) {
         WARN_ONCE.call_once(|| {
-            tracing::warn!(
+            warn!(
+                &error,
                 target: COMPONENT,
-                ?error,
-                "failed to raise apply-block thread priority; continuing at normal priority",
+                "failed to raise apply-block thread priority; continuing at normal priority"
             );
         });
     }

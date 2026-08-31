@@ -256,8 +256,7 @@ jobs:
     uses: ./.github/workflows/docker.yml
     with:
       mode: dry-run
-      commit: ${{ needs.preflight.outputs.commit }}
-      tag: ${{ needs.preflight.outputs.tag }}
+      ref: ${{ needs.preflight.outputs.tag }}
       created: ${{ needs.preflight.outputs.created }}
 
   publish-docker:
@@ -272,8 +271,7 @@ jobs:
     uses: ./.github/workflows/docker.yml
     with:
       mode: publish
-      commit: ${{ needs.preflight.outputs.commit }}
-      tag: ${{ needs.preflight.outputs.tag }}
+      ref: ${{ needs.preflight.outputs.tag }}
       created: ${{ needs.preflight.outputs.created }}
 
   publish-github-release:
@@ -322,9 +320,13 @@ jobs:
             prerelease_flag=(--prerelease)
           fi
 
-          cargo xtask changelog render \
+          if ! cargo xtask changelog render \
             --release-tag "${TAG}" \
-            > "${RUNNER_TEMP}/release-notes.md"
+            > "${RUNNER_TEMP}/release-notes.md"; then
+            echo "::warning title=Release notes generation failed::Using fallback release notes."
+            printf 'Release %s\n\nRelease notes could not be generated automatically.\n' "${TAG}" \
+              > "${RUNNER_TEMP}/release-notes.md"
+          fi
 
           gh release create "${TAG}" \
             --repo "${REPO}" \

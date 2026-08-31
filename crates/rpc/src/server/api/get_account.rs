@@ -9,9 +9,9 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::generated as proto;
 use miden_node_store::GetAccountError;
 use miden_node_utils::limiter::{QueryParamStorageMapKeyTotalLimit, QueryParamStorageMapSlotLimit};
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
-use tracing::{debug, info_span};
+use tracing::info_span;
 
 use super::{RpcService, check};
 use crate::{COMPONENT, LOG_TARGET};
@@ -40,16 +40,13 @@ impl proto::server::rpc_api::GetAccount for RpcService {
         _metadata: &tonic::metadata::MetadataMap,
         _extensions: &tonic::codegen::http::Extensions,
     ) -> tonic::Result<Self::Output> {
-        miden_span_record!(
-            account.id = %request.account_id,
+        miden_span_record!(account.id = request.account_id, block.number = request.block_num);
+        debug!(
+            target: LOG_TARGET,
+            "Getting account",
+            account.id = request.account_id,
+            block.number = request.block_num
         );
-        if let Some(block) = request.block_num {
-            miden_span_record!(
-                block.number = %block,
-            );
-        }
-        tracing::trace!(target: LOG_TARGET, ?request);
-        debug!(target: LOG_TARGET, "Getting account");
 
         // Validate storage map request limits before forwarding to store.
         if let Some(details) = &request.details {

@@ -112,7 +112,11 @@ impl NetworkTransactionBuilder {
         let mut tasks = Tasks::new();
 
         // Start the gRPC server.
-        let server = NtxBuilderRpcServer::new(self.db.reader(), self.config.max_note_attempts);
+        let server = NtxBuilderRpcServer::new(
+            self.db.reader(),
+            self.config.max_note_attempts,
+            self.config.grpc_timeout,
+        );
         let server_shutdown = shutdown.clone();
         tasks.spawn("grpc-server", async move {
             server

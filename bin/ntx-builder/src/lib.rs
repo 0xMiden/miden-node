@@ -115,8 +115,14 @@ const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize =
 /// Default duration after which an idle network account actor will deactivate.
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
+/// Default per-request timeout for node RPC requests.
+const DEFAULT_RPC_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Default per-request timeout for the remote transaction prover.
-const DEFAULT_PROVER_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_TX_PROVER_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default timeout for gRPC requests served by the network transaction builder.
+const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Default maximum number of crashes an account actor is allowed before being deactivated.
 const DEFAULT_MAX_ACCOUNT_CRASHES: usize = 10;
@@ -152,11 +158,20 @@ pub struct NtxBuilderConfig {
     /// Address of the node RPC gRPC server.
     pub rpc_url: Url,
 
+    /// Timeout for requests to the node RPC service.
+    pub rpc_timeout: Duration,
+
     /// Optional auth header value injected into internal RPC requests.
     pub rpc_auth_header: Option<AsciiMetadataValue>,
 
     /// Address of the remote transaction prover.
     pub tx_prover_url: Url,
+
+    /// Timeout for requests to the remote transaction prover.
+    pub tx_prover_timeout: Duration,
+
+    /// Timeout for gRPC requests served by the network transaction builder.
+    pub grpc_timeout: Duration,
 
     /// Size of the LRU cache for note scripts. Scripts are fetched through RPC and cached to avoid
     /// repeated gRPC calls.
@@ -222,8 +237,11 @@ impl NtxBuilderConfig {
     pub fn new(rpc_url: Url, tx_prover_url: Url, database_filepath: PathBuf) -> Self {
         Self {
             rpc_url,
+            rpc_timeout: DEFAULT_RPC_TIMEOUT,
             rpc_auth_header: None,
             tx_prover_url,
+            tx_prover_timeout: DEFAULT_TX_PROVER_TIMEOUT,
+            grpc_timeout: DEFAULT_GRPC_TIMEOUT,
             script_cache_size: DEFAULT_SCRIPT_CACHE_SIZE,
             max_concurrent_txs: DEFAULT_MAX_CONCURRENT_TXS,
             max_notes_per_tx: DEFAULT_MAX_NOTES_PER_TX,
@@ -245,6 +263,27 @@ impl NtxBuilderConfig {
     #[must_use]
     pub fn with_rpc_auth_header(mut self, value: AsciiMetadataValue) -> Self {
         self.rpc_auth_header = Some(value);
+        self
+    }
+
+    /// Sets the timeout for requests to the node RPC service.
+    #[must_use]
+    pub fn with_rpc_timeout(mut self, timeout: Duration) -> Self {
+        self.rpc_timeout = timeout;
+        self
+    }
+
+    /// Sets the timeout for requests to the remote transaction prover.
+    #[must_use]
+    pub fn with_tx_prover_timeout(mut self, timeout: Duration) -> Self {
+        self.tx_prover_timeout = timeout;
+        self
+    }
+
+    /// Sets the timeout for gRPC requests served by the network transaction builder.
+    #[must_use]
+    pub fn with_grpc_timeout(mut self, timeout: Duration) -> Self {
+        self.grpc_timeout = timeout;
         self
     }
 
@@ -395,6 +434,7 @@ impl NtxBuilderConfig {
                 Some(rpc_auth_header_value),
                 genesis_commitment,
                 trusted_validator_signing_keys,
+                self.rpc_timeout,
                 self.request_backoff_initial,
                 self.request_backoff_max,
             ),
@@ -402,6 +442,7 @@ impl NtxBuilderConfig {
                 self.rpc_url.clone(),
                 genesis_commitment,
                 trusted_validator_signing_keys,
+                self.rpc_timeout,
                 self.request_backoff_initial,
                 self.request_backoff_max,
             ),
@@ -414,7 +455,7 @@ impl NtxBuilderConfig {
         // its lazy endpoint from startup to make a bad configuration visible immediately.
         let tx_prover_monitor = miden_node_proto::clients::Builder::new(self.tx_prover_url.clone())
             .with_tls()?
-            .with_timeout(DEFAULT_PROVER_TIMEOUT)
+            .with_timeout(self.tx_prover_timeout)
             .without_metadata_version()
             .without_metadata_genesis()
             .without_auth_header()
@@ -485,7 +526,7 @@ impl NtxBuilderConfig {
                 rpc,
                 prover: RemoteTransactionProver::new(
                     self.tx_prover_url.clone(),
-                    DEFAULT_PROVER_TIMEOUT,
+                    self.tx_prover_timeout,
                 )?,
             },
             state: State {

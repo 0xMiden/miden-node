@@ -19,15 +19,21 @@ use url::Url;
 
 const ENV_DATA_DIRECTORY: &str = "MIDEN_NODE_DATA_DIRECTORY";
 const ENV_LISTEN: &str = "MIDEN_NODE_NTX_BUILDER_LISTEN";
+const ENV_GRPC_TIMEOUT: &str = "MIDEN_NODE_NTX_BUILDER_GRPC_TIMEOUT";
 const ENV_RPC_URL: &str = "MIDEN_NODE_NTX_BUILDER_RPC_URL";
+const ENV_RPC_TIMEOUT: &str = "MIDEN_NODE_NTX_BUILDER_RPC_TIMEOUT";
 const ENV_RPC_AUTH_HEADER_VALUE: &str = "MIDEN_NODE_NTX_BUILDER_RPC_AUTH_HEADER_VALUE";
 const ENV_TX_PROVER_URL: &str = "MIDEN_NODE_NTX_BUILDER_NTX_PROVER_URL";
+const ENV_TX_PROVER_TIMEOUT: &str = "MIDEN_NODE_NTX_BUILDER_NTX_PROVER_TIMEOUT";
 const ENV_SCRIPT_CACHE_SIZE: &str = "MIDEN_NODE_NTX_BUILDER_SCRIPT_CACHE_SIZE";
 const ENV_MAX_CYCLES: &str = "MIDEN_NODE_NTX_BUILDER_MAX_CYCLES";
 const ENV_TX_EXPIRATION_DELTA: &str = "MIDEN_NODE_NTX_BUILDER_TX_EXPIRATION_DELTA";
 const ENV_SQLITE_CONNECTION_POOL_SIZE: &str = "MIDEN_NODE_NTX_BUILDER_SQLITE_CONNECTION_POOL_SIZE";
 
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
+const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_RPC_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_TX_PROVER_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_SCRIPT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
 const DEFAULT_MAX_CYCLES: u32 = 1 << 18;
 const DEFAULT_TX_EXPIRATION_DELTA: NonZeroU16 = NonZeroU16::new(30).unwrap();
@@ -42,9 +48,29 @@ pub enum NtxBuilderCommand {
         #[arg(long = "listen", env = ENV_LISTEN, value_name = "LISTEN")]
         listen: SocketAddr,
 
+        /// Maximum duration allocated to a gRPC request served by the ntx-builder.
+        #[arg(
+            long = "grpc.timeout",
+            env = ENV_GRPC_TIMEOUT,
+            default_value = duration_to_human_readable_string(DEFAULT_GRPC_TIMEOUT),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
+        )]
+        grpc_timeout: Duration,
+
         /// The node RPC service gRPC url.
         #[arg(long = "rpc.url", alias = "store.url", env = ENV_RPC_URL, value_name = "URL")]
         rpc_url: Url,
+
+        /// Request timeout for calls to the node RPC service.
+        #[arg(
+            long = "rpc.timeout",
+            env = ENV_RPC_TIMEOUT,
+            default_value = duration_to_human_readable_string(DEFAULT_RPC_TIMEOUT),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
+        )]
+        rpc_timeout: Duration,
 
         /// Optional value for the fixed `x-miden-network-tx-auth` metadata header.
         #[arg(
@@ -57,6 +83,16 @@ pub enum NtxBuilderCommand {
         /// The remote transaction prover's gRPC url.
         #[arg(long = "tx-prover.url", env = ENV_TX_PROVER_URL, value_name = "URL")]
         tx_prover_url: Url,
+
+        /// Request timeout for calls to the remote transaction prover.
+        #[arg(
+            long = "tx-prover.timeout",
+            env = ENV_TX_PROVER_TIMEOUT,
+            default_value = duration_to_human_readable_string(DEFAULT_TX_PROVER_TIMEOUT),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
+        )]
+        tx_prover_timeout: Duration,
 
         /// Number of note scripts to cache locally.
         ///
@@ -211,9 +247,12 @@ impl NtxBuilderCommand {
     async fn start(self, shutdown: CancellationToken) -> anyhow::Result<()> {
         let Self::Start {
             listen,
+            grpc_timeout,
             rpc_url,
+            rpc_timeout,
             rpc_auth_header_value,
             tx_prover_url,
+            tx_prover_timeout,
             script_cache_size,
             idle_timeout,
             max_account_crashes,
@@ -232,9 +271,12 @@ impl NtxBuilderCommand {
             service.name = "miden-ntx-builder",
             service.version = env!("CARGO_PKG_VERSION"),
             ntx_builder.listen = listen.to_string(),
+            grpc.timeout = humantime::Duration::from(grpc_timeout).to_string(),
             data.directory = data_directory.as_path(),
             rpc.endpoint = format_endpoint(&rpc_url),
+            rpc.timeout = humantime::Duration::from(rpc_timeout).to_string(),
             tx_prover.endpoint = format_endpoint(&tx_prover_url),
+            tx_prover.timeout = humantime::Duration::from(tx_prover_timeout).to_string(),
             rpc.authentication.configured = rpc_auth_header_value.is_some(),
             ntx_builder.idle_timeout = humantime::Duration::from(idle_timeout).to_string(),
             ntx_builder.max_cycles = max_tx_cycles,
@@ -250,6 +292,9 @@ impl NtxBuilderCommand {
 
         let config =
             miden_ntx_builder::NtxBuilderConfig::new(rpc_url, tx_prover_url, database_filepath)
+                .with_grpc_timeout(grpc_timeout)
+                .with_rpc_timeout(rpc_timeout)
+                .with_tx_prover_timeout(tx_prover_timeout)
                 .with_script_cache_size(script_cache_size)
                 .with_idle_timeout(idle_timeout)
                 .with_max_account_crashes(max_account_crashes)

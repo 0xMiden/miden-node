@@ -172,6 +172,7 @@ impl AccountActorContext {
                     url.clone(),
                     miden_protocol::Word::default(),
                     trusted_validator_signing_keys,
+                    Duration::from_secs(10),
                     Duration::from_millis(100),
                     Duration::from_secs(30),
                 )

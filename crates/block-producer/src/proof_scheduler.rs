@@ -19,15 +19,14 @@ use std::time::Duration;
 use anyhow::Context;
 use miden_node_proto::BlockProofRequest;
 use miden_node_store::state::{ProofWriter, State};
+use miden_node_tracing::{Instrument, debug, info, miden_instrument};
 use miden_node_utils::retry::{self, Retryable};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::{debug, info, miden_instrument};
 use miden_protocol::block::{BlockNumber, BlockProof};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
-use tracing::Instrument;
 
 use crate::block_prover::{BlockProver, ProverError};
 use crate::errors::ProofSchedulerError;
@@ -188,12 +187,12 @@ async fn prove_block(
         // is retried like any other transient failure.
         let result = (|| {
             attempt += 1;
-            let attempt_span = tracing::info_span!(
+            let attempt_span = miden_node_tracing::info_span!(
                 target: COMPONENT,
                 "prove_attempt",
                 attempt,
-                error = tracing::field::Empty,
-                timed_out = tracing::field::Empty,
+                error = miden_node_tracing::field::Empty,
+                timed_out = miden_node_tracing::field::Empty,
             );
 
             async move {
@@ -207,11 +206,13 @@ async fn prove_block(
                     Ok(Ok(proof)) => Ok((block_num, proof.to_bytes())),
                     Ok(Err(err @ ProveBlockError::Fatal(_))) => Err(err),
                     Ok(Err(ProveBlockError::Transient(err))) => {
-                        tracing::Span::current().record("error", tracing::field::display(&err));
+                        miden_node_tracing::Span::current()
+                            .record("error", miden_node_tracing::field::display(&err));
                         Err(ProveBlockError::Transient(err))
                     },
                     Err(elapsed) => {
-                        tracing::Span::current().record("timed_out", elapsed.to_string());
+                        miden_node_tracing::Span::current()
+                            .record("timed_out", elapsed.to_string());
                         Err(ProveBlockError::Transient(Box::new(elapsed)))
                     },
                 }

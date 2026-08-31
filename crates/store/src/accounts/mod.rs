@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 #[cfg(feature = "rocksdb")]
 use miden_crypto::merkle::smt::RocksDbStorage;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_protocol::account::{AccountId, AccountIdPrefix};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::block::account_tree::{AccountMutationSet, AccountTree, AccountWitness};

@@ -4,7 +4,7 @@ use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::decode::GrpcDecodeExt;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::{decode, generated as proto};
-use miden_node_utils::tracing::{info, miden_instrument};
+use miden_node_tracing::{info, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::block::ProposedBlock;
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};

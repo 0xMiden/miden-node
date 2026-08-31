@@ -1,8 +1,8 @@
 use miden_node_proto::decode::read_block_range;
 use miden_node_proto::generated as proto;
 use miden_node_store::{NoteSyncError, NoteSyncRecord};
+use miden_node_tracing::{debug, miden_instrument, miden_span_record};
 use miden_node_utils::limiter::QueryParamNoteTagLimit;
-use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
 use tonic::Status;
 
 use super::{RpcInvalidBlockRange, RpcService, check, invalid_block_range_to_status};

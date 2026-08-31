@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_note_transport_proto::miden_note_transport::StatsResponse;
 use miden_note_transport_proto::miden_note_transport::miden_note_transport_client::MidenNoteTransportClient;
 use tonic::transport::{Channel, ClientTlsConfig};

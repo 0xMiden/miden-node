@@ -1,9 +1,8 @@
 use miden_node_block_producer::store::get_tx_inputs;
 use miden_node_proto::clients::{SequencerClient, ValidatorClient};
 use miden_node_proto::generated as proto;
-use miden_node_utils::ErrorReport;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record, trace};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{ErrorReport, debug, miden_instrument, miden_span_record, trace};
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::utils::serde::{Deserializable, Serializable};

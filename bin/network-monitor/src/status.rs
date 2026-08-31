@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use miden_node_proto::clients::RpcClient;
-use miden_node_utils::tracing::{debug, miden_instrument};
+use miden_node_tracing::{debug, miden_instrument};
 use url::Url;
 
 use crate::COMPONENT;

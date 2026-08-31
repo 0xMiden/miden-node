@@ -1,5 +1,5 @@
 use miden_node_proto::generated::{self as grpc, rpc};
-use miden_node_utils::tracing::error;
+use miden_node_tracing::error;
 use miden_protocol::Word;
 
 use super::NtxBuilderRpcServer;
@@ -21,7 +21,7 @@ impl grpc::server::ntx_builder_api::GetNetworkNoteStatus for NtxBuilderRpcServer
         Ok(miden_protocol::note::NoteId::from_raw(note_id_digest))
     }
 
-    #[miden_node_utils::tracing::miden_instrument(
+    #[miden_node_tracing::miden_instrument(
         target = COMPONENT,
         name = "get_network_note_status",
         fields (

@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize};
 use url::Url;

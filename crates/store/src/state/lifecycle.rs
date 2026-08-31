@@ -6,11 +6,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
 use arc_swap::ArcSwap;
-use miden_node_utils::ErrorReport;
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{ErrorReport, miden_instrument};
 use miden_node_utils::clap::StorageOptions;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::miden_instrument;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tracing::Instrument;

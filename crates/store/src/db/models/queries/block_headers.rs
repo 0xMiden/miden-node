@@ -12,8 +12,8 @@ use diesel::{
     SqliteConnection,
 };
 use miden_crypto::Word;
+use miden_node_tracing::miden_instrument;
 use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
-use miden_node_utils::tracing::miden_instrument;
 use miden_protocol::block::{BlockHeader, BlockNumber, BlockSignatures};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 

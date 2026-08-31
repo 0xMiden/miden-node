@@ -16,8 +16,8 @@ use std::panic::Location;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use miden_node_tracing::Span;
 use miden_protocol::block::{BlockNumber, Blockchain};
-use tracing::Span;
 
 use crate::COMPONENT;
 use crate::account_state_forest::{AccountStateForest, AccountStateForestBackendReader};

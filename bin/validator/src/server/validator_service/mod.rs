@@ -4,8 +4,8 @@ use std::sync::atomic::AtomicU64;
 use miden_node_db::DatabaseError;
 use miden_node_proto::domain::encryption::TransactionEncryptionKeyInfo;
 use miden_node_store::BlockStore;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{miden_instrument, miden_span_record};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{miden_instrument, miden_span_record};
 use miden_protocol::Word;
 use miden_protocol::block::{
     BlockHeader,

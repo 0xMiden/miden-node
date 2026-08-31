@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use miden_node_store::state::{BlockWriter, State};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{ErrorSpanExt, Span, debug, miden_instrument, miden_span_record};
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::spawn::spawn_blocking_in_current_span;
-use miden_node_utils::tracing::{ErrorSpanExt, debug, miden_instrument, miden_span_record};
 use miden_protocol::batch::{OrderedBatches, ProvenBatch};
 use miden_protocol::block::{
     BlockInputs,
@@ -16,7 +16,6 @@ use miden_protocol::block::{
 };
 use miden_protocol::transaction::TransactionHeader;
 use tokio::time::Duration;
-use tracing::Span;
 
 use crate::errors::{BuildBlockError, StoreError};
 use crate::mempool::SharedMempool;

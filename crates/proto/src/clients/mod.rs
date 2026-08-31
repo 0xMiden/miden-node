@@ -31,8 +31,8 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use http::header::ACCEPT;
-use miden_node_utils::tracing::grpc::OtelInterceptor;
-use miden_node_utils::tracing::{debug, info, warn};
+use miden_node_tracing::grpc::OtelInterceptor;
+use miden_node_tracing::{debug, info, warn};
 use miden_protocol::Word;
 use miden_protocol::batch::ProposedBatch;
 use miden_protocol::utils::serde::Serializable;

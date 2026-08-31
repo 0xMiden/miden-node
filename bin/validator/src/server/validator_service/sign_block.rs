@@ -1,13 +1,11 @@
 use std::sync::atomic::Ordering;
 
 use miden_node_proto::generated as grpc;
-use miden_node_utils::ErrorReport;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::{ErrorReport, Instrument, info_span, miden_instrument};
 use miden_protocol::Word;
 use miden_protocol::block::{BlockNumber, ProposedBlock};
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::{PublicKey, Signature};
 use miden_tx::utils::serde::{Deserializable, Serializable};
-use tracing::{Instrument, info_span};
 
 use super::ValidatorService;
 use crate::COMPONENT;

@@ -224,6 +224,7 @@ nohup miden-node sequencer \
 nohup miden-ntx-builder start \
   --listen         127.0.0.1:50301 \
   --rpc.url        http://127.0.0.1:57291 \
+  --rpc.timeout    300s \
   --tx-prover.url  http://127.0.0.1:50051 \
   --data-directory "$DATA/ntx-builder" \
   > logs/ntx-builder.log 2>&1 &

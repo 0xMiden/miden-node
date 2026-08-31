@@ -22,10 +22,10 @@ use miden_crypto::merkle::smt::{
     SmtStorageReader,
 };
 #[cfg(feature = "rocksdb")]
-use miden_node_utils::clap::RocksDbOptions;
+use miden_node_tracing::info;
+use miden_node_tracing::miden_instrument;
 #[cfg(feature = "rocksdb")]
-use miden_node_utils::tracing::info;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_utils::clap::RocksDbOptions;
 use miden_protocol::account::{AccountId, AccountStorageHeader, StorageSlotType};
 use miden_protocol::block::account_tree::{AccountIdKey, AccountTree};
 use miden_protocol::block::nullifier_tree::NullifierTree;
@@ -84,7 +84,7 @@ pub type TreeStorageReader = <TreeStorage as SmtStorage>::Reader;
 
 /// Converts a `LargeSmtError` into a `StateInitializationError`.
 pub fn account_tree_large_smt_error_to_init_error(e: LargeSmtError) -> StateInitializationError {
-    use miden_node_utils::ErrorReport;
+    use miden_node_tracing::ErrorReport;
     match e {
         LargeSmtError::Merkle(merkle_error) => {
             StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))

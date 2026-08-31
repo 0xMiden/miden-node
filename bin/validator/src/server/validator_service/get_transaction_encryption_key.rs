@@ -1,5 +1,5 @@
 use miden_node_proto::generated as grpc;
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_tx::utils::serde::Serializable;
 
 use super::ValidatorService;

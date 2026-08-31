@@ -54,8 +54,7 @@ use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, LockResult, Mutex, MutexGuard};
 
-use miden_node_utils::ErrorReport;
-use miden_node_utils::tracing::{debug, miden_instrument, miden_span_record};
+use miden_node_tracing::{ErrorReport, debug, miden_instrument, miden_span_record};
 use miden_protocol::batch::{BatchId, ProvenBatch};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::transaction::TransactionHeader;
@@ -720,7 +719,7 @@ impl Mempool {
 }
 
 fn emit_transaction_added(tx: &AuthenticatedTransaction) {
-    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+    if !miden_node_tracing::enabled!(target: LOG_TARGET, miden_node_tracing::Level::DEBUG) {
         return;
     }
 
@@ -734,7 +733,7 @@ fn emit_transaction_added(tx: &AuthenticatedTransaction) {
 }
 
 fn emit_transaction_expirations(removal: &graph::TransactionRemoval, chain_tip: BlockNumber) {
-    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+    if !miden_node_tracing::enabled!(target: LOG_TARGET, miden_node_tracing::Level::DEBUG) {
         return;
     }
 
@@ -755,7 +754,7 @@ fn emit_transaction_evictions(
     direct_reason: &'static str,
     dependent_reason: &'static str,
 ) {
-    if !tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG) {
+    if !miden_node_tracing::enabled!(target: LOG_TARGET, miden_node_tracing::Level::DEBUG) {
         return;
     }
 

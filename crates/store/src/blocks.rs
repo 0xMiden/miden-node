@@ -11,7 +11,7 @@ use std::io::ErrorKind;
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 
-use miden_node_utils::tracing::miden_instrument;
+use miden_node_tracing::miden_instrument;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::utils::serde::Serializable;
 

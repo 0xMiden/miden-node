@@ -6,8 +6,8 @@ use anyhow::Context;
 use miden_node_proto::clients::{Builder, ValidatorClient};
 use miden_node_proto::generated::validator::{BlockSubscriptionRequest, BlockSubscriptionResponse};
 use miden_node_store::{BlockWriter, State, WriterTask};
+use miden_node_tracing::info;
 use miden_node_utils::shutdown::CancellationToken;
-use miden_node_utils::tracing::info;
 use miden_protocol::Word;
 use miden_protocol::block::{
     BlockBody,

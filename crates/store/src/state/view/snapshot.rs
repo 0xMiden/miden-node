@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
-use miden_node_utils::tracing::{debug, warn};
+use miden_node_tracing::{debug, warn};
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{BlockNumber, Blockchain};
 use miden_protocol::crypto::merkle::smt::LargeSmt;

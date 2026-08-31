@@ -13,14 +13,13 @@ use miden_protocol::block::{FeeParameters, ValidatorKeys};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey as RpoSecretKey;
 use miden_protocol::errors::TokenSymbolError;
 use miden_protocol::{Felt, ONE};
-use miden_standards::account::access::AccessControl;
 use miden_standards::account::auth::{Approver, AuthSingleSig};
 use miden_standards::account::faucets::{
     FungibleFaucet,
     TokenName,
-    create_network_fungible_faucet,
+    create_native_fungible_faucet_for_genesis,
 };
-use miden_standards::account::fees::{BasicConstantFeePolicy, FeePolicyManager};
+use miden_standards::account::fees::BasicConstantFeePolicy;
 use miden_standards::account::policies::{
     BurnPolicy,
     MintPolicy,
@@ -493,35 +492,23 @@ fn build_native_faucet(
         .active_receive_policy(TransferPolicy::allow_all())
         .build();
 
-    let fee_policy = BasicConstantFeePolicy::new()
-        .with_fees([
-            (MintNote::script_root(), AssetAmount::ZERO),
-            (BurnNote::script_root(), AssetAmount::ZERO),
-        ])
-        .into();
-    // TODO: Replace this workaround with `create_native_fungible_faucet_for_genesis` once a
-    // `miden-standards` release containing 0xMiden/protocol#3588 is available.
-    //
-    // The faucet should charge fees in its own asset, but setting its own id as the fee faucet id
-    // would require knowing that id before creating the account, which is not possible: the fee
-    // faucet id is part of the storage the account id is derived from. We use the operator id
-    // instead, which only works while the fees above are zero. Changing it later requires a new
-    // faucet, so this should be revisited once a proper solution is available.
-    let fee_policy_manager = FeePolicyManager::builder()
-        .fee_faucet_id(operator_id)
-        .active_fee_policy(fee_policy)
-        .build();
+    let fee_policy = BasicConstantFeePolicy::new().with_fees([
+        (MintNote::script_root(), AssetAmount::ZERO),
+        (BurnNote::script_root(), AssetAmount::ZERO),
+    ]);
 
+    // The faucet charges fees in its own asset; the genesis constructor resolves the self-reference
+    // by patching the fee-asset slot after the account id is derived.
     let faucet_seed: [u8; 32] = rng.random();
-    let faucet = create_network_fungible_faucet(
+    let faucet = create_native_fungible_faucet_for_genesis(
         faucet_seed,
         faucet_component,
-        AccessControl::Ownable2Step { owner: operator_id },
+        operator_id,
         policies,
-        fee_policy_manager,
+        fee_policy,
     )?;
 
-    debug_assert_eq!(faucet.nonce(), Felt::ZERO);
+    debug_assert_eq!(faucet.nonce(), ONE);
 
     Ok((faucet, symbol))
 }

@@ -173,6 +173,7 @@ fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestRe
     use miden_protocol::account::StorageMapKey;
     use miden_standards::account::access::Ownable2Step;
     use miden_standards::account::auth::AuthNetworkAccount;
+    use miden_standards::account::fees::FeePolicyManager;
 
     let gcfg = GenesisConfig::default();
     let (state, secrets) = gcfg.into_state(dev_validator_keys())?;
@@ -217,6 +218,17 @@ fn generated_native_faucet_is_a_network_account_owned_by_an_operator() -> TestRe
     // The pre-funded balance is part of the faucet's genesis issuance.
     let faucet = FungibleFaucet::try_from(native_faucet.storage())?;
     assert_eq!(faucet.token_supply().as_u64(), DEFAULT_FAUCET_OPERATOR_BALANCE);
+
+    // The faucet charges fees in its own asset.
+    let fee_asset = native_faucet
+        .storage()
+        .get_item(FeePolicyManager::fee_asset_id_slot())
+        .expect("the fee asset slot should exist");
+    assert_eq!(
+        fee_asset,
+        native_asset_id.to_word(),
+        "the native faucet's fee asset must reference the faucet itself"
+    );
 
     // The faucet is network authenticated: `AuthNetworkAccount` checks an allowlist of note scripts
     // instead of a signature. Only mint and burn notes are accepted.

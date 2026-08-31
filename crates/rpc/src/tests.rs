@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -9,10 +8,18 @@ use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{Extensions, HeaderMap, HeaderValue};
 use miden_node_block_producer::store::TransactionInputs;
 use miden_node_block_producer::{
-    AuthenticatedTransaction, BlockProducerApi, BlockProducerApiConfig,
+    AuthenticatedTransaction,
+    BlockProducerApi,
+    BlockProducerApiConfig,
 };
 use miden_node_proto::clients::{
-    Builder, GrpcClient, Interceptor, NtxBuilderClient, RpcClient, SequencerClient, ValidatorClient,
+    Builder,
+    GrpcClient,
+    Interceptor,
+    NtxBuilderClient,
+    RpcClient,
+    SequencerClient,
+    ValidatorClient,
 };
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::rpc::api_server::Api;
@@ -25,26 +32,38 @@ use miden_node_store::state::State;
 use miden_node_tracing::spawn::spawn_blocking_in_current_span;
 use miden_node_utils::clap::GrpcOptions;
 use miden_node_utils::limiter::{
-    QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
-    QueryParamNullifierPrefixLimit, QueryParamStorageMapKeyTotalLimit,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+    QueryParamNullifierPrefixLimit,
+    QueryParamStorageMapKeyTotalLimit,
     QueryParamStorageMapSlotLimit,
 };
 use miden_node_utils::shutdown::CancellationToken;
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountId, AccountIdVersion, AccountPatch, AccountType,
-    AccountUpdateDetails, AssetCallbackFlag,
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountIdVersion,
+    AccountPatch,
+    AccountType,
+    AccountUpdateDetails,
+    AssetCallbackFlag,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::batch::ProposedBatch;
-use miden_protocol::block::FeeParameters;
-use miden_protocol::block::{BlockSignatures, ProvenBlock, SignedBlock};
+use miden_protocol::block::{BlockSignatures, FeeParameters, ProvenBlock, SignedBlock};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
-    OutputNote, ProvenTransaction, PublicOutputNote, TxAccountUpdate,
+    OutputNote,
+    ProvenTransaction,
+    PublicOutputNote,
+    TxAccountUpdate,
 };
 use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::vm::ExecutionProof;
@@ -145,14 +164,10 @@ impl TestStore {
         let validator_keys =
             miden_protocol::block::ValidatorKeys::new(vec![validator_key]).unwrap();
         let (mut genesis_state, _) = config.into_state(validator_keys).unwrap();
-        genesis_state.fee_parameters = FeeParameters::new(
-            genesis_state.fee_parameters.fee_faucet_id(),
-            verification_base_fee,
-        );
-        let genesis_block = genesis_state
-            .clone()
-            .into_block()
-            .expect("genesis block should be created");
+        genesis_state.fee_parameters =
+            FeeParameters::new(genesis_state.fee_parameters.fee_faucet_id(), verification_base_fee);
+        let genesis_block =
+            genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
 
         State::bootstrap(genesis_block, path).expect("store should bootstrap");
@@ -229,10 +244,8 @@ fn build_test_proven_tx_with_fee(
     )
     .unwrap();
 
-    let output_notes = include_fee
-        .then(|| fee_output_note(account_id))
-        .into_iter()
-        .collect::<Vec<_>>();
+    let output_notes =
+        include_fee.then(|| fee_output_note(account_id)).into_iter().collect::<Vec<_>>();
 
     ProvenTransaction::new(
         account_update,
@@ -351,10 +364,7 @@ async fn build_valid_batch_fixture() -> ValidBatchFixture {
         sealed_transaction_inputs: vec![proto::submission::SealedTransactionInputs::default()],
     };
 
-    ValidBatchFixture {
-        request,
-        genesis_block,
-    }
+    ValidBatchFixture { request, genesis_block }
 }
 
 fn assert_beyond_tip(status: &tonic::Status, endpoint: &str) {
@@ -429,18 +439,8 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
 
         // Assert the server rejects our request on the basis of an unsupported version.
         assert!(response.is_err());
-        assert_eq!(
-            response.as_ref().err().unwrap().code(),
-            tonic::Code::InvalidArgument
-        );
-        assert!(
-            response
-                .as_ref()
-                .err()
-                .unwrap()
-                .message()
-                .contains("server does not support"),
-        );
+        assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
+        assert!(response.as_ref().err().unwrap().message().contains("server does not support"),);
     }
 }
 
@@ -461,10 +461,7 @@ async fn rpc_server_has_web_support() {
 
     let mut headers = HeaderMap::new();
     let accept_header = concat!("application/vnd.miden; version=", env!("CARGO_PKG_VERSION"));
-    headers.insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("application/grpc-web+proto"),
-    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
     headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
 
     // An empty message with header format:
@@ -522,11 +519,8 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 
     // Corrupt the structured account update with the incorrect patch commitment.
     let mut transaction: proto::transaction::ProvenTransactionData = (&tx).into();
-    transaction
-        .account_update
-        .as_mut()
-        .unwrap()
-        .account_patch_commitment = Some(incorrect_commitment.into());
+    transaction.account_update.as_mut().unwrap().account_patch_commitment =
+        Some(incorrect_commitment.into());
 
     let request = proto::submission::ProvenTransactionSubmission {
         transaction: Some(transaction),
@@ -565,16 +559,11 @@ async fn rpc_server_rejects_proven_transactions_without_fees() {
         None,
     );
 
-    let status = service
-        .submit_proven_tx(Request::new(request))
-        .await
-        .unwrap_err();
+    let status = service.submit_proven_tx(Request::new(request)).await.unwrap_err();
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert_eq!(status.details(), &[4]);
     assert!(
-        status
-            .message()
-            .contains("does not contain a non-zero TX_FEE output note"),
+        status.message().contains("does not contain a non-zero TX_FEE output note"),
         "expected the missing-fee error, got: {status}"
     );
 }
@@ -605,22 +594,13 @@ async fn sequencer_authenticated_rpc_rejects_transactions_without_fees() {
     };
 
     let status = service
-        .submit_authenticated_tx(Request::new(
-            proto::sequencer::AuthenticatedTransaction::from(tx),
-        ))
+        .submit_authenticated_tx(Request::new(proto::sequencer::AuthenticatedTransaction::from(tx)))
         .await
         .unwrap_err();
 
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert_eq!(status.details(), &[4]);
-    assert_eq!(
-        block_producer
-            .status()
-            .await
-            .mempool_stats
-            .uncommitted_transactions,
-        0
-    );
+    assert_eq!(block_producer.status().await.mempool_stats.uncommitted_transactions, 0);
 }
 
 #[tokio::test]
@@ -643,10 +623,7 @@ async fn rpc_server_does_not_require_fees_when_the_base_fee_is_zero() {
     );
 
     // The dummy proof is rejected later, demonstrating that the transaction passed the fee gate.
-    let status = service
-        .submit_proven_tx(Request::new(request))
-        .await
-        .unwrap_err();
+    let status = service.submit_proven_tx(Request::new(request)).await.unwrap_err();
     assert_ne!(status.details(), &[4]);
     assert!(
         status.message().contains("Invalid proof for transaction"),
@@ -777,10 +754,7 @@ impl ntx_builder_api::GetNetworkNoteStatus for FixedNtxBuilder {
             .get(ACCEPT.as_str())
             .and_then(|value| value.to_str().ok())
             .map(str::to_string);
-        *self
-            .last_accept
-            .lock()
-            .expect("last_accept mutex should not be poisoned") = accept;
+        *self.last_accept.lock().expect("last_accept mutex should not be poisoned") = accept;
 
         Ok(self.response.clone())
     }
@@ -794,12 +768,8 @@ async fn start_ntx_builder(
     Arc<std::sync::Mutex<Option<String>>>,
     TestServerGuard,
 ) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind ntx-builder");
-    let addr = listener
-        .local_addr()
-        .expect("Failed to get ntx-builder address");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind ntx-builder");
+    let addr = listener.local_addr().expect("Failed to get ntx-builder address");
     let call_count = Arc::new(AtomicUsize::new(0));
     let last_accept = Arc::new(std::sync::Mutex::new(None));
     let service = FixedNtxBuilder {
@@ -864,20 +834,16 @@ async fn start_source_rpc_with_genesis(
     match genesis_block {
         Some(genesis_block) => {
             TestStore::bootstrap_from_mock_genesis(&block_producer_dir, genesis_block);
-        }
+        },
         None => {
             TestStore::bootstrap(&block_producer_dir);
-        }
+        },
     }
     let (block_producer_state, ..) = State::for_tests(&block_producer_dir).await;
     let state = Arc::clone(&store.state);
 
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind source RPC");
-    let addr = listener
-        .local_addr()
-        .expect("Failed to get source RPC address");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind source RPC");
+    let addr = listener.local_addr().expect("Failed to get source RPC address");
     let shutdown = CancellationToken::new();
 
     task::spawn({
@@ -955,10 +921,7 @@ impl validator_api::GetTransactionEncryptionKey for FixedValidator {
             .get(ACCEPT.as_str())
             .and_then(|value| value.to_str().ok())
             .map(str::to_string);
-        *self
-            .last_accept
-            .lock()
-            .expect("last_accept mutex should not be poisoned") = accept;
+        *self.last_accept.lock().expect("last_accept mutex should not be poisoned") = accept;
 
         Ok(self.encryption_key.clone())
     }
@@ -983,9 +946,7 @@ impl validator_api::Status for FixedValidator {
         _metadata: &MetadataMap,
         _extensions: &Extensions,
     ) -> tonic::Result<Self::Output> {
-        Err(tonic::Status::unimplemented(
-            "not supported by the stub validator",
-        ))
+        Err(tonic::Status::unimplemented("not supported by the stub validator"))
     }
 }
 
@@ -1033,9 +994,7 @@ impl validator_api::SignBlock for FixedValidator {
         _metadata: &MetadataMap,
         _extensions: &Extensions,
     ) -> tonic::Result<Self::Output> {
-        Err(tonic::Status::unimplemented(
-            "not supported by the stub validator",
-        ))
+        Err(tonic::Status::unimplemented("not supported by the stub validator"))
     }
 }
 
@@ -1059,9 +1018,7 @@ impl validator_api::BlockSubscription for FixedValidator {
         _metadata: &MetadataMap,
         _extensions: &Extensions,
     ) -> tonic::Result<Self::ItemStream> {
-        Err(tonic::Status::unimplemented(
-            "not supported by the stub validator",
-        ))
+        Err(tonic::Status::unimplemented("not supported by the stub validator"))
     }
 }
 
@@ -1075,12 +1032,8 @@ async fn start_validator(
     Arc<std::sync::Mutex<Option<String>>>,
     TestServerGuard,
 ) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind validator");
-    let addr = listener
-        .local_addr()
-        .expect("Failed to get validator address");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind validator");
+    let addr = listener.local_addr().expect("Failed to get validator address");
     let call_count = Arc::new(AtomicUsize::new(0));
     let last_accept = Arc::new(std::sync::Mutex::new(None));
     let service = FixedValidator {
@@ -1123,12 +1076,8 @@ fn test_encryption_key() -> proto::submission::TransactionEncryptionKey {
         key_id: vec![0xDE, 0xAD, 0xBE, 0xEF],
         public_key: vec![7; 32],
         attestations: vec![proto::submission::ValidatorKeyAttestation {
-            validator_public_key: Some(proto::primitives::PublicKey {
-                encoded: vec![8; 33],
-            }),
-            signature: Some(proto::primitives::Signature {
-                encoded: vec![9; 65],
-            }),
+            validator_public_key: Some(proto::primitives::PublicKey { encoded: vec![8; 33] }),
+            signature: Some(proto::primitives::Signature { encoded: vec![9; 65] }),
         }],
         next_key: Some(proto::submission::NextTransactionEncryptionKey {
             scheme: proto::submission::IesScheme::X25519Xchacha20Poly1305 as i32,
@@ -1227,9 +1176,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding_encryption
         source_store.genesis_commitment().to_hex(),
     );
     let mut request = Request::new(());
-    request
-        .metadata_mut()
-        .insert(ACCEPT.as_str(), original_accept.parse().unwrap());
+    request.metadata_mut().insert(ACCEPT.as_str(), original_accept.parse().unwrap());
 
     let response = full_node
         .get_transaction_encryption_key(request)
@@ -1239,9 +1186,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding_encryption
 
     assert_eq!(response, expected);
     assert_eq!(
-        *last_accept
-            .lock()
-            .expect("last_accept mutex should not be poisoned"),
+        *last_accept.lock().expect("last_accept mutex should not be poisoned"),
         Some(original_accept),
     );
 }
@@ -1304,9 +1249,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
         source_store.genesis_commitment().to_hex(),
     );
     let mut request = Request::new(Word::empty().into());
-    request
-        .metadata_mut()
-        .insert(ACCEPT.as_str(), original_accept.parse().unwrap());
+    request.metadata_mut().insert(ACCEPT.as_str(), original_accept.parse().unwrap());
 
     let response = full_node
         .get_network_note_status(request)
@@ -1316,9 +1259,7 @@ async fn full_node_preserves_original_accept_metadata_when_forwarding() {
 
     assert_eq!(response, expected);
     assert_eq!(
-        *last_accept
-            .lock()
-            .expect("last_accept mutex should not be poisoned"),
+        *last_accept.lock().expect("last_accept mutex should not be poisoned"),
         Some(original_accept),
     );
 }
@@ -1460,12 +1401,8 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore, TestServerG
     let state = Arc::clone(&store.state);
 
     // Start the rpc component.
-    let rpc_listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind rpc");
-    let rpc_addr = rpc_listener
-        .local_addr()
-        .expect("Failed to get rpc address");
+    let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
+    let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
     let shutdown = CancellationToken::new();
     task::spawn({
         let shutdown = shutdown.clone();
@@ -1515,26 +1452,16 @@ async fn get_limits_endpoint() {
     let (mut rpc_client, _rpc_addr, _store, _server) = start_rpc().await;
 
     // Call the get_limits endpoint
-    let response = rpc_client
-        .get_limits(())
-        .await
-        .expect("get_limits should succeed");
+    let response = rpc_client.get_limits(()).await.expect("get_limits should succeed");
     let limits = response.into_inner();
 
     // Verify the response contains expected endpoints and limits
-    assert!(
-        !limits.endpoints.is_empty(),
-        "endpoints should not be empty"
-    );
+    assert!(!limits.endpoints.is_empty(), "endpoints should not be empty");
 
-    let sync_transactions = limits
-        .endpoints
-        .get("SyncTransactions")
-        .expect("SyncTransactions should exist");
+    let sync_transactions =
+        limits.endpoints.get("SyncTransactions").expect("SyncTransactions should exist");
     assert_eq!(
-        sync_transactions
-            .parameters
-            .get(QueryParamAccountIdLimit::PARAM_NAME),
+        sync_transactions.parameters.get(QueryParamAccountIdLimit::PARAM_NAME),
         Some(&(QueryParamAccountIdLimit::LIMIT as u32)),
         "SyncTransactions {} limit should be {}",
         QueryParamAccountIdLimit::PARAM_NAME,
@@ -1542,14 +1469,10 @@ async fn get_limits_endpoint() {
     );
 
     // Verify SyncNullifiers endpoint
-    let sync_nullifiers = limits
-        .endpoints
-        .get("SyncNullifiers")
-        .expect("SyncNullifiers should exist");
+    let sync_nullifiers =
+        limits.endpoints.get("SyncNullifiers").expect("SyncNullifiers should exist");
     assert_eq!(
-        sync_nullifiers
-            .parameters
-            .get(QueryParamNullifierPrefixLimit::PARAM_NAME),
+        sync_nullifiers.parameters.get(QueryParamNullifierPrefixLimit::PARAM_NAME),
         Some(&(QueryParamNullifierPrefixLimit::LIMIT as u32)),
         "SyncNullifiers {} limit should be {}",
         QueryParamNullifierPrefixLimit::PARAM_NAME,
@@ -1557,14 +1480,9 @@ async fn get_limits_endpoint() {
     );
 
     // Verify SyncNotes endpoint
-    let sync_notes = limits
-        .endpoints
-        .get("SyncNotes")
-        .expect("SyncNotes should exist");
+    let sync_notes = limits.endpoints.get("SyncNotes").expect("SyncNotes should exist");
     assert_eq!(
-        sync_notes
-            .parameters
-            .get(QueryParamNoteTagLimit::PARAM_NAME),
+        sync_notes.parameters.get(QueryParamNoteTagLimit::PARAM_NAME),
         Some(&(QueryParamNoteTagLimit::LIMIT as u32)),
         "SyncNotes {} limit should be {}",
         QueryParamNoteTagLimit::PARAM_NAME,
@@ -1583,14 +1501,9 @@ async fn get_limits_endpoint() {
     );
 
     // Verify GetNotesById endpoint
-    let get_notes_by_id = limits
-        .endpoints
-        .get("GetNotesById")
-        .expect("GetNotesById should exist");
+    let get_notes_by_id = limits.endpoints.get("GetNotesById").expect("GetNotesById should exist");
     assert_eq!(
-        get_notes_by_id
-            .parameters
-            .get(QueryParamNoteIdLimit::PARAM_NAME),
+        get_notes_by_id.parameters.get(QueryParamNoteIdLimit::PARAM_NAME),
         Some(&(QueryParamNoteIdLimit::LIMIT as u32)),
         "GetNotesById {} limit should be {}",
         QueryParamNoteIdLimit::PARAM_NAME,
@@ -1598,23 +1511,16 @@ async fn get_limits_endpoint() {
     );
 
     // Verify GetAccount endpoint advertises both the per-key and per-slot storage map limits.
-    let get_account = limits
-        .endpoints
-        .get("GetAccount")
-        .expect("GetAccount should exist");
+    let get_account = limits.endpoints.get("GetAccount").expect("GetAccount should exist");
     assert_eq!(
-        get_account
-            .parameters
-            .get(QueryParamStorageMapKeyTotalLimit::PARAM_NAME),
+        get_account.parameters.get(QueryParamStorageMapKeyTotalLimit::PARAM_NAME),
         Some(&(QueryParamStorageMapKeyTotalLimit::LIMIT as u32)),
         "GetAccount {} limit should be {}",
         QueryParamStorageMapKeyTotalLimit::PARAM_NAME,
         QueryParamStorageMapKeyTotalLimit::LIMIT
     );
     assert_eq!(
-        get_account
-            .parameters
-            .get(QueryParamStorageMapSlotLimit::PARAM_NAME),
+        get_account.parameters.get(QueryParamStorageMapSlotLimit::PARAM_NAME),
         Some(&(QueryParamStorageMapSlotLimit::LIMIT as u32)),
         "GetAccount {} limit should be {}",
         QueryParamStorageMapSlotLimit::PARAM_NAME,
@@ -1630,10 +1536,7 @@ async fn sync_chain_mmr_returns_delta() {
         current_client_block_height: 0,
         finality_level: proto::rpc::FinalityLevel::Committed.into(),
     };
-    let response = rpc_client
-        .sync_chain_mmr(request)
-        .await
-        .expect("sync_chain_mmr should succeed");
+    let response = rpc_client.sync_chain_mmr(request).await.expect("sync_chain_mmr should succeed");
     let response = response.into_inner();
 
     let mmr_delta = response.mmr_delta.expect("mmr_delta should exist");
@@ -1662,31 +1565,18 @@ fn sync_chain_mmr_block_header_matches_chain_commitment() {
     client_mmr.add(headers[0].commitment(), false).unwrap();
 
     // First delta: block_from=0, block_to=2, so from_forest=1, to_forest=2.
-    let delta = server_mmr
-        .get_delta(Forest::new(1).unwrap(), Forest::new(2).unwrap())
-        .unwrap();
+    let delta = server_mmr.get_delta(Forest::new(1).unwrap(), Forest::new(2).unwrap()).unwrap();
     client_mmr.apply(delta).unwrap();
-    assert_eq!(
-        client_mmr.peaks().hash_peaks(),
-        headers[2].chain_commitment()
-    );
+    assert_eq!(client_mmr.peaks().hash_peaks(), headers[2].chain_commitment());
     client_mmr.add(headers[2].commitment(), false).unwrap();
 
     // Second delta: block_from=2, block_to=4, so from_forest=3, to_forest=4.
-    let delta = server_mmr
-        .get_delta(Forest::new(3).unwrap(), Forest::new(4).unwrap())
-        .unwrap();
+    let delta = server_mmr.get_delta(Forest::new(3).unwrap(), Forest::new(4).unwrap()).unwrap();
     client_mmr.apply(delta).unwrap();
-    assert_eq!(
-        client_mmr.peaks().hash_peaks(),
-        headers[4].chain_commitment()
-    );
+    assert_eq!(client_mmr.peaks().hash_peaks(), headers[4].chain_commitment());
     client_mmr.add(headers[4].commitment(), false).unwrap();
 
-    assert_eq!(
-        client_mmr.peaks().hash_peaks(),
-        server_mmr.peaks().hash_peaks()
-    );
+    assert_eq!(client_mmr.peaks().hash_peaks(), server_mmr.peaks().hash_peaks());
 }
 
 /// All paginated sync endpoints must reject a `block_to` that is greater than the chain tip.
@@ -1699,12 +1589,7 @@ async fn sync_endpoints_reject_block_to_beyond_chain_tip() {
     let (mut rpc_client, _rpc_addr, _store, _server) = start_rpc().await;
 
     // A range ending one block past the genesis tip; otherwise valid (non-empty, start <= end).
-    let block_range = || {
-        Some(proto::rpc::BlockRange {
-            block_from: 0,
-            block_to: 1,
-        })
-    };
+    let block_range = || Some(proto::rpc::BlockRange { block_from: 0, block_to: 1 });
     // Any public account id works: the chain-tip check happens before the account is queried.
     let account_id = || {
         Some(

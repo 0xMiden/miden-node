@@ -3,8 +3,15 @@ use miden_protocol::Word;
 #[cfg(test)]
 use miden_protocol::account::StorageSlotHeader;
 use miden_protocol::account::{
-    Account, AccountCode, AccountHeader, AccountId, AccountStorageHeader, StorageMap,
-    StorageMapKey, StorageSlotName, StorageSlotType,
+    Account,
+    AccountCode,
+    AccountHeader,
+    AccountId,
+    AccountStorageHeader,
+    StorageMap,
+    StorageMapKey,
+    StorageSlotName,
+    StorageSlotType,
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
@@ -55,25 +62,14 @@ impl TryFrom<proto::rpc::AccountRequest> for AccountRequest {
 
     fn try_from(value: proto::rpc::AccountRequest) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::rpc::AccountRequest {
-            account_id,
-            block_num,
-            details,
-        } = value;
+        let proto::rpc::AccountRequest { account_id, block_num, details } = value;
 
         let account_id = decode!(decoder, account_id)?;
         let block_num = block_num.map(Into::into);
 
-        let details = details
-            .map(TryFrom::try_from)
-            .transpose()
-            .context("details")?;
+        let details = details.map(TryFrom::try_from).transpose().context("details")?;
 
-        Ok(AccountRequest {
-            account_id,
-            block_num,
-            details,
-        })
+        Ok(AccountRequest { account_id, block_num, details })
     }
 }
 
@@ -106,10 +102,8 @@ impl TryFrom<proto::rpc::account_request::AccountDetailRequest> for AccountDetai
             storage_request,
         } = value;
 
-        let code_commitment = code_commitment
-            .map(TryFrom::try_from)
-            .transpose()
-            .context("code_commitment")?;
+        let code_commitment =
+            code_commitment.map(TryFrom::try_from).transpose().context("code_commitment")?;
         let asset_vault_commitment = asset_vault_commitment
             .map(TryFrom::try_from)
             .transpose()
@@ -119,18 +113,16 @@ impl TryFrom<proto::rpc::account_request::AccountDetailRequest> for AccountDetai
             None => AccountStorageRequest::None,
             Some(ProtoStorageRequest::AllStorageMaps(true)) => {
                 AccountStorageRequest::AllStorageMaps
-            }
+            },
             Some(ProtoStorageRequest::AllStorageMaps(false)) => {
-                return Err(ConversionError::message(
-                    "all_storage_maps must be true when set",
-                ));
-            }
+                return Err(ConversionError::message("all_storage_maps must be true when set"));
+            },
             Some(ProtoStorageRequest::StorageMaps(requests)) => {
                 let requests = try_convert(requests.storage_maps)
                     .collect::<Result<_, _>>()
                     .context("storage_maps")?;
                 AccountStorageRequest::Explicit(requests)
-            }
+            },
         };
 
         Ok(AccountDetailRequest {
@@ -164,10 +156,7 @@ impl TryFrom<proto::rpc::account_request::account_detail_request::StorageMapDeta
         let slot_name = StorageSlotName::new(slot_name).context("slot_name")?;
         let slot_data = decode!(decoder, slot_data)?;
 
-        Ok(StorageMapRequest {
-            slot_name,
-            slot_data,
-        })
+        Ok(StorageMapRequest { slot_name, slot_data })
     }
 }
 
@@ -193,18 +182,14 @@ impl
         Ok(match value {
             ProtoSlotData::AllEntries(true) => SlotData::All,
             ProtoSlotData::AllEntries(false) => {
-                return Err(ConversionError::message(
-                    "enum variant discriminant out of range",
-                ));
-            }
+                return Err(ConversionError::message("enum variant discriminant out of range"));
+            },
             ProtoSlotData::MapKeys(keys) => {
                 let keys = keys
                     .map_keys
                     .into_iter()
                     .map(|key| {
-                        Word::try_from(key)
-                            .map(StorageMapKey::new)
-                            .map_err(ConversionError::from)
+                        Word::try_from(key).map(StorageMapKey::new).map_err(ConversionError::from)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 if has_duplicate_storage_map_keys(&keys) {
@@ -213,15 +198,13 @@ impl
                     ));
                 }
                 SlotData::MapKeys(keys)
-            }
+            },
         })
     }
 }
 
 fn has_duplicate_storage_map_keys(keys: &[StorageMapKey]) -> bool {
-    keys.iter()
-        .enumerate()
-        .any(|(index, key)| keys[..index].contains(key))
+    keys.iter().enumerate().any(|(index, key)| keys[..index].contains(key))
 }
 
 // ACCOUNT VAULT DETAILS
@@ -266,10 +249,7 @@ impl TryFrom<proto::rpc::AccountVaultDetails> for AccountVaultDetails {
     type Error = ConversionError;
 
     fn try_from(value: proto::rpc::AccountVaultDetails) -> Result<Self, Self::Error> {
-        let proto::rpc::AccountVaultDetails {
-            too_many_assets,
-            assets,
-        } = value;
+        let proto::rpc::AccountVaultDetails { too_many_assets, assets } = value;
 
         if too_many_assets {
             Ok(Self::LimitExceeded)
@@ -292,10 +272,7 @@ impl From<AccountVaultDetails> for proto::rpc::AccountVaultDetails {
             },
             AccountVaultDetails::Assets(assets) => Self {
                 too_many_assets: false,
-                assets: assets
-                    .into_iter()
-                    .map(proto::asset::Asset::from)
-                    .collect::<Vec<_>>(),
+                assets: assets.into_iter().map(proto::asset::Asset::from).collect::<Vec<_>>(),
             },
         }
     }
@@ -359,10 +336,7 @@ impl AccountStorageMapDetails {
                 entries: StorageMapEntries::LimitExceeded,
             }
         } else {
-            let entries = storage_map
-                .entries()
-                .map(|(k, v)| (*k, *v))
-                .collect::<Vec<_>>();
+            let entries = storage_map.entries().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
             Self {
                 slot_name,
                 entries: StorageMapEntries::AllEntries(entries),
@@ -439,10 +413,7 @@ impl AccountStorageMapDetails {
 
         Ok(Self {
             slot_name,
-            entries: StorageMapEntries::PartialMap {
-                map_keys,
-                partial_smt,
-            },
+            entries: StorageMapEntries::PartialMap { map_keys, partial_smt },
         })
     }
 
@@ -464,7 +435,9 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
         value: proto::rpc::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
         use proto::rpc::account_storage_details::account_storage_map_details::{
-            AllMapEntries, PartialStorageMap, Result as ProtoResult,
+            AllMapEntries,
+            PartialStorageMap,
+            Result as ProtoResult,
         };
 
         let decoder = value.decoder();
@@ -476,10 +449,8 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
         let entries = match decode!(decoder, result)? {
             ProtoResult::TooManyEntries(true) => StorageMapEntries::LimitExceeded,
             ProtoResult::TooManyEntries(false) => {
-                return Err(ConversionError::message(
-                    "too_many_entries must be true when set",
-                ));
-            }
+                return Err(ConversionError::message("too_many_entries must be true when set"));
+            },
             ProtoResult::AllEntries(AllMapEntries { entries }) => {
                 let entries = entries
                     .into_iter()
@@ -492,11 +463,8 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
                     .collect::<Result<Vec<_>, ConversionError>>()
                     .context("entries")?;
                 StorageMapEntries::AllEntries(entries)
-            }
-            ProtoResult::PartialMap(PartialStorageMap {
-                map_keys,
-                partial_smt,
-            }) => {
+            },
+            ProtoResult::PartialMap(PartialStorageMap { map_keys, partial_smt }) => {
                 if map_keys.len() > Self::MAX_SMT_PROOF_ENTRIES {
                     return Err(ConversionError::message(format!(
                         "partial storage map contains {} keys, exceeding the limit of {}",
@@ -517,15 +485,10 @@ impl TryFrom<proto::rpc::account_storage_details::AccountStorageMapDetails>
                 let partial_smt: PartialSmt =
                     decode!(decoder, partial_smt).context("partial_smt")?;
                 for map_key in &map_keys {
-                    partial_smt
-                        .get_value(&map_key.hash().as_word())
-                        .context("map_keys")?;
+                    partial_smt.get_value(&map_key.hash().as_word()).context("map_keys")?;
                 }
-                StorageMapEntries::PartialMap {
-                    map_keys,
-                    partial_smt,
-                }
-            }
+                StorageMapEntries::PartialMap { map_keys, partial_smt }
+            },
         };
 
         Ok(Self { slot_name, entries })
@@ -537,7 +500,9 @@ impl From<AccountStorageMapDetails>
 {
     fn from(value: AccountStorageMapDetails) -> Self {
         use proto::rpc::account_storage_details::account_storage_map_details::{
-            AllMapEntries, PartialStorageMap, Result as ProtoResult,
+            AllMapEntries,
+            PartialStorageMap,
+            Result as ProtoResult,
         };
 
         let AccountStorageMapDetails { slot_name, entries } = value;
@@ -554,17 +519,16 @@ impl From<AccountStorageMapDetails>
                     }).collect::<Vec<_>>(),
                 };
                 ProtoResult::AllEntries(all)
-            }
-            StorageMapEntries::PartialMap {
-                map_keys,
-                partial_smt,
-            } => ProtoResult::PartialMap(PartialStorageMap {
-                map_keys: map_keys
-                    .into_iter()
-                    .map(|key| proto::primitives::Word::from(Word::from(key)))
-                    .collect(),
-                partial_smt: Some(partial_smt.into()),
-            }),
+            },
+            StorageMapEntries::PartialMap { map_keys, partial_smt } => {
+                ProtoResult::PartialMap(PartialStorageMap {
+                    map_keys: map_keys
+                        .into_iter()
+                        .map(|key| proto::primitives::Word::from(Word::from(key)))
+                        .collect(),
+                    partial_smt: Some(partial_smt.into()),
+                })
+            },
         };
 
         Self {
@@ -601,30 +565,24 @@ impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
 
     fn try_from(value: proto::rpc::AccountStorageDetails) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::rpc::AccountStorageDetails {
-            header,
-            map_details,
-        } = value;
+        let proto::rpc::AccountStorageDetails { header, map_details } = value;
 
         let header: AccountStorageHeader = decode!(decoder, header)?;
 
-        let map_details: Vec<AccountStorageMapDetails> = try_convert(map_details)
-            .collect::<Result<Vec<_>, _>>()
-            .context("map_details")?;
+        let map_details: Vec<AccountStorageMapDetails> =
+            try_convert(map_details).collect::<Result<Vec<_>, _>>().context("map_details")?;
 
         for map_detail in &map_details {
             let StorageMapEntries::PartialMap { partial_smt, .. } = &map_detail.entries else {
                 continue;
             };
 
-            let slot = header
-                .find_slot_header_by_name(&map_detail.slot_name)
-                .ok_or_else(|| {
-                    ConversionError::message(format!(
-                        "partial storage map references unknown slot {}",
-                        map_detail.slot_name
-                    ))
-                })?;
+            let slot = header.find_slot_header_by_name(&map_detail.slot_name).ok_or_else(|| {
+                ConversionError::message(format!(
+                    "partial storage map references unknown slot {}",
+                    map_detail.slot_name
+                ))
+            })?;
             if slot.slot_type() != StorageSlotType::Map {
                 return Err(ConversionError::message(format!(
                     "partial storage map references non-map slot {}",
@@ -639,19 +597,13 @@ impl TryFrom<proto::rpc::AccountStorageDetails> for AccountStorageDetails {
             }
         }
 
-        Ok(Self {
-            header,
-            map_details,
-        })
+        Ok(Self { header, map_details })
     }
 }
 
 impl From<AccountStorageDetails> for proto::rpc::AccountStorageDetails {
     fn from(value: AccountStorageDetails) -> Self {
-        let AccountStorageDetails {
-            header,
-            map_details,
-        } = value;
+        let AccountStorageDetails { header, map_details } = value;
 
         Self {
             header: Some(header.into()),
@@ -675,36 +627,21 @@ impl TryFrom<proto::rpc::AccountResponse> for AccountResponse {
 
     fn try_from(value: proto::rpc::AccountResponse) -> Result<Self, Self::Error> {
         let decoder = value.decoder();
-        let proto::rpc::AccountResponse {
-            block_num,
-            witness,
-            details,
-        } = value;
+        let proto::rpc::AccountResponse { block_num, witness, details } = value;
 
         let block_num = decode!(decoder, block_num)?;
 
         let witness = decode!(decoder, witness)?;
 
-        let details = details
-            .map(TryFrom::try_from)
-            .transpose()
-            .context("details")?;
+        let details = details.map(TryFrom::try_from).transpose().context("details")?;
 
-        Ok(AccountResponse {
-            block_num,
-            witness,
-            details,
-        })
+        Ok(AccountResponse { block_num, witness, details })
     }
 }
 
 impl From<AccountResponse> for proto::rpc::AccountResponse {
     fn from(value: AccountResponse) -> Self {
-        let AccountResponse {
-            block_num,
-            witness,
-            details,
-        } = value;
+        let AccountResponse { block_num, witness, details } = value;
 
         Self {
             witness: Some(witness.into()),

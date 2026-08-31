@@ -13,7 +13,7 @@ use miden_protocol::block::{FeeParameters, ValidatorKeys};
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey as RpoSecretKey;
 use miden_protocol::errors::TokenSymbolError;
 use miden_protocol::{Felt, ONE};
-use miden_standards::account::auth::{Approver, AuthSingleSig};
+use miden_standards::account::auth::{Approver, AuthSingleSig, NetworkAccountNoteAllowlist};
 use miden_standards::account::faucets::{
     FungibleFaucet,
     TokenName,
@@ -27,7 +27,7 @@ use miden_standards::account::policies::{
     TransferPolicy,
 };
 use miden_standards::account::wallets::create_basic_wallet;
-use miden_standards::note::{BurnNote, MintNote};
+use miden_standards::note::{BurnNote, FeeSponsorshipNote, MintNote};
 use rand::distr::weighted::Weight;
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -509,6 +509,15 @@ fn build_native_faucet(
     )?;
 
     debug_assert_eq!(faucet.nonce(), ONE);
+
+    // The faucet's note allowlist must cover the fee sponsorship note, otherwise the network
+    // transaction builder will not work.
+    debug_assert!(
+        NetworkAccountNoteAllowlist::try_from(faucet.storage()).is_ok_and(|allowlist| {
+            allowlist.allowed_script_roots().contains(&FeeSponsorshipNote::script_root())
+        }),
+        "network faucet's note allowlist must cover the fee sponsorship note"
+    );
 
     Ok((faucet, symbol))
 }

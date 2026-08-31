@@ -190,6 +190,7 @@ wait_for_port "$RPC_PORT" node
 start_bg ntx-builder miden-ntx-builder start \
     --listen         "127.0.0.1:$NTX_PORT" \
     --rpc.url        "http://127.0.0.1:$RPC_PORT" \
+    --rpc.timeout    300s \
     --tx-prover.url  "http://127.0.0.1:$REMOTE_PROVER_PORT" \
     --data-directory "$DATA/ntx-builder"
 wait_for_port "$NTX_PORT" ntx-builder

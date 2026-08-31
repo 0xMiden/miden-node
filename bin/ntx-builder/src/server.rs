@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Context;
 use miden_node_proto::server::ntx_builder_api;
 use miden_node_proto_build::ntx_builder_api_descriptor;
@@ -25,11 +27,16 @@ mod get_network_note_status;
 pub struct NtxBuilderRpcServer {
     db: NtxDbReader,
     max_note_attempts: usize,
+    request_timeout: Duration,
 }
 
 impl NtxBuilderRpcServer {
-    pub(crate) fn new(db: NtxDbReader, max_note_attempts: usize) -> Self {
-        Self { db, max_note_attempts }
+    pub(crate) fn new(
+        db: NtxDbReader,
+        max_note_attempts: usize,
+        request_timeout: Duration,
+    ) -> Self {
+        Self { db, max_note_attempts, request_timeout }
     }
 
     /// Starts the gRPC server on the given listener.
@@ -38,6 +45,7 @@ impl NtxBuilderRpcServer {
         listener: TcpListener,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
+        let request_timeout = self.request_timeout;
         let api_service = ntx_builder_api::service(self);
         let reflection_service = server::Builder::configure()
             .register_file_descriptor_set(ntx_builder_api_descriptor())
@@ -57,6 +65,7 @@ impl NtxBuilderRpcServer {
         tonic::transport::Server::builder()
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
+            .timeout(request_timeout)
             .add_service(api_service)
             .add_service(reflection_service)
             .serve_with_incoming_shutdown(

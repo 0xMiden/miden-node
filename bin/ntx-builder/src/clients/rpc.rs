@@ -90,12 +90,16 @@ pub struct RpcClient {
 impl RpcClient {
     /// Creates a new client with a lazy connection to the node RPC endpoint.
     ///
+    /// `request_timeout` bounds each gRPC request, including establishment of the long-lived block
+    /// subscription but not the lifetime of its response stream.
+    ///
     /// `backoff_initial` / `backoff_max` configure the exponential backoff schedule applied to
     /// `block_subscription` retries (the only operation that retries today).
     pub fn new(
         rpc_url: Url,
         genesis_commitment: Word,
         trusted_validator_signing_keys: Vec<ValidatorPublicKey>,
+        request_timeout: Duration,
         backoff_initial: Duration,
         backoff_max: Duration,
     ) -> anyhow::Result<Self> {
@@ -104,6 +108,7 @@ impl RpcClient {
             None,
             genesis_commitment,
             trusted_validator_signing_keys,
+            request_timeout,
             backoff_initial,
             backoff_max,
         )
@@ -118,6 +123,7 @@ impl RpcClient {
         rpc_auth_header_value: Option<AsciiMetadataValue>,
         genesis_commitment: Word,
         trusted_validator_signing_keys: Vec<ValidatorPublicKey>,
+        request_timeout: Duration,
         backoff_initial: Duration,
         backoff_max: Duration,
     ) -> anyhow::Result<Self> {
@@ -130,7 +136,7 @@ impl RpcClient {
 
         let builder = Builder::new(rpc_url)
             .with_tls()?
-            .without_timeout()
+            .with_timeout(request_timeout)
             .without_metadata_version()
             .with_metadata_genesis(genesis_commitment);
         let builder = match rpc_auth_header_value {

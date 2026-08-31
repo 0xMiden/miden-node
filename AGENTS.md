@@ -19,3 +19,9 @@ Simplified Technical English.
 - Do not use idioms, slang, contractions, or decorative language.
 - Explain intent, constraints, hazards, and behavior that is not obvious.
 - Do not describe code that is already clear.
+- Write comments that are true for the current code without task context.
+- Do not refer to the prompt, the conversation, or the requested change.
+- Do not describe the previous code or compare it with the current code.
+- Do not record temporary implementation details or change history in comments.
+- Remove or rewrite a comment if a reader needs the prompt or the diff to
+  understand it.

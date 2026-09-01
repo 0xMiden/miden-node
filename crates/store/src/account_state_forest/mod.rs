@@ -236,11 +236,10 @@ impl<B: BackendReader> AccountStateForest<B> {
 
     /// Builds the leaf removals needed to replace a storage-map lineage with an empty tree.
     ///
-    /// `LargeSmtForest` does not currently expose a lineage reset or replacement mutation, so this
-    /// operation enumerates the latest tree and costs O(n) in its number of entries. A removed map
-    /// remains the latest version of its lineage until it is recreated; pruning cannot discard that
-    /// latest version. The `account_state_forest` benchmark tracks the resulting recreation cost so
-    /// this fallback remains visible until the forest API provides a constant-size reset primitive.
+    /// `LargeSmtForest` has no lineage reset operation. This operation enumerates the latest tree
+    /// and costs O(n) in its number of entries. A removed map remains the latest version of its
+    /// lineage until code recreates it. Pruning cannot discard the latest version. The
+    /// `account_state_forest` benchmark measures the recreation cost.
     fn build_current_tree_removal_operations(
         &self,
         lineage: LineageId,

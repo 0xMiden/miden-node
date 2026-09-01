@@ -255,9 +255,8 @@ pub(super) fn apply_storage_patch(
 
 /// Applies a storage patch to an existing storage header using precomputed map roots.
 ///
-/// This mirrors the legacy storage patch path for value-slot updates, map-slot removal, no-op map
-/// updates, and slot creation. For map slots whose final root is needed, it uses the root supplied
-/// by the caller instead of loading the previous map entries and reconstructing the map.
+/// Applies value-slot updates, map-slot removal, no-op map updates, and slot creation. Uses the map
+/// roots supplied by the caller. It does not load or reconstruct the map entries.
 pub(super) fn apply_storage_patch_with_roots(
     header: &AccountStorageHeader,
     patch: &AccountStoragePatch,

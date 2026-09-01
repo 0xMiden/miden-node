@@ -1123,8 +1123,7 @@ async fn get_block_inputs(
 ///
 /// Intended for benches that run until process exit and never need the storage released
 /// deterministically; use [`load_state`] when the writer must be joined. The write capability is
-/// leaked to keep the block writer alive for the process lifetime, as before the read/write
-/// split.
+/// leaked to keep the block writer alive for the process lifetime.
 pub async fn start_store(data_directory: PathBuf) -> Arc<State> {
     let (state, block_writer, _writer_task) = load_state(data_directory).await;
     std::mem::forget(block_writer);

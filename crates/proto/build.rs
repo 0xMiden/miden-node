@@ -83,10 +83,8 @@ fn rustfmt_generated(dir: &Path) -> miette::Result<()> {
         return Ok(());
     }
 
-    // Just ignore output and exit status. The `rustfmt` binary is part of the Rust toolchain even
-    // if the `rustfmt` component is not installed, and it will print a warning and exit with status
-    // code 1. We don't actually care about formatting in this case, so we can just ignore the
-    // error.
+    // Ignore the output and exit status. The `rustfmt` binary prints a warning and exits with
+    // status code 1 when the component is not installed. Generated files can remain unformatted.
     let _output = Command::new("rustfmt")
         .args(["--edition", "2024"])
         .args(&rs_files)
@@ -112,7 +110,7 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> miette::Re
 
 /// Generate `mod.rs` which includes all files in the folder as submodules.
 fn generate_mod_rs(dst_dir: impl AsRef<Path>) -> std::io::Result<()> {
-    // I couldn't find any `codegen::` function for `mod <module>;`, so we generate it manually.
+    // The codegen API has no function for a `mod <module>;` declaration. Generate it directly.
     let mut modules = Vec::new();
 
     for entry in fs::read_dir(dst_dir.as_ref())? {

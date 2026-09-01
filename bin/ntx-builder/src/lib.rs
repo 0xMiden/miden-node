@@ -489,8 +489,8 @@ impl NtxBuilderConfig {
             block.from = block_from
         );
 
-        // The stream reconnects on its own whenever the node closes the subscription, resuming from
-        // the next un-applied block, so a dropped connection no longer crashes the builder.
+        // The stream reconnects when the node closes the subscription. It resumes from the next
+        // block that the builder has not applied.
         let block_stream: BlockStream = Box::pin(rpc.block_subscription_reconnecting(block_from));
 
         let chain = Arc::new(SharedChainState::new(header, mmr));

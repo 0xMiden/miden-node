@@ -477,8 +477,7 @@ async fn apply_committed_block_seeds_genesis_network_account() {
     let effects = genesis_effects();
     let account_id = effects.network_account_updates[0].0;
 
-    // Genesis has no transactions, so this used to panic on the "must originate from a transaction"
-    // invariant. It must now bootstrap the account successfully.
+    // Genesis account updates have no originating transactions. The update must seed the account.
     db.apply_committed_block(effects, PartialMmr::default()).await.unwrap();
 
     assert!(
@@ -496,10 +495,8 @@ async fn apply_committed_block_seeds_genesis_network_account() {
 #[tokio::test]
 async fn apply_committed_block_fails_on_txless_update_after_genesis() {
     let (db, _dir) = test_setup().await;
-    // Same shape as genesis but at a non-genesis height: a committed account update with no
-    // originating transaction is a real block-producer invariant violation. The
-    // `apply_committed_block` assertion still fires; because the work runs on the pool's blocking
-    // thread, the panic surfaces as an error rather than unwinding the test thread.
+    // Non-genesis account updates require an originating transaction. The database pool converts a
+    // panic in its blocking thread to an error.
     let mut effects = genesis_effects();
     effects.header = mock_block_header(BlockNumber::from(1));
 

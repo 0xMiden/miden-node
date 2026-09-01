@@ -178,13 +178,10 @@ impl Server {
     }
 }
 
-/// This test ensures that the legacy behaviour can still be configured.
+/// Verifies that a capacity of one permits only one concurrent proof request.
 ///
-/// The original prover worker refused to process multiple requests concurrently.
-/// This test ensures that the redesign behaves the same when limited to a capacity of 1.
-///
-/// Create a server with a capacity of one and submit two requests. Ensure
-/// that one succeeds and one fails with a resource exhaustion error.
+/// Creates a server with a capacity of one and submits two requests. One request must succeed. The
+/// server must reject the other request with a resource exhaustion error.
 #[serial]
 #[tokio::test(flavor = "multi_thread")]
 async fn legacy_behaviour_with_capacity_1() {
@@ -257,12 +254,8 @@ async fn capacity_is_respected() {
 
 /// Ensures that the server request timeout is adhered to.
 ///
-/// We cannot actually enforce this for a request that has already being proven as the proof
-/// is done in a blocking sync task. We can however check that a second queued request is rejected.
-///
-/// This is tricky to test properly because we can't easily control the server's response time.
-/// Instead we configure the server to have a ridiculously short timeout which should hopefully
-/// always timeout.
+/// A blocking proof task cannot stop after proving starts. A queued request can expire. The test
+/// uses a ten-nanosecond timeout so at least one request expires.
 #[tokio::test(flavor = "multi_thread")]
 async fn timeout_is_respected() {
     let (server, port) = Server::with_arbitrary_port(ProofKind::Transaction)
@@ -292,9 +285,7 @@ async fn timeout_is_respected() {
 
 /// Ensures that an invalid proof kind is rejected.
 ///
-/// The error should be an invalid argument error, but since that is fairly broad we also inspect
-/// the error message for mention of the invalid proof kind. This is technically an implementation
-/// detail, but its the best we have without adding multiple abstraction layers.
+/// Checks the status code and message because the status code covers multiple validation errors.
 #[tokio::test(flavor = "multi_thread")]
 async fn invalid_proof_kind_is_rejected() {
     let (server, port) = Server::with_arbitrary_port(ProofKind::Transaction)
@@ -317,11 +308,8 @@ async fn invalid_proof_kind_is_rejected() {
 
 /// Ensures that a valid but unsupported proof kind is rejected.
 ///
-/// Aka submit a transaction proof request to a batch proving server.
-///
-/// The error should be an invalid argument error, but since that is fairly broad we also inspect
-/// the error message for mention of the unsupported proof kind. This is technically an
-/// implementation detail, but its the best we have without adding multiple abstraction layers.
+/// Submits a transaction proof request to a batch proving server. Checks the status code and
+/// message because the status code covers multiple validation errors.
 #[tokio::test(flavor = "multi_thread")]
 async fn unsupported_proof_kind_is_rejected() {
     let (server, port) = Server::with_arbitrary_port(ProofKind::Batch)

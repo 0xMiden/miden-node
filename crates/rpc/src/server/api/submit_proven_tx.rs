@@ -1,5 +1,5 @@
-use miden_node_block_producer::{AuthenticatedTransaction, ensure_transaction_has_fee};
 use miden_node_block_producer::store::get_tx_inputs;
+use miden_node_block_producer::{AuthenticatedTransaction, ensure_transaction_has_fee};
 use miden_node_proto::clients::{SequencerClient, ValidatorClient};
 use miden_node_proto::generated as proto;
 use miden_node_tracing::spawn::spawn_blocking_in_current_span;

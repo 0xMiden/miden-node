@@ -84,9 +84,8 @@ async fn authenticated_transaction_without_fee_is_rejected_before_mempool_ingres
         BlockProducerApiConfig::default(),
         miden_node_utils::shutdown::CancellationToken::new(),
     );
-    let tx = AuthenticatedTransaction::from_inner(
-        MockProvenTxBuilder::with_account_index(100).build(),
-    );
+    let tx =
+        AuthenticatedTransaction::from_inner(MockProvenTxBuilder::with_account_index(100).build());
 
     assert_matches!(
         api.submit_authenticated_tx(tx).await,
@@ -106,9 +105,8 @@ async fn authenticated_transaction_without_fee_is_accepted_when_fees_are_disable
         BlockProducerApiConfig::default(),
         miden_node_utils::shutdown::CancellationToken::new(),
     );
-    let tx = AuthenticatedTransaction::from_inner(
-        MockProvenTxBuilder::with_account_index(100).build(),
-    );
+    let tx =
+        AuthenticatedTransaction::from_inner(MockProvenTxBuilder::with_account_index(100).build());
 
     let chain_tip = api.submit_authenticated_tx(tx).await.unwrap();
     assert_eq!(chain_tip, BlockNumber::GENESIS);

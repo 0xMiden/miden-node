@@ -137,10 +137,8 @@ impl TestStore {
         let validator_keys =
             miden_protocol::block::ValidatorKeys::new(vec![validator_key]).unwrap();
         let (mut genesis_state, _) = config.into_state(validator_keys).unwrap();
-        genesis_state.fee_parameters = FeeParameters::new(
-            genesis_state.fee_parameters.fee_faucet_id(),
-            verification_base_fee,
-        );
+        genesis_state.fee_parameters =
+            FeeParameters::new(genesis_state.fee_parameters.fee_faucet_id(), verification_base_fee);
         let genesis_block =
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
@@ -205,10 +203,8 @@ fn build_test_proven_tx_with_fee(
     )
     .unwrap();
 
-    let output_notes = include_fee
-        .then(|| fee_output_note(account_id))
-        .into_iter()
-        .collect::<Vec<_>>();
+    let output_notes =
+        include_fee.then(|| fee_output_note(account_id)).into_iter().collect::<Vec<_>>();
 
     ProvenTransaction::new(
         account_update,
@@ -454,16 +450,11 @@ async fn rpc_server_rejects_proven_transactions_without_fees() {
         None,
     );
 
-    let status = service
-        .submit_proven_tx(Request::new(request))
-        .await
-        .unwrap_err();
+    let status = service.submit_proven_tx(Request::new(request)).await.unwrap_err();
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
     assert_eq!(status.details(), &[4]);
     assert!(
-        status
-            .message()
-            .contains("does not contain a non-zero TX_FEE output note"),
+        status.message().contains("does not contain a non-zero TX_FEE output note"),
         "expected the missing-fee error, got: {status}"
     );
 }
@@ -488,10 +479,7 @@ async fn rpc_server_does_not_require_fees_when_the_base_fee_is_zero() {
     );
 
     // The dummy proof is rejected later, demonstrating that the transaction passed the fee gate.
-    let status = service
-        .submit_proven_tx(Request::new(request))
-        .await
-        .unwrap_err();
+    let status = service.submit_proven_tx(Request::new(request)).await.unwrap_err();
     assert_ne!(status.details(), &[4]);
     assert!(
         status.message().contains("Invalid proof for transaction"),

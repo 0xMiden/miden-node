@@ -37,12 +37,12 @@ If you are missing specific error information that could be useful, please open 
 `SubmitProvenTx` and `SubmitProvenTxBatch` may return the following detail codes when a transaction or batch is rejected
 during submission validation or by the sequencer's mempool.
 
-| Error              | Value | gRPC status        | Meaning                     |
-| ------------------ | ----- | ------------------ | --------------------------- |
-| `Internal`         | `0`   | `INTERNAL`         | Internal submission failure |
-| `Expired`          | `1`   | `INVALID_ARGUMENT` | Transaction expired         |
-| `StateConflict`    | `2`   | `INVALID_ARGUMENT` | State conflict              |
-| `CapacityExceeded` | `3`   | `INVALID_ARGUMENT` | Mempool capacity exceeded   |
+| Error              | Value | gRPC status        | Meaning                              |
+| ------------------ | ----- | ------------------ | ------------------------------------ |
+| `Internal`         | `0`   | `INTERNAL`         | Internal submission failure          |
+| `Expired`          | `1`   | `INVALID_ARGUMENT` | Transaction expired                  |
+| `StateConflict`    | `2`   | `INVALID_ARGUMENT` | State conflict                       |
+| `CapacityExceeded` | `3`   | `INVALID_ARGUMENT` | Mempool capacity exceeded            |
 | `MissingFee`       | `4`   | `INVALID_ARGUMENT` | Transaction has no non-zero fee note |
 
 `Expired` means the transaction or batch has expired, or will expire too soon for the sequencer to consider accepting

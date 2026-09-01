@@ -42,9 +42,7 @@ pub fn ensure_transaction_has_fee(
     if contains_fee {
         Ok(())
     } else {
-        Err(MempoolSubmissionError::MissingFee {
-            transaction_id: tx.id(),
-        })
+        Err(MempoolSubmissionError::MissingFee { transaction_id: tx.id() })
     }
 }
 
@@ -285,9 +283,7 @@ mod tests {
             .into();
 
         MockProvenTxBuilder::with_account_index(1)
-            .output_notes(vec![OutputNote::Public(
-                PublicOutputNote::new(fee_note).unwrap(),
-            )])
+            .output_notes(vec![OutputNote::Public(PublicOutputNote::new(fee_note).unwrap())])
             .build()
     }
 

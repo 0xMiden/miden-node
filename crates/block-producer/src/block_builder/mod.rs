@@ -217,7 +217,7 @@ impl BlockBuilder {
                 .input_notes()
                 .iter()
                 .cloned()
-                .filter_map(|note| note.header().map(|header| header.id().as_word()))
+                .filter_map(|note| note.header().map(miden_protocol::note::NoteHeader::id))
         });
         let block_references_iter =
             batch_iter.clone().map(Deref::deref).map(ProvenBatch::reference_block_num);
@@ -226,18 +226,30 @@ impl BlockBuilder {
         let created_nullifiers_iter =
             batch_iter.map(Deref::deref).flat_map(ProvenBatch::created_nullifiers);
 
-        let inputs = self
-            .state
-            .view()
-            .get_block_inputs(
-                account_ids_iter.collect(),
-                created_nullifiers_iter.collect(),
-                unauthenticated_notes_iter.collect(),
+        let account_ids = account_ids_iter.collect::<Vec<_>>();
+        let created_nullifiers = created_nullifiers_iter.collect::<Vec<_>>();
+        let view = self.state.view();
+
+        // The reference block must be the chain tip. Its account and nullifier roots must match the
+        // witnesses from this view.
+        let inclusion_proofs = view
+            .get_inclusion_proofs(
+                *view.tip(),
                 block_references_iter.collect(),
+                unauthenticated_notes_iter.collect(),
             )
             .await
-            .map_err(StoreError::GetBlockInputsFailed)
-            .map_err(BuildBlockError::GetBlockInputsFailed)?;
+            .map_err(StoreError::GetInclusionProofsFailed)
+            .map_err(BuildBlockError::FetchInclusionProofsFailed)?;
+        let state_witnesses = view.get_state_witnesses(&account_ids, &created_nullifiers);
+
+        let inputs = BlockInputs::new(
+            inclusion_proofs.reference_block_header,
+            inclusion_proofs.partial_blockchain,
+            state_witnesses.account_witnesses,
+            state_witnesses.nullifier_witnesses,
+            inclusion_proofs.note_inclusion_proofs,
+        );
 
         // Check that the latest committed block in the store matches our expectations.
         //

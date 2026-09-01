@@ -34,10 +34,12 @@ pub(in crate::state) use snapshot::{
 };
 
 mod account;
-mod batch_inputs;
 mod block;
-mod block_inputs;
+mod inclusion_proofs;
+pub use inclusion_proofs::InclusionProofs;
 mod note;
+mod state_witnesses;
+pub use state_witnesses::StateWitnesses;
 mod sync;
 
 mod transaction_inputs;

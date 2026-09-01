@@ -34,9 +34,8 @@ pub use errors::{
     ApplyBlockWithProvingInputsError,
     DatabaseError,
     GetAccountError,
-    GetBatchInputsError,
     GetBlockHeaderError,
-    GetBlockInputsError,
+    GetInclusionProofsError,
     NoteSyncError,
     RangeBeyondTip,
     StateSyncError,
@@ -44,12 +43,14 @@ pub use errors::{
 pub use genesis::GenesisState;
 pub use state::{
     BlockWriter,
+    InclusionProofs,
     LoadedState,
     ProofWriter,
     ScopedBlockNum,
     ScopedBlockRange,
     State,
     StateView,
+    StateWitnesses,
     WriterTask,
 };
 

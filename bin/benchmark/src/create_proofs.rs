@@ -107,8 +107,10 @@ impl ProofCollector {
         }
     }
 
-    /// Submit one executed tx for proving. The remote path spawns a concurrent task and returns
-    /// immediately; the local path proves inline now, blocking until the proof is done.
+    /// Submits one executed transaction for proving.
+    ///
+    /// The remote prover uses a concurrent task and returns immediately. The local prover blocks
+    /// until it completes the proof.
     async fn submit(&mut self, prover: &Arc<BenchmarkProver>, executed_tx: ExecutedTransaction) {
         match self {
             Self::Concurrent(tasks) => {

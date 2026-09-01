@@ -712,27 +712,17 @@ struct NtxDataStore {
     /// Scripts fetched from the remote RPC service during execution, to be persisted by the
     /// coordinator.
     fetched_scripts: Arc<Mutex<Vec<(Word, NoteScript)>>>,
-    /// Mapping of storage map roots to storage slot names observed during various calls.
+    /// Maps storage map roots to storage slot names.
     ///
-    /// The registered slot names are subsequently used to retrieve storage map witnesses from the
-    /// RPC service. We need this because the RPC interface (and the underlying SMT forest) use storage
-    /// slot names, but the `DataStore` interface works with tree roots. To get around this problem
-    /// we populate this map when:
-    /// - The the native account is loaded (in `get_transaction_inputs()`).
-    /// - When a foreign account is loaded (in `get_foreign_account_inputs`).
+    /// The RPC service identifies maps by slot name. The [`DataStore`] interface identifies maps by
+    /// root. Native and foreign account loading populate this map before witness retrieval.
     ///
-    /// The assumption here are:
-    /// - Once an account is loaded, the mapping between `(account_id, map_root)` and slot names do
-    ///   not change. This is always the case.
-    /// - New storage slots created during transaction execution will not be accesses in the same
-    ///   transaction. The mechanism for adding new storage slots is not implemented yet, but the
-    ///   plan for it is consistent with this assumption.
+    /// The mapping for a loaded account remains stable during transaction execution. A transaction
+    /// cannot access a storage slot that it creates during the same execution.
     ///
-    /// One nuance worth mentioning: it is possible that there could be a root collision where an
-    /// account has two storage maps with the same root. In this case, the map will contain only a
-    /// single entry with the storage slot name that was added last. Thus, technically, requests
-    /// to the RPC service could be "wrong", but given that two identical maps have identical witnesses
-    /// this does not cause issues in practice.
+    /// Two storage maps can have the same root. In this case, the last inserted slot name replaces
+    /// the other slot name. Identical maps have identical witnesses, so the selected slot does not
+    /// change the witness.
     storage_slots: Arc<Mutex<HashMap<(AccountId, Word), StorageSlotName>>>,
     /// Per-request retry backoff for transient RPC failures.
     request_backoff: ExponentialBuilder,

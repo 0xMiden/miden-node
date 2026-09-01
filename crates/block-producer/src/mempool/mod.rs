@@ -545,9 +545,8 @@ impl Mempool {
         name = "mempool.rollback_block",
     )]
     pub fn rollback_block(&mut self, block: BlockNumber) {
-        // FIXME: We should consider a more robust check here to identify the block by a hash.
-        //        If multiple jobs are possible, then so are multiple variants with the same
-        //        block number.
+        // A block number identifies the pending block while only one block job can exist. Multiple
+        // block variants at the same height would require identification by block commitment.
         let block = self
             .pending_block
             .take_if(|pending| pending.block_number == block)

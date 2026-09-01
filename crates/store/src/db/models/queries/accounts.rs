@@ -163,8 +163,7 @@ pub(crate) fn select_account(
 
     let summary: AccountSummary = raw.try_into()?;
 
-    // Backfill account details from database For private accounts, we don't store full details in
-    // the database
+    // Public accounts store full details. Private accounts store only the summary.
     let details = if account_id.is_public() {
         Some(select_full_account(conn, account_id)?)
     } else {
@@ -174,21 +173,10 @@ pub(crate) fn select_account(
     Ok(AccountInfo { summary, details })
 }
 
-/// Reconstruct full Account from database tables for the latest account state
+/// Reconstructs the latest account state from database tables.
 ///
-/// This function queries the database tables to reconstruct a complete Account object:
-/// - Code from `account_codes` table
-/// - Nonce and storage header from `accounts` table
-/// - Storage map entries from `account_storage_map_values` table
-/// - Vault from `account_vault_assets` table
-///
-/// # Note
-///
-/// A stop-gap solution to retain store API and construct `AccountInfo` types.
-/// The function should ultimately be removed, and any queries be served from the
-/// `State` which contains an `SmtForest` to serve the latest and most recent
-/// historical data.
-// TODO: remove eventually once refactoring is complete
+/// Reads code from `account_codes`, the nonce and storage header from `accounts`, map entries from
+/// `account_storage_map_values`, and assets from `account_vault_assets`.
 pub(crate) fn select_full_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -523,8 +511,8 @@ pub(crate) fn select_account_vault_assets(
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
     use schema::account_vault_assets as t;
-    // TODO: These limits should be given by the protocol. See miden-protocol/issues/1770 for more
-    // details
+    // The protocol does not define these limits. Derive a conservative row limit from the response
+    // payload limit.
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
     const MAX_ROWS: usize = MAX_RESPONSE_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
@@ -857,7 +845,7 @@ pub(crate) fn select_latest_account_storage_components(
     Ok((header, entries))
 }
 
-// TODO this is expensive and should only be called from tests
+// This query is expensive because it loads every current storage map entry for the account.
 fn select_latest_storage_map_entries_all(
     conn: &mut SqliteConnection,
     account_id: &AccountId,
@@ -1461,7 +1449,6 @@ pub(crate) fn upsert_accounts(
             .set(&account_value)
             .execute(conn)?;
 
-        // insert pending storage map entries TODO consider batching
         for (acc_id, slot_name, key, value) in pending_storage_inserts {
             if account_is_new {
                 insert_account_storage_map_value_inner(

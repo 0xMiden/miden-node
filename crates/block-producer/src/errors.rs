@@ -5,6 +5,7 @@ use miden_node_store::{
     ApplyBlockWithProvingInputsError,
     DatabaseError,
     GetBatchInputsError,
+    GetBlockHeaderError,
     GetBlockInputsError,
 };
 use miden_protocol::Word;
@@ -13,6 +14,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::utils::DeserializationError;
 use miden_protocol::errors::{ProposedBatchError, ProposedBlockError, ProvenBatchError};
 use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::TransactionId;
 use thiserror::Error;
 
 use crate::batch_builder::RemoteProverError;
@@ -72,6 +74,9 @@ pub enum MempoolSubmissionError {
 
     #[error("the mempool is at capacity")]
     CapacityExceeded,
+
+    #[error("transaction {transaction_id} does not contain a non-zero TX_FEE output note")]
+    MissingFee { transaction_id: TransactionId },
 
     #[error("mempool lock is poisoned")]
     #[grpc(internal)]
@@ -191,6 +196,10 @@ pub enum StoreError {
     GetBatchInputsFailed(#[source] GetBatchInputsError),
     #[error("failed to get block inputs from store")]
     GetBlockInputsFailed(#[source] GetBlockInputsError),
+    #[error("failed to get reference block header from store")]
+    GetBlockHeaderFailed(#[source] GetBlockHeaderError),
+    #[error("reference block {0} was not found in the store")]
+    ReferenceBlockNotFound(BlockNumber),
     #[error("failed to apply block to store")]
     ApplyBlockFailed(#[source] ApplyBlockWithProvingInputsError),
 }

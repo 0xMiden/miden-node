@@ -34,8 +34,8 @@ If you are missing specific error information that could be useful, please open 
 
 ## Transaction Submission Errors
 
-`SubmitProvenTx` and `SubmitProvenTxBatch` may return the following detail codes when a transaction or batch reaches the
-sequencer's mempool and is rejected.
+`SubmitProvenTx` and `SubmitProvenTxBatch` may return the following detail codes when a transaction or batch is rejected
+during submission validation or by the sequencer's mempool.
 
 | Error              | Value | gRPC status        | Meaning                     |
 | ------------------ | ----- | ------------------ | --------------------------- |
@@ -43,6 +43,7 @@ sequencer's mempool and is rejected.
 | `Expired`          | `1`   | `INVALID_ARGUMENT` | Transaction expired         |
 | `StateConflict`    | `2`   | `INVALID_ARGUMENT` | State conflict              |
 | `CapacityExceeded` | `3`   | `INVALID_ARGUMENT` | Mempool capacity exceeded   |
+| `MissingFee`       | `4`   | `INVALID_ARGUMENT` | Transaction has no non-zero fee note |
 
 `Expired` means the transaction or batch has expired, or will expire too soon for the sequencer to consider accepting
 it.
@@ -52,6 +53,10 @@ unauthenticated input notes, or an account initial commitment mismatch. Use the 
 conflict, and use the detail byte when a client needs stable branching between broad submission failure classes.
 
 `CapacityExceeded` means the mempool capacity has been exhausted and is under load.
+
+`MissingFee` means that at least one submitted transaction requires a fee but does not contain an output note with the
+canonical `TX_FEE` script and a non-zero asset. Transactions that do not require a fee remain valid without a fee note.
+This check does not establish that the fee amount is sufficient.
 
 ### Encrypted input errors
 

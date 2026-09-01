@@ -9,7 +9,7 @@ use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::shutdown::CancellationToken;
 use miden_node_utils::tasks::Tasks;
 use miden_protocol::batch::ProposedBatch;
-use miden_protocol::block::BlockNumber;
+use miden_protocol::block::{BlockNumber, FeeParameters};
 use miden_protocol::transaction::ProvenTransaction;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
@@ -18,8 +18,8 @@ use url::Url;
 use crate::batch_builder::{BatchBuilder, BatchIntervals};
 use crate::block_builder::BlockBuilder;
 use crate::block_prover::BlockProver;
-use crate::domain::transaction::AuthenticatedTransaction;
-use crate::errors::MempoolSubmissionError;
+use crate::domain::transaction::{AuthenticatedTransaction, ensure_transaction_has_fee};
+use crate::errors::{MempoolSubmissionError, StoreError};
 use crate::mempool::{BatchBudget, BlockBudget, Mempool, MempoolConfig, SharedMempool};
 use crate::store::{TransactionInputs, get_tx_inputs};
 use crate::validator::BlockProducerValidatorClient;
@@ -359,6 +359,9 @@ impl BlockProducerApi {
         &self,
         tx: AuthenticatedTransaction,
     ) -> Result<BlockNumber, MempoolSubmissionError> {
+        let fee_parameters = self.reference_fee_parameters(tx.reference_block().0).await?;
+        ensure_transaction_has_fee(tx.raw_proven_transaction(), &fee_parameters)?;
+
         let shared_mempool = self.mempool.lock().await;
         // We need the let binding here to avoid E0597 `shared_mempool` does not live long enough
         let result = shared_mempool
@@ -417,6 +420,11 @@ impl BlockProducerApi {
             "transaction inputs must match the batch's transactions"
         );
 
+        for tx in batch.transactions() {
+            let fee_parameters = self.reference_fee_parameters(tx.ref_block_num()).await?;
+            ensure_transaction_has_fee(tx, &fee_parameters)?;
+        }
+
         let mut txs = Vec::with_capacity(batch.transactions().len());
         for (tx, inputs) in batch.transactions().iter().zip(inputs) {
             // SAFETY: We assume that the rpc component has verified the transaction proofs, as well
@@ -434,6 +442,24 @@ impl BlockProducerApi {
             .map_err(MempoolSubmissionError::MempoolPoisoned)?
             .add_user_batch(&txs);
         result
+    }
+
+    async fn reference_fee_parameters(
+        &self,
+        block_num: BlockNumber,
+    ) -> Result<FeeParameters, MempoolSubmissionError> {
+        let header = self
+            .state
+            .view()
+            .get_block_header(Some(block_num), false)
+            .await
+            .map_err(StoreError::GetBlockHeaderFailed)
+            .map_err(MempoolSubmissionError::StoreStateReadFailed)?
+            .0
+            .ok_or(StoreError::ReferenceBlockNotFound(block_num))
+            .map_err(MempoolSubmissionError::StoreStateReadFailed)?;
+
+        Ok(header.fee_parameters().clone())
     }
 
     pub async fn status(&self) -> BlockProducerStatus {

@@ -31,6 +31,7 @@ miden-node-store   = { workspace = true }
 miden-node-tracing = { workspace = true }
 miden-node-utils   = { features = ["testing"], workspace = true }
 miden-protocol     = { default-features = true, workspace = true }
+miden-standards    = { workspace = true }
 miden-tx-batch     = { workspace = true }
 rand               = { workspace = true }
 thiserror          = { workspace = true }

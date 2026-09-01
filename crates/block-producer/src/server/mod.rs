@@ -18,6 +18,7 @@ use url::Url;
 use crate::batch_builder::{BatchBuilder, BatchIntervals};
 use crate::block_builder::BlockBuilder;
 use crate::block_prover::BlockProver;
+use crate::domain::batch::BatchParameters;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::MempoolSubmissionError;
 use crate::mempool::{BatchBudget, BlockBudget, Mempool, MempoolConfig, SharedMempool};
@@ -417,6 +418,9 @@ impl BlockProducerApi {
             "transaction inputs must match the batch's transactions"
         );
 
+        let parameters = BatchParameters {
+            reference_block: batch.reference_block_header().block_num(),
+        };
         let mut txs = Vec::with_capacity(batch.transactions().len());
         for (tx, inputs) in batch.transactions().iter().zip(inputs) {
             // SAFETY: We assume that the rpc component has verified the transaction proofs, as well
@@ -432,7 +436,7 @@ impl BlockProducerApi {
         let result = shared_mempool
             .lock()
             .map_err(MempoolSubmissionError::MempoolPoisoned)?
-            .add_user_batch(&txs);
+            .add_user_batch(&txs, parameters);
         result
     }
 

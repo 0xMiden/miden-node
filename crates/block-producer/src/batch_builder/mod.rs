@@ -300,6 +300,7 @@ impl BatchJob {
         &self,
         batch: SelectedBatch,
     ) -> Result<(SelectedBatch, BatchInputs), BuildBatchError> {
+        let batch_reference_block_num = batch.parameters().reference_block;
         let block_references = batch
             .transactions()
             .iter()
@@ -314,6 +315,7 @@ impl BatchJob {
         self.state
             .view()
             .get_batch_inputs(
+                batch_reference_block_num,
                 block_references.map(|(block_num, _)| block_num).collect(),
                 unauthenticated_notes.collect(),
             )

@@ -54,9 +54,9 @@ conflict, and use the detail byte when a client needs stable branching between b
 
 `CapacityExceeded` means the mempool capacity has been exhausted and is under load.
 
-`MissingFee` means that at least one submitted transaction requires a fee but does not contain an output note with the
-canonical `TX_FEE` script and a non-zero asset. Transactions that do not require a fee remain valid without a fee note.
-This check does not establish that the fee amount is sufficient.
+`MissingFee` is returned only by `SubmitProvenTx`. It means that the submitted transaction requires a fee but does not
+contain an output note with the canonical `TX_FEE` script and a non-zero asset. Transactions that do not require a fee
+remain valid without a fee note. This check does not establish that the fee amount is sufficient.
 
 ### Encrypted input errors
 

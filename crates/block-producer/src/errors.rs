@@ -5,7 +5,6 @@ use miden_node_store::{
     ApplyBlockWithProvingInputsError,
     DatabaseError,
     GetBatchInputsError,
-    GetBlockHeaderError,
     GetBlockInputsError,
 };
 use miden_protocol::Word;
@@ -196,10 +195,6 @@ pub enum StoreError {
     GetBatchInputsFailed(#[source] GetBatchInputsError),
     #[error("failed to get block inputs from store")]
     GetBlockInputsFailed(#[source] GetBlockInputsError),
-    #[error("failed to get reference block header from store")]
-    GetBlockHeaderFailed(#[source] GetBlockHeaderError),
-    #[error("reference block {0} was not found in the store")]
-    ReferenceBlockNotFound(BlockNumber),
     #[error("failed to apply block to store")]
     ApplyBlockFailed(#[source] ApplyBlockWithProvingInputsError),
 }

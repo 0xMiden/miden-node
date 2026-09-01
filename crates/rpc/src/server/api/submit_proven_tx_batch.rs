@@ -1,4 +1,3 @@
-use miden_node_block_producer::ensure_transaction_has_fee;
 use miden_node_block_producer::store::get_tx_inputs;
 use miden_node_proto::clients::{SequencerClient, ValidatorClient};
 use miden_node_proto::generated as proto;
@@ -76,13 +75,6 @@ impl proto::server::rpc_api::SubmitProvenTxBatch for RpcService {
             proven_batch.reference_block_commitment(),
         )
         .await?;
-        for tx in proposed_batch.transactions() {
-            let reference_header = self
-                .verify_reference_commitment(tx.ref_block_num(), tx.ref_block_commitment())
-                .await?;
-            ensure_transaction_has_fee(tx, reference_header.fee_parameters())
-                .map_err(Status::from)?;
-        }
 
         // Perform this check here since its cheap. If this passes we can safely zip inputs and
         // transactions.

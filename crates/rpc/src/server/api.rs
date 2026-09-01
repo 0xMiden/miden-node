@@ -271,6 +271,7 @@ impl RpcService {
 // ================================================================================================
 
 pub(crate) struct SequencerInternalService {
+    pub(crate) state: Arc<State>,
     pub(crate) block_producer: BlockProducerApi,
 }
 

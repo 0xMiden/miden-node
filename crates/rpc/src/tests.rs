@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -5,7 +6,12 @@ use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{Extensions, HeaderMap, HeaderValue};
-use miden_node_block_producer::{BlockProducerApi, BlockProducerApiConfig};
+use miden_node_block_producer::store::TransactionInputs;
+use miden_node_block_producer::{
+    AuthenticatedTransaction,
+    BlockProducerApi,
+    BlockProducerApiConfig,
+};
 use miden_node_proto::clients::{
     Builder,
     GrpcClient,
@@ -17,6 +23,7 @@ use miden_node_proto::clients::{
 };
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::rpc::api_server::Api;
+use miden_node_proto::generated::sequencer::api_server::Api as SequencerApi;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
@@ -65,7 +72,7 @@ use tonic::metadata::MetadataMap;
 use url::Url;
 
 use crate::server::RpcBackend;
-use crate::server::api::RpcService;
+use crate::server::api::{RpcService, SequencerInternalService};
 use crate::{PreAuthSubmission, Rpc, RpcMode, ValidatorClients};
 
 /// Global registry of temp directories. Held for the lifetime of the test binary so that `RocksDB`
@@ -457,6 +464,43 @@ async fn rpc_server_rejects_proven_transactions_without_fees() {
         status.message().contains("does not contain a non-zero TX_FEE output note"),
         "expected the missing-fee error, got: {status}"
     );
+}
+
+#[tokio::test]
+async fn sequencer_authenticated_rpc_rejects_transactions_without_fees() {
+    let store = TestStore::start_with_base_fee(1).await;
+    let genesis = store.genesis_commitment();
+    let (account, account_patch) = build_test_account([0; 32]);
+    let tx = build_test_proven_tx_with_fee(&account, &account_patch, genesis, false);
+    let inputs = TransactionInputs {
+        account_id: tx.account_id(),
+        account_commitment: Some(tx.account_update().initial_state_commitment()),
+        nullifiers: HashMap::default(),
+        found_unauthenticated_notes: HashSet::default(),
+        current_block_height: 0.into(),
+    };
+    let tx = AuthenticatedTransaction::new_unchecked(tx.into(), inputs).unwrap();
+    let block_producer = BlockProducerApi::new(
+        Arc::clone(&store.state),
+        store.state.committed_tip(),
+        BlockProducerApiConfig::default(),
+        CancellationToken::new(),
+    );
+    let service = SequencerInternalService {
+        state: Arc::clone(&store.state),
+        block_producer: block_producer.clone(),
+    };
+
+    let status = service
+        .submit_authenticated_tx(Request::new(
+            proto::sequencer::AuthenticatedTransaction::from(tx),
+        ))
+        .await
+        .unwrap_err();
+
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert_eq!(status.details(), &[4]);
+    assert_eq!(block_producer.status().await.mempool_stats.uncommitted_transactions, 0);
 }
 
 #[tokio::test]

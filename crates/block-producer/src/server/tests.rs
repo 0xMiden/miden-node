@@ -2,25 +2,21 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use assert_matches::assert_matches;
 use miden_node_store::GenesisState;
 use miden_node_store::state::State;
 use miden_node_utils::fee::test_fee_params;
 use miden_protocol::Word;
 use miden_protocol::batch::ProvenBatch;
-use miden_protocol::block::{BlockHeader, BlockNumber, FeeParameters, ValidatorKeys};
+use miden_protocol::block::{BlockHeader, BlockNumber, ValidatorKeys};
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use url::Url;
 
 use crate::domain::transaction::AuthenticatedTransaction;
-use crate::errors::MempoolSubmissionError;
 use crate::mempool::{Mempool, MempoolConfig};
 use crate::server::MempoolStats;
 use crate::test_utils::MockProvenTxBuilder;
 use crate::test_utils::batch::TransactionBatchConstructor;
 use crate::{
-    BlockProducerApi,
-    BlockProducerApiConfig,
     DEFAULT_BATCH_WORKERS,
     DEFAULT_MAX_BATCHES_PER_BLOCK,
     DEFAULT_MAX_CONCURRENT_PROOFS,
@@ -74,48 +70,9 @@ fn mempool_stats_track_uncommitted_work_and_the_canonical_tip() {
 }
 
 #[tokio::test]
-async fn authenticated_transaction_without_fee_is_rejected_before_mempool_ingress() {
-    let data_directory = tempfile::tempdir().expect("tempdir should be created");
-    bootstrap_store(data_directory.path(), 1);
-    let (state, ..) = State::for_tests(data_directory.path()).await;
-    let api = BlockProducerApi::new(
-        Arc::clone(&state),
-        state.committed_tip(),
-        BlockProducerApiConfig::default(),
-        miden_node_utils::shutdown::CancellationToken::new(),
-    );
-    let tx =
-        AuthenticatedTransaction::from_inner(MockProvenTxBuilder::with_account_index(100).build());
-
-    assert_matches!(
-        api.submit_authenticated_tx(tx).await,
-        Err(MempoolSubmissionError::MissingFee { .. })
-    );
-    assert_eq!(api.status().await.mempool_stats.uncommitted_transactions, 0);
-}
-
-#[tokio::test]
-async fn authenticated_transaction_without_fee_is_accepted_when_fees_are_disabled() {
-    let data_directory = tempfile::tempdir().expect("tempdir should be created");
-    bootstrap_store(data_directory.path(), 0);
-    let (state, ..) = State::for_tests(data_directory.path()).await;
-    let api = BlockProducerApi::new(
-        Arc::clone(&state),
-        state.committed_tip(),
-        BlockProducerApiConfig::default(),
-        miden_node_utils::shutdown::CancellationToken::new(),
-    );
-    let tx =
-        AuthenticatedTransaction::from_inner(MockProvenTxBuilder::with_account_index(100).build());
-
-    let chain_tip = api.submit_authenticated_tx(tx).await.unwrap();
-    assert_eq!(chain_tip, BlockNumber::GENESIS);
-}
-
-#[tokio::test]
 async fn block_producer_starts_with_store_state() {
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
-    bootstrap_store(data_directory.path(), 0);
+    bootstrap_store(data_directory.path());
     let (state, block_writer, proof_writer) = State::for_tests(data_directory.path()).await;
 
     let block_producer = Sequencer {
@@ -142,12 +99,11 @@ async fn block_producer_starts_with_store_state() {
     assert_eq!(status.chain_tip, BlockNumber::GENESIS);
 }
 
-fn bootstrap_store(path: &std::path::Path, verification_base_fee: u32) {
+fn bootstrap_store(path: &std::path::Path) {
     let signer = random_secret_key();
-    let fee_faucet_id = test_fee_params().fee_faucet_id();
     let genesis_state = GenesisState::new(
         vec![],
-        FeeParameters::new(fee_faucet_id, verification_base_fee),
+        test_fee_params(),
         1,
         1,
         ValidatorKeys::new(vec![signer.public_key()]).unwrap(),

@@ -123,16 +123,13 @@ pub fn apply_committed_block(
     effects: &CommittedBlockEffects,
     chain_mmr: &PartialMmr,
 ) -> Result<Vec<AccountId>, DatabaseError> {
-    // The latest transaction in this block per account, from the same source the coordinator uses
-    // for each `AccountView`'s `last_committed_tx`, so the persisted `accounts.last_tx_id` and the
-    // pushed landing state agree. For block-producer output every committed account update
-    // originates from a transaction in the same block, so each upserted account has an entry here.
-    // The genesis block is the sole exception: it commits account state directly with no
-    // transactions, so genesis accounts fall back to the zero sentinel below.
+    // Derive each account's latest transaction from the effects that the coordinator uses. The
+    // stored `accounts.last_tx_id` and `AccountView::last_committed_tx` values must agree. Each
+    // non-genesis account update has an originating transaction in the same block. Genesis account
+    // updates use the zero sentinel because genesis contains no transactions.
     //
-    // `accounts.last_tx_id` is persisted but no longer read by landing detection, which now compares
-    // against the in-memory `AccountView`. The column is retained as the committed-state record and
-    // is exercised only by the `account_last_tx` test accessor (see `queries::accounts`).
+    // Landing detection reads `AccountView::last_committed_tx`. The database column records the
+    // same committed state.
     let last_tx = effects.latest_tx_per_account();
     let is_genesis = effects.header.block_num() == BlockNumber::GENESIS;
 

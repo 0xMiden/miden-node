@@ -492,9 +492,7 @@ async fn sequencer_authenticated_rpc_rejects_transactions_without_fees() {
     };
 
     let status = service
-        .submit_authenticated_tx(Request::new(
-            proto::sequencer::AuthenticatedTransaction::from(tx),
-        ))
+        .submit_authenticated_tx(Request::new(proto::sequencer::AuthenticatedTransaction::from(tx)))
         .await
         .unwrap_err();
 

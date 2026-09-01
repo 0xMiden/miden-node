@@ -35,7 +35,8 @@ pub use errors::{
     DatabaseError,
     GetAccountError,
     GetBlockHeaderError,
-    GetInclusionProofsError,
+    GetBlockInclusionProofsError,
+    GetNoteInclusionProofsError,
     NoteSyncError,
     RangeBeyondTip,
     StateSyncError,
@@ -43,7 +44,6 @@ pub use errors::{
 pub use genesis::GenesisState;
 pub use state::{
     BlockWriter,
-    InclusionProofs,
     LoadedState,
     ProofWriter,
     ScopedBlockNum,

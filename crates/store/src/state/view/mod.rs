@@ -36,7 +36,6 @@ pub(in crate::state) use snapshot::{
 mod account;
 mod block;
 mod inclusion_proofs;
-pub use inclusion_proofs::InclusionProofs;
 mod note;
 mod state_witnesses;
 pub use state_witnesses::StateWitnesses;

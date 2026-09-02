@@ -68,9 +68,7 @@ impl Db {
     /// Create and commit a transaction with the queries added in the provided closure
     pub async fn transact<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
-        Q: Send
-            + for<'a, 't> FnOnce(&'a mut SqliteConnection) -> std::result::Result<R, E>
-            + 'static,
+        Q: Send + for<'a> FnOnce(&'a mut SqliteConnection) -> std::result::Result<R, E> + 'static,
         R: Send + 'static,
         M: Send + ToString,
         E: From<diesel::result::Error>,
@@ -108,9 +106,7 @@ impl PinnedConnection {
     /// the pinned connection.
     pub async fn transact<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
-        Q: Send
-            + for<'a, 't> FnOnce(&'a mut SqliteConnection) -> std::result::Result<R, E>
-            + 'static,
+        Q: Send + for<'a> FnOnce(&'a mut SqliteConnection) -> std::result::Result<R, E> + 'static,
         R: Send + 'static,
         M: Send + ToString,
         E: From<diesel::result::Error>,

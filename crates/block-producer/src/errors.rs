@@ -13,6 +13,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::utils::DeserializationError;
 use miden_protocol::errors::{ProposedBatchError, ProposedBlockError, ProvenBatchError};
 use miden_protocol::note::Nullifier;
+use miden_protocol::transaction::TransactionId;
 use thiserror::Error;
 
 use crate::batch_builder::RemoteProverError;
@@ -72,6 +73,9 @@ pub enum MempoolSubmissionError {
 
     #[error("the mempool is at capacity")]
     CapacityExceeded,
+
+    #[error("transaction {transaction_id} does not contain a non-zero TX_FEE output note")]
+    MissingFee { transaction_id: TransactionId },
 
     #[error("mempool lock is poisoned")]
     #[grpc(internal)]

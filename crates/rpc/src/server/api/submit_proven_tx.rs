@@ -1,5 +1,5 @@
-use miden_node_block_producer::AuthenticatedTransaction;
 use miden_node_block_producer::store::get_tx_inputs;
+use miden_node_block_producer::{AuthenticatedTransaction, ensure_transaction_has_fee};
 use miden_node_proto::clients::{SequencerClient, ValidatorClient};
 use miden_node_proto::generated as proto;
 use miden_node_tracing::spawn::spawn_blocking_in_current_span;
@@ -63,8 +63,10 @@ impl proto::server::rpc_api::SubmitProvenTx for RpcService {
         debug!(target: LOG_TARGET, "Submitting transaction");
 
         // Verify the reference block is actually part of the chain.
-        self.verify_reference_commitment(tx.ref_block_num(), tx.ref_block_commitment())
+        let reference_header = self
+            .verify_reference_commitment(tx.ref_block_num(), tx.ref_block_commitment())
             .await?;
+        ensure_transaction_has_fee(&tx, reference_header.fee_parameters()).map_err(Status::from)?;
 
         // Rebuild a new ProvenTransaction with decorators removed from output notes
         let account_update = TxAccountUpdate::new(

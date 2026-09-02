@@ -1010,10 +1010,11 @@ fn create_existing_account_patch(
                 benchmark_storage_map_update_value(storage_update.block_index, tx_index, key_index),
             );
             let map_patch = StorageMapPatch::Update { entries };
-            AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-                benchmark_storage_map_slot(),
-                StorageSlotPatch::Map(map_patch),
-            )]))
+            AccountStoragePatch::from_raw(
+                [(benchmark_storage_map_slot(), StorageSlotPatch::Map(map_patch))]
+                    .into_iter()
+                    .collect::<BTreeMap<_, _>>(),
+            )
             .unwrap()
         },
         _ => AccountStoragePatch::new(),

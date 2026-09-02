@@ -659,9 +659,11 @@ impl AccountSecrets {
         &self,
         genesis_state: &GenesisState,
     ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + '_ {
-        let account_lut = IndexMap::<AccountId, Account>::from_iter(
-            genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
-        );
+        let account_lut = genesis_state
+            .accounts
+            .iter()
+            .map(|account| (account.id(), account.clone()))
+            .collect::<IndexMap<AccountId, Account>>();
         self.secrets.iter().cloned().map(move |(name, account_id, secret_key)| {
             let account = account_lut
                 .get(&account_id)

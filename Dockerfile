@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG RUST_VERSION=1.96
+ARG RUST_VERSION=1.98
 ARG DEBIAN_RELEASE=bookworm
 ARG BIN
 ARG PORT
@@ -10,6 +10,8 @@ ARG PORT
 ARG BUILDER=builder-ci
 
 FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS build-base
+# Used by our codegen code.
+RUN rustup component add rustfmt
 # Disable incremental compilation: its reuse depends on the same mtime-based
 # fingerprinting that the shared CI target cache cannot make safe (see
 # builder-ci below), and release builds gain nothing from it anyway. Dep

@@ -1256,7 +1256,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore, TestServerG
     });
     let url = rpc_addr.to_string();
     // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
-    let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
+    let url = Url::parse(format!("http://{url}").as_str()).unwrap();
     let rpc_client = connect_rpc(url).await;
 
     (rpc_client, rpc_addr, store, TestServerGuard(shutdown))

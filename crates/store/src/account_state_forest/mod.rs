@@ -305,17 +305,16 @@ impl<B: BackendReader> AccountStateForest<B> {
     ) -> Result<(), AccountStateForestUpdateError> {
         let account_id = patch.id();
         for (slot_name, map_patch) in patch.storage().maps() {
-            let raw_map_entries = Vec::from_iter(
-                map_patch
-                    .entries()
-                    .into_iter()
-                    .flat_map(|entries| entries.as_map().iter())
-                    .filter_map(
-                        |(&key, &value)| {
-                            if value == EMPTY_WORD { None } else { Some((key, value)) }
-                        },
-                    ),
-            );
+            let raw_map_entries = map_patch
+                .entries()
+                .into_iter()
+                .flat_map(|entries| entries.as_map().iter())
+                .filter_map(
+                    |(&key, &value)| {
+                        if value == EMPTY_WORD { None } else { Some((key, value)) }
+                    },
+                )
+                .collect::<Vec<_>>();
             let operations = Self::build_forest_operations(
                 raw_map_entries.iter().map(|(raw_key, value)| (raw_key.hash().into(), *value)),
             );
@@ -637,10 +636,13 @@ impl<B: BackendReader> AccountStateForest<B> {
             RootInfo::Missing => return None,
         };
 
-        let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {
-            let key_hashed = raw_key.hash().into();
-            self.forest.open(tree, key_hashed).map_err(Self::map_forest_error)
-        }));
+        let proofs = raw_keys
+            .iter()
+            .map(|raw_key| {
+                let key_hashed = raw_key.hash().into();
+                self.forest.open(tree, key_hashed).map_err(Self::map_forest_error)
+            })
+            .collect::<Result<_, _>>();
 
         Some(proofs.and_then(|proofs| {
             AccountStorageMapDetails::from_proofs(slot_name, map_root, raw_keys, proofs)

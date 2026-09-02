@@ -10,6 +10,8 @@ ARG PORT
 ARG BUILDER=builder-ci
 
 FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS build-base
+# Used by our codegen code.
+RUN rustup component add rustfmt
 # Disable incremental compilation: its reuse depends on the same mtime-based
 # fingerprinting that the shared CI target cache cannot make safe (see
 # builder-ci below), and release builds gain nothing from it anyway. Dep

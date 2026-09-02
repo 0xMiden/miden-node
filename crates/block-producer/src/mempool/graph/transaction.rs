@@ -8,7 +8,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Nullifier;
 use miden_protocol::transaction::TransactionId;
 
-use crate::domain::batch::SelectedBatch;
+use crate::domain::batch::{BatchParameters, SelectedBatch};
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::StateConflict;
 use crate::mempool::BatchBudget;
@@ -140,6 +140,7 @@ impl TransactionGraph {
     pub fn append_user_batch(
         &mut self,
         batch: &[Arc<AuthenticatedTransaction>],
+        parameters: BatchParameters,
     ) -> Result<(), StateConflict> {
         let batch_id =
             BatchId::from_transactions(batch.iter().map(|tx| tx.raw_proven_transaction()));
@@ -159,22 +160,30 @@ impl TransactionGraph {
         }
 
         let txs = batch.iter().map(GraphNode::id).collect::<Vec<_>>();
-        self.user_batches.insert(batch_id, txs);
+        self.user_batches.insert(batch_id, txs, parameters);
 
         Ok(())
     }
 
-    pub fn select_any_batch(&mut self, budget: BatchBudget) -> Option<SelectedBatch> {
+    pub fn select_any_batch(
+        &mut self,
+        budget: BatchBudget,
+        internal_parameters: BatchParameters,
+    ) -> Option<SelectedBatch> {
         self.select_user_batch()
-            .or_else(|| self.select_internal_batch(budget).into_batch())
+            .or_else(|| self.select_internal_batch(budget, internal_parameters).into_batch())
     }
 
-    pub fn select_full_batch(&mut self, budget: BatchBudget) -> Option<SelectedBatch> {
+    pub fn select_full_batch(
+        &mut self,
+        budget: BatchBudget,
+        internal_parameters: BatchParameters,
+    ) -> Option<SelectedBatch> {
         if let Some(user_batch) = self.select_user_batch() {
             return Some(user_batch);
         }
 
-        match self.select_internal_batch(budget) {
+        match self.select_internal_batch(budget, internal_parameters) {
             BatchSelection::Full(batch) => Some(batch),
             BatchSelection::Partial(batch) => {
                 // Full-batch selection is speculative; partial selections must not reserve txs.
@@ -211,9 +220,8 @@ impl TransactionGraph {
     /// Transactions can fail selection if they depend on any external transactions that have
     /// not yet been selected.
     fn try_select_user_batch_candidate(&mut self, candidate: BatchId) -> Option<SelectedBatch> {
-        let mut selected = SelectedBatch::builder();
-
-        let txs = self.user_batches.get_txs_contained_in_batch(&candidate)?;
+        let (txs, parameters) = self.user_batches.get(&candidate)?;
+        let mut selected = SelectedBatch::builder(parameters);
 
         for tx in txs {
             let Some(tx) = self.inner.selection_candidates().get(&tx).copied() else {
@@ -234,8 +242,12 @@ impl TransactionGraph {
         Some(selected.build())
     }
 
-    fn select_internal_batch(&mut self, mut budget: BatchBudget) -> BatchSelection {
-        let mut selected = SelectedBatch::builder();
+    fn select_internal_batch(
+        &mut self,
+        mut budget: BatchBudget,
+        parameters: BatchParameters,
+    ) -> BatchSelection {
+        let mut selected = SelectedBatch::builder(parameters);
 
         'outer: loop {
             // Select arbitrary candidate which is _not_ part of a user batch.
@@ -460,24 +472,32 @@ impl TransactionGraph {
 /// A bijective mapping of batches and their transactions.
 #[derive(Clone, Debug, PartialEq, Default)]
 struct BatchTxMap {
-    by_batch: HashMap<BatchId, Vec<TransactionId>>,
+    by_batch: HashMap<BatchId, UserBatch>,
     by_tx: HashMap<TransactionId, BatchId>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct UserBatch {
+    txs: Vec<TransactionId>,
+    parameters: BatchParameters,
+}
+
 impl BatchTxMap {
-    fn insert(&mut self, batch: BatchId, txs: Vec<TransactionId>) {
+    fn insert(&mut self, batch: BatchId, txs: Vec<TransactionId>, parameters: BatchParameters) {
         for tx in &txs {
             assert!(self.by_tx.insert(*tx, batch).is_none());
         }
-        assert!(self.by_batch.insert(batch, txs).is_none());
+        assert!(self.by_batch.insert(batch, UserBatch { txs, parameters }).is_none());
     }
 
     fn remove(&mut self, batch: &BatchId) -> Vec<TransactionId> {
-        let txs = self.by_batch.remove(batch).unwrap_or_default();
-        for tx in &txs {
+        let Some(batch) = self.by_batch.remove(batch) else {
+            return Vec::new();
+        };
+        for tx in &batch.txs {
             self.by_tx.remove(tx);
         }
-        txs
+        batch.txs
     }
 
     fn batches(&self) -> impl Iterator<Item = &BatchId> {
@@ -489,8 +509,8 @@ impl BatchTxMap {
         self.by_tx.get(tx)
     }
 
-    fn get_txs_contained_in_batch(&self, batch: &BatchId) -> Option<&[TransactionId]> {
-        self.by_batch.get(batch).map(Vec::as_slice)
+    fn get(&self, batch: &BatchId) -> Option<(&[TransactionId], BatchParameters)> {
+        self.by_batch.get(batch).map(|batch| (batch.txs.as_slice(), batch.parameters))
     }
 
     fn contains_tx(&self, tx: &TransactionId) -> bool {

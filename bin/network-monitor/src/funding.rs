@@ -131,18 +131,30 @@ impl FaucetClient {
     pub(crate) async fn metadata(&self) -> Result<GetMetadataResponse> {
         fetch_faucet_metadata(&self.client, &self.faucet_url).await
     }
+}
+
+/// Funds monitor accounts with the chain's fee asset.
+///
+/// Binds a [`FaucetClient`] to the RPC client used to await note commitment and to the chain's
+/// fee faucet ID, so callers fund an account from just an ID and an amount. Built where the
+/// genesis header is known, since the fee faucet ID comes from the genesis fee parameters.
+pub struct FeeFunder {
+    faucet: FaucetClient,
+    rpc_client: RpcClient,
+    fee_faucet_id: AccountId,
+}
+
+impl FeeFunder {
+    pub fn new(faucet: FaucetClient, rpc_client: RpcClient, fee_faucet_id: AccountId) -> Self {
+        Self { faucet, rpc_client, fee_faucet_id }
+    }
 
     /// Requests `amount` base units for `account_id` and waits for the resulting public P2ID note
-    /// to commit. The note's asset is checked against `fee_faucet_id` so a faucet minting the wrong
-    /// token fails here instead of as opaque fee aborts later.
-    pub async fn fund(
-        &self,
-        rpc_client: &mut RpcClient,
-        account_id: AccountId,
-        fee_faucet_id: AccountId,
-        amount: u64,
-    ) -> Result<Note> {
+    /// to commit. The note's asset is checked against the fee faucet ID so a faucet minting the
+    /// wrong token fails here instead of as opaque fee aborts later.
+    pub async fn fund(&mut self, account_id: AccountId, amount: u64) -> Result<Note> {
         let tokens = self
+            .faucet
             .request_tokens(&account_id.to_string(), amount)
             .await
             .context("faucet token request failed")?;
@@ -158,12 +170,12 @@ impl FaucetClient {
             asset.amount = amount
         );
 
-        let note = await_committed_note(rpc_client, note_id).await?;
-        ensure_note_carries_fee_asset(&note, fee_faucet_id).with_context(|| {
+        let note = await_committed_note(&mut self.rpc_client, note_id).await?;
+        ensure_note_carries_fee_asset(&note, self.fee_faucet_id).with_context(|| {
             format!(
                 "the faucet at {} did not mint the chain's fee asset: is --faucet-url pointing \
                  at the chain's native faucet?",
-                self.faucet_url
+                self.faucet.url()
             )
         })?;
         Ok(note)

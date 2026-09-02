@@ -50,7 +50,7 @@ use crate::deploy::{
     create_and_deploy_accounts,
     create_genesis_aware_rpc_client,
 };
-use crate::funding::{FaucetClient, wallet_funding_amount, wallet_topup_threshold};
+use crate::funding::{FaucetClient, FeeFunder, wallet_funding_amount, wallet_topup_threshold};
 use crate::service::Service;
 use crate::status::{
     CounterTrackingDetails,
@@ -482,14 +482,10 @@ impl IncrementService {
             account.id = self.tx.wallet_account.id(),
             asset.balance = balance
         );
-        let mut rpc_client = self.rpc_client.clone();
-        match funding
-            .fund(
-                &mut rpc_client,
-                self.tx.wallet_account.id(),
-                fee_parameters.fee_faucet_id(),
-                wallet_funding_amount(verification_base_fee),
-            )
+        let mut funder =
+            FeeFunder::new(funding, self.rpc_client.clone(), fee_parameters.fee_faucet_id());
+        match funder
+            .fund(self.tx.wallet_account.id(), wallet_funding_amount(verification_base_fee))
             .await
         {
             Ok(note) => {

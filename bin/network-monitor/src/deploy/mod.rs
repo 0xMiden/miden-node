@@ -73,7 +73,7 @@ use url::Url;
 
 use crate::deploy::counter::create_counter_account;
 use crate::deploy::wallet::create_wallet_account;
-use crate::funding::{FaucetClient, counter_funding_amount, wallet_funding_amount};
+use crate::funding::{FaucetClient, FeeFunder, counter_funding_amount, wallet_funding_amount};
 use crate::{COMPONENT, LOG_TARGET};
 
 pub mod counter;
@@ -313,7 +313,7 @@ pub async fn create_and_deploy_accounts(
 
     // The genesis header is immutable, so it is fetched once and reused by every step below.
     let genesis_header = fetch_genesis_block_header(&mut rpc_client).await?;
-    let funding = active_fee_funding(&genesis_header, funding)?;
+    let mut funder = active_fee_funder(&genesis_header, funding, &rpc_client)?;
     let verification_base_fee = genesis_header.fee_parameters().verification_base_fee();
 
     let (wallet_account, secret_key) = create_wallet_account()?;
@@ -323,24 +323,14 @@ pub async fn create_and_deploy_accounts(
 
     // Both vaults start empty, so each account's first transaction pays its fee from a faucet note
     // consumed in that same transaction.
-    let (counter_funding_note, wallet_funding_note) = match funding {
-        Some(funding) => {
-            let counter_note = funding
-                .fund(
-                    &mut rpc_client,
-                    counter_account.id(),
-                    fee_faucet_id,
-                    counter_funding_amount(verification_base_fee),
-                )
+    let (counter_funding_note, wallet_funding_note) = match funder.as_mut() {
+        Some(funder) => {
+            let counter_note = funder
+                .fund(counter_account.id(), counter_funding_amount(verification_base_fee))
                 .await
                 .context("failed to fund the counter account")?;
-            let wallet_note = funding
-                .fund(
-                    &mut rpc_client,
-                    wallet_account.id(),
-                    fee_faucet_id,
-                    wallet_funding_amount(verification_base_fee),
-                )
+            let wallet_note = funder
+                .fund(wallet_account.id(), wallet_funding_amount(verification_base_fee))
                 .await
                 .context("failed to fund the wallet account")?;
             (Some(counter_note), Some(wallet_note))
@@ -352,7 +342,7 @@ pub async fn create_and_deploy_accounts(
     // provisioned as committed in that block (see `fetch_foreign_account_inputs`).
     let (tip_header, blockchain) =
         fetch_tip_chain_state(&mut rpc_client, genesis_header.commitment()).await?;
-    let creation_fee_faucet = match funding {
+    let creation_fee_faucet = match funder.as_ref() {
         Some(_) => Some(
             fetch_foreign_account_inputs(&mut rpc_client, fee_faucet_id, tip_header.block_num())
                 .await
@@ -371,7 +361,7 @@ pub async fn create_and_deploy_accounts(
         prover,
     )
     .await?;
-    let anchored_fee_faucet_id = funding.is_some().then_some(fee_faucet_id);
+    let anchored_fee_faucet_id = funder.is_some().then_some(fee_faucet_id);
     let counter_anchor = resolve_counter_anchor(
         &mut rpc_client,
         &genesis_header,
@@ -408,7 +398,7 @@ impl std::fmt::Display for UnsupportedChainError {
     }
 }
 
-/// Returns the funding handle on fee-charging chains, `None` on zero-fee chains.
+/// Returns the faucet client on fee-charging chains, `None` on zero-fee chains.
 // TODO(#2450): Mainnet has no faucet service; it needs another funding path.
 pub fn active_fee_funding<'a>(
     genesis_header: &BlockHeader,
@@ -418,6 +408,25 @@ pub fn active_fee_funding<'a>(
         return Ok(None);
     }
     funding.map(Some).context(UnsupportedChainError)
+}
+
+/// Returns a [`FeeFunder`] on fee-charging chains, `None` on zero-fee chains.
+///
+/// The funder binds the faucet client to the given RPC client and to the fee faucet ID from the
+/// genesis fee parameters.
+pub fn active_fee_funder(
+    genesis_header: &BlockHeader,
+    funding: Option<&FaucetClient>,
+    rpc_client: &RpcClient,
+) -> Result<Option<FeeFunder>> {
+    let funder = active_fee_funding(genesis_header, funding)?.map(|faucet| {
+        FeeFunder::new(
+            faucet.clone(),
+            rpc_client.clone(),
+            genesis_header.fee_parameters().fee_faucet_id(),
+        )
+    });
+    Ok(funder)
 }
 
 /// Fetches a public account in full (code, vault, storage with maps) plus its account-tree
@@ -831,7 +840,7 @@ pub async fn build_probe_transaction_inputs(
     let (mut rpc_client, _) =
         create_genesis_aware_rpc_client(rpc_url, Duration::from_secs(10)).await?;
     let genesis_header = fetch_genesis_block_header(&mut rpc_client).await?;
-    let funding = active_fee_funding(&genesis_header, funding)?;
+    let mut funder = active_fee_funder(&genesis_header, funding, &rpc_client)?;
     let verification_base_fee = genesis_header.fee_parameters().verification_base_fee();
     let fee_faucet_id = genesis_header.fee_parameters().fee_faucet_id();
     let counter_account =
@@ -839,15 +848,10 @@ pub async fn build_probe_transaction_inputs(
 
     let (tip_header, blockchain) =
         fetch_tip_chain_state(&mut rpc_client, genesis_header.commitment()).await?;
-    let (funding_note, fee_faucet) = match funding {
-        Some(funding) => {
-            let note = funding
-                .fund(
-                    &mut rpc_client,
-                    counter_account.id(),
-                    fee_faucet_id,
-                    counter_funding_amount(verification_base_fee),
-                )
+    let (funding_note, fee_faucet) = match funder.as_mut() {
+        Some(funder) => {
+            let note = funder
+                .fund(counter_account.id(), counter_funding_amount(verification_base_fee))
                 .await
                 .context("failed to fund the probe's counter account")?;
             let faucet = fetch_foreign_account_inputs(

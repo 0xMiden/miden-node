@@ -73,7 +73,7 @@ use url::Url;
 
 use crate::deploy::counter::create_counter_account;
 use crate::deploy::wallet::create_wallet_account;
-use crate::funding::{FeeFunding, counter_funding_amount, wallet_funding_amount};
+use crate::funding::{FaucetClient, counter_funding_amount, wallet_funding_amount};
 use crate::{COMPONENT, LOG_TARGET};
 
 pub mod counter;
@@ -305,7 +305,7 @@ pub async fn create_genesis_aware_rpc_client(
 pub async fn create_and_deploy_accounts(
     submission_client: &TransactionSubmissionClient,
     prover: &LocalTransactionProver,
-    funding: Option<&FeeFunding>,
+    funding: Option<&FaucetClient>,
 ) -> Result<DeployedMonitorAccounts> {
     info!(target: LOG_TARGET, "Creating fresh monitor accounts");
 
@@ -412,8 +412,8 @@ impl std::fmt::Display for UnsupportedChainError {
 // TODO(#2450): Mainnet has no faucet service; it needs another funding path.
 pub fn active_fee_funding<'a>(
     genesis_header: &BlockHeader,
-    funding: Option<&'a FeeFunding>,
-) -> Result<Option<&'a FeeFunding>> {
+    funding: Option<&'a FaucetClient>,
+) -> Result<Option<&'a FaucetClient>> {
     if genesis_header.fee_parameters().verification_base_fee() == 0 {
         return Ok(None);
     }
@@ -824,7 +824,7 @@ pub(crate) async fn execute_counter_genesis_tx(
 /// is never submitted, so the note is never spent on-chain: one claim serves every probe run.
 pub async fn build_probe_transaction_inputs(
     rpc_url: &Url,
-    funding: Option<&FeeFunding>,
+    funding: Option<&FaucetClient>,
 ) -> Result<TransactionInputs> {
     let (wallet_account, _secret_key) = create_wallet_account()?;
 
@@ -1066,13 +1066,13 @@ mod tests {
 
     use miden_testing::MockChain;
 
-    use super::{FeeFunding, active_fee_funding};
+    use super::{FaucetClient, active_fee_funding};
 
     /// A fee-charging chain without a faucet must fail at startup; a zero-fee chain must not fund
     /// even when a faucet is configured.
     #[test]
     fn fee_funding_is_required_exactly_on_fee_charging_chains() {
-        let funding = FeeFunding::new(
+        let funding = FaucetClient::new(
             url::Url::parse("http://faucet.invalid").expect("static URL is valid"),
             Duration::from_secs(1),
         );

@@ -20,7 +20,12 @@ use url::Url;
 
 use crate::LOG_TARGET;
 use crate::config::MonitorConfig;
-use crate::faucet::request_tokens;
+use crate::faucet::{
+    GetMetadataResponse,
+    GetTokensResponse,
+    fetch_faucet_metadata,
+    request_tokens,
+};
 
 /// Upper bound on the fee formula's cycle multiplier: the kernel charges `verification_base_fee *
 /// (ilog2(total_cycles) + 1)` with cycles capped at `2^29`.
@@ -77,17 +82,20 @@ pub fn counter_funding_amount(verification_base_fee: u32) -> u64 {
         .min(MAX_FAUCET_REQUEST_AMOUNT)
 }
 
-/// Requests fee tokens from the faucet for the monitor's accounts.
+/// HTTP client for the chain's faucet service.
+///
+/// Wraps the token-request flow (proof-of-work challenge plus `/get_tokens`) and the
+/// monitor-specific funding flow built on top of it.
 #[derive(Clone, Debug)]
-pub struct FeeFunding {
+pub struct FaucetClient {
     faucet_url: Url,
     client: Client,
     /// Wall-clock cap on solving a single faucet proof-of-work challenge.
     solve_timeout: Duration,
 }
 
-impl FeeFunding {
-    /// Builds the funding handle when a faucet URL is configured.
+impl FaucetClient {
+    /// Builds the client when a faucet URL is configured.
     pub fn from_config(config: &MonitorConfig) -> Option<Self> {
         config.faucet_url.clone().map(|url| Self::new(url, config.request_timeout))
     }
@@ -104,6 +112,26 @@ impl FeeFunding {
         }
     }
 
+    /// Returns the faucet's base URL.
+    pub fn url(&self) -> &Url {
+        &self.faucet_url
+    }
+
+    /// Requests `amount` base units for `account_id`, solving the faucet's proof-of-work challenge.
+    /// Does not wait for the minted note to commit.
+    pub(crate) async fn request_tokens(
+        &self,
+        account_id: &str,
+        amount: u64,
+    ) -> Result<GetTokensResponse> {
+        request_tokens(&self.client, &self.faucet_url, account_id, amount, self.solve_timeout).await
+    }
+
+    /// Fetches the faucet's metadata.
+    pub(crate) async fn metadata(&self) -> Result<GetMetadataResponse> {
+        fetch_faucet_metadata(&self.client, &self.faucet_url).await
+    }
+
     /// Requests `amount` base units for `account_id` and waits for the resulting public P2ID note
     /// to commit. The note's asset is checked against `fee_faucet_id` so a faucet minting the wrong
     /// token fails here instead of as opaque fee aborts later.
@@ -114,15 +142,10 @@ impl FeeFunding {
         fee_faucet_id: AccountId,
         amount: u64,
     ) -> Result<Note> {
-        let tokens = request_tokens(
-            &self.client,
-            &self.faucet_url,
-            &account_id.to_string(),
-            amount,
-            self.solve_timeout,
-        )
-        .await
-        .context("faucet token request failed")?;
+        let tokens = self
+            .request_tokens(&account_id.to_string(), amount)
+            .await
+            .context("faucet token request failed")?;
 
         let note_id = NoteId::try_from_hex(&tokens.note_id)
             .with_context(|| format!("faucet returned an invalid note id: {}", tokens.note_id))?;

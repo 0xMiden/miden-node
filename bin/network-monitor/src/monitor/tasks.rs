@@ -23,7 +23,7 @@ use crate::deploy::{
 use crate::explorer::ExplorerService;
 use crate::faucet::FaucetService;
 use crate::frontend::{ServerState, serve};
-use crate::funding::FeeFunding;
+use crate::funding::FaucetClient;
 use crate::note_transport::NoteTransportService;
 use crate::remote_prover::ProverStatusService;
 use crate::service::{Service, build_tls_client};
@@ -104,7 +104,7 @@ impl Tasks {
     /// proof-test probes on the test cadence.
     pub fn spawn_prover_tasks(&mut self, config: &MonitorConfig) -> Vec<Receiver<ServiceStatus>> {
         // The probe payload's creation transaction pays its fee from the faucet.
-        let funding = FeeFunding::from_config(config);
+        let funding = FaucetClient::from_config(config);
         let mut prover_rxs = Vec::new();
         for (i, prover_url) in config.remote_prover_urls.iter().enumerate() {
             let name = format!("Remote Prover ({})", i + 1);
@@ -286,7 +286,7 @@ async fn bootstrap_ntx(
     )
     .await?;
     // The faucet funds fee payments; whether it is needed is decided during deployment.
-    let funding = FeeFunding::from_config(config);
+    let funding = FaucetClient::from_config(config);
     let accounts =
         Box::pin(create_and_deploy_accounts(&submission_client, &prover, funding.as_ref())).await?;
 

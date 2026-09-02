@@ -50,7 +50,7 @@ use crate::deploy::{
     create_and_deploy_accounts,
     create_genesis_aware_rpc_client,
 };
-use crate::funding::{FeeFunding, wallet_funding_amount, wallet_topup_threshold};
+use crate::funding::{FaucetClient, wallet_funding_amount, wallet_topup_threshold};
 use crate::service::Service;
 use crate::status::{
     CounterTrackingDetails,
@@ -194,7 +194,7 @@ pub struct IncrementService {
     /// Shared client for attestation verification, sealing, and transaction submission.
     submission_client: TransactionSubmissionClient,
     /// Faucet access for fee funding; `None` when no faucet is configured (zero-fee chains only).
-    funding: Option<FeeFunding>,
+    funding: Option<FaucetClient>,
     /// Committed faucet note to be consumed by the next increment. Cleared once consumed.
     pending_funding_note: Option<Note>,
 }
@@ -211,7 +211,7 @@ impl IncrementService {
         submission_client: TransactionSubmissionClient,
         accounts_sender: watch::Sender<TrackedAccounts>,
         latency_state: Arc<Mutex<LatencyState>>,
-        funding: Option<FeeFunding>,
+        funding: Option<FaucetClient>,
     ) -> Result<Self> {
         let rpc_client = submission_client.rpc_client();
         let pending_funding_note = accounts.wallet_funding_note;

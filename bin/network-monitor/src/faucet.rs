@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use url::Url;
 
 use crate::deploy::wallet::create_wallet_account;
+use crate::funding::FaucetClient;
 use crate::service::Service;
 use crate::status::{ServiceDetails, ServiceStatus};
 use crate::{COMPONENT, LOG_TARGET};
@@ -85,11 +86,8 @@ pub struct GetMetadataResponse {
 // ================================================================================================
 
 pub struct FaucetService {
-    url: Url,
-    client: Client,
+    faucet: FaucetClient,
     interval: Duration,
-    /// Wall-clock cap on solving a single `PoW` challenge.
-    solve_timeout: Duration,
     /// A valid public account ID used as the recipient for faucet token requests. Generated once at
     /// construction from a throwaway wallet account; the minted tokens are never spent.
     account_id: String,
@@ -101,17 +99,11 @@ pub struct FaucetService {
 
 impl FaucetService {
     pub fn new(url: Url, interval: Duration, request_timeout: Duration) -> Self {
-        let client = Client::builder()
-            .timeout(request_timeout)
-            .build()
-            .expect("Failed to create HTTP client with timeout");
         let (wallet_account, _secret_key) =
             create_wallet_account().expect("failed to create faucet recipient account");
         Self {
-            url,
-            client,
+            faucet: FaucetClient::new(url, request_timeout),
             interval,
-            solve_timeout: request_timeout,
             account_id: wallet_account.id().to_string(),
             success_count: 0,
             failure_count: 0,
@@ -134,7 +126,7 @@ impl Service for FaucetService {
         ServiceStatus::unknown(
             self.name(),
             ServiceDetails::FaucetTest(FaucetTestDetails {
-                url: self.url.to_string(),
+                url: self.faucet.url().to_string(),
                 test_duration_ms: 0,
                 success_count: 0,
                 failure_count: 0,
@@ -151,7 +143,7 @@ impl Service for FaucetService {
         // is shown on the card even when minting is failing. We only overwrite the stored metadata
         // on a successful fetch, so a transient metadata errors doesn't wipe the last-known values
         // from the card.
-        match fetch_faucet_metadata(&self.client, &self.url).await {
+        match self.faucet.metadata().await {
             Ok(metadata) => self.faucet_metadata = Some(metadata),
             Err(e) => warn!(
                 &e,
@@ -160,15 +152,7 @@ impl Service for FaucetService {
             ),
         }
 
-        let last_error = match request_tokens(
-            &self.client,
-            &self.url,
-            &self.account_id,
-            MINT_AMOUNT,
-            self.solve_timeout,
-        )
-        .await
-        {
+        let last_error = match self.faucet.request_tokens(&self.account_id, MINT_AMOUNT).await {
             Ok(minted_tokens) => {
                 self.success_count += 1;
                 self.last_tx_id = Some(minted_tokens.tx_id.clone());
@@ -191,7 +175,7 @@ impl Service for FaucetService {
         };
 
         let details = ServiceDetails::FaucetTest(FaucetTestDetails {
-            url: self.url.to_string(),
+            url: self.faucet.url().to_string(),
             test_duration_ms: start_time.elapsed().as_millis() as u64,
             success_count: self.success_count,
             failure_count: self.failure_count,
@@ -215,7 +199,7 @@ impl Service for FaucetService {
     ret(level = "debug"),
     err,
 )]
-async fn fetch_faucet_metadata(
+pub(crate) async fn fetch_faucet_metadata(
     client: &Client,
     faucet_url: &Url,
 ) -> anyhow::Result<GetMetadataResponse> {

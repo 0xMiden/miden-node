@@ -105,10 +105,9 @@ fn precomputed_state_from_account(account: &Account) -> PrecomputedPublicAccount
 }
 
 fn precomputed_states_from_account(account: &Account) -> PrecomputedPublicAccountStates {
-    PrecomputedPublicAccountStates::from_iter([(
-        account.id(),
-        precomputed_state_from_account(account),
-    )])
+    [(account.id(), precomputed_state_from_account(account))]
+        .into_iter()
+        .collect::<PrecomputedPublicAccountStates>()
 }
 
 fn callback_enabled_faucet_id() -> AccountId {
@@ -325,10 +324,12 @@ fn optimized_delta_matches_full_account_method() {
 
     // Build the storage delta (value slot update only)
     let storage_patch = {
-        let deltas = BTreeMap::from_iter([(
+        let deltas = [(
             value_slot_name.clone(),
             StorageSlotPatch::Value(StorageValuePatch::Update { value: new_slot_value }),
-        )]);
+        )]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
         AccountStoragePatch::from_raw(deltas).unwrap()
     };
 
@@ -743,10 +744,11 @@ fn optimized_delta_updates_storage_map_header() {
         select_full_account(&mut conn, account.id()).expect("Failed to load full account");
 
     let map_patch = StorageMapPatch::from_iters([], [(map_key, map_value_updated)]);
-    let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        StorageSlotName::mock(SLOT_INDEX_MAP),
-        StorageSlotPatch::Map(map_patch),
-    )]))
+    let storage_patch = AccountStoragePatch::from_raw(
+        [(StorageSlotName::mock(SLOT_INDEX_MAP), StorageSlotPatch::Map(map_patch))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
 
     let final_nonce =
@@ -809,12 +811,16 @@ fn apply_storage_patch_with_roots_uses_precomputed_map_root() {
         old_root,
     )])
     .unwrap();
-    let patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(StorageMapPatch::from_iters([], [(key, new_value)])),
-    )]))
+    let patch = AccountStoragePatch::from_raw(
+        [(
+            slot_name.clone(),
+            StorageSlotPatch::Map(StorageMapPatch::from_iters([], [(key, new_value)])),
+        )]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
-    let precomputed_roots = BTreeMap::from_iter([(slot_name.clone(), new_root)]);
+    let precomputed_roots = [(slot_name.clone(), new_root)].into_iter().collect::<BTreeMap<_, _>>();
 
     let new_header = apply_storage_patch_with_roots(&header, &patch, &precomputed_roots).unwrap();
 
@@ -1168,24 +1174,28 @@ fn apply_storage_patch_handles_create_update_and_remove() {
     slots.sort_by_key(StorageSlotHeader::id);
     let header = AccountStorageHeader::new(slots).unwrap();
 
-    let patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([
-        (removed_value_name.clone(), StorageSlotPatch::Value(StorageValuePatch::Remove)),
-        (removed_map_name.clone(), StorageSlotPatch::Map(StorageMapPatch::Remove)),
-        (
-            updated_value_name.clone(),
-            StorageSlotPatch::Value(StorageValuePatch::Update { value: updated_value }),
-        ),
-        (
-            created_value_name.clone(),
-            StorageSlotPatch::Value(StorageValuePatch::Create { value: created_value }),
-        ),
-        (
-            created_map_name.clone(),
-            StorageSlotPatch::Map(StorageMapPatch::Create {
-                entries: StorageMapPatchEntries::new(),
-            }),
-        ),
-    ]))
+    let patch = AccountStoragePatch::from_raw(
+        [
+            (removed_value_name.clone(), StorageSlotPatch::Value(StorageValuePatch::Remove)),
+            (removed_map_name.clone(), StorageSlotPatch::Map(StorageMapPatch::Remove)),
+            (
+                updated_value_name.clone(),
+                StorageSlotPatch::Value(StorageValuePatch::Update { value: updated_value }),
+            ),
+            (
+                created_value_name.clone(),
+                StorageSlotPatch::Value(StorageValuePatch::Create { value: created_value }),
+            ),
+            (
+                created_map_name.clone(),
+                StorageSlotPatch::Map(StorageMapPatch::Create {
+                    entries: StorageMapPatchEntries::new(),
+                }),
+            ),
+        ]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
 
     let new_header =

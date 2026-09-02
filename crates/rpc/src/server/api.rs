@@ -116,7 +116,7 @@ pub struct RpcService {
     ntx_builder: Option<NtxBuilderClient>,
     network_tx_auth: Option<NetworkTxAuth>,
     genesis_commitment: Option<Word>,
-    block_commitment_cache: LruCache<BlockNumber, Word>,
+    block_header_cache: LruCache<BlockNumber, BlockHeader>,
     block_subscription_semaphore: Arc<Semaphore>,
     proof_subscription_semaphore: Arc<Semaphore>,
     subscription_ban: Arc<IpBanList>,
@@ -136,7 +136,7 @@ impl RpcService {
             ntx_builder,
             network_tx_auth,
             genesis_commitment: None,
-            block_commitment_cache: LruCache::new(commitment_cache_capacity),
+            block_header_cache: LruCache::new(commitment_cache_capacity),
             block_subscription_semaphore: Arc::new(Semaphore::new(MAX_REPLICA_SUBSCRIPTIONS)),
             proof_subscription_semaphore: Arc::new(Semaphore::new(MAX_REPLICA_SUBSCRIPTIONS)),
             subscription_ban: Arc::new(IpBanList::default()),
@@ -186,19 +186,19 @@ impl RpcService {
         BlockHeader::try_from(header).context("failed to parse response")
     }
 
-    /// Returns the given block's onchain commitment.
+    /// Returns the given block's onchain header.
     ///
     /// This is retrieved from the local LRU cache, or otherwise from the store on cache miss.
     #[miden_instrument(
         target = COMPONENT,
-        name = "get_block_commitment",
+        name = "get_block_header",
         fields(
             block.number = block,
         ),
     )]
-    async fn get_block_commitment(&self, block: BlockNumber) -> Result<Word, Status> {
-        if let Some(commitment) = self.block_commitment_cache.get(&block) {
-            return Ok(commitment);
+    async fn get_block_header(&self, block: BlockNumber) -> Result<BlockHeader, Status> {
+        if let Some(header) = self.block_header_cache.get(&block) {
+            return Ok(header);
         }
 
         let header = self
@@ -210,19 +210,19 @@ impl RpcService {
             .0
             .ok_or_else(|| Status::invalid_argument(format!("unknown block {block}")))?;
 
-        let commitment = header.commitment();
-        self.block_commitment_cache.put(block, commitment);
+        self.block_header_cache.put(block, header.clone());
 
-        Ok(commitment)
+        Ok(header)
     }
 
-    /// Returns an error if the provided block's commitment does not match the one on chain.
+    /// Returns the reference block header, or an error if its commitment is not on chain.
     async fn verify_reference_commitment(
         &self,
         block: BlockNumber,
         commitment: Word,
-    ) -> Result<(), Status> {
-        let onchain = self.get_block_commitment(block).await?;
+    ) -> Result<BlockHeader, Status> {
+        let header = self.get_block_header(block).await?;
+        let onchain = header.commitment();
 
         if onchain != commitment {
             return Err(Status::invalid_argument(format!(
@@ -230,7 +230,7 @@ impl RpcService {
             )));
         }
 
-        Ok(())
+        Ok(header)
     }
 
     /// Errors if any of `candidate_ids` is classified as a network account by the store. Callers
@@ -271,6 +271,7 @@ impl RpcService {
 // ================================================================================================
 
 pub(crate) struct SequencerInternalService {
+    pub(crate) state: Arc<State>,
     pub(crate) block_producer: BlockProducerApi,
 }
 

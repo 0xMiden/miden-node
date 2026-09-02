@@ -70,8 +70,8 @@ impl BatchBudget {
     /// otherwise returns [`BudgetStatus::WithinScope`] and subtracts the resources from the budget.
     #[must_use]
     pub(crate) fn check_then_subtract(&mut self, tx: &AuthenticatedTransaction) -> BudgetStatus {
-        // This type assertion reminds us to update the account check if we ever support multiple
-        // account updates per tx.
+        // The protocol exposes one account update per transaction. This type assertion keeps the
+        // budget assumption coupled to that API.
         pub(crate) const ACCOUNT_UPDATES_PER_TX: usize = 1;
         let _: miden_protocol::account::AccountId = tx.account_update().account_id();
 

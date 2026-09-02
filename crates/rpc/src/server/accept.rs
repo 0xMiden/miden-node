@@ -380,7 +380,7 @@ impl FromStr for QValue {
                 //
                 // This recomposition removes the special casing for these.
                 let digits = match rest {
-                    [] => [b'0', b'0', b'0'],
+                    [] => *b"000",
                     [a] => [*a, b'0', b'0'],
                     [a, b] => [*a, *b, b'0'],
                     [a, b, c] => [*a, *b, *c],

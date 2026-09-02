@@ -484,7 +484,7 @@ mod tests {
         assert!(html.contains("0.5.0"));
         assert!(html.contains("42"));
         assert!(html.contains("Total Notes"));
-        // Server-side per-tag stats are not implemented yet, so the row renders as a dash.
+        // Missing per-tag statistics render the activity row as a dash.
         assert!(html.contains("Last Note Activity"));
     }
 

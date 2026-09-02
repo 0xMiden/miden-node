@@ -236,11 +236,10 @@ impl<B: BackendReader> AccountStateForest<B> {
 
     /// Builds the leaf removals needed to replace a storage-map lineage with an empty tree.
     ///
-    /// `LargeSmtForest` does not currently expose a lineage reset or replacement mutation, so this
-    /// operation enumerates the latest tree and costs O(n) in its number of entries. A removed map
-    /// remains the latest version of its lineage until it is recreated; pruning cannot discard that
-    /// latest version. The `account_state_forest` benchmark tracks the resulting recreation cost so
-    /// this fallback remains visible until the forest API provides a constant-size reset primitive.
+    /// `LargeSmtForest` has no lineage reset operation. This operation enumerates the latest tree
+    /// and costs O(n) in its number of entries. A removed map remains the latest version of its
+    /// lineage until code recreates it. Pruning cannot discard the latest version. The
+    /// `account_state_forest` benchmark measures the recreation cost.
     fn build_current_tree_removal_operations(
         &self,
         lineage: LineageId,
@@ -306,17 +305,16 @@ impl<B: BackendReader> AccountStateForest<B> {
     ) -> Result<(), AccountStateForestUpdateError> {
         let account_id = patch.id();
         for (slot_name, map_patch) in patch.storage().maps() {
-            let raw_map_entries = Vec::from_iter(
-                map_patch
-                    .entries()
-                    .into_iter()
-                    .flat_map(|entries| entries.as_map().iter())
-                    .filter_map(
-                        |(&key, &value)| {
-                            if value == EMPTY_WORD { None } else { Some((key, value)) }
-                        },
-                    ),
-            );
+            let raw_map_entries = map_patch
+                .entries()
+                .into_iter()
+                .flat_map(|entries| entries.as_map().iter())
+                .filter_map(
+                    |(&key, &value)| {
+                        if value == EMPTY_WORD { None } else { Some((key, value)) }
+                    },
+                )
+                .collect::<Vec<_>>();
             let operations = Self::build_forest_operations(
                 raw_map_entries.iter().map(|(raw_key, value)| (raw_key.hash().into(), *value)),
             );
@@ -638,10 +636,13 @@ impl<B: BackendReader> AccountStateForest<B> {
             RootInfo::Missing => return None,
         };
 
-        let proofs = Result::from_iter(raw_keys.iter().map(|raw_key| {
-            let key_hashed = raw_key.hash().into();
-            self.forest.open(tree, key_hashed).map_err(Self::map_forest_error)
-        }));
+        let proofs = raw_keys
+            .iter()
+            .map(|raw_key| {
+                let key_hashed = raw_key.hash().into();
+                self.forest.open(tree, key_hashed).map_err(Self::map_forest_error)
+            })
+            .collect::<Result<_, _>>();
 
         Some(proofs.and_then(|proofs| {
             AccountStorageMapDetails::from_proofs(slot_name, map_root, raw_keys, proofs)

@@ -80,23 +80,20 @@ pub fn create_counter_account(
     let account_code =
         AccountComponent::new(component_code, vec![counter_slot, owner_id_slot], metadata)?;
 
-    let mut allowed_scripts = BTreeSet::new();
-
     let increment_script = create_increment_script().expect("is valid note script");
-
-    allowed_scripts.insert(increment_script.root());
 
     // The account's auth procedure prices every note it consumes, and any transaction creating a
     // note targeted at it prices that note through the same policy via FPI. Every allowlisted note
-    // script must have a schedule entry, since a script without one aborts fee estimation.
+    // script must have a schedule entry, since a script without one aborts fee estimation. The
+    // allowlist is derived from the schedule to keep the two aligned by construction.
     let increment_note_fee = AssetAmount::new(max_fee_per_transaction(verification_base_fee))
         .expect("the per-transaction fee bound fits an asset amount");
-    let mut fee_schedule = vec![(increment_script.root(), increment_note_fee)];
-
-    allowed_scripts.insert(FeeSponsorshipNote::script_root());
-    fee_schedule.push((FeeSponsorshipNote::script_root(), AssetAmount::ZERO));
-    allowed_scripts.insert(P2idNote::script_root());
-    fee_schedule.push((P2idNote::script_root(), AssetAmount::ZERO));
+    let fee_schedule = [
+        (increment_script.root(), increment_note_fee),
+        (FeeSponsorshipNote::script_root(), AssetAmount::ZERO),
+        (P2idNote::script_root(), AssetAmount::ZERO),
+    ];
+    let allowed_scripts = BTreeSet::from(fee_schedule.map(|(root, _)| root));
 
     let fee_policy = BasicConstantFeePolicy::new().with_fees(fee_schedule).into();
     let fee_policy_manager = FeePolicyManager::builder()

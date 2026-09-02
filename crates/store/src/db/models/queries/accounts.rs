@@ -278,11 +278,12 @@ pub(crate) fn select_account_commitments_paged(
 
     let raw = query.load::<(Vec<u8>, Vec<u8>)>(conn)?;
 
-    let mut commitments = Result::<Vec<_>, DatabaseError>::from_iter(raw.into_iter().map(
-        |(ref account, ref commitment)| {
+    let mut commitments = raw
+        .into_iter()
+        .map(|(ref account, ref commitment)| {
             Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
-        },
-    ))?;
+        })
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
 
     // If we got more than page_size, there are more results
     let next_cursor = if commitments.len() > page_size.get() {
@@ -375,9 +376,12 @@ pub(crate) fn select_public_account_ids_paged(
 
     let raw = query.load::<Vec<u8>>(conn)?;
 
-    let mut account_ids: Vec<AccountId> = Result::from_iter(raw.into_iter().map(|bytes| {
-        AccountId::read_from_bytes(&bytes).map_err(DatabaseError::DeserializationError)
-    }))?;
+    let mut account_ids: Vec<AccountId> = raw
+        .into_iter()
+        .map(|bytes| {
+            AccountId::read_from_bytes(&bytes).map_err(DatabaseError::DeserializationError)
+        })
+        .collect::<Result<_, _>>()?;
 
     // If we got more than page_size, there are more results
     let next_cursor = if account_ids.len() > page_size.get() {
@@ -444,8 +448,9 @@ pub(crate) fn select_public_account_state_roots_paged(
 
     let raw = query.load::<(Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)?;
 
-    let mut accounts: Vec<PublicAccountStateRoots> = Result::from_iter(raw.into_iter().map(
-        |(account_id_bytes, vault_root_bytes, storage_header_bytes)| {
+    let mut accounts: Vec<PublicAccountStateRoots> = raw
+        .into_iter()
+        .map(|(account_id_bytes, vault_root_bytes, storage_header_bytes)| {
             let account_id = AccountId::read_from_bytes(&account_id_bytes)
                 .map_err(DatabaseError::DeserializationError)?;
             let vault_root_bytes = vault_root_bytes.ok_or_else(|| {
@@ -464,8 +469,8 @@ pub(crate) fn select_public_account_state_roots_paged(
                 vault_root: Word::read_from_bytes(&vault_root_bytes)?,
                 storage_header: AccountStorageHeader::read_from_bytes(&storage_header_bytes)?,
             })
-        },
-    ))?;
+        })
+        .collect::<Result<_, _>>()?;
 
     // If we got more than page_size, there are more results.
     let next_cursor = if accounts.len() > page_size.get() {
@@ -799,8 +804,9 @@ pub(crate) fn select_latest_account_storage(
     let (storage_header, map_entries_by_slot) =
         select_latest_account_storage_components(conn, account_id)?;
     // Reconstruct StorageSlots from header slots + map entries
-    let slots =
-        Result::<Vec<_>, DatabaseError>::from_iter(storage_header.slots().map(|slot_header| {
+    let slots = storage_header
+        .slots()
+        .map(|slot_header| {
             let slot = match slot_header.slot_type() {
                 StorageSlotType::Value => {
                     // For value slots, the header value IS the slot value
@@ -815,7 +821,8 @@ pub(crate) fn select_latest_account_storage(
                 },
             };
             Ok(slot)
-        }))?;
+        })
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
 
     Ok(AccountStorage::new(slots)?)
 }

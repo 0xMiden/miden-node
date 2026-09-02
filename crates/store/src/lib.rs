@@ -34,9 +34,9 @@ pub use errors::{
     ApplyBlockWithProvingInputsError,
     DatabaseError,
     GetAccountError,
-    GetBatchInputsError,
     GetBlockHeaderError,
-    GetBlockInputsError,
+    GetBlockInclusionProofsError,
+    GetNoteInclusionProofsError,
     NoteSyncError,
     RangeBeyondTip,
     StateSyncError,
@@ -50,6 +50,7 @@ pub use state::{
     ScopedBlockRange,
     State,
     StateView,
+    StateWitnesses,
     WriterTask,
 };
 

@@ -226,8 +226,10 @@ pub(super) fn apply_storage_patch(
         map_updates.insert(slot_name, storage_map.root());
     }
 
-    let mut slots =
-        Vec::from_iter(header.slots().filter(|slot| !removed.contains(slot.name())).map(|slot| {
+    let mut slots = header
+        .slots()
+        .filter(|slot| !removed.contains(slot.name()))
+        .map(|slot| {
             let slot_name = slot.name();
             if let Some(new_value) = value_updates.remove(slot_name) {
                 StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
@@ -236,7 +238,8 @@ pub(super) fn apply_storage_patch(
             } else {
                 slot.clone()
             }
-        }));
+        })
+        .collect::<Vec<_>>();
 
     // Any updates left over belong to slots created by the patch.
     for (slot_name, value) in value_updates {
@@ -296,8 +299,10 @@ pub(super) fn apply_storage_patch_with_roots(
         map_updates.insert(slot_name, root);
     }
 
-    let mut slots =
-        Vec::from_iter(header.slots().filter(|slot| !removed.contains(slot.name())).map(|slot| {
+    let mut slots = header
+        .slots()
+        .filter(|slot| !removed.contains(slot.name()))
+        .map(|slot| {
             let slot_name = slot.name();
             if let Some(new_value) = value_updates.remove(slot_name) {
                 StorageSlotHeader::new(slot_name.clone(), slot.slot_type(), new_value)
@@ -306,7 +311,8 @@ pub(super) fn apply_storage_patch_with_roots(
             } else {
                 slot.clone()
             }
-        }));
+        })
+        .collect::<Vec<_>>();
 
     // Any updates left over belong to slots created by the patch.
     for (slot_name, value) in value_updates {

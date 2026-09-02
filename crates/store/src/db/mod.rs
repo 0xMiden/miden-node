@@ -314,7 +314,7 @@ impl Db {
 
         self.transact("nullifieres by prefix", move |conn| {
             let nullifier_prefixes =
-                Vec::from_iter(nullifier_prefixes.into_iter().map(|prefix| prefix as u16));
+                nullifier_prefixes.into_iter().map(|prefix| prefix as u16).collect::<Vec<_>>();
             queries::select_nullifiers_by_prefix(
                 conn,
                 prefix_len as u8,
@@ -746,7 +746,7 @@ impl Db {
             return Ok(AccountStorageMapDetails::limit_exceeded(slot_name));
         }
 
-        let entries = Vec::from_iter(latest_values.into_iter());
+        let entries = latest_values.into_iter().collect::<Vec<_>>();
         Ok(AccountStorageMapDetails {
             slot_name,
             entries: StorageMapEntries::AllEntries(entries),

@@ -94,7 +94,7 @@ impl SequencerCommand {
 
         let rpc = Rpc {
             listener: bind_rpc(runtime.rpc_listen).await?,
-            state,
+            state: Arc::clone(&state),
             mode: RpcMode::sequencer(block_producer.clone(), validator_clients),
             ntx_builder: Some(ntx_builder_client),
             grpc_options: runtime.grpc_options,
@@ -131,6 +131,7 @@ impl SequencerCommand {
         if let Some(internal_listen) = self.internal {
             let sequencer_internal = SequencerInternal {
                 listener: bind_rpc(internal_listen).await?,
+                state,
                 block_producer,
                 grpc_options: runtime.grpc_options,
             };

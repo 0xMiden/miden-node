@@ -84,8 +84,10 @@ impl HistoricalOverlay {
         let root = rev_set.as_mutation_set().root();
         let mut_set = rev_set.into_mutation_set();
 
-        let node_mutations =
-            HashMap::from_iter(mut_set.node_mutations().iter().map(|(node_index, mutation)| {
+        let node_mutations = mut_set
+            .node_mutations()
+            .iter()
+            .map(|(node_index, mutation)| {
                 match mutation {
                     NodeMutation::Addition(inner_node) => (*node_index, inner_node.hash()),
                     NodeMutation::Removal => {
@@ -95,11 +97,14 @@ impl HistoricalOverlay {
                         (*node_index, empty_root)
                     },
                 }
-            }));
+            })
+            .collect::<HashMap<_, _>>();
 
-        let account_updates = HashMap::from_iter(
-            mut_set.new_pairs().iter().map(|(&k, &v)| (LeafIndex::from(k), (k, v))),
-        );
+        let account_updates = mut_set
+            .new_pairs()
+            .iter()
+            .map(|(&k, &v)| (LeafIndex::from(k), (k, v)))
+            .collect::<HashMap<_, _>>();
 
         Self {
             block_number,

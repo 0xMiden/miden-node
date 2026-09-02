@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -5,7 +6,12 @@ use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{Extensions, HeaderMap, HeaderValue};
-use miden_node_block_producer::{BlockProducerApi, BlockProducerApiConfig};
+use miden_node_block_producer::store::TransactionInputs;
+use miden_node_block_producer::{
+    AuthenticatedTransaction,
+    BlockProducerApi,
+    BlockProducerApiConfig,
+};
 use miden_node_proto::clients::{
     Builder,
     GrpcClient,
@@ -17,6 +23,7 @@ use miden_node_proto::clients::{
 };
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::rpc::api_server::Api;
+use miden_node_proto::generated::sequencer::api_server::Api as SequencerApi;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::server::{ntx_builder_api, rpc_api, validator_api};
 use miden_node_store::genesis::config::GenesisConfig;
@@ -43,11 +50,19 @@ use miden_protocol::account::{
     AccountUpdateDetails,
     AssetCallbackFlag,
 };
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::FeeParameters;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
-use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
+use miden_protocol::transaction::{
+    OutputNote,
+    ProvenTransaction,
+    PublicOutputNote,
+    TxAccountUpdate,
+};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::note::TxFeeNote;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::task;
@@ -57,7 +72,7 @@ use tonic::metadata::MetadataMap;
 use url::Url;
 
 use crate::server::RpcBackend;
-use crate::server::api::RpcService;
+use crate::server::api::{RpcService, SequencerInternalService};
 use crate::{PreAuthSubmission, Rpc, RpcMode, ValidatorClients};
 
 /// Global registry of temp directories. Held for the lifetime of the test binary so that `RocksDB`
@@ -101,8 +116,13 @@ impl TestStore {
     }
 
     async fn start() -> Self {
+        Self::start_with_base_fee(0).await
+    }
+
+    async fn start_with_base_fee(verification_base_fee: u32) -> Self {
         let data_directory = new_tempdir();
-        let genesis_commitment = Self::bootstrap(&data_directory);
+        let genesis_commitment =
+            Self::bootstrap_with_base_fee(&data_directory, verification_base_fee);
         let (state, ..) = State::for_tests(&data_directory).await;
         Self {
             state,
@@ -112,6 +132,10 @@ impl TestStore {
     }
 
     fn bootstrap(path: &std::path::Path) -> Word {
+        Self::bootstrap_with_base_fee(path, 0)
+    }
+
+    fn bootstrap_with_base_fee(path: &std::path::Path, verification_base_fee: u32) -> Word {
         let config = GenesisConfig::default();
         let validator_key =
             miden_protocol::crypto::dsa::ecdsa_k256_keccak::SigningKey::read_from_bytes(&[7; 32])
@@ -119,7 +143,9 @@ impl TestStore {
                 .public_key();
         let validator_keys =
             miden_protocol::block::ValidatorKeys::new(vec![validator_key]).unwrap();
-        let (genesis_state, _) = config.into_state(validator_keys).unwrap();
+        let (mut genesis_state, _) = config.into_state(validator_keys).unwrap();
+        genesis_state.fee_parameters =
+            FeeParameters::new(genesis_state.fee_parameters.fee_faucet_id(), verification_base_fee);
         let genesis_block =
             genesis_state.clone().into_block().expect("genesis block should be created");
         let genesis_commitment = genesis_block.inner().header().commitment();
@@ -158,6 +184,16 @@ fn build_test_proven_tx(
     patch: &AccountPatch,
     genesis: Word,
 ) -> ProvenTransaction {
+    build_test_proven_tx_with_fee(account, patch, genesis, true)
+}
+
+/// Creates a minimal proven transaction, optionally including its canonical fee output note.
+fn build_test_proven_tx_with_fee(
+    account: &Account,
+    patch: &AccountPatch,
+    genesis: Word,
+    include_fee: bool,
+) -> ProvenTransaction {
     let account_id = AccountId::dummy(
         [0; 15],
         AccountIdVersion::Version1,
@@ -174,16 +210,30 @@ fn build_test_proven_tx(
     )
     .unwrap();
 
+    let output_notes =
+        include_fee.then(|| fee_output_note(account_id)).into_iter().collect::<Vec<_>>();
+
     ProvenTransaction::new(
         account_update,
         Vec::<miden_protocol::transaction::InputNoteCommitment>::new(),
-        Vec::<miden_protocol::transaction::OutputNote>::new(),
+        output_notes,
         0.into(),
         genesis,
         u32::MAX.into(),
         ExecutionProof::new_dummy(),
     )
     .unwrap()
+}
+
+fn fee_output_note(sender: AccountId) -> OutputNote {
+    let fee_note = TxFeeNote::builder()
+        .sender(sender)
+        .serial_number(Word::from([1u32, 2, 3, 4]))
+        .asset(FungibleAsset::new(FungibleAsset::mock_issuer(), 1).unwrap())
+        .build()
+        .unwrap()
+        .into();
+    OutputNote::Public(PublicOutputNote::new(fee_note).unwrap())
 }
 
 /// Same as `build_test_proven_tx` but lets the caller supply the `AccountId`. Uses a non-empty
@@ -206,7 +256,7 @@ fn build_test_proven_tx_with_id(
     ProvenTransaction::new(
         account_update,
         Vec::<miden_protocol::transaction::InputNoteCommitment>::new(),
-        Vec::<miden_protocol::transaction::OutputNote>::new(),
+        [fee_output_note(account_id)],
         0.into(),
         genesis,
         u32::MAX.into(),
@@ -385,6 +435,97 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     assert!(
         err.contains("expected account patch commitment"),
         "expected error message to contain patch commitment error but got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn rpc_server_rejects_proven_transactions_without_fees() {
+    let store = TestStore::start_with_base_fee(1).await;
+    let genesis = store.genesis_commitment();
+    let (account, account_patch) = build_test_account([0; 32]);
+    let tx = build_test_proven_tx_with_fee(&account, &account_patch, genesis, false);
+    let request = proto::transaction::ProvenTransaction {
+        transaction: tx.to_bytes(),
+        sealed_transaction_inputs: None,
+    };
+
+    let service = RpcService::new(
+        Arc::clone(&store.state),
+        RpcBackend::full_node(source_rpc_client(), None),
+        None,
+        NonZeroUsize::new(1_000_000).unwrap(),
+        None,
+    );
+
+    let status = service.submit_proven_tx(Request::new(request)).await.unwrap_err();
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert_eq!(status.details(), &[4]);
+    assert!(
+        status.message().contains("does not contain a non-zero TX_FEE output note"),
+        "expected the missing-fee error, got: {status}"
+    );
+}
+
+#[tokio::test]
+async fn sequencer_authenticated_rpc_rejects_transactions_without_fees() {
+    let store = TestStore::start_with_base_fee(1).await;
+    let genesis = store.genesis_commitment();
+    let (account, account_patch) = build_test_account([0; 32]);
+    let tx = build_test_proven_tx_with_fee(&account, &account_patch, genesis, false);
+    let inputs = TransactionInputs {
+        account_id: tx.account_id(),
+        account_commitment: Some(tx.account_update().initial_state_commitment()),
+        nullifiers: HashMap::default(),
+        found_unauthenticated_notes: HashSet::default(),
+        current_block_height: 0.into(),
+    };
+    let tx = AuthenticatedTransaction::new_unchecked(tx.into(), inputs).unwrap();
+    let block_producer = BlockProducerApi::new(
+        Arc::clone(&store.state),
+        store.state.committed_tip(),
+        BlockProducerApiConfig::default(),
+        CancellationToken::new(),
+    );
+    let service = SequencerInternalService {
+        state: Arc::clone(&store.state),
+        block_producer: block_producer.clone(),
+    };
+
+    let status = service
+        .submit_authenticated_tx(Request::new(proto::sequencer::AuthenticatedTransaction::from(tx)))
+        .await
+        .unwrap_err();
+
+    assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    assert_eq!(status.details(), &[4]);
+    assert_eq!(block_producer.status().await.mempool_stats.uncommitted_transactions, 0);
+}
+
+#[tokio::test]
+async fn rpc_server_does_not_require_fees_when_the_base_fee_is_zero() {
+    let store = TestStore::start().await;
+    let genesis = store.genesis_commitment();
+    let (account, account_patch) = build_test_account([0; 32]);
+    let tx = build_test_proven_tx_with_fee(&account, &account_patch, genesis, false);
+    let request = proto::transaction::ProvenTransaction {
+        transaction: tx.to_bytes(),
+        sealed_transaction_inputs: None,
+    };
+
+    let service = RpcService::new(
+        Arc::clone(&store.state),
+        RpcBackend::full_node(source_rpc_client(), None),
+        None,
+        NonZeroUsize::new(1_000_000).unwrap(),
+        None,
+    );
+
+    // The dummy proof is rejected later, demonstrating that the transaction passed the fee gate.
+    let status = service.submit_proven_tx(Request::new(request)).await.unwrap_err();
+    assert_ne!(status.details(), &[4]);
+    assert!(
+        status.message().contains("Invalid proof for transaction"),
+        "expected proof validation after the fee gate, got: {status}"
     );
 }
 
@@ -1115,7 +1256,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, TestStore, TestServerG
     });
     let url = rpc_addr.to_string();
     // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
-    let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
+    let url = Url::parse(format!("http://{url}").as_str()).unwrap();
     let rpc_client = connect_rpc(url).await;
 
     (rpc_client, rpc_addr, store, TestServerGuard(shutdown))

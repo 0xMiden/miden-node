@@ -61,7 +61,7 @@ use miden_protocol::transaction::TransactionHeader;
 use thiserror::Error;
 
 use crate::block_builder::SelectedBlock;
-use crate::domain::batch::SelectedBatch;
+use crate::domain::batch::{BatchParameters, SelectedBatch};
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{MempoolSubmissionError, StateConflict};
 use crate::mempool::budget::BudgetStatus;
@@ -279,6 +279,7 @@ impl Mempool {
     pub fn add_user_batch(
         &mut self,
         txs: &[Arc<AuthenticatedTransaction>],
+        parameters: BatchParameters,
     ) -> Result<BlockNumber, MempoolSubmissionError> {
         assert!(!txs.is_empty(), "Cannot have a batch with no transactions");
 
@@ -303,7 +304,7 @@ impl Mempool {
         }
 
         self.transactions
-            .append_user_batch(txs)
+            .append_user_batch(txs, parameters)
             .map_err(MempoolSubmissionError::StateConflict)?;
 
         let telemetry = self.telemetry();
@@ -333,7 +334,10 @@ impl Mempool {
         name = "mempool.select_any_batch",
     )]
     pub fn select_any_batch(&mut self) -> Option<SelectedBatch> {
-        let batch = self.transactions.select_any_batch(self.config.batch_budget)?;
+        let parameters = BatchParameters {
+            reference_block: self.committed_chain_tip,
+        };
+        let batch = self.transactions.select_any_batch(self.config.batch_budget, parameters)?;
         let batch = self.append_selected_batch(batch);
         let telemetry = self.telemetry();
         miden_span_record!(
@@ -358,7 +362,10 @@ impl Mempool {
         name = "mempool.select_full_batch",
     )]
     pub fn select_full_batch(&mut self) -> Option<SelectedBatch> {
-        let batch = self.transactions.select_full_batch(self.config.batch_budget)?;
+        let parameters = BatchParameters {
+            reference_block: self.committed_chain_tip,
+        };
+        let batch = self.transactions.select_full_batch(self.config.batch_budget, parameters)?;
         let batch = self.append_selected_batch(batch);
         let telemetry = self.telemetry();
         miden_span_record!(

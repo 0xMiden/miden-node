@@ -152,7 +152,7 @@ fn generate_server_modules(
                 }
 
                 let service_name = to_snake_case(service_name);
-                let module_name = format!("{}_{}", &package, service_name);
+                let module_name = format!("{package}_{service_name}");
 
                 let contents =
                     Service::from_descriptor(service, &package)?.generate().scope().to_string();
@@ -251,7 +251,7 @@ impl Service {
     /// {}
     /// ```
     fn service_trait(&self) -> Trait {
-        let mut ret = Trait::new(format!("{}Service", &self.name));
+        let mut ret = Trait::new(format!("{}Service", self.name));
         ret.vis("pub");
 
         for method in &self.unary_methods {
@@ -464,7 +464,7 @@ impl UnaryMethod {
 
         ret.new_fn("encode")
             .arg("output", "Self::Output")
-            .ret(format!("tonic::Result<{}>", &self.response));
+            .ret(format!("tonic::Result<{}>", self.response));
 
         ret.new_fn("handle")
             .set_async(true)
@@ -477,8 +477,8 @@ impl UnaryMethod {
         ret.new_fn("full")
             .set_async(true)
             .arg_ref_self()
-            .arg("request", format!("tonic::Request<{}>", &self.request))
-            .ret(format!("tonic::Result<{}>", &self.response))
+            .arg("request", format!("tonic::Request<{}>", self.request))
+            .ret(format!("tonic::Result<{}>", self.response))
             .line("let (metadata, extensions, message) = request.into_parts();")
             .line(
                 r#"miden_node_tracing::Span::current().record("rpc.request.size", prost::Message::encoded_len(&message));"#,
@@ -556,7 +556,7 @@ impl ServerStream {
 
         ret.new_fn("encode")
             .arg("item", "Self::Item")
-            .ret(format!("tonic::Result<{}>", &self.response));
+            .ret(format!("tonic::Result<{}>", self.response));
 
         ret.new_fn("handle")
             .set_async(true)
@@ -569,7 +569,7 @@ impl ServerStream {
         ret.new_fn("full")
             .set_async(true)
             .arg_ref_self()
-            .arg("request", format!("tonic::Request<{}>", &self.request))
+            .arg("request", format!("tonic::Request<{}>", self.request))
             .ret(format!("tonic::Result<{boxed_stream}>"))
             .line("use tonic::codegen::tokio_stream::StreamExt as _;")
             .line("let (metadata, extensions, message) = request.into_parts();")

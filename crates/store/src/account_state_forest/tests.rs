@@ -243,7 +243,9 @@ fn forest_versions_are_continuous_for_sequential_updates() {
         vault_patch.insert_asset(dummy_fungible_asset(faucet_id, u64::from(i) * 10));
 
         let map_patch = StorageMapPatch::from_iters([], [(raw_key, Word::from([i, 0, 0, 0]))]);
-        let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch))]);
+        let raw = [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
         let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
 
         let patch = dummy_partial_patch(account_id, vault_patch, storage_patch);
@@ -274,10 +276,11 @@ fn compute_block_update_mutations_does_not_mutate_forest() {
     let mut vault_patch = AccountVaultPatch::default();
     vault_patch.insert_asset(dummy_fungible_asset(faucet_id, 110));
     let map_patch = StorageMapPatch::from_iters([], [(raw_key, value)]);
-    let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(map_patch),
-    )]))
+    let storage_patch = AccountStoragePatch::from_raw(
+        [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
     let patch = dummy_partial_patch(account_id, vault_patch, storage_patch);
 
@@ -315,10 +318,11 @@ fn precompute_partial_empty_storage_map_create_records_empty_root() {
     let slot_name = StorageSlotName::mock(14);
 
     let map_patch = StorageMapPatch::Create { entries: StorageMapPatchEntries::new() };
-    let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(map_patch),
-    )]))
+    let storage_patch = AccountStoragePatch::from_raw(
+        [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
     let patch = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch);
 
@@ -356,15 +360,16 @@ fn storage_map_remove_resets_forest_lineage_for_later_create() {
     let new_value = Word::from([16u32, 0, 0, 0]);
 
     let create_old = StorageMapPatch::Create {
-        entries: StorageMapPatchEntries::from_iter([(old_key, old_value)]),
+        entries: [(old_key, old_value)].into_iter().collect::<StorageMapPatchEntries>(),
     };
     let old_patch = dummy_partial_patch(
         account_id,
         AccountVaultPatch::default(),
-        AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-            slot_name.clone(),
-            StorageSlotPatch::Map(create_old),
-        )]))
+        AccountStoragePatch::from_raw(
+            [(slot_name.clone(), StorageSlotPatch::Map(create_old))]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>(),
+        )
         .unwrap(),
     );
     forest.update_account(BlockNumber::from(1u32), &old_patch);
@@ -372,10 +377,11 @@ fn storage_map_remove_resets_forest_lineage_for_later_create() {
     let remove_patch = dummy_partial_patch(
         account_id,
         AccountVaultPatch::default(),
-        AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-            slot_name.clone(),
-            StorageSlotPatch::Map(StorageMapPatch::Remove),
-        )]))
+        AccountStoragePatch::from_raw(
+            [(slot_name.clone(), StorageSlotPatch::Map(StorageMapPatch::Remove))]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>(),
+        )
         .unwrap(),
     );
     let prepared_remove = forest
@@ -391,15 +397,16 @@ fn storage_map_remove_resets_forest_lineage_for_later_create() {
     assert_eq!(forest.forest.latest_version(lineage), Some(1));
 
     let create_new = StorageMapPatch::Create {
-        entries: StorageMapPatchEntries::from_iter([(new_key, new_value)]),
+        entries: [(new_key, new_value)].into_iter().collect::<StorageMapPatchEntries>(),
     };
     let new_patch = dummy_partial_patch(
         account_id,
         AccountVaultPatch::default(),
-        AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-            slot_name.clone(),
-            StorageSlotPatch::Map(create_new),
-        )]))
+        AccountStoragePatch::from_raw(
+            [(slot_name.clone(), StorageSlotPatch::Map(create_new))]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>(),
+        )
         .unwrap(),
     );
     let prepared_create = forest
@@ -436,10 +443,11 @@ fn precomputed_and_applied_roots_match_protocol_state() {
     let mut vault_patch_1 = AccountVaultPatch::default();
     vault_patch_1.insert_asset(asset_1);
     let map_patch_1 = StorageMapPatch::from_iters([], [(raw_key, value_1)]);
-    let storage_patch_1 = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(map_patch_1),
-    )]))
+    let storage_patch_1 = AccountStoragePatch::from_raw(
+        [(slot_name.clone(), StorageSlotPatch::Map(map_patch_1))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
     let patch_1 = dummy_partial_patch(account_id, vault_patch_1, storage_patch_1);
 
@@ -464,10 +472,11 @@ fn precomputed_and_applied_roots_match_protocol_state() {
     let mut vault_patch_2 = AccountVaultPatch::default();
     vault_patch_2.insert_asset(asset_2);
     let map_patch_2 = StorageMapPatch::from_iters([], [(raw_key, value_2)]);
-    let storage_patch_2 = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(map_patch_2),
-    )]))
+    let storage_patch_2 = AccountStoragePatch::from_raw(
+        [(slot_name.clone(), StorageSlotPatch::Map(map_patch_2))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
     let patch_2 = dummy_partial_patch(account_id, vault_patch_2, storage_patch_2);
 
@@ -552,20 +561,22 @@ fn compute_block_update_mutations_rejects_full_state_existing_lineages() {
     let slot_name = StorageSlotName::mock(13);
     let raw_key = StorageMapKey::from_index(13);
     let map_patch = StorageMapPatch::from_iters([], [(raw_key, Word::from([13u32, 0, 0, 0]))]);
-    let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(map_patch),
-    )]))
+    let storage_patch = AccountStoragePatch::from_raw(
+        [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
     let initial_storage_patch =
         dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch);
     storage_forest.update_account(block_1, &initial_storage_patch);
 
     let empty_map_create = StorageMapPatch::Create { entries: StorageMapPatchEntries::new() };
-    let duplicate_storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(empty_map_create),
-    )]))
+    let duplicate_storage_patch = AccountStoragePatch::from_raw(
+        [(slot_name.clone(), StorageSlotPatch::Map(empty_map_create))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
     let duplicate_storage_full_state = AccountPatch::new(
         account_id,
@@ -703,7 +714,9 @@ fn storage_map_incremental_updates() {
     // Block 1: Insert key1 -> value1
     let block_1 = BlockNumber::GENESIS.child();
     let map_patch_1 = StorageMapPatch::from_iters([], [(key1, value1)]);
-    let raw_1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_1))]);
+    let raw_1 = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_1))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_1 = AccountStoragePatch::from_raw(raw_1).unwrap();
     let patch_1 = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_1);
     forest.update_account(block_1, &patch_1);
@@ -712,7 +725,9 @@ fn storage_map_incremental_updates() {
     // Block 2: Insert key2 -> value2
     let block_2 = block_1.child();
     let map_patch_2 = StorageMapPatch::from_iters([], [(key2, value2)]);
-    let raw_2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_2))]);
+    let raw_2 = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_2))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_2 = AccountStoragePatch::from_raw(raw_2).unwrap();
     let patch_2 = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_2);
     forest.update_account(block_2, &patch_2);
@@ -721,7 +736,9 @@ fn storage_map_incremental_updates() {
     // Block 3: Update key1 -> value3
     let block_3 = block_2.child();
     let map_patch_3 = StorageMapPatch::from_iters([], [(key1, value3)]);
-    let raw_3 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_3))]);
+    let raw_3 = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_3))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_3 = AccountStoragePatch::from_raw(raw_3).unwrap();
     let patch_3 = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_3);
     forest.update_account(block_3, &patch_3);
@@ -752,14 +769,18 @@ fn test_storage_map_removals() {
 
     let block_1 = BlockNumber::GENESIS.child();
     let map_patch_1 = StorageMapPatch::from_iters([], [(key_1, value_1), (key_2, value_2)]);
-    let raw_1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_1))]);
+    let raw_1 = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_1))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_1 = AccountStoragePatch::from_raw(raw_1).unwrap();
     let patch_1 = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_1);
     forest.update_account(block_1, &patch_1);
 
     let block_2 = block_1.child();
     let map_patch_2 = StorageMapPatch::from_iters([key_1], []);
-    let raw_2 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_2))]);
+    let raw_2 = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_2))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_2 = AccountStoragePatch::from_raw(raw_2).unwrap();
     let patch_2 = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_2);
     forest.update_account(block_2, &patch_2);
@@ -798,7 +819,9 @@ fn storage_map_state_is_not_available_for_block_gaps() {
     let block_1 = BlockNumber::from(BLOCK_FIRST);
     let value_1 = Word::from([VALUE_FIRST, 0, 0, 0]);
     let map_patch_1 = StorageMapPatch::from_iters([], [(raw_key, value_1)]);
-    let raw_1 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_1))]);
+    let raw_1 = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_1))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_1 = AccountStoragePatch::from_raw(raw_1).unwrap();
     let patch_1 = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_1);
     forest.update_account(block_1, &patch_1);
@@ -806,7 +829,9 @@ fn storage_map_state_is_not_available_for_block_gaps() {
     let block_4 = BlockNumber::from(BLOCK_SECOND);
     let value_2 = Word::from([VALUE_SECOND, 0, 0, 0]);
     let map_patch_4 = StorageMapPatch::from_iters([], [(raw_key, value_2)]);
-    let raw_4 = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch_4))]);
+    let raw_4 = [(slot_name.clone(), StorageSlotPatch::Map(map_patch_4))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_4 = AccountStoragePatch::from_raw(raw_4).unwrap();
     let patch_4 = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_4);
     forest.update_account(block_4, &patch_4);
@@ -894,7 +919,9 @@ fn storage_map_open_returns_partial_map() {
         map_entries.push((key, value));
     }
     let map_patch = StorageMapPatch::from_iters([], map_entries);
-    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch))]);
+    let raw = [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
     let patch = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch);
     forest.update_account(block_num, &patch);
@@ -934,7 +961,9 @@ fn storage_map_all_entries_returns_raw_keys_after_update() {
     let value = Word::from([42u32, 0, 0, 0]);
 
     let map_patch = StorageMapPatch::from_iters([], [(raw_key, value)]);
-    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch))]);
+    let raw = [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
     let patch = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch);
     forest.update_account(block_num, &patch);
@@ -966,7 +995,9 @@ fn storage_map_all_entries_returns_cache_miss_when_raw_key_is_not_cached() {
     let value = Word::from([43u32, 0, 0, 0]);
 
     let map_patch = StorageMapPatch::from_iters([], [(raw_key, value)]);
-    let raw = BTreeMap::from_iter([(slot_name.clone(), StorageSlotPatch::Map(map_patch))]);
+    let raw = [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
     let patch = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch);
     forest.update_account(block_num, &patch);
@@ -1035,10 +1066,11 @@ fn prune_removes_smt_roots_from_forest() {
                     Word::from([99u32, i, i * i, i * i * i]),
                 )],
             );
-            AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-                slot_name.clone(),
-                StorageSlotPatch::Map(map_patch),
-            )]))
+            AccountStoragePatch::from_raw(
+                [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+                    .into_iter()
+                    .collect::<BTreeMap<_, _>>(),
+            )
             .unwrap()
         } else {
             AccountStoragePatch::default()
@@ -1111,10 +1143,11 @@ fn prune_roots_removes_old_entries() {
         let key = StorageMapKey::new(Word::from([i, i * i, 5, 4]));
         let value = Word::from([0, 0, i * i * i, 77]);
         let map_patch = StorageMapPatch::from_iters([], [(key, value)]);
-        let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-            slot_name.clone(),
-            StorageSlotPatch::Map(map_patch),
-        )]))
+        let storage_patch = AccountStoragePatch::from_raw(
+            [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>(),
+        )
         .unwrap();
 
         let patch = dummy_partial_patch(account_id, vault_patch, storage_patch);
@@ -1184,10 +1217,12 @@ fn prune_handles_multiple_slots() {
             [],
             [(StorageMapKey::new(Word::from([i, 0, 0, 2])), Word::from([i, 0, 0, 3]))],
         );
-        let raw = BTreeMap::from_iter([
+        let raw = [
             (slot_a.clone(), StorageSlotPatch::Map(map_patch_a)),
             (slot_b.clone(), StorageSlotPatch::Map(map_patch_b)),
-        ]);
+        ]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
         let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
         let patch = dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch);
         forest.update_account(block_num, &patch);
@@ -1230,10 +1265,12 @@ fn prune_preserves_most_recent_state_per_entity() {
         [(StorageMapKey::new(Word::from([2u32, 0, 0, 0])), Word::from([200u32, 0, 0, 0]))],
     );
 
-    let raw = BTreeMap::from_iter([
+    let raw = [
         (slot_map_a.clone(), StorageSlotPatch::Map(map_patch_a)),
         (slot_map_b.clone(), StorageSlotPatch::Map(map_patch_b)),
-    ]);
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
     let storage_patch_1 = AccountStoragePatch::from_raw(raw).unwrap();
     let patch_1 = dummy_partial_patch(account_id, vault_patch_1, storage_patch_1);
     forest.update_account(block_1, &patch_1);
@@ -1245,8 +1282,9 @@ fn prune_preserves_most_recent_state_per_entity() {
         [(StorageMapKey::new(Word::from([1u32, 0, 0, 0])), Word::from([999u32, 0, 0, 0]))],
     );
 
-    let raw_at_51 =
-        BTreeMap::from_iter([(slot_map_a.clone(), StorageSlotPatch::Map(map_patch_a_new))]);
+    let raw_at_51 = [(slot_map_a.clone(), StorageSlotPatch::Map(map_patch_a_new))]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
     let storage_patch_at_51 = AccountStoragePatch::from_raw(raw_at_51).unwrap();
     let patch_at_51 =
         dummy_partial_patch(account_id, AccountVaultPatch::default(), storage_patch_at_51);
@@ -1287,7 +1325,9 @@ fn prune_preserves_entries_within_retention_window() {
             [(StorageMapKey::from_index(block_num), Word::from([block_num * 10, 0, 0, 0]))],
         );
 
-        let raw = BTreeMap::from_iter([(slot_map.clone(), StorageSlotPatch::Map(map_patch))]);
+        let raw = [(slot_map.clone(), StorageSlotPatch::Map(map_patch))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
         let storage_patch = AccountStoragePatch::from_raw(raw).unwrap();
         let patch = dummy_partial_patch(account_id, vault_patch, storage_patch);
         forest.update_account(block, &patch);

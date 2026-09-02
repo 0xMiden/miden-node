@@ -211,10 +211,9 @@ fn precomputed_state_from_account(account: &Account) -> PrecomputedPublicAccount
 }
 
 fn precomputed_states_from_account(account: &Account) -> PrecomputedPublicAccountStates {
-    PrecomputedPublicAccountStates::from_iter([(
-        account.id(),
-        precomputed_state_from_account(account),
-    )])
+    [(account.id(), precomputed_state_from_account(account))]
+        .into_iter()
+        .collect::<PrecomputedPublicAccountStates>()
 }
 
 fn create_account_with_map_storage(
@@ -261,7 +260,10 @@ fn assert_storage_map_slot_entries(
         panic!("expected map slot");
     };
 
-    let entries = BTreeMap::from_iter(storage_map.entries().map(|(key, value)| (*key, *value)));
+    let entries = storage_map
+        .entries()
+        .map(|(key, value)| (*key, *value))
+        .collect::<BTreeMap<_, _>>();
     assert_eq!(&entries, expected, "map entries mismatch");
 }
 
@@ -811,7 +813,7 @@ fn select_latest_account_storage_ordering_semantics() {
     let storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
 
-    let expected = BTreeMap::from_iter(entries);
+    let expected = entries.into_iter().collect::<BTreeMap<_, _>>();
     assert_storage_map_slot_entries(&storage, &slot_name, &expected);
 }
 
@@ -879,8 +881,8 @@ fn select_latest_account_storage_multiple_slots() {
     let storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
 
-    let expected_slot_1 = BTreeMap::from_iter([(key_a, value_a)]);
-    let expected_slot_2 = BTreeMap::from_iter([(key_b, value_b)]);
+    let expected_slot_1 = [(key_a, value_a)].into_iter().collect::<BTreeMap<_, _>>();
+    let expected_slot_2 = [(key_b, value_b)].into_iter().collect::<BTreeMap<_, _>>();
 
     assert_storage_map_slot_entries(&storage, &slot_name_1, &expected_slot_1);
     assert_storage_map_slot_entries(&storage, &slot_name_2, &expected_slot_2);
@@ -917,10 +919,11 @@ fn select_latest_account_storage_slot_updates() {
         .expect("upsert_accounts failed");
 
     let map_patch = StorageMapPatch::from_iters([], [(key_1, value_2), (key_2, value_3)]);
-    let storage_patch = AccountStoragePatch::from_raw(BTreeMap::from_iter([(
-        slot_name.clone(),
-        StorageSlotPatch::Map(map_patch),
-    )]))
+    let storage_patch = AccountStoragePatch::from_raw(
+        [(slot_name.clone(), StorageSlotPatch::Map(map_patch))]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+    )
     .unwrap();
 
     let final_nonce = Felt::new_unchecked(account.nonce().as_canonical_u64() + 1);
@@ -950,7 +953,7 @@ fn select_latest_account_storage_slot_updates() {
     let storage =
         select_latest_account_storage(&mut conn, account_id).expect("Failed to query storage");
 
-    let expected = BTreeMap::from_iter([(key_1, value_2), (key_2, value_3)]);
+    let expected = [(key_1, value_2), (key_2, value_3)].into_iter().collect::<BTreeMap<_, _>>();
     assert_storage_map_slot_entries(&storage, &slot_name, &expected);
 }
 
